@@ -1,0 +1,95 @@
+{
+	"root": true,
+	"env": {
+		"browser": true,
+		"es2022": true,
+		"node": true
+	},
+	"extends": [
+		"eslint:recommended",
+		"plugin:@typescript-eslint/recommended",
+		"plugin:react/recommended",
+		"plugin:react-hooks/recommended",
+		"plugin:react/jsx-runtime",
+		"prettier"
+	],
+	"parser": "@typescript-eslint/parser",
+	"parserOptions": {
+		"ecmaVersion": "latest",
+		"sourceType": "module",
+		"ecmaFeatures": {
+			"jsx": true
+		}
+	},
+	"plugins": ["@typescript-eslint", "react", "react-hooks", "boundaries"],
+	"settings": {
+		"react": {
+			"version": "detect"
+		},
+		"boundaries/include": ["src/**/*"],
+		"boundaries/elements": [
+			{
+				"mode": "full",
+				"type": "global",
+				"pattern": ["src/global/**/*"]
+			},
+			{
+				"mode": "full",
+				"type": "feature",
+				"capture": ["featureName"],
+				"pattern": ["src/features/(?<featureName>[^/]+)/**/*"]
+			},
+			{
+				"mode": "full",
+				"type": "app",
+				"capture": ["_", "fileName"],
+				"pattern": ["src/routes/**/*"]
+			}
+		]
+	},
+	"rules": {
+		"@typescript-eslint/no-unused-vars": [
+			"error",
+			{
+				"argsIgnorePattern": "^_",
+				"varsIgnorePattern": "^_"
+			}
+		],
+		"react/prop-types": "off",
+		"react/react-in-jsx-scope": "off",
+		"boundaries/no-unknown": ["error"],
+		"boundaries/no-unknown-files": ["error"],
+		"boundaries/element-types": [
+			"error",
+			{
+				"default": "disallow",
+				"rules": [
+					{
+						"from": ["global"],
+						"allow": ["global"]
+					},
+					{
+						"from": ["feature"],
+						"allow": ["global", ["feature", { "featureName": "${from.featureName}" }]]
+					},
+					{
+						"from": ["app", "neverImport"],
+						"allow": ["global", "feature"]
+					},
+					{
+						"from": ["app"],
+						"allow": [["app", { "fileName": "*.css" }]]
+					}
+				]
+			}
+		]
+	},
+	"ignorePatterns": [
+		"dist",
+		"node_modules",
+		"*.config.js",
+		"*.config.ts",
+		"routeTree.gen.ts",
+		"_generated"
+	]
+}

@@ -1,0 +1,9 @@
+node_modules
+dist
+_generated
+routeTree.gen.ts
+pnpm-lock.yaml
+*.config.js
+*.config.ts
+
+

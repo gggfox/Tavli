@@ -1,0 +1,86 @@
+/* ============================================
+ * Hover Utility Classes
+ * Replaces inline JS hover handlers with CSS
+ * ============================================ */
+
+/* Icon button hover - tertiary to primary text */
+.hover-icon {
+  color: var(--text-tertiary);
+  background-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hover-icon:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
+}
+
+/* Secondary text hover - maintains secondary color */
+.hover-secondary {
+  color: var(--text-secondary);
+  background-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hover-secondary:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
+}
+
+/* Button hover - just background change */
+.hover-bg {
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.hover-bg:hover {
+  background-color: var(--bg-hover);
+}
+
+/* Primary button hover */
+.hover-btn-primary {
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  transition: background-color 0.15s ease;
+}
+
+.hover-btn-primary:hover {
+  background-color: var(--btn-primary-hover);
+}
+
+/* Secondary button hover */
+.hover-btn-secondary {
+  background-color: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  transition: background-color 0.15s ease;
+}
+
+.hover-btn-secondary:hover {
+  background-color: var(--btn-secondary-hover);
+}
+
+/* Danger/delete hover - muted to danger */
+.hover-danger {
+  color: var(--text-muted);
+  background-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.hover-danger:hover {
+  color: var(--accent-danger);
+  background-color: var(--accent-danger-light);
+}
+
+/* Opacity hover for dismiss buttons */
+.hover-opacity {
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.hover-opacity:hover {
+  opacity: 0.7;
+}
+
+
+
+

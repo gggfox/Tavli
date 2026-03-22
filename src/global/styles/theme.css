@@ -1,0 +1,109 @@
+/*
+ * Notion-Inspired Theme System
+ * Light mode by default, dark mode via .dark class on <html>
+ */
+
+:root {
+	/* Notion Light Theme Colors */
+	--bg-primary: #ffffff;
+	--bg-secondary: #f7f6f3;
+	--bg-tertiary: #f1f1ef;
+	--bg-hover: rgba(55, 53, 47, 0.08);
+	--bg-active: rgba(55, 53, 47, 0.16);
+	--bg-elevated: #ffffff;
+
+	/* Text Colors */
+	--text-primary: #37352f;
+	--text-secondary: #787774;
+	--text-tertiary: #9b9a97;
+	--text-muted: #b4b4b3;
+	--text-inverse: #ffffff;
+
+	/* Border Colors */
+	--border-default: rgba(55, 53, 47, 0.09);
+	--border-strong: rgba(55, 53, 47, 0.16);
+
+	/* Accent Colors - Notion warm tones */
+	--accent-primary: #eb5757;
+	--accent-primary-hover: #e03e3e;
+	--accent-secondary: #2eaadc;
+	--accent-success: #0f7b6c;
+	--accent-success-light: rgba(15, 123, 108, 0.1);
+	--accent-warning: #dfab01;
+	--accent-danger: #e03e3e;
+	--accent-danger-light: rgba(224, 62, 62, 0.1);
+
+	/* Interactive Elements */
+	--btn-primary-bg: #2383e2;
+	--btn-primary-hover: #0b6bcb;
+	--btn-primary-text: #ffffff;
+	--btn-secondary-bg: rgba(55, 53, 47, 0.08);
+	--btn-secondary-hover: rgba(55, 53, 47, 0.16);
+	--btn-secondary-text: #37352f;
+	--btn-disabled-bg: rgba(55, 53, 47, 0.08);
+	--btn-disabled-text: rgba(55, 53, 47, 0.4);
+
+	/* Input */
+	--input-bg: #ffffff;
+	--input-border: rgba(55, 53, 47, 0.16);
+	--input-border-focus: #2383e2;
+	--input-placeholder: #9b9a97;
+
+	/* Shadows */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
+	--shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+
+	/* Scrollbar */
+	--scrollbar-thumb: rgba(55, 53, 47, 0.16);
+	--scrollbar-thumb-hover: rgba(55, 53, 47, 0.32);
+}
+
+/* Dark Theme */
+.dark {
+	--bg-primary: #191919;
+	--bg-secondary: #202020;
+	--bg-tertiary: #2f2f2f;
+	--bg-hover: rgba(255, 255, 255, 0.055);
+	--bg-active: rgba(255, 255, 255, 0.1);
+	--bg-elevated: #252525;
+
+	--text-primary: #ffffffcf;
+	--text-secondary: #9b9a97;
+	--text-tertiary: #787774;
+	--text-muted: #5a5a5a;
+	--text-inverse: #191919;
+
+	--border-default: rgba(255, 255, 255, 0.094);
+	--border-strong: rgba(255, 255, 255, 0.16);
+
+	--accent-primary: #eb5757;
+	--accent-primary-hover: #ff6b6b;
+	--accent-secondary: #529cca;
+	--accent-success: #4dab9a;
+	--accent-success-light: rgba(77, 171, 154, 0.15);
+	--accent-warning: #f0c000;
+	--accent-danger: #eb5757;
+	--accent-danger-light: rgba(235, 87, 87, 0.15);
+
+	--btn-primary-bg: #2383e2;
+	--btn-primary-hover: #4b9fe8;
+	--btn-primary-text: #ffffff;
+	--btn-secondary-bg: rgba(255, 255, 255, 0.08);
+	--btn-secondary-hover: rgba(255, 255, 255, 0.13);
+	--btn-secondary-text: #ffffffcf;
+	--btn-disabled-bg: rgba(255, 255, 255, 0.05);
+	--btn-disabled-text: rgba(255, 255, 255, 0.3);
+
+	--input-bg: #252525;
+	--input-border: rgba(255, 255, 255, 0.13);
+	--input-border-focus: #2383e2;
+	--input-placeholder: #5a5a5a;
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+	--shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4), 0 4px 6px rgba(0, 0, 0, 0.3);
+
+	--scrollbar-thumb: rgba(255, 255, 255, 0.13);
+	--scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+}

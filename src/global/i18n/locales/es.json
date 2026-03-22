@@ -1,0 +1,85 @@
+{
+	"sidebar": {
+		"brand": {
+			"name": "Fierro Viejo"
+		},
+		"controls": {
+			"collapse": "Contraer barra lateral",
+			"expand": "Expandir barra lateral"
+		},
+		"nav": {
+			"home": "Panel de Control",
+			"liveAuctions": "Subastas en Vivo",
+			"eShop": "Tienda en Línea",
+			"liveRfqs": "RFQs en Vivo",
+			"createRfq": "Crear RFQ",
+			"myActiveBids": "Mis Ofertas Activas",
+			"analytics": "Análisis",
+			"purchaseHistory": "Historial de Compras",
+			"alerts": "Alertas",
+			"createMaterialAlert": "Crear Alerta de Material",
+			"createPriceAlert": "Crear Alerta de Precio",
+			"salesHistory": "Historial de Ventas",
+			"liveSales": "Ventas en Vivo",
+			"pendingMaterials": "Materiales Pendientes",
+			"admin": "Administración",
+			"adminUsers": "Usuarios",
+			"adminMaterials": "Materiales",
+			"serverFunctions": "Funciones del Servidor",
+			"demos": "Demostraciones",
+			"apiRequest": "Solicitud API",
+			"ssrDemos": "Demostraciones SSR",
+			"spaMode": "Modo SPA",
+			"fullSSR": "SSR Completo",
+			"dataOnly": "Solo Datos"
+		},
+		"theme": {
+			"darkMode": "Modo oscuro",
+			"lightMode": "Modo claro",
+			"switchTo": "Cambiar a"
+		},
+		"language": {
+			"selectLanguage": "Seleccionar idioma",
+			"english": "Inglés",
+			"spanish": "Español"
+		},
+		"auth": {
+			"signIn": "Iniciar sesión",
+			"signUp": "Registrarse",
+			"signOut": "Cerrar sesión",
+			"clickToSignOut": "Haz clic para cerrar sesión",
+			"notConfigured": "Autenticación no configurada"
+		},
+		"settings": {
+			"title": "Configuración",
+			"close": "Cerrar",
+			"theme": "Tema"
+		}
+	},
+	"errors": {
+		"generic": "Ocurrió un error. Por favor, inténtalo de nuevo.",
+		"ERROR_ADMIN_REQUIRED": "No tienes permiso para realizar esta acción.",
+		"ERROR_SELLER_REQUIRED": "Necesitas acceso de vendedor para realizar esta acción.",
+		"ERROR_BUYER_REQUIRED": "Necesitas acceso de comprador para realizar esta acción.",
+		"ERROR_INSUFFICIENT_PERMISSIONS": "No tienes los permisos necesarios.",
+		"validation": {
+			"categoryRequired": "Por favor selecciona al menos una categoría.",
+			"quantityRequired": "Por favor ingresa una cantidad válida mayor a 0.",
+			"locationRequired": "Por favor ingresa una ubicación."
+		},
+		"materials": {
+			"createFailed": "Error al crear el material. Por favor, inténtalo de nuevo.",
+			"createSuccess": "¡Material creado exitosamente! Aparecerá en la lista después de la aprobación del administrador.",
+			"addToAuctionFailed": "Error al agregar el material a la subasta. Por favor, inténtalo de nuevo.",
+			"addToAuctionSuccess": "¡Material agregado a la subasta exitosamente!",
+			"notFound": "Material no encontrado.",
+			"alreadyInAuction": "Este material ya está en la subasta."
+		},
+		"auctions": {
+			"notFound": "Subasta no encontrada.",
+			"noLiveAuction": "No hay ninguna subasta en vivo disponible.",
+			"createFailed": "Error al crear la subasta. Por favor, inténtalo de nuevo.",
+			"startFailed": "Error al iniciar la subasta. Por favor, inténtalo de nuevo."
+		}
+	}
+}
