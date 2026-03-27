@@ -18,6 +18,7 @@ export default defineSchema({
 	// ============================================================================
 	[TABLE.USER_ROLES]: defineTable({
 		userId: v.string(),
+		email: v.optional(v.string()),
 		roles: v.array(
 			v.union(
 				v.literal("admin"),

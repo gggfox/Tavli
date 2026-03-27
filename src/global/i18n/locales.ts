@@ -51,6 +51,12 @@ export const SidebarKeys = {
 	SETTINGS: "sidebar.settings.title",
 	CLOSE: "sidebar.settings.close",
 	THEME: "sidebar.settings.theme",
+	ROLES: "sidebar.settings.roles",
+	NO_ROLES: "sidebar.settings.noRoles",
+	DEV_TOOLS: "sidebar.settings.devTools",
+	SELF_ASSIGN_ADMIN: "sidebar.settings.selfAssignAdmin",
+	ADMIN_ALREADY_ASSIGNED: "sidebar.settings.adminAlreadyAssigned",
+	ASSIGNING_ADMIN: "sidebar.settings.assigningAdmin",
 } as const;
 
 export type SidebarKey = (typeof SidebarKeys)[keyof typeof SidebarKeys];

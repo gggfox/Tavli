@@ -4,10 +4,9 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 
 export function useOptionGroups(restaurantId: Id<"restaurants"> | undefined) {
-	const { data, isLoading } = useQuery({
-		...convexQuery(api.optionGroups.getGroupsByRestaurant, { restaurantId: restaurantId! }),
-		enabled: !!restaurantId,
-	});
+	const { data, isLoading } = useQuery(
+		convexQuery(api.optionGroups.getGroupsByRestaurant, restaurantId ? { restaurantId } : "skip")
+	);
 
 	const createGroup = useMutation({ mutationFn: useConvexMutation(api.optionGroups.createGroup) });
 	const updateGroup = useMutation({ mutationFn: useConvexMutation(api.optionGroups.updateGroup) });
@@ -45,9 +44,8 @@ export function useOptionGroups(restaurantId: Id<"restaurants"> | undefined) {
 }
 
 export function useOptionsForGroup(optionGroupId: Id<"optionGroups"> | undefined) {
-	const { data } = useQuery({
-		...convexQuery(api.optionGroups.getOptionsByGroup, { optionGroupId: optionGroupId! }),
-		enabled: !!optionGroupId,
-	});
+	const { data } = useQuery(
+		convexQuery(api.optionGroups.getOptionsByGroup, optionGroupId ? { optionGroupId } : "skip")
+	);
 	return data ?? [];
 }

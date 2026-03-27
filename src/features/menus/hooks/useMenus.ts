@@ -4,10 +4,9 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 
 export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
-	const { data: menus, isLoading } = useQuery({
-		...convexQuery(api.menus.getMenusByRestaurant, { restaurantId: restaurantId! }),
-		enabled: !!restaurantId,
-	});
+	const { data: menus, isLoading } = useQuery(
+		convexQuery(api.menus.getMenusByRestaurant, restaurantId ? { restaurantId } : "skip")
+	);
 
 	const createMenu = useMutation({ mutationFn: useConvexMutation(api.menus.createMenu) });
 	const updateMenu = useMutation({ mutationFn: useConvexMutation(api.menus.updateMenu) });
@@ -30,19 +29,17 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 }
 
 export function useCategories(menuId: Id<"menus"> | undefined) {
-	const { data, isLoading } = useQuery({
-		...convexQuery(api.menus.getCategoriesByMenu, { menuId: menuId! }),
-		enabled: !!menuId,
-	});
+	const { data, isLoading } = useQuery(
+		convexQuery(api.menus.getCategoriesByMenu, menuId ? { menuId } : "skip")
+	);
 
 	return { categories: data ?? [], isLoading };
 }
 
 export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
-	const { data, isLoading } = useQuery({
-		...convexQuery(api.menuItems.getByCategory, { categoryId: categoryId! }),
-		enabled: !!categoryId,
-	});
+	const { data, isLoading } = useQuery(
+		convexQuery(api.menuItems.getByCategory, categoryId ? { categoryId } : "skip")
+	);
 
 	const createItem = useMutation({ mutationFn: useConvexMutation(api.menuItems.create) });
 	const updateItem = useMutation({ mutationFn: useConvexMutation(api.menuItems.update) });

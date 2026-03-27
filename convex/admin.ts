@@ -333,6 +333,9 @@ export const selfAssignAdminRole = mutation({
 			return [null, error];
 		}
 
+		const identity = await ctx.auth.getUserIdentity();
+		const email = identity?.email ?? undefined;
+
 		// Check if user already has roles
 		const existingUser = await ctx.db
 			.query(TABLE.USER_ROLES)
@@ -382,6 +385,7 @@ export const selfAssignAdminRole = mutation({
 			const now = Date.now();
 			await ctx.db.patch(existingUser._id, {
 				roles: [...existingUser.roles, "admin"],
+				email,
 				updatedAt: now,
 			});
 
@@ -392,6 +396,7 @@ export const selfAssignAdminRole = mutation({
 		const now = Date.now();
 		const roleId = await ctx.db.insert(TABLE.USER_ROLES, {
 			userId: userId,
+			email,
 			roles: ["admin"],
 			createdAt: now,
 			updatedAt: now,

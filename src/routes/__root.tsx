@@ -1,7 +1,6 @@
 import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
 import { QueryClient } from "@tanstack/react-query";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
-import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import type { ReactNode } from "react";
 
@@ -10,9 +9,8 @@ import { ErrorBoundary, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { ThemeProvider } from "@/global/utils/theme";
 import "../global/i18n/config";
+import { convexClient } from "../router";
 import appCss from "../styles.css?url";
-
-const convexClient = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL ?? "");
 
 export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;

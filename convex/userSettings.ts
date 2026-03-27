@@ -13,7 +13,7 @@ export const get = query({
 	handler: async (ctx) => {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) {
-			throw error;
+			return null;
 		}
 		const settings = await ctx.db
 			.query("userSettings")

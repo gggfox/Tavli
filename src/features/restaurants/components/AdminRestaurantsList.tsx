@@ -1,5 +1,6 @@
-import { EmptyState, LoadingState, StatusBadge, TextInput } from "@/global/components";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { EmptyState, InlineError, LoadingState, StatusBadge, TextInput } from "@/global/components";
+import { unwrapResult } from "@/global/utils";
+import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -7,8 +8,14 @@ import { ExternalLink, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import { useState } from "react";
 
 export function AdminRestaurantsList() {
-	const { data: rawResult, isLoading } = useQuery(convexQuery(api.restaurants.getAll, {}));
+	const { isAuthenticated } = useConvexAuth();
+
+	const { data: rawResult, isLoading } = useQuery({
+		...convexQuery(api.restaurants.getAll, {}),
+		enabled: isAuthenticated,
+	});
 	const restaurants = Array.isArray(rawResult) && rawResult[0] ? rawResult[0] : [];
+	const queryError = Array.isArray(rawResult) && rawResult[1] ? rawResult[1] : null;
 
 	const createMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.create),
@@ -21,14 +28,20 @@ export function AdminRestaurantsList() {
 	const [name, setName] = useState("");
 	const [slug, setSlug] = useState("");
 	const [currency, setCurrency] = useState("USD");
+	const [error, setError] = useState<string | null>(null);
 
 	const handleCreate = async (e: React.FormEvent) => {
 		e.preventDefault();
-		await createMutation.mutateAsync({ name, slug, currency });
-		setName("");
-		setSlug("");
-		setCurrency("USD");
-		setShowForm(false);
+		setError(null);
+		try {
+			unwrapResult(await createMutation.mutateAsync({ name, slug, currency }));
+			setName("");
+			setSlug("");
+			setCurrency("USD");
+			setShowForm(false);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to create restaurant");
+		}
 	};
 
 	if (isLoading) {
@@ -37,6 +50,9 @@ export function AdminRestaurantsList() {
 
 	return (
 		<div className="space-y-4">
+			{queryError && <InlineError message={queryError.message ?? "Failed to load restaurants."} />}
+			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
+
 			<div className="flex justify-end">
 				<button
 					onClick={() => setShowForm(!showForm)}
@@ -151,10 +167,14 @@ export function AdminRestaurantsList() {
 								href={`/r/${r.slug}/t/1/menu`}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-								title="Open customer view"
+								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[var(--bg-hover)]"
+								style={{
+									color: "var(--accent-primary)",
+									border: "1px solid var(--border-default)",
+								}}
 							>
-								<ExternalLink size={16} style={{ color: "var(--text-secondary)" }} />
+								<ExternalLink size={14} />
+								Customer View
 							</a>
 							<button
 								onClick={() =>

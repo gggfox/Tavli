@@ -10,7 +10,7 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireAdminRole, requireOwnerRole } from "./_util/auth";
+import { getCurrentUserId, isAdmin, requireOwnerRole } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -170,10 +170,15 @@ export const getAll = query({
 	> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireAdminRole(ctx, userId);
-		if (error2) return [null, error2];
 
-		const restaurants = await ctx.db.query(TABLE.RESTAURANTS).collect();
+		const userIsAdmin = await isAdmin(ctx, userId);
+
+		const restaurants = userIsAdmin
+			? await ctx.db.query(TABLE.RESTAURANTS).collect()
+			: await ctx.db
+					.query(TABLE.RESTAURANTS)
+					.withIndex("by_owner", (q) => q.eq("ownerId", userId))
+					.collect();
 
 		return [
 			restaurants.map((r) => ({

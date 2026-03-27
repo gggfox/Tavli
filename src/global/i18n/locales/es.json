@@ -38,7 +38,13 @@
 		"settings": {
 			"title": "Configuración",
 			"close": "Cerrar",
-			"theme": "Tema"
+			"theme": "Tema",
+			"roles": "Tus Roles",
+			"noRoles": "Sin roles asignados",
+			"devTools": "Herramientas de Desarrollo",
+			"selfAssignAdmin": "Auto-asignar Rol de Admin",
+			"adminAlreadyAssigned": "Rol de admin ya asignado",
+			"assigningAdmin": "Asignando..."
 		}
 	},
 	"errors": {
