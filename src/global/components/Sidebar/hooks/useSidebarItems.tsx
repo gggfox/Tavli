@@ -7,9 +7,6 @@ import { sidebarItems } from "../constants";
 export function useSidebarItems({ isMounted }: { isMounted: boolean }) {
 	const { isAuthenticated } = useConvexAuth();
 
-	// Get current user's roles to filter sidebar items
-	// Only run query when mounted (client-side) and authenticated
-	// Extract the first element from the tuple [data, error] returned by AsyncReturn
 	const { data: rawUserRoles } = useQuery({
 		...convexQuery(api.admin.getCurrentUserRoles, {}),
 		enabled: isMounted && isAuthenticated,
@@ -20,24 +17,15 @@ export function useSidebarItems({ isMounted }: { isMounted: boolean }) {
 	);
 
 	const isAdmin = useMemo(() => userRoles.includes("admin"), [userRoles]);
-	const isSeller = useMemo(() => userRoles.includes("seller"), [userRoles]);
-	const hasAdminOrSellerAccess = useMemo(() => isAdmin || isSeller, [isAdmin, isSeller]);
 
-	// Filter sidebar items based on user roles
 	const filteredSidebarItems = useMemo(() => {
 		return sidebarItems.filter((item) => {
-			// Only show admin section if user has admin role
 			if (item.translationKey === "sidebar.nav.admin") {
 				return isAdmin;
 			}
-			// Only show sales history section if user has admin or seller role
-			if (item.translationKey === "sidebar.nav.salesHistory") {
-				return hasAdminOrSellerAccess;
-			}
-			// Always show other items
 			return true;
 		});
-	}, [isAdmin, hasAdminOrSellerAccess]);
+	}, [isAdmin]);
 
 	return { filteredSidebarItems };
 }

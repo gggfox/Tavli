@@ -1,1 +1,0 @@
-export { PendingMaterialsTable } from "./PendingMaterialsTable";

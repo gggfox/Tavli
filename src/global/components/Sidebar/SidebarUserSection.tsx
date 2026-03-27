@@ -1,5 +1,5 @@
 import { SidebarKeys } from "@/global/i18n";
-import { useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useClerk, useUser } from "@clerk/tanstack-react-start";
 import { LogOut } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, getAvatarFallback } from "../Avatar";
@@ -14,9 +14,13 @@ interface SidebarUserSectionProps {
  */
 export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionProps>) {
 	const { t } = useTranslation();
-	const { user, signOut } = useAuth();
+	const { user } = useUser();
+	const { signOut } = useClerk();
 
 	if (!user) return null;
+
+	const displayName = user.firstName || user.primaryEmailAddress?.emailAddress || "User";
+	const email = user.primaryEmailAddress?.emailAddress ?? "";
 
 	return (
 		<div className="p-2" style={{ borderTop: "1px solid var(--border-default)" }}>
@@ -27,17 +31,13 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 			>
 				<button
 					className="relative"
-					title={
-						isExpanded
-							? undefined
-							: `${user.firstName || user.email} - ${t(SidebarKeys.CLICK_TO_SIGN_OUT)}`
-					}
+					title={isExpanded ? undefined : `${displayName} - ${t(SidebarKeys.CLICK_TO_SIGN_OUT)}`}
 					onClick={() => signOut()}
 				>
 					<Avatar
-						src={user.profilePictureUrl}
-						alt={user.firstName || "User"}
-						fallback={getAvatarFallback(user.firstName, user.email)}
+						src={user.imageUrl}
+						alt={displayName}
+						fallback={getAvatarFallback(user.firstName, email)}
 						size="md"
 						className="transition-all"
 					/>
@@ -56,7 +56,7 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 							{user.firstName} {user.lastName}
 						</p>
 						<p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
-							{user.email}
+							{email}
 						</p>
 					</div>
 				)}

@@ -9,80 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SalesHistoryRouteImport } from './routes/sales-history'
-import { Route as PurchaseHistoryRouteImport } from './routes/purchase-history'
-import { Route as PendingMaterialsRouteImport } from './routes/pending-materials'
-import { Route as MyActiveBidsRouteImport } from './routes/my-active-bids'
-import { Route as LiveRfqsRouteImport } from './routes/live-rfqs'
-import { Route as LiveAuctionsRouteImport } from './routes/live-auctions'
-import { Route as EShopRouteImport } from './routes/e-shop'
-import { Route as AnalyticsRouteImport } from './routes/analytics'
-import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SalesHistoryLiveRouteImport } from './routes/sales-history/live'
-import { Route as LiveRfqsCreateRouteImport } from './routes/live-rfqs/create'
-import { Route as AlertsCreatePriceRouteImport } from './routes/alerts/create-price'
-import { Route as AlertsCreateMaterialRouteImport } from './routes/alerts/create-material'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as AdminMaterialsRouteImport } from './routes/admin/materials'
+import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
+import { Route as AdminRestaurantRouteImport } from './routes/admin/restaurant'
+import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
+import { Route as AdminOptionsRouteImport } from './routes/admin/options'
+import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
-import { Route as ApiAuthSignupRouteImport } from './routes/api/auth/signup'
-import { Route as ApiAuthSignoutRouteImport } from './routes/api/auth/signout'
-import { Route as ApiAuthSigninRouteImport } from './routes/api/auth/signin'
-import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as AdminRestaurantTablesRouteImport } from './routes/admin/restaurant/tables'
+import { Route as AdminMenusMenuIdRouteImport } from './routes/admin/menus/$menuId'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
+import { Route as RSlugTTableNumberRouteImport } from './routes/r/$slug/t/$tableNumber'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
 import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
+import { Route as RSlugTTableNumberMenuRouteImport } from './routes/r/$slug/t/$tableNumber/menu'
+import { Route as RSlugTTableNumberCartRouteImport } from './routes/r/$slug/t/$tableNumber/cart'
+import { Route as RSlugTTableNumberOrderOrderIdRouteImport } from './routes/r/$slug/t/$tableNumber/order/$orderId'
 
-const SalesHistoryRoute = SalesHistoryRouteImport.update({
-  id: '/sales-history',
-  path: '/sales-history',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PurchaseHistoryRoute = PurchaseHistoryRouteImport.update({
-  id: '/purchase-history',
-  path: '/purchase-history',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PendingMaterialsRoute = PendingMaterialsRouteImport.update({
-  id: '/pending-materials',
-  path: '/pending-materials',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MyActiveBidsRoute = MyActiveBidsRouteImport.update({
-  id: '/my-active-bids',
-  path: '/my-active-bids',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LiveRfqsRoute = LiveRfqsRouteImport.update({
-  id: '/live-rfqs',
-  path: '/live-rfqs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LiveAuctionsRoute = LiveAuctionsRouteImport.update({
-  id: '/live-auctions',
-  path: '/live-auctions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EShopRoute = EShopRouteImport.update({
-  id: '/e-shop',
-  path: '/e-shop',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AnalyticsRoute = AnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AlertsRoute = AlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -93,34 +41,34 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SalesHistoryLiveRoute = SalesHistoryLiveRouteImport.update({
-  id: '/live',
-  path: '/live',
-  getParentRoute: () => SalesHistoryRoute,
-} as any)
-const LiveRfqsCreateRoute = LiveRfqsCreateRouteImport.update({
-  id: '/create',
-  path: '/create',
-  getParentRoute: () => LiveRfqsRoute,
-} as any)
-const AlertsCreatePriceRoute = AlertsCreatePriceRouteImport.update({
-  id: '/create-price',
-  path: '/create-price',
-  getParentRoute: () => AlertsRoute,
-} as any)
-const AlertsCreateMaterialRoute = AlertsCreateMaterialRouteImport.update({
-  id: '/create-material',
-  path: '/create-material',
-  getParentRoute: () => AlertsRoute,
-} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminMaterialsRoute = AdminMaterialsRouteImport.update({
-  id: '/materials',
-  path: '/materials',
+const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
+  id: '/restaurants',
+  path: '/restaurants',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRestaurantRoute = AdminRestaurantRouteImport.update({
+  id: '/restaurant',
+  path: '/restaurant',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrdersRoute = AdminOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOptionsRoute = AdminOptionsRouteImport.update({
+  id: '/options',
+  path: '/options',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMenusIndexRoute = AdminMenusIndexRouteImport.update({
+  id: '/menus/',
+  path: '/menus/',
   getParentRoute: () => AdminRoute,
 } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
@@ -138,29 +86,24 @@ const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
   path: '/demo/api/names',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthSignupRoute = ApiAuthSignupRouteImport.update({
-  id: '/api/auth/signup',
-  path: '/api/auth/signup',
-  getParentRoute: () => rootRouteImport,
+const AdminRestaurantTablesRoute = AdminRestaurantTablesRouteImport.update({
+  id: '/tables',
+  path: '/tables',
+  getParentRoute: () => AdminRestaurantRoute,
 } as any)
-const ApiAuthSignoutRoute = ApiAuthSignoutRouteImport.update({
-  id: '/api/auth/signout',
-  path: '/api/auth/signout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSigninRoute = ApiAuthSigninRouteImport.update({
-  id: '/api/auth/signin',
-  path: '/api/auth/signin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
-  id: '/api/auth/callback',
-  path: '/api/auth/callback',
-  getParentRoute: () => rootRouteImport,
+const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
+  id: '/menus/$menuId',
+  path: '/menus/$menuId',
+  getParentRoute: () => AdminRoute,
 } as any)
 const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
   id: '/demo/start/ssr/',
   path: '/demo/start/ssr/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RSlugTTableNumberRoute = RSlugTTableNumberRouteImport.update({
+  id: '/r/$slug/t/$tableNumber',
+  path: '/r/$slug/t/$tableNumber',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
@@ -178,281 +121,180 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
   path: '/demo/start/ssr/data-only',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RSlugTTableNumberMenuRoute = RSlugTTableNumberMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => RSlugTTableNumberRoute,
+} as any)
+const RSlugTTableNumberCartRoute = RSlugTTableNumberCartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => RSlugTTableNumberRoute,
+} as any)
+const RSlugTTableNumberOrderOrderIdRoute =
+  RSlugTTableNumberOrderOrderIdRouteImport.update({
+    id: '/order/$orderId',
+    path: '/order/$orderId',
+    getParentRoute: () => RSlugTTableNumberRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/alerts': typeof AlertsRouteWithChildren
-  '/analytics': typeof AnalyticsRoute
-  '/e-shop': typeof EShopRoute
-  '/live-auctions': typeof LiveAuctionsRoute
-  '/live-rfqs': typeof LiveRfqsRouteWithChildren
-  '/my-active-bids': typeof MyActiveBidsRoute
-  '/pending-materials': typeof PendingMaterialsRoute
-  '/purchase-history': typeof PurchaseHistoryRoute
-  '/sales-history': typeof SalesHistoryRouteWithChildren
-  '/admin/materials': typeof AdminMaterialsRoute
+  '/admin/options': typeof AdminOptionsRoute
+  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/restaurant': typeof AdminRestaurantRouteWithChildren
+  '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/alerts/create-material': typeof AlertsCreateMaterialRoute
-  '/alerts/create-price': typeof AlertsCreatePriceRoute
-  '/live-rfqs/create': typeof LiveRfqsCreateRoute
-  '/sales-history/live': typeof SalesHistoryLiveRoute
-  '/api/auth/callback': typeof ApiAuthCallbackRoute
-  '/api/auth/signin': typeof ApiAuthSigninRoute
-  '/api/auth/signout': typeof ApiAuthSignoutRoute
-  '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
+  '/admin/restaurant/tables': typeof AdminRestaurantTablesRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/admin/menus': typeof AdminMenusIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/r/$slug/t/$tableNumber': typeof RSlugTTableNumberRouteWithChildren
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
+  '/r/$slug/t/$tableNumber/cart': typeof RSlugTTableNumberCartRoute
+  '/r/$slug/t/$tableNumber/menu': typeof RSlugTTableNumberMenuRoute
+  '/r/$slug/t/$tableNumber/order/$orderId': typeof RSlugTTableNumberOrderOrderIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/alerts': typeof AlertsRouteWithChildren
-  '/analytics': typeof AnalyticsRoute
-  '/e-shop': typeof EShopRoute
-  '/live-auctions': typeof LiveAuctionsRoute
-  '/live-rfqs': typeof LiveRfqsRouteWithChildren
-  '/my-active-bids': typeof MyActiveBidsRoute
-  '/pending-materials': typeof PendingMaterialsRoute
-  '/purchase-history': typeof PurchaseHistoryRoute
-  '/sales-history': typeof SalesHistoryRouteWithChildren
-  '/admin/materials': typeof AdminMaterialsRoute
+  '/admin/options': typeof AdminOptionsRoute
+  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/restaurant': typeof AdminRestaurantRouteWithChildren
+  '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/alerts/create-material': typeof AlertsCreateMaterialRoute
-  '/alerts/create-price': typeof AlertsCreatePriceRoute
-  '/live-rfqs/create': typeof LiveRfqsCreateRoute
-  '/sales-history/live': typeof SalesHistoryLiveRoute
-  '/api/auth/callback': typeof ApiAuthCallbackRoute
-  '/api/auth/signin': typeof ApiAuthSigninRoute
-  '/api/auth/signout': typeof ApiAuthSignoutRoute
-  '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
+  '/admin/restaurant/tables': typeof AdminRestaurantTablesRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/admin/menus': typeof AdminMenusIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/r/$slug/t/$tableNumber': typeof RSlugTTableNumberRouteWithChildren
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
+  '/r/$slug/t/$tableNumber/cart': typeof RSlugTTableNumberCartRoute
+  '/r/$slug/t/$tableNumber/menu': typeof RSlugTTableNumberMenuRoute
+  '/r/$slug/t/$tableNumber/order/$orderId': typeof RSlugTTableNumberOrderOrderIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/alerts': typeof AlertsRouteWithChildren
-  '/analytics': typeof AnalyticsRoute
-  '/e-shop': typeof EShopRoute
-  '/live-auctions': typeof LiveAuctionsRoute
-  '/live-rfqs': typeof LiveRfqsRouteWithChildren
-  '/my-active-bids': typeof MyActiveBidsRoute
-  '/pending-materials': typeof PendingMaterialsRoute
-  '/purchase-history': typeof PurchaseHistoryRoute
-  '/sales-history': typeof SalesHistoryRouteWithChildren
-  '/admin/materials': typeof AdminMaterialsRoute
+  '/admin/options': typeof AdminOptionsRoute
+  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/restaurant': typeof AdminRestaurantRouteWithChildren
+  '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/alerts/create-material': typeof AlertsCreateMaterialRoute
-  '/alerts/create-price': typeof AlertsCreatePriceRoute
-  '/live-rfqs/create': typeof LiveRfqsCreateRoute
-  '/sales-history/live': typeof SalesHistoryLiveRoute
-  '/api/auth/callback': typeof ApiAuthCallbackRoute
-  '/api/auth/signin': typeof ApiAuthSigninRoute
-  '/api/auth/signout': typeof ApiAuthSignoutRoute
-  '/api/auth/signup': typeof ApiAuthSignupRoute
+  '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
+  '/admin/restaurant/tables': typeof AdminRestaurantTablesRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/admin/menus/': typeof AdminMenusIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/r/$slug/t/$tableNumber': typeof RSlugTTableNumberRouteWithChildren
   '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
+  '/r/$slug/t/$tableNumber/cart': typeof RSlugTTableNumberCartRoute
+  '/r/$slug/t/$tableNumber/menu': typeof RSlugTTableNumberMenuRoute
+  '/r/$slug/t/$tableNumber/order/$orderId': typeof RSlugTTableNumberOrderOrderIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
-    | '/alerts'
-    | '/analytics'
-    | '/e-shop'
-    | '/live-auctions'
-    | '/live-rfqs'
-    | '/my-active-bids'
-    | '/pending-materials'
-    | '/purchase-history'
-    | '/sales-history'
-    | '/admin/materials'
+    | '/admin/options'
+    | '/admin/orders'
+    | '/admin/restaurant'
+    | '/admin/restaurants'
     | '/admin/users'
-    | '/alerts/create-material'
-    | '/alerts/create-price'
-    | '/live-rfqs/create'
-    | '/sales-history/live'
-    | '/api/auth/callback'
-    | '/api/auth/signin'
-    | '/api/auth/signout'
-    | '/api/auth/signup'
+    | '/admin/menus/$menuId'
+    | '/admin/restaurant/tables'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/admin/menus'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/r/$slug/t/$tableNumber'
     | '/demo/start/ssr'
+    | '/r/$slug/t/$tableNumber/cart'
+    | '/r/$slug/t/$tableNumber/menu'
+    | '/r/$slug/t/$tableNumber/order/$orderId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/admin'
-    | '/alerts'
-    | '/analytics'
-    | '/e-shop'
-    | '/live-auctions'
-    | '/live-rfqs'
-    | '/my-active-bids'
-    | '/pending-materials'
-    | '/purchase-history'
-    | '/sales-history'
-    | '/admin/materials'
+    | '/admin/options'
+    | '/admin/orders'
+    | '/admin/restaurant'
+    | '/admin/restaurants'
     | '/admin/users'
-    | '/alerts/create-material'
-    | '/alerts/create-price'
-    | '/live-rfqs/create'
-    | '/sales-history/live'
-    | '/api/auth/callback'
-    | '/api/auth/signin'
-    | '/api/auth/signout'
-    | '/api/auth/signup'
+    | '/admin/menus/$menuId'
+    | '/admin/restaurant/tables'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/admin/menus'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/r/$slug/t/$tableNumber'
     | '/demo/start/ssr'
+    | '/r/$slug/t/$tableNumber/cart'
+    | '/r/$slug/t/$tableNumber/menu'
+    | '/r/$slug/t/$tableNumber/order/$orderId'
   id:
     | '__root__'
     | '/'
     | '/admin'
-    | '/alerts'
-    | '/analytics'
-    | '/e-shop'
-    | '/live-auctions'
-    | '/live-rfqs'
-    | '/my-active-bids'
-    | '/pending-materials'
-    | '/purchase-history'
-    | '/sales-history'
-    | '/admin/materials'
+    | '/admin/options'
+    | '/admin/orders'
+    | '/admin/restaurant'
+    | '/admin/restaurants'
     | '/admin/users'
-    | '/alerts/create-material'
-    | '/alerts/create-price'
-    | '/live-rfqs/create'
-    | '/sales-history/live'
-    | '/api/auth/callback'
-    | '/api/auth/signin'
-    | '/api/auth/signout'
-    | '/api/auth/signup'
+    | '/admin/menus/$menuId'
+    | '/admin/restaurant/tables'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/admin/menus/'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/r/$slug/t/$tableNumber'
     | '/demo/start/ssr/'
+    | '/r/$slug/t/$tableNumber/cart'
+    | '/r/$slug/t/$tableNumber/menu'
+    | '/r/$slug/t/$tableNumber/order/$orderId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
-  AlertsRoute: typeof AlertsRouteWithChildren
-  AnalyticsRoute: typeof AnalyticsRoute
-  EShopRoute: typeof EShopRoute
-  LiveAuctionsRoute: typeof LiveAuctionsRoute
-  LiveRfqsRoute: typeof LiveRfqsRouteWithChildren
-  MyActiveBidsRoute: typeof MyActiveBidsRoute
-  PendingMaterialsRoute: typeof PendingMaterialsRoute
-  PurchaseHistoryRoute: typeof PurchaseHistoryRoute
-  SalesHistoryRoute: typeof SalesHistoryRouteWithChildren
-  ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
-  ApiAuthSigninRoute: typeof ApiAuthSigninRoute
-  ApiAuthSignoutRoute: typeof ApiAuthSignoutRoute
-  ApiAuthSignupRoute: typeof ApiAuthSignupRoute
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
   DemoStartServerFuncsRoute: typeof DemoStartServerFuncsRoute
   DemoStartSsrDataOnlyRoute: typeof DemoStartSsrDataOnlyRoute
   DemoStartSsrFullSsrRoute: typeof DemoStartSsrFullSsrRoute
   DemoStartSsrSpaModeRoute: typeof DemoStartSsrSpaModeRoute
+  RSlugTTableNumberRoute: typeof RSlugTTableNumberRouteWithChildren
   DemoStartSsrIndexRoute: typeof DemoStartSsrIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/sales-history': {
-      id: '/sales-history'
-      path: '/sales-history'
-      fullPath: '/sales-history'
-      preLoaderRoute: typeof SalesHistoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/purchase-history': {
-      id: '/purchase-history'
-      path: '/purchase-history'
-      fullPath: '/purchase-history'
-      preLoaderRoute: typeof PurchaseHistoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pending-materials': {
-      id: '/pending-materials'
-      path: '/pending-materials'
-      fullPath: '/pending-materials'
-      preLoaderRoute: typeof PendingMaterialsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/my-active-bids': {
-      id: '/my-active-bids'
-      path: '/my-active-bids'
-      fullPath: '/my-active-bids'
-      preLoaderRoute: typeof MyActiveBidsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/live-rfqs': {
-      id: '/live-rfqs'
-      path: '/live-rfqs'
-      fullPath: '/live-rfqs'
-      preLoaderRoute: typeof LiveRfqsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/live-auctions': {
-      id: '/live-auctions'
-      path: '/live-auctions'
-      fullPath: '/live-auctions'
-      preLoaderRoute: typeof LiveAuctionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/e-shop': {
-      id: '/e-shop'
-      path: '/e-shop'
-      fullPath: '/e-shop'
-      preLoaderRoute: typeof EShopRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/analytics': {
-      id: '/analytics'
-      path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AnalyticsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/alerts': {
-      id: '/alerts'
-      path: '/alerts'
-      fullPath: '/alerts'
-      preLoaderRoute: typeof AlertsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -467,34 +309,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sales-history/live': {
-      id: '/sales-history/live'
-      path: '/live'
-      fullPath: '/sales-history/live'
-      preLoaderRoute: typeof SalesHistoryLiveRouteImport
-      parentRoute: typeof SalesHistoryRoute
-    }
-    '/live-rfqs/create': {
-      id: '/live-rfqs/create'
-      path: '/create'
-      fullPath: '/live-rfqs/create'
-      preLoaderRoute: typeof LiveRfqsCreateRouteImport
-      parentRoute: typeof LiveRfqsRoute
-    }
-    '/alerts/create-price': {
-      id: '/alerts/create-price'
-      path: '/create-price'
-      fullPath: '/alerts/create-price'
-      preLoaderRoute: typeof AlertsCreatePriceRouteImport
-      parentRoute: typeof AlertsRoute
-    }
-    '/alerts/create-material': {
-      id: '/alerts/create-material'
-      path: '/create-material'
-      fullPath: '/alerts/create-material'
-      preLoaderRoute: typeof AlertsCreateMaterialRouteImport
-      parentRoute: typeof AlertsRoute
-    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -502,11 +316,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/materials': {
-      id: '/admin/materials'
-      path: '/materials'
-      fullPath: '/admin/materials'
-      preLoaderRoute: typeof AdminMaterialsRouteImport
+    '/admin/restaurants': {
+      id: '/admin/restaurants'
+      path: '/restaurants'
+      fullPath: '/admin/restaurants'
+      preLoaderRoute: typeof AdminRestaurantsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/restaurant': {
+      id: '/admin/restaurant'
+      path: '/restaurant'
+      fullPath: '/admin/restaurant'
+      preLoaderRoute: typeof AdminRestaurantRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orders': {
+      id: '/admin/orders'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/options': {
+      id: '/admin/options'
+      path: '/options'
+      fullPath: '/admin/options'
+      preLoaderRoute: typeof AdminOptionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/menus/': {
+      id: '/admin/menus/'
+      path: '/menus'
+      fullPath: '/admin/menus'
+      preLoaderRoute: typeof AdminMenusIndexRouteImport
       parentRoute: typeof AdminRoute
     }
     '/demo/start/server-funcs': {
@@ -530,39 +372,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoApiNamesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/signup': {
-      id: '/api/auth/signup'
-      path: '/api/auth/signup'
-      fullPath: '/api/auth/signup'
-      preLoaderRoute: typeof ApiAuthSignupRouteImport
-      parentRoute: typeof rootRouteImport
+    '/admin/restaurant/tables': {
+      id: '/admin/restaurant/tables'
+      path: '/tables'
+      fullPath: '/admin/restaurant/tables'
+      preLoaderRoute: typeof AdminRestaurantTablesRouteImport
+      parentRoute: typeof AdminRestaurantRoute
     }
-    '/api/auth/signout': {
-      id: '/api/auth/signout'
-      path: '/api/auth/signout'
-      fullPath: '/api/auth/signout'
-      preLoaderRoute: typeof ApiAuthSignoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/signin': {
-      id: '/api/auth/signin'
-      path: '/api/auth/signin'
-      fullPath: '/api/auth/signin'
-      preLoaderRoute: typeof ApiAuthSigninRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/callback': {
-      id: '/api/auth/callback'
-      path: '/api/auth/callback'
-      fullPath: '/api/auth/callback'
-      preLoaderRoute: typeof ApiAuthCallbackRouteImport
-      parentRoute: typeof rootRouteImport
+    '/admin/menus/$menuId': {
+      id: '/admin/menus/$menuId'
+      path: '/menus/$menuId'
+      fullPath: '/admin/menus/$menuId'
+      preLoaderRoute: typeof AdminMenusMenuIdRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/demo/start/ssr/': {
       id: '/demo/start/ssr/'
       path: '/demo/start/ssr'
       fullPath: '/demo/start/ssr'
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/r/$slug/t/$tableNumber': {
+      id: '/r/$slug/t/$tableNumber'
+      path: '/r/$slug/t/$tableNumber'
+      fullPath: '/r/$slug/t/$tableNumber'
+      preLoaderRoute: typeof RSlugTTableNumberRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/start/ssr/spa-mode': {
@@ -586,80 +421,89 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/r/$slug/t/$tableNumber/menu': {
+      id: '/r/$slug/t/$tableNumber/menu'
+      path: '/menu'
+      fullPath: '/r/$slug/t/$tableNumber/menu'
+      preLoaderRoute: typeof RSlugTTableNumberMenuRouteImport
+      parentRoute: typeof RSlugTTableNumberRoute
+    }
+    '/r/$slug/t/$tableNumber/cart': {
+      id: '/r/$slug/t/$tableNumber/cart'
+      path: '/cart'
+      fullPath: '/r/$slug/t/$tableNumber/cart'
+      preLoaderRoute: typeof RSlugTTableNumberCartRouteImport
+      parentRoute: typeof RSlugTTableNumberRoute
+    }
+    '/r/$slug/t/$tableNumber/order/$orderId': {
+      id: '/r/$slug/t/$tableNumber/order/$orderId'
+      path: '/order/$orderId'
+      fullPath: '/r/$slug/t/$tableNumber/order/$orderId'
+      preLoaderRoute: typeof RSlugTTableNumberOrderOrderIdRouteImport
+      parentRoute: typeof RSlugTTableNumberRoute
+    }
   }
 }
 
+interface AdminRestaurantRouteChildren {
+  AdminRestaurantTablesRoute: typeof AdminRestaurantTablesRoute
+}
+
+const AdminRestaurantRouteChildren: AdminRestaurantRouteChildren = {
+  AdminRestaurantTablesRoute: AdminRestaurantTablesRoute,
+}
+
+const AdminRestaurantRouteWithChildren = AdminRestaurantRoute._addFileChildren(
+  AdminRestaurantRouteChildren,
+)
+
 interface AdminRouteChildren {
-  AdminMaterialsRoute: typeof AdminMaterialsRoute
+  AdminOptionsRoute: typeof AdminOptionsRoute
+  AdminOrdersRoute: typeof AdminOrdersRoute
+  AdminRestaurantRoute: typeof AdminRestaurantRouteWithChildren
+  AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
+  AdminMenusIndexRoute: typeof AdminMenusIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminMaterialsRoute: AdminMaterialsRoute,
+  AdminOptionsRoute: AdminOptionsRoute,
+  AdminOrdersRoute: AdminOrdersRoute,
+  AdminRestaurantRoute: AdminRestaurantRouteWithChildren,
+  AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminUsersRoute: AdminUsersRoute,
+  AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
+  AdminMenusIndexRoute: AdminMenusIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface AlertsRouteChildren {
-  AlertsCreateMaterialRoute: typeof AlertsCreateMaterialRoute
-  AlertsCreatePriceRoute: typeof AlertsCreatePriceRoute
+interface RSlugTTableNumberRouteChildren {
+  RSlugTTableNumberCartRoute: typeof RSlugTTableNumberCartRoute
+  RSlugTTableNumberMenuRoute: typeof RSlugTTableNumberMenuRoute
+  RSlugTTableNumberOrderOrderIdRoute: typeof RSlugTTableNumberOrderOrderIdRoute
 }
 
-const AlertsRouteChildren: AlertsRouteChildren = {
-  AlertsCreateMaterialRoute: AlertsCreateMaterialRoute,
-  AlertsCreatePriceRoute: AlertsCreatePriceRoute,
+const RSlugTTableNumberRouteChildren: RSlugTTableNumberRouteChildren = {
+  RSlugTTableNumberCartRoute: RSlugTTableNumberCartRoute,
+  RSlugTTableNumberMenuRoute: RSlugTTableNumberMenuRoute,
+  RSlugTTableNumberOrderOrderIdRoute: RSlugTTableNumberOrderOrderIdRoute,
 }
 
-const AlertsRouteWithChildren =
-  AlertsRoute._addFileChildren(AlertsRouteChildren)
-
-interface LiveRfqsRouteChildren {
-  LiveRfqsCreateRoute: typeof LiveRfqsCreateRoute
-}
-
-const LiveRfqsRouteChildren: LiveRfqsRouteChildren = {
-  LiveRfqsCreateRoute: LiveRfqsCreateRoute,
-}
-
-const LiveRfqsRouteWithChildren = LiveRfqsRoute._addFileChildren(
-  LiveRfqsRouteChildren,
-)
-
-interface SalesHistoryRouteChildren {
-  SalesHistoryLiveRoute: typeof SalesHistoryLiveRoute
-}
-
-const SalesHistoryRouteChildren: SalesHistoryRouteChildren = {
-  SalesHistoryLiveRoute: SalesHistoryLiveRoute,
-}
-
-const SalesHistoryRouteWithChildren = SalesHistoryRoute._addFileChildren(
-  SalesHistoryRouteChildren,
-)
+const RSlugTTableNumberRouteWithChildren =
+  RSlugTTableNumberRoute._addFileChildren(RSlugTTableNumberRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
-  AlertsRoute: AlertsRouteWithChildren,
-  AnalyticsRoute: AnalyticsRoute,
-  EShopRoute: EShopRoute,
-  LiveAuctionsRoute: LiveAuctionsRoute,
-  LiveRfqsRoute: LiveRfqsRouteWithChildren,
-  MyActiveBidsRoute: MyActiveBidsRoute,
-  PendingMaterialsRoute: PendingMaterialsRoute,
-  PurchaseHistoryRoute: PurchaseHistoryRoute,
-  SalesHistoryRoute: SalesHistoryRouteWithChildren,
-  ApiAuthCallbackRoute: ApiAuthCallbackRoute,
-  ApiAuthSigninRoute: ApiAuthSigninRoute,
-  ApiAuthSignoutRoute: ApiAuthSignoutRoute,
-  ApiAuthSignupRoute: ApiAuthSignupRoute,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoStartApiRequestRoute: DemoStartApiRequestRoute,
   DemoStartServerFuncsRoute: DemoStartServerFuncsRoute,
   DemoStartSsrDataOnlyRoute: DemoStartSsrDataOnlyRoute,
   DemoStartSsrFullSsrRoute: DemoStartSsrFullSsrRoute,
   DemoStartSsrSpaModeRoute: DemoStartSsrSpaModeRoute,
+  RSlugTTableNumberRoute: RSlugTTableNumberRouteWithChildren,
   DemoStartSsrIndexRoute: DemoStartSsrIndexRoute,
 }
 export const routeTree = rootRouteImport

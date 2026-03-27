@@ -1,12 +1,9 @@
 import { StatusBadge } from "@/global";
 import { getDebugStatusConfig } from "@/global/components/StatusBadge/constants/debugStatusConfig";
-import { useAccessToken, useAuth } from "@workos/authkit-tanstack-react-start/client";
+import { useAuth, useUser } from "@clerk/tanstack-react-start";
 import { useConvexAuth } from "convex/react";
 import { useState } from "react";
 
-/**
- * Decode JWT payload (without verification) to inspect claims
- */
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
 	try {
 		const parts = token.split(".");
@@ -19,9 +16,6 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 	}
 }
 
-/**
- * Format a claim value for display
- */
 function formatClaim(value: unknown): string {
 	if (value === undefined || value === null) return "MISSING!";
 	if (typeof value === "string") return value;
@@ -30,9 +24,6 @@ function formatClaim(value: unknown): string {
 	return JSON.stringify(value);
 }
 
-/**
- * Section header component
- */
 function SectionHeader({
 	title,
 	color = "cyan",
@@ -50,18 +41,12 @@ function SectionHeader({
 	return <div className={`font-semibold text-sm mb-3 pb-2 border-b ${colors[color]}`}>{title}</div>;
 }
 
-/**
- * Status color mapping for DataRow values
- */
 const valueColorMap: Record<string, string> = {
 	success: "text-emerald-400",
 	error: "text-rose-400",
 	neutral: "text-slate-400",
 };
 
-/**
- * Derive status badge state from loading and authenticated conditions
- */
 interface BadgeState {
 	status: "loading" | "success" | "error" | "neutral";
 	label: string;
@@ -83,48 +68,23 @@ function deriveBadgeState(
 
 type DataRowStatus = "success" | "error" | "neutral";
 
-/**
- * Derive status from loading state (neutral when loading, success when not)
- */
 function loadingStatus(isLoading: boolean): DataRowStatus {
-	if (isLoading) {
-		return "neutral";
-	}
-	return "success";
+	return isLoading ? "neutral" : "success";
 }
 
-/**
- * Derive status from boolean value (success when truthy, error when falsy)
- */
 function booleanStatus(value: unknown): DataRowStatus {
 	return value ? "success" : "error";
 }
 
-/**
- * Derive status from optional value (success when present, neutral when absent)
- */
 function optionalStatus(value: unknown): DataRowStatus {
 	return value ? "success" : "neutral";
 }
 
-/**
- * Get test result color class
- */
-function getTestResultColor(result: string): string {
-	return result.startsWith("✓") ? "text-emerald-400" : "text-rose-400";
-}
-
-/**
- * Format timestamp from JWT claim
- */
 function formatJwtTimestamp(timestamp: unknown): string | null {
 	if (!timestamp) return null;
 	return new Date(Number(timestamp) * 1000).toLocaleString();
 }
 
-/**
- * Data row component for displaying key-value pairs
- */
 function DataRow({
 	label,
 	value,
@@ -132,7 +92,7 @@ function DataRow({
 }: Readonly<{
 	label: string;
 	value: string | null | undefined;
-	status?: "success" | "error" | "neutral";
+	status?: DataRowStatus;
 }>) {
 	const valueColor = status ? valueColorMap[status] : "text-slate-300";
 
@@ -144,66 +104,53 @@ function DataRow({
 	);
 }
 
-/**
- * WorkOS auth section component
- */
-function WorkOsSection({
-	loading,
-	user,
-	sessionId,
+function ClerkSection({
+	isLoaded,
+	isSignedIn,
+	userId,
+	email,
 }: Readonly<{
-	loading: boolean;
-	user: { email: string; id: string } | null | undefined;
-	sessionId: string | null | undefined;
+	isLoaded: boolean;
+	isSignedIn: boolean;
+	userId: string | null | undefined;
+	email: string | null | undefined;
 }>) {
-	const truncatedSession = sessionId ? `${sessionId.substring(0, 16)}...` : null;
-
 	return (
 		<div className="mb-4">
-			<SectionHeader title="WorkOS TanStack Start" color="cyan" />
+			<SectionHeader title="Clerk Auth" color="cyan" />
 			<div className="space-y-0.5 pl-2">
-				<DataRow label="Loading" value={String(loading)} status={loadingStatus(loading)} />
-				<DataRow label="User" value={user?.email || null} status={booleanStatus(user)} />
-				<DataRow label="User ID" value={user?.id} status={optionalStatus(user?.id)} />
-				<DataRow label="Session" value={truncatedSession} status={optionalStatus(sessionId)} />
+				<DataRow label="Loaded" value={String(isLoaded)} status={loadingStatus(!isLoaded)} />
+				<DataRow label="Signed In" value={String(isSignedIn)} status={booleanStatus(isSignedIn)} />
+				<DataRow label="User ID" value={userId} status={optionalStatus(userId)} />
+				<DataRow label="Email" value={email} status={optionalStatus(email)} />
 			</div>
 		</div>
 	);
 }
 
-/**
- * Access token section component
- */
-function AccessTokenSection({
-	loading,
-	accessToken,
+function TokenSection({
+	token,
 	tokenError,
 	testResult,
 	isTestLoading,
 	onTestToken,
 }: Readonly<{
-	loading: boolean;
-	accessToken: string | null | undefined;
-	tokenError: Error | null | undefined;
+	token: string | null;
+	tokenError: string | null;
 	testResult: string | null;
 	isTestLoading: boolean;
 	onTestToken: () => void;
 }>) {
-	const buttonLabel = isTestLoading ? "Testing..." : "Test getAccessToken()";
-	const tokenPreview = accessToken ? `${accessToken.substring(0, 24)}...` : null;
+	const tokenPreview = token ? `${token.substring(0, 24)}...` : null;
+	const buttonLabel = isTestLoading ? "Testing..." : "Test getToken()";
 
 	return (
 		<div className="mb-4">
-			<SectionHeader title="Access Token" color="orange" />
+			<SectionHeader title="Convex Token" color="orange" />
 			<div className="space-y-0.5 pl-2">
-				<DataRow label="Loading" value={String(loading)} status={loadingStatus(loading)} />
-				<DataRow
-					label="Has Token"
-					value={String(!!accessToken)}
-					status={booleanStatus(accessToken)}
-				/>
-				{accessToken && <DataRow label="Preview" value={tokenPreview} status="neutral" />}
-				{tokenError && <DataRow label="Error" value={tokenError.message} status="error" />}
+				<DataRow label="Has Token" value={String(!!token)} status={booleanStatus(token)} />
+				{token && <DataRow label="Preview" value={tokenPreview} status="neutral" />}
+				{tokenError && <DataRow label="Error" value={tokenError} status="error" />}
 			</div>
 			<div className="mt-2 pl-2">
 				<button
@@ -214,16 +161,17 @@ function AccessTokenSection({
 					{buttonLabel}
 				</button>
 				{testResult && (
-					<div className={`mt-2 text-xs ${getTestResultColor(testResult)}`}>{testResult}</div>
+					<div
+						className={`mt-2 text-xs ${testResult.startsWith("✓") ? "text-emerald-400" : "text-rose-400"}`}
+					>
+						{testResult}
+					</div>
 				)}
 			</div>
 		</div>
 	);
 }
 
-/**
- * JWT claims section component
- */
 function JwtClaimsSection({
 	jwtPayload,
 }: Readonly<{
@@ -233,7 +181,38 @@ function JwtClaimsSection({
 		<div className="mb-4">
 			<SectionHeader title="JWT Claims (Critical for Convex)" color="yellow" />
 			{jwtPayload ? (
-				<JwtClaimsContent payload={jwtPayload} />
+				<>
+					<div className="space-y-0.5 pl-2">
+						<DataRow
+							label="Issuer (iss)"
+							value={formatClaim(jwtPayload.iss)}
+							status={booleanStatus(jwtPayload.iss)}
+						/>
+						<DataRow
+							label="Audience (aud)"
+							value={formatClaim(jwtPayload.aud)}
+							status={booleanStatus(jwtPayload.aud)}
+						/>
+						<DataRow
+							label="Subject (sub)"
+							value={formatClaim(jwtPayload.sub)}
+							status={optionalStatus(jwtPayload.sub)}
+						/>
+						<DataRow
+							label="Expires"
+							value={formatJwtTimestamp(jwtPayload.exp)}
+							status={optionalStatus(jwtPayload.exp)}
+						/>
+					</div>
+					<details className="mt-3 pl-2">
+						<summary className="text-slate-500 hover:text-slate-400 cursor-pointer text-xs">
+							View raw JWT claims
+						</summary>
+						<pre className="mt-2 p-2 bg-slate-800 rounded text-[10px] overflow-auto max-h-32 text-slate-400">
+							{JSON.stringify(jwtPayload, null, 2)}
+						</pre>
+					</details>
+				</>
 			) : (
 				<div className="text-rose-400 pl-2">No token to decode</div>
 			)}
@@ -241,54 +220,6 @@ function JwtClaimsSection({
 	);
 }
 
-/**
- * JWT claims content when payload is available
- */
-function JwtClaimsContent({
-	payload,
-}: Readonly<{
-	payload: Record<string, unknown>;
-}>) {
-	return (
-		<>
-			<div className="space-y-0.5 pl-2">
-				<DataRow
-					label="Issuer (iss)"
-					value={formatClaim(payload.iss)}
-					status={booleanStatus(payload.iss)}
-				/>
-				<DataRow
-					label="Audience (aud)"
-					value={formatClaim(payload.aud)}
-					status={booleanStatus(payload.aud)}
-				/>
-				<DataRow
-					label="Subject (sub)"
-					value={formatClaim(payload.sub)}
-					status={optionalStatus(payload.sub)}
-				/>
-				<DataRow
-					label="Expires"
-					value={formatJwtTimestamp(payload.exp)}
-					status={optionalStatus(payload.exp)}
-				/>
-				<DataRow label="Issued At" value={formatJwtTimestamp(payload.iat)} status="neutral" />
-			</div>
-			<details className="mt-3 pl-2">
-				<summary className="text-slate-500 hover:text-slate-400 cursor-pointer text-xs">
-					View raw JWT claims
-				</summary>
-				<pre className="mt-2 p-2 bg-slate-800 rounded text-[10px] overflow-auto max-h-32 text-slate-400">
-					{JSON.stringify(payload, null, 2)}
-				</pre>
-			</details>
-		</>
-	);
-}
-
-/**
- * Convex auth state section component
- */
 function ConvexSection({
 	loading,
 	authenticated,
@@ -312,77 +243,54 @@ function ConvexSection({
 }
 
 /**
- * Troubleshooting guide section component
- */
-function TroubleshootingSection() {
-	return (
-		<details className="mt-4">
-			<summary className="text-slate-500 hover:text-slate-400 cursor-pointer text-xs font-medium">
-				Troubleshooting Guide
-			</summary>
-			<div className="mt-2 p-3 bg-slate-800/50 rounded text-[11px] space-y-2 text-slate-400">
-				<div>
-					<strong className="text-slate-300">WorkOS OK but Convex fails:</strong>
-					<p>Check JWT claims (iss, aud) match Convex auth.config.ts</p>
-				</div>
-				<div>
-					<strong className="text-slate-300">Token missing:</strong>
-					<p>Ensure WORKOS_CLIENT_ID is set in Convex environment</p>
-				</div>
-				<div>
-					<strong className="text-slate-300">Invalid audience:</strong>
-					<p>Configure WorkOS JWT template with correct audience claim</p>
-				</div>
-			</div>
-		</details>
-	);
-}
-
-/**
- * Auth Debug Panel - displays authentication state across WorkOS, JWT, and Convex
+ * Auth Debug Panel - displays authentication state across Clerk, JWT, and Convex.
  *
- * This panel helps debug the complex auth flow:
- * 1. WorkOS TanStack Start SDK handles user authentication
- * 2. Access tokens are JWTs that must have correct claims for Convex
+ * Flow:
+ * 1. Clerk handles user authentication
+ * 2. getToken({ template: "convex" }) produces JWTs for Convex
  * 3. Convex validates the JWT and provides its own auth state
  */
 export function AuthDebugPanel() {
+	const { isLoaded, isSignedIn, userId, getToken } = useAuth();
+	const { user } = useUser();
 	const { isLoading: convexLoading, isAuthenticated: convexAuthenticated } = useConvexAuth();
-	const { user, loading: workosLoading, sessionId } = useAuth();
-	const {
-		accessToken,
-		loading: tokenLoading,
-		error: tokenError,
-		getAccessToken,
-	} = useAccessToken();
 
-	const jwtPayload = accessToken ? decodeJwtPayload(accessToken) : null;
-
+	const [convexToken, setConvexToken] = useState<string | null>(null);
+	const [tokenError, setTokenError] = useState<string | null>(null);
 	const [testResult, setTestResult] = useState<string | null>(null);
 	const [isTestLoading, setIsTestLoading] = useState(false);
+
+	const jwtPayload = convexToken ? decodeJwtPayload(convexToken) : null;
 
 	const handleTestToken = async () => {
 		setIsTestLoading(true);
 		try {
-			const token = await getAccessToken();
-			const result = token ? `✓ Token retrieved (${token.length} chars)` : "✗ Returned null";
-			setTestResult(result);
+			const token = await getToken({ template: "convex" });
+			if (token) {
+				setConvexToken(token);
+				setTokenError(null);
+				setTestResult(`✓ Token retrieved (${token.length} chars)`);
+			} else {
+				setTestResult("✗ Returned null");
+			}
 		} catch (e) {
 			const message = e instanceof Error ? e.message : "Unknown error";
+			setTokenError(message);
 			setTestResult(`✗ ${message}`);
 		} finally {
 			setIsTestLoading(false);
 		}
 	};
 
+	const email = user?.primaryEmailAddress?.emailAddress ?? null;
+
 	return (
 		<div className="p-4 font-mono text-xs bg-slate-900 min-h-full overflow-auto">
-			{/* Overview Status */}
 			<div className="flex flex-wrap gap-2 mb-4 p-3 bg-slate-800/50 rounded-lg">
 				{(() => {
-					const badgeState = deriveBadgeState(workosLoading, !!user, {
-						loading: "WorkOS Loading",
-						success: "WorkOS OK",
+					const badgeState = deriveBadgeState(!isLoaded, isSignedIn ?? false, {
+						loading: "Clerk Loading",
+						success: "Clerk OK",
 						error: "No User",
 					});
 					const config = getDebugStatusConfig(badgeState.status);
@@ -396,7 +304,7 @@ export function AuthDebugPanel() {
 					);
 				})()}
 				{(() => {
-					const badgeState = deriveBadgeState(tokenLoading, !!accessToken, {
+					const badgeState = deriveBadgeState(false, !!convexToken, {
 						loading: "Token Loading",
 						success: "Token OK",
 						error: "No Token",
@@ -429,10 +337,14 @@ export function AuthDebugPanel() {
 				})()}
 			</div>
 
-			<WorkOsSection loading={workosLoading} user={user} sessionId={sessionId} />
-			<AccessTokenSection
-				loading={tokenLoading}
-				accessToken={accessToken}
+			<ClerkSection
+				isLoaded={isLoaded}
+				isSignedIn={isSignedIn ?? false}
+				userId={userId}
+				email={email}
+			/>
+			<TokenSection
+				token={convexToken}
 				tokenError={tokenError}
 				testResult={testResult}
 				isTestLoading={isTestLoading}
@@ -440,7 +352,6 @@ export function AuthDebugPanel() {
 			/>
 			<JwtClaimsSection jwtPayload={jwtPayload} />
 			<ConvexSection loading={convexLoading} authenticated={convexAuthenticated} />
-			<TroubleshootingSection />
 		</div>
 	);
 }

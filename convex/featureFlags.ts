@@ -2,16 +2,16 @@
  * Feature flags management for the application.
  * Allows enabling/disabling features at runtime without code deployments.
  */
+import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
+import { mutation, query } from "./_generated/server";
 import {
-	AsyncReturn,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
-} from "@/global/types";
-import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+} from "./_shared/errors";
+import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
 
 // ============================================================================
@@ -31,9 +31,7 @@ type DeleteFeatureFlagErrors =
  * Available feature flag keys.
  * Add new feature flags here as constants for type safety.
  */
-export const FEATURE_FLAGS = {
-	MATERIAL_LOCATION: "material_location",
-} as const;
+export const FEATURE_FLAGS = {} as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
 
@@ -169,14 +167,7 @@ export const seedDefaultFeatureFlags = mutation({
 		const now = Date.now();
 		const results = { created: 0, skipped: 0 };
 
-		const defaultFlags = [
-			{
-				key: FEATURE_FLAGS.MATERIAL_LOCATION,
-				enabled: false,
-				description:
-					"Enable material location field in the create material form. Currently disabled as we only have one location.",
-			},
-		];
+		const defaultFlags: Array<{ key: string; enabled: boolean; description: string }> = [];
 
 		for (const flag of defaultFlags) {
 			const existing = await ctx.db

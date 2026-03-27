@@ -4,10 +4,10 @@
  * Provides functions to check for existing events with the same idempotencyKey
  * to prevent duplicate operations.
  */
-import { AsyncReturn } from "@/global";
-import { NotFoundError, NotFoundErrorObject } from "@/global/types/errors";
 import type { Doc } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
+import { NotFoundError, NotFoundErrorObject } from "../_shared/errors";
+import { AsyncReturn } from "../_shared/types";
 import { TABLE, type TableName } from "../constants";
 
 type EventDoc = Doc<typeof TABLE.ALL_EVENTS>;
@@ -16,7 +16,7 @@ type EventDoc = Doc<typeof TABLE.ALL_EVENTS>;
  * Check if an event with the given idempotencyKey already exists for the specified aggregate.
  *
  * @param ctx - Database context
- * @param aggregateType - The type of aggregate (e.g., TABLE.AUCTIONS)
+ * @param aggregateType - The type of aggregate (e.g., TABLE.RESTAURANTS)
  * @param aggregateId - The ID of the aggregate (as a string)
  * @param idempotencyKey - The idempotency key to check
  * @returns The existing event document if found, null otherwise
@@ -48,7 +48,7 @@ export async function findExistingEventByKey(
  * This is useful when checking idempotency before an aggregate is created (e.g., during creation).
  *
  * @param ctx - Database context
- * @param aggregateType - The type of aggregate (e.g., TABLE.AUCTIONS)
+ * @param aggregateType - The type of aggregate (e.g., TABLE.RESTAURANTS)
  * @param idempotencyKey - The idempotency key to check
  * @returns The existing event document if found, null otherwise
  */

@@ -1,13 +1,18 @@
+import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
 import { QueryClient } from "@tanstack/react-query";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
+import { ConvexReactClient } from "convex/react";
+import { ConvexProviderWithClerk } from "convex/react-clerk";
 import type { ReactNode } from "react";
 
-import { AuthDebugPanel, TasksDebugPanel } from "@/features";
+import { AuthDebugPanel } from "@/features";
 import { ErrorBoundary, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { ThemeProvider } from "@/global/utils/theme";
 import "../global/i18n/config";
 import appCss from "../styles.css?url";
+
+const convexClient = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL ?? "");
 
 export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
@@ -22,7 +27,7 @@ export const Route = createRootRouteWithContext<{
 				content: "width=device-width, initial-scale=1",
 			},
 			{
-				title: "TanStack Start Starter",
+				title: "Tavli",
 			},
 		],
 		links: [
@@ -58,36 +63,35 @@ function RootComponent() {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 	return (
-		<html lang="en">
-			<head>
-				<HeadContent />
-			</head>
-			<body>
-				{children}
-				<ClientOnlyDevtools
-					config={{
-						position: "bottom-right",
-					}}
-					plugins={[
-						{
-							id: "auth",
-							name: "Auth",
-							render: <AuthDebugPanel />,
-						},
-						{
-							id: "tasks",
-							name: "Tasks",
-							render: <TasksDebugPanel />,
-						},
-						{
-							id: "router",
-							name: "Router",
-							render: <SafeRouterDevtoolsPanel />,
-						},
-					]}
-				/>
-				<Scripts />
-			</body>
-		</html>
+		<ClerkProvider>
+			<ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
+				<html lang="en">
+					<head>
+						<HeadContent />
+					</head>
+					<body>
+						{children}
+						<ClientOnlyDevtools
+							config={{
+								position: "bottom-right",
+							}}
+							plugins={[
+								{
+									id: "auth",
+									name: "Auth",
+									render: <AuthDebugPanel />,
+								},
+								{
+									id: "router",
+									name: "Router",
+									render: <SafeRouterDevtoolsPanel />,
+								},
+							]}
+						/>
+						<Scripts />
+					</body>
+				</html>
+			</ConvexProviderWithClerk>
+		</ClerkProvider>
 	);
 }

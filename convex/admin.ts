@@ -1,6 +1,8 @@
 /**
  * Admin-only queries and mutations for user management.
  */
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -8,10 +10,8 @@ import {
 	NotFoundErrorObject,
 	UserInputValidationError,
 	UserInputValidationErrorObject,
-} from "@/global/types/errors";
-import { AsyncReturn } from "@/global/types/types";
-import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+} from "./_shared/errors";
+import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
 import { findExistingEventByKey, findExistingEventByKeyAndType } from "./_util/idempotency";
 import type { UserRoleDoc } from "./constants";

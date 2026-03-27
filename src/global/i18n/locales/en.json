@@ -1,7 +1,7 @@
 {
 	"sidebar": {
 		"brand": {
-			"name": "Fierro Viejo"
+			"name": "Tavli"
 		},
 		"controls": {
 			"collapse": "Collapse sidebar",
@@ -9,29 +9,14 @@
 		},
 		"nav": {
 			"home": "Dashboard",
-			"liveAuctions": "Live Auctions",
-			"eShop": "E-Shop",
-			"liveRfqs": "Live RFQs",
-			"createRfq": "Create RFQ",
-			"myActiveBids": "My Active Bids",
-			"analytics": "Analytics",
-			"purchaseHistory": "Purchase History",
-			"alerts": "Alerts",
-			"createMaterialAlert": "Create Material Alert",
-			"createPriceAlert": "Create Price Alert",
-			"salesHistory": "Sales History",
-			"liveSales": "Live Sales",
-			"pendingMaterials": "Pending Materials",
+			"restaurants": "Restaurants",
+			"restaurant": "Restaurant",
+			"tables": "Tables",
+			"menus": "Menus",
+			"options": "Options",
+			"orders": "Orders",
 			"admin": "Admin",
-			"adminUsers": "Users",
-			"adminMaterials": "Materials",
-			"serverFunctions": "Server Functions",
-			"demos": "Demos",
-			"apiRequest": "API Request",
-			"ssrDemos": "SSR Demos",
-			"spaMode": "SPA Mode",
-			"fullSSR": "Full SSR",
-			"dataOnly": "Data Only"
+			"adminUsers": "Users"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -59,27 +44,6 @@
 	"errors": {
 		"generic": "An error occurred. Please try again.",
 		"ERROR_ADMIN_REQUIRED": "You don't have permission to perform this action.",
-		"ERROR_SELLER_REQUIRED": "You need seller access to perform this action.",
-		"ERROR_BUYER_REQUIRED": "You need buyer access to perform this action.",
-		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions.",
-		"validation": {
-			"categoryRequired": "Please select at least one category.",
-			"quantityRequired": "Please enter a valid quantity greater than 0.",
-			"locationRequired": "Please enter a location."
-		},
-		"materials": {
-			"createFailed": "Failed to create material. Please try again.",
-			"createSuccess": "Material created successfully! It will appear in the list after admin approval.",
-			"addToAuctionFailed": "Failed to add material to auction. Please try again.",
-			"addToAuctionSuccess": "Material added to auction successfully!",
-			"notFound": "Material not found.",
-			"alreadyInAuction": "This material is already in the auction."
-		},
-		"auctions": {
-			"notFound": "Auction not found.",
-			"noLiveAuction": "No live auction is currently available.",
-			"createFailed": "Failed to create auction. Please try again.",
-			"startFailed": "Failed to start auction. Please try again."
-		}
+		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions."
 	}
 }

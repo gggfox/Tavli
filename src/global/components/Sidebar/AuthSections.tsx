@@ -9,7 +9,7 @@ export function AuthSections() {
 	const { t } = useTranslation();
 	const { isExpanded } = useToggleSidebar();
 
-	const hasAuth = Config.instance.hasWorkOSConfig;
+	const hasAuth = Config.instance.hasAuthConfig;
 	return (
 		<>
 			{hasAuth && (

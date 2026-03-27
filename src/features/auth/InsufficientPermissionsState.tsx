@@ -26,7 +26,7 @@ export function InsufficientPermissionsState() {
 					Access Restricted
 				</h3>
 				<p style={{ color: "var(--text-secondary)" }}>
-					You need admin or seller role to view live sales.
+					You need the appropriate role to access this section.
 				</p>
 			</div>
 		</div>

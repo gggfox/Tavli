@@ -8,15 +8,20 @@
  * @module
  */
 
-import type * as _seed_referenceData from "../_seed/referenceData.js";
+import type * as _shared_errors from "../_shared/errors.js";
+import type * as _shared_types from "../_shared/types.js";
 import type * as _util_auth from "../_util/auth.js";
 import type * as _util_idempotency from "../_util/idempotency.js";
 import type * as admin from "../admin.js";
-import type * as auctions from "../auctions.js";
 import type * as constants from "../constants.js";
 import type * as featureFlags from "../featureFlags.js";
-import type * as materials from "../materials.js";
-import type * as tasks from "../tasks.js";
+import type * as menuItems from "../menuItems.js";
+import type * as menus from "../menus.js";
+import type * as optionGroups from "../optionGroups.js";
+import type * as orders from "../orders.js";
+import type * as restaurants from "../restaurants.js";
+import type * as sessions from "../sessions.js";
+import type * as tables from "../tables.js";
 import type * as userSettings from "../userSettings.js";
 
 import type {
@@ -26,15 +31,20 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "_seed/referenceData": typeof _seed_referenceData;
+  "_shared/errors": typeof _shared_errors;
+  "_shared/types": typeof _shared_types;
   "_util/auth": typeof _util_auth;
   "_util/idempotency": typeof _util_idempotency;
   admin: typeof admin;
-  auctions: typeof auctions;
   constants: typeof constants;
   featureFlags: typeof featureFlags;
-  materials: typeof materials;
-  tasks: typeof tasks;
+  menuItems: typeof menuItems;
+  menus: typeof menus;
+  optionGroups: typeof optionGroups;
+  orders: typeof orders;
+  restaurants: typeof restaurants;
+  sessions: typeof sessions;
+  tables: typeof tables;
   userSettings: typeof userSettings;
 }>;
 

@@ -4,3 +4,4 @@ export * from "./errorMessages";
 export * from "./extractError";
 export * from "./iconMapper";
 export * from "./theme";
+export * from "./unwrapResult";

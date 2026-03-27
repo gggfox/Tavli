@@ -1,1 +1,0 @@
-export { StartAuctionSection } from "./StartAuctionSection";
