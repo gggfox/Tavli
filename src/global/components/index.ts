@@ -3,6 +3,7 @@ export { EmptyState } from "./EmptyState";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { FeatureCard } from "./FeatureCard";
 export { InlineError } from "./InlineError";
+export { LanguageTabBar } from "./LanguageTabBar";
 export { LoadingState } from "./LoadingState";
 export * from "./Modal";
 export * from "./MultiCardSelect";

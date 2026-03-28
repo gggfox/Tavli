@@ -1,3 +1,4 @@
+import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -39,7 +40,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 					Order Status
 				</h2>
 				<p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-					${(orderData.totalAmount / 100).toFixed(2)} &middot; {orderData.items.length} items
+					${formatCents(orderData.totalAmount)} &middot; {orderData.items.length} items
 				</p>
 			</div>
 
@@ -94,7 +95,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 						<span>
 							{item.quantity}x {item.menuItemName}
 						</span>
-						<span>${(item.lineTotal / 100).toFixed(2)}</span>
+						<span>${formatCents(item.lineTotal)}</span>
 					</div>
 				))}
 			</div>

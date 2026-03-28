@@ -2,6 +2,16 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { TABLE } from "./constants";
 
+const nameDescTranslations = v.optional(
+	v.record(
+		v.string(),
+		v.object({ name: v.optional(v.string()), description: v.optional(v.string()) })
+	)
+);
+const nameOnlyTranslations = v.optional(
+	v.record(v.string(), v.object({ name: v.optional(v.string()) }))
+);
+
 export default defineSchema({
 	// ============================================================================
 	// User Settings
@@ -56,6 +66,8 @@ export default defineSchema({
 		description: v.optional(v.string()),
 		currency: v.string(),
 		timezone: v.optional(v.string()),
+		defaultLanguage: v.optional(v.string()),
+		supportedLanguages: v.optional(v.array(v.string())),
 		isActive: v.boolean(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -67,6 +79,9 @@ export default defineSchema({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),
 		description: v.optional(v.string()),
+		translations: nameDescTranslations,
+		defaultLanguage: v.optional(v.string()),
+		supportedLanguages: v.optional(v.array(v.string())),
 		isActive: v.boolean(),
 		displayOrder: v.number(),
 		createdAt: v.number(),
@@ -78,6 +93,7 @@ export default defineSchema({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),
 		description: v.optional(v.string()),
+		translations: nameDescTranslations,
 		displayOrder: v.number(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -88,8 +104,9 @@ export default defineSchema({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),
 		description: v.optional(v.string()),
+		translations: nameDescTranslations,
 		basePrice: v.number(),
-		imageUrl: v.optional(v.string()),
+		imageStorageId: v.optional(v.id("_storage")),
 		isAvailable: v.boolean(),
 		unavailableReason: v.optional(v.string()),
 		availableDays: v.optional(v.array(v.number())),
@@ -104,6 +121,7 @@ export default defineSchema({
 	[TABLE.OPTION_GROUPS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),
+		translations: nameOnlyTranslations,
 		selectionType: v.union(v.literal("single"), v.literal("multi")),
 		isRequired: v.boolean(),
 		minSelections: v.number(),
@@ -117,6 +135,7 @@ export default defineSchema({
 		optionGroupId: v.id(TABLE.OPTION_GROUPS),
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),
+		translations: nameOnlyTranslations,
 		priceModifier: v.number(),
 		isAvailable: v.boolean(),
 		displayOrder: v.number(),

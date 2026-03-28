@@ -47,6 +47,7 @@ export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
 	const toggleAvailability = useMutation({
 		mutationFn: useConvexMutation(api.menuItems.toggleAvailability),
 	});
+	const generateUploadUrl = useConvexMutation(api.menuItems.generateUploadUrl);
 
 	return {
 		items: data ?? [],
@@ -55,5 +56,6 @@ export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
 		updateItem: updateItem.mutateAsync,
 		removeItem: removeItem.mutateAsync,
 		toggleAvailability: toggleAvailability.mutateAsync,
+		generateUploadUrl,
 	};
 }

@@ -1,4 +1,5 @@
 import { EmptyState, LoadingState, StatusBadge } from "@/global/components";
+import { formatCents } from "@/global/utils/money";
 import type { Id } from "convex/_generated/dataModel";
 import { CheckCircle2, ChefHat, CreditCard, UtensilsCrossed, XCircle } from "lucide-react";
 import { useOrders } from "../hooks/useOrders";
@@ -81,7 +82,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 								</span>
 							</div>
 							<span className="text-xs" style={{ color: "var(--text-muted)" }}>
-								${(order.totalAmount / 100).toFixed(2)}
+								${formatCents(order.totalAmount)}
 							</span>
 						</div>
 

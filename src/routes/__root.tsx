@@ -1,8 +1,15 @@
 import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
 import { QueryClient } from "@tanstack/react-query";
-import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
+import {
+	HeadContent,
+	Outlet,
+	Scripts,
+	createRootRouteWithContext,
+	useRouterState,
+} from "@tanstack/react-router";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AuthDebugPanel } from "@/features";
 import { ErrorBoundary, Sidebar } from "@/global/components";
@@ -40,30 +47,46 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootComponent() {
+	const pathname = useRouterState({ select: (s) => s.location.pathname });
+	const isCustomerRoute = pathname.startsWith("/r/");
+
 	return (
 		<RootDocument>
 			<ThemeProvider>
-				<div
-					className="h-screen flex overflow-hidden"
-					style={{ backgroundColor: "var(--bg-primary)" }}
-				>
-					<Sidebar />
-					<main className="flex-1 overflow-auto" style={{ backgroundColor: "var(--bg-primary)" }}>
+				{isCustomerRoute ? (
+					<div
+						className="h-screen flex flex-col overflow-hidden"
+						style={{ backgroundColor: "var(--bg-primary)" }}
+					>
 						<ErrorBoundary>
 							<Outlet />
 						</ErrorBoundary>
-					</main>
-				</div>
+					</div>
+				) : (
+					<div
+						className="h-screen flex overflow-hidden"
+						style={{ backgroundColor: "var(--bg-primary)" }}
+					>
+						<Sidebar />
+						<main className="flex-1 overflow-auto" style={{ backgroundColor: "var(--bg-primary)" }}>
+							<ErrorBoundary>
+								<Outlet />
+							</ErrorBoundary>
+						</main>
+					</div>
+				)}
 			</ThemeProvider>
 		</RootDocument>
 	);
 }
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
+	const { i18n } = useTranslation();
+
 	return (
 		<ClerkProvider>
 			<ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
-				<html lang="en">
+				<html lang={i18n.language}>
 					<head>
 						<HeadContent />
 					</head>

@@ -1,3 +1,4 @@
+import { unwrapQuery } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -8,7 +9,7 @@ export function useOrders(restaurantId: Id<"restaurants"> | undefined) {
 		convexQuery(api.orders.getActiveOrdersByRestaurant, restaurantId ? { restaurantId } : "skip")
 	);
 
-	const orders = Array.isArray(rawResult) && rawResult[0] ? rawResult[0] : [];
+	const orders = unwrapQuery(rawResult).data ?? [];
 
 	const updateStatus = useMutation({
 		mutationFn: useConvexMutation(api.orders.updateStatus),

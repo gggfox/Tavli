@@ -1,18 +1,13 @@
 import { LoadingState, StatusBadge } from "@/global/components";
+import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
 import { useState } from "react";
-
-interface SelectedOption {
-	optionGroupId: Id<"optionGroups">;
-	optionGroupName: string;
-	optionId: Id<"options">;
-	optionName: string;
-	priceModifier: number;
-}
+import type { SelectedOption } from "../types";
+import { toggleOptionSelection } from "../utils";
 
 interface MenuItemDetailProps {
 	itemId: Id<"menuItems">;
@@ -26,9 +21,7 @@ interface MenuItemDetailProps {
 }
 
 export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuItemDetailProps>) {
-	const { data: item } = useQuery(
-		convexQuery(api.menuItems.getByCategory, { categoryId: itemId as any })
-	);
+	const { data: menuItem } = useQuery(convexQuery(api.menuItems.getById, { itemId }));
 	const { data: optionGroups } = useQuery(
 		convexQuery(api.optionGroups.getGroupsForMenuItem, { menuItemId: itemId })
 	);
@@ -36,8 +29,6 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 	const [quantity, setQuantity] = useState(1);
 	const [selectedOptions, setSelectedOptions] = useState<Map<string, SelectedOption[]>>(new Map());
 	const [instructions, setInstructions] = useState("");
-
-	const menuItem = Array.isArray(item) ? item.find((i) => i._id === itemId) : null;
 
 	const allSelected = Array.from(selectedOptions.values()).flat();
 	const optionsTotal = allSelected.reduce((sum, o) => sum + o.priceModifier, 0);
@@ -61,20 +52,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 				optionName,
 				priceModifier,
 			};
-
-			if (selectionType === "single") {
-				next.set(groupId, [opt]);
-			} else {
-				const exists = current.findIndex((o) => o.optionId === optionId);
-				if (exists >= 0) {
-					next.set(
-						groupId,
-						current.filter((_, i) => i !== exists)
-					);
-				} else {
-					next.set(groupId, [...current, opt]);
-				}
-			}
+			next.set(groupId, toggleOptionSelection(current, opt, selectionType));
 			return next;
 		});
 	};
@@ -125,7 +103,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 						</p>
 					)}
 					<p className="text-lg font-semibold mt-2" style={{ color: "var(--text-primary)" }}>
-						${(menuItem.basePrice / 100).toFixed(2)}
+						${formatCents(menuItem.basePrice)}
 					</p>
 				</div>
 
@@ -176,7 +154,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 												<span>{opt.name}</span>
 												{opt.priceModifier > 0 && (
 													<span style={{ color: "var(--text-muted)" }}>
-														+${(opt.priceModifier / 100).toFixed(2)}
+														+${formatCents(opt.priceModifier)}
 													</span>
 												)}
 											</button>
@@ -249,7 +227,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 					onClick={handleAdd}
 					className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary"
 				>
-					Add to Cart - ${(itemTotal / 100).toFixed(2)}
+					Add to Cart - ${formatCents(itemTotal)}
 				</button>
 			</div>
 		</div>

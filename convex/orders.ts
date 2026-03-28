@@ -61,6 +61,7 @@ export const addItem = mutation({
 		quantity: v.number(),
 		selectedOptions: v.array(selectedOptionValidator),
 		specialInstructions: v.optional(v.string()),
+		lang: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
 		const order = await ctx.db.get(args.orderId);
@@ -71,13 +72,15 @@ export const addItem = mutation({
 		const menuItem = await ctx.db.get(args.menuItemId);
 		if (!menuItem) throw new NotFoundError("Menu item not found");
 
+		const menuItemName = (args.lang && menuItem.translations?.[args.lang]?.name) || menuItem.name;
+
 		const optionsTotal = args.selectedOptions.reduce((sum, o) => sum + o.priceModifier, 0);
 		const lineTotal = (menuItem.basePrice + optionsTotal) * args.quantity;
 
 		const itemId = await ctx.db.insert(TABLE.ORDER_ITEMS, {
 			orderId: args.orderId,
 			menuItemId: args.menuItemId,
-			menuItemName: menuItem.name,
+			menuItemName,
 			quantity: args.quantity,
 			unitPrice: menuItem.basePrice,
 			selectedOptions: args.selectedOptions,

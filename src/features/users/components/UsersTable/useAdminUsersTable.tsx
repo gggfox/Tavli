@@ -1,3 +1,4 @@
+import { unwrapQuery } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -32,7 +33,7 @@ export function useAdminUsersTable() {
 		...convexQuery(api.admin.getAllUsers, {}),
 		enabled: isAuthenticated,
 	});
-	const users = Array.isArray(rawUsers) && rawUsers[0] !== null ? rawUsers[0] : null;
+	const users = unwrapQuery(rawUsers).data;
 
 	const table = useReactTable({
 		data: users ?? [],

@@ -69,6 +69,8 @@ export const update = mutation({
 		description: v.optional(v.string()),
 		currency: v.optional(v.string()),
 		timezone: v.optional(v.string()),
+		defaultLanguage: v.optional(v.string()),
+		supportedLanguages: v.optional(v.array(v.string())),
 	},
 	handler: async function (
 		ctx,
@@ -107,6 +109,8 @@ export const update = mutation({
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
 			...(args.timezone !== undefined && { timezone: args.timezone }),
+			...(args.defaultLanguage !== undefined && { defaultLanguage: args.defaultLanguage }),
+			...(args.supportedLanguages !== undefined && { supportedLanguages: args.supportedLanguages }),
 			updatedAt: now,
 		});
 

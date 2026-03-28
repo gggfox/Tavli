@@ -21,6 +21,8 @@ export const createMenu = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),
 		description: v.optional(v.string()),
+		defaultLanguage: v.optional(v.string()),
+		supportedLanguages: v.optional(v.array(v.string())),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -38,6 +40,8 @@ export const createMenu = mutation({
 			restaurantId: args.restaurantId,
 			name: args.name,
 			description: args.description,
+			defaultLanguage: args.defaultLanguage,
+			supportedLanguages: args.supportedLanguages,
 			isActive: true,
 			displayOrder: existing.length,
 			createdAt: now,
@@ -55,6 +59,8 @@ export const updateMenu = mutation({
 		description: v.optional(v.string()),
 		isActive: v.optional(v.boolean()),
 		displayOrder: v.optional(v.number()),
+		defaultLanguage: v.optional(v.string()),
+		supportedLanguages: v.optional(v.array(v.string())),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -70,6 +76,8 @@ export const updateMenu = mutation({
 			...(args.description !== undefined && { description: args.description }),
 			...(args.isActive !== undefined && { isActive: args.isActive }),
 			...(args.displayOrder !== undefined && { displayOrder: args.displayOrder }),
+			...(args.defaultLanguage !== undefined && { defaultLanguage: args.defaultLanguage }),
+			...(args.supportedLanguages !== undefined && { supportedLanguages: args.supportedLanguages }),
 			updatedAt: Date.now(),
 		});
 
@@ -111,6 +119,41 @@ export const deleteMenu = mutation({
 
 		await ctx.db.delete(args.menuId);
 		return [undefined, null];
+	},
+});
+
+export const setMenuTranslation = mutation({
+	args: {
+		menuId: v.id(TABLE.MENUS),
+		lang: v.string(),
+		name: v.optional(v.string()),
+		description: v.optional(v.string()),
+	},
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu) return [null, new NotFoundError("Menu not found").toObject()];
+
+		const translations = { ...menu.translations };
+		translations[args.lang] = {
+			...translations[args.lang],
+			...(args.name !== undefined && { name: args.name }),
+			...(args.description !== undefined && { description: args.description }),
+		};
+
+		await ctx.db.patch(args.menuId, { translations, updatedAt: Date.now() });
+		return [args.menuId, null];
+	},
+});
+
+export const getMenuById = query({
+	args: { menuId: v.id(TABLE.MENUS) },
+	handler: async (ctx, args) => {
+		return await ctx.db.get(args.menuId);
 	},
 });
 
@@ -215,6 +258,34 @@ export const deleteCategory = mutation({
 
 		await ctx.db.delete(args.categoryId);
 		return [undefined, null];
+	},
+});
+
+export const setCategoryTranslation = mutation({
+	args: {
+		categoryId: v.id(TABLE.MENU_CATEGORIES),
+		lang: v.string(),
+		name: v.optional(v.string()),
+		description: v.optional(v.string()),
+	},
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const category = await ctx.db.get(args.categoryId);
+		if (!category) return [null, new NotFoundError("Category not found").toObject()];
+
+		const translations = { ...category.translations };
+		translations[args.lang] = {
+			...translations[args.lang],
+			...(args.name !== undefined && { name: args.name }),
+			...(args.description !== undefined && { description: args.description }),
+		};
+
+		await ctx.db.patch(args.categoryId, { translations, updatedAt: Date.now() });
+		return [args.categoryId, null];
 	},
 });
 

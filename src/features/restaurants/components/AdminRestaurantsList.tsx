@@ -1,5 +1,5 @@
 import { EmptyState, InlineError, LoadingState, StatusBadge, TextInput } from "@/global/components";
-import { unwrapResult } from "@/global/utils";
+import { sanitizeSlug, unwrapQuery, unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -14,8 +14,8 @@ export function AdminRestaurantsList() {
 		...convexQuery(api.restaurants.getAll, {}),
 		enabled: isAuthenticated,
 	});
-	const restaurants = Array.isArray(rawResult) && rawResult[0] ? rawResult[0] : [];
-	const queryError = Array.isArray(rawResult) && rawResult[1] ? rawResult[1] : null;
+	const { data, error: queryError } = unwrapQuery(rawResult);
+	const restaurants = data ?? [];
 
 	const createMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.create),
@@ -86,7 +86,7 @@ export function AdminRestaurantsList() {
 							label="Slug"
 							type="text"
 							value={slug}
-							onChange={(e) => setSlug(e.target.value.toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"))}
+							onChange={(e) => setSlug(sanitizeSlug(e.target.value))}
 							required
 						/>
 						<div>
@@ -164,7 +164,7 @@ export function AdminRestaurantsList() {
 						</div>
 						<div className="flex items-center gap-2">
 							<a
-								href={`/r/${r.slug}/t/1/menu`}
+								href={`/r/${r.slug}/t/1/en/menu`}
 								target="_blank"
 								rel="noopener noreferrer"
 								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[var(--bg-hover)]"

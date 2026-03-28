@@ -1,4 +1,5 @@
 import { EmptyState, LoadingState } from "@/global/components";
+import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -87,7 +88,7 @@ export function Cart({
 								</div>
 								<div className="flex items-center gap-2">
 									<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-										${(item.lineTotal / 100).toFixed(2)}
+										${formatCents(item.lineTotal)}
 									</span>
 									<button
 										onClick={() => onRemoveItem(item._id)}
@@ -112,7 +113,7 @@ export function Cart({
 						style={{ color: "var(--text-primary)" }}
 					>
 						<span>Total</span>
-						<span>${(totalAmount / 100).toFixed(2)}</span>
+						<span>${formatCents(totalAmount)}</span>
 					</div>
 					<button
 						onClick={onSubmit}

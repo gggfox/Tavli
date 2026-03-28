@@ -1,3 +1,4 @@
+import { sanitizeSlug } from "@/global/utils/slug";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
 import { useState } from "react";
@@ -38,7 +39,7 @@ export function RestaurantSettingsForm({
 		});
 	};
 
-	const testUrl = `/r/${slug || "your-slug"}/t/1/menu`;
+	const testUrl = `/r/${slug || "your-slug"}/t/1/en/menu`;
 
 	return (
 		<form onSubmit={handleSubmit} className="space-y-6 max-w-lg">
@@ -116,7 +117,7 @@ export function RestaurantSettingsForm({
 					id="restaurant-slug"
 					type="text"
 					value={slug}
-					onChange={(e) => setSlug(e.target.value.toLowerCase().replaceAll(/[^a-z0-9-]/g, "-"))}
+					onChange={(e) => setSlug(sanitizeSlug(e.target.value))}
 					required
 					className="w-full px-3 py-2 rounded-lg text-sm"
 					style={{

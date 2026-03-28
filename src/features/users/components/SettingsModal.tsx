@@ -2,6 +2,7 @@ import { useUserSettings } from "@/features/users/hooks";
 import { i18n, Modal, useTheme } from "@/global";
 import { Languages, SidebarKeys } from "@/global/i18n";
 import { Config } from "@/global/utils/config";
+import { unwrapQuery } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -25,10 +26,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 		...convexQuery(api.admin.getCurrentUserRoles, {}),
 		enabled: isAuthenticated,
 	});
-	const serverRoles: string[] = useMemo(
-		() => (Array.isArray(rawUserRoles) && rawUserRoles[0] !== null ? rawUserRoles[0] : []),
-		[rawUserRoles]
-	);
+	const serverRoles: string[] = useMemo(() => unwrapQuery(rawUserRoles).data ?? [], [rawUserRoles]);
 	const [optimisticRoles, setOptimisticRoles] = useState<string[]>([]);
 	const displayRoles: string[] = useMemo(
 		() => Array.from(new Set([...serverRoles, ...optimisticRoles])),

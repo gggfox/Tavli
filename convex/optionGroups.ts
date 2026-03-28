@@ -114,6 +114,32 @@ export const deleteGroup = mutation({
 	},
 });
 
+export const setGroupTranslation = mutation({
+	args: {
+		groupId: v.id(TABLE.OPTION_GROUPS),
+		lang: v.string(),
+		name: v.optional(v.string()),
+	},
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const group = await ctx.db.get(args.groupId);
+		if (!group) return [null, new NotFoundError("Option group not found").toObject()];
+
+		const translations = { ...group.translations };
+		translations[args.lang] = {
+			...translations[args.lang],
+			...(args.name !== undefined && { name: args.name }),
+		};
+
+		await ctx.db.patch(args.groupId, { translations, updatedAt: Date.now() });
+		return [args.groupId, null];
+	},
+});
+
 export const getGroupsByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args) => {
@@ -201,6 +227,32 @@ export const deleteOption = mutation({
 
 		await ctx.db.delete(args.optionId);
 		return [undefined, null];
+	},
+});
+
+export const setOptionTranslation = mutation({
+	args: {
+		optionId: v.id(TABLE.OPTIONS),
+		lang: v.string(),
+		name: v.optional(v.string()),
+	},
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const option = await ctx.db.get(args.optionId);
+		if (!option) return [null, new NotFoundError("Option not found").toObject()];
+
+		const translations = { ...option.translations };
+		translations[args.lang] = {
+			...translations[args.lang],
+			...(args.name !== undefined && { name: args.name }),
+		};
+
+		await ctx.db.patch(args.optionId, { translations });
+		return [args.optionId, null];
 	},
 });
 
