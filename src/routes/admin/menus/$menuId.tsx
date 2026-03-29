@@ -2,6 +2,7 @@ import { MenuEditor } from "@/features/menus";
 import { useRestaurant } from "@/features/restaurants";
 import { LoadingState } from "@/global/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
@@ -38,7 +39,7 @@ function MenuEditorPage() {
 				</p>
 			</div>
 			<div className="flex-1 overflow-y-auto">
-				<MenuEditor menuId={menuId as any} restaurantId={restaurant._id} />
+				<MenuEditor menuId={menuId as Id<"menus">} restaurantId={restaurant._id} />
 			</div>
 		</div>
 	);

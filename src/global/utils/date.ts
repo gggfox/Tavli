@@ -16,3 +16,30 @@ export const MIN_VALID_TIMESTAMP = 1577836800000;
 export function isValidTimestamp(timestamp: number | undefined): timestamp is number {
 	return timestamp !== undefined && timestamp >= MIN_VALID_TIMESTAMP;
 }
+
+export function formatDate(timestamp: number | undefined): string {
+	if (!isValidTimestamp(timestamp)) {
+		return "—";
+	}
+	return new Intl.DateTimeFormat("en-US", {
+		year: "numeric",
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+	}).format(new Date(timestamp));
+}
+
+/**
+ * Get the best available timestamp for display.
+ * Falls back to `fallback` (typically `_creationTime`) if `timestamp` is invalid.
+ */
+export function getDisplayTimestamp(
+	timestamp: number | undefined,
+	fallback: number | undefined
+): number | undefined {
+	if (isValidTimestamp(timestamp)) {
+		return timestamp;
+	}
+	return fallback;
+}

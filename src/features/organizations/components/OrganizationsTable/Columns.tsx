@@ -1,31 +1,8 @@
-import { isValidTimestamp } from "@/global/utils/date";
+import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { OrganizationDoc } from "convex/constants";
 
 const columnHelper = createColumnHelper<OrganizationDoc>();
-
-function formatDate(timestamp: number | undefined): string {
-	if (!isValidTimestamp(timestamp)) {
-		return "—";
-	}
-	return new Intl.DateTimeFormat("en-US", {
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	}).format(new Date(timestamp));
-}
-
-function getDisplayTimestamp(
-	timestamp: number | undefined,
-	fallback: number | undefined
-): number | undefined {
-	if (isValidTimestamp(timestamp)) {
-		return timestamp;
-	}
-	return fallback;
-}
 
 export const columns = [
 	columnHelper.accessor("name", {
@@ -57,8 +34,8 @@ export const columns = [
 				<span
 					className="px-2 py-0.5 rounded-full text-xs font-medium"
 					style={{
-						backgroundColor: active ? "rgba(34, 197, 94, 0.15)" : "rgba(156, 163, 175, 0.15)",
-						color: active ? "rgb(34, 197, 94)" : "rgb(156, 163, 175)",
+						backgroundColor: active ? "var(--accent-success-light)" : "rgba(156, 163, 175, 0.15)",
+						color: active ? "var(--accent-success)" : "var(--text-muted)",
 					}}
 				>
 					{active ? "Active" : "Inactive"}

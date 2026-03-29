@@ -2,41 +2,51 @@ import { unwrapQuery } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
-	ColumnFiltersState,
+	type ColumnDef,
+	type ColumnFiltersState,
 	getCoreRowModel,
 	getFilteredRowModel,
 	getPaginationRowModel,
 	getSortedRowModel,
-	SortingState,
+	type SortingState,
 	useReactTable,
 } from "@tanstack/react-table";
-import { api } from "convex/_generated/api";
 import { useConvexAuth } from "convex/react";
 import { useState } from "react";
-import { columns } from "./Columns";
 
-export function useAdminUsersTable() {
+interface UseAdminTableOptions<TData> {
+	queryOptions: ReturnType<typeof convexQuery>;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	columns: ColumnDef<TData, any>[];
+	enabled?: boolean;
+	pageSize?: number;
+}
+
+export function useAdminTable<TData>({
+	queryOptions,
+	columns,
+	enabled,
+	pageSize = 10,
+}: UseAdminTableOptions<TData>) {
 	const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 
-	// Only run query when authenticated
-	// Extract the first element from the tuple [data, error] returned by AsyncReturn
 	const {
-		data: rawUsers,
+		data: rawData,
 		isLoading,
 		error,
 		isError,
 		refetch,
 	} = useQuery({
-		...convexQuery(api.admin.getAllUsers, {}),
-		enabled: isAuthenticated,
+		...queryOptions,
+		enabled: enabled ?? isAuthenticated,
 	});
-	const users = unwrapQuery(rawUsers).data;
+	const data = unwrapQuery(rawData).data as TData[] | null;
 
 	const table = useReactTable({
-		data: users ?? [],
+		data: data ?? [],
 		columns,
 		state: {
 			sorting,
@@ -51,15 +61,13 @@ export function useAdminUsersTable() {
 		getFilteredRowModel: getFilteredRowModel(),
 		getPaginationRowModel: getPaginationRowModel(),
 		initialState: {
-			pagination: {
-				pageSize: 10,
-			},
+			pagination: { pageSize },
 		},
 	});
 
 	return {
 		table,
-		users,
+		data,
 		isLoading,
 		isAuthLoading,
 		isAuthenticated,

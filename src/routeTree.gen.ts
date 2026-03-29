@@ -14,6 +14,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
+import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
@@ -55,6 +56,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
   id: '/restaurants',
   path: '/restaurants',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRouteWithChildren
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/orders'
     | '/admin/organizations'
+    | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/users'
     | '/r/$slug'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/orders'
     | '/admin/organizations'
+    | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/users'
     | '/r/$slug'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/orders'
     | '/admin/organizations'
+    | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/users'
     | '/r/$slug'
@@ -339,6 +351,13 @@ declare module '@tanstack/react-router' {
       path: '/restaurants'
       fullPath: '/admin/restaurants'
       preLoaderRoute: typeof AdminRestaurantsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/organizations': {
@@ -466,6 +485,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
+  AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
@@ -475,6 +495,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
+  AdminPaymentsRoute: AdminPaymentsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,

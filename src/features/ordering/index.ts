@@ -1,4 +1,6 @@
 export { Cart } from "./components/Cart";
+export { CustomerMenuPage } from "./components/CustomerMenuPage";
+export { CustomerOrderPage } from "./components/CustomerOrderPage";
 export { MenuBrowser } from "./components/MenuBrowser";
 export { MenuItemDetail } from "./components/MenuItemDetail";
 export { OrderStatus } from "./components/OrderStatus";

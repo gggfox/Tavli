@@ -1,6 +1,13 @@
 import { useConvexAuth } from "convex/react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useUserSettings } from "../../features/users/hooks/useUserSettings";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useState,
+	type ReactNode,
+} from "react";
 
 export const Theme = {
 	LIGHT: "light",
@@ -10,55 +17,49 @@ export const Theme = {
 export type Theme = (typeof Theme)[keyof typeof Theme];
 const LOCAL_STORAGE_THEME_KEY = "fierro-viejo-theme";
 
-function isUndefined(value: unknown): value is undefined {
-	return value === undefined;
+export interface RemoteThemeSettings {
+	theme: Theme | null;
+	updateTheme: (theme: Theme) => Promise<{ success: boolean; error?: unknown }>;
 }
 
-function isDefined(value: unknown): value is NonNullable<unknown> {
-	return value !== null && value !== undefined;
-}
+const RemoteThemeContext = createContext<RemoteThemeSettings | null>(null);
 
-/**
- * Hook to access theme state and actions.
- * Uses Convex settings when authenticated, falls back to localStorage when not.
- */
 export function useTheme() {
 	const { isAuthenticated } = useConvexAuth();
-	const settings = useUserSettings();
+	const remote = useContext(RemoteThemeContext);
+
 	const [localTheme, setLocalTheme] = useState<Theme>(() => {
-		if (isUndefined(globalThis.window)) return Theme.LIGHT;
+		if (globalThis.window === undefined) return Theme.LIGHT;
 		const saved = globalThis.window.localStorage.getItem(LOCAL_STORAGE_THEME_KEY);
 		return saved === Theme.DARK ? Theme.DARK : Theme.LIGHT;
 	});
 
 	const saveTheme = useCallback((newTheme: Theme) => {
 		setLocalTheme(newTheme);
-		if (isDefined(globalThis.window)) {
+		if (globalThis.window !== undefined) {
 			globalThis.window.localStorage.setItem(LOCAL_STORAGE_THEME_KEY, newTheme);
 		}
 	}, []);
 
-	// Use Convex settings when authenticated, otherwise use localStorage
 	const theme = useMemo<Theme>(() => {
-		if (isAuthenticated && settings.settings) {
-			return settings.theme;
+		if (isAuthenticated && remote?.theme) {
+			return remote.theme;
 		}
 		return localTheme;
-	}, [isAuthenticated, settings.settings, settings.theme, localTheme]);
+	}, [isAuthenticated, remote?.theme, localTheme]);
 
 	const setTheme = useCallback(
 		async (newTheme: Theme) => {
-			if (!isAuthenticated) {
+			if (!isAuthenticated || !remote) {
 				saveTheme(newTheme);
 				return;
 			}
-			const result = await settings.updateTheme(newTheme);
+			const result = await remote.updateTheme(newTheme);
 			if (!result.success) {
-				console.error("Failed to update theme:", result.error);
 				saveTheme(newTheme);
 			}
 		},
-		[isAuthenticated, settings, saveTheme]
+		[isAuthenticated, remote, saveTheme]
 	);
 
 	const toggleTheme = useCallback(async () => {
@@ -69,14 +70,22 @@ export function useTheme() {
 	return { theme, setTheme, toggleTheme };
 }
 
-/**
- * Provider component that syncs theme state with the DOM.
- * Still needed to apply the theme class to the document root.
- */
-export function ThemeProvider({ children }: Readonly<{ children: ReactNode }>) {
+interface ThemeProviderProps {
+	readonly children: ReactNode;
+	readonly remoteSettings?: RemoteThemeSettings;
+}
+
+export function ThemeProvider({ children, remoteSettings }: ThemeProviderProps) {
+	return (
+		<RemoteThemeContext.Provider value={remoteSettings ?? null}>
+			<ThemeApplier>{children}</ThemeApplier>
+		</RemoteThemeContext.Provider>
+	);
+}
+
+function ThemeApplier({ children }: Readonly<{ children: ReactNode }>) {
 	const { theme } = useTheme();
 
-	// Apply theme class to document
 	useEffect(() => {
 		const root = document.documentElement;
 		if (theme === Theme.DARK) {

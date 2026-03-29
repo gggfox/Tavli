@@ -1,18 +1,17 @@
-import { OrderStatus } from "@/features/ordering";
+import { CustomerOrderPage } from "@/features/ordering";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import type { Id } from "convex/_generated/dataModel";
 
 export const Route = createFileRoute("/r/$slug/order/$orderId")({
-	component: OrderStatusPage,
+	component: Page,
 });
 
-function OrderStatusPage() {
+function Page() {
 	const { slug, orderId } = Route.useParams();
 	const navigate = useNavigate();
 
 	return (
-		<OrderStatus
-			orderId={orderId as Id<"orders">}
+		<CustomerOrderPage
+			orderId={orderId}
 			onBackToMenu={() => navigate({ to: "/r/$slug/menu", params: { slug } })}
 		/>
 	);

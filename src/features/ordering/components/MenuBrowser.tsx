@@ -5,7 +5,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { Check, X } from "lucide-react";
+import { UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SelectedOption } from "../types";
 import { toggleOptionSelection } from "../utils";
@@ -169,6 +169,18 @@ export function MenuBrowser({
 			</div>
 
 			{/* Bottom bar: total + pay */}
+			{itemCount === 0 && (
+				<div
+					className="shrink-0 px-4 py-4 text-center"
+					style={{
+						borderTop: "1px solid var(--border-default)",
+						backgroundColor: "var(--bg-primary)",
+						color: "var(--text-muted)",
+					}}
+				>
+					<p className="text-sm">Tap on items to start your order</p>
+				</div>
+			)}
 			{itemCount > 0 && (
 				<div
 					className="shrink-0 px-4 pb-4 pt-3 space-y-3"
@@ -361,57 +373,51 @@ function CategoryItems({
 			<h3 className="text-lg font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
 				{getTranslatedField(category, lang)}
 			</h3>
-			<div className="space-y-2">
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 				{visibleItems.map((item) => {
 					const isSelected = selections.has(item._id);
 					const selection = selections.get(item._id);
+					const description = getTranslatedField(item, lang, "description") || item.description;
 					return (
 						<div key={item._id}>
 							<button
 								onClick={() => onToggleItem(item._id, item.basePrice)}
-								className="w-full text-left flex justify-between items-center px-4 py-3 rounded-xl transition-colors"
+								className="w-full h-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
 								style={{
 									backgroundColor: isSelected ? "var(--bg-active, #e0e7ff)" : "var(--bg-secondary)",
-									border: isSelected ? "1px solid var(--btn-primary-bg)" : "1px solid transparent",
+									border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
 								}}
 							>
-								<div className="flex items-center gap-3 flex-1 pr-4">
+								{item.imageUrl ? (
+									<img
+										src={item.imageUrl}
+										alt={getTranslatedField(item, lang)}
+										className="w-full h-36 sm:h-40 object-cover"
+									/>
+								) : (
 									<div
-										className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors"
-										style={{
-											backgroundColor: isSelected ? "var(--btn-primary-bg)" : "transparent",
-											border: isSelected ? "none" : "2px solid var(--border-default)",
-										}}
+										className="w-full h-36 sm:h-40 flex items-center justify-center"
+										style={{ backgroundColor: "var(--bg-primary)" }}
 									>
-										{isSelected && <Check size={12} color="white" strokeWidth={3} />}
+										<UtensilsCrossed size={48} style={{ color: "var(--text-muted)" }} />
 									</div>
-									{item.imageUrl && (
-										<img
-											src={item.imageUrl}
-											alt={getTranslatedField(item, lang)}
-											className="w-12 h-12 rounded-lg object-cover shrink-0"
-										/>
-									)}
-									<div className="flex-1">
-										<div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-											{getTranslatedField(item, lang)}
+								)}
+								<div className="px-3 py-2.5 mt-auto">
+									<div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+										{getTranslatedField(item, lang)}
+									</div>
+									{description && (
+										<div
+											className="text-xs mt-0.5 line-clamp-2"
+											style={{ color: "var(--text-muted)" }}
+										>
+											{description}
 										</div>
-										{(getTranslatedField(item, lang, "description") || item.description) && (
-											<div
-												className="text-xs mt-0.5 line-clamp-2"
-												style={{ color: "var(--text-muted)" }}
-											>
-												{getTranslatedField(item, lang, "description") || item.description}
-											</div>
-										)}
+									)}
+									<div className="text-sm font-bold mt-1" style={{ color: "var(--text-primary)" }}>
+										${formatCents(item.basePrice)}
 									</div>
 								</div>
-								<span
-									className="text-sm font-medium whitespace-nowrap"
-									style={{ color: "var(--text-primary)" }}
-								>
-									${formatCents(item.basePrice)}
-								</span>
 							</button>
 
 							{isSelected && selection && (
@@ -486,7 +492,7 @@ function InlineOptionGroups({
 
 	return (
 		<div
-			className="ml-8 mt-1 mb-2 space-y-3 px-3 py-3 rounded-lg"
+			className="mt-1 mb-2 space-y-3 px-3 py-3 rounded-lg"
 			style={{
 				backgroundColor: "var(--bg-secondary)",
 				borderLeft: "2px solid var(--btn-primary-bg)",

@@ -1,5 +1,14 @@
 import { SidebarKeys } from "@/global/i18n";
-import { Building2, ClipboardList, Home, ListOrdered, Settings, Store, Users } from "lucide-react";
+import {
+	Building2,
+	ClipboardList,
+	DollarSign,
+	Home,
+	ListOrdered,
+	Settings,
+	Store,
+	Users,
+} from "lucide-react";
 import { SidebarItem } from "./SidebarLink";
 
 export const sidebarItems: SidebarItem[] = [
@@ -27,6 +36,12 @@ export const sidebarItems: SidebarItem[] = [
 		translationKey: SidebarKeys.ORDERS,
 		icon: <ListOrdered size={18} className="shrink-0" />,
 		to: "/admin/orders",
+	},
+	{
+		type: "link",
+		translationKey: SidebarKeys.PAYMENTS,
+		icon: <DollarSign size={18} className="shrink-0" />,
+		to: "/admin/payments",
 	},
 	{
 		type: "group",

@@ -10,6 +10,7 @@ import {
 } from "@/global/components";
 import { sanitizeSlug, unwrapQuery, unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
+import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
@@ -294,109 +295,140 @@ function CreateRestaurantForm({
 	});
 	const organizations = useOrganizations();
 
-	const [name, setName] = useState("");
-	const [slug, setSlug] = useState("");
-	const [currency, setCurrency] = useState("USD");
-	const [organizationId, setOrganizationId] = useState<string>("");
-
-	const handleCreate = async (e: React.FormEvent) => {
-		e.preventDefault();
-		try {
-			unwrapResult(
-				await createMutation.mutateAsync({
-					name,
-					slug,
-					currency,
-					organizationId: organizationId as Id<"organizations">,
-				})
-			);
-			onCreated();
-		} catch (err) {
-			onError(err instanceof Error ? err.message : "Failed to create restaurant");
-		}
-	};
+	const form = useForm({
+		defaultValues: { name: "", slug: "", currency: "USD", organizationId: "" },
+		onSubmit: async ({ value }) => {
+			try {
+				unwrapResult(
+					await createMutation.mutateAsync({
+						name: value.name,
+						slug: value.slug,
+						currency: value.currency,
+						organizationId: value.organizationId as Id<"organizations">,
+					})
+				);
+				onCreated();
+			} catch (err) {
+				onError(err instanceof Error ? err.message : "Failed to create restaurant");
+			}
+		},
+	});
 
 	return (
-		<form onSubmit={handleCreate} className="space-y-4">
-			<TextInput
-				id="admin-rest-name"
-				label="Name"
-				type="text"
-				value={name}
-				onChange={(e) => setName(e.target.value)}
-				required
+		<form
+			onSubmit={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				form.handleSubmit();
+			}}
+			className="space-y-4"
+		>
+			<form.Field
+				name="name"
+				children={(field) => (
+					<TextInput
+						id="admin-rest-name"
+						label="Name"
+						type="text"
+						value={field.state.value}
+						onChange={(e) => field.handleChange(e.target.value)}
+						onBlur={field.handleBlur}
+						required
+					/>
+				)}
 			/>
-			<TextInput
-				id="admin-rest-slug"
-				label="Slug"
-				type="text"
-				value={slug}
-				onChange={(e) => setSlug(sanitizeSlug(e.target.value))}
-				required
+			<form.Field
+				name="slug"
+				children={(field) => (
+					<TextInput
+						id="admin-rest-slug"
+						label="Slug"
+						type="text"
+						value={field.state.value}
+						onChange={(e) => field.handleChange(sanitizeSlug(e.target.value))}
+						onBlur={field.handleBlur}
+						required
+					/>
+				)}
 			/>
-			<div>
-				<label
-					htmlFor="admin-rest-currency"
-					className="block text-xs font-medium mb-1"
-					style={{ color: "var(--text-secondary)" }}
-				>
-					Currency
-				</label>
-				<select
-					id="admin-rest-currency"
-					value={currency}
-					onChange={(e) => setCurrency(e.target.value)}
-					className="w-full px-3 py-2 rounded-lg text-sm"
-					style={{
-						backgroundColor: "var(--bg-secondary)",
-						border: "1px solid var(--border-default)",
-						color: "var(--text-primary)",
-					}}
-				>
-					<option value="USD">USD ($)</option>
-					<option value="EUR">EUR</option>
-					<option value="GBP">GBP</option>
-					<option value="MXN">MXN ($)</option>
-				</select>
-			</div>
-			<div>
-				<label
-					htmlFor="admin-rest-org"
-					className="block text-xs font-medium mb-1"
-					style={{ color: "var(--text-secondary)" }}
-				>
-					Organization
-				</label>
-				<select
-					id="admin-rest-org"
-					value={organizationId}
-					onChange={(e) => setOrganizationId(e.target.value)}
-					required
-					className="w-full px-3 py-2 rounded-lg text-sm"
-					style={{
-						backgroundColor: "var(--bg-secondary)",
-						border: "1px solid var(--border-default)",
-						color: "var(--text-primary)",
-					}}
-				>
-					<option value="" disabled>
-						Select an organization
-					</option>
-					{organizations.map((org) => (
-						<option key={org._id} value={org._id}>
-							{org.name}
-						</option>
-					))}
-				</select>
-			</div>
+			<form.Field
+				name="currency"
+				children={(field) => (
+					<div>
+						<label
+							htmlFor="admin-rest-currency"
+							className="block text-xs font-medium mb-1"
+							style={{ color: "var(--text-secondary)" }}
+						>
+							Currency
+						</label>
+						<select
+							id="admin-rest-currency"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							className="w-full px-3 py-2 rounded-lg text-sm"
+							style={{
+								backgroundColor: "var(--bg-secondary)",
+								border: "1px solid var(--border-default)",
+								color: "var(--text-primary)",
+							}}
+						>
+							<option value="USD">USD ($)</option>
+							<option value="EUR">EUR</option>
+							<option value="GBP">GBP</option>
+							<option value="MXN">MXN ($)</option>
+						</select>
+					</div>
+				)}
+			/>
+			<form.Field
+				name="organizationId"
+				children={(field) => (
+					<div>
+						<label
+							htmlFor="admin-rest-org"
+							className="block text-xs font-medium mb-1"
+							style={{ color: "var(--text-secondary)" }}
+						>
+							Organization
+						</label>
+						<select
+							id="admin-rest-org"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							required
+							className="w-full px-3 py-2 rounded-lg text-sm"
+							style={{
+								backgroundColor: "var(--bg-secondary)",
+								border: "1px solid var(--border-default)",
+								color: "var(--text-primary)",
+							}}
+						>
+							<option value="" disabled>
+								Select an organization
+							</option>
+							{organizations.map((org) => (
+								<option key={org._id} value={org._id}>
+									{org.name}
+								</option>
+							))}
+						</select>
+					</div>
+				)}
+			/>
 			<div className="flex gap-2 pt-2">
-				<button
-					type="submit"
-					disabled={createMutation.isPending}
-					className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-				>
-					{createMutation.isPending ? "Creating..." : "Create"}
-				</button>
+				<form.Subscribe
+					selector={(state) => state.isSubmitting}
+					children={(isSubmitting) => (
+						<button
+							type="submit"
+							disabled={isSubmitting}
+							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+						>
+							{isSubmitting ? "Creating..." : "Create"}
+						</button>
+					)}
+				/>
 			</div>
 		</form>
 	);

@@ -295,6 +295,47 @@ export const getActiveOrdersByRestaurant = query({
 	},
 });
 
+export const getPaidOrdersByRestaurant = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		from: v.optional(v.number()),
+		to: v.optional(v.number()),
+	},
+	handler: async function (ctx, args) {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireStaffRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const allOrders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+
+		const paidOrders = allOrders.filter((o) => {
+			if (o.status !== "paid") return false;
+			if (args.from && o.paidAt && o.paidAt < args.from) return false;
+			if (args.to && o.paidAt && o.paidAt > args.to) return false;
+			return true;
+		});
+
+		const ordersWithItems = await Promise.all(
+			paidOrders.map(async (order) => {
+				const items = await ctx.db
+					.query(TABLE.ORDER_ITEMS)
+					.withIndex("by_order", (q) => q.eq("orderId", order._id))
+					.collect();
+				const table = await ctx.db.get(order.tableId);
+				return { ...order, items, tableNumber: table?.tableNumber ?? 0 };
+			})
+		);
+
+		const totalRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+
+		return [{ orders: ordersWithItems, totalRevenue, orderCount: paidOrders.length }, null];
+	},
+});
+
 // ============================================================================
 // Helpers
 // ============================================================================

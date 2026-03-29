@@ -1,6 +1,7 @@
 import { InlineError, TextInput } from "@/global/components";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -27,65 +28,63 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		mutationFn: useConvexMutation(api.tables.remove),
 	});
 
-	const [newTableNumber, setNewTableNumber] = useState("");
-	const [newTableLabel, setNewTableLabel] = useState("");
 	const [editingId, setEditingId] = useState<Id<"tables"> | null>(null);
-	const [editNumber, setEditNumber] = useState("");
-	const [editLabel, setEditLabel] = useState("");
 	const [error, setError] = useState<string | null>(null);
 
 	const clearError = () => setError(null);
 
-	const handleAdd = async (e: React.FormEvent) => {
-		e.preventDefault();
-		clearError();
-		const num = Number.parseInt(newTableNumber, 10);
-		if (Number.isNaN(num)) return;
-		try {
-			unwrapResult(
-				await createTable.mutateAsync({
-					restaurantId,
-					tableNumber: num,
-					label: newTableLabel || undefined,
-				})
-			);
-			setNewTableNumber("");
-			setNewTableLabel("");
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to create table");
-		}
-	};
+	const createForm = useForm({
+		defaultValues: { tableNumber: "", label: "" },
+		onSubmit: async ({ value }) => {
+			clearError();
+			const num = Number.parseInt(value.tableNumber, 10);
+			if (Number.isNaN(num)) return;
+			try {
+				unwrapResult(
+					await createTable.mutateAsync({
+						restaurantId,
+						tableNumber: num,
+						label: value.label || undefined,
+					})
+				);
+				createForm.reset();
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Failed to create table");
+			}
+		},
+	});
+
+	const editForm = useForm({
+		defaultValues: { editNumber: "", editLabel: "" },
+		onSubmit: async ({ value }) => {
+			if (!editingId) return;
+			clearError();
+			const num = Number.parseInt(value.editNumber, 10);
+			if (Number.isNaN(num)) return;
+			try {
+				unwrapResult(
+					await updateTable.mutateAsync({
+						tableId: editingId,
+						tableNumber: num,
+						label: value.editLabel || undefined,
+					})
+				);
+				cancelEdit();
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Failed to update table");
+			}
+		},
+	});
 
 	const startEdit = (tableId: Id<"tables">, tableNumber: number, label?: string) => {
 		clearError();
 		setEditingId(tableId);
-		setEditNumber(String(tableNumber));
-		setEditLabel(label ?? "");
+		editForm.reset({ editNumber: String(tableNumber), editLabel: label ?? "" });
 	};
 
 	const cancelEdit = () => {
 		setEditingId(null);
-		setEditNumber("");
-		setEditLabel("");
-	};
-
-	const handleSaveEdit = async () => {
-		if (!editingId) return;
-		clearError();
-		const num = Number.parseInt(editNumber, 10);
-		if (Number.isNaN(num)) return;
-		try {
-			unwrapResult(
-				await updateTable.mutateAsync({
-					tableId: editingId,
-					tableNumber: num,
-					label: editLabel || undefined,
-				})
-			);
-			cancelEdit();
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to update table");
-		}
+		editForm.reset();
 	};
 
 	const handleToggleActive = async (tableId: Id<"tables">) => {
@@ -112,25 +111,44 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		<div className="space-y-6">
 			{error && <InlineError message={error} onDismiss={clearError} />}
 
-			<form onSubmit={handleAdd} className="flex gap-3 items-end">
-				<TextInput
-					id="new-table-number"
-					label="Table #"
-					type="number"
-					value={newTableNumber}
-					onChange={(e) => setNewTableNumber(e.target.value)}
-					required
-					min={1}
-					className="w-20"
+			<form
+				onSubmit={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					createForm.handleSubmit();
+				}}
+				className="flex gap-3 items-end"
+			>
+				<createForm.Field
+					name="tableNumber"
+					children={(field) => (
+						<TextInput
+							id="new-table-number"
+							label="Table #"
+							type="number"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							onBlur={field.handleBlur}
+							required
+							min={1}
+							className="w-20"
+						/>
+					)}
 				/>
-				<TextInput
-					id="new-table-label"
-					label="Label (optional)"
-					type="text"
-					value={newTableLabel}
-					onChange={(e) => setNewTableLabel(e.target.value)}
-					placeholder="Patio 3"
-					className="w-40"
+				<createForm.Field
+					name="label"
+					children={(field) => (
+						<TextInput
+							id="new-table-label"
+							label="Label (optional)"
+							type="text"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							onBlur={field.handleBlur}
+							placeholder="Patio 3"
+							className="w-40"
+						/>
+					)}
 				/>
 				<button
 					type="submit"
@@ -153,22 +171,34 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					>
 						{editingId === table._id ? (
 							<div className="flex items-center gap-3 flex-1 mr-3">
-								<TextInput
-									type="number"
-									value={editNumber}
-									onChange={(e) => setEditNumber(e.target.value)}
-									min={1}
-									className="w-20"
+								<editForm.Field
+									name="editNumber"
+									children={(field) => (
+										<TextInput
+											type="number"
+											value={field.state.value}
+											onChange={(e) => field.handleChange(e.target.value)}
+											onBlur={field.handleBlur}
+											min={1}
+											className="w-20"
+										/>
+									)}
 								/>
-								<TextInput
-									type="text"
-									value={editLabel}
-									onChange={(e) => setEditLabel(e.target.value)}
-									placeholder="Label"
-									className="w-32"
+								<editForm.Field
+									name="editLabel"
+									children={(field) => (
+										<TextInput
+											type="text"
+											value={field.state.value}
+											onChange={(e) => field.handleChange(e.target.value)}
+											onBlur={field.handleBlur}
+											placeholder="Label"
+											className="w-32"
+										/>
+									)}
 								/>
 								<button
-									onClick={handleSaveEdit}
+									onClick={() => editForm.handleSubmit()}
 									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
 									title="Save"
 								>

@@ -1,40 +1,10 @@
-import { isValidTimestamp } from "@/global/utils/date";
+import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { UserRoleDoc } from "convex/constants";
 import { RoleBadge } from "./RoleBadge";
 
 type UserRole = UserRoleDoc;
 const columnHelper = createColumnHelper<UserRole>();
-
-function formatDate(timestamp: number | undefined): string {
-	// Handle invalid timestamps (0, undefined, or very old dates before 2020)
-	if (!isValidTimestamp(timestamp)) {
-		return "—";
-	}
-	return new Intl.DateTimeFormat("en-US", {
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	}).format(new Date(timestamp));
-}
-
-/**
- * Get the best available timestamp for display.
- * Falls back to _creationTime if createdAt/updatedAt is invalid.
- */
-function getDisplayTimestamp(
-	timestamp: number | undefined,
-	fallback: number | undefined
-): number | undefined {
-	// Use timestamp if it's valid (after Jan 1, 2020)
-	if (isValidTimestamp(timestamp)) {
-		return timestamp;
-	}
-	// Fall back to _creationTime
-	return fallback;
-}
 
 export const columns = [
 	columnHelper.accessor("userId", {

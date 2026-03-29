@@ -27,6 +27,7 @@ export const SidebarKeys = {
 	MENUS: "sidebar.nav.menus",
 	OPTIONS: "sidebar.nav.options",
 	ORDERS: "sidebar.nav.orders",
+	PAYMENTS: "sidebar.nav.payments",
 	ADMIN: "sidebar.nav.admin",
 	ADMIN_USERS: "sidebar.nav.adminUsers",
 	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",

@@ -1,7 +1,10 @@
+export { AdminPageLayout } from "./AdminPageLayout";
 export { Avatar, getAvatarFallback } from "./Avatar";
+export { CollapsibleCard } from "./CollapsibleCard";
 export { EmptyState } from "./EmptyState";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { FeatureCard } from "./FeatureCard";
+export { InlineEditInput } from "./InlineEditInput";
 export { InlineError } from "./InlineError";
 export { LanguageTabBar } from "./LanguageTabBar";
 export { LoadingState } from "./LoadingState";
@@ -10,6 +13,6 @@ export * from "./MultiCardSelect";
 export { SearchInput } from "./SearchInput";
 export { Sidebar } from "./Sidebar";
 export { StatusBadge } from "./StatusBadge";
-export { Pagination } from "./Table";
+export { AdminTable, Pagination, SortIcon, TableErrorState, TableSkeleton } from "./Table";
 export { TextInput } from "./TextInput";
 export { WelcomeSection } from "./WelcomeSection";

@@ -13,6 +13,7 @@ const STAFF_SIDEBAR_KEYS = new Set([
 	SidebarKeys.MENUS,
 	SidebarKeys.OPTIONS,
 	SidebarKeys.ORDERS,
+	SidebarKeys.PAYMENTS,
 ]);
 
 export function useSidebarItems({ isMounted }: { isMounted: boolean }) {
