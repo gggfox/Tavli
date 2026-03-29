@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 const supportedLanguages = new Set<string>(Object.values(Languages));
 
-export const Route = createFileRoute("/r/$slug/t/$tableNumber/$lang")({
+export const Route = createFileRoute("/r/$slug/$lang")({
 	component: LanguageLayout,
 });
 

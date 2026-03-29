@@ -24,7 +24,9 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 		deleteOption,
 	} = useOptionGroups(restaurantId);
 
-	const { data: menus } = useQuery(convexQuery(api.menus.getMenusByRestaurant, { restaurantId }));
+	const { data: menus } = useQuery(
+		convexQuery(api.menus.getMenusByRestaurant, restaurantId ? { restaurantId } : "skip")
+	);
 	const { defaultLang, supportedLangs } = useMemo(() => {
 		const allMenus = menus ?? [];
 		const first = allMenus[0];

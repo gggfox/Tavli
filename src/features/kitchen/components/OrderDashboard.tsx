@@ -1,7 +1,14 @@
 import { EmptyState, LoadingState, StatusBadge } from "@/global/components";
 import { formatCents } from "@/global/utils/money";
 import type { Id } from "convex/_generated/dataModel";
-import { CheckCircle2, ChefHat, CreditCard, UtensilsCrossed, XCircle } from "lucide-react";
+import {
+	AlertTriangle,
+	CheckCircle2,
+	ChefHat,
+	CreditCard,
+	UtensilsCrossed,
+	XCircle,
+} from "lucide-react";
 import { useOrders } from "../hooks/useOrders";
 
 interface OrderDashboardProps {
@@ -39,10 +46,20 @@ const STATUS_CONFIG: Record<
 };
 
 export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) {
-	const { orders, isLoading, updateStatus } = useOrders(restaurantId);
+	const { orders, isLoading, error, updateStatus } = useOrders(restaurantId);
 
 	if (isLoading) {
 		return <LoadingState message="Loading orders..." className="p-4" />;
+	}
+
+	if (error) {
+		return (
+			<EmptyState
+				icon={AlertTriangle}
+				title="Could not load orders."
+				description={error.message ?? "Please check your permissions and try again."}
+			/>
+		);
 	}
 
 	const sorted = [...orders].sort((a: any, b: any) => {

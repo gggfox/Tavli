@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
@@ -10,7 +11,7 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, isAdmin, requireOwnerRole } from "./_util/auth";
+import { getCurrentUserId, isAdmin, requireOwnerRole, RoleErrorMessages } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -22,6 +23,7 @@ export const create = mutation({
 		description: v.optional(v.string()),
 		currency: v.string(),
 		timezone: v.optional(v.string()),
+		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
 	handler: async function (
 		ctx,
@@ -29,6 +31,8 @@ export const create = mutation({
 	): AsyncReturn<Id<"restaurants">, AuthErrors | UserInputValidationErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
 
 		const existing = await ctx.db
 			.query(TABLE.RESTAURANTS)
@@ -47,6 +51,7 @@ export const create = mutation({
 		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.RESTAURANTS, {
 			ownerId: userId,
+			organizationId: args.organizationId,
 			name: args.name,
 			slug: args.slug,
 			description: args.description,
@@ -71,6 +76,7 @@ export const update = mutation({
 		timezone: v.optional(v.string()),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
+		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
 	handler: async function (
 		ctx,
@@ -86,6 +92,11 @@ export const update = mutation({
 
 		const restaurant = await ctx.db.get(args.restaurantId);
 		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
+
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
 
 		if (args.slug && args.slug !== restaurant.slug) {
 			const existing = await ctx.db
@@ -111,6 +122,7 @@ export const update = mutation({
 			...(args.timezone !== undefined && { timezone: args.timezone }),
 			...(args.defaultLanguage !== undefined && { defaultLanguage: args.defaultLanguage }),
 			...(args.supportedLanguages !== undefined && { supportedLanguages: args.supportedLanguages }),
+			...(args.organizationId !== undefined && { organizationId: args.organizationId }),
 			updatedAt: now,
 		});
 
@@ -128,6 +140,11 @@ export const toggleActive = mutation({
 
 		const restaurant = await ctx.db.get(args.restaurantId);
 		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
+
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
 
 		const newState = !restaurant.isActive;
 		await ctx.db.patch(args.restaurantId, { isActive: newState, updatedAt: Date.now() });
@@ -160,41 +177,38 @@ export const getBySlug = query({
 });
 
 export const getAll = query({
-	handler: async function (ctx): AsyncReturn<
-		Array<{
-			_id: string;
-			name: string;
-			slug: string;
-			ownerId: string;
-			isActive: boolean;
-			currency: string;
-			createdAt: number;
-		}>,
-		AuthErrors
-	> {
+	handler: async function (ctx): AsyncReturn<Doc<"restaurants">[], AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 
 		const userIsAdmin = await isAdmin(ctx, userId);
+		if (userIsAdmin) {
+			return [await ctx.db.query(TABLE.RESTAURANTS).collect(), null];
+		}
 
-		const restaurants = userIsAdmin
-			? await ctx.db.query(TABLE.RESTAURANTS).collect()
-			: await ctx.db
-					.query(TABLE.RESTAURANTS)
-					.withIndex("by_owner", (q) => q.eq("ownerId", userId))
-					.collect();
+		const owned = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_owner", (q) => q.eq("ownerId", userId))
+			.collect();
 
-		return [
-			restaurants.map((r) => ({
-				_id: r._id,
-				name: r.name,
-				slug: r.slug,
-				ownerId: r.ownerId,
-				isActive: r.isActive,
-				currency: r.currency,
-				createdAt: r.createdAt,
-			})),
-			null,
-		];
+		const userRole = await ctx.db
+			.query(TABLE.USER_ROLES)
+			.withIndex("by_user", (q) => q.eq("userId", userId))
+			.first();
+
+		const orgId = userRole?.organizationId as Id<"organizations"> | undefined;
+		if (!orgId) return [owned, null];
+
+		const orgRestaurants = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_organization", (q) => q.eq("organizationId", orgId))
+			.collect();
+
+		const seen = new Set(owned.map((r) => r._id));
+		for (const r of orgRestaurants) {
+			if (!seen.has(r._id)) owned.push(r);
+		}
+
+		return [owned, null];
 	},
 });

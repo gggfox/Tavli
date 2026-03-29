@@ -19,6 +19,7 @@ import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
 import type * as optionGroups from "../optionGroups.js";
 import type * as orders from "../orders.js";
+import type * as organizations from "../organizations.js";
 import type * as restaurants from "../restaurants.js";
 import type * as sessions from "../sessions.js";
 import type * as tables from "../tables.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   menus: typeof menus;
   optionGroups: typeof optionGroups;
   orders: typeof orders;
+  organizations: typeof organizations;
   restaurants: typeof restaurants;
   sessions: typeof sessions;
   tables: typeof tables;

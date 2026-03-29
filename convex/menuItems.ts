@@ -7,7 +7,7 @@ import {
 	NotFoundErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireOwnerRole } from "./_util/auth";
+import { getCurrentUserId, requireManagerRole } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -17,7 +17,7 @@ export const generateUploadUrl = mutation({
 	handler: async function (ctx): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const url = await ctx.storage.generateUploadUrl();
@@ -39,7 +39,7 @@ export const create = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -81,7 +81,7 @@ export const update = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
@@ -111,7 +111,7 @@ export const remove = mutation({
 	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
@@ -137,7 +137,7 @@ export const removeImage = mutation({
 	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
@@ -164,7 +164,7 @@ export const toggleAvailability = mutation({
 	handler: async function (ctx, args): AsyncReturn<boolean, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
@@ -203,7 +203,7 @@ export const setTranslation = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);

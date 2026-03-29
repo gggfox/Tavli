@@ -1,13 +1,10 @@
 import { isValidTimestamp } from "@/global/utils/date";
 import { createColumnHelper } from "@tanstack/react-table";
-import type { UserRoleDoc } from "convex/constants";
-import { RoleBadge } from "./RoleBadge";
+import type { OrganizationDoc } from "convex/constants";
 
-type UserRole = UserRoleDoc;
-const columnHelper = createColumnHelper<UserRole>();
+const columnHelper = createColumnHelper<OrganizationDoc>();
 
 function formatDate(timestamp: number | undefined): string {
-	// Handle invalid timestamps (0, undefined, or very old dates before 2020)
 	if (!isValidTimestamp(timestamp)) {
 		return "—";
 	}
@@ -20,72 +17,52 @@ function formatDate(timestamp: number | undefined): string {
 	}).format(new Date(timestamp));
 }
 
-/**
- * Get the best available timestamp for display.
- * Falls back to _creationTime if createdAt/updatedAt is invalid.
- */
 function getDisplayTimestamp(
 	timestamp: number | undefined,
 	fallback: number | undefined
 ): number | undefined {
-	// Use timestamp if it's valid (after Jan 1, 2020)
 	if (isValidTimestamp(timestamp)) {
 		return timestamp;
 	}
-	// Fall back to _creationTime
 	return fallback;
 }
 
 export const columns = [
-	columnHelper.accessor("userId", {
-		header: "User ID",
+	columnHelper.accessor("name", {
+		header: "Name",
 		cell: (info) => (
-			<span className="font-mono text-xs" style={{ color: "var(--text-primary)" }}>
-				{info.getValue().slice(0, 16)}...
+			<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+				{info.getValue()}
 			</span>
 		),
 	}),
-	columnHelper.accessor("email", {
-		header: "Email",
+	columnHelper.accessor("description", {
+		header: "Description",
 		cell: (info) => {
 			const value = info.getValue();
 			return value ? (
-				<span className="text-sm" style={{ color: "var(--text-primary)" }}>
-					{value}
+				<span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+					{value.length > 60 ? `${value.slice(0, 60)}...` : value}
 				</span>
 			) : (
 				<span style={{ color: "var(--text-muted)" }}>—</span>
 			);
 		},
 	}),
-	columnHelper.accessor("roles", {
-		header: "Roles",
-		cell: (info) => (
-			<div className="flex gap-1.5 flex-wrap">
-				{info.getValue().map((role) => (
-					<RoleBadge key={role} role={role} />
-				))}
-			</div>
-		),
-		filterFn: (row, columnId, filterValue) => {
-			if (!filterValue) return true;
-			const roles = row.getValue(columnId);
+	columnHelper.accessor("isActive", {
+		header: "Status",
+		cell: (info) => {
+			const active = info.getValue();
 			return (
-				Array.isArray(roles) &&
-				roles.some((role) => role.toLowerCase().includes(filterValue.toLowerCase()))
-			);
-		},
-	}),
-	columnHelper.accessor("organizationId", {
-		header: "Organization",
-		cell: (info) => {
-			const value = info.getValue();
-			return value ? (
-				<span className="font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
-					{value.slice(0, 12)}...
+				<span
+					className="px-2 py-0.5 rounded-full text-xs font-medium"
+					style={{
+						backgroundColor: active ? "rgba(34, 197, 94, 0.15)" : "rgba(156, 163, 175, 0.15)",
+						color: active ? "rgb(34, 197, 94)" : "rgb(156, 163, 175)",
+					}}
+				>
+					{active ? "Active" : "Inactive"}
 				</span>
-			) : (
-				<span style={{ color: "var(--text-muted)" }}>—</span>
 			);
 		},
 	}),

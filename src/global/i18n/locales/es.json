@@ -16,7 +16,8 @@
 			"options": "Opciones",
 			"orders": "Pedidos",
 			"admin": "Administración",
-			"adminUsers": "Usuarios"
+			"adminUsers": "Usuarios",
+			"adminOrganizations": "Organizaciones"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -42,14 +43,23 @@
 			"roles": "Tus Roles",
 			"noRoles": "Sin roles asignados",
 			"devTools": "Herramientas de Desarrollo",
+			"switchRoles": "Cambiar Roles",
 			"selfAssignAdmin": "Auto-asignar Rol de Admin",
 			"adminAlreadyAssigned": "Rol de admin ya asignado",
 			"assigningAdmin": "Asignando..."
 		}
 	},
+	"roles": {
+		"admin": "Administrador",
+		"owner": "Propietario",
+		"manager": "Gerente",
+		"customer": "Cliente",
+		"employee": "Empleado"
+	},
 	"errors": {
 		"generic": "Ocurrió un error. Por favor, inténtalo de nuevo.",
 		"ERROR_ADMIN_REQUIRED": "No tienes permiso para realizar esta acción.",
+		"ERROR_MANAGER_REQUIRED": "Necesitas permisos de gerente para realizar esta acción.",
 		"ERROR_INSUFFICIENT_PERMISSIONS": "No tienes los permisos necesarios."
 	}
 }

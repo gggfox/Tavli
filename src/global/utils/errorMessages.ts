@@ -7,12 +7,11 @@
 
 /**
  * Known error codes from the backend.
- * These match the codes defined in convex/_util/roles.ts
+ * These match the codes defined in convex/_util/auth.ts
  */
 export const ErrorCodes = {
 	ADMIN_REQUIRED: "ERROR_ADMIN_REQUIRED",
-	SELLER_REQUIRED: "ERROR_SELLER_REQUIRED",
-	BUYER_REQUIRED: "ERROR_BUYER_REQUIRED",
+	MANAGER_REQUIRED: "ERROR_MANAGER_REQUIRED",
 	INSUFFICIENT_PERMISSIONS: "ERROR_INSUFFICIENT_PERMISSIONS",
 } as const;
 

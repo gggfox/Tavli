@@ -5,12 +5,14 @@ import { useState } from "react";
 
 interface RestaurantSettingsFormProps {
 	restaurant: Doc<"restaurants"> | null;
+	organizations?: Doc<"organizations">[];
 	onSave: (data: {
 		name: string;
 		slug: string;
 		description?: string;
 		currency: string;
 		timezone?: string;
+		organizationId: Id<"organizations">;
 	}) => Promise<unknown>;
 	onToggleActive?: (restaurantId: Id<"restaurants">) => Promise<unknown>;
 	isSaving?: boolean;
@@ -18,6 +20,7 @@ interface RestaurantSettingsFormProps {
 
 export function RestaurantSettingsForm({
 	restaurant,
+	organizations,
 	onSave,
 	onToggleActive,
 	isSaving,
@@ -27,6 +30,7 @@ export function RestaurantSettingsForm({
 	const [description, setDescription] = useState(restaurant?.description ?? "");
 	const [currency, setCurrency] = useState(restaurant?.currency ?? "USD");
 	const [timezone, setTimezone] = useState(restaurant?.timezone ?? "");
+	const [organizationId, setOrganizationId] = useState<string>(restaurant?.organizationId ?? "");
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -36,10 +40,11 @@ export function RestaurantSettingsForm({
 			description: description || undefined,
 			currency,
 			timezone: timezone || undefined,
+			organizationId: organizationId as Id<"organizations">,
 		});
 	};
 
-	const testUrl = `/r/${slug || "your-slug"}/t/1/en/menu`;
+	const testUrl = `/r/${slug || "your-slug"}/en/menu`;
 
 	return (
 		<form onSubmit={handleSubmit} className="space-y-6 max-w-lg">
@@ -128,7 +133,7 @@ export function RestaurantSettingsForm({
 				/>
 				<div className="flex items-center gap-2 mt-1">
 					<p className="text-xs" style={{ color: "var(--text-muted)" }}>
-						Customers will visit: /r/{slug || "your-slug"}/t/1
+						Customers will visit: /r/{slug || "your-slug"}/en/menu
 					</p>
 					{restaurant && slug && (
 						<a
@@ -216,6 +221,39 @@ export function RestaurantSettingsForm({
 					/>
 				</div>
 			</div>
+
+			{organizations && organizations.length > 0 && (
+				<div>
+					<label
+						htmlFor="restaurant-org"
+						className="block text-sm font-medium mb-1"
+						style={{ color: "var(--text-primary)" }}
+					>
+						Organization
+					</label>
+					<select
+						id="restaurant-org"
+						value={organizationId}
+						onChange={(e) => setOrganizationId(e.target.value)}
+						required
+						className="w-full px-3 py-2 rounded-lg text-sm"
+						style={{
+							backgroundColor: "var(--bg-secondary)",
+							border: "1px solid var(--border-default)",
+							color: "var(--text-primary)",
+						}}
+					>
+						<option value="" disabled>
+							Select an organization
+						</option>
+						{organizations.map((org) => (
+							<option key={org._id} value={org._id}>
+								{org.name}
+							</option>
+						))}
+					</select>
+				</div>
+			)}
 
 			<button
 				type="submit"

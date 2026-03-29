@@ -6,10 +6,13 @@ import { unwrapQuery } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import { USER_ROLES } from "convex/constants";
 import { useConvex, useConvexAuth } from "convex/react";
-import { Moon, ShieldCheck, Sun, X } from "lucide-react";
+import { Moon, Sun, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+const ALL_ROLES = Object.values(USER_ROLES);
 
 interface SettingsModalProps {
 	isOpen: boolean;
@@ -27,11 +30,8 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 		enabled: isAuthenticated,
 	});
 	const serverRoles: string[] = useMemo(() => unwrapQuery(rawUserRoles).data ?? [], [rawUserRoles]);
-	const [optimisticRoles, setOptimisticRoles] = useState<string[]>([]);
-	const displayRoles: string[] = useMemo(
-		() => Array.from(new Set([...serverRoles, ...optimisticRoles])),
-		[serverRoles, optimisticRoles]
-	);
+	const [optimisticRoles, setOptimisticRoles] = useState<string[] | null>(null);
+	const displayRoles: string[] = optimisticRoles ?? serverRoles;
 
 	const handleLanguageChange = useCallback(
 		async (newLanguage: typeof Languages.EN | typeof Languages.ES) => {
@@ -55,30 +55,30 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 	);
 
 	const convex = useConvex();
-	const hasAdminRole = displayRoles.includes("admin");
-	const [isAssigningAdmin, setIsAssigningAdmin] = useState(false);
 
-	const handleSelfAssignAdmin = useCallback(async () => {
-		setIsAssigningAdmin(true);
-		try {
-			const [result, error] = await convex.mutation(api.admin.selfAssignAdminRole, {});
-			if (error) {
-				console.error("Failed to self-assign admin role:", error);
-			} else if (result) {
-				setOptimisticRoles((prev) => Array.from(new Set([...prev, "admin"])));
+	const handleToggleRole = useCallback(
+		async (role: string) => {
+			const currentRoles = displayRoles;
+			const newRoles = currentRoles.includes(role)
+				? currentRoles.filter((r) => r !== role)
+				: [...currentRoles, role];
+
+			setOptimisticRoles(newRoles);
+			try {
+				const [, error] = await convex.mutation(api.admin.devSetOwnRoles, {
+					roles: newRoles as typeof ALL_ROLES,
+				});
+				if (error) {
+					console.error("Failed to update roles:", error);
+				}
+			} catch (error) {
+				console.error("Failed to update roles:", error);
+			} finally {
+				setOptimisticRoles(null);
 			}
-		} catch (error) {
-			console.error("Failed to self-assign admin role:", error);
-		} finally {
-			setIsAssigningAdmin(false);
-		}
-	}, [convex]);
-
-	const adminButtonLabel = useMemo(() => {
-		if (isAssigningAdmin) return t(SidebarKeys.ASSIGNING_ADMIN);
-		if (hasAdminRole) return t(SidebarKeys.ADMIN_ALREADY_ASSIGNED);
-		return t(SidebarKeys.SELF_ASSIGN_ADMIN);
-	}, [isAssigningAdmin, hasAdminRole, t]);
+		},
+		[convex, displayRoles]
+	);
 
 	const handleToggleTheme = useCallback(() => {
 		const root = document.documentElement;
@@ -128,13 +128,13 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 								displayRoles.map((role) => (
 									<span
 										key={role}
-										className="px-3 py-1 rounded-full text-xs font-medium capitalize"
+										className="px-3 py-1 rounded-full text-xs font-medium"
 										style={{
 											backgroundColor: "var(--bg-active)",
 											color: "var(--text-primary)",
 										}}
 									>
-										{role}
+										{t(`roles.${role}`, role)}
 									</span>
 								))
 							) : (
@@ -194,15 +194,30 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 						<h3 className="text-sm font-medium mb-3" style={{ color: "var(--text-secondary)" }}>
 							{t(SidebarKeys.DEV_TOOLS)}
 						</h3>
-						<button
-							onClick={handleSelfAssignAdmin}
-							disabled={hasAdminRole || isAssigningAdmin}
-							className="w-full flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed hover-secondary"
-							style={{ color: "var(--text-secondary)" }}
-						>
-							<ShieldCheck size={18} className="shrink-0" />
-							<span>{adminButtonLabel}</span>
-						</button>
+						<p className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
+							{t(SidebarKeys.SWITCH_ROLES)}
+						</p>
+						<div className="flex flex-wrap gap-2">
+							{ALL_ROLES.map((role) => {
+								const isActive = displayRoles.includes(role);
+								return (
+									<button
+										key={role}
+										onClick={() => handleToggleRole(role)}
+										className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all border ${
+											isActive
+												? "bg-[var(--bg-active)] border-[var(--accent-primary)]"
+												: "border-[var(--border-default)] hover:border-[var(--border-hover)]"
+										}`}
+										style={{
+											color: isActive ? "var(--text-primary)" : "var(--text-muted)",
+										}}
+									>
+										{role}
+									</button>
+								);
+							})}
+						</div>
 					</div>
 				)}
 			</div>

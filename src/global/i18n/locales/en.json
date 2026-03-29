@@ -16,7 +16,8 @@
 			"options": "Options",
 			"orders": "Orders",
 			"admin": "Admin",
-			"adminUsers": "Users"
+			"adminUsers": "Users",
+			"adminOrganizations": "Organizations"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -42,14 +43,23 @@
 			"roles": "Your Roles",
 			"noRoles": "No roles assigned",
 			"devTools": "Dev Tools",
+			"switchRoles": "Switch Roles",
 			"selfAssignAdmin": "Self Assign Admin Role",
 			"adminAlreadyAssigned": "Admin role already assigned",
 			"assigningAdmin": "Assigning..."
 		}
 	},
+	"roles": {
+		"admin": "Admin",
+		"owner": "Owner",
+		"manager": "Manager",
+		"customer": "Customer",
+		"employee": "Employee"
+	},
 	"errors": {
 		"generic": "An error occurred. Please try again.",
 		"ERROR_ADMIN_REQUIRED": "You don't have permission to perform this action.",
+		"ERROR_MANAGER_REQUIRED": "You need manager permissions to perform this action.",
 		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions."
 	}
 }

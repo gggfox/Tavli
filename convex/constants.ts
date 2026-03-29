@@ -4,6 +4,7 @@ export const TABLE = {
 	ALL_EVENTS: "allEvents",
 	USER_SETTINGS: "userSettings",
 	USER_ROLES: "userRoles",
+	ORGANIZATIONS: "organizations",
 	FEATURE_FLAGS: "featureFlags",
 	RESTAURANTS: "restaurants",
 	MENUS: "menus",
@@ -23,13 +24,14 @@ export type TableName = (typeof TABLE)[keyof typeof TABLE];
 export type UserSettingsId = Id<typeof TABLE.USER_SETTINGS>;
 export type UserRoleDoc = Doc<typeof TABLE.USER_ROLES>;
 export type UserSettingsDoc = Doc<typeof TABLE.USER_SETTINGS>;
+export type OrganizationDoc = Doc<typeof TABLE.ORGANIZATIONS>;
 
 export const USER_ROLES = {
 	ADMIN: "admin",
-	SELLER: "seller",
-	BUYER: "buyer",
 	OWNER: "owner",
-	STAFF: "staff",
+	MANAGER: "manager",
+	CUSTOMER: "customer",
+	EMPLOYEE: "employee",
 } as const;
 
 export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];

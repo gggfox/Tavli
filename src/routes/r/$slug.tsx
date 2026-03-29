@@ -13,18 +13,15 @@ function getSessionErrorMessage(err: unknown): string {
 	if (raw.includes("Restaurant not found")) {
 		return "This restaurant was not found or is currently unavailable. Please check the link.";
 	}
-	if (raw.includes("Table not found")) {
-		return "This table is not available. Please ask the staff for a valid table link.";
-	}
 	return "Something went wrong. Please try refreshing the page.";
 }
 
-export const Route = createFileRoute("/r/$slug/t/$tableNumber")({
+export const Route = createFileRoute("/r/$slug")({
 	component: CustomerLayout,
 });
 
 function CustomerLayout() {
-	const { slug, tableNumber } = Route.useParams();
+	const { slug } = Route.useParams();
 	const { sessionId, setSession } = useSessionStore();
 	const [error, setError] = useState<string | null>(null);
 
@@ -44,19 +41,17 @@ function CustomerLayout() {
 		createSession
 			.mutateAsync({
 				restaurantSlug: slug,
-				tableNumber: Number.parseInt(tableNumber, 10),
 			})
 			.then((result) => {
 				setSession({
 					sessionId: result.sessionId,
 					restaurantId: result.restaurantId,
-					tableId: result.tableId,
 				});
 			})
 			.catch((err: unknown) => {
 				setError(getSessionErrorMessage(err));
 			});
-	}, [slug, tableNumber]);
+	}, [slug]);
 
 	if (error) {
 		return (
@@ -76,7 +71,7 @@ function CustomerLayout() {
 	if (!sessionId) {
 		return (
 			<div className="flex-1 flex items-center justify-center">
-				<p style={{ color: "var(--text-muted)" }}>Setting up your table...</p>
+				<p style={{ color: "var(--text-muted)" }}>Loading...</p>
 			</div>
 		);
 	}
@@ -91,7 +86,7 @@ function CustomerLayout() {
 				}}
 			>
 				<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-					Table {tableNumber}
+					Menu
 				</span>
 			</header>
 			<div className="flex-1 overflow-hidden">

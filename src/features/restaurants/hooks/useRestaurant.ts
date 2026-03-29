@@ -5,7 +5,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 
 export function useRestaurant() {
-	const { data: rawResult, isLoading } = useQuery(convexQuery(api.restaurants.getByOwner, {}));
+	const { data: rawResult, isLoading } = useQuery(convexQuery(api.restaurants.getAll, {}));
 
 	const restaurants = unwrapQuery(rawResult).data ?? [];
 

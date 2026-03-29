@@ -8,7 +8,7 @@ import {
 	UserInputValidationError,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireOwnerOrStaffRole } from "./_util/auth";
+import { getCurrentUserId, requireStaffRole } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -26,11 +26,19 @@ const selectedOptionValidator = v.object({
 // ============================================================================
 
 export const createDraft = mutation({
-	args: { sessionId: v.id(TABLE.SESSIONS) },
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		tableId: v.id(TABLE.TABLES),
+	},
 	handler: async (ctx, args) => {
 		const session = await ctx.db.get(args.sessionId);
 		if (session?.status !== "active") {
 			throw new NotFoundError("Active session not found");
+		}
+
+		const table = await ctx.db.get(args.tableId);
+		if (!table || !table.isActive || table.restaurantId !== session.restaurantId) {
+			throw new NotFoundError("Table not found");
 		}
 
 		const existingDraft = await ctx.db
@@ -45,7 +53,7 @@ export const createDraft = mutation({
 		return await ctx.db.insert(TABLE.ORDERS, {
 			sessionId: args.sessionId,
 			restaurantId: session.restaurantId,
-			tableId: session.tableId,
+			tableId: args.tableId,
 			status: "draft",
 			totalAmount: 0,
 			createdAt: now,
@@ -226,7 +234,7 @@ export const updateStatus = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerOrStaffRole(ctx, userId);
+		const [, error2] = await requireStaffRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const order = await ctx.db.get(args.orderId);
@@ -260,7 +268,7 @@ export const getActiveOrdersByRestaurant = query({
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerOrStaffRole(ctx, userId);
+		const [, error2] = await requireStaffRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const allOrders = await ctx.db

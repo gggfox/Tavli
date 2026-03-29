@@ -25,10 +25,12 @@ describe("TABLE constants", () => {
 });
 
 describe("USER_ROLES", () => {
-	it("has admin, owner, and staff", () => {
+	it("has admin, owner, manager, customer, and employee", () => {
 		expect(USER_ROLES.ADMIN).toBe("admin");
 		expect(USER_ROLES.OWNER).toBe("owner");
-		expect(USER_ROLES.STAFF).toBe("staff");
+		expect(USER_ROLES.MANAGER).toBe("manager");
+		expect(USER_ROLES.CUSTOMER).toBe("customer");
+		expect(USER_ROLES.EMPLOYEE).toBe("employee");
 	});
 
 	it("has exactly 5 roles", () => {

@@ -62,6 +62,7 @@ export const getAllUsers = query({
 				_id: user._id,
 				_creationTime: user._creationTime,
 				userId: user.userId,
+				email: user.email,
 				roles: user.roles,
 				organizationId: user.organizationId,
 				createdAt: user.createdAt,
@@ -84,7 +85,15 @@ type UpdateUserRolesErrors =
 export const updateUserRoles = mutation({
 	args: {
 		userId: v.string(),
-		roles: v.array(v.union(v.literal("admin"), v.literal("seller"), v.literal("buyer"))),
+		roles: v.array(
+			v.union(
+				v.literal("admin"),
+				v.literal("owner"),
+				v.literal("manager"),
+				v.literal("customer"),
+				v.literal("employee")
+			)
+		),
 		idempotencyKey: v.optional(v.string()),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, UpdateUserRolesErrors> {
@@ -168,7 +177,15 @@ type CreateUserRoleErrors =
 export const createUserRole = mutation({
 	args: {
 		userId: v.string(),
-		roles: v.array(v.union(v.literal("admin"), v.literal("seller"), v.literal("buyer"))),
+		roles: v.array(
+			v.union(
+				v.literal("admin"),
+				v.literal("owner"),
+				v.literal("manager"),
+				v.literal("customer"),
+				v.literal("employee")
+			)
+		),
 		organizationId: v.optional(v.string()),
 		idempotencyKey: v.optional(v.string()),
 	},
@@ -317,87 +334,56 @@ export const deleteUserRole = mutation({
 });
 
 /**
- * Self-assign admin role (development/testing only).
- * This allows any authenticated user to assign themselves admin role.
- * In production, this should be restricted or removed.
+ * Set own roles to an arbitrary combination (development/testing only).
+ * Requires admin role to prevent privilege escalation.
  */
-type SelfAssignAdminRoleErrors = NotAuthenticatedErrorObject | NotFoundErrorObject;
+type DevSetOwnRolesErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
-export const selfAssignAdminRole = mutation({
+export const devSetOwnRoles = mutation({
 	args: {
-		idempotencyKey: v.optional(v.string()),
+		roles: v.array(
+			v.union(
+				v.literal("admin"),
+				v.literal("owner"),
+				v.literal("manager"),
+				v.literal("customer"),
+				v.literal("employee")
+			)
+		),
 	},
-	handler: async function (ctx, args): AsyncReturn<string, SelfAssignAdminRoleErrors> {
+	handler: async function (ctx, args): AsyncReturn<string, DevSetOwnRolesErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) {
 			return [null, error];
+		}
+		const [, error2] = await requireAdminRole(ctx, userId);
+		if (error2) {
+			return [null, error2];
 		}
 
 		const identity = await ctx.auth.getUserIdentity();
 		const email = identity?.email ?? undefined;
 
-		// Check if user already has roles
 		const existingUser = await ctx.db
 			.query(TABLE.USER_ROLES)
 			.withIndex("by_user", (q) => q.eq("userId", userId))
 			.first();
 
-		// Check idempotency
-		if (args.idempotencyKey) {
-			if (existingUser) {
-				const [existing, existingError] = await findExistingEventByKey(
-					ctx,
-					TABLE.USER_ROLES,
-					existingUser._id,
-					args.idempotencyKey
-				);
-
-				if (existingError && existingError.name !== "NOT_FOUND") {
-					return [null, existingError];
-				}
-
-				if (existing) {
-					return [existingUser._id, null];
-				}
-			} else {
-				const [existing, existingError] = await findExistingEventByKeyAndType(
-					ctx,
-					TABLE.USER_ROLES,
-					args.idempotencyKey
-				);
-
-				if (existingError && existingError.name !== "NOT_FOUND") {
-					return [null, existingError];
-				}
-
-				if (existing) {
-					return [existing.aggregateId, null];
-				}
-			}
-		}
+		const now = Date.now();
 
 		if (existingUser) {
-			// Update existing roles to include admin if not already present
-			if (existingUser.roles.includes("admin")) {
-				return [existingUser._id, null]; // Already has admin role
-			}
-
-			const now = Date.now();
 			await ctx.db.patch(existingUser._id, {
-				roles: [...existingUser.roles, "admin"],
+				roles: args.roles,
 				email,
 				updatedAt: now,
 			});
-
 			return [existingUser._id, null];
 		}
 
-		// Create new role entry with admin role
-		const now = Date.now();
 		const roleId = await ctx.db.insert(TABLE.USER_ROLES, {
-			userId: userId,
+			userId,
 			email,
-			roles: ["admin"],
+			roles: args.roles,
 			createdAt: now,
 			updatedAt: now,
 		});

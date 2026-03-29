@@ -11,27 +11,26 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
-import { Route as AdminRestaurantRouteImport } from './routes/admin/restaurant'
+import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
-import { Route as AdminOptionsRouteImport } from './routes/admin/options'
 import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
+import { Route as RSlugMenuRouteImport } from './routes/r/$slug/menu'
+import { Route as RSlugLangRouteImport } from './routes/r/$slug/$lang'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
-import { Route as AdminRestaurantTablesRouteImport } from './routes/admin/restaurant/tables'
 import { Route as AdminMenusMenuIdRouteImport } from './routes/admin/menus/$menuId'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
-import { Route as RSlugTTableNumberRouteImport } from './routes/r/$slug/t/$tableNumber'
+import { Route as RSlugOrderOrderIdRouteImport } from './routes/r/$slug/order/$orderId'
+import { Route as RSlugLangMenuRouteImport } from './routes/r/$slug/$lang/menu'
+import { Route as RSlugLangCartRouteImport } from './routes/r/$slug/$lang/cart'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
 import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
-import { Route as RSlugTTableNumberMenuRouteImport } from './routes/r/$slug/t/$tableNumber/menu'
-import { Route as RSlugTTableNumberLangRouteImport } from './routes/r/$slug/t/$tableNumber/$lang'
-import { Route as RSlugTTableNumberLangMenuRouteImport } from './routes/r/$slug/t/$tableNumber/$lang/menu'
-import { Route as RSlugTTableNumberLangCartRouteImport } from './routes/r/$slug/t/$tableNumber/$lang/cart'
-import { Route as RSlugTTableNumberLangOrderOrderIdRouteImport } from './routes/r/$slug/t/$tableNumber/$lang/order/$orderId'
+import { Route as RSlugLangOrderOrderIdRouteImport } from './routes/r/$slug/$lang/order/$orderId'
 
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
@@ -41,6 +40,11 @@ const AdminRoute = AdminRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RSlugRoute = RSlugRouteImport.update({
+  id: '/r/$slug',
+  path: '/r/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -53,9 +57,9 @@ const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
   path: '/restaurants',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminRestaurantRoute = AdminRestaurantRouteImport.update({
-  id: '/restaurant',
-  path: '/restaurant',
+const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminOrdersRoute = AdminOrdersRouteImport.update({
@@ -63,15 +67,20 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminOptionsRoute = AdminOptionsRouteImport.update({
-  id: '/options',
-  path: '/options',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminMenusIndexRoute = AdminMenusIndexRouteImport.update({
   id: '/menus/',
   path: '/menus/',
   getParentRoute: () => AdminRoute,
+} as any)
+const RSlugMenuRoute = RSlugMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => RSlugRoute,
+} as any)
+const RSlugLangRoute = RSlugLangRouteImport.update({
+  id: '/$lang',
+  path: '/$lang',
+  getParentRoute: () => RSlugRoute,
 } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
   id: '/demo/start/server-funcs',
@@ -88,11 +97,6 @@ const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
   path: '/demo/api/names',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminRestaurantTablesRoute = AdminRestaurantTablesRouteImport.update({
-  id: '/tables',
-  path: '/tables',
-  getParentRoute: () => AdminRestaurantRoute,
-} as any)
 const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
   id: '/menus/$menuId',
   path: '/menus/$menuId',
@@ -103,10 +107,20 @@ const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
   path: '/demo/start/ssr/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RSlugTTableNumberRoute = RSlugTTableNumberRouteImport.update({
-  id: '/r/$slug/t/$tableNumber',
-  path: '/r/$slug/t/$tableNumber',
-  getParentRoute: () => rootRouteImport,
+const RSlugOrderOrderIdRoute = RSlugOrderOrderIdRouteImport.update({
+  id: '/order/$orderId',
+  path: '/order/$orderId',
+  getParentRoute: () => RSlugRoute,
+} as any)
+const RSlugLangMenuRoute = RSlugLangMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => RSlugLangRoute,
+} as any)
+const RSlugLangCartRoute = RSlugLangCartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => RSlugLangRoute,
 } as any)
 const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
   id: '/demo/start/ssr/spa-mode',
@@ -123,199 +137,170 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
   path: '/demo/start/ssr/data-only',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RSlugTTableNumberMenuRoute = RSlugTTableNumberMenuRouteImport.update({
-  id: '/menu',
-  path: '/menu',
-  getParentRoute: () => RSlugTTableNumberRoute,
+const RSlugLangOrderOrderIdRoute = RSlugLangOrderOrderIdRouteImport.update({
+  id: '/order/$orderId',
+  path: '/order/$orderId',
+  getParentRoute: () => RSlugLangRoute,
 } as any)
-const RSlugTTableNumberLangRoute = RSlugTTableNumberLangRouteImport.update({
-  id: '/$lang',
-  path: '/$lang',
-  getParentRoute: () => RSlugTTableNumberRoute,
-} as any)
-const RSlugTTableNumberLangMenuRoute =
-  RSlugTTableNumberLangMenuRouteImport.update({
-    id: '/menu',
-    path: '/menu',
-    getParentRoute: () => RSlugTTableNumberLangRoute,
-  } as any)
-const RSlugTTableNumberLangCartRoute =
-  RSlugTTableNumberLangCartRouteImport.update({
-    id: '/cart',
-    path: '/cart',
-    getParentRoute: () => RSlugTTableNumberLangRoute,
-  } as any)
-const RSlugTTableNumberLangOrderOrderIdRoute =
-  RSlugTTableNumberLangOrderOrderIdRouteImport.update({
-    id: '/order/$orderId',
-    path: '/order/$orderId',
-    getParentRoute: () => RSlugTTableNumberLangRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/admin/options': typeof AdminOptionsRoute
   '/admin/orders': typeof AdminOrdersRoute
-  '/admin/restaurant': typeof AdminRestaurantRouteWithChildren
+  '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
-  '/admin/restaurant/tables': typeof AdminRestaurantTablesRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/r/$slug/$lang': typeof RSlugLangRouteWithChildren
+  '/r/$slug/menu': typeof RSlugMenuRoute
   '/admin/menus': typeof AdminMenusIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
-  '/r/$slug/t/$tableNumber': typeof RSlugTTableNumberRouteWithChildren
+  '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
+  '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
+  '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
-  '/r/$slug/t/$tableNumber/$lang': typeof RSlugTTableNumberLangRouteWithChildren
-  '/r/$slug/t/$tableNumber/menu': typeof RSlugTTableNumberMenuRoute
-  '/r/$slug/t/$tableNumber/$lang/cart': typeof RSlugTTableNumberLangCartRoute
-  '/r/$slug/t/$tableNumber/$lang/menu': typeof RSlugTTableNumberLangMenuRoute
-  '/r/$slug/t/$tableNumber/$lang/order/$orderId': typeof RSlugTTableNumberLangOrderOrderIdRoute
+  '/r/$slug/$lang/order/$orderId': typeof RSlugLangOrderOrderIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/admin/options': typeof AdminOptionsRoute
   '/admin/orders': typeof AdminOrdersRoute
-  '/admin/restaurant': typeof AdminRestaurantRouteWithChildren
+  '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
-  '/admin/restaurant/tables': typeof AdminRestaurantTablesRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/r/$slug/$lang': typeof RSlugLangRouteWithChildren
+  '/r/$slug/menu': typeof RSlugMenuRoute
   '/admin/menus': typeof AdminMenusIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
-  '/r/$slug/t/$tableNumber': typeof RSlugTTableNumberRouteWithChildren
+  '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
+  '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
+  '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
-  '/r/$slug/t/$tableNumber/$lang': typeof RSlugTTableNumberLangRouteWithChildren
-  '/r/$slug/t/$tableNumber/menu': typeof RSlugTTableNumberMenuRoute
-  '/r/$slug/t/$tableNumber/$lang/cart': typeof RSlugTTableNumberLangCartRoute
-  '/r/$slug/t/$tableNumber/$lang/menu': typeof RSlugTTableNumberLangMenuRoute
-  '/r/$slug/t/$tableNumber/$lang/order/$orderId': typeof RSlugTTableNumberLangOrderOrderIdRoute
+  '/r/$slug/$lang/order/$orderId': typeof RSlugLangOrderOrderIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/admin/options': typeof AdminOptionsRoute
   '/admin/orders': typeof AdminOrdersRoute
-  '/admin/restaurant': typeof AdminRestaurantRouteWithChildren
+  '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
-  '/admin/restaurant/tables': typeof AdminRestaurantTablesRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/r/$slug/$lang': typeof RSlugLangRouteWithChildren
+  '/r/$slug/menu': typeof RSlugMenuRoute
   '/admin/menus/': typeof AdminMenusIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
-  '/r/$slug/t/$tableNumber': typeof RSlugTTableNumberRouteWithChildren
+  '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
+  '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
+  '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
   '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
-  '/r/$slug/t/$tableNumber/$lang': typeof RSlugTTableNumberLangRouteWithChildren
-  '/r/$slug/t/$tableNumber/menu': typeof RSlugTTableNumberMenuRoute
-  '/r/$slug/t/$tableNumber/$lang/cart': typeof RSlugTTableNumberLangCartRoute
-  '/r/$slug/t/$tableNumber/$lang/menu': typeof RSlugTTableNumberLangMenuRoute
-  '/r/$slug/t/$tableNumber/$lang/order/$orderId': typeof RSlugTTableNumberLangOrderOrderIdRoute
+  '/r/$slug/$lang/order/$orderId': typeof RSlugLangOrderOrderIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
-    | '/admin/options'
     | '/admin/orders'
-    | '/admin/restaurant'
+    | '/admin/organizations'
     | '/admin/restaurants'
     | '/admin/users'
+    | '/r/$slug'
     | '/admin/menus/$menuId'
-    | '/admin/restaurant/tables'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/r/$slug/$lang'
+    | '/r/$slug/menu'
     | '/admin/menus'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
-    | '/r/$slug/t/$tableNumber'
+    | '/r/$slug/$lang/cart'
+    | '/r/$slug/$lang/menu'
+    | '/r/$slug/order/$orderId'
     | '/demo/start/ssr'
-    | '/r/$slug/t/$tableNumber/$lang'
-    | '/r/$slug/t/$tableNumber/menu'
-    | '/r/$slug/t/$tableNumber/$lang/cart'
-    | '/r/$slug/t/$tableNumber/$lang/menu'
-    | '/r/$slug/t/$tableNumber/$lang/order/$orderId'
+    | '/r/$slug/$lang/order/$orderId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/admin'
-    | '/admin/options'
     | '/admin/orders'
-    | '/admin/restaurant'
+    | '/admin/organizations'
     | '/admin/restaurants'
     | '/admin/users'
+    | '/r/$slug'
     | '/admin/menus/$menuId'
-    | '/admin/restaurant/tables'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/r/$slug/$lang'
+    | '/r/$slug/menu'
     | '/admin/menus'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
-    | '/r/$slug/t/$tableNumber'
+    | '/r/$slug/$lang/cart'
+    | '/r/$slug/$lang/menu'
+    | '/r/$slug/order/$orderId'
     | '/demo/start/ssr'
-    | '/r/$slug/t/$tableNumber/$lang'
-    | '/r/$slug/t/$tableNumber/menu'
-    | '/r/$slug/t/$tableNumber/$lang/cart'
-    | '/r/$slug/t/$tableNumber/$lang/menu'
-    | '/r/$slug/t/$tableNumber/$lang/order/$orderId'
+    | '/r/$slug/$lang/order/$orderId'
   id:
     | '__root__'
     | '/'
     | '/admin'
-    | '/admin/options'
     | '/admin/orders'
-    | '/admin/restaurant'
+    | '/admin/organizations'
     | '/admin/restaurants'
     | '/admin/users'
+    | '/r/$slug'
     | '/admin/menus/$menuId'
-    | '/admin/restaurant/tables'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/r/$slug/$lang'
+    | '/r/$slug/menu'
     | '/admin/menus/'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
-    | '/r/$slug/t/$tableNumber'
+    | '/r/$slug/$lang/cart'
+    | '/r/$slug/$lang/menu'
+    | '/r/$slug/order/$orderId'
     | '/demo/start/ssr/'
-    | '/r/$slug/t/$tableNumber/$lang'
-    | '/r/$slug/t/$tableNumber/menu'
-    | '/r/$slug/t/$tableNumber/$lang/cart'
-    | '/r/$slug/t/$tableNumber/$lang/menu'
-    | '/r/$slug/t/$tableNumber/$lang/order/$orderId'
+    | '/r/$slug/$lang/order/$orderId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  RSlugRoute: typeof RSlugRouteWithChildren
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
   DemoStartServerFuncsRoute: typeof DemoStartServerFuncsRoute
   DemoStartSsrDataOnlyRoute: typeof DemoStartSsrDataOnlyRoute
   DemoStartSsrFullSsrRoute: typeof DemoStartSsrFullSsrRoute
   DemoStartSsrSpaModeRoute: typeof DemoStartSsrSpaModeRoute
-  RSlugTTableNumberRoute: typeof RSlugTTableNumberRouteWithChildren
   DemoStartSsrIndexRoute: typeof DemoStartSsrIndexRoute
 }
 
@@ -335,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/r/$slug': {
+      id: '/r/$slug'
+      path: '/r/$slug'
+      fullPath: '/r/$slug'
+      preLoaderRoute: typeof RSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -349,11 +341,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRestaurantsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/restaurant': {
-      id: '/admin/restaurant'
-      path: '/restaurant'
-      fullPath: '/admin/restaurant'
-      preLoaderRoute: typeof AdminRestaurantRouteImport
+    '/admin/organizations': {
+      id: '/admin/organizations'
+      path: '/organizations'
+      fullPath: '/admin/organizations'
+      preLoaderRoute: typeof AdminOrganizationsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/orders': {
@@ -363,19 +355,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/options': {
-      id: '/admin/options'
-      path: '/options'
-      fullPath: '/admin/options'
-      preLoaderRoute: typeof AdminOptionsRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/menus/': {
       id: '/admin/menus/'
       path: '/menus'
       fullPath: '/admin/menus'
       preLoaderRoute: typeof AdminMenusIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/r/$slug/menu': {
+      id: '/r/$slug/menu'
+      path: '/menu'
+      fullPath: '/r/$slug/menu'
+      preLoaderRoute: typeof RSlugMenuRouteImport
+      parentRoute: typeof RSlugRoute
+    }
+    '/r/$slug/$lang': {
+      id: '/r/$slug/$lang'
+      path: '/$lang'
+      fullPath: '/r/$slug/$lang'
+      preLoaderRoute: typeof RSlugLangRouteImport
+      parentRoute: typeof RSlugRoute
     }
     '/demo/start/server-funcs': {
       id: '/demo/start/server-funcs'
@@ -398,13 +397,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoApiNamesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/restaurant/tables': {
-      id: '/admin/restaurant/tables'
-      path: '/tables'
-      fullPath: '/admin/restaurant/tables'
-      preLoaderRoute: typeof AdminRestaurantTablesRouteImport
-      parentRoute: typeof AdminRestaurantRoute
-    }
     '/admin/menus/$menuId': {
       id: '/admin/menus/$menuId'
       path: '/menus/$menuId'
@@ -419,12 +411,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/r/$slug/t/$tableNumber': {
-      id: '/r/$slug/t/$tableNumber'
-      path: '/r/$slug/t/$tableNumber'
-      fullPath: '/r/$slug/t/$tableNumber'
-      preLoaderRoute: typeof RSlugTTableNumberRouteImport
-      parentRoute: typeof rootRouteImport
+    '/r/$slug/order/$orderId': {
+      id: '/r/$slug/order/$orderId'
+      path: '/order/$orderId'
+      fullPath: '/r/$slug/order/$orderId'
+      preLoaderRoute: typeof RSlugOrderOrderIdRouteImport
+      parentRoute: typeof RSlugRoute
+    }
+    '/r/$slug/$lang/menu': {
+      id: '/r/$slug/$lang/menu'
+      path: '/menu'
+      fullPath: '/r/$slug/$lang/menu'
+      preLoaderRoute: typeof RSlugLangMenuRouteImport
+      parentRoute: typeof RSlugLangRoute
+    }
+    '/r/$slug/$lang/cart': {
+      id: '/r/$slug/$lang/cart'
+      path: '/cart'
+      fullPath: '/r/$slug/$lang/cart'
+      preLoaderRoute: typeof RSlugLangCartRouteImport
+      parentRoute: typeof RSlugLangRoute
     }
     '/demo/start/ssr/spa-mode': {
       id: '/demo/start/ssr/spa-mode'
@@ -447,60 +453,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/r/$slug/t/$tableNumber/menu': {
-      id: '/r/$slug/t/$tableNumber/menu'
-      path: '/menu'
-      fullPath: '/r/$slug/t/$tableNumber/menu'
-      preLoaderRoute: typeof RSlugTTableNumberMenuRouteImport
-      parentRoute: typeof RSlugTTableNumberRoute
-    }
-    '/r/$slug/t/$tableNumber/$lang': {
-      id: '/r/$slug/t/$tableNumber/$lang'
-      path: '/$lang'
-      fullPath: '/r/$slug/t/$tableNumber/$lang'
-      preLoaderRoute: typeof RSlugTTableNumberLangRouteImport
-      parentRoute: typeof RSlugTTableNumberRoute
-    }
-    '/r/$slug/t/$tableNumber/$lang/menu': {
-      id: '/r/$slug/t/$tableNumber/$lang/menu'
-      path: '/menu'
-      fullPath: '/r/$slug/t/$tableNumber/$lang/menu'
-      preLoaderRoute: typeof RSlugTTableNumberLangMenuRouteImport
-      parentRoute: typeof RSlugTTableNumberLangRoute
-    }
-    '/r/$slug/t/$tableNumber/$lang/cart': {
-      id: '/r/$slug/t/$tableNumber/$lang/cart'
-      path: '/cart'
-      fullPath: '/r/$slug/t/$tableNumber/$lang/cart'
-      preLoaderRoute: typeof RSlugTTableNumberLangCartRouteImport
-      parentRoute: typeof RSlugTTableNumberLangRoute
-    }
-    '/r/$slug/t/$tableNumber/$lang/order/$orderId': {
-      id: '/r/$slug/t/$tableNumber/$lang/order/$orderId'
+    '/r/$slug/$lang/order/$orderId': {
+      id: '/r/$slug/$lang/order/$orderId'
       path: '/order/$orderId'
-      fullPath: '/r/$slug/t/$tableNumber/$lang/order/$orderId'
-      preLoaderRoute: typeof RSlugTTableNumberLangOrderOrderIdRouteImport
-      parentRoute: typeof RSlugTTableNumberLangRoute
+      fullPath: '/r/$slug/$lang/order/$orderId'
+      preLoaderRoute: typeof RSlugLangOrderOrderIdRouteImport
+      parentRoute: typeof RSlugLangRoute
     }
   }
 }
 
-interface AdminRestaurantRouteChildren {
-  AdminRestaurantTablesRoute: typeof AdminRestaurantTablesRoute
-}
-
-const AdminRestaurantRouteChildren: AdminRestaurantRouteChildren = {
-  AdminRestaurantTablesRoute: AdminRestaurantTablesRoute,
-}
-
-const AdminRestaurantRouteWithChildren = AdminRestaurantRoute._addFileChildren(
-  AdminRestaurantRouteChildren,
-)
-
 interface AdminRouteChildren {
-  AdminOptionsRoute: typeof AdminOptionsRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
-  AdminRestaurantRoute: typeof AdminRestaurantRouteWithChildren
+  AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
@@ -508,9 +473,8 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminOptionsRoute: AdminOptionsRoute,
   AdminOrdersRoute: AdminOrdersRoute,
-  AdminRestaurantRoute: AdminRestaurantRouteWithChildren,
+  AdminOrganizationsRoute: AdminOrganizationsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
@@ -519,47 +483,46 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface RSlugTTableNumberLangRouteChildren {
-  RSlugTTableNumberLangCartRoute: typeof RSlugTTableNumberLangCartRoute
-  RSlugTTableNumberLangMenuRoute: typeof RSlugTTableNumberLangMenuRoute
-  RSlugTTableNumberLangOrderOrderIdRoute: typeof RSlugTTableNumberLangOrderOrderIdRoute
+interface RSlugLangRouteChildren {
+  RSlugLangCartRoute: typeof RSlugLangCartRoute
+  RSlugLangMenuRoute: typeof RSlugLangMenuRoute
+  RSlugLangOrderOrderIdRoute: typeof RSlugLangOrderOrderIdRoute
 }
 
-const RSlugTTableNumberLangRouteChildren: RSlugTTableNumberLangRouteChildren = {
-  RSlugTTableNumberLangCartRoute: RSlugTTableNumberLangCartRoute,
-  RSlugTTableNumberLangMenuRoute: RSlugTTableNumberLangMenuRoute,
-  RSlugTTableNumberLangOrderOrderIdRoute:
-    RSlugTTableNumberLangOrderOrderIdRoute,
+const RSlugLangRouteChildren: RSlugLangRouteChildren = {
+  RSlugLangCartRoute: RSlugLangCartRoute,
+  RSlugLangMenuRoute: RSlugLangMenuRoute,
+  RSlugLangOrderOrderIdRoute: RSlugLangOrderOrderIdRoute,
 }
 
-const RSlugTTableNumberLangRouteWithChildren =
-  RSlugTTableNumberLangRoute._addFileChildren(
-    RSlugTTableNumberLangRouteChildren,
-  )
+const RSlugLangRouteWithChildren = RSlugLangRoute._addFileChildren(
+  RSlugLangRouteChildren,
+)
 
-interface RSlugTTableNumberRouteChildren {
-  RSlugTTableNumberLangRoute: typeof RSlugTTableNumberLangRouteWithChildren
-  RSlugTTableNumberMenuRoute: typeof RSlugTTableNumberMenuRoute
+interface RSlugRouteChildren {
+  RSlugLangRoute: typeof RSlugLangRouteWithChildren
+  RSlugMenuRoute: typeof RSlugMenuRoute
+  RSlugOrderOrderIdRoute: typeof RSlugOrderOrderIdRoute
 }
 
-const RSlugTTableNumberRouteChildren: RSlugTTableNumberRouteChildren = {
-  RSlugTTableNumberLangRoute: RSlugTTableNumberLangRouteWithChildren,
-  RSlugTTableNumberMenuRoute: RSlugTTableNumberMenuRoute,
+const RSlugRouteChildren: RSlugRouteChildren = {
+  RSlugLangRoute: RSlugLangRouteWithChildren,
+  RSlugMenuRoute: RSlugMenuRoute,
+  RSlugOrderOrderIdRoute: RSlugOrderOrderIdRoute,
 }
 
-const RSlugTTableNumberRouteWithChildren =
-  RSlugTTableNumberRoute._addFileChildren(RSlugTTableNumberRouteChildren)
+const RSlugRouteWithChildren = RSlugRoute._addFileChildren(RSlugRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  RSlugRoute: RSlugRouteWithChildren,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoStartApiRequestRoute: DemoStartApiRequestRoute,
   DemoStartServerFuncsRoute: DemoStartServerFuncsRoute,
   DemoStartSsrDataOnlyRoute: DemoStartSsrDataOnlyRoute,
   DemoStartSsrFullSsrRoute: DemoStartSsrFullSsrRoute,
   DemoStartSsrSpaModeRoute: DemoStartSsrSpaModeRoute,
-  RSlugTTableNumberRoute: RSlugTTableNumberRouteWithChildren,
   DemoStartSsrIndexRoute: DemoStartSsrIndexRoute,
 }
 export const routeTree = rootRouteImport

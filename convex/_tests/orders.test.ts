@@ -81,30 +81,30 @@ describe("orders", () => {
 	describe("createDraft", () => {
 		it("creates a draft order for an active session", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId } = await seedRestaurantAndSession(t);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			expect(orderId).toBeTruthy();
 		});
 
 		it("returns existing draft if one already exists", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId } = await seedRestaurantAndSession(t);
 
-			const id1 = await t.mutation(api.orders.createDraft, { sessionId });
-			const id2 = await t.mutation(api.orders.createDraft, { sessionId });
+			const id1 = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			const id2 = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			expect(id1).toBe(id2);
 		});
 
 		it("throws for a closed session", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId } = await seedRestaurantAndSession(t);
 
 			await t.run(async (ctx) => {
 				await ctx.db.patch(sessionId, { status: "closed", closedAt: Date.now() });
 			});
 
-			await expect(t.mutation(api.orders.createDraft, { sessionId })).rejects.toThrow(
+			await expect(t.mutation(api.orders.createDraft, { sessionId, tableId })).rejects.toThrow(
 				"Active session not found"
 			);
 		});
@@ -113,10 +113,10 @@ describe("orders", () => {
 	describe("addItem", () => {
 		it("adds an item to a draft order and recalculates total", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			const itemId = await t.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
@@ -136,10 +136,10 @@ describe("orders", () => {
 	describe("removeItem", () => {
 		it("removes an item and recalculates total", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			const itemId = await t.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
@@ -158,10 +158,10 @@ describe("orders", () => {
 	describe("submitOrder", () => {
 		it("transitions a draft order to submitted", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			await t.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
@@ -178,9 +178,9 @@ describe("orders", () => {
 
 		it("throws when submitting an empty order", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId } = await seedRestaurantAndSession(t);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 
 			await expect(t.mutation(api.orders.submitOrder, { orderId })).rejects.toThrow(
 				"items: Order must have at least one item"
@@ -191,20 +191,20 @@ describe("orders", () => {
 	describe("updateStatus", () => {
 		it("follows valid state transitions", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
-			const authed = t.withIdentity({ subject: "staff1" });
+			const authed = t.withIdentity({ subject: "employee1" });
 
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
-					userId: "staff1",
-					roles: ["staff"],
+					userId: "employee1",
+					roles: ["employee"],
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
 			});
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			await t.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
@@ -237,20 +237,20 @@ describe("orders", () => {
 
 		it("rejects invalid state transitions", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
-			const authed = t.withIdentity({ subject: "staff1" });
+			const authed = t.withIdentity({ subject: "employee1" });
 
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
-					userId: "staff1",
-					roles: ["staff"],
+					userId: "employee1",
+					roles: ["employee"],
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
 			});
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			await t.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
@@ -269,10 +269,10 @@ describe("orders", () => {
 
 		it("requires authentication", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId });
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
 			await t.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
@@ -300,6 +300,175 @@ describe("orders", () => {
 				.query(api.orders.getOrderWithItems, { orderId: fakeId })
 				.catch(() => null);
 			expect(result).toBeNull();
+		});
+	});
+
+	describe("getActiveOrdersByRestaurant", () => {
+		it("returns submitted orders for an authenticated owner", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			await t.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 2,
+				selectedOptions: [],
+			});
+			await t.mutation(api.orders.submitOrder, { orderId });
+
+			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+
+			expect(error).toBeNull();
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			expect(orders).toHaveLength(1);
+			expect(orders[0].status).toBe("submitted");
+			expect(orders[0].items).toHaveLength(1);
+			expect(orders[0].items[0].menuItemName).toBe("Bruschetta");
+			expect(orders[0].tableNumber).toBe(1);
+		});
+
+		it("filters out draft, paid, and cancelled orders", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const draftOrderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			await t.mutation(api.orders.addItem, {
+				orderId: draftOrderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+
+			await t.run(async (ctx) => {
+				await ctx.db.patch(sessionId, { status: "closed", closedAt: Date.now() });
+			});
+
+			let submittedOrderId: Id<"orders">;
+			let paidOrderId: Id<"orders">;
+			let cancelledOrderId: Id<"orders">;
+
+			await t.run(async (ctx) => {
+				const tableId = (await ctx.db.get(draftOrderId))!.tableId;
+				const newSession1 = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+
+				submittedOrderId = await ctx.db.insert("orders", {
+					sessionId: newSession1,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 800,
+					submittedAt: Date.now(),
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: submittedOrderId,
+					menuItemId,
+					menuItemName: "Bruschetta",
+					quantity: 1,
+					unitPrice: 800,
+					selectedOptions: [],
+					lineTotal: 800,
+					createdAt: Date.now(),
+				});
+
+				paidOrderId = await ctx.db.insert("orders", {
+					sessionId: newSession1,
+					restaurantId,
+					tableId,
+					status: "paid",
+					totalAmount: 800,
+					submittedAt: Date.now(),
+					paidAt: Date.now(),
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+
+				cancelledOrderId = await ctx.db.insert("orders", {
+					sessionId: newSession1,
+					restaurantId,
+					tableId,
+					status: "cancelled",
+					totalAmount: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+
+			expect(error).toBeNull();
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			expect(orders).toHaveLength(1);
+			expect(orders[0]._id).toBe(submittedOrderId!);
+		});
+
+		it("returns auth error for unauthenticated users", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId } = await seedRestaurantAndSession(t);
+
+			const [orders, error] = await t.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+
+			expect(orders).toBeNull();
+			if (error === null || Array.isArray(error)) throw new Error("Expected error object");
+			expect(error.name).toBe("NOT_AUTHENTICATED");
+		});
+
+		it("returns auth error for users without required role", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId } = await seedRestaurantAndSession(t);
+			const authed = t.withIdentity({ subject: "customer1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "customer1",
+					roles: ["customer"],
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+
+			expect(orders).toBeNull();
+			if (error === null || Array.isArray(error)) throw new Error("Expected error object");
+			expect(error.name).toBe("NOT_AUTHORIZED");
 		});
 	});
 });

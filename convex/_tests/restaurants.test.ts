@@ -1,20 +1,36 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
+
+async function seedOrganization(t: ReturnType<typeof convexTest>) {
+	let orgId: Id<"organizations">;
+	await t.run(async (ctx) => {
+		orgId = await ctx.db.insert("organizations", {
+			name: "Test Org",
+			isActive: true,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
+	return orgId!;
+}
 
 describe("restaurants", () => {
 	describe("create", () => {
 		it("creates a restaurant when authenticated", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
 
 			const [id, error] = await authed.mutation(api.restaurants.create, {
 				name: "Test Restaurant",
 				slug: "test-restaurant",
 				currency: "USD",
+				organizationId: orgId,
 			});
 
 			expect(error).toBeNull();
@@ -23,11 +39,13 @@ describe("restaurants", () => {
 
 		it("fails when not authenticated", async () => {
 			const t = convexTest(schema, modules);
+			const orgId = await seedOrganization(t);
 
 			const [value, error] = await t.mutation(api.restaurants.create, {
 				name: "Test Restaurant",
 				slug: "test-restaurant",
 				currency: "USD",
+				organizationId: orgId,
 			});
 
 			expect(value).toBeNull();
@@ -38,17 +56,20 @@ describe("restaurants", () => {
 		it("rejects duplicate slugs", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
 
 			await authed.mutation(api.restaurants.create, {
 				name: "First",
 				slug: "same-slug",
 				currency: "USD",
+				organizationId: orgId,
 			});
 
 			const [value, error] = await authed.mutation(api.restaurants.create, {
 				name: "Second",
 				slug: "same-slug",
 				currency: "EUR",
+				organizationId: orgId,
 			});
 
 			expect(value).toBeNull();
@@ -61,11 +82,13 @@ describe("restaurants", () => {
 		it("returns the restaurant matching the slug", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
 
 			await authed.mutation(api.restaurants.create, {
 				name: "Pizzeria",
 				slug: "pizzeria",
 				currency: "EUR",
+				organizationId: orgId,
 			});
 
 			const restaurant = await t.query(api.restaurants.getBySlug, { slug: "pizzeria" });
@@ -86,11 +109,13 @@ describe("restaurants", () => {
 		it("returns restaurants owned by the authenticated user", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "owner1" });
+			const orgId = await seedOrganization(t);
 
 			await authed.mutation(api.restaurants.create, {
 				name: "My Place",
 				slug: "my-place",
 				currency: "USD",
+				organizationId: orgId,
 			});
 
 			const [restaurants, error] = await authed.query(api.restaurants.getByOwner);
@@ -113,8 +138,8 @@ describe("restaurants", () => {
 		it("toggles the isActive state of a restaurant", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
 
-			// Give the user the owner role
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
 					userId: "user1",
@@ -128,6 +153,7 @@ describe("restaurants", () => {
 				name: "Toggle Test",
 				slug: "toggle-test",
 				currency: "USD",
+				organizationId: orgId,
 			});
 
 			const [newState, error] = await authed.mutation(api.restaurants.toggleActive, {

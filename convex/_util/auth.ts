@@ -6,7 +6,7 @@
  * 1. Prevent exposing internal architecture to users
  * 2. Allow i18n-compatible error handling on the frontend
  *
- * Admins have implicit access to all buyer and seller functionalities.
+ * Admins have implicit access to all role-specific functionalities.
  */
 import type { DatabaseReader, DatabaseWriter } from "../_generated/server";
 import { TABLE, USER_ROLES, UserRole } from "../constants";
@@ -25,10 +25,10 @@ import { AsyncReturn } from "../_shared/types";
  */
 export const RoleErrorMessages = {
 	ADMIN_REQUIRED: "ERROR_ADMIN_ROLE_REQUIRED",
-	SELLER_REQUIRED: "ERROR_SELLER_ROLE_REQUIRED",
-	BUYER_REQUIRED: "ERROR_BUYER_ROLE_REQUIRED",
 	OWNER_REQUIRED: "ERROR_OWNER_ROLE_REQUIRED",
-	STAFF_REQUIRED: "ERROR_STAFF_ROLE_REQUIRED",
+	MANAGER_REQUIRED: "ERROR_MANAGER_ROLE_REQUIRED",
+	CUSTOMER_REQUIRED: "ERROR_CUSTOMER_ROLE_REQUIRED",
+	EMPLOYEE_REQUIRED: "ERROR_EMPLOYEE_ROLE_REQUIRED",
 	INSUFFICIENT_PERMISSIONS: "ERROR_INSUFFICIENT_ROLES",
 } as const;
 
@@ -88,79 +88,24 @@ export async function requireAdminRole(
 }
 
 /**
- * Require seller role. Returns error if user doesn't have seller role.
- * Note: Admins automatically pass this check as they have implicit seller access.
+ * Require manager role. Returns error if user doesn't have manager, owner, or admin role.
+ * Admins and owners automatically pass this check.
  */
-export async function requireSellerRole(
+export async function requireManagerRole(
 	ctx: RoleDbContext,
 	userId: string
 ): AsyncReturn<null, NotAuthorizedErrorObject> {
 	const roles = await fetchUserRoles(ctx, userId);
 
-	// Admins have implicit access to seller functionalities
-	if (roles.includes(USER_ROLES.ADMIN)) {
+	if (
+		roles.includes(USER_ROLES.ADMIN) ||
+		roles.includes(USER_ROLES.OWNER) ||
+		roles.includes(USER_ROLES.MANAGER)
+	) {
 		return [null, null];
 	}
 
-	if (!roles.includes(USER_ROLES.SELLER)) {
-		return [null, new NotAuthorizedError(RoleErrorMessages.SELLER_REQUIRED).toObject()];
-	}
-
-	return [null, null];
-}
-
-/**
- * Require buyer role. Returns error if user doesn't have buyer role.
- * Note: Admins automatically pass this check as they have implicit buyer access.
- */
-export async function requireBuyerRole(
-	ctx: RoleDbContext,
-	userId: string
-): AsyncReturn<null, NotAuthorizedErrorObject> {
-	const roles = await fetchUserRoles(ctx, userId);
-
-	// Admins have implicit access to buyer functionalities
-	if (roles.includes(USER_ROLES.ADMIN)) {
-		return [null, null];
-	}
-
-	if (!roles.includes(USER_ROLES.BUYER)) {
-		return [null, new NotAuthorizedError(RoleErrorMessages.BUYER_REQUIRED).toObject()];
-	}
-
-	return [null, null];
-}
-
-/**
- * Require admin or seller role. Returns error if user doesn't have either role.
- */
-export async function requireAdminOrSellerRole(
-	ctx: RoleDbContext,
-	userId: string
-): AsyncReturn<null, NotAuthorizedErrorObject> {
-	const roles = await fetchUserRoles(ctx, userId);
-
-	if (!roles.includes(USER_ROLES.ADMIN) && !roles.includes(USER_ROLES.SELLER)) {
-		return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-	}
-
-	return [null, null];
-}
-
-/**
- * Require admin or buyer role. Returns error if user doesn't have either role.
- */
-export async function requireAdminOrBuyerRole(
-	ctx: RoleDbContext,
-	userId: string
-): AsyncReturn<null, NotAuthorizedErrorObject> {
-	const roles = await fetchUserRoles(ctx, userId);
-
-	if (!roles.includes(USER_ROLES.ADMIN) && !roles.includes(USER_ROLES.BUYER)) {
-		return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-	}
-
-	return [null, null];
+	return [null, new NotAuthorizedError(RoleErrorMessages.MANAGER_REQUIRED).toObject()];
 }
 
 /**
@@ -185,25 +130,29 @@ export async function requireOwnerRole(
 }
 
 /**
- * Require owner or staff role. Returns error if user doesn't have either role.
+ * Require owner, manager, or employee role. Returns error if user doesn't have any of these.
  * Admins automatically pass this check.
  */
-export async function requireOwnerOrStaffRole(
+export async function requireStaffRole(
 	ctx: RoleDbContext,
 	userId: string
 ): AsyncReturn<null, NotAuthorizedErrorObject> {
 	const roles = await fetchUserRoles(ctx, userId);
 
-	if (roles.includes(USER_ROLES.ADMIN)) {
+	if (
+		roles.includes(USER_ROLES.ADMIN) ||
+		roles.includes(USER_ROLES.OWNER) ||
+		roles.includes(USER_ROLES.MANAGER) ||
+		roles.includes(USER_ROLES.EMPLOYEE)
+	) {
 		return [null, null];
 	}
 
-	if (!roles.includes(USER_ROLES.OWNER) && !roles.includes(USER_ROLES.STAFF)) {
-		return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-	}
-
-	return [null, null];
+	return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
 }
+
+/** @deprecated Use requireStaffRole instead */
+export const requireOwnerOrEmployeeRole = requireStaffRole;
 
 /**
  * Get all roles for a user.

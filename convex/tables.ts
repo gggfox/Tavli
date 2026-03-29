@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
@@ -9,7 +10,7 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireOwnerRole } from "./_util/auth";
+import { getCurrentUserId, isAdmin, requireOwnerRole, RoleErrorMessages } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -28,6 +29,13 @@ export const create = mutation({
 		if (error) return [null, error];
 		const [, error2] = await requireOwnerRole(ctx, userId);
 		if (error2) return [null, error2];
+
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
 
 		const existing = await ctx.db
 			.query(TABLE.TABLES)
@@ -75,6 +83,12 @@ export const update = mutation({
 		const table = await ctx.db.get(args.tableId);
 		if (!table) return [null, new NotFoundError("Table not found").toObject()];
 
+		const restaurant = await ctx.db.get(table.restaurantId);
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant?.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
 		if (args.tableNumber !== undefined && args.tableNumber !== table.tableNumber) {
 			const existing = await ctx.db
 				.query(TABLE.TABLES)
@@ -112,6 +126,12 @@ export const remove = mutation({
 		const table = await ctx.db.get(args.tableId);
 		if (!table) return [null, new NotFoundError("Table not found").toObject()];
 
+		const restaurant = await ctx.db.get(table.restaurantId);
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant?.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
 		await ctx.db.delete(args.tableId);
 		return [undefined, null];
 	},
@@ -128,6 +148,12 @@ export const toggleActive = mutation({
 		const table = await ctx.db.get(args.tableId);
 		if (!table) return [null, new NotFoundError("Table not found").toObject()];
 
+		const restaurant = await ctx.db.get(table.restaurantId);
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant?.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
 		const newState = !table.isActive;
 		await ctx.db.patch(args.tableId, { isActive: newState });
 		return [newState, null];
@@ -141,5 +167,16 @@ export const getByRestaurant = query({
 			.query(TABLE.TABLES)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
+	},
+});
+
+export const getActiveByRestaurant = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args) => {
+		const tables = await ctx.db
+			.query(TABLE.TABLES)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+		return tables.filter((t) => t.isActive);
 	},
 });

@@ -7,7 +7,7 @@ import {
 	NotFoundErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireOwnerRole } from "./_util/auth";
+import { getCurrentUserId, requireManagerRole } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -27,7 +27,7 @@ export const createMenu = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -65,7 +65,7 @@ export const updateMenu = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const menu = await ctx.db.get(args.menuId);
@@ -90,7 +90,7 @@ export const deleteMenu = mutation({
 	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const menu = await ctx.db.get(args.menuId);
@@ -132,7 +132,7 @@ export const setMenuTranslation = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const menu = await ctx.db.get(args.menuId);
@@ -181,7 +181,7 @@ export const createCategory = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -214,7 +214,7 @@ export const updateCategory = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const category = await ctx.db.get(args.categoryId);
@@ -236,7 +236,7 @@ export const deleteCategory = mutation({
 	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const category = await ctx.db.get(args.categoryId);
@@ -271,7 +271,7 @@ export const setCategoryTranslation = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
+		const [, error2] = await requireManagerRole(ctx, userId);
 		if (error2) return [null, error2];
 
 		const category = await ctx.db.get(args.categoryId);

@@ -1,4 +1,5 @@
-import { LanguageTabBar } from "@/global/components";
+import { OptionGroupManager } from "@/features/options";
+import { LanguageTabBar, Modal } from "@/global/components";
 import { Languages } from "@/global/i18n/locales";
 import { formatCents, parseDollarsToCents } from "@/global/utils/money";
 import { unwrapResult } from "@/global/utils/unwrapResult";
@@ -15,6 +16,7 @@ import {
 	EyeOff,
 	Globe,
 	ImagePlus,
+	LayoutGrid,
 	ListChecks,
 	Plus,
 	Trash2,
@@ -47,6 +49,7 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 
 	const [newCatName, setNewCatName] = useState("");
 	const [langSettingsOpen, setLangSettingsOpen] = useState(false);
+	const [optionGroupsModalOpen, setOptionGroupsModalOpen] = useState(false);
 
 	const sorted = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
 
@@ -92,7 +95,54 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 						style={{ color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)" }}
 					/>
 				</button>
+				<button
+					type="button"
+					onClick={() => setOptionGroupsModalOpen(true)}
+					className="p-2 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
+					title="Manage option groups"
+				>
+					<LayoutGrid size={16} style={{ color: "var(--text-muted)" }} />
+				</button>
 			</div>
+
+			<Modal
+				isOpen={optionGroupsModalOpen}
+				onClose={() => setOptionGroupsModalOpen(false)}
+				ariaLabel="Manage Option Groups"
+				size="3xl"
+			>
+				<div
+					className="rounded-xl overflow-hidden"
+					style={{
+						backgroundColor: "var(--bg-primary)",
+						border: "1px solid var(--border-default)",
+					}}
+				>
+					<div
+						className="flex items-center justify-between px-6 py-4"
+						style={{ borderBottom: "1px solid var(--border-default)" }}
+					>
+						<div>
+							<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+								Option Groups
+							</h2>
+							<p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+								Create reusable option groups and link them to menu items.
+							</p>
+						</div>
+						<button
+							type="button"
+							onClick={() => setOptionGroupsModalOpen(false)}
+							className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)]"
+						>
+							<X size={18} style={{ color: "var(--text-muted)" }} />
+						</button>
+					</div>
+					<div className="p-6 max-h-[70vh] overflow-y-auto">
+						<OptionGroupManager restaurantId={restaurantId} />
+					</div>
+				</div>
+			</Modal>
 
 			{langSettingsOpen && (
 				<MenuLanguageSettings
@@ -977,7 +1027,7 @@ function ItemOptionGroupPicker({
 					color: "var(--text-muted)",
 				}}
 			>
-				No option groups yet. Create them in the Options page first.
+				No option groups yet. Use the Option Groups button above to create them.
 			</div>
 		);
 	}

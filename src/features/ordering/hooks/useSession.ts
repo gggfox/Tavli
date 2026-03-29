@@ -4,19 +4,13 @@ import { create } from "zustand";
 interface SessionState {
 	sessionId: Id<"sessions"> | null;
 	restaurantId: Id<"restaurants"> | null;
-	tableId: Id<"tables"> | null;
-	setSession: (data: {
-		sessionId: Id<"sessions">;
-		restaurantId: Id<"restaurants">;
-		tableId: Id<"tables">;
-	}) => void;
+	setSession: (data: { sessionId: Id<"sessions">; restaurantId: Id<"restaurants"> }) => void;
 	clearSession: () => void;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
 	sessionId: null,
 	restaurantId: null,
-	tableId: null,
 	setSession: (data) => {
 		set(data);
 		try {
@@ -26,7 +20,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 		}
 	},
 	clearSession: () => {
-		set({ sessionId: null, restaurantId: null, tableId: null });
+		set({ sessionId: null, restaurantId: null });
 		try {
 			sessionStorage.removeItem("tavli_session");
 		} catch {
@@ -38,7 +32,6 @@ export const useSessionStore = create<SessionState>((set) => ({
 export function restoreSession(): {
 	sessionId: Id<"sessions">;
 	restaurantId: Id<"restaurants">;
-	tableId: Id<"tables">;
 } | null {
 	try {
 		const stored = sessionStorage.getItem("tavli_session");

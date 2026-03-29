@@ -3,5 +3,6 @@ export * from "./kitchen";
 export * from "./menus";
 export * from "./options";
 export * from "./ordering";
+export * from "./organizations";
 export * from "./restaurants";
 export * from "./users";

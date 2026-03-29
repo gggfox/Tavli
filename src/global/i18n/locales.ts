@@ -29,6 +29,7 @@ export const SidebarKeys = {
 	ORDERS: "sidebar.nav.orders",
 	ADMIN: "sidebar.nav.admin",
 	ADMIN_USERS: "sidebar.nav.adminUsers",
+	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",
 
 	// Theme
 	DARK_MODE: "sidebar.theme.darkMode",
@@ -54,9 +55,23 @@ export const SidebarKeys = {
 	ROLES: "sidebar.settings.roles",
 	NO_ROLES: "sidebar.settings.noRoles",
 	DEV_TOOLS: "sidebar.settings.devTools",
+	SWITCH_ROLES: "sidebar.settings.switchRoles",
 	SELF_ASSIGN_ADMIN: "sidebar.settings.selfAssignAdmin",
 	ADMIN_ALREADY_ASSIGNED: "sidebar.settings.adminAlreadyAssigned",
 	ASSIGNING_ADMIN: "sidebar.settings.assigningAdmin",
 } as const;
 
 export type SidebarKey = (typeof SidebarKeys)[keyof typeof SidebarKeys];
+
+/**
+ * Translation keys for role names
+ */
+export const RoleKeys = {
+	ADMIN: "roles.admin",
+	OWNER: "roles.owner",
+	MANAGER: "roles.manager",
+	CUSTOMER: "roles.customer",
+	EMPLOYEE: "roles.employee",
+} as const;
+
+export type RoleKey = (typeof RoleKeys)[keyof typeof RoleKeys];

@@ -32,10 +32,10 @@ export default defineSchema({
 		roles: v.array(
 			v.union(
 				v.literal("admin"),
-				v.literal("seller"),
-				v.literal("buyer"),
 				v.literal("owner"),
-				v.literal("staff")
+				v.literal("manager"),
+				v.literal("customer"),
+				v.literal("employee")
 			)
 		),
 		organizationId: v.optional(v.string()),
@@ -44,6 +44,18 @@ export default defineSchema({
 	})
 		.index("by_user", ["userId"])
 		.index("by_organizationId", ["organizationId"]),
+
+	// ============================================================================
+	// Organizations
+	// ============================================================================
+	[TABLE.ORGANIZATIONS]: defineTable({
+		name: v.string(),
+		slug: v.optional(v.string()),
+		description: v.optional(v.string()),
+		isActive: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_name", ["name"]),
 
 	// ============================================================================
 	// Feature Flags
@@ -61,6 +73,7 @@ export default defineSchema({
 	// ============================================================================
 	[TABLE.RESTAURANTS]: defineTable({
 		ownerId: v.string(),
+		organizationId: v.id(TABLE.ORGANIZATIONS),
 		name: v.string(),
 		slug: v.string(),
 		description: v.optional(v.string()),
@@ -73,7 +86,8 @@ export default defineSchema({
 		updatedAt: v.number(),
 	})
 		.index("by_slug", ["slug"])
-		.index("by_owner", ["ownerId"]),
+		.index("by_owner", ["ownerId"])
+		.index("by_organization", ["organizationId"]),
 
 	[TABLE.MENUS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -163,7 +177,7 @@ export default defineSchema({
 
 	[TABLE.SESSIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
-		tableId: v.id(TABLE.TABLES),
+		tableId: v.optional(v.id(TABLE.TABLES)),
 		status: v.union(v.literal("active"), v.literal("closed")),
 		startedAt: v.number(),
 		closedAt: v.optional(v.number()),

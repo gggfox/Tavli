@@ -28,6 +28,7 @@ interface MenuBrowserProps {
 			selectedOptions: SelectedOption[];
 		}>;
 		specialInstructions?: string;
+		tableId: Id<"tables">;
 	}) => void;
 	isSubmitting: boolean;
 }
@@ -46,6 +47,11 @@ export function MenuBrowser({
 	const [selections, setSelections] = useState<Map<string, ItemSelection>>(new Map());
 	const [showPayFlow, setShowPayFlow] = useState(false);
 	const [comment, setComment] = useState("");
+	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(null);
+
+	const { data: tables } = useQuery(
+		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
+	);
 	const [validationErrors, setValidationErrors] = useState<Map<string, string[]>>(new Map());
 
 	const currentMenuId = selectedMenuId ?? activeMenus[0]?._id;
@@ -113,6 +119,7 @@ export function MenuBrowser({
 	const itemCount = selections.size;
 
 	const handleConfirmOrder = () => {
+		if (!selectedTableId) return;
 		const items = Array.from(selections.entries()).map(([menuItemId, sel]) => ({
 			menuItemId: menuItemId as Id<"menuItems">,
 			quantity: sel.quantity,
@@ -121,6 +128,7 @@ export function MenuBrowser({
 		onSubmitOrder({
 			items,
 			specialInstructions: comment || undefined,
+			tableId: selectedTableId,
 		});
 	};
 
@@ -173,7 +181,7 @@ export function MenuBrowser({
 						<>
 							<div className="flex items-center justify-between">
 								<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-									Order Comment (optional)
+									Confirm Your Order
 								</h3>
 								<button
 									onClick={() => setShowPayFlow(false)}
@@ -182,10 +190,49 @@ export function MenuBrowser({
 									<X size={16} style={{ color: "var(--text-muted)" }} />
 								</button>
 							</div>
+
+							<div>
+								<label
+									htmlFor="table-select"
+									className="block text-xs font-semibold mb-1"
+									style={{ color: "var(--text-secondary)" }}
+								>
+									Table Number <span style={{ color: "#dc2626" }}>*</span>
+								</label>
+								<select
+									id="table-select"
+									value={selectedTableId ?? ""}
+									onChange={(e) =>
+										setSelectedTableId(e.target.value ? (e.target.value as Id<"tables">) : null)
+									}
+									className="w-full px-3 py-2 rounded-lg text-sm"
+									style={{
+										backgroundColor: "var(--bg-secondary)",
+										border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`,
+										color: "var(--text-primary)",
+									}}
+								>
+									<option value="">Select your table</option>
+									{(tables ?? [])
+										.sort((a, b) => a.tableNumber - b.tableNumber)
+										.map((t) => (
+											<option key={t._id} value={t._id}>
+												Table {t.tableNumber}
+												{t.label ? ` – ${t.label}` : ""}
+											</option>
+										))}
+								</select>
+								{!selectedTableId && (
+									<p className="text-[11px] mt-1" style={{ color: "#dc2626" }}>
+										Please select a table to continue
+									</p>
+								)}
+							</div>
+
 							<textarea
 								value={comment}
 								onChange={(e) => setComment(e.target.value)}
-								placeholder="Any allergies, preferences, or notes for the kitchen?"
+								placeholder="Any allergies, preferences, or notes for the kitchen? (optional)"
 								rows={2}
 								className="w-full px-3 py-2 rounded-lg text-sm"
 								style={{
@@ -203,7 +250,7 @@ export function MenuBrowser({
 							</div>
 							<button
 								onClick={handleConfirmOrder}
-								disabled={isSubmitting || hasValidationErrors}
+								disabled={isSubmitting || hasValidationErrors || !selectedTableId}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
 								{isSubmitting ? "Placing Order..." : "Confirm Order"}
