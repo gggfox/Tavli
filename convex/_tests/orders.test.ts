@@ -40,6 +40,27 @@ async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>) {
 	return { restaurantId: restaurantId!, tableId: tableId!, sessionId: sessionId! };
 }
 
+/**
+ * Simulates the Stripe webhook confirming payment by patching the order
+ * to "submitted" status. In production this is done by confirmPayment
+ * (an internalMutation called from the webhook handler).
+ */
+async function simulatePaymentConfirmation(
+	t: ReturnType<typeof convexTest>,
+	orderId: Id<"orders">
+) {
+	await t.run(async (ctx) => {
+		const now = Date.now();
+		await ctx.db.patch(orderId, {
+			status: "submitted",
+			stripePaymentIntentId: "pi_test_simulated",
+			paidAt: now,
+			submittedAt: now,
+			updatedAt: now,
+		});
+	});
+}
+
 async function seedMenuItem(t: ReturnType<typeof convexTest>, restaurantId: Id<"restaurants">) {
 	let menuItemId: Id<"menuItems">;
 
@@ -156,7 +177,7 @@ describe("orders", () => {
 	});
 
 	describe("submitOrder", () => {
-		it("transitions a draft order to submitted", async () => {
+		it("validates the draft order but keeps it in draft status", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
@@ -172,8 +193,29 @@ describe("orders", () => {
 			await t.mutation(api.orders.submitOrder, { orderId });
 
 			const order = await t.query(api.orders.getOrderWithItems, { orderId });
-			expect(order!.status).toBe("submitted");
-			expect(order!.submittedAt).toBeDefined();
+			expect(order!.status).toBe("draft");
+		});
+
+		it("saves special instructions", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			await t.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+
+			await t.mutation(api.orders.submitOrder, {
+				orderId,
+				specialInstructions: "No onions please",
+			});
+
+			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			expect(order!.specialInstructions).toBe("No onions please");
 		});
 
 		it("throws when submitting an empty order", async () => {
@@ -212,6 +254,7 @@ describe("orders", () => {
 				selectedOptions: [],
 			});
 			await t.mutation(api.orders.submitOrder, { orderId });
+			await simulatePaymentConfirmation(t, orderId);
 
 			const [, err1] = await authed.mutation(api.orders.updateStatus, {
 				orderId,
@@ -258,6 +301,7 @@ describe("orders", () => {
 				selectedOptions: [],
 			});
 			await t.mutation(api.orders.submitOrder, { orderId });
+			await simulatePaymentConfirmation(t, orderId);
 
 			await expect(
 				authed.mutation(api.orders.updateStatus, {
@@ -280,6 +324,7 @@ describe("orders", () => {
 				selectedOptions: [],
 			});
 			await t.mutation(api.orders.submitOrder, { orderId });
+			await simulatePaymentConfirmation(t, orderId);
 
 			const [value, error] = await t.mutation(api.orders.updateStatus, {
 				orderId,
@@ -327,6 +372,7 @@ describe("orders", () => {
 				selectedOptions: [],
 			});
 			await t.mutation(api.orders.submitOrder, { orderId });
+			await simulatePaymentConfirmation(t, orderId);
 
 			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
 				restaurantId,
@@ -341,7 +387,7 @@ describe("orders", () => {
 			expect(orders[0].tableNumber).toBe(1);
 		});
 
-		it("filters out draft, paid, and cancelled orders", async () => {
+		it("filters out draft, served, and cancelled orders", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
@@ -369,11 +415,10 @@ describe("orders", () => {
 			});
 
 			let submittedOrderId: Id<"orders">;
-			let paidOrderId: Id<"orders">;
+			let servedOrderId: Id<"orders">;
 			let cancelledOrderId: Id<"orders">;
 
 			await t.run(async (ctx) => {
-				const tableId = (await ctx.db.get(draftOrderId))!.tableId;
 				const newSession1 = await ctx.db.insert("sessions", {
 					restaurantId,
 					tableId,
@@ -402,11 +447,11 @@ describe("orders", () => {
 					createdAt: Date.now(),
 				});
 
-				paidOrderId = await ctx.db.insert("orders", {
+				servedOrderId = await ctx.db.insert("orders", {
 					sessionId: newSession1,
 					restaurantId,
 					tableId,
-					status: "paid",
+					status: "served",
 					totalAmount: 800,
 					submittedAt: Date.now(),
 					paidAt: Date.now(),

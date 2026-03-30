@@ -15,6 +15,7 @@ import type * as _util_idempotency from "../_util/idempotency.js";
 import type * as admin from "../admin.js";
 import type * as constants from "../constants.js";
 import type * as featureFlags from "../featureFlags.js";
+import type * as http from "../http.js";
 import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
 import type * as optionGroups from "../optionGroups.js";
@@ -22,6 +23,8 @@ import type * as orders from "../orders.js";
 import type * as organizations from "../organizations.js";
 import type * as restaurants from "../restaurants.js";
 import type * as sessions from "../sessions.js";
+import type * as stripe from "../stripe.js";
+import type * as stripeHelpers from "../stripeHelpers.js";
 import type * as tables from "../tables.js";
 import type * as userSettings from "../userSettings.js";
 
@@ -39,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   constants: typeof constants;
   featureFlags: typeof featureFlags;
+  http: typeof http;
   menuItems: typeof menuItems;
   menus: typeof menus;
   optionGroups: typeof optionGroups;
@@ -46,6 +50,8 @@ declare const fullApi: ApiFromModules<{
   organizations: typeof organizations;
   restaurants: typeof restaurants;
   sessions: typeof sessions;
+  stripe: typeof stripe;
+  stripeHelpers: typeof stripeHelpers;
   tables: typeof tables;
   userSettings: typeof userSettings;
 }>;

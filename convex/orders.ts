@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { internalMutation, mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -174,10 +175,50 @@ export const submitOrder = mutation({
 			});
 		}
 
+		if (args.specialInstructions) {
+			await ctx.db.patch(args.orderId, {
+				specialInstructions: args.specialInstructions,
+				updatedAt: Date.now(),
+			});
+		}
+	},
+});
+
+/**
+ * Called by the Stripe webhook handler after payment_intent.succeeded.
+ * Transitions a draft order to submitted and records payment info.
+ */
+export const confirmPayment = internalMutation({
+	args: {
+		orderId: v.string(),
+		stripePaymentIntentId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const order = await ctx.db
+			.query(TABLE.ORDERS)
+			.filter((q) => q.eq(q.field("_id"), args.orderId))
+			.first();
+
+		if (!order) throw new Error(`Order ${args.orderId} not found`);
+		if (order.status !== "draft") {
+			console.warn(`Order ${args.orderId} is already in status ${order.status}, skipping`);
+			return;
+		}
+
+		const items = await ctx.db
+			.query(TABLE.ORDER_ITEMS)
+			.withIndex("by_order", (q) => q.eq("orderId", order._id))
+			.collect();
+
+		if (items.length === 0) {
+			throw new Error(`Order ${args.orderId} has no items`);
+		}
+
 		const now = Date.now();
-		await ctx.db.patch(args.orderId, {
+		await ctx.db.patch(order._id, {
 			status: "submitted",
-			specialInstructions: args.specialInstructions,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+			paidAt: now,
 			submittedAt: now,
 			updatedAt: now,
 		});
@@ -215,9 +256,9 @@ export const getOrdersBySession = query({
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
 	submitted: ["preparing", "cancelled"],
-	preparing: ["ready"],
-	ready: ["served"],
-	served: ["paid", "cancelled"],
+	preparing: ["ready", "cancelled"],
+	ready: ["served", "cancelled"],
+	served: ["cancelled"],
 };
 
 export const updateStatus = mutation({
@@ -227,7 +268,6 @@ export const updateStatus = mutation({
 			v.literal("preparing"),
 			v.literal("ready"),
 			v.literal("served"),
-			v.literal("paid"),
 			v.literal("cancelled")
 		),
 	},
@@ -256,8 +296,14 @@ export const updateStatus = mutation({
 		await ctx.db.patch(args.orderId, {
 			status: args.newStatus,
 			updatedAt: now,
-			...(args.newStatus === "paid" && { paidAt: now }),
 		});
+
+		if (args.newStatus === "cancelled" && order.stripePaymentIntentId) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- types regenerate on `convex dev`
+			await ctx.scheduler.runAfter(0, (internal as any).stripe.createRefund, {
+				stripePaymentIntentId: order.stripePaymentIntentId,
+			});
+		}
 
 		return [args.orderId, null];
 	},
@@ -277,7 +323,7 @@ export const getActiveOrdersByRestaurant = query({
 			.collect();
 
 		const activeOrders = allOrders.filter(
-			(o) => !["draft", "paid", "cancelled"].includes(o.status)
+			(o) => !["draft", "served", "cancelled"].includes(o.status)
 		);
 
 		const ordersWithItems = await Promise.all(
@@ -313,9 +359,9 @@ export const getPaidOrdersByRestaurant = query({
 			.collect();
 
 		const paidOrders = allOrders.filter((o) => {
-			if (o.status !== "paid") return false;
-			if (args.from && o.paidAt && o.paidAt < args.from) return false;
-			if (args.to && o.paidAt && o.paidAt > args.to) return false;
+			if (!o.paidAt) return false;
+			if (args.from && o.paidAt < args.from) return false;
+			if (args.to && o.paidAt > args.to) return false;
 			return true;
 		});
 

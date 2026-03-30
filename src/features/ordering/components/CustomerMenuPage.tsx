@@ -8,10 +8,10 @@ import { MenuBrowser } from "./MenuBrowser";
 
 interface CustomerMenuPageProps {
 	lang?: string;
-	onNavigateToOrder: (orderId: string) => void;
+	onNavigateToCheckout: (orderId: string) => void;
 }
 
-export function CustomerMenuPage({ lang, onNavigateToOrder }: Readonly<CustomerMenuPageProps>) {
+export function CustomerMenuPage({ lang, onNavigateToCheckout }: Readonly<CustomerMenuPageProps>) {
 	const { sessionId, restaurantId } = useSessionStore();
 	const { createDraft, addItem, submitOrder } = useCart();
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,7 +43,7 @@ export function CustomerMenuPage({ lang, onNavigateToOrder }: Readonly<CustomerM
 				orderId,
 				specialInstructions: data.specialInstructions,
 			});
-			onNavigateToOrder(orderId);
+			onNavigateToCheckout(orderId);
 		} finally {
 			setIsSubmitting(false);
 		}

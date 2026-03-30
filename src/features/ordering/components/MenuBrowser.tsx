@@ -1,14 +1,13 @@
-import { StatusBadge } from "@/global/components";
 import { formatCents } from "@/global/utils/money";
 import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { UtensilsCrossed, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, UtensilsCrossed, X } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import type { SelectedOption } from "../types";
-import { toggleOptionSelection } from "../utils";
+import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export type { SelectedOption } from "../types";
 
@@ -39,6 +38,9 @@ export function MenuBrowser({
 	onSubmitOrder,
 	isSubmitting,
 }: Readonly<MenuBrowserProps>) {
+	const { data: paymentsEnabled } = useQuery(
+		convexQuery(api.restaurants.getPaymentsEnabled, { restaurantId })
+	);
 	const { data: menus } = useQuery(convexQuery(api.menus.getMenusByRestaurant, { restaurantId }));
 	const activeMenus = (menus ?? [])
 		.filter((m) => m.isActive)
@@ -48,62 +50,47 @@ export function MenuBrowser({
 	const [showPayFlow, setShowPayFlow] = useState(false);
 	const [comment, setComment] = useState("");
 	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(null);
+	const [detailItem, setDetailItem] = useState<Doc<"menuItems"> | null>(null);
 
 	const { data: tables } = useQuery(
 		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
 	);
-	const [validationErrors, setValidationErrors] = useState<Map<string, string[]>>(new Map());
 
 	const currentMenuId = selectedMenuId ?? activeMenus[0]?._id;
 
-	const hasValidationErrors = useMemo(
-		() => Array.from(validationErrors.values()).some((groups) => groups.length > 0),
-		[validationErrors]
-	);
-
-	const onValidationChange = useCallback((itemId: Id<"menuItems">, missingGroups: string[]) => {
-		setValidationErrors((prev) => {
-			const next = new Map(prev);
-			if (missingGroups.length === 0) {
-				next.delete(itemId);
-			} else {
-				next.set(itemId, missingGroups);
-			}
-			return next;
-		});
+	const handleOpenDetail = useCallback((item: Doc<"menuItems">) => {
+		setDetailItem(item);
 	}, []);
 
-	const toggleItem = useCallback((itemId: Id<"menuItems">, basePrice: number) => {
-		setSelections((prev) => {
-			const next = new Map(prev);
-			if (next.has(itemId)) {
-				next.delete(itemId);
-				setValidationErrors((ve) => {
-					const nve = new Map(ve);
-					nve.delete(itemId);
-					return nve;
-				});
-			} else {
-				next.set(itemId, { quantity: 1, basePrice, selectedOptions: new Map() });
-			}
-			return next;
-		});
-	}, []);
-
-	const updateItemOptions = useCallback(
-		(itemId: Id<"menuItems">, groupId: string, options: SelectedOption[]) => {
+	const handleAddOrUpdate = useCallback(
+		(data: {
+			menuItemId: Id<"menuItems">;
+			quantity: number;
+			basePrice: number;
+			selectedOptions: Map<string, SelectedOption[]>;
+		}) => {
 			setSelections((prev) => {
 				const next = new Map(prev);
-				const item = next.get(itemId);
-				if (!item) return prev;
-				const newOptions = new Map(item.selectedOptions);
-				newOptions.set(groupId, options);
-				next.set(itemId, { ...item, selectedOptions: newOptions });
+				next.set(data.menuItemId, {
+					quantity: data.quantity,
+					basePrice: data.basePrice,
+					selectedOptions: data.selectedOptions,
+				});
 				return next;
 			});
+			setDetailItem(null);
 		},
 		[]
 	);
+
+	const handleRemoveItem = useCallback((itemId: Id<"menuItems">) => {
+		setSelections((prev) => {
+			const next = new Map(prev);
+			next.delete(itemId);
+			return next;
+		});
+		setDetailItem(null);
+	}, []);
 
 	const orderTotal = useMemo(() => {
 		let total = 0;
@@ -161,14 +148,24 @@ export function MenuBrowser({
 						menuId={currentMenuId}
 						lang={lang}
 						selections={selections}
-						onToggleItem={toggleItem}
-						onUpdateOptions={updateItemOptions}
-						onValidationChange={onValidationChange}
+						onOpenDetail={handleOpenDetail}
 					/>
 				)}
 			</div>
 
 			{/* Bottom bar: total + pay */}
+			{paymentsEnabled === false && itemCount > 0 && (
+				<div
+					className="shrink-0 px-4 py-3 text-center text-sm"
+					style={{
+						borderTop: "1px solid var(--border-default)",
+						backgroundColor: "rgba(217, 119, 6, 0.1)",
+						color: "var(--accent-warning, #d97706)",
+					}}
+				>
+					Online ordering is not available at this restaurant yet.
+				</div>
+			)}
 			{itemCount === 0 && (
 				<div
 					className="shrink-0 px-4 py-4 text-center"
@@ -193,7 +190,7 @@ export function MenuBrowser({
 						<>
 							<div className="flex items-center justify-between">
 								<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-									Confirm Your Order
+									Review Your Order
 								</h3>
 								<button
 									onClick={() => setShowPayFlow(false)}
@@ -262,10 +259,10 @@ export function MenuBrowser({
 							</div>
 							<button
 								onClick={handleConfirmOrder}
-								disabled={isSubmitting || hasValidationErrors || !selectedTableId}
+								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								{isSubmitting ? "Placing Order..." : "Confirm Order"}
+								{isSubmitting ? "Preparing..." : "Proceed to Payment"}
 							</button>
 						</>
 					) : (
@@ -279,21 +276,32 @@ export function MenuBrowser({
 								</span>
 								<span>${formatCents(orderTotal)}</span>
 							</div>
-							{hasValidationErrors && (
-								<p className="text-xs text-center" style={{ color: "#dc2626" }}>
-									Please complete all required options
-								</p>
-							)}
 							<button
 								onClick={() => setShowPayFlow(true)}
-								disabled={hasValidationErrors}
+								disabled={paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								Pay
+								Proceed to Payment
 							</button>
 						</>
 					)}
 				</div>
+			)}
+
+			{/* Item detail bottom sheet */}
+			{detailItem && (
+				<ItemDetailSheet
+					item={detailItem}
+					lang={lang}
+					existingSelection={
+						selections.has(detailItem._id) ? selections.get(detailItem._id) : undefined
+					}
+					onAddToCart={handleAddOrUpdate}
+					onRemove={
+						selections.has(detailItem._id) ? () => handleRemoveItem(detailItem._id) : undefined
+					}
+					onClose={() => setDetailItem(null)}
+				/>
 			)}
 		</div>
 	);
@@ -303,16 +311,12 @@ function MenuCategories({
 	menuId,
 	lang,
 	selections,
-	onToggleItem,
-	onUpdateOptions,
-	onValidationChange,
+	onOpenDetail,
 }: Readonly<{
 	menuId: Id<"menus">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
-	onToggleItem: (id: Id<"menuItems">, basePrice: number) => void;
-	onUpdateOptions: (itemId: Id<"menuItems">, groupId: string, options: SelectedOption[]) => void;
-	onValidationChange: (itemId: Id<"menuItems">, missingGroups: string[]) => void;
+	onOpenDetail: (item: Doc<"menuItems">) => void;
 }>) {
 	const { data: categories } = useQuery(convexQuery(api.menus.getCategoriesByMenu, { menuId }));
 	const sorted = [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
@@ -325,9 +329,7 @@ function MenuCategories({
 					category={cat}
 					lang={lang}
 					selections={selections}
-					onToggleItem={onToggleItem}
-					onUpdateOptions={onUpdateOptions}
-					onValidationChange={onValidationChange}
+					onOpenDetail={onOpenDetail}
 				/>
 			))}
 		</>
@@ -338,16 +340,12 @@ function CategoryItems({
 	category,
 	lang,
 	selections,
-	onToggleItem,
-	onUpdateOptions,
-	onValidationChange,
+	onOpenDetail,
 }: Readonly<{
 	category: Doc<"menuCategories">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
-	onToggleItem: (id: Id<"menuItems">, basePrice: number) => void;
-	onUpdateOptions: (itemId: Id<"menuItems">, groupId: string, options: SelectedOption[]) => void;
-	onValidationChange: (itemId: Id<"menuItems">, missingGroups: string[]) => void;
+	onOpenDetail: (item: Doc<"menuItems">) => void;
 }>) {
 	const { data: items } = useQuery(
 		convexQuery(api.menuItems.getByCategory, { categoryId: category._id })
@@ -379,221 +377,64 @@ function CategoryItems({
 					const selection = selections.get(item._id);
 					const description = getTranslatedField(item, lang, "description") || item.description;
 					return (
-						<div key={item._id}>
-							<button
-								onClick={() => onToggleItem(item._id, item.basePrice)}
-								className="w-full h-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
-								style={{
-									backgroundColor: isSelected ? "var(--bg-active, #e0e7ff)" : "var(--bg-secondary)",
-									border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
-								}}
-							>
-								{item.imageUrl ? (
-									<img
-										src={item.imageUrl}
-										alt={getTranslatedField(item, lang)}
-										className="w-full h-36 sm:h-40 object-cover"
-									/>
-								) : (
+						<button
+							key={item._id}
+							onClick={() => onOpenDetail(item)}
+							className="relative w-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
+							style={{
+								backgroundColor: isSelected ? "var(--bg-active, #e0e7ff)" : "var(--bg-secondary)",
+								border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
+							}}
+						>
+							{isSelected && (
+								<span
+									className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full"
+									style={{ backgroundColor: "var(--btn-primary-bg)" }}
+								>
+									<Check size={14} className="text-white" />
+								</span>
+							)}
+							{isSelected && selection && selection.quantity > 1 && (
+								<span
+									className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white"
+									style={{ backgroundColor: "var(--btn-primary-bg)" }}
+								>
+									{selection.quantity}
+								</span>
+							)}
+							{item.imageUrl ? (
+								<img
+									src={item.imageUrl}
+									alt={getTranslatedField(item, lang)}
+									className="w-full h-36 sm:h-40 object-cover"
+								/>
+							) : (
+								<div
+									className="w-full h-36 sm:h-40 flex items-center justify-center"
+									style={{ backgroundColor: "var(--bg-primary)" }}
+								>
+									<UtensilsCrossed size={48} style={{ color: "var(--text-muted)" }} />
+								</div>
+							)}
+							<div className="px-3 py-2.5 mt-auto">
+								<div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+									{getTranslatedField(item, lang)}
+								</div>
+								{description && (
 									<div
-										className="w-full h-36 sm:h-40 flex items-center justify-center"
-										style={{ backgroundColor: "var(--bg-primary)" }}
+										className="text-xs mt-0.5 line-clamp-2"
+										style={{ color: "var(--text-muted)" }}
 									>
-										<UtensilsCrossed size={48} style={{ color: "var(--text-muted)" }} />
+										{description}
 									</div>
 								)}
-								<div className="px-3 py-2.5 mt-auto">
-									<div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-										{getTranslatedField(item, lang)}
-									</div>
-									{description && (
-										<div
-											className="text-xs mt-0.5 line-clamp-2"
-											style={{ color: "var(--text-muted)" }}
-										>
-											{description}
-										</div>
-									)}
-									<div className="text-sm font-bold mt-1" style={{ color: "var(--text-primary)" }}>
-										${formatCents(item.basePrice)}
-									</div>
+								<div className="text-sm font-bold mt-1" style={{ color: "var(--text-primary)" }}>
+									${formatCents(item.basePrice)}
 								</div>
-							</button>
-
-							{isSelected && selection && (
-								<InlineOptionGroups
-									itemId={item._id}
-									lang={lang}
-									selection={selection}
-									onUpdateOptions={onUpdateOptions}
-									onValidationChange={onValidationChange}
-								/>
-							)}
-						</div>
+							</div>
+						</button>
 					);
 				})}
-			</div>
-		</div>
-	);
-}
-
-function InlineOptionGroups({
-	itemId,
-	lang,
-	selection,
-	onUpdateOptions,
-	onValidationChange,
-}: Readonly<{
-	itemId: Id<"menuItems">;
-	lang?: string;
-	selection: ItemSelection;
-	onUpdateOptions: (itemId: Id<"menuItems">, groupId: string, options: SelectedOption[]) => void;
-	onValidationChange: (itemId: Id<"menuItems">, missingGroups: string[]) => void;
-}>) {
-	const { data: optionGroups } = useQuery(
-		convexQuery(api.optionGroups.getGroupsForMenuItem, { menuItemId: itemId })
-	);
-
-	const groups = optionGroups ?? [];
-
-	const missingGroups = useMemo(() => {
-		return groups
-			.filter((g: any) => {
-				if (!g.isRequired) return false;
-				const selected = selection.selectedOptions.get(g._id) ?? [];
-				const min = g.minSelections > 0 ? g.minSelections : 1;
-				return selected.length < min;
-			})
-			.map((g: any) => g.name as string);
-	}, [groups, selection.selectedOptions]);
-
-	const missingGroupIds = useMemo(() => {
-		return new Set(
-			groups
-				.filter((g: any) => {
-					if (!g.isRequired) return false;
-					const selected = selection.selectedOptions.get(g._id) ?? [];
-					const min = g.minSelections > 0 ? g.minSelections : 1;
-					return selected.length < min;
-				})
-				.map((g: any) => g._id as string)
-		);
-	}, [groups, selection.selectedOptions]);
-
-	useEffect(() => {
-		onValidationChange(itemId, missingGroups);
-	}, [itemId, missingGroups, onValidationChange]);
-
-	useEffect(() => {
-		return () => onValidationChange(itemId, []);
-	}, [itemId, onValidationChange]);
-
-	if (groups.length === 0) return null;
-
-	return (
-		<div
-			className="mt-1 mb-2 space-y-3 px-3 py-3 rounded-lg"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				borderLeft: "2px solid var(--btn-primary-bg)",
-			}}
-		>
-			{groups.map((group: any) => (
-				<OptionGroupSection
-					key={group._id}
-					group={group}
-					lang={lang}
-					groupSelections={selection.selectedOptions.get(group._id) ?? []}
-					onSelect={(updated) => onUpdateOptions(itemId, group._id, updated)}
-					hasError={missingGroupIds.has(group._id)}
-				/>
-			))}
-		</div>
-	);
-}
-
-function optionBorderColor(isSelected: boolean, hasError: boolean): string {
-	if (isSelected) return "var(--btn-primary-bg)";
-	if (hasError) return "#fca5a5";
-	return "var(--border-default)";
-}
-
-function OptionGroupSection({
-	group,
-	lang,
-	groupSelections,
-	onSelect,
-	hasError,
-}: Readonly<{
-	group: any;
-	lang?: string;
-	groupSelections: SelectedOption[];
-	onSelect: (updated: SelectedOption[]) => void;
-	hasError: boolean;
-}>) {
-	const handleOptionClick = (opt: any) => {
-		const newOpt: SelectedOption = {
-			optionGroupId: group._id,
-			optionGroupName: getTranslatedField(group, lang),
-			optionId: opt._id,
-			optionName: getTranslatedField(opt, lang),
-			priceModifier: opt.priceModifier,
-		};
-		onSelect(toggleOptionSelection(groupSelections, newOpt, group.selectionType));
-	};
-
-	return (
-		<div>
-			<div className="flex items-center gap-2 mb-1.5">
-				<span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
-					{getTranslatedField(group, lang)}
-				</span>
-				{group.isRequired && (
-					<StatusBadge
-						bgColor={hasError ? "#fef2f2" : "var(--accent-warning-light, #fef3c7)"}
-						textColor={hasError ? "#dc2626" : "var(--accent-warning, #d97706)"}
-						label="Required"
-						className="text-[10px]"
-					/>
-				)}
-				{group.selectionType === "single" && (
-					<span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-						Pick one
-					</span>
-				)}
-			</div>
-			{hasError && (
-				<p className="text-[11px] mb-1.5" style={{ color: "#dc2626" }}>
-					Please select an option
-				</p>
-			)}
-			<div className="space-y-1">
-				{(group.options ?? [])
-					.filter((o: any) => o.isAvailable)
-					.map((opt: any) => {
-						const isOptSelected = groupSelections.some((s) => s.optionId === opt._id);
-						return (
-							<button
-								key={opt._id}
-								onClick={() => handleOptionClick(opt)}
-								className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs transition-colors"
-								style={{
-									backgroundColor: isOptSelected
-										? "var(--bg-active, #e0e7ff)"
-										: "var(--bg-primary)",
-									border: `1px solid ${optionBorderColor(isOptSelected, hasError)}`,
-									color: "var(--text-primary)",
-								}}
-							>
-								<span>{getTranslatedField(opt, lang)}</span>
-								{opt.priceModifier > 0 && (
-									<span style={{ color: "var(--text-muted)" }}>
-										+${formatCents(opt.priceModifier)}
-									</span>
-								)}
-							</button>
-						);
-					})}
 			</div>
 		</div>
 	);

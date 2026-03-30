@@ -56,7 +56,7 @@ export function Modal(props: Readonly<ModalProps>) {
 
 	const sizeClass = SIZE_CLASSES[props.size ?? "lg"];
 	const backdropClasses = `absolute inset-0 flex items-center justify-center p-4 bg-black/50 ${props.backdropClassName || ""}`;
-	const containerClasses = `relative z-10 w-full ${sizeClass} ${props.containerClassName || ""}`;
+	const containerClasses = `relative z-10 w-full max-h-full overflow-y-auto ${sizeClass} ${props.containerClassName || ""}`;
 	const contentClasses = `relative ${props.contentClassName || ""}`;
 
 	const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {

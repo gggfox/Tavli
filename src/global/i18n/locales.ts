@@ -28,6 +28,8 @@ export const SidebarKeys = {
 	OPTIONS: "sidebar.nav.options",
 	ORDERS: "sidebar.nav.orders",
 	PAYMENTS: "sidebar.nav.payments",
+	PRODUCTS: "sidebar.nav.products",
+	STOREFRONT: "sidebar.nav.storefront",
 	ADMIN: "sidebar.nav.admin",
 	ADMIN_USERS: "sidebar.nav.adminUsers",
 	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",

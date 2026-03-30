@@ -11,8 +11,12 @@ function Page() {
 
 	return (
 		<CustomerMenuPage
-			onNavigateToOrder={(orderId) =>
-				navigate({ to: "/r/$slug/order/$orderId", params: { slug, orderId } })
+			onNavigateToCheckout={(orderId) =>
+				navigate({
+					to: "/r/$slug/$lang/checkout",
+					params: { slug, lang: "en" },
+					search: { orderId },
+				})
 			}
 		/>
 	);

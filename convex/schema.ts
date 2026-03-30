@@ -81,6 +81,8 @@ export default defineSchema({
 		timezone: v.optional(v.string()),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
+		stripeAccountId: v.optional(v.string()),
+		stripeOnboardingComplete: v.optional(v.boolean()),
 		isActive: v.boolean(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -193,11 +195,11 @@ export default defineSchema({
 			v.literal("preparing"),
 			v.literal("ready"),
 			v.literal("served"),
-			v.literal("paid"),
 			v.literal("cancelled")
 		),
 		totalAmount: v.number(),
 		specialInstructions: v.optional(v.string()),
+		stripePaymentIntentId: v.optional(v.string()),
 		submittedAt: v.optional(v.number()),
 		paidAt: v.optional(v.number()),
 		createdAt: v.number(),
@@ -225,6 +227,24 @@ export default defineSchema({
 		lineTotal: v.number(),
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
+
+	// ============================================================================
+	// Products (Stripe platform-level products mapped to connected accounts)
+	// ============================================================================
+	[TABLE.PRODUCTS]: defineTable({
+		stripeProductId: v.string(),
+		stripePriceId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		name: v.string(),
+		description: v.optional(v.string()),
+		priceInCents: v.number(),
+		currency: v.string(),
+		isActive: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_stripeProductId", ["stripeProductId"]),
 
 	// ============================================================================
 	// Unified Event Store

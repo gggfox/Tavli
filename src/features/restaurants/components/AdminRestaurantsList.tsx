@@ -1,4 +1,5 @@
 import { RestaurantSettingsForm } from "@/features/restaurants/components/RestaurantSettingsForm";
+import { StripeConnectSetup } from "@/features/restaurants/components/StripeConnectSetup";
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
 import {
 	EmptyState,
@@ -248,6 +249,9 @@ export function AdminRestaurantsList() {
 							}}
 							isSaving={updateMutation.isPending}
 						/>
+						<div className="mt-6">
+							<StripeConnectSetup restaurantId={modal.restaurant._id} />
+						</div>
 					</div>
 				</Modal>
 			)}

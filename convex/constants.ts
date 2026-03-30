@@ -17,6 +17,7 @@ export const TABLE = {
 	SESSIONS: "sessions",
 	ORDERS: "orders",
 	ORDER_ITEMS: "orderItems",
+	PRODUCTS: "products",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -42,7 +43,6 @@ export const ORDER_STATUS = {
 	PREPARING: "preparing",
 	READY: "ready",
 	SERVED: "served",
-	PAID: "paid",
 	CANCELLED: "cancelled",
 } as const;
 

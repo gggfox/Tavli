@@ -5,7 +5,9 @@ import {
 	DollarSign,
 	Home,
 	ListOrdered,
+	Package,
 	Settings,
+	ShoppingBag,
 	Store,
 	Users,
 } from "lucide-react";
@@ -42,6 +44,18 @@ export const sidebarItems: SidebarItem[] = [
 		translationKey: SidebarKeys.PAYMENTS,
 		icon: <DollarSign size={18} className="shrink-0" />,
 		to: "/admin/payments",
+	},
+	{
+		type: "link",
+		translationKey: SidebarKeys.PRODUCTS,
+		icon: <Package size={18} className="shrink-0" />,
+		to: "/admin/products",
+	},
+	{
+		type: "link",
+		translationKey: SidebarKeys.STOREFRONT,
+		icon: <ShoppingBag size={18} className="shrink-0" />,
+		to: "/storefront",
 	},
 	{
 		type: "group",

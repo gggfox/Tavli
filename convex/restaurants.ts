@@ -166,6 +166,15 @@ export const getByOwner = query({
 	},
 });
 
+export const getPaymentsEnabled = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args) => {
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (!restaurant) return false;
+		return restaurant.stripeOnboardingComplete === true;
+	},
+});
+
 export const getBySlug = query({
 	args: { slug: v.string() },
 	handler: async (ctx, args) => {
@@ -173,6 +182,33 @@ export const getBySlug = query({
 			.query(TABLE.RESTAURANTS)
 			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
 			.first();
+	},
+});
+
+export const getStripeStatus = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<
+		{ stripeAccountId: string | undefined; stripeOnboardingComplete: boolean },
+		AuthErrors | NotFoundErrorObject
+	> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
+
+		return [
+			{
+				stripeAccountId: restaurant.stripeAccountId,
+				stripeOnboardingComplete: restaurant.stripeOnboardingComplete ?? false,
+			},
+			null,
+		];
 	},
 });
 

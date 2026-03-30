@@ -9,6 +9,7 @@ import {
 	UtensilsCrossed,
 	XCircle,
 } from "lucide-react";
+import { useState } from "react";
 import { useOrders } from "../hooks/useOrders";
 
 interface OrderDashboardProps {
@@ -20,9 +21,9 @@ const STATUS_CONFIG: Record<
 	{ label: string; next: string | null; nextLabel: string; color: string }
 > = {
 	submitted: {
-		label: "New",
+		label: "Pending",
 		next: "preparing",
-		nextLabel: "Start Preparing",
+		nextLabel: "Accept Order",
 		color: "var(--accent-warning, #d97706)",
 	},
 	preparing: {
@@ -37,16 +38,11 @@ const STATUS_CONFIG: Record<
 		nextLabel: "Mark Served",
 		color: "var(--accent-success, #16a34a)",
 	},
-	served: {
-		label: "Served",
-		next: "paid",
-		nextLabel: "Mark Paid",
-		color: "var(--accent-secondary, #7c3aed)",
-	},
 };
 
 export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) {
 	const { orders, isLoading, error, updateStatus } = useOrders(restaurantId);
+	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 
 	if (isLoading) {
 		return <LoadingState message="Loading orders..." className="p-4" />;
@@ -63,7 +59,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	}
 
 	const sorted = [...orders].sort((a: any, b: any) => {
-		const statusOrder = ["submitted", "preparing", "ready", "served"];
+		const statusOrder = ["submitted", "preparing", "ready"];
 		return (
 			statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) || a.createdAt - b.createdAt
 		);
@@ -97,6 +93,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 								<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
 									Table {order.tableNumber}
 								</span>
+								{order.paidAt && (
+									<span
+										className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+										style={{ backgroundColor: "var(--accent-success)", color: "white" }}
+									>
+										<CreditCard size={10} />
+										Paid
+									</span>
+								)}
 							</div>
 							<span className="text-xs" style={{ color: "var(--text-muted)" }}>
 								${formatCents(order.totalAmount)}
@@ -121,33 +126,70 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 							))}
 						</div>
 
-						<div className="px-4 pb-4 flex gap-2">
-							{config.next && (
-								<button
-									onClick={() =>
-										updateStatus({ orderId: order._id, newStatus: config.next as any })
-									}
-									className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-								>
-									{config.next === "preparing" && <ChefHat size={14} />}
-									{config.next === "ready" && <CheckCircle2 size={14} />}
-									{config.next === "served" && <UtensilsCrossed size={14} />}
-									{config.next === "paid" && <CreditCard size={14} />}
-									{config.nextLabel}
-								</button>
-							)}
-							{(order.status === "submitted" || order.status === "served") && (
-								<button
-									onClick={() => updateStatus({ orderId: order._id, newStatus: "cancelled" })}
-									className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm"
+						<div className="px-4 pb-4 space-y-2">
+							{cancelConfirm === order._id ? (
+								<div
+									className="p-3 rounded-lg space-y-2"
 									style={{
-										border: "1px solid var(--border-default)",
-										color: "var(--accent-danger)",
+										backgroundColor: "rgba(220, 38, 38, 0.05)",
+										border: "1px solid rgba(220, 38, 38, 0.2)",
 									}}
 								>
-									<XCircle size={14} />
-									Cancel
-								</button>
+									<p className="text-xs font-medium" style={{ color: "var(--accent-danger)" }}>
+										{order.stripePaymentIntentId
+											? "This order has been paid. Cancelling will issue a refund."
+											: "Cancel this order?"}
+									</p>
+									<div className="flex gap-2">
+										<button
+											onClick={() => {
+												updateStatus({ orderId: order._id, newStatus: "cancelled" });
+												setCancelConfirm(null);
+											}}
+											className="flex-1 py-1.5 rounded-lg text-xs font-medium"
+											style={{ backgroundColor: "var(--accent-danger)", color: "white" }}
+										>
+											{order.stripePaymentIntentId ? "Cancel & Refund" : "Confirm Cancel"}
+										</button>
+										<button
+											onClick={() => setCancelConfirm(null)}
+											className="flex-1 py-1.5 rounded-lg text-xs font-medium"
+											style={{
+												border: "1px solid var(--border-default)",
+												color: "var(--text-secondary)",
+											}}
+										>
+											Keep Order
+										</button>
+									</div>
+								</div>
+							) : (
+								<div className="flex gap-2">
+									{config.next && (
+										<button
+											onClick={() =>
+												updateStatus({ orderId: order._id, newStatus: config.next as any })
+											}
+											className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+										>
+											{config.next === "preparing" && <ChefHat size={14} />}
+											{config.next === "ready" && <CheckCircle2 size={14} />}
+											{config.next === "served" && <UtensilsCrossed size={14} />}
+											{config.nextLabel}
+										</button>
+									)}
+									<button
+										onClick={() => setCancelConfirm(order._id)}
+										className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm"
+										style={{
+											border: "1px solid var(--border-default)",
+											color: "var(--accent-danger)",
+										}}
+									>
+										<XCircle size={14} />
+										Cancel
+									</button>
+								</div>
 							)}
 						</div>
 					</div>

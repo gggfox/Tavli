@@ -12,8 +12,12 @@ function Page() {
 	return (
 		<CustomerMenuPage
 			lang={lang}
-			onNavigateToOrder={(orderId) =>
-				navigate({ to: "/r/$slug/$lang/order/$orderId", params: { slug, lang, orderId } })
+			onNavigateToCheckout={(orderId) =>
+				navigate({
+					to: "/r/$slug/$lang/checkout",
+					params: { slug, lang },
+					search: { orderId },
+				})
 			}
 		/>
 	);

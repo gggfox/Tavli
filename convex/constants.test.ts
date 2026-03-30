@@ -7,6 +7,7 @@ describe("TABLE constants", () => {
 			"allEvents",
 			"userSettings",
 			"userRoles",
+			"organizations",
 			"featureFlags",
 			"restaurants",
 			"tables",
@@ -19,6 +20,7 @@ describe("TABLE constants", () => {
 			"sessions",
 			"orders",
 			"orderItems",
+			"products",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});
@@ -45,12 +47,11 @@ describe("ORDER_STATUS", () => {
 		expect(ORDER_STATUS.PREPARING).toBe("preparing");
 		expect(ORDER_STATUS.READY).toBe("ready");
 		expect(ORDER_STATUS.SERVED).toBe("served");
-		expect(ORDER_STATUS.PAID).toBe("paid");
 		expect(ORDER_STATUS.CANCELLED).toBe("cancelled");
 	});
 
-	it("has exactly 7 statuses", () => {
-		expect(Object.keys(ORDER_STATUS)).toHaveLength(7);
+	it("has exactly 6 statuses", () => {
+		expect(Object.keys(ORDER_STATUS)).toHaveLength(6);
 	});
 });
 

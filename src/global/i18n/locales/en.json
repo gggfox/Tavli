@@ -16,6 +16,8 @@
 			"options": "Options",
 			"orders": "Orders",
 			"payments": "Payments",
+			"products": "Products",
+			"storefront": "Storefront",
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations"

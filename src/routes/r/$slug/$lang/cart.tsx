@@ -18,8 +18,9 @@ function CartPage() {
 	const handleSubmit = async () => {
 		await submitOrder({ orderId: orderId as Id<"orders"> });
 		navigate({
-			to: "/r/$slug/$lang/order/$orderId",
-			params: { slug, lang, orderId },
+			to: "/r/$slug/$lang/checkout",
+			params: { slug, lang },
+			search: { orderId },
 		});
 	};
 

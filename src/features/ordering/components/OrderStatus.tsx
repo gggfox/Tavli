@@ -3,7 +3,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { CheckCircle2, ChefHat, Clock, CreditCard, UtensilsCrossed } from "lucide-react";
+import { CheckCircle2, ChefHat, Clock, UtensilsCrossed } from "lucide-react";
 
 interface OrderStatusProps {
 	orderId: Id<"orders">;
@@ -15,10 +15,9 @@ const STATUS_STEPS = [
 	{ key: "preparing", label: "Preparing", icon: ChefHat },
 	{ key: "ready", label: "Ready", icon: CheckCircle2 },
 	{ key: "served", label: "Served", icon: UtensilsCrossed },
-	{ key: "paid", label: "Paid", icon: CreditCard },
 ] as const;
 
-const STATUS_ORDER = ["submitted", "preparing", "ready", "served", "paid"];
+const STATUS_ORDER = ["submitted", "preparing", "ready", "served"];
 
 export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps>) {
 	const { data: orderData } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
