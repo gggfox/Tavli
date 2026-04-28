@@ -5,6 +5,39 @@ import { mutation, query } from "./_generated/server";
 import { getCurrentUserId } from "./_util/auth";
 
 /**
+ * Order statuses the dashboard is allowed to filter by.
+ * `draft` is excluded because drafts are pre-submission and never belong
+ * on the kitchen dashboard.
+ */
+const orderDashboardStatusValidator = v.union(
+	v.literal("submitted"),
+	v.literal("preparing"),
+	v.literal("ready"),
+	v.literal("served"),
+	v.literal("cancelled")
+);
+
+type OrderDashboardStatus =
+	| "submitted"
+	| "preparing"
+	| "ready"
+	| "served"
+	| "cancelled";
+
+type SettingsUpdates = {
+	theme?: "light" | "dark";
+	sidebarExpanded?: boolean;
+	language?: "en" | "es";
+	orderDashboardStatusFilters?: OrderDashboardStatus[];
+};
+
+type SettingsDefaults = {
+	theme: "light" | "dark";
+	sidebarExpanded: boolean;
+	language: "en" | "es";
+};
+
+/**
  * Get user settings for the authenticated user.
  * Returns default settings if none exist.
  */
@@ -50,57 +83,45 @@ export const get = query({
 async function upsertUserSettings(
 	ctx: MutationCtx,
 	userId: string,
-	updates: {
-		theme?: "light" | "dark";
-		sidebarExpanded?: boolean;
-		language?: "en" | "es";
-	},
-	defaults: {
-		theme: "light" | "dark";
-		sidebarExpanded: boolean;
-		language: "en" | "es";
-	}
+	updates: SettingsUpdates,
+	defaults: SettingsDefaults
 ): Promise<Id<"userSettings">> {
-	// Step 1: Check for existing settings
 	const existing = await ctx.db
 		.query("userSettings")
 		.withIndex("by_user", (q) => q.eq("userId", userId))
 		.first();
 
 	if (existing) {
-		// Step 2: Patch existing record
 		await ctx.db.patch(existing._id, updates);
 		return existing._id;
 	}
 
-	// Step 3: Insert new record
 	const newId = await ctx.db.insert("userSettings", {
 		userId,
 		theme: updates.theme ?? defaults.theme,
 		sidebarExpanded: updates.sidebarExpanded ?? defaults.sidebarExpanded,
 		language: updates.language ?? defaults.language,
+		...(updates.orderDashboardStatusFilters !== undefined && {
+			orderDashboardStatusFilters: updates.orderDashboardStatusFilters,
+		}),
 	});
 
-	// Step 4: Check for duplicates (race condition detection)
-	// If another mutation inserted between our check and insert, we'll find multiple records
+	// Race-condition guard: if a concurrent mutation also inserted a row, keep
+	// the oldest and merge our updates into it.
 	const allSettings = await ctx.db
 		.query("userSettings")
 		.withIndex("by_user", (q) => q.eq("userId", userId))
 		.collect();
 
 	if (allSettings.length > 1) {
-		// Step 5: Duplicate detected - keep the oldest record (lowest ID) and delete others
-		// Sort by ID to get the oldest record (Convex IDs are ordered by creation time)
 		const sorted = [...allSettings].sort((a, b) => a._id.localeCompare(b._id));
 		const recordToKeep = sorted[0];
 		const recordsToDelete = sorted.slice(1);
 
-		// Delete all duplicate records (including ours if it's not the one we're keeping)
 		for (const record of recordsToDelete) {
 			await ctx.db.delete(record._id);
 		}
 
-		// Patch the record we kept with our updates
 		await ctx.db.patch(recordToKeep._id, updates);
 		return recordToKeep._id;
 	}
@@ -179,6 +200,32 @@ export const updateLanguage = mutation({
 			userId,
 			{ language: args.language },
 			{ theme: "light", sidebarExpanded: true, language: args.language }
+		);
+	},
+});
+
+/**
+ * Update the OrderDashboard status filters for the authenticated user.
+ * Creates settings if they don't exist.
+ *
+ * An empty array is a valid value (means "show no statuses"). The mutation
+ * dedupes the input so the persisted value stays minimal.
+ */
+export const updateOrderDashboardStatusFilters = mutation({
+	args: {
+		statuses: v.array(orderDashboardStatusValidator),
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		const deduped = Array.from(new Set(args.statuses)) as OrderDashboardStatus[];
+		return await upsertUserSettings(
+			ctx,
+			userId,
+			{ orderDashboardStatusFilters: deduped },
+			{ theme: "light", sidebarExpanded: true, language: "en" }
 		);
 	},
 });

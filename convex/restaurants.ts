@@ -171,7 +171,25 @@ export const getPaymentsEnabled = query({
 	handler: async (ctx, args) => {
 		const restaurant = await ctx.db.get(args.restaurantId);
 		if (!restaurant) return false;
-		return restaurant.stripeOnboardingComplete === true;
+		return restaurant.isActive === true && restaurant.stripeOnboardingComplete === true;
+	},
+});
+
+export const getManageableForStripe = query({
+	handler: async function (ctx): AsyncReturn<Doc<"restaurants">[], AuthErrors> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (userIsAdmin) {
+			return [await ctx.db.query(TABLE.RESTAURANTS).collect(), null];
+		}
+
+		const ownedRestaurants = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_owner", (q) => q.eq("ownerId", userId))
+			.collect();
+		return [ownedRestaurants, null];
 	},
 });
 

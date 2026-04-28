@@ -1,19 +1,37 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
+
+async function seedOrganization(t: ReturnType<typeof convexTest>) {
+	let organizationId: Id<"organizations">;
+
+	await t.run(async (ctx) => {
+		organizationId = await ctx.db.insert("organizations", {
+			name: "Test Org",
+			isActive: true,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
+
+	return organizationId!;
+}
 
 async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>) {
 	let restaurantId: Id<"restaurants">;
 	let tableId: Id<"tables">;
 	let sessionId: Id<"sessions">;
 
+	const organizationId = await seedOrganization(t);
+
 	await t.run(async (ctx) => {
 		restaurantId = await ctx.db.insert("restaurants", {
 			ownerId: "owner1",
+			organizationId,
 			name: "Test Restaurant",
 			slug: "test-r",
 			currency: "USD",
@@ -37,7 +55,12 @@ async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>) {
 		});
 	});
 
-	return { restaurantId: restaurantId!, tableId: tableId!, sessionId: sessionId! };
+	return {
+		organizationId: organizationId!,
+		restaurantId: restaurantId!,
+		tableId: tableId!,
+		sessionId: sessionId!,
+	};
 }
 
 /**
@@ -53,6 +76,7 @@ async function simulatePaymentConfirmation(
 		const now = Date.now();
 		await ctx.db.patch(orderId, {
 			status: "submitted",
+			paymentState: "paid",
 			stripePaymentIntentId: "pi_test_simulated",
 			paidAt: now,
 			submittedAt: now,
@@ -96,6 +120,40 @@ async function seedMenuItem(t: ReturnType<typeof convexTest>, restaurantId: Id<"
 	});
 
 	return menuItemId!;
+}
+
+async function seedOptionGroupAndOption(
+	t: ReturnType<typeof convexTest>,
+	restaurantId: Id<"restaurants">
+) {
+	let optionGroupId: Id<"optionGroups">;
+	let optionId: Id<"options">;
+
+	await t.run(async (ctx) => {
+		optionGroupId = await ctx.db.insert("optionGroups", {
+			restaurantId,
+			name: "Add-ons",
+			selectionType: "single",
+			isRequired: false,
+			minSelections: 0,
+			maxSelections: 1,
+			displayOrder: 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+
+		optionId = await ctx.db.insert("options", {
+			optionGroupId,
+			restaurantId,
+			name: "Extra cheese",
+			priceModifier: 250,
+			isAvailable: true,
+			displayOrder: 0,
+			createdAt: Date.now(),
+		});
+	});
+
+	return { optionGroupId: optionGroupId!, optionId: optionId! };
 }
 
 describe("orders", () => {
@@ -151,6 +209,34 @@ describe("orders", () => {
 			expect(order!.items[0].menuItemName).toBe("Bruschetta");
 			expect(order!.items[0].quantity).toBe(2);
 			expect(order!.totalAmount).toBe(1600);
+		});
+
+		it("recalculates selected option pricing from server-side records", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const { optionGroupId, optionId } = await seedOptionGroupAndOption(t, restaurantId);
+
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			await t.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [
+					{
+						optionGroupId,
+						optionGroupName: "Tampered Group Name",
+						optionId,
+						optionName: "Tampered Option Name",
+						priceModifier: 0,
+					},
+				],
+			});
+
+			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			expect(order!.totalAmount).toBe(1050);
+			expect(order!.items[0].selectedOptions[0].priceModifier).toBe(250);
+			expect(order!.items[0].selectedOptions[0].optionName).toBe("Extra cheese");
 		});
 	});
 
@@ -228,12 +314,66 @@ describe("orders", () => {
 				"items: Order must have at least one item"
 			);
 		});
+
+		it("ignores stale payment confirmations for non-active payment attempts", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			await t.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+
+			const firstPaymentId = await t.mutation(internal.stripeHelpers.createPayment, {
+				restaurantId,
+				orderId,
+				amount: 800,
+				currency: "usd",
+				status: "processing",
+				refundStatus: "none",
+				attemptNumber: 1,
+				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt,
+			});
+			const secondPaymentId = await t.mutation(internal.stripeHelpers.createPayment, {
+				restaurantId,
+				orderId,
+				amount: 800,
+				currency: "usd",
+				status: "processing",
+				refundStatus: "none",
+				attemptNumber: 2,
+				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt,
+			});
+			await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId,
+				paymentState: "processing",
+				activePaymentId: secondPaymentId,
+				stripePaymentIntentId: "pi_active",
+			});
+
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: firstPaymentId,
+				stripePaymentIntentId: "pi_stale",
+			});
+
+			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			expect(order!.status).toBe("draft");
+			expect(order!.paymentState).toBe("processing");
+
+			const stalePayment = await t.run(async (ctx) => ctx.db.get(firstPaymentId));
+			expect(stalePayment?.status).toBe("processing");
+		});
 	});
 
 	describe("updateStatus", () => {
 		it("follows valid state transitions", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { organizationId, sessionId, restaurantId, tableId } =
+				await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "employee1" });
 
@@ -241,6 +381,7 @@ describe("orders", () => {
 				await ctx.db.insert("userRoles", {
 					userId: "employee1",
 					roles: ["employee"],
+					organizationId,
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
@@ -280,7 +421,8 @@ describe("orders", () => {
 
 		it("rejects invalid state transitions", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { organizationId, sessionId, restaurantId, tableId } =
+				await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "employee1" });
 
@@ -288,6 +430,7 @@ describe("orders", () => {
 				await ctx.db.insert("userRoles", {
 					userId: "employee1",
 					roles: ["employee"],
+					organizationId,
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
@@ -351,7 +494,8 @@ describe("orders", () => {
 	describe("getActiveOrdersByRestaurant", () => {
 		it("returns submitted orders for an authenticated owner", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { organizationId, sessionId, restaurantId, tableId } =
+				await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "owner1" });
 
@@ -359,6 +503,7 @@ describe("orders", () => {
 				await ctx.db.insert("userRoles", {
 					userId: "owner1",
 					roles: ["owner"],
+					organizationId,
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
@@ -389,7 +534,8 @@ describe("orders", () => {
 
 		it("filters out draft, served, and cancelled orders", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { organizationId, sessionId, restaurantId, tableId } =
+				await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "owner1" });
 
@@ -397,6 +543,7 @@ describe("orders", () => {
 				await ctx.db.insert("userRoles", {
 					userId: "owner1",
 					roles: ["owner"],
+					organizationId,
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
@@ -415,9 +562,6 @@ describe("orders", () => {
 			});
 
 			let submittedOrderId: Id<"orders">;
-			let servedOrderId: Id<"orders">;
-			let cancelledOrderId: Id<"orders">;
-
 			await t.run(async (ctx) => {
 				const newSession1 = await ctx.db.insert("sessions", {
 					restaurantId,
@@ -432,6 +576,7 @@ describe("orders", () => {
 					tableId,
 					status: "submitted",
 					totalAmount: 800,
+					paymentState: "paid",
 					submittedAt: Date.now(),
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
@@ -447,19 +592,20 @@ describe("orders", () => {
 					createdAt: Date.now(),
 				});
 
-				servedOrderId = await ctx.db.insert("orders", {
+				await ctx.db.insert("orders", {
 					sessionId: newSession1,
 					restaurantId,
 					tableId,
 					status: "served",
 					totalAmount: 800,
+					paymentState: "paid",
 					submittedAt: Date.now(),
 					paidAt: Date.now(),
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
 
-				cancelledOrderId = await ctx.db.insert("orders", {
+				await ctx.db.insert("orders", {
 					sessionId: newSession1,
 					restaurantId,
 					tableId,
@@ -480,6 +626,115 @@ describe("orders", () => {
 			expect(orders[0]._id).toBe(submittedOrderId!);
 		});
 
+		it("returns served and cancelled orders when explicitly requested via statuses filter", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			let servedOrderId: Id<"orders">;
+			let cancelledOrderId: Id<"orders">;
+			let submittedOrderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+
+				submittedOrderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 500,
+					paymentState: "paid",
+					submittedAt: Date.now(),
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: submittedOrderId,
+					menuItemId,
+					menuItemName: "Bruschetta",
+					quantity: 1,
+					unitPrice: 500,
+					selectedOptions: [],
+					lineTotal: 500,
+					createdAt: Date.now(),
+				});
+
+				servedOrderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "served",
+					totalAmount: 700,
+					paymentState: "paid",
+					submittedAt: Date.now(),
+					paidAt: Date.now(),
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: servedOrderId,
+					menuItemId,
+					menuItemName: "Bruschetta",
+					quantity: 1,
+					unitPrice: 700,
+					selectedOptions: [],
+					lineTotal: 700,
+					createdAt: Date.now(),
+				});
+
+				cancelledOrderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "cancelled",
+					totalAmount: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			// Default behaviour (no statuses) keeps the active-only contract.
+			const [defaultOrders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+			if (!Array.isArray(defaultOrders)) throw new Error("Expected array");
+			expect(defaultOrders.map((o) => o._id)).toEqual([submittedOrderId!]);
+
+			// Explicit served+cancelled returns only those.
+			const [terminalOrders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				statuses: ["served", "cancelled"],
+			});
+			if (!Array.isArray(terminalOrders)) throw new Error("Expected array");
+			expect(new Set(terminalOrders.map((o) => o._id))).toEqual(
+				new Set([servedOrderId!, cancelledOrderId!])
+			);
+
+			// Combined active + terminal returns all three.
+			const [allOrders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				statuses: ["submitted", "served", "cancelled"],
+			});
+			if (!Array.isArray(allOrders)) throw new Error("Expected array");
+			expect(allOrders).toHaveLength(3);
+		});
+
 		it("returns auth error for unauthenticated users", async () => {
 			const t = convexTest(schema, modules);
 			const { restaurantId } = await seedRestaurantAndSession(t);
@@ -495,13 +750,14 @@ describe("orders", () => {
 
 		it("returns auth error for users without required role", async () => {
 			const t = convexTest(schema, modules);
-			const { restaurantId } = await seedRestaurantAndSession(t);
+			const { organizationId, restaurantId } = await seedRestaurantAndSession(t);
 			const authed = t.withIdentity({ subject: "customer1" });
 
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
 					userId: "customer1",
 					roles: ["customer"],
+					organizationId,
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});

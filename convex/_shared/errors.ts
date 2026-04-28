@@ -47,6 +47,9 @@ export type UserInputValidationErrorObject = CustomErrorObject & {
 export type IdempotencyKeyConflictErrorObject = CustomErrorObject & {
 	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.IDEMPOTENCY_KEY_CONFLICT}`];
 };
+export type ConflictErrorObject = CustomErrorObject & {
+	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.CONFLICT}`];
+};
 export type InvalidAuctionStateErrorObject = CustomErrorObject & {
 	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.INVALID_AUCTION_STATE}`];
 };
@@ -146,6 +149,22 @@ export class UserInputValidationError extends CustomError {
 			name: this.name as (typeof ERROR_NAMES)["VALIDATION_ERROR"],
 			message: this.message,
 			fields: this.fields,
+		};
+	}
+}
+
+export class ConflictError extends CustomError {
+	constructor(message?: string) {
+		super({
+			message: message ?? DEFAULT_ERROR_MESSAGES[ERROR_NAMES.CONFLICT],
+			name: ERROR_NAMES.CONFLICT,
+		});
+	}
+
+	override toObject(): ConflictErrorObject {
+		return {
+			name: ERROR_NAMES.CONFLICT,
+			message: this.message,
 		};
 	}
 }

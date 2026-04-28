@@ -34,17 +34,19 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const clearError = () => setError(null);
 
 	const createForm = useForm({
-		defaultValues: { tableNumber: "", label: "" },
+		defaultValues: { tableNumber: "", label: "", capacity: "4" },
 		onSubmit: async ({ value }) => {
 			clearError();
 			const num = Number.parseInt(value.tableNumber, 10);
 			if (Number.isNaN(num)) return;
+			const cap = Number.parseInt(value.capacity, 10);
 			try {
 				unwrapResult(
 					await createTable.mutateAsync({
 						restaurantId,
 						tableNumber: num,
 						label: value.label || undefined,
+						capacity: Number.isNaN(cap) ? undefined : cap,
 					})
 				);
 				createForm.reset();
@@ -55,18 +57,20 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	});
 
 	const editForm = useForm({
-		defaultValues: { editNumber: "", editLabel: "" },
+		defaultValues: { editNumber: "", editLabel: "", editCapacity: "" },
 		onSubmit: async ({ value }) => {
 			if (!editingId) return;
 			clearError();
 			const num = Number.parseInt(value.editNumber, 10);
 			if (Number.isNaN(num)) return;
+			const cap = Number.parseInt(value.editCapacity, 10);
 			try {
 				unwrapResult(
 					await updateTable.mutateAsync({
 						tableId: editingId,
 						tableNumber: num,
 						label: value.editLabel || undefined,
+						capacity: Number.isNaN(cap) ? undefined : cap,
 					})
 				);
 				cancelEdit();
@@ -76,10 +80,19 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		},
 	});
 
-	const startEdit = (tableId: Id<"tables">, tableNumber: number, label?: string) => {
+	const startEdit = (
+		tableId: Id<"tables">,
+		tableNumber: number,
+		label?: string,
+		capacity?: number
+	) => {
 		clearError();
 		setEditingId(tableId);
-		editForm.reset({ editNumber: String(tableNumber), editLabel: label ?? "" });
+		editForm.reset({
+			editNumber: String(tableNumber),
+			editLabel: label ?? "",
+			editCapacity: capacity !== undefined ? String(capacity) : "",
+		});
 	};
 
 	const cancelEdit = () => {
@@ -150,6 +163,22 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 						/>
 					)}
 				/>
+				<createForm.Field
+					name="capacity"
+					children={(field) => (
+						<TextInput
+							id="new-table-capacity"
+							label="Seats"
+							type="number"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							onBlur={field.handleBlur}
+							required
+							min={1}
+							className="w-20"
+						/>
+					)}
+				/>
 				<button
 					type="submit"
 					className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
@@ -197,6 +226,20 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 										/>
 									)}
 								/>
+								<editForm.Field
+									name="editCapacity"
+									children={(field) => (
+										<TextInput
+											type="number"
+											value={field.state.value}
+											onChange={(e) => field.handleChange(e.target.value)}
+											onBlur={field.handleBlur}
+											placeholder="Seats"
+											min={1}
+											className="w-20"
+										/>
+									)}
+								/>
 								<button
 									onClick={() => editForm.handleSubmit()}
 									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
@@ -223,10 +266,17 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 											{table.label}
 										</span>
 									)}
+									<span className="text-xs" style={{ color: "var(--text-muted)" }}>
+										{table.capacity !== undefined
+											? `${table.capacity} seats`
+											: "seats not set"}
+									</span>
 								</div>
 								<div className="flex items-center gap-2">
 									<button
-										onClick={() => startEdit(table._id, table.tableNumber, table.label)}
+										onClick={() =>
+											startEdit(table._id, table.tableNumber, table.label, table.capacity)
+										}
 										className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
 										title="Edit table"
 									>

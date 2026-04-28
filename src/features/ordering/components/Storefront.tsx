@@ -5,6 +5,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { Loader2, ShoppingBag, Store } from "lucide-react";
 import { useState } from "react";
+import { StorefrontSkeleton } from "./StorefrontSkeleton";
 
 /**
  * Public storefront that displays all products across all connected accounts
@@ -21,11 +22,7 @@ export function Storefront() {
 	);
 
 	if (isLoading) {
-		return (
-			<div className="flex items-center justify-center py-16">
-				<Loader2 size={24} className="animate-spin" style={{ color: "var(--text-muted)" }} />
-			</div>
-		);
+		return <StorefrontSkeleton />;
 	}
 
 	if (!products || products.length === 0) {

@@ -11,7 +11,7 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, isAdmin, requireOwnerRole, RoleErrorMessages } from "./_util/auth";
-import { TABLE } from "./constants";
+import { FALLBACK_TABLE_CAPACITY, TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -20,6 +20,7 @@ export const create = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		tableNumber: v.number(),
 		label: v.optional(v.string()),
+		capacity: v.optional(v.number()),
 	},
 	handler: async function (
 		ctx,
@@ -35,6 +36,15 @@ export const create = mutation({
 		const userIsAdmin = await isAdmin(ctx, userId);
 		if (!userIsAdmin && restaurant.ownerId !== userId) {
 			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
+		if (args.capacity !== undefined && args.capacity < 1) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "capacity", message: "Must be at least 1" }],
+				}).toObject(),
+			];
 		}
 
 		const existing = await ctx.db
@@ -57,6 +67,7 @@ export const create = mutation({
 			restaurantId: args.restaurantId,
 			tableNumber: args.tableNumber,
 			label: args.label,
+			capacity: args.capacity,
 			isActive: true,
 			createdAt: Date.now(),
 		});
@@ -70,6 +81,7 @@ export const update = mutation({
 		tableId: v.id(TABLE.TABLES),
 		label: v.optional(v.string()),
 		tableNumber: v.optional(v.number()),
+		capacity: v.optional(v.number()),
 	},
 	handler: async function (
 		ctx,
@@ -87,6 +99,15 @@ export const update = mutation({
 		const userIsAdmin = await isAdmin(ctx, userId);
 		if (!userIsAdmin && restaurant?.ownerId !== userId) {
 			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
+		if (args.capacity !== undefined && args.capacity < 1) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "capacity", message: "Must be at least 1" }],
+				}).toObject(),
+			];
 		}
 
 		if (args.tableNumber !== undefined && args.tableNumber !== table.tableNumber) {
@@ -109,9 +130,51 @@ export const update = mutation({
 		await ctx.db.patch(args.tableId, {
 			...(args.label !== undefined && { label: args.label }),
 			...(args.tableNumber !== undefined && { tableNumber: args.tableNumber }),
+			...(args.capacity !== undefined && { capacity: args.capacity }),
 		});
 
 		return [args.tableId, null];
+	},
+});
+
+/**
+ * One-shot admin-only backfill for the `capacity` field. Sets `capacity` on
+ * any row where it's missing to the provided default. Owners can run this
+ * once after the rollout; safe to re-run (no-op for rows that already have
+ * a capacity).
+ */
+export const backfillCapacity = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		defaultCapacity: v.optional(v.number()),
+	},
+	handler: async function (ctx, args): AsyncReturn<{ updated: number }, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireOwnerRole(ctx, userId);
+		if (error2) return [null, error2];
+
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
+
+		const userIsAdmin = await isAdmin(ctx, userId);
+		if (!userIsAdmin && restaurant.ownerId !== userId) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
+		const tables = await ctx.db
+			.query(TABLE.TABLES)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+		const fillTo = args.defaultCapacity ?? FALLBACK_TABLE_CAPACITY;
+		let updated = 0;
+		for (const t of tables) {
+			if (t.capacity === undefined) {
+				await ctx.db.patch(t._id, { capacity: fillTo });
+				updated++;
+			}
+		}
+		return [{ updated }, null];
 	},
 });
 

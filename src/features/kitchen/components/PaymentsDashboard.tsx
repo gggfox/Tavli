@@ -1,10 +1,11 @@
-import { EmptyState, LoadingState } from "@/global/components";
+import { CopyableId, EmptyState, SegmentedControl, Tooltip } from "@/global/components";
 import { formatDate } from "@/global/utils/date";
 import { formatCents } from "@/global/utils/money";
 import type { Id } from "convex/_generated/dataModel";
 import { AlertTriangle, CreditCard, DollarSign, Hash, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { usePayments } from "../hooks/usePayments";
+import { PaymentsDashboardSkeleton } from "./PaymentsDashboardSkeleton";
 
 interface PaymentsDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -63,7 +64,7 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 	);
 
 	if (isLoading) {
-		return <LoadingState message="Loading payments..." className="p-4" />;
+		return <PaymentsDashboardSkeleton />;
 	}
 
 	if (error) {
@@ -78,30 +79,12 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 
 	return (
 		<div className="space-y-6">
-			{/* Time frame filter */}
-			<div className="flex flex-wrap gap-2">
-				{TIME_FRAME_OPTIONS.map((opt) => (
-					<button
-						key={opt.key}
-						onClick={() => setTimeFrame(opt.key)}
-						className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-						style={
-							timeFrame === opt.key
-								? {
-										backgroundColor: "var(--btn-primary-bg)",
-										color: "var(--btn-primary-text, #fff)",
-									}
-								: {
-										backgroundColor: "var(--bg-secondary)",
-										color: "var(--text-secondary)",
-										border: "1px solid var(--border-default)",
-									}
-						}
-					>
-						{opt.label}
-					</button>
-				))}
-			</div>
+			<SegmentedControl
+				options={TIME_FRAME_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+				value={timeFrame}
+				onChange={setTimeFrame}
+				ariaLabel="Filter payments by time frame"
+			/>
 
 			{/* Summary cards */}
 			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -136,6 +119,12 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 									className="text-left px-4 py-3 font-medium"
 									style={{ color: "var(--text-muted)" }}
 								>
+									Order ID
+								</th>
+								<th
+									className="text-left px-4 py-3 font-medium"
+									style={{ color: "var(--text-muted)" }}
+								>
 									Date
 								</th>
 								<th
@@ -159,30 +148,93 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 							</tr>
 						</thead>
 						<tbody>
-							{sorted.map((order: any) => (
-								<tr key={order._id} style={{ borderBottom: "1px solid var(--border-default)" }}>
-									<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
-										{order.paidAt ? formatDate(order.paidAt) : "—"}
-									</td>
-									<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
-										Table {order.tableNumber}
-									</td>
-									<td className="px-4 py-3" style={{ color: "var(--text-secondary)" }}>
-										{order.items.map((i: any) => `${i.quantity}x ${i.menuItemName}`).join(", ")}
-									</td>
-									<td
-										className="px-4 py-3 text-right font-medium"
-										style={{ color: "var(--text-primary)" }}
-									>
-										${formatCents(order.totalAmount)}
-									</td>
-								</tr>
-							))}
+						{sorted.map((order: any) => (
+							<tr key={order._id} style={{ borderBottom: "1px solid var(--border-default)" }}>
+								<td className="px-4 py-3">
+									<CopyableId id={order._id} />
+								</td>
+								<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
+									{order.paidAt ? formatDate(order.paidAt) : "—"}
+								</td>
+								<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
+									Table {order.tableNumber}
+								</td>
+								<td className="px-4 py-3">
+									<OrderItemsTooltipTrigger order={order} />
+								</td>
+								<td
+									className="px-4 py-3 text-right font-medium"
+									style={{ color: "var(--text-primary)" }}
+								>
+									${formatCents(order.totalAmount)}
+								</td>
+							</tr>
+						))}
 						</tbody>
 					</table>
 				</div>
 			)}
 		</div>
+	);
+}
+
+interface OrderItem {
+	_id: string;
+	menuItemName: string;
+	quantity: number;
+}
+
+interface OrderForTooltip {
+	items: OrderItem[];
+	totalAmount: number;
+}
+
+function OrderItemsTooltipTrigger({ order }: Readonly<{ order: OrderForTooltip }>) {
+	const itemCount = order.items.reduce((n, item) => n + item.quantity, 0);
+	const label = itemCount === 1 ? "1 item" : `${itemCount} items`;
+
+	return (
+		<Tooltip
+			content={
+				<div className="space-y-2">
+					<ul className="space-y-1 list-none p-0 m-0">
+						{order.items.map((item) => (
+							<li
+								key={item._id}
+								className="flex items-baseline justify-between gap-3"
+								style={{ color: "var(--text-primary)" }}
+							>
+								<span style={{ color: "var(--text-muted)" }}>{item.quantity}×</span>
+								<span className="flex-1">{item.menuItemName}</span>
+							</li>
+						))}
+					</ul>
+					<div
+						className="flex items-baseline justify-between gap-3 pt-1.5 mt-1 font-medium"
+						style={{
+							borderTop: "1px solid var(--border-default)",
+							color: "var(--text-primary)",
+						}}
+					>
+						<span style={{ color: "var(--text-muted)" }}>Total</span>
+						<span>${formatCents(order.totalAmount)}</span>
+					</div>
+				</div>
+			}
+		>
+			<button
+				type="button"
+				className="bg-transparent p-0 cursor-help"
+				style={{
+					color: "var(--text-secondary)",
+					textDecoration: "underline",
+					textDecorationStyle: "dotted",
+					textUnderlineOffset: "3px",
+				}}
+			>
+				{label}
+			</button>
+		</Tooltip>
 	);
 }
 

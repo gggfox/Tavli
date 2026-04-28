@@ -1,7 +1,15 @@
 import { useConvexAction } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { AlertCircle, CheckCircle2, Clock, ExternalLink, Loader2 } from "lucide-react";
+import {
+	AlertCircle,
+	AlertTriangle,
+	CheckCircle2,
+	Clock,
+	ExternalLink,
+	Loader2,
+	Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 /**
@@ -37,11 +45,15 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 	const createAccount = useConvexAction(api.stripe.createConnectAccount);
 	const createLink = useConvexAction(api.stripe.createAccountLink);
 	const checkStatus = useConvexAction(api.stripe.getAccountStatus);
+	const resetConnection = useConvexAction(api.stripe.resetStripeConnection);
 
 	const [status, setStatus] = useState<AccountStatus | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [actionLoading, setActionLoading] = useState(false);
+	const [resetLoading, setResetLoading] = useState(false);
+	const [confirmingReset, setConfirmingReset] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [resetNotice, setResetNotice] = useState<string | null>(null);
 
 	const refreshStatus = useCallback(async () => {
 		try {
@@ -73,6 +85,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 
 	const handleSetup = async () => {
 		setError(null);
+		setResetNotice(null);
 		setActionLoading(true);
 		try {
 			if (!status?.connected) {
@@ -92,6 +105,26 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to start Stripe setup");
 			setActionLoading(false);
+		}
+	};
+
+	const handleReset = async () => {
+		setError(null);
+		setResetNotice(null);
+		setResetLoading(true);
+		try {
+			const result = await resetConnection({ restaurantId });
+			setConfirmingReset(false);
+			setResetNotice(
+				result.closedStripeAccount
+					? `Disconnected and closed Stripe account ${result.closedStripeAccountId}. You can now onboard a new account.`
+					: "Disconnected from Stripe. The previous account was left open — close it from your Stripe Dashboard if needed."
+			);
+			await refreshStatus();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to reset Stripe setup");
+		} finally {
+			setResetLoading(false);
 		}
 	};
 
@@ -158,15 +191,46 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 				</div>
 			)}
 
+			{resetNotice && (
+				<div
+					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
+					style={{
+						backgroundColor: "rgba(34, 197, 94, 0.1)",
+						color: "var(--accent-success, #16a34a)",
+					}}
+				>
+					<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+					<span>{resetNotice}</span>
+				</div>
+			)}
+
 			<StripeStatusSection
 				status={status}
 				isFullySetUp={!!isFullySetUp}
 				actionLoading={actionLoading}
+				resetLoading={resetLoading}
+				confirmingReset={confirmingReset}
 				onSetup={handleSetup}
 				onRefresh={refreshStatus}
+				onRequestReset={() => setConfirmingReset(true)}
+				onCancelReset={() => setConfirmingReset(false)}
+				onConfirmReset={handleReset}
 			/>
 		</div>
 	);
+}
+
+interface StripeStatusSectionProps {
+	status: AccountStatus | null;
+	isFullySetUp: boolean;
+	actionLoading: boolean;
+	resetLoading: boolean;
+	confirmingReset: boolean;
+	onSetup: () => void;
+	onRefresh: () => void;
+	onRequestReset: () => void;
+	onCancelReset: () => void;
+	onConfirmReset: () => void;
 }
 
 /**
@@ -174,20 +238,24 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
  * 1. Fully active — shows dashboard link and status
  * 2. Connected but incomplete — shows requirements status and continue button
  * 3. Not connected — shows setup button
+ *
+ * Once an account exists (cases 1 and 2) a "Reset Stripe Setup" control is
+ * available so the user can unlink it — necessary when they need to re-onboard
+ * with different parameters (e.g. a different country) since Stripe locks the
+ * account country after creation.
  */
 function StripeStatusSection({
 	status,
 	isFullySetUp,
 	actionLoading,
+	resetLoading,
+	confirmingReset,
 	onSetup,
 	onRefresh,
-}: Readonly<{
-	status: AccountStatus | null;
-	isFullySetUp: boolean;
-	actionLoading: boolean;
-	onSetup: () => void;
-	onRefresh: () => void;
-}>) {
+	onRequestReset,
+	onCancelReset,
+	onConfirmReset,
+}: Readonly<StripeStatusSectionProps>) {
 	if (isFullySetUp) {
 		return (
 			<div className="space-y-3">
@@ -195,7 +263,7 @@ function StripeStatusSection({
 					Your Stripe account is connected and ready to receive payments. Customers will be charged
 					when placing orders, and funds will be transferred to your Stripe account automatically.
 				</p>
-				<div className="flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<a
 						href="https://dashboard.stripe.com/"
 						target="_blank"
@@ -219,6 +287,13 @@ function StripeStatusSection({
 					>
 						Refresh Status
 					</button>
+					<ResetStripeControl
+						confirmingReset={confirmingReset}
+						resetLoading={resetLoading}
+						onRequestReset={onRequestReset}
+						onCancelReset={onCancelReset}
+						onConfirmReset={onConfirmReset}
+					/>
 				</div>
 			</div>
 		);
@@ -275,11 +350,11 @@ function StripeStatusSection({
 					)}
 				</div>
 
-				<div className="flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2">
 					<button
 						onClick={onSetup}
-						disabled={actionLoading}
-						className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+						disabled={actionLoading || resetLoading || confirmingReset}
+						className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50"
 					>
 						{actionLoading ? (
 							<>
@@ -303,6 +378,13 @@ function StripeStatusSection({
 					>
 						Refresh
 					</button>
+					<ResetStripeControl
+						confirmingReset={confirmingReset}
+						resetLoading={resetLoading}
+						onRequestReset={onRequestReset}
+						onCancelReset={onCancelReset}
+						onConfirmReset={onConfirmReset}
+					/>
 				</div>
 			</div>
 		);
@@ -328,6 +410,102 @@ function StripeStatusSection({
 					"Onboard to collect payments"
 				)}
 			</button>
+		</div>
+	);
+}
+
+/**
+ * Two-step confirmation control for disconnecting the restaurant from its
+ * Stripe account. Collapsed state renders a small danger-tinted button; the
+ * expanded state renders a warning with explicit Confirm/Cancel actions.
+ */
+function ResetStripeControl({
+	confirmingReset,
+	resetLoading,
+	onRequestReset,
+	onCancelReset,
+	onConfirmReset,
+}: Readonly<{
+	confirmingReset: boolean;
+	resetLoading: boolean;
+	onRequestReset: () => void;
+	onCancelReset: () => void;
+	onConfirmReset: () => void;
+}>) {
+	if (!confirmingReset) {
+		return (
+			<button
+				type="button"
+				onClick={onRequestReset}
+				disabled={resetLoading}
+				className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50"
+				style={{
+					color: "var(--accent-danger, #dc2626)",
+					border: "1px solid var(--border-default)",
+				}}
+				data-testid="stripe-reset-button"
+			>
+				<Trash2 size={12} />
+				Reset Stripe Setup
+			</button>
+		);
+	}
+
+	return (
+		<div
+			className="flex flex-col gap-2 w-full p-3 rounded-lg"
+			style={{
+				backgroundColor: "rgba(220, 38, 38, 0.08)",
+				border: "1px solid rgba(220, 38, 38, 0.3)",
+			}}
+			data-testid="stripe-reset-confirm"
+		>
+			<div className="flex items-start gap-2 text-xs" style={{ color: "var(--text-primary)" }}>
+				<AlertTriangle
+					size={14}
+					className="mt-0.5 shrink-0"
+					style={{ color: "var(--accent-danger, #dc2626)" }}
+				/>
+				<span>
+					This closes the current Stripe account and unlinks it from this restaurant. You&apos;ll
+					need to complete onboarding again. Any existing products tied to this account will no
+					longer be chargeable.
+				</span>
+			</div>
+			<div className="flex items-center gap-2">
+				<button
+					type="button"
+					onClick={onConfirmReset}
+					disabled={resetLoading}
+					className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+					style={{ backgroundColor: "var(--accent-danger, #dc2626)", color: "#fff" }}
+					data-testid="stripe-reset-confirm-button"
+				>
+					{resetLoading ? (
+						<>
+							<Loader2 size={12} className="animate-spin" />
+							Resetting...
+						</>
+					) : (
+						<>
+							<Trash2 size={12} />
+							Confirm Reset
+						</>
+					)}
+				</button>
+				<button
+					type="button"
+					onClick={onCancelReset}
+					disabled={resetLoading}
+					className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50"
+					style={{
+						color: "var(--text-secondary)",
+						border: "1px solid var(--border-default)",
+					}}
+				>
+					Cancel
+				</button>
+			</div>
 		</div>
 	);
 }

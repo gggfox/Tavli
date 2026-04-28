@@ -20,8 +20,10 @@
 // =============================================================================
 
 import { httpRouter } from "convex/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
+import { TABLE, RESERVATION_SOURCE } from "./constants";
 
 const http = httpRouter();
 
@@ -107,6 +109,170 @@ http.route({
 			console.error("Connect webhook processing error:", error);
 			return new Response("Webhook handler failed", { status: 400 });
 		}
+	}),
+});
+
+// =============================================================================
+// Reservations API (for the WhatsApp bot, future SDK clients, etc.)
+// =============================================================================
+//
+// Three POST routes guarded by `RESERVATIONS_BOT_TOKEN`. The bot sends:
+//   Authorization: Bearer <token>
+// Routes are kept minimal: parse, validate the token, delegate to the same
+// internal mutations the UI uses. Idempotency is supported on create via the
+// `Idempotency-Key` header.
+//
+// Local dev: set RESERVATIONS_BOT_TOKEN with `npx convex env set
+// RESERVATIONS_BOT_TOKEN <some-secret>`.
+
+function unauthorizedResponse(): Response {
+	return new Response(JSON.stringify({ error: "Unauthorized" }), {
+		status: 401,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+function badRequestResponse(message: string): Response {
+	return new Response(JSON.stringify({ error: message }), {
+		status: 400,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+function jsonResponse(payload: unknown, status = 200): Response {
+	return new Response(JSON.stringify(payload), {
+		status,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+function isAuthorizedBotRequest(request: Request): boolean {
+	const expected = process.env.RESERVATIONS_BOT_TOKEN;
+	if (!expected) return false;
+	const header = request.headers.get("authorization");
+	if (!header) return false;
+	const [scheme, token] = header.split(" ");
+	if (scheme !== "Bearer" || !token) return false;
+	// Constant-time-ish compare. The token is a shared secret, not a JWT, so
+	// length-equal + char-by-char is sufficient.
+	if (token.length !== expected.length) return false;
+	let mismatch = 0;
+	for (let i = 0; i < token.length; i++) {
+		mismatch |= (token.codePointAt(i) ?? 0) ^ (expected.codePointAt(i) ?? 0);
+	}
+	return mismatch === 0;
+}
+
+http.route({
+	path: "/api/v1/reservations/availability",
+	method: "POST",
+	handler: httpAction(async (ctx, request) => {
+		if (!isAuthorizedBotRequest(request)) return unauthorizedResponse();
+		let body: {
+			restaurantId?: string;
+			partySize?: number;
+			startsAt?: number;
+		};
+		try {
+			body = await request.json();
+		} catch {
+			return badRequestResponse("Invalid JSON body");
+		}
+		if (!body.restaurantId || !body.partySize || !body.startsAt) {
+			return badRequestResponse("restaurantId, partySize, and startsAt are required");
+		}
+		const result = await ctx.runQuery(api.reservations.getAvailability, {
+			restaurantId: body.restaurantId as Id<typeof TABLE.RESTAURANTS>,
+			partySize: body.partySize,
+			startsAt: body.startsAt,
+		});
+		return jsonResponse(result);
+	}),
+});
+
+http.route({
+	path: "/api/v1/reservations",
+	method: "POST",
+	handler: httpAction(async (ctx, request) => {
+		if (!isAuthorizedBotRequest(request)) return unauthorizedResponse();
+		let body: {
+			restaurantId?: string;
+			partySize?: number;
+			startsAt?: number;
+			contact?: { name?: string; phone?: string; email?: string };
+			notes?: string;
+			userId?: string;
+		};
+		try {
+			body = await request.json();
+		} catch {
+			return badRequestResponse("Invalid JSON body");
+		}
+		if (
+			!body.restaurantId ||
+			!body.partySize ||
+			!body.startsAt ||
+			!body.contact?.name ||
+			!body.contact?.phone
+		) {
+			return badRequestResponse(
+				"restaurantId, partySize, startsAt, and contact.{name,phone} are required"
+			);
+		}
+		const idempotencyKey = request.headers.get("idempotency-key") ?? undefined;
+		const [reservationId, error] = await ctx.runMutation(
+			internal.reservations.internalCreate,
+			{
+				restaurantId: body.restaurantId as Id<typeof TABLE.RESTAURANTS>,
+				partySize: body.partySize,
+				startsAt: body.startsAt,
+				contact: {
+					name: body.contact.name,
+					phone: body.contact.phone,
+					email: body.contact.email,
+				},
+				source: RESERVATION_SOURCE.WHATSAPP,
+				userId: body.userId,
+				notes: body.notes,
+				idempotencyKey,
+			}
+		);
+		if (error) {
+			return jsonResponse({ error }, error.name === "NOT_FOUND" ? 404 : 409);
+		}
+		return jsonResponse({ reservationId }, 201);
+	}),
+});
+
+http.route({
+	pathPrefix: "/api/v1/reservations/cancel/",
+	method: "POST",
+	handler: httpAction(async (_ctx, request) => {
+		if (!isAuthorizedBotRequest(request)) return unauthorizedResponse();
+		// Path is /api/v1/reservations/cancel/<reservationId>
+		const url = new URL(request.url);
+		const reservationId = url.pathname.split("/").pop();
+		if (!reservationId) return badRequestResponse("Missing reservationId");
+		let body: { reason?: string } = {};
+		try {
+			body = await request.json();
+		} catch {
+			// Empty body is OK -- reason is optional.
+		}
+		// The bot acts on behalf of the customer, so we don't run the
+		// staff-auth path. Instead delegate to a dedicated internal cancel
+		// (planned: a future `internalCancel` mutation that bypasses staff
+		// auth for bot-originated rows). For now reject with 501 so the bot
+		// surfaces a clear "not yet supported" message rather than silently
+		// failing.
+		return jsonResponse(
+			{
+				error: "Bot-originated cancellation not yet wired",
+				reservationId,
+				reason: body.reason,
+			},
+			501
+		);
 	}),
 });
 

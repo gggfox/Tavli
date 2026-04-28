@@ -1,13 +1,12 @@
 import { SidebarKeys } from "@/global/i18n";
 import {
 	Building2,
+	CalendarClock,
 	ClipboardList,
 	DollarSign,
 	Home,
 	ListOrdered,
-	Package,
 	Settings,
-	ShoppingBag,
 	Store,
 	Users,
 } from "lucide-react";
@@ -47,15 +46,9 @@ export const sidebarItems: SidebarItem[] = [
 	},
 	{
 		type: "link",
-		translationKey: SidebarKeys.PRODUCTS,
-		icon: <Package size={18} className="shrink-0" />,
-		to: "/admin/products",
-	},
-	{
-		type: "link",
-		translationKey: SidebarKeys.STOREFRONT,
-		icon: <ShoppingBag size={18} className="shrink-0" />,
-		to: "/storefront",
+		translationKey: SidebarKeys.RESERVATIONS,
+		icon: <CalendarClock size={18} className="shrink-0" />,
+		to: "/admin/reservations",
 	},
 	{
 		type: "group",

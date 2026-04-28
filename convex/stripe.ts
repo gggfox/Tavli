@@ -8,9 +8,8 @@
 //   2. Onboarding via V2 Account Links
 //   3. Checking account status via V2 Accounts retrieve
 //   4. Listening for V2 thin events (requirements & capability changes)
-//   5. Creating platform-level Products with prices
-//   6. Processing payments via Checkout Sessions with destination charges
-//   7. Refunds for cancelled orders
+//   5. PaymentIntent-backed checkout for restaurant orders
+//   6. Refunds for cancelled orders
 //
 // ---- Required Environment Variables (set in Convex Dashboard) ----
 //
@@ -18,7 +17,7 @@
 //                                  Find it at https://dashboard.stripe.com/apikeys
 //
 //   STRIPE_WEBHOOK_SECRET        - Webhook signing secret for payment events
-//                                  (checkout.session.completed, payment_intent.succeeded).
+//                                  (payment_intent.succeeded, payment_intent.payment_failed).
 //                                  Created when you add a webhook endpoint in the Stripe Dashboard
 //                                  or via `stripe listen --forward-to <url>`.
 //
@@ -45,7 +44,15 @@ import Stripe from "stripe";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
-import { TABLE } from "./constants";
+import {
+	ORDER_PAYMENT_STATE,
+	PAYMENT_REFUND_STATUS,
+	PAYMENT_STATUS,
+	TABLE,
+	USER_ROLES,
+} from "./constants";
+import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError, NotFoundError } from "./_shared/errors";
+import { getCurrentUserId } from "./_util/auth";
 
 // =============================================================================
 // Stripe Client Factory
@@ -72,6 +79,33 @@ function getStripeClient(): Stripe {
 	return new Stripe(key);
 }
 
+async function requireStripeRestaurantAccess(
+	ctx: any,
+	restaurantId: Id<"restaurants">
+): Promise<Doc<"restaurants">> {
+	const [userId, authError] = await getCurrentUserId(ctx);
+	if (authError) throw fromErrorObject(authError);
+
+	const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
+		internal.stripeHelpers.getRestaurantInternal,
+		{ restaurantId }
+	);
+	if (!restaurant) {
+		throw fromErrorObject(new NotFoundError("Restaurant not found").toObject());
+	}
+
+	const userRole = await ctx.runQuery(internal.stripeHelpers.getUserRoleInternal, {
+		userId,
+	});
+	const roles = userRole?.roles ?? [];
+	const isAdmin = roles.includes(USER_ROLES.ADMIN);
+	if (!isAdmin && restaurant.ownerId !== userId) {
+		throw fromErrorObject(new NotAuthorizedError("NOT_AUTHORIZED").toObject());
+	}
+
+	return restaurant;
+}
+
 // =============================================================================
 // 1. Connected Account Creation (V2 API)
 // =============================================================================
@@ -96,28 +130,20 @@ export const createConnectAccount = action({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 	},
 	handler: async (ctx, args): Promise<{ stripeAccountId: string }> => {
-		// Step 1: Verify the caller is authenticated
 		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) throw new Error("Not authenticated");
+		if (!identity) throw fromErrorObject(new NotAuthenticatedError().toObject());
 
-		// Step 2: Look up the restaurant to get its name and check for existing account
-		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
-			internal.stripeHelpers.getRestaurantInternal,
-			{ restaurantId: args.restaurantId }
-		);
-		if (!restaurant) throw new Error("Restaurant not found");
+		const restaurant = await requireStripeRestaurantAccess(ctx, args.restaurantId);
 
-		// Step 3: If already connected, return the existing Stripe account ID
 		if (restaurant.stripeAccountId) {
 			return { stripeAccountId: restaurant.stripeAccountId };
 		}
 
-		// Step 4: Create a new V2 Connected Account
 		const stripeClient = getStripeClient();
 		const account = await stripeClient.v2.core.accounts.create({
 			display_name: restaurant.name,
 			contact_email: identity.email ?? "",
-			identity: { country: "us" },
+			identity: { country: "mx" },
 			dashboard: "express",
 			defaults: {
 				responsibilities: {
@@ -141,13 +167,66 @@ export const createConnectAccount = action({
 			},
 		});
 
-		// Step 5: Persist the Stripe account ID on the restaurant record
 		await ctx.runMutation(internal.stripeHelpers.saveStripeAccountId, {
 			restaurantId: args.restaurantId,
 			stripeAccountId: account.id,
 		});
 
 		return { stripeAccountId: account.id };
+	},
+});
+
+/**
+ * Disconnects a restaurant from its Stripe Connected Account so onboarding
+ * can be restarted from scratch (e.g. to recover from a partially-completed
+ * flow that picked the wrong country, since Stripe locks the account country
+ * after creation).
+ *
+ * Best-effort closes the Stripe account via `v2.core.accounts.close` passing
+ * every configuration the account was created with. If Stripe rejects the
+ * close (already closed, network error, etc.) we still clear the Convex link
+ * so the user can retry, and surface `closedStripeAccount: false` to the UI.
+ *
+ * The caller will then see `connected: false` from `getAccountStatus` and the
+ * UI re-renders the "Onboard to collect payments" button.
+ */
+export const resetStripeConnection = action({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async (
+		ctx,
+		args
+	): Promise<{ closedStripeAccount: boolean; closedStripeAccountId: string | null }> => {
+		const restaurant = await requireStripeRestaurantAccess(ctx, args.restaurantId);
+
+		if (!restaurant.stripeAccountId) {
+			return { closedStripeAccount: false, closedStripeAccountId: null };
+		}
+
+		let closedStripeAccount = false;
+		try {
+			const stripeClient = getStripeClient();
+			await stripeClient.v2.core.accounts.close(restaurant.stripeAccountId, {
+				applied_configurations: ["merchant", "recipient"],
+			});
+			closedStripeAccount = true;
+		} catch (err) {
+			// eslint-disable-next-line no-console
+			console.error(
+				`[stripe.resetStripeConnection] Failed to close Stripe account ${restaurant.stripeAccountId}; clearing Convex link anyway:`,
+				err
+			);
+		}
+
+		await ctx.runMutation(internal.stripeHelpers.clearStripeConnection, {
+			restaurantId: args.restaurantId,
+		});
+
+		return {
+			closedStripeAccount,
+			closedStripeAccountId: restaurant.stripeAccountId,
+		};
 	},
 });
 
@@ -174,37 +253,23 @@ export const createAccountLink = action({
 		refreshUrl: v.string(),
 	},
 	handler: async (ctx, args) => {
-		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) throw new Error("Not authenticated");
-
-		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
-			internal.stripeHelpers.getRestaurantInternal,
-			{ restaurantId: args.restaurantId }
-		);
+		const restaurant = await requireStripeRestaurantAccess(ctx, args.restaurantId);
 		if (!restaurant?.stripeAccountId) {
 			throw new Error("Restaurant has no Stripe account. Create one first.");
 		}
 
 		const stripeClient = getStripeClient();
+		const returnUrl = new URL(args.returnUrl);
+		returnUrl.searchParams.set("accountId", restaurant.stripeAccountId);
 
-		// Create a V2 account link for the onboarding use case
 		const accountLink = await stripeClient.v2.core.accountLinks.create({
-			// The connected account to onboard
 			account: restaurant.stripeAccountId,
 			use_case: {
 				type: "account_onboarding",
 				account_onboarding: {
-					// Must match the configurations used during account creation
 					configurations: ["recipient", "merchant"],
-
-					// If the onboarding link expires or the user needs to restart,
-					// Stripe redirects here so you can generate a fresh link
 					refresh_url: args.refreshUrl,
-
-					// After the user completes (or exits) onboarding, Stripe
-					// redirects here. We include the accountId so the frontend
-					// can refresh the account status on return.
-					return_url: `${args.returnUrl}?accountId=${restaurant.stripeAccountId}`,
+					return_url: returnUrl.toString(),
 				},
 			},
 		});
@@ -234,13 +299,7 @@ export const getAccountStatus = action({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 	},
 	handler: async (ctx, args) => {
-		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) throw new Error("Not authenticated");
-
-		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
-			internal.stripeHelpers.getRestaurantInternal,
-			{ restaurantId: args.restaurantId }
-		);
+		const restaurant = await requireStripeRestaurantAccess(ctx, args.restaurantId);
 		if (!restaurant?.stripeAccountId) {
 			return {
 				connected: false,
@@ -332,7 +391,6 @@ export const handleThinEvent = internalAction({
 			);
 		}
 
-		// Step 1: Parse and verify the thin event using the webhook secret.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const thinEvent = (stripeClient as any).parseThinEvent(
 			args.payloadString,
@@ -340,10 +398,8 @@ export const handleThinEvent = internalAction({
 			webhookSecret
 		);
 
-		// Step 2: Fetch the full event data from Stripe using the thin event's ID.
 		const event = await stripeClient.v2.core.events.retrieve(thinEvent.id);
 
-		// Step 3: Route to the appropriate handler based on event type.
 		switch (event.type) {
 			case "v2.core.account[requirements].updated":
 			case "v2.core.account[configuration.recipient].capability_status_updated": {
@@ -394,170 +450,70 @@ async function handleAccountStatusChange(
 	});
 }
 
-// =============================================================================
-// 5. Product Management (Platform-Level)
-// =============================================================================
-
-/**
- * Creates a Stripe Product with a default price at the platform level.
- *
- * Products are owned by the platform, not the connected account. We store
- * the mapping from product to connected account (restaurant) in our own DB
- * so we know which account should receive funds when a customer buys this product.
- *
- * The Stripe Product's metadata also includes the restaurantId for traceability.
- */
-export const createProduct = action({
-	args: {
-		restaurantId: v.id(TABLE.RESTAURANTS),
-		name: v.string(),
-		description: v.optional(v.string()),
-		priceInCents: v.number(),
-		currency: v.string(),
-	},
-	handler: async (ctx, args) => {
-		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) throw new Error("Not authenticated");
-
-		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
-			internal.stripeHelpers.getRestaurantInternal,
-			{ restaurantId: args.restaurantId }
-		);
-		if (!restaurant) throw new Error("Restaurant not found");
-		if (!restaurant.stripeAccountId || !restaurant.stripeOnboardingComplete) {
-			throw new Error("Restaurant must complete Stripe onboarding before creating products.");
+async function handlePaymentIntentSuccess(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	paymentIntent: any
+): Promise<Id<"payments"> | undefined> {
+	const payment: Doc<"payments"> | null = await ctx.runQuery(
+		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
+		{
+			stripePaymentIntentId: paymentIntent.id,
 		}
+	);
+	if (!payment) return undefined;
 
-		const stripeClient = getStripeClient();
+	const chargeId =
+		typeof paymentIntent.latest_charge === "string"
+			? paymentIntent.latest_charge
+			: (paymentIntent.latest_charge?.id ?? undefined);
 
-		// Create the product on the platform account with an embedded default price.
-		// `default_price_data` creates a one-time price automatically attached to
-		// the product — no need for a separate price creation call.
-		const product = await stripeClient.products.create({
-			name: args.name,
-			description: args.description ?? undefined,
-			default_price_data: {
-				unit_amount: args.priceInCents,
-				currency: args.currency.toLowerCase(),
-			},
-			metadata: {
-				restaurantId: args.restaurantId,
-				stripeAccountId: restaurant.stripeAccountId,
-			},
-		});
+	await ctx.runMutation(internal.orders.confirmPayment, {
+		paymentId: payment._id,
+		stripePaymentIntentId: paymentIntent.id,
+		stripeChargeId: chargeId,
+	});
+	return payment._id;
+}
 
-		// Extract the default price ID — Stripe returns it as an expandable
-		// field that may be a string or an object depending on expansion
-		const priceId =
-			typeof product.default_price === "string"
-				? product.default_price
-				: (product.default_price?.id ?? "");
-
-		const productId: Id<"products"> = await ctx.runMutation(internal.stripeHelpers.saveProduct, {
-			stripeProductId: product.id,
-			stripePriceId: priceId,
-			restaurantId: args.restaurantId,
-			name: args.name,
-			description: args.description,
-			priceInCents: args.priceInCents,
-			currency: args.currency.toLowerCase(),
-		});
-
-		return { productId, stripeProductId: product.id };
-	},
-});
-
-// =============================================================================
-// 6. Checkout Session with Destination Charges
-// =============================================================================
-
-/**
- * Creates a Stripe Checkout Session using the destination charge pattern.
- *
- * How destination charges work:
- * - The customer pays the platform (your Stripe account)
- * - Stripe automatically transfers funds to the connected account (restaurant)
- *   minus the `application_fee_amount`
- * - The platform keeps the application fee as revenue
- *
- * We use Stripe's hosted checkout page for simplicity — the customer is
- * redirected to Stripe's UI to enter payment details, then redirected back
- * to our success/cancel URLs.
- */
-export const createCheckoutSession = action({
-	args: {
-		productId: v.id(TABLE.PRODUCTS),
-		quantity: v.number(),
-		successUrl: v.string(),
-		cancelUrl: v.string(),
-	},
-	handler: async (ctx, args): Promise<{ url: string | null }> => {
-		const product: Doc<"products"> | null = await ctx.runQuery(
-			internal.stripeHelpers.getProductInternal,
-			{ productId: args.productId }
-		);
-		if (!product) throw new Error("Product not found");
-		if (!product.isActive) throw new Error("Product is not available");
-
-		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
-			internal.stripeHelpers.getRestaurantInternal,
-			{ restaurantId: product.restaurantId }
-		);
-		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
-			throw new Error("Restaurant is not set up to receive payments.");
+async function handlePaymentIntentFailure(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	paymentIntent: any
+): Promise<Id<"payments"> | undefined> {
+	const payment: Doc<"payments"> | null = await ctx.runQuery(
+		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
+		{
+			stripePaymentIntentId: paymentIntent.id,
 		}
+	);
+	if (!payment) return undefined;
 
-		const lineTotal = product.priceInCents * args.quantity;
-		const applicationFeeAmount = Math.round(lineTotal * 0.06);
-
-		const stripeClient = getStripeClient();
-		const session = await stripeClient.checkout.sessions.create({
-			line_items: [
-				{
-					price_data: {
-						currency: product.currency,
-						product_data: {
-							name: product.name,
-							...(product.description ? { description: product.description } : {}),
-						},
-						unit_amount: product.priceInCents,
-					},
-					quantity: args.quantity,
-				},
-			],
-			payment_intent_data: {
-				application_fee_amount: applicationFeeAmount,
-				transfer_data: {
-					destination: restaurant.stripeAccountId,
-				},
-			},
-			mode: "payment",
-			success_url: `${args.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-			cancel_url: args.cancelUrl,
-			metadata: {
-				productId: product._id,
-				restaurantId: product.restaurantId,
-			},
-		});
-
-		return { url: session.url };
-	},
-});
+	await ctx.runMutation(internal.orders.failPayment, {
+		paymentId: payment._id,
+		stripePaymentIntentId: paymentIntent.id,
+		failureCode: paymentIntent.last_payment_error?.code ?? undefined,
+		failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
+	});
+	return payment._id;
+}
 
 // =============================================================================
-// 7. Standard Webhook Handler (Payment Events)
+// 5. Standard Webhook Handler (Payment Events)
 // =============================================================================
 
 /**
  * Handles standard Stripe webhook events for payment processing.
  *
  * Listens for:
- * - `checkout.session.completed` — a hosted checkout session was paid
- * - `payment_intent.succeeded` — a payment intent was confirmed (fallback)
+ * - `payment_intent.succeeded` — a payment intent was confirmed
+ * - `payment_intent.payment_failed` — a payment intent failed
+ * - `account.updated` — legacy V1 account status updates
  *
- * Both events confirm that money was collected. We log the event for
- * tracking and can extend this handler for additional business logic
- * (e.g. sending confirmation emails, updating inventory).
+ * Each event is recorded in `stripeWebhookEvents` so duplicate deliveries
+ * are no-ops.
  */
 export const fulfillPayment = internalAction({
 	args: {
@@ -578,50 +534,32 @@ export const fulfillPayment = internalAction({
 			);
 		}
 
-		// Verify the event signature to confirm it came from Stripe
 		const event = stripeClient.webhooks.constructEvent(
 			args.payloadString,
 			args.signatureHeader,
 			webhookSecret
 		);
 
-		switch (event.type) {
-			case "checkout.session.completed": {
-				// A Checkout Session was successfully paid.
-				// The session metadata contains our internal references.
-				const session = event.data.object;
-				console.log(
-					`Checkout session completed: ${session.id}, ` +
-						`payment_status: ${session.payment_status}, ` +
-						`metadata: ${JSON.stringify(session.metadata)}`
-				);
+		const processedEvent = await ctx.runQuery(
+			internal.stripeHelpers.getProcessedStripeWebhookEventInternal,
+			{
+				eventId: event.id,
+			}
+		);
+		if (processedEvent) {
+			return;
+		}
 
-				// If this checkout was for an order (from the existing order flow),
-				// confirm the payment
-				const orderId = session.metadata?.orderId;
-				if (orderId) {
-					await ctx.runMutation(internal.orders.confirmPayment, {
-						orderId,
-						stripePaymentIntentId:
-							typeof session.payment_intent === "string"
-								? session.payment_intent
-								: (session.payment_intent?.id ?? session.id),
-					});
-				}
+		let paymentId: Id<"payments"> | undefined;
+
+		switch (event.type) {
+			case "payment_intent.succeeded": {
+				paymentId = await handlePaymentIntentSuccess(ctx, event.data.object);
 				break;
 			}
 
-			case "payment_intent.succeeded": {
-				// Fallback handler for direct PaymentIntent confirmations
-				// (used by the existing in-app checkout flow with Stripe Elements)
-				const paymentIntent = event.data.object;
-				const orderId = paymentIntent.metadata?.orderId;
-				if (orderId) {
-					await ctx.runMutation(internal.orders.confirmPayment, {
-						orderId,
-						stripePaymentIntentId: paymentIntent.id,
-					});
-				}
+			case "payment_intent.payment_failed": {
+				paymentId = await handlePaymentIntentFailure(ctx, event.data.object);
 				break;
 			}
 
@@ -641,11 +579,17 @@ export const fulfillPayment = internalAction({
 				break;
 			}
 		}
+
+		await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
+			eventId: event.id,
+			eventType: event.type,
+			paymentId,
+		});
 	},
 });
 
 // =============================================================================
-// 8. Refund
+// 6. Refund
 // =============================================================================
 
 /**
@@ -654,25 +598,85 @@ export const fulfillPayment = internalAction({
  */
 export const createRefund = internalAction({
 	args: {
-		stripePaymentIntentId: v.string(),
+		paymentId: v.id(TABLE.PAYMENTS),
 	},
-	handler: async (_ctx, args) => {
-		const stripeClient = getStripeClient();
-		const refund = await stripeClient.refunds.create({
-			payment_intent: args.stripePaymentIntentId,
+	handler: async (
+		ctx,
+		args
+	): Promise<{ refundId: string; status: string | null }> => {
+		const payment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentInternal,
+			{
+				paymentId: args.paymentId,
+			}
+		);
+		if (!payment?.stripePaymentIntentId) {
+			throw new Error("Payment does not have a Stripe payment intent");
+		}
+
+		await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			paymentId: args.paymentId,
+			refundStatus: PAYMENT_REFUND_STATUS.REQUESTED,
+			refundRequestedAt: Date.now(),
 		});
-		return { refundId: refund.id, status: refund.status };
+		await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+			orderId: payment.orderId,
+			paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+		});
+
+		const stripeClient = getStripeClient();
+		try {
+			const refund: Stripe.Refund = await stripeClient.refunds.create(
+				{
+					payment_intent: payment.stripePaymentIntentId,
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{
+					idempotencyKey: `refund:${args.paymentId}`,
+				}
+			);
+
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId: args.paymentId,
+				refundStatus:
+					refund.status === "succeeded"
+						? PAYMENT_REFUND_STATUS.SUCCEEDED
+						: PAYMENT_REFUND_STATUS.REQUESTED,
+				stripeRefundId: refund.id,
+				...(refund.status === "succeeded" && { refundedAt: Date.now() }),
+			});
+			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId: payment.orderId,
+				paymentState:
+					refund.status === "succeeded"
+						? ORDER_PAYMENT_STATE.REFUNDED
+						: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+			});
+
+			return { refundId: refund.id, status: refund.status };
+		} catch (error) {
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId: args.paymentId,
+				refundStatus: PAYMENT_REFUND_STATUS.FAILED,
+				failureMessage: error instanceof Error ? error.message : "Refund failed",
+			});
+			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId: payment.orderId,
+				paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
+			});
+			throw error;
+		}
 	},
 });
 
 // =============================================================================
-// 9. Payment Intent (Existing In-App Checkout Flow)
+// 7. Payment Intent (In-App Checkout Flow)
 // =============================================================================
 
 /**
- * Creates a PaymentIntent for the existing in-app checkout flow using
- * Stripe Elements. This supports the current order-based checkout where
- * customers pay within the app (not via hosted checkout).
+ * Creates a PaymentIntent for the in-app order checkout flow using
+ * Stripe Elements. Customers pay within the app (not via hosted checkout).
  *
  * Uses destination charges with a 6% application fee.
  */
@@ -680,7 +684,10 @@ export const createPaymentIntent = action({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
 	},
-	handler: async (ctx, args) => {
+	handler: async (
+		ctx,
+		args
+	): Promise<{ clientSecret: string | null; paymentId: Id<"payments"> }> => {
 		const order: Doc<"orders"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getOrderInternal,
 			{ orderId: args.orderId }
@@ -697,29 +704,126 @@ export const createPaymentIntent = action({
 			throw new Error("Restaurant is not set up for payments");
 		}
 
-		// 6% platform fee on the order total
 		const applicationFeeAmount = Math.round(order.totalAmount * 0.06);
+		const currency = restaurant.currency.toLowerCase();
 
 		const stripeClient = getStripeClient();
-		const paymentIntent = await stripeClient.paymentIntents.create({
-			amount: order.totalAmount,
-			currency: restaurant.currency.toLowerCase(),
-			application_fee_amount: applicationFeeAmount,
-			transfer_data: {
-				destination: restaurant.stripeAccountId,
-			},
-			metadata: {
-				orderId: args.orderId,
-				restaurantId: order.restaurantId,
-			},
-		});
+		const latestPayment: Doc<"payments"> | null = order.activePaymentId
+			? await ctx.runQuery(internal.stripeHelpers.getPaymentInternal, {
+					paymentId: order.activePaymentId,
+				})
+			: await ctx.runQuery(internal.stripeHelpers.getLatestPaymentByOrderInternal, {
+					orderId: args.orderId,
+				});
+		const canReuseExistingIntent =
+			latestPayment?.status === PAYMENT_STATUS.PROCESSING &&
+			latestPayment.orderUpdatedAtSnapshot === order.updatedAt &&
+			latestPayment.amount === order.totalAmount &&
+			latestPayment.currency === currency &&
+			!!latestPayment.stripePaymentIntentId;
 
-		// Save the PaymentIntent ID on the order for later reference
-		await ctx.runMutation(internal.stripeHelpers.savePaymentIntentId, {
+		if (canReuseExistingIntent && latestPayment?.stripePaymentIntentId) {
+			const existingIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+				latestPayment.stripePaymentIntentId
+			);
+			if (
+				existingIntent.status !== "succeeded" &&
+				existingIntent.status !== "canceled" &&
+				existingIntent.client_secret
+			) {
+				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+					orderId: args.orderId,
+					paymentState: ORDER_PAYMENT_STATE.PROCESSING,
+					activePaymentId: latestPayment._id,
+					stripePaymentIntentId: latestPayment.stripePaymentIntentId,
+				});
+
+				return {
+					clientSecret: existingIntent.client_secret,
+					paymentId: latestPayment._id,
+				};
+			}
+		}
+
+		if (
+			latestPayment &&
+			latestPayment.status !== PAYMENT_STATUS.SUCCEEDED &&
+			latestPayment.status !== PAYMENT_STATUS.SUPERSEDED &&
+			latestPayment.status !== PAYMENT_STATUS.CANCELLED
+		) {
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId: latestPayment._id,
+				status: PAYMENT_STATUS.SUPERSEDED,
+			});
+		}
+
+		const attemptNumber = latestPayment ? latestPayment.attemptNumber + 1 : 1;
+		const paymentId: Id<"payments"> = await ctx.runMutation(internal.stripeHelpers.createPayment, {
+			restaurantId: order.restaurantId,
 			orderId: args.orderId,
-			stripePaymentIntentId: paymentIntent.id,
+			amount: order.totalAmount,
+			currency,
+			status: PAYMENT_STATUS.PENDING,
+			refundStatus: PAYMENT_REFUND_STATUS.NONE,
+			attemptNumber,
+			orderUpdatedAtSnapshot: order.updatedAt,
 		});
 
-		return { clientSecret: paymentIntent.client_secret };
+		await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+			orderId: args.orderId,
+			paymentState: ORDER_PAYMENT_STATE.PENDING,
+			activePaymentId: paymentId,
+		});
+
+		try {
+			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
+				{
+					amount: order.totalAmount,
+					currency,
+					application_fee_amount: applicationFeeAmount,
+					transfer_data: {
+						destination: restaurant.stripeAccountId,
+					},
+					metadata: {
+						orderId: args.orderId,
+						restaurantId: order.restaurantId,
+						paymentId,
+					},
+				},
+				{
+					idempotencyKey: `order-payment:${paymentId}`,
+				}
+			);
+
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId,
+				status: PAYMENT_STATUS.PROCESSING,
+				stripePaymentIntentId: paymentIntent.id,
+			});
+			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId: args.orderId,
+				paymentState: ORDER_PAYMENT_STATE.PROCESSING,
+				activePaymentId: paymentId,
+				stripePaymentIntentId: paymentIntent.id,
+			});
+
+			return {
+				clientSecret: paymentIntent.client_secret,
+				paymentId,
+			};
+		} catch (error) {
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId,
+				status: PAYMENT_STATUS.FAILED,
+				failureMessage: error instanceof Error ? error.message : "Failed to create payment intent",
+				failedAt: Date.now(),
+			});
+			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId: args.orderId,
+				paymentState: ORDER_PAYMENT_STATE.FAILED,
+				activePaymentId: paymentId,
+			});
+			throw error;
+		}
 	},
 });

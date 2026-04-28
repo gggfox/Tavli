@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
@@ -13,9 +14,12 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
+import { isDevEnv } from "./_util/env";
 import { findExistingEventByKey, findExistingEventByKeyAndType } from "./_util/idempotency";
 import type { UserRoleDoc } from "./constants";
 import { TABLE } from "./constants";
+
+export const DEV_ONLY_ERROR_MESSAGE = "ERROR_DEV_ENVIRONMENT_ONLY";
 
 /**
  * Get current user's roles.
@@ -334,8 +338,15 @@ export const deleteUserRole = mutation({
 });
 
 /**
- * Set own roles to an arbitrary combination (development/testing only).
- * Requires admin role to prevent privilege escalation.
+ * Set own roles to an arbitrary combination (development environment only).
+ *
+ * Available only when `process.env.CONVEX_ENV === "development"`. In any other
+ * deployment this returns NOT_AUTHORIZED so the dev-only role switcher in the
+ * UI cannot be used to escalate privileges in staging/production.
+ *
+ * Inside dev we deliberately skip the admin-role check: switching to a
+ * non-admin role would otherwise lock the user out of switching back, defeating
+ * the point of the switcher.
  */
 type DevSetOwnRolesErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -352,13 +363,13 @@ export const devSetOwnRoles = mutation({
 		),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, DevSetOwnRolesErrors> {
+		if (!isDevEnv()) {
+			return [null, new NotAuthorizedError(DEV_ONLY_ERROR_MESSAGE).toObject()];
+		}
+
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) {
 			return [null, error];
-		}
-		const [, error2] = await requireAdminRole(ctx, userId);
-		if (error2) {
-			return [null, error2];
 		}
 
 		const identity = await ctx.auth.getUserIdentity();

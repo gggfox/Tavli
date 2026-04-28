@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
@@ -9,10 +10,18 @@ import {
 	UserInputValidationError,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireStaffRole } from "./_util/auth";
-import { TABLE } from "./constants";
+import { getCurrentUserId, requireRestaurantStaffAccess, requireStaffRole } from "./_util/auth";
+import { ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
+
+type NormalizedSelectedOption = {
+	optionGroupId: Id<"optionGroups">;
+	optionGroupName: string;
+	optionId: Id<"options">;
+	optionName: string;
+	priceModifier: number;
+};
 
 const selectedOptionValidator = v.object({
 	optionGroupId: v.id(TABLE.OPTION_GROUPS),
@@ -57,6 +66,7 @@ export const createDraft = mutation({
 			tableId: args.tableId,
 			status: "draft",
 			totalAmount: 0,
+			paymentState: ORDER_PAYMENT_STATE.UNPAID,
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -83,7 +93,12 @@ export const addItem = mutation({
 
 		const menuItemName = (args.lang && menuItem.translations?.[args.lang]?.name) || menuItem.name;
 
-		const optionsTotal = args.selectedOptions.reduce((sum, o) => sum + o.priceModifier, 0);
+		const normalizedSelectedOptions = await normalizeSelectedOptions(
+			ctx,
+			order.restaurantId,
+			args.selectedOptions
+		);
+		const optionsTotal = normalizedSelectedOptions.reduce((sum, o) => sum + o.priceModifier, 0);
 		const lineTotal = (menuItem.basePrice + optionsTotal) * args.quantity;
 
 		const itemId = await ctx.db.insert(TABLE.ORDER_ITEMS, {
@@ -92,12 +107,13 @@ export const addItem = mutation({
 			menuItemName,
 			quantity: args.quantity,
 			unitPrice: menuItem.basePrice,
-			selectedOptions: args.selectedOptions,
+			selectedOptions: normalizedSelectedOptions,
 			specialInstructions: args.specialInstructions,
 			lineTotal,
 			createdAt: Date.now(),
 		});
 
+		await invalidateActivePayment(ctx, order);
 		await recalculateTotal(ctx, args.orderId);
 		return itemId;
 	},
@@ -120,19 +136,23 @@ export const updateItem = mutation({
 		}
 
 		const quantity = args.quantity ?? item.quantity;
-		const selectedOptions = args.selectedOptions ?? item.selectedOptions;
+		const selectedOptions =
+			args.selectedOptions !== undefined
+				? await normalizeSelectedOptions(ctx, order.restaurantId, args.selectedOptions)
+				: item.selectedOptions;
 		const optionsTotal = selectedOptions.reduce((sum, o) => sum + o.priceModifier, 0);
 		const lineTotal = (item.unitPrice + optionsTotal) * quantity;
 
 		await ctx.db.patch(args.orderItemId, {
 			...(args.quantity !== undefined && { quantity: args.quantity }),
-			...(args.selectedOptions !== undefined && { selectedOptions: args.selectedOptions }),
+			...(args.selectedOptions !== undefined && { selectedOptions }),
 			...(args.specialInstructions !== undefined && {
 				specialInstructions: args.specialInstructions,
 			}),
 			lineTotal,
 		});
 
+		await invalidateActivePayment(ctx, order);
 		await recalculateTotal(ctx, item.orderId);
 	},
 });
@@ -149,6 +169,7 @@ export const removeItem = mutation({
 		}
 
 		await ctx.db.delete(args.orderItemId);
+		await invalidateActivePayment(ctx, order);
 		await recalculateTotal(ctx, item.orderId);
 	},
 });
@@ -190,38 +211,100 @@ export const submitOrder = mutation({
  */
 export const confirmPayment = internalMutation({
 	args: {
-		orderId: v.string(),
+		paymentId: v.id(TABLE.PAYMENTS),
 		stripePaymentIntentId: v.string(),
+		stripeChargeId: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const order = await ctx.db
-			.query(TABLE.ORDERS)
-			.filter((q) => q.eq(q.field("_id"), args.orderId))
-			.first();
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) {
+			throw new Error(`Payment ${args.paymentId} not found`);
+		}
+		if (payment.status === PAYMENT_STATUS.SUCCEEDED) {
+			return;
+		}
 
-		if (!order) throw new Error(`Order ${args.orderId} not found`);
-		if (order.status !== "draft") {
-			console.warn(`Order ${args.orderId} is already in status ${order.status}, skipping`);
+		const order = await ctx.db.get(payment.orderId);
+		if (!order) throw new Error(`Order ${payment.orderId} not found`);
+		if (order.activePaymentId !== payment._id) {
+			console.warn(`Payment ${payment._id} is no longer active for order ${order._id}, skipping`);
+			return;
+		}
+		if (
+			payment.orderUpdatedAtSnapshot !== undefined &&
+			order.updatedAt !== payment.orderUpdatedAtSnapshot
+		) {
+			console.warn(`Order ${order._id} changed after payment intent ${payment._id}, skipping`);
+			return;
+		}
+		if (order.totalAmount !== payment.amount) {
+			console.warn(
+				`Order ${order._id} total ${order.totalAmount} no longer matches payment ${payment.amount}`
+			);
+			return;
+		}
+		if (order.status !== "draft" && order.status !== "submitted") {
+			console.warn(`Order ${order._id} is in status ${order.status}, skipping payment confirmation`);
 			return;
 		}
 
 		const items = await ctx.db
 			.query(TABLE.ORDER_ITEMS)
-			.withIndex("by_order", (q) => q.eq("orderId", order._id))
+			.withIndex("by_order", (q) => q.eq("orderId", payment.orderId))
 			.collect();
 
 		if (items.length === 0) {
-			throw new Error(`Order ${args.orderId} has no items`);
+			throw new Error(`Order ${payment.orderId} has no items`);
 		}
 
 		const now = Date.now();
+		await ctx.db.patch(payment._id, {
+			status: PAYMENT_STATUS.SUCCEEDED,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+			...(args.stripeChargeId !== undefined && { stripeChargeId: args.stripeChargeId }),
+			succeededAt: now,
+			updatedAt: now,
+		});
 		await ctx.db.patch(order._id, {
 			status: "submitted",
+			paymentState: ORDER_PAYMENT_STATE.PAID,
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			paidAt: now,
 			submittedAt: now,
 			updatedAt: now,
 		});
+	},
+});
+
+export const failPayment = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		stripePaymentIntentId: v.string(),
+		failureCode: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+
+		const now = Date.now();
+		await ctx.db.patch(payment._id, {
+			status: PAYMENT_STATUS.FAILED,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+			...(args.failureCode !== undefined && { failureCode: args.failureCode }),
+			...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
+			failedAt: now,
+			updatedAt: now,
+		});
+
+		const order = await ctx.db.get(payment.orderId);
+		if (order?.activePaymentId === payment._id && order.status === "draft") {
+			await ctx.db.patch(order._id, {
+				paymentState: ORDER_PAYMENT_STATE.FAILED,
+				updatedAt: now,
+			});
+		}
 	},
 });
 
@@ -236,7 +319,14 @@ export const getOrderWithItems = query({
 			.withIndex("by_order", (q) => q.eq("orderId", args.orderId))
 			.collect();
 
-		return { ...order, items };
+		const activePayment = order.activePaymentId ? await ctx.db.get(order.activePaymentId) : null;
+
+		return {
+			...order,
+			paymentState: order.paymentState ?? ORDER_PAYMENT_STATE.UNPAID,
+			activePayment,
+			items,
+		};
 	},
 });
 
@@ -280,6 +370,9 @@ export const updateStatus = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
+		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		if (restaurantError) return [null, restaurantError];
+
 		const allowedNext = VALID_TRANSITIONS[order.status];
 		if (!allowedNext?.includes(args.newStatus)) {
 			throw new UserInputValidationError({
@@ -295,13 +388,17 @@ export const updateStatus = mutation({
 		const now = Date.now();
 		await ctx.db.patch(args.orderId, {
 			status: args.newStatus,
+			...(args.newStatus === "cancelled" &&
+				order.paymentState === ORDER_PAYMENT_STATE.PAID && {
+					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+				}),
 			updatedAt: now,
 		});
 
-		if (args.newStatus === "cancelled" && order.stripePaymentIntentId) {
+		if (args.newStatus === "cancelled" && order.activePaymentId) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- types regenerate on `convex dev`
 			await ctx.scheduler.runAfter(0, (internal as any).stripe.createRefund, {
-				stripePaymentIntentId: order.stripePaymentIntentId,
+				paymentId: order.activePaymentId,
 			});
 		}
 
@@ -309,25 +406,46 @@ export const updateStatus = mutation({
 	},
 });
 
+// Statuses the kitchen dashboard is allowed to surface. `draft` is excluded
+// because drafts are pre-submission state and never belong on the dashboard.
+const DASHBOARD_STATUS_VALIDATOR = v.union(
+	v.literal("submitted"),
+	v.literal("preparing"),
+	v.literal("ready"),
+	v.literal("served"),
+	v.literal("cancelled")
+);
+
+const DEFAULT_DASHBOARD_STATUSES = ["submitted", "preparing", "ready"] as const;
+
 export const getActiveOrdersByRestaurant = query({
-	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// When omitted, defaults to the active set (submitted/preparing/ready)
+		// so existing callers keep behaving as before.
+		statuses: v.optional(v.array(DASHBOARD_STATUS_VALIDATOR)),
+	},
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 		const [, error2] = await requireStaffRole(ctx, userId);
 		if (error2) return [null, error2];
 
+		const requestedStatuses =
+			args.statuses && args.statuses.length > 0
+				? Array.from(new Set(args.statuses))
+				: [...DEFAULT_DASHBOARD_STATUSES];
+
 		const allOrders = await ctx.db
 			.query(TABLE.ORDERS)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
 
-		const activeOrders = allOrders.filter(
-			(o) => !["draft", "served", "cancelled"].includes(o.status)
-		);
+		const allowed = new Set<string>(requestedStatuses);
+		const filteredOrders = allOrders.filter((o) => allowed.has(o.status));
 
 		const ordersWithItems = await Promise.all(
-			activeOrders.map(async (order) => {
+			filteredOrders.map(async (order) => {
 				const items = await ctx.db
 					.query(TABLE.ORDER_ITEMS)
 					.withIndex("by_order", (q) => q.eq("orderId", order._id))
@@ -398,4 +516,75 @@ async function recalculateTotal(
 	const total = items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
 
 	await ctx.db.patch(orderId, { totalAmount: total, updatedAt: Date.now() });
+}
+
+async function normalizeSelectedOptions(
+	ctx: { db: { get: any } },
+	restaurantId: Id<"restaurants">,
+	selectedOptions: Array<{
+		optionGroupId: Id<"optionGroups">;
+		optionGroupName: string;
+		optionId: Id<"options">;
+		optionName: string;
+		priceModifier: number;
+	}>
+): Promise<NormalizedSelectedOption[]> {
+	const normalized: NormalizedSelectedOption[] = [];
+	for (const selectedOption of selectedOptions) {
+		const optionGroup = await ctx.db.get(selectedOption.optionGroupId);
+		if (!optionGroup || optionGroup.restaurantId !== restaurantId) {
+			throw new NotFoundError("Option group not found");
+		}
+
+		const option = await ctx.db.get(selectedOption.optionId);
+		if (
+			!option ||
+			option.restaurantId !== restaurantId ||
+			option.optionGroupId !== selectedOption.optionGroupId
+		) {
+			throw new NotFoundError("Option not found");
+		}
+
+		normalized.push({
+			optionGroupId: selectedOption.optionGroupId,
+			optionGroupName: optionGroup.name,
+			optionId: selectedOption.optionId,
+			optionName: option.name,
+			priceModifier: option.priceModifier,
+		});
+	}
+
+	return normalized;
+}
+
+async function invalidateActivePayment(
+	ctx: { db: { get: any; patch: any } },
+	order: {
+		_id: string;
+		activePaymentId?: string;
+		paymentState?: string;
+		status: string;
+	}
+) {
+	if (!order.activePaymentId || order.status !== "draft") {
+		return;
+	}
+
+	const payment = await ctx.db.get(order.activePaymentId);
+	if (
+		payment &&
+		payment.status !== PAYMENT_STATUS.SUCCEEDED &&
+		payment.status !== PAYMENT_STATUS.SUPERSEDED &&
+		payment.status !== PAYMENT_STATUS.CANCELLED
+	) {
+		await ctx.db.patch(order.activePaymentId, {
+			status: PAYMENT_STATUS.SUPERSEDED,
+			updatedAt: Date.now(),
+		});
+	}
+
+	await ctx.db.patch(order._id, {
+		paymentState: ORDER_PAYMENT_STATE.UNPAID,
+		updatedAt: Date.now(),
+	});
 }

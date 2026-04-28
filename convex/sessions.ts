@@ -1,7 +1,9 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import type { DatabaseWriter } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { NotFoundError } from "./_shared/errors";
-import { TABLE } from "./constants";
+import { SESSION_STATUS, TABLE } from "./constants";
 
 /**
  * Create a new session for a customer.
@@ -55,3 +57,25 @@ export const close = mutation({
 		});
 	},
 });
+
+/**
+ * Helper used by `reservations.markSeated`. Creates an active session pinned
+ * to a table at "now", in the same Convex transaction as the reservation
+ * status flip, so the existing ordering flow is reachable the moment the
+ * guest sits down. Not exposed as a public mutation -- callers must already
+ * have authorized the staff action.
+ */
+export async function createSessionForReservation(
+	ctx: { db: DatabaseWriter },
+	args: {
+		restaurantId: Id<typeof TABLE.RESTAURANTS>;
+		tableId: Id<typeof TABLE.TABLES>;
+	}
+): Promise<Id<typeof TABLE.SESSIONS>> {
+	return await ctx.db.insert(TABLE.SESSIONS, {
+		restaurantId: args.restaurantId,
+		tableId: args.tableId,
+		status: SESSION_STATUS.ACTIVE,
+		startedAt: Date.now(),
+	});
+}

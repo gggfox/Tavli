@@ -1,7 +1,8 @@
-import { PaymentsDashboard } from "@/features/kitchen";
+import { PaymentsDashboard, PaymentsDashboardSkeleton } from "@/features/kitchen";
 import { useRestaurant } from "@/features/restaurants";
-import { AdminPageLayout, LoadingState } from "@/global/components";
+import { AdminPageLayout } from "@/global/components";
 import { createFileRoute } from "@tanstack/react-router";
+import type { Id } from "convex/_generated/dataModel";
 
 export const Route = createFileRoute("/admin/payments")({
 	component: PaymentsPage,
@@ -10,27 +11,24 @@ export const Route = createFileRoute("/admin/payments")({
 function PaymentsPage() {
 	const { restaurant, isLoading } = useRestaurant();
 
-	if (isLoading) {
-		return (
-			<div className="p-6">
-				<LoadingState />
-			</div>
-		);
-	}
-
-	if (!restaurant) {
-		return (
-			<div className="p-6">
-				<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-					Please set up your restaurant first.
-				</p>
-			</div>
-		);
-	}
-
 	return (
 		<AdminPageLayout title="Payments" description="View revenue and payment history.">
-			<PaymentsDashboard restaurantId={restaurant._id} />
+			<PaymentsContent restaurantId={restaurant?._id} isLoading={isLoading} />
 		</AdminPageLayout>
 	);
+}
+
+function PaymentsContent({
+	restaurantId,
+	isLoading,
+}: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
+	if (isLoading) return <PaymentsDashboardSkeleton />;
+	if (!restaurantId) {
+		return (
+			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+				Please set up your restaurant first.
+			</p>
+		);
+	}
+	return <PaymentsDashboard restaurantId={restaurantId} />;
 }

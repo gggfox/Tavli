@@ -1,6 +1,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { TABLE } from "./constants";
+import {
+	ORDER_PAYMENT_STATE,
+	PAYMENT_REFUND_STATUS,
+	PAYMENT_STATUS,
+	RESERVATION_SOURCE,
+	RESERVATION_STATUS,
+	TABLE,
+} from "./constants";
 
 const nameDescTranslations = v.optional(
 	v.record(
@@ -21,6 +28,21 @@ export default defineSchema({
 		theme: v.optional(v.union(v.literal("light"), v.literal("dark"))),
 		sidebarExpanded: v.optional(v.boolean()),
 		language: v.optional(v.union(v.literal("en"), v.literal("es"))),
+		reservationSoundEnabled: v.optional(v.boolean()),
+		// Subset of order statuses the OrderDashboard should display.
+		// `draft` is intentionally excluded: drafts are pre-submission state
+		// and never belong on the kitchen dashboard.
+		orderDashboardStatusFilters: v.optional(
+			v.array(
+				v.union(
+					v.literal("submitted"),
+					v.literal("preparing"),
+					v.literal("ready"),
+					v.literal("served"),
+					v.literal("cancelled")
+				)
+			)
+		),
 	}).index("by_user", ["userId"]),
 
 	// ============================================================================
@@ -89,7 +111,8 @@ export default defineSchema({
 	})
 		.index("by_slug", ["slug"])
 		.index("by_owner", ["ownerId"])
-		.index("by_organization", ["organizationId"]),
+		.index("by_organization", ["organizationId"])
+		.index("by_stripe_account", ["stripeAccountId"]),
 
 	[TABLE.MENUS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -171,6 +194,10 @@ export default defineSchema({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		tableNumber: v.number(),
 		label: v.optional(v.string()),
+		// Optional during the rollout. New rows always set it; existing rows
+		// fall back to FALLBACK_TABLE_CAPACITY in availability checks until the
+		// `tables.backfillCapacity` admin mutation has run.
+		capacity: v.optional(v.number()),
 		isActive: v.boolean(),
 		createdAt: v.number(),
 	})
@@ -199,6 +226,19 @@ export default defineSchema({
 		),
 		totalAmount: v.number(),
 		specialInstructions: v.optional(v.string()),
+		paymentState: v.optional(
+			v.union(
+				v.literal(ORDER_PAYMENT_STATE.UNPAID),
+				v.literal(ORDER_PAYMENT_STATE.PENDING),
+				v.literal(ORDER_PAYMENT_STATE.PROCESSING),
+				v.literal(ORDER_PAYMENT_STATE.PAID),
+				v.literal(ORDER_PAYMENT_STATE.FAILED),
+				v.literal(ORDER_PAYMENT_STATE.REFUND_REQUESTED),
+				v.literal(ORDER_PAYMENT_STATE.REFUNDED),
+				v.literal(ORDER_PAYMENT_STATE.REFUND_FAILED)
+			)
+		),
+		activePaymentId: v.optional(v.id(TABLE.PAYMENTS)),
 		stripePaymentIntentId: v.optional(v.string()),
 		submittedAt: v.optional(v.number()),
 		paidAt: v.optional(v.number()),
@@ -228,23 +268,158 @@ export default defineSchema({
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
 
-	// ============================================================================
-	// Products (Stripe platform-level products mapped to connected accounts)
-	// ============================================================================
-	[TABLE.PRODUCTS]: defineTable({
-		stripeProductId: v.string(),
-		stripePriceId: v.string(),
+	[TABLE.PAYMENTS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
-		name: v.string(),
-		description: v.optional(v.string()),
-		priceInCents: v.number(),
+		orderId: v.id(TABLE.ORDERS),
+		amount: v.number(),
 		currency: v.string(),
-		isActive: v.boolean(),
+		status: v.union(
+			v.literal(PAYMENT_STATUS.PENDING),
+			v.literal(PAYMENT_STATUS.PROCESSING),
+			v.literal(PAYMENT_STATUS.SUCCEEDED),
+			v.literal(PAYMENT_STATUS.FAILED),
+			v.literal(PAYMENT_STATUS.SUPERSEDED),
+			v.literal(PAYMENT_STATUS.CANCELLED)
+		),
+		refundStatus: v.union(
+			v.literal(PAYMENT_REFUND_STATUS.NONE),
+			v.literal(PAYMENT_REFUND_STATUS.REQUESTED),
+			v.literal(PAYMENT_REFUND_STATUS.SUCCEEDED),
+			v.literal(PAYMENT_REFUND_STATUS.FAILED)
+		),
+		attemptNumber: v.number(),
+		orderUpdatedAtSnapshot: v.optional(v.number()),
+		stripePaymentIntentId: v.optional(v.string()),
+		stripeChargeId: v.optional(v.string()),
+		stripeRefundId: v.optional(v.string()),
+		latestStripeEventId: v.optional(v.string()),
+		failureCode: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+		succeededAt: v.optional(v.number()),
+		failedAt: v.optional(v.number()),
+		refundRequestedAt: v.optional(v.number()),
+		refundedAt: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
+		.index("by_order", ["orderId"])
 		.index("by_restaurant", ["restaurantId"])
-		.index("by_stripeProductId", ["stripeProductId"]),
+		.index("by_payment_intent", ["stripePaymentIntentId"]),
+
+	[TABLE.STRIPE_WEBHOOK_EVENTS]: defineTable({
+		eventId: v.string(),
+		eventType: v.string(),
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		processedAt: v.number(),
+		createdAt: v.number(),
+	})
+		.index("by_event_id", ["eventId"])
+		.index("by_payment", ["paymentId"]),
+
+	// ============================================================================
+	// Reservations
+	// ============================================================================
+	//
+	// Capacity-based reservations. Customers (UI now, WhatsApp bot later)
+	// submit `partySize + startsAt + contact`; staff confirm and assign one or
+	// more `tableIds` at confirmation time. The reservation lifecycle lives in
+	// `status` -- see RESERVATION_STATUS in constants.ts.
+	//
+	// Double-booking safety: any mutation that assigns a table reads
+	// overlapping rows on `by_table_time` and rejects on conflict. Because the
+	// read+write happens inside one Convex transaction, OCC retries handle
+	// concurrent assignment without explicit locking.
+	[TABLE.RESERVATIONS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		partySize: v.number(),
+		startsAt: v.number(),
+		endsAt: v.number(),
+		// Empty until staff confirm and pick tables. Multi-table to support
+		// large parties spanning two or more physical tables.
+		tableIds: v.array(v.id(TABLE.TABLES)),
+		status: v.union(
+			v.literal(RESERVATION_STATUS.PENDING),
+			v.literal(RESERVATION_STATUS.CONFIRMED),
+			v.literal(RESERVATION_STATUS.SEATED),
+			v.literal(RESERVATION_STATUS.COMPLETED),
+			v.literal(RESERVATION_STATUS.CANCELLED),
+			v.literal(RESERVATION_STATUS.NO_SHOW)
+		),
+		source: v.union(
+			v.literal(RESERVATION_SOURCE.UI),
+			v.literal(RESERVATION_SOURCE.WHATSAPP),
+			v.literal(RESERVATION_SOURCE.STAFF)
+		),
+		// Contact details work without a WorkOS account (WhatsApp bot only
+		// has a phone number). userId is set when a signed-in user reserves.
+		contact: v.object({
+			name: v.string(),
+			phone: v.string(),
+			email: v.optional(v.string()),
+		}),
+		userId: v.optional(v.string()),
+		notes: v.optional(v.string()),
+		// Set on markSeated() to attach the existing ordering flow.
+		sessionId: v.optional(v.id(TABLE.SESSIONS)),
+		idempotencyKey: v.optional(v.string()),
+		confirmedAt: v.optional(v.number()),
+		seatedAt: v.optional(v.number()),
+		completedAt: v.optional(v.number()),
+		cancelledAt: v.optional(v.number()),
+		cancelReason: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_restaurant_time", ["restaurantId", "startsAt"])
+		.index("by_restaurant_status_time", ["restaurantId", "status", "startsAt"])
+		.index("by_phone", ["restaurantId", "contact.phone"])
+		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_session", ["sessionId"]),
+
+	// Time-windowed locks marking a table unavailable. Stackable, auditable.
+	// Both reservation overlap checks and the public availability query union
+	// these in.
+	[TABLE.TABLE_LOCKS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		tableId: v.id(TABLE.TABLES),
+		startsAt: v.number(),
+		endsAt: v.number(),
+		reason: v.optional(v.string()),
+		lockedBy: v.string(),
+		createdAt: v.number(),
+	})
+		.index("by_table_time", ["tableId", "startsAt"])
+		.index("by_restaurant_time", ["restaurantId", "startsAt"]),
+
+	// One row per restaurant. Auto-created on first read with the
+	// DEFAULT_RESERVATION_SETTINGS values from constants.ts.
+	[TABLE.RESERVATION_SETTINGS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		defaultTurnMinutes: v.number(),
+		// Per-capacity overrides. The first matching range wins. If no range
+		// matches, defaultTurnMinutes is used.
+		turnMinutesByCapacity: v.array(
+			v.object({
+				minPartySize: v.number(),
+				maxPartySize: v.number(),
+				turnMinutes: v.number(),
+			})
+		),
+		minAdvanceMinutes: v.number(),
+		maxAdvanceDays: v.number(),
+		noShowGraceMinutes: v.number(),
+		// Restaurant-wide closures. Used for holidays, private events, etc.
+		blackoutWindows: v.array(
+			v.object({
+				startsAt: v.number(),
+				endsAt: v.number(),
+				reason: v.optional(v.string()),
+			})
+		),
+		acceptingReservations: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_restaurant", ["restaurantId"]),
 
 	// ============================================================================
 	// Unified Event Store

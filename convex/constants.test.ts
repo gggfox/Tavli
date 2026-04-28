@@ -20,7 +20,11 @@ describe("TABLE constants", () => {
 			"sessions",
 			"orders",
 			"orderItems",
-			"products",
+			"payments",
+			"stripeWebhookEvents",
+			"reservations",
+			"tableLocks",
+			"reservationSettings",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});

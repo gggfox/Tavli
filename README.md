@@ -1,17 +1,53 @@
-Welcome to your new TanStack app! 
+Welcome to Tavli.
 
 # Getting Started
 
-To run this application:
+Install dependencies and start the app:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-# Building For Production
+## Convex environment
 
-To build this application for production:
+Set on each Convex deployment via the dashboard or `npx convex env set`:
+
+- `CONVEX_ENV` — `development`, `staging`, or `production`. Gates dev-only
+  features such as the role switcher in Settings, which lets any authenticated
+  user adopt any role for testing. When unset (or set to anything other than
+  `development`/`dev`), the role switcher returns `NOT_AUTHORIZED`. Always set
+  this to `production` on prod deployments.
+
+  ```bash
+  npx convex env set CONVEX_ENV development           # local dev deployment
+  npx convex env set --prod CONVEX_ENV production     # production deployment
+  ```
+
+## Stripe Configuration
+
+### Frontend environment
+- `VITE_STRIPE_PUBLISHABLE_KEY`
+
+### Convex environment
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_CONNECT_WEBHOOK_SECRET`
+
+The Stripe integration uses two webhook surfaces:
+- `POST /stripe/webhook` for standard payment events
+- `POST /stripe/connect-webhook` for Connect thin events
+
+For local development, forward Stripe events with the Stripe CLI:
+
+```bash
+stripe listen --forward-to http://localhost:3210/stripe/webhook
+stripe listen --thin-events "v2.core.account[requirements].updated,v2.core.account[configuration.recipient].capability_status_updated" --forward-thin-to http://localhost:3210/stripe/connect-webhook
+```
+
+Production rollout steps live in [`documentation/runbooks/stripe-go-live.md`](documentation/runbooks/stripe-go-live.md).
+
+# Building For Production
 
 ```bash
 pnpm build
@@ -19,10 +55,22 @@ pnpm build
 
 ## Testing
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+Run the unit/component suite:
 
 ```bash
 pnpm test
+```
+
+Run the coverage variant used by CI:
+
+```bash
+pnpm test:coverage
+```
+
+Run Playwright E2E checks:
+
+```bash
+pnpm test:e2e
 ```
 
 ## Styling

@@ -6,10 +6,11 @@
  * - Direct Convex mutations
  * - TanStack Query's caching and suspense
  */
-import { Theme, UserSettings, UserSettingsError } from "@/features";
+import { OrderDashboardStatusFilter, Theme, UserSettings, UserSettingsError } from "@/features";
 import {
 	transformUserSettings,
 	updateLanguage as updateLanguageService,
+	updateOrderDashboardStatusFilters as updateOrderDashboardStatusFiltersService,
 	updateSidebarExpanded as updateSidebarExpandedService,
 	updateTheme as updateThemeService,
 } from "@/features/users/components/UserSettingsService";
@@ -36,9 +37,18 @@ export type UseUserSettingsReturn = {
 	theme: Theme;
 	sidebarExpanded: boolean;
 	language: Language;
+	/**
+	 * Persisted OrderDashboard filter selection. `null` means the user has
+	 * never set it -- callers should fall back to a sensible default (typically
+	 * the active-status set).
+	 */
+	orderDashboardStatusFilters: OrderDashboardStatusFilter[] | null;
 	updateTheme: (theme: Theme) => Promise<UserSettingsResult<UserSettingsId>>;
 	updateSidebarExpanded: (expanded: boolean) => Promise<UserSettingsResult<UserSettingsId>>;
 	updateLanguage: (language: Language) => Promise<UserSettingsResult<UserSettingsId>>;
+	updateOrderDashboardStatusFilters: (
+		statuses: OrderDashboardStatusFilter[]
+	) => Promise<UserSettingsResult<UserSettingsId>>;
 };
 
 // Re-export UserSettingsError for consumers
@@ -105,6 +115,13 @@ export function useUserSettings(): UseUserSettingsReturn {
 
 	// Extract sidebar expanded state with default
 	const sidebarExpanded = useMemo(() => settings?.sidebarExpanded ?? true, [settings]);
+
+	// Persisted OrderDashboard filters (null when never set, so callers can
+	// distinguish "not set" from "explicitly empty").
+	const orderDashboardStatusFilters = useMemo<OrderDashboardStatusFilter[] | null>(
+		() => settings?.orderDashboardStatusFilters ?? null,
+		[settings]
+	);
 
 	// Extract language with default
 	// Use i18n's current language as fallback to ensure UI reflects actual language
@@ -197,6 +214,24 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
+	// Persist the OrderDashboard status filter selection
+	const updateOrderDashboardStatusFilters = useCallback(
+		async (
+			statuses: OrderDashboardStatusFilter[]
+		): Promise<UserSettingsResult<UserSettingsId>> => {
+			try {
+				const value = await updateOrderDashboardStatusFiltersService(client, statuses);
+				return { success: true, value };
+			} catch (error) {
+				return {
+					success: false,
+					error: error instanceof Error ? error : new Error(String(error)),
+				};
+			}
+		},
+		[client]
+	);
+
 	// Sync i18n language when settings change (for initial load and real-time updates)
 	useEffect(() => {
 		if (settings?.language && i18n.language !== settings.language) {
@@ -247,8 +282,10 @@ export function useUserSettings(): UseUserSettingsReturn {
 		theme,
 		sidebarExpanded,
 		language,
+		orderDashboardStatusFilters,
 		updateTheme,
 		updateSidebarExpanded,
 		updateLanguage,
+		updateOrderDashboardStatusFilters,
 	};
 }

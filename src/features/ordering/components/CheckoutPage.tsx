@@ -1,14 +1,63 @@
 import { formatCents } from "@/global/utils/money";
 import { convexQuery, useConvexAction } from "@convex-dev/react-query";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
+import { loadStripe, type Appearance } from "@stripe/stripe-js";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft, CreditCard, Loader2, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+
+const LIGHT_APPEARANCE: Appearance = {
+	theme: "stripe",
+	variables: {
+		colorPrimary: "#2383e2",
+		colorBackground: "#ffffff",
+		colorText: "#37352f",
+		colorTextSecondary: "#787774",
+		colorTextPlaceholder: "#9b9a97",
+		colorDanger: "#e03e3e",
+		borderRadius: "8px",
+	},
+};
+
+const DARK_APPEARANCE: Appearance = {
+	theme: "night",
+	variables: {
+		colorPrimary: "#2383e2",
+		colorBackground: "#252525",
+		colorText: "#ffffffcf",
+		colorTextSecondary: "#9b9a97",
+		colorTextPlaceholder: "#5a5a5a",
+		colorDanger: "#eb5757",
+		borderRadius: "8px",
+	},
+};
+
+function useIsDarkTheme(): boolean {
+	const [isDark, setIsDark] = useState(() => {
+		if (typeof document === "undefined") return false;
+		return document.documentElement.classList.contains("dark");
+	});
+
+	useEffect(() => {
+		if (typeof document === "undefined") return;
+		const root = document.documentElement;
+		const update = () => {
+			setIsDark(root.classList.contains("dark"));
+		};
+		update();
+		const observer = new MutationObserver(update);
+		observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+		return () => {
+			observer.disconnect();
+		};
+	}, []);
+
+	return isDark;
+}
 
 interface CheckoutPageProps {
 	orderId: string;
@@ -37,21 +86,49 @@ export function CheckoutPage({
 			const result = await createPaymentIntent({
 				orderId: orderId as Id<"orders">,
 			});
-			if (result.clientSecret) {
+			if (result?.clientSecret) {
 				setClientSecret(result.clientSecret);
+			} else {
+				setClientSecret(null);
 			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to initialize payment");
+			setClientSecret(null);
 		} finally {
 			setLoading(false);
 		}
 	}, [createPaymentIntent, orderId]);
 
 	useEffect(() => {
-		if (orderData?.status === "draft" && orderData.totalAmount > 0) {
+		if (!orderData || orderData.status !== "draft") {
+			return;
+		}
+		if (orderData.totalAmount <= 0) {
+			setLoading(false);
+			return;
+		}
+		if (orderData.paymentState === "failed") {
+			setLoading(false);
+			setClientSecret(null);
+			setError(orderData.activePayment?.failureMessage ?? "Payment failed. Please try again.");
+			return;
+		}
+		if (
+			orderData.paymentState === "unpaid" ||
+			orderData.paymentState === "pending" ||
+			orderData.paymentState === "processing" ||
+			orderData.paymentState === undefined
+		) {
 			initPayment();
 		}
-	}, [orderData?.status, orderData?.totalAmount, initPayment]);
+	}, [
+		orderData,
+		orderData?.activePayment?.failureMessage,
+		orderData?.paymentState,
+		orderData?.status,
+		orderData?.totalAmount,
+		initPayment,
+	]);
 
 	if (!orderData) {
 		return (
@@ -67,77 +144,79 @@ export function CheckoutPage({
 	}
 
 	return (
-		<div className="flex flex-col h-full max-w-lg mx-auto p-4 space-y-6">
-			<div className="flex items-center gap-3">
-				<button onClick={onBackToMenu} className="p-2 rounded-lg hover:bg-(--bg-hover)">
-					<ArrowLeft size={20} style={{ color: "var(--text-primary)" }} />
-				</button>
-				<h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-					Checkout
-				</h2>
-			</div>
+		<div className="flex flex-col h-full w-full overflow-y-auto">
+			<div className="flex flex-col max-w-lg w-full mx-auto p-4 pb-8 space-y-6">
+				<div className="flex items-center gap-3">
+					<button onClick={onBackToMenu} className="p-2 rounded-lg hover:bg-(--bg-hover)">
+						<ArrowLeft size={20} style={{ color: "var(--text-primary)" }} />
+					</button>
+					<h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+						Checkout
+					</h2>
+				</div>
 
-			{/* Order Summary */}
-			<div
-				className="rounded-xl p-4 space-y-3"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-				}}
-			>
-				<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-					Order Summary
-				</h3>
-				{orderData.items.map((item) => (
+				{/* Order Summary */}
+				<div
+					className="rounded-xl p-4 space-y-3"
+					style={{
+						backgroundColor: "var(--bg-secondary)",
+						border: "1px solid var(--border-default)",
+					}}
+				>
+					<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+						Order Summary
+					</h3>
+					{orderData.items.map((item) => (
+						<div
+							key={item._id}
+							className="flex justify-between text-sm"
+							style={{ color: "var(--text-secondary)" }}
+						>
+							<span>
+								{item.quantity}x {item.menuItemName}
+							</span>
+							<span>${formatCents(item.lineTotal)}</span>
+						</div>
+					))}
 					<div
-						key={item._id}
-						className="flex justify-between text-sm"
-						style={{ color: "var(--text-secondary)" }}
+						className="flex justify-between pt-3 text-sm font-semibold"
+						style={{
+							borderTop: "1px solid var(--border-default)",
+							color: "var(--text-primary)",
+						}}
 					>
-						<span>
-							{item.quantity}x {item.menuItemName}
-						</span>
-						<span>${formatCents(item.lineTotal)}</span>
+						<span>Total</span>
+						<span>${formatCents(orderData.totalAmount)}</span>
 					</div>
-				))}
-				<div
-					className="flex justify-between pt-3 text-sm font-semibold"
-					style={{
-						borderTop: "1px solid var(--border-default)",
-						color: "var(--text-primary)",
-					}}
-				>
-					<span>Total</span>
-					<span>${formatCents(orderData.totalAmount)}</span>
 				</div>
-			</div>
 
-			{error && (
+				{error && (
+					<div
+						className="px-4 py-3 rounded-lg text-sm"
+						style={{
+							backgroundColor: "rgba(220, 38, 38, 0.1)",
+							color: "var(--accent-danger, #dc2626)",
+						}}
+					>
+						{error}
+					</div>
+				)}
+
+				<PaymentSection
+					loading={loading}
+					clientSecret={clientSecret}
+					orderId={orderId}
+					onOrderPlaced={onOrderPlaced}
+					onRetry={initPayment}
+				/>
+
 				<div
-					className="px-4 py-3 rounded-lg text-sm"
-					style={{
-						backgroundColor: "rgba(220, 38, 38, 0.1)",
-						color: "var(--accent-danger, #dc2626)",
-					}}
+					className="flex items-center justify-center gap-2 text-xs"
+					style={{ color: "var(--text-muted)" }}
 				>
-					{error}
+					<ShieldCheck size={14} />
+					<span>Payments secured by Stripe</span>
 				</div>
-			)}
-
-			<PaymentSection
-				loading={loading}
-				clientSecret={clientSecret}
-				orderId={orderId}
-				onOrderPlaced={onOrderPlaced}
-				onRetry={initPayment}
-			/>
-
-			<div
-				className="flex items-center justify-center gap-2 text-xs"
-				style={{ color: "var(--text-muted)" }}
-			>
-				<ShieldCheck size={14} />
-				<span>Payments secured by Stripe</span>
 			</div>
 		</div>
 	);
@@ -156,6 +235,18 @@ function PaymentSection({
 	onOrderPlaced: (orderId: string) => void;
 	onRetry: () => void;
 }>) {
+	const isDark = useIsDarkTheme();
+	const elementsOptions = useMemo(
+		() =>
+			clientSecret
+				? {
+						clientSecret,
+						appearance: isDark ? DARK_APPEARANCE : LIGHT_APPEARANCE,
+					}
+				: null,
+		[clientSecret, isDark]
+	);
+
 	if (loading) {
 		return (
 			<div className="flex items-center justify-center py-8">
@@ -164,21 +255,10 @@ function PaymentSection({
 		);
 	}
 
-	if (clientSecret) {
+	if (clientSecret && elementsOptions) {
+		// Remount Elements when theme changes so Stripe picks up the new appearance.
 		return (
-			<Elements
-				stripe={stripePromise}
-				options={{
-					clientSecret,
-					appearance: {
-						theme: "stripe",
-						variables: {
-							colorPrimary: "#6366f1",
-							borderRadius: "8px",
-						},
-					},
-				}}
-			>
+			<Elements key={isDark ? "dark" : "light"} stripe={stripePromise} options={elementsOptions}>
 				<PaymentForm orderId={orderId} onSuccess={() => onOrderPlaced(orderId)} />
 			</Elements>
 		);
@@ -220,6 +300,13 @@ function PaymentForm({
 			onSuccess();
 		}
 	}, [orderData?.status, onSuccess]);
+
+	useEffect(() => {
+		if (orderData?.paymentState === "failed") {
+			setProcessing(false);
+			setError(orderData.activePayment?.failureMessage ?? "Payment failed");
+		}
+	}, [orderData?.activePayment?.failureMessage, orderData?.paymentState]);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();

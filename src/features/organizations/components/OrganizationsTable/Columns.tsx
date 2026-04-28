@@ -1,3 +1,4 @@
+import { CopyableId } from "@/global/components";
 import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { OrganizationDoc } from "convex/constants";
@@ -5,6 +6,10 @@ import type { OrganizationDoc } from "convex/constants";
 const columnHelper = createColumnHelper<OrganizationDoc>();
 
 export const columns = [
+	columnHelper.accessor("_id", {
+		header: "ID",
+		cell: (info) => <CopyableId id={info.getValue()} />,
+	}),
 	columnHelper.accessor("name", {
 		header: "Name",
 		cell: (info) => (

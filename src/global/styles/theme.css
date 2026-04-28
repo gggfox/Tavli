@@ -30,8 +30,12 @@
 	--accent-success: #0f7b6c;
 	--accent-success-light: rgba(15, 123, 108, 0.1);
 	--accent-warning: #dfab01;
+	--accent-warning-light: rgba(223, 171, 1, 0.12);
 	--accent-danger: #e03e3e;
 	--accent-danger-light: rgba(224, 62, 62, 0.1);
+	--accent-info: #2383e2;
+	--accent-info-light: rgba(35, 131, 226, 0.1);
+	--accent-neutral-light: rgba(120, 119, 116, 0.12);
 
 	/* Interactive Elements */
 	--btn-primary-bg: #2383e2;
@@ -83,8 +87,12 @@
 	--accent-success: #4dab9a;
 	--accent-success-light: rgba(77, 171, 154, 0.15);
 	--accent-warning: #f0c000;
+	--accent-warning-light: rgba(240, 192, 0, 0.16);
 	--accent-danger: #eb5757;
 	--accent-danger-light: rgba(235, 87, 87, 0.15);
+	--accent-info: #4b9fe8;
+	--accent-info-light: rgba(75, 159, 232, 0.15);
+	--accent-neutral-light: rgba(155, 154, 151, 0.14);
 
 	--btn-primary-bg: #2383e2;
 	--btn-primary-hover: #4b9fe8;

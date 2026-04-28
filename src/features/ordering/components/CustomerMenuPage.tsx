@@ -1,10 +1,10 @@
-import { LoadingState } from "@/global/components";
 import type { Id } from "convex/_generated/dataModel";
 import { useState } from "react";
 import { useCart } from "../hooks/useCart";
 import { useSessionStore } from "../hooks/useSession";
 import type { SelectedOption } from "../types";
 import { MenuBrowser } from "./MenuBrowser";
+import { MenuBrowserSkeleton } from "./MenuBrowserSkeleton";
 
 interface CustomerMenuPageProps {
 	lang?: string;
@@ -17,11 +17,7 @@ export function CustomerMenuPage({ lang, onNavigateToCheckout }: Readonly<Custom
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	if (!restaurantId || !sessionId) {
-		return (
-			<div className="p-4">
-				<LoadingState />
-			</div>
-		);
+		return <MenuBrowserSkeleton />;
 	}
 
 	const handleSubmitOrder = async (data: {

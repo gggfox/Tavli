@@ -34,7 +34,7 @@ const mockItems = [
 ];
 
 describe("Cart", () => {
-	it("shows loading state when data is not yet available", () => {
+	it("shows loading skeleton when data is not yet available", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: undefined,
 			isLoading: true,
@@ -49,7 +49,9 @@ describe("Cart", () => {
 				isSubmitting={false}
 			/>
 		);
-		expect(screen.getByText("Loading cart...")).toBeInTheDocument();
+		const skeleton = screen.getByLabelText("Loading cart");
+		expect(skeleton).toBeInTheDocument();
+		expect(skeleton).toHaveAttribute("aria-busy", "true");
 	});
 
 	it("shows empty state when cart has no items", () => {

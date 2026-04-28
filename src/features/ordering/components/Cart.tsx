@@ -1,10 +1,11 @@
-import { EmptyState, LoadingState } from "@/global/components";
+import { EmptyState } from "@/global/components";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft, Trash2 } from "lucide-react";
+import { CartSkeleton } from "./CartSkeleton";
 
 interface CartProps {
 	orderId: Id<"orders">;
@@ -24,18 +25,7 @@ export function Cart({
 	const { data: orderData } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
 
 	if (!orderData) {
-		return (
-			<div className="p-4">
-				<button
-					onClick={onBack}
-					className="flex items-center gap-1 text-sm"
-					style={{ color: "var(--btn-primary-bg)" }}
-				>
-					<ArrowLeft size={16} /> Back
-				</button>
-				<LoadingState message="Loading cart..." className="mt-4" />
-			</div>
-		);
+		return <CartSkeleton onBack={onBack} />;
 	}
 
 	const { items, totalAmount } = orderData;

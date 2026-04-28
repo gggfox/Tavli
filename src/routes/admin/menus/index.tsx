@@ -1,34 +1,25 @@
-import { MenuList, useMenus } from "@/features/menus";
+import { MenuList, MenuListSkeleton, useMenus } from "@/features/menus";
 import { useRestaurant } from "@/features/restaurants";
-import { LoadingState } from "@/global/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import type { Id } from "convex/_generated/dataModel";
+import type { ComponentProps } from "react";
 
 export const Route = createFileRoute("/admin/menus/")({
 	component: MenusPage,
 });
+
+type MenuListBindings = Pick<
+	ComponentProps<typeof MenuList>,
+	"menus" | "onCreate" | "onUpdate" | "onDelete"
+>;
 
 function MenusPage() {
 	const { restaurant, isLoading } = useRestaurant();
 	const { menus, createMenu, updateMenu, deleteMenu } = useMenus(restaurant?._id);
 	const navigate = useNavigate();
 
-	if (isLoading) {
-		return (
-			<div className="p-6">
-				<LoadingState />
-			</div>
-		);
-	}
-
-	if (!restaurant) {
-		return (
-			<div className="p-6">
-				<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-					Please set up your restaurant first.
-				</p>
-			</div>
-		);
-	}
+	const handleSelect = (menuId: Id<"menus">) =>
+		navigate({ to: "/admin/menus/$menuId", params: { menuId } });
 
 	return (
 		<div className="p-6 flex flex-col h-full">
@@ -42,15 +33,51 @@ function MenusPage() {
 				</p>
 			</div>
 			<div className="flex-1 overflow-y-auto">
-				<MenuList
+				<MenusContent
+					restaurantId={restaurant?._id}
+					isLoading={isLoading}
 					menus={menus}
-					restaurantId={restaurant._id}
 					onCreate={createMenu}
 					onUpdate={updateMenu}
 					onDelete={deleteMenu}
-					onSelect={(menuId) => navigate({ to: "/admin/menus/$menuId", params: { menuId } })}
+					onSelect={handleSelect}
 				/>
 			</div>
 		</div>
+	);
+}
+
+function MenusContent({
+	restaurantId,
+	isLoading,
+	menus,
+	onCreate,
+	onUpdate,
+	onDelete,
+	onSelect,
+}: Readonly<
+	MenuListBindings & {
+		restaurantId: Id<"restaurants"> | undefined;
+		isLoading: boolean;
+		onSelect: (menuId: Id<"menus">) => void;
+	}
+>) {
+	if (isLoading) return <MenuListSkeleton />;
+	if (!restaurantId) {
+		return (
+			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+				Please set up your restaurant first.
+			</p>
+		);
+	}
+	return (
+		<MenuList
+			menus={menus}
+			restaurantId={restaurantId}
+			onCreate={onCreate}
+			onUpdate={onUpdate}
+			onDelete={onDelete}
+			onSelect={onSelect}
+		/>
 	);
 }

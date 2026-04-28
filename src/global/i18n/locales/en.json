@@ -16,8 +16,7 @@
 			"options": "Options",
 			"orders": "Orders",
 			"payments": "Payments",
-			"products": "Products",
-			"storefront": "Storefront",
+			"reservations": "Reservations",
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations"
@@ -50,6 +49,15 @@
 			"selfAssignAdmin": "Self Assign Admin Role",
 			"adminAlreadyAssigned": "Admin role already assigned",
 			"assigningAdmin": "Assigning..."
+		}
+	},
+	"customer": {
+		"nav": {
+			"menu": "Menu",
+			"reserve": "Reserve"
+		},
+		"auth": {
+			"signUp": "Sign up"
 		}
 	},
 	"roles": {

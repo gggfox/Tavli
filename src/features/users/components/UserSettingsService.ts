@@ -31,6 +31,18 @@ export type Theme = "light" | "dark";
 export type { Language } from "@/global/i18n";
 
 /**
+ * Statuses the OrderDashboard is allowed to filter by. Mirrors the validator
+ * in convex/userSettings.ts -- `draft` is excluded because drafts never appear
+ * on the dashboard.
+ */
+export type OrderDashboardStatusFilter =
+	| "submitted"
+	| "preparing"
+	| "ready"
+	| "served"
+	| "cancelled";
+
+/**
  * Transform raw Convex user settings to domain UserSettings.
  * Currently an identity function, but provides a hook for
  * future domain transformations if needed.
@@ -44,7 +56,11 @@ export const transformUserSettings = (raw: UserSettingsDoc): UserSettings => raw
 export class UserSettingsError {
 	readonly _tag = "UserSettingsError";
 	constructor(
-		readonly operation: "updateTheme" | "updateSidebarExpanded" | "updateLanguage",
+		readonly operation:
+			| "updateTheme"
+			| "updateSidebarExpanded"
+			| "updateLanguage"
+			| "updateOrderDashboardStatusFilters",
 		readonly cause: unknown
 	) {}
 }
@@ -97,5 +113,24 @@ export async function updateLanguage(
 		return await client.mutation(api.userSettings.updateLanguage, { language });
 	} catch (error) {
 		throw new UserSettingsError("updateLanguage", error);
+	}
+}
+
+/**
+ * Update the OrderDashboard status filters for the authenticated user.
+ * Persisting these means the user's filter choices follow them across
+ * devices.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardStatusFilters(
+	client: ConvexReactClient,
+	statuses: OrderDashboardStatusFilter[]
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardStatusFilters, {
+			statuses,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardStatusFilters", error);
 	}
 }

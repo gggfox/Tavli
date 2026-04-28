@@ -8,6 +8,7 @@
  *
  * Admins have implicit access to all role-specific functionalities.
  */
+import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader, DatabaseWriter } from "../_generated/server";
 import { TABLE, USER_ROLES, UserRole } from "../constants";
 
@@ -16,6 +17,8 @@ import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
 	NotAuthorizedErrorObject,
+	NotFoundError,
+	NotFoundErrorObject,
 } from "../_shared/errors";
 import { AsyncReturn } from "../_shared/types";
 
@@ -43,12 +46,20 @@ type RoleDbContext = { db: DatabaseReader | DatabaseWriter };
  * Helper to get user roles from the database.
  */
 async function fetchUserRoles(ctx: RoleDbContext, userId: string): Promise<UserRole[]> {
+	const userRole = await fetchUserRoleRecord(ctx, userId);
+	return userRole?.roles ?? [];
+}
+
+async function fetchUserRoleRecord(
+	ctx: RoleDbContext,
+	userId: string
+): Promise<Doc<"userRoles"> | null> {
 	const userRole = await ctx.db
 		.query(TABLE.USER_ROLES)
 		.withIndex("by_user", (q) => q.eq("userId", userId))
 		.first();
 
-	return userRole?.roles ?? [];
+	return userRole;
 }
 
 /**
@@ -159,6 +170,63 @@ export const requireOwnerOrEmployeeRole = requireStaffRole;
  */
 export async function getUserRoles(ctx: RoleDbContext, userId: string): Promise<UserRole[]> {
 	return fetchUserRoles(ctx, userId);
+}
+
+type RestaurantAccessErrors = NotAuthorizedErrorObject | NotFoundErrorObject;
+
+type RestaurantAccessScope = "owner_admin" | "staff";
+
+type RestaurantAccessContext = RoleDbContext;
+
+async function requireRestaurantAccess(
+	ctx: RestaurantAccessContext,
+	userId: string,
+	restaurantId: Id<"restaurants">,
+	scope: RestaurantAccessScope
+): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {
+	const restaurant = await ctx.db.get(restaurantId);
+	if (!restaurant) {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+
+	const userRoleRecord = await fetchUserRoleRecord(ctx, userId);
+	const roles = userRoleRecord?.roles ?? [];
+	if (roles.includes(USER_ROLES.ADMIN)) {
+		return [restaurant, null];
+	}
+
+	if (restaurant.ownerId === userId) {
+		return [restaurant, null];
+	}
+
+	if (
+		scope === "staff" &&
+		userRoleRecord?.organizationId &&
+		userRoleRecord.organizationId === restaurant.organizationId &&
+		(roles.includes(USER_ROLES.OWNER) ||
+			roles.includes(USER_ROLES.MANAGER) ||
+			roles.includes(USER_ROLES.EMPLOYEE))
+	) {
+		return [restaurant, null];
+	}
+
+	return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+}
+
+export async function requireRestaurantOwnerOrAdmin(
+	ctx: RestaurantAccessContext,
+	userId: string,
+	restaurantId: Id<"restaurants">
+): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {
+	return requireRestaurantAccess(ctx, userId, restaurantId, "owner_admin");
+}
+
+export async function requireRestaurantStaffAccess(
+	ctx: RestaurantAccessContext,
+	userId: string,
+	restaurantId: Id<"restaurants">
+): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {
+	return requireRestaurantAccess(ctx, userId, restaurantId, "staff");
 }
 
 /**

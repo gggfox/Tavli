@@ -8,12 +8,13 @@ import { sidebarItems } from "../constants";
 
 const STAFF_ROLES = ["admin", "owner", "manager", "employee"];
 
-const STAFF_SIDEBAR_KEYS = new Set([
+const STAFF_SIDEBAR_KEYS = new Set<string>([
 	SidebarKeys.RESTAURANTS,
 	SidebarKeys.MENUS,
 	SidebarKeys.OPTIONS,
 	SidebarKeys.ORDERS,
 	SidebarKeys.PAYMENTS,
+	SidebarKeys.RESERVATIONS,
 ]);
 
 export function useSidebarItems({ isMounted }: { isMounted: boolean }) {

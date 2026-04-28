@@ -19,12 +19,28 @@ async function seedOrganization(t: ReturnType<typeof convexTest>) {
 	return orgId!;
 }
 
+async function seedUserRole(
+	t: ReturnType<typeof convexTest>,
+	args: { userId: string; roles: string[]; organizationId?: Id<"organizations"> }
+) {
+	await t.run(async (ctx) => {
+		await ctx.db.insert("userRoles", {
+			userId: args.userId,
+			roles: args.roles as Array<"admin" | "owner" | "manager" | "customer" | "employee">,
+			organizationId: args.organizationId,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
+}
+
 describe("restaurants", () => {
 	describe("create", () => {
 		it("creates a restaurant when authenticated", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
 
 			const [id, error] = await authed.mutation(api.restaurants.create, {
 				name: "Test Restaurant",
@@ -57,6 +73,7 @@ describe("restaurants", () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
 
 			await authed.mutation(api.restaurants.create, {
 				name: "First",
@@ -83,6 +100,7 @@ describe("restaurants", () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
 
 			await authed.mutation(api.restaurants.create, {
 				name: "Pizzeria",
@@ -110,6 +128,7 @@ describe("restaurants", () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "owner1" });
 			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "owner1", roles: ["owner"], organizationId: orgId });
 
 			await authed.mutation(api.restaurants.create, {
 				name: "My Place",

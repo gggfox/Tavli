@@ -1,3 +1,4 @@
+import { CopyableId } from "@/global/components";
 import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { UserRoleDoc } from "convex/constants";
@@ -9,11 +10,7 @@ const columnHelper = createColumnHelper<UserRole>();
 export const columns = [
 	columnHelper.accessor("userId", {
 		header: "User ID",
-		cell: (info) => (
-			<span className="font-mono text-xs" style={{ color: "var(--text-primary)" }}>
-				{info.getValue().slice(0, 16)}...
-			</span>
-		),
+		cell: (info) => <CopyableId id={info.getValue()} />,
 	}),
 	columnHelper.accessor("email", {
 		header: "Email",

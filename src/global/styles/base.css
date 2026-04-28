@@ -52,8 +52,9 @@ code {
 	scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-/* Smooth theme transitions */
-html {
+/* Smooth theme transitions — only after first paint to avoid animating the
+   initial inline-script-applied theme on load. */
+html.theme-ready {
 	transition:
 		background-color 0.2s ease-in-out,
 		color 0.2s ease-in-out;

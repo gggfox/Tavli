@@ -1,11 +1,19 @@
+import type { OrderDashboardStatusFilter } from "@/features";
 import { unwrapQuery } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-export function useOrders(restaurantId: Id<"restaurants"> | undefined) {
+
+export function useOrders(
+	restaurantId: Id<"restaurants"> | undefined,
+	statuses?: OrderDashboardStatusFilter[]
+) {
 	const { data: rawResult, isLoading } = useQuery(
-		convexQuery(api.orders.getActiveOrdersByRestaurant, restaurantId ? { restaurantId } : "skip")
+		convexQuery(
+			api.orders.getActiveOrdersByRestaurant,
+			restaurantId ? { restaurantId, statuses } : "skip"
+		)
 	);
 
 	const { data, error } = unwrapQuery(rawResult);

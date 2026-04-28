@@ -1,4 +1,4 @@
-import { LoadingState, StatusBadge } from "@/global/components";
+import { StatusBadge } from "@/global/components";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { ArrowLeft, Minus, Plus } from "lucide-react";
 import { useState } from "react";
 import type { SelectedOption } from "../types";
 import { toggleOptionSelection } from "../utils";
+import { MenuItemDetailSkeleton } from "./MenuItemDetailSkeleton";
 
 interface MenuItemDetailProps {
 	itemId: Id<"menuItems">;
@@ -68,18 +69,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 	};
 
 	if (!menuItem) {
-		return (
-			<div className="p-4">
-				<button
-					onClick={onBack}
-					className="flex items-center gap-1 text-sm mb-4"
-					style={{ color: "var(--btn-primary-bg)" }}
-				>
-					<ArrowLeft size={16} /> Back
-				</button>
-				<LoadingState />
-			</div>
-		);
+		return <MenuItemDetailSkeleton onBack={onBack} />;
 	}
 
 	return (

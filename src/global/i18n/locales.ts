@@ -28,8 +28,7 @@ export const SidebarKeys = {
 	OPTIONS: "sidebar.nav.options",
 	ORDERS: "sidebar.nav.orders",
 	PAYMENTS: "sidebar.nav.payments",
-	PRODUCTS: "sidebar.nav.products",
-	STOREFRONT: "sidebar.nav.storefront",
+	RESERVATIONS: "sidebar.nav.reservations",
 	ADMIN: "sidebar.nav.admin",
 	ADMIN_USERS: "sidebar.nav.adminUsers",
 	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",
@@ -65,6 +64,17 @@ export const SidebarKeys = {
 } as const;
 
 export type SidebarKey = (typeof SidebarKeys)[keyof typeof SidebarKeys];
+
+/**
+ * Translation keys for the public-facing customer experience at /r/$slug.
+ */
+export const CustomerKeys = {
+	MENU: "customer.nav.menu",
+	RESERVE: "customer.nav.reserve",
+	SIGN_UP: "customer.auth.signUp",
+} as const;
+
+export type CustomerKey = (typeof CustomerKeys)[keyof typeof CustomerKeys];
 
 /**
  * Translation keys for role names

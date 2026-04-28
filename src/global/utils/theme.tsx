@@ -15,7 +15,32 @@ export const Theme = {
 } as const;
 
 export type Theme = (typeof Theme)[keyof typeof Theme];
-const LOCAL_STORAGE_THEME_KEY = "fierro-viejo-theme";
+export const LOCAL_STORAGE_THEME_KEY = "fierro-viejo-theme";
+
+function readInitialTheme(): Theme {
+	if (globalThis.window === undefined) return Theme.LIGHT;
+	try {
+		const saved = globalThis.window.localStorage.getItem(LOCAL_STORAGE_THEME_KEY);
+		if (saved === Theme.DARK) return Theme.DARK;
+		if (saved === Theme.LIGHT) return Theme.LIGHT;
+		// No stored preference — fall back to OS color scheme on first visit.
+		if (globalThis.window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
+			return Theme.DARK;
+		}
+		return Theme.LIGHT;
+	} catch {
+		return Theme.LIGHT;
+	}
+}
+
+function persistTheme(theme: Theme): void {
+	if (globalThis.window === undefined) return;
+	try {
+		globalThis.window.localStorage.setItem(LOCAL_STORAGE_THEME_KEY, theme);
+	} catch {
+		// Ignore (e.g. privacy-mode storage failures).
+	}
+}
 
 export interface RemoteThemeSettings {
 	theme: Theme | null;
@@ -28,17 +53,11 @@ export function useTheme() {
 	const { isAuthenticated } = useConvexAuth();
 	const remote = useContext(RemoteThemeContext);
 
-	const [localTheme, setLocalTheme] = useState<Theme>(() => {
-		if (globalThis.window === undefined) return Theme.LIGHT;
-		const saved = globalThis.window.localStorage.getItem(LOCAL_STORAGE_THEME_KEY);
-		return saved === Theme.DARK ? Theme.DARK : Theme.LIGHT;
-	});
+	const [localTheme, setLocalTheme] = useState<Theme>(readInitialTheme);
 
 	const saveTheme = useCallback((newTheme: Theme) => {
 		setLocalTheme(newTheme);
-		if (globalThis.window !== undefined) {
-			globalThis.window.localStorage.setItem(LOCAL_STORAGE_THEME_KEY, newTheme);
-		}
+		persistTheme(newTheme);
 	}, []);
 
 	const theme = useMemo<Theme>(() => {
@@ -47,6 +66,15 @@ export function useTheme() {
 		}
 		return localTheme;
 	}, [isAuthenticated, remote?.theme, localTheme]);
+
+	// Mirror the authoritative remote theme into localStorage so the
+	// inline <head> script can render the correct theme on the next reload
+	// without waiting for Convex to authenticate and resolve user settings.
+	useEffect(() => {
+		if (remote?.theme) {
+			persistTheme(remote.theme);
+		}
+	}, [remote?.theme]);
 
 	const setTheme = useCallback(
 		async (newTheme: Theme) => {
@@ -94,6 +122,18 @@ function ThemeApplier({ children }: Readonly<{ children: ReactNode }>) {
 			root.classList.remove(Theme.DARK);
 		}
 	}, [theme]);
+
+	// Enable CSS transitions only after the first paint so the initial
+	// inline-script-applied theme doesn't animate on load.
+	useEffect(() => {
+		const root = document.documentElement;
+		const enable = () => root.classList.add("theme-ready");
+		const raf = globalThis.requestAnimationFrame?.(enable);
+		if (raf === undefined) enable();
+		return () => {
+			if (raf !== undefined) globalThis.cancelAnimationFrame?.(raf);
+		};
+	}, []);
 
 	return <>{children}</>;
 }

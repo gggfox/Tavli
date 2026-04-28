@@ -1,14 +1,8 @@
+import { AdminRestaurantsListSkeleton } from "@/features/restaurants/components/AdminRestaurantsListSkeleton";
 import { RestaurantSettingsForm } from "@/features/restaurants/components/RestaurantSettingsForm";
 import { StripeConnectSetup } from "@/features/restaurants/components/StripeConnectSetup";
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
-import {
-	EmptyState,
-	InlineError,
-	LoadingState,
-	Modal,
-	StatusBadge,
-	TextInput,
-} from "@/global/components";
+import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global/components";
 import { sanitizeSlug, unwrapQuery, unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -67,7 +61,7 @@ export function AdminRestaurantsList() {
 	const closeModal = () => setModal({ kind: "closed" });
 
 	if (isLoading) {
-		return <LoadingState />;
+		return <AdminRestaurantsListSkeleton />;
 	}
 
 	return (

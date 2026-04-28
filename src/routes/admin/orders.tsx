@@ -1,7 +1,7 @@
-import { OrderDashboard } from "@/features/kitchen";
+import { OrderDashboard, OrderDashboardSkeleton } from "@/features/kitchen";
 import { useRestaurant } from "@/features/restaurants";
-import { LoadingState } from "@/global/components";
 import { createFileRoute } from "@tanstack/react-router";
+import type { Id } from "convex/_generated/dataModel";
 
 export const Route = createFileRoute("/admin/orders")({
 	component: OrdersPage,
@@ -9,24 +9,6 @@ export const Route = createFileRoute("/admin/orders")({
 
 function OrdersPage() {
 	const { restaurant, isLoading } = useRestaurant();
-
-	if (isLoading) {
-		return (
-			<div className="p-6">
-				<LoadingState />
-			</div>
-		);
-	}
-
-	if (!restaurant) {
-		return (
-			<div className="p-6">
-				<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-					Please set up your restaurant first.
-				</p>
-			</div>
-		);
-	}
 
 	return (
 		<div className="p-6 flex flex-col h-full">
@@ -39,8 +21,23 @@ function OrdersPage() {
 				</p>
 			</div>
 			<div className="flex-1 overflow-y-auto">
-				<OrderDashboard restaurantId={restaurant._id} />
+				<OrdersContent restaurantId={restaurant?._id} isLoading={isLoading} />
 			</div>
 		</div>
 	);
+}
+
+function OrdersContent({
+	restaurantId,
+	isLoading,
+}: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
+	if (isLoading) return <OrderDashboardSkeleton />;
+	if (!restaurantId) {
+		return (
+			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+				Please set up your restaurant first.
+			</p>
+		);
+	}
+	return <OrderDashboard restaurantId={restaurantId} />;
 }
