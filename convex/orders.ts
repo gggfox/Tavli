@@ -515,25 +515,22 @@ export const getPaidOrdersByRestaurant = query({
 		const { menuItemTranslations, optionTranslations, optionGroupTranslations } =
 			await loadOrderItemTranslations(ctx, allItems);
 
-		const enrichedOrders = ordersWithItems.map((order) => ({
-			...order,
-			items: order.items.map((item) => ({
-				...item,
-				menuItemTranslations: menuItemTranslations.get(item.menuItemId),
-				selectedOptions: item.selectedOptions.map((selected) => ({
-					...selected,
-					optionTranslations: optionTranslations.get(selected.optionId),
-					optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
+		const enrichedOrders = ordersWithItems
+			.map((order) => ({
+				...order,
+				items: order.items.map((item) => ({
+					...item,
+					menuItemTranslations: menuItemTranslations.get(item.menuItemId),
+					selectedOptions: item.selectedOptions.map((selected) => ({
+						...selected,
+						optionTranslations: optionTranslations.get(selected.optionId),
+						optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
+					})),
 				})),
-			})),
-		}));
+			}))
+			.sort((a, b) => (b.paidAt ?? 0) - (a.paidAt ?? 0));
 
-		const totalRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-
-		return [
-			{ orders: enrichedOrders, totalRevenue, orderCount: paidOrders.length },
-			null,
-		];
+		return [enrichedOrders, null];
 	},
 });
 
