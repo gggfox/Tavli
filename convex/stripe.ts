@@ -40,7 +40,7 @@
 "use node";
 
 import { v } from "convex/values";
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
@@ -49,62 +49,16 @@ import {
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	TABLE,
-	USER_ROLES,
 } from "./constants";
-import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError, NotFoundError } from "./_shared/errors";
-import { getCurrentUserId } from "./_util/auth";
-
-// =============================================================================
-// Stripe Client Factory
-// =============================================================================
-
-/**
- * Creates and returns a Stripe client instance configured with the platform's
- * secret key. The SDK automatically uses the latest API version (2026-03-25.dahlia)
- * so we do not need to set it explicitly.
- *
- * All Stripe API calls in this module go through this client.
- */
-function getStripeClient(): Stripe {
-	// PLACEHOLDER: Set STRIPE_SECRET_KEY in your Convex Dashboard environment variables.
-	// Get your key from https://dashboard.stripe.com/apikeys
-	const key = process.env.STRIPE_SECRET_KEY;
-	if (!key) {
-		throw new Error(
-			"STRIPE_SECRET_KEY is not set. " +
-				"Add it to your Convex deployment environment variables in the Convex Dashboard. " +
-				"You can find your secret key at https://dashboard.stripe.com/apikeys"
-		);
-	}
-	return new Stripe(key);
-}
-
-async function requireStripeRestaurantAccess(
-	ctx: any,
-	restaurantId: Id<"restaurants">
-): Promise<Doc<"restaurants">> {
-	const [userId, authError] = await getCurrentUserId(ctx);
-	if (authError) throw fromErrorObject(authError);
-
-	const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
-		internal.stripeHelpers.getRestaurantInternal,
-		{ restaurantId }
-	);
-	if (!restaurant) {
-		throw fromErrorObject(new NotFoundError("Restaurant not found").toObject());
-	}
-
-	const userRole = await ctx.runQuery(internal.stripeHelpers.getUserRoleInternal, {
-		userId,
-	});
-	const roles = userRole?.roles ?? [];
-	const isAdmin = roles.includes(USER_ROLES.ADMIN);
-	if (!isAdmin && restaurant.ownerId !== userId) {
-		throw fromErrorObject(new NotAuthorizedError("NOT_AUTHORIZED").toObject());
-	}
-
-	return restaurant;
-}
+import { fromErrorObject, NotAuthenticatedError } from "./_shared/errors";
+import {
+	getStripeClient,
+	handleAccountStatusChange,
+	handlePaymentIntentFailure,
+	handlePaymentIntentSuccess,
+	inferV2AccountStatus,
+	requireStripeRestaurantAccess,
+} from "./_util/stripe";
 
 // =============================================================================
 // 1. Connected Account Creation (V2 API)
@@ -283,51 +237,6 @@ export const createAccountLink = action({
 // =============================================================================
 
 /**
- * Fetches a V2 connected account and infers its onboarding-status fields.
- *
- * The retrieve call and the field inspection are tightly coupled: the
- * `include` parameter dictates which V2 fields are present on the response,
- * and the inference reads exactly those fields. Centralising both keeps
- * `getAccountStatus` and the thin-event handler in lockstep so they cannot
- * drift (e.g. one starts checking a new capability while the other doesn't).
- *
- * Lives here (not in `stripeHelpers.ts`) because it both calls the Stripe
- * SDK and inspects V2 account fields — `stripeHelpers.ts` is not `"use node"`.
- */
-async function inferV2AccountStatus(
-	stripeClient: Stripe,
-	stripeAccountId: string
-): Promise<{
-	readyToReceivePayments: boolean;
-	requirementsStatus: string | null;
-	onboardingComplete: boolean;
-	isComplete: boolean;
-}> {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const account: any = await stripeClient.v2.core.accounts.retrieve(stripeAccountId, {
-		include: ["configuration.recipient", "requirements"],
-	});
-
-	const readyToReceivePayments: boolean =
-		account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ===
-		"active";
-
-	const requirementsStatus: string | null =
-		account?.requirements?.summary?.minimum_deadline?.status ?? null;
-	const onboardingComplete =
-		requirementsStatus !== "currently_due" && requirementsStatus !== "past_due";
-
-	const isComplete = readyToReceivePayments && onboardingComplete;
-
-	return {
-		readyToReceivePayments,
-		requirementsStatus,
-		onboardingComplete,
-		isComplete,
-	};
-}
-
-/**
  * Retrieves the current status of a connected account using the V2 API.
  *
  * Returns a status object the frontend uses to decide what to show:
@@ -448,75 +357,6 @@ export const handleThinEvent = internalAction({
 		}
 	},
 });
-
-/**
- * Shared helper for thin event handlers: re-fetches the V2 account,
- * determines the current onboarding/payment status, and updates the
- * restaurant record in our DB.
- */
-async function handleAccountStatusChange(
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	ctx: any,
-	stripeClient: Stripe,
-	stripeAccountId: string
-): Promise<void> {
-	const { isComplete } = await inferV2AccountStatus(stripeClient, stripeAccountId);
-
-	await ctx.runMutation(internal.stripeHelpers.updateOnboardingByAccountId, {
-		stripeAccountId,
-		stripeOnboardingComplete: isComplete,
-	});
-}
-
-async function handlePaymentIntentSuccess(
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	ctx: any,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	paymentIntent: any
-): Promise<Id<"payments"> | undefined> {
-	const payment: Doc<"payments"> | null = await ctx.runQuery(
-		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
-		{
-			stripePaymentIntentId: paymentIntent.id,
-		}
-	);
-	if (!payment) return undefined;
-
-	const chargeId =
-		typeof paymentIntent.latest_charge === "string"
-			? paymentIntent.latest_charge
-			: (paymentIntent.latest_charge?.id ?? undefined);
-
-	await ctx.runMutation(internal.orders.confirmPayment, {
-		paymentId: payment._id,
-		stripePaymentIntentId: paymentIntent.id,
-		stripeChargeId: chargeId,
-	});
-	return payment._id;
-}
-
-async function handlePaymentIntentFailure(
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	ctx: any,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	paymentIntent: any
-): Promise<Id<"payments"> | undefined> {
-	const payment: Doc<"payments"> | null = await ctx.runQuery(
-		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
-		{
-			stripePaymentIntentId: paymentIntent.id,
-		}
-	);
-	if (!payment) return undefined;
-
-	await ctx.runMutation(internal.orders.failPayment, {
-		paymentId: payment._id,
-		stripePaymentIntentId: paymentIntent.id,
-		failureCode: paymentIntent.last_payment_error?.code ?? undefined,
-		failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
-	});
-	return payment._id;
-}
 
 // =============================================================================
 // 5. Standard Webhook Handler (Payment Events)

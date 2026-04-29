@@ -14,7 +14,7 @@ const config = defineConfig({
     tailwindcss(),
     tanstackStart({
       router: {
-        // Test files colocated with route files (e.g. routes/success.test.tsx)
+        // Test files colocated with route files (e.g. routes/foo.test.tsx)
         // are not routes — exclude them so the router-generator stops touching
         // routeTree.gen.ts on every test edit, which otherwise spams HMR and
         // can crash the dev server in a regenerate loop.

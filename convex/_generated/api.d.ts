@@ -15,6 +15,7 @@ import type * as _util_availability from "../_util/availability.js";
 import type * as _util_env from "../_util/env.js";
 import type * as _util_idempotency from "../_util/idempotency.js";
 import type * as _util_reservationSettings from "../_util/reservationSettings.js";
+import type * as _util_stripe from "../_util/stripe.js";
 import type * as admin from "../admin.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "_util/env": typeof _util_env;
   "_util/idempotency": typeof _util_idempotency;
   "_util/reservationSettings": typeof _util_reservationSettings;
+  "_util/stripe": typeof _util_stripe;
   admin: typeof admin;
   constants: typeof constants;
   crons: typeof crons;

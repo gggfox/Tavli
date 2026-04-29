@@ -9,14 +9,11 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SuccessRouteImport } from './routes/success'
-import { Route as StorefrontRouteImport } from './routes/storefront'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
-import { Route as AdminProductsRouteImport } from './routes/admin/products'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
@@ -41,16 +38,6 @@ import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
 import { Route as RSlugLangOrderOrderIdRouteImport } from './routes/r/$slug/$lang/order/$orderId'
 
-const SuccessRoute = SuccessRouteImport.update({
-  id: '/success',
-  path: '/success',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StorefrontRoute = StorefrontRouteImport.update({
-  id: '/storefront',
-  path: '/storefront',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -74,11 +61,6 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
   id: '/restaurants',
   path: '/restaurants',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminProductsRoute = AdminProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
@@ -200,12 +182,9 @@ const RSlugLangOrderOrderIdRoute = RSlugLangOrderOrderIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/storefront': typeof StorefrontRoute
-  '/success': typeof SuccessRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
-  '/admin/products': typeof AdminProductsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -233,12 +212,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/storefront': typeof StorefrontRoute
-  '/success': typeof SuccessRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
-  '/admin/products': typeof AdminProductsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -267,12 +243,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
-  '/storefront': typeof StorefrontRoute
-  '/success': typeof SuccessRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
-  '/admin/products': typeof AdminProductsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -302,12 +275,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
-    | '/storefront'
-    | '/success'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
-    | '/admin/products'
     | '/admin/restaurants'
     | '/admin/users'
     | '/r/$slug'
@@ -335,12 +305,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
-    | '/storefront'
-    | '/success'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
-    | '/admin/products'
     | '/admin/restaurants'
     | '/admin/users'
     | '/r/$slug'
@@ -368,12 +335,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
-    | '/storefront'
-    | '/success'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
-    | '/admin/products'
     | '/admin/restaurants'
     | '/admin/users'
     | '/r/$slug'
@@ -402,8 +366,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
-  StorefrontRoute: typeof StorefrontRoute
-  SuccessRoute: typeof SuccessRoute
   RSlugRoute: typeof RSlugRouteWithChildren
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
@@ -416,20 +378,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/success': {
-      id: '/success'
-      path: '/success'
-      fullPath: '/success'
-      preLoaderRoute: typeof SuccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/storefront': {
-      id: '/storefront'
-      path: '/storefront'
-      fullPath: '/storefront'
-      preLoaderRoute: typeof StorefrontRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -463,13 +411,6 @@ declare module '@tanstack/react-router' {
       path: '/restaurants'
       fullPath: '/admin/restaurants'
       preLoaderRoute: typeof AdminRestaurantsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/products': {
-      id: '/admin/products'
-      path: '/products'
-      fullPath: '/admin/products'
-      preLoaderRoute: typeof AdminProductsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/payments': {
@@ -640,7 +581,6 @@ interface AdminRouteChildren {
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
-  AdminProductsRoute: typeof AdminProductsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
@@ -652,7 +592,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
-  AdminProductsRoute: AdminProductsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
@@ -703,8 +642,6 @@ const RSlugRouteWithChildren = RSlugRoute._addFileChildren(RSlugRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
-  StorefrontRoute: StorefrontRoute,
-  SuccessRoute: SuccessRoute,
   RSlugRoute: RSlugRouteWithChildren,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoStartApiRequestRoute: DemoStartApiRequestRoute,
