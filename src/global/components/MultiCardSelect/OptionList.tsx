@@ -70,8 +70,8 @@ function GroupHeader({ group }: GroupHeaderProps) {
 	if (!group) return <div className="hidden"></div>;
 	return (
 		<div
-			className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider"
-			style={{ color: "var(--text-muted)" }}
+			className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-faint-foreground"
+			
 		>
 			{group.replaceAll("_", " ")}
 		</div>

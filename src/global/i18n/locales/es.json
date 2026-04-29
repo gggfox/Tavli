@@ -56,6 +56,78 @@
 			"saved": "¡Guardado!",
 			"failed": "Error",
 			"saving": "Guardando..."
+		},
+		"itemsCount_one": "1 artículo",
+		"itemsCount_other": "{{count}} artículos"
+	},
+	"orders": {
+		"status": {
+			"submitted": "Pendiente",
+			"preparing": "Preparando",
+			"ready": "Listo",
+			"served": "Entregado",
+			"cancelled": "Cancelado"
+		},
+		"actions": {
+			"accept": "Aceptar pedido",
+			"markReady": "Marcar listo",
+			"markServed": "Marcar entregado",
+			"cancel": "Cancelar",
+			"cancelAndRefund": "Cancelar y reembolsar",
+			"confirmCancel": "Confirmar cancelación",
+			"keepOrder": "Mantener pedido",
+			"viewFullOrder": "Ver pedido completo →"
+		},
+		"cancel": {
+			"prompt": "¿Cancelar este pedido?",
+			"paidPrompt": "Este pedido ha sido pagado. Cancelarlo emitirá un reembolso."
+		},
+		"card": {
+			"table": "Mesa {{number}}",
+			"paid": "Pagado",
+			"moreItems_one": "+1 artículo más",
+			"moreItems_other": "+{{count}} artículos más"
+		},
+		"empty": {
+			"noFilters": "Selecciona al menos un estado para ver pedidos.",
+			"noOrders": "Ningún pedido coincide con los filtros seleccionados."
+		},
+		"aria": {
+			"filter": "Filtrar pedidos por estado",
+			"fullOrder": "Detalles del pedido",
+			"loading": "Cargando pedidos"
+		}
+	},
+	"payments": {
+		"aria": {
+			"filter": "Filtrar pagos por periodo",
+			"loading": "Cargando pagos"
+		},
+		"timeFrame": {
+			"today": "Hoy",
+			"week": "Esta semana",
+			"month": "Este mes",
+			"quarter": "Este trimestre",
+			"year": "Este año",
+			"all": "Todo el tiempo"
+		},
+		"summary": {
+			"totalRevenue": "Ingresos totales",
+			"orders": "Pedidos",
+			"avgOrder": "Pedido promedio"
+		},
+		"empty": {
+			"noPayments": "Sin pagos en este periodo."
+		},
+		"table": {
+			"orderId": "ID del pedido",
+			"date": "Fecha",
+			"table": "Mesa",
+			"items": "Artículos",
+			"total": "Total"
+		},
+		"tooltip": {
+			"total": "Total"
 		}
 	},
 	"customer": {
@@ -79,6 +151,402 @@
 		"ERROR_ADMIN_REQUIRED": "No tienes permiso para realizar esta acción.",
 		"ERROR_MANAGER_REQUIRED": "Necesitas permisos de gerente para realizar esta acción.",
 		"ERROR_INSUFFICIENT_PERMISSIONS": "No tienes los permisos necesarios."
+	},
+	"time": {
+		"relative": {
+			"justNow": "justo ahora",
+			"minAgo": "hace {{count}} min",
+			"hourAgo": "hace {{count}} h",
+			"dayAgo": "hace {{count}} d"
+		}
+	},
+	"ordering": {
+		"session": {
+			"errorNotFound": "No se encontró este restaurante o no está disponible. Verifica el enlace.",
+			"errorGeneric": "Algo salió mal. Intenta recargar la página.",
+			"oops": "¡Ups!",
+			"noSession": "No hay sesión activa. Vuelve al menú.",
+			"viewOrders": "Ver tus pedidos",
+			"myOrders": "Mis pedidos"
+		},
+		"backToMenu": "Volver al menú",
+		"backToMenuAria": "Volver al menú",
+		"menu": {
+			"proceedToPayment": "Ir al pago",
+			"preparing": "Preparando...",
+			"reviewOrder": "Revisa tu pedido",
+			"tableNumber": "Número de mesa",
+			"selectTable": "Selecciona tu mesa",
+			"tableRequired": "Selecciona una mesa para continuar",
+			"tableLabel": "Mesa {{number}}",
+			"notesPlaceholder": "¿Alguna alergia, preferencia o nota para la cocina? (opcional)",
+			"totalLabel": "Total",
+			"totalWithCount_one": "Total (1 producto)",
+			"totalWithCount_other": "Total ({{count}} productos)",
+			"tapToStart": "Toca productos para iniciar tu pedido",
+			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea."
+		},
+		"item": {
+			"required": "Obligatorio",
+			"pickOne": "Elige uno",
+			"pleaseSelect": "Selecciona una opción",
+			"addToCart": "Agregar al carrito",
+			"updateCart": "Actualizar carrito",
+			"removeFromOrder": "Quitar del pedido",
+			"specialInstructionsLabel": "Instrucciones especiales",
+			"specialInstructionsPlaceholder": "¿Alguna alergia o preferencia?"
+		},
+		"cart": {
+			"back": "Volver al menú",
+			"heading": "Tu pedido",
+			"empty": "Tu carrito está vacío. ¡Agrega productos!",
+			"total": "Total",
+			"placeOrder": "Realizar pedido",
+			"placingOrder": "Realizando pedido..."
+		},
+		"checkout": {
+			"heading": "Pago",
+			"orderSummary": "Resumen del pedido",
+			"total": "Total",
+			"initFailed": "Error al inicializar el pago",
+			"paymentFailed": "El pago falló. Inténtalo de nuevo.",
+			"genericError": "El pago falló",
+			"unableInit": "No se pudo inicializar el pago. Inténtalo de nuevo.",
+			"retry": "Reintentar",
+			"processing": "Procesando...",
+			"payNow": "Pagar ahora",
+			"securedByStripe": "Pagos protegidos por Stripe"
+		},
+		"orderStatus": {
+			"loading": "Cargando pedido...",
+			"heading": "Estado del pedido",
+			"cancelled": "Pedido cancelado",
+			"items": "Productos",
+			"summary": "${{total}} · {{count}} productos",
+			"orderMore": "Pedir más",
+			"stepPlaced": "Pedido realizado",
+			"stepPreparing": "Preparando",
+			"stepReady": "Listo",
+			"stepServed": "Entregado"
+		},
+		"orders": {
+			"header": "Tus pedidos",
+			"emptyTitle": "Aún no hay pedidos",
+			"emptyDesc": "Inicia un pedido desde el menú para verlo aquí.",
+			"emptyBrowse": "Ver menú",
+			"timeJustNow": "Justo ahora",
+			"timeMinAgo": "hace {{count}} min",
+			"timeHourAgo": "hace {{count}} h",
+			"lifecyclePaymentFailed": "El pago falló",
+			"lifecycleTryAgain": "Reintentar",
+			"lifecyclePaymentProcessing": "Procesando pago",
+			"lifecycleView": "Ver",
+			"lifecycleUnpaid": "Sin pagar",
+			"lifecycleFinishCheckout": "Terminar pago",
+			"lifecyclePlaced": "Pedido realizado",
+			"lifecyclePreparing": "Preparando",
+			"lifecycleReady": "Listo",
+			"lifecycleServed": "Entregado",
+			"lifecycleCancelled": "Cancelado"
+		}
+	},
+	"restaurants": {
+		"list": {
+			"newRestaurant": "Nuevo restaurante",
+			"edit": "Editar restaurante",
+			"manageTables": "Gestionar mesas",
+			"customerView": "Vista de cliente",
+			"deactivate": "Desactivar",
+			"activate": "Activar",
+			"empty": "No se encontraron restaurantes.",
+			"loadingAria": "Cargando restaurantes",
+			"loadFailed": "Error al cargar restaurantes.",
+			"toggleFailed": "Error al cambiar el estado del restaurante",
+			"statusActive": "Activo",
+			"statusInactive": "Inactivo"
+		},
+		"modal": {
+			"createAria": "Crear restaurante",
+			"editAria": "Editar restaurante",
+			"tablesAria": "Gestionar mesas",
+			"createHeading": "Nuevo restaurante",
+			"editHeading": "Editar restaurante",
+			"tablesHeading": "Mesas"
+		},
+		"form": {
+			"nameLabel": "Nombre del restaurante",
+			"slugLabel": "Slug (identificador de URL)",
+			"slugHint": "Los clientes visitarán: /r/{{slug}}/en/menu",
+			"openTestLink": "Abrir enlace de prueba",
+			"descriptionLabel": "Descripción",
+			"currencyLabel": "Moneda",
+			"timezoneLabel": "Zona horaria",
+			"timezonePlaceholder": "America/Mexico_City",
+			"orgLabel": "Organización",
+			"orgPlaceholder": "Selecciona una organización",
+			"statusLabel": "Estado",
+			"toggleDeactivateTitle": "Desactivar restaurante",
+			"toggleActivateTitle": "Activar restaurante",
+			"saveChanges": "Guardar cambios",
+			"create": "Crear",
+			"creating": "Creando...",
+			"updateFailed": "Error al actualizar el restaurante",
+			"createFailed": "Error al crear el restaurante"
+		},
+		"tables": {
+			"numberLabel": "Mesa #",
+			"labelLabel": "Etiqueta (opcional)",
+			"labelPlaceholder": "Patio 3",
+			"seatsLabel": "Asientos",
+			"add": "Agregar",
+			"save": "Guardar",
+			"cancel": "Cancelar",
+			"editTitle": "Editar mesa",
+			"deactivateTitle": "Desactivar",
+			"activateTitle": "Activar",
+			"removeTitle": "Eliminar mesa",
+			"tableLabel": "Mesa {{number}}",
+			"seatsFormat_one": "1 asiento",
+			"seatsFormat_other": "{{count}} asientos",
+			"seatsNotSet": "asientos sin definir",
+			"empty": "Aún no hay mesas. Agrega tu primera arriba.",
+			"createFailed": "Error al crear la mesa",
+			"updateFailed": "Error al actualizar la mesa",
+			"toggleFailed": "Error al cambiar el estado de la mesa",
+			"removeFailed": "Error al eliminar la mesa"
+		},
+		"stripe": {
+			"heading": "Configuración de pagos",
+			"description": "Conecta tu cuenta de Stripe para aceptar pagos de los clientes.",
+			"paymentsEnabled": "Pagos habilitados",
+			"checking": "Verificando configuración de pagos...",
+			"fullySetup": "Tu cuenta de Stripe está conectada y lista para recibir pagos. A los clientes se les cobrará al hacer pedidos, y los fondos se transferirán automáticamente a tu cuenta de Stripe.",
+			"dashboard": "Panel de Stripe",
+			"refreshStatus": "Actualizar estado",
+			"refresh": "Actualizar",
+			"requirementsPrefix": "Estado de requisitos:",
+			"requirementsCurrentlyDue": " — Se requiere acción para completar la configuración.",
+			"requirementsPastDue": " — Los requisitos vencidos deben completarse de inmediato.",
+			"transfersInactive": "Las transferencias de pago aún no están activas. Completa la configuración para habilitar los pagos.",
+			"partialRequirements": "Los pagos están habilitados, pero hay requisitos adicionales pendientes.",
+			"redirecting": "Redirigiendo...",
+			"continueSetup": "Continuar configuración de Stripe",
+			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Aplica una comisión de plataforma del 6 % además de las comisiones estándar de procesamiento de Stripe.",
+			"settingUp": "Configurando...",
+			"onboard": "Iniciar configuración para cobrar pagos",
+			"resetButton": "Restablecer configuración de Stripe",
+			"resetConfirm": "Confirmar restablecimiento",
+			"resetResetting": "Restableciendo...",
+			"resetCancel": "Cancelar",
+			"resetWarning": "Esto cierra la cuenta actual de Stripe y la desvincula de este restaurante. Tendrás que completar la configuración de nuevo. Cualquier producto vinculado a esta cuenta dejará de ser cobrable.",
+			"disconnectedClosed": "Desconectada y cerrada la cuenta de Stripe {{accountId}}. Ahora puedes configurar una nueva cuenta.",
+			"disconnectedLeftOpen": "Desconectado de Stripe. La cuenta anterior quedó abierta — ciérrala desde tu panel de Stripe si es necesario.",
+			"statusFailed": "Error al verificar el estado de pagos",
+			"setupFailed": "Error al iniciar la configuración de Stripe",
+			"resetFailed": "Error al restablecer la configuración de Stripe"
+		}
+	},
+	"welcome": {
+		"badge": "Gestión de menús de restaurante",
+		"headingPrefix": "Bienvenido a",
+		"subheading": "Gestiona tus restaurantes, menús y pedidos. Los clientes escanean un código QR para navegar y pedir desde su mesa.",
+		"feature": {
+			"menuTitle": "Constructor de menús",
+			"menuDesc": "Crea y gestiona menús con categorías, productos y grupos de opciones.",
+			"tableTitle": "Pedidos en mesa",
+			"tableDesc": "Los clientes piden desde su mesa con un enlace único o un código QR.",
+			"authTitle": "Autenticación segura",
+			"authDesc": "Gestiona los roles del personal con autenticación segura vía Clerk."
+		},
+		"getStarted": "Empezar"
+	},
+	"menus": {
+		"list": {
+			"newPlaceholder": "Nombre del menú (p. ej. Menú Cena)",
+			"addButton": "Agregar menú",
+			"toggleDeactivate": "Desactivar",
+			"toggleActivate": "Activar",
+			"rename": "Renombrar",
+			"delete": "Eliminar menú",
+			"empty": "Aún no hay menús. Crea tu primero arriba.",
+			"loadingAria": "Cargando menús"
+		},
+		"editor": {
+			"languagesLabel": "Idiomas",
+			"languagesTitle": "Configurar idiomas",
+			"optionsLabel": "Opciones",
+			"optionsTitle": "Gestionar grupos de opciones",
+			"optionGroupsModalAria": "Gestionar grupos de opciones",
+			"optionGroupsHeading": "Grupos de opciones",
+			"optionGroupsDescription": "Crea grupos de opciones reutilizables y vincúlalos a los productos del menú.",
+			"newCategoryPlaceholder": "Nueva categoría (p. ej. Entradas)",
+			"addCategory": "Agregar categoría",
+			"translatingHint": "Traduciendo nombres y descripciones. Los precios, imágenes y opciones se comparten entre todos los idiomas.",
+			"noCategories": "Aún no hay categorías. Agrega tu primera arriba.",
+			"loadingAria": "Cargando editor del menú"
+		},
+		"category": {
+			"itemsCount_one": "(1 producto)",
+			"itemsCount_other": "({{count}} productos)",
+			"translationPlaceholder": "Traducción de {{name}}...",
+			"deleteTitle": "Eliminar categoría",
+			"addItem": "Agregar producto"
+		},
+		"item": {
+			"editTitle": "Editar producto",
+			"imageTitle": "Gestionar imagen",
+			"optionsTitle": "Vincular grupos de opciones",
+			"markUnavailable": "Marcar no disponible",
+			"markAvailable": "Marcar disponible",
+			"removeTitle": "Eliminar producto"
+		},
+		"translation": {
+			"namePlaceholder": "Traducción de {{name}}...",
+			"descPlaceholder": "Traducción de la descripción...",
+			"descLabel": "desc"
+		},
+		"form": {
+			"itemNamePlaceholder": "Nombre del producto",
+			"itemPricePlaceholder": "Precio",
+			"itemDescriptionPlaceholder": "Descripción (opcional)",
+			"changeImage": "Cambiar imagen",
+			"addImage": "Agregar imagen",
+			"pasteHint": "o pega desde el portapapeles",
+			"uploading": "Subiendo...",
+			"add": "Agregar",
+			"cancel": "Cancelar",
+			"saving": "Guardando...",
+			"save": "Guardar",
+			"editHeader": "Editar producto",
+			"replaceImage": "Reemplazar imagen",
+			"uploadImage": "Subir imagen",
+			"remove": "Eliminar",
+			"imageHeader": "Imagen del producto"
+		},
+		"picker": {
+			"noGroups": "Aún no hay grupos de opciones. Usa el botón Grupos de opciones de arriba para crearlos.",
+			"linkedGroups": "Grupos de opciones vinculados",
+			"groupSingle": "· Único",
+			"groupMulti": "· Múltiple"
+		},
+		"lang": {
+			"defaultLabel": "Idioma predeterminado (usado para los nombres principales de los productos)",
+			"additionalLabel": "Idiomas adicionales para traducciones"
+		}
+	},
+	"options": {
+		"translatingHint": "Traduciendo nombres de grupos y opciones. La configuración y los precios se comparten entre todos los idiomas.",
+		"newGroupButton": "Nuevo grupo de opciones",
+		"groupNamePlaceholder": "Nombre del grupo (p. ej. \"Término de la carne\")",
+		"selectionSingle": "Selección única",
+		"selectionMulti": "Selección múltiple",
+		"requiredLabel": "Obligatorio",
+		"createButton": "Crear",
+		"cancelButton": "Cancelar",
+		"groupTranslationPlaceholder": "Traducción de {{name}}...",
+		"optionTranslationPlaceholder": "Traducción de {{name}}...",
+		"groupNameInlinePlaceholder": "Nombre del grupo",
+		"typeSingle": "Único",
+		"typeMulti": "Múltiple",
+		"typeRequired": "• Obligatorio",
+		"typeOptional": "• Opcional",
+		"optionNamePlaceholder": "Nombre de la opción",
+		"optionPricePlaceholder": "+$"
+	},
+	"reservations": {
+		"status": {
+			"pending": "Pendiente",
+			"confirmed": "Confirmada",
+			"seated": "Sentado",
+			"completed": "Completada",
+			"cancelled": "Cancelada",
+			"noShow": "No se presentó"
+		},
+		"range": {
+			"today": "Hoy",
+			"week": "Esta semana",
+			"month": "Este mes",
+			"quarter": "Este trimestre",
+			"year": "Este año",
+			"all": "Todo el tiempo"
+		},
+		"aria": {
+			"filterRange": "Filtrar reservaciones por rango de fechas",
+			"filterStatus": "Filtrar reservaciones por estado",
+			"detailDrawer": "Detalles de la reservación",
+			"detailDrawerClose": "Cerrar panel",
+			"remove": "Eliminar",
+			"removeLock": "Eliminar bloqueo"
+		},
+		"empty": {
+			"title": "No hay reservaciones en esta vista.",
+			"description": "Prueba con un rango o filtro de estado distinto."
+		},
+		"drawer": {
+			"partyOf": "Grupo de {{count}}",
+			"via": "vía {{source}}",
+			"assignedTables_one": "Asignada: 1 mesa",
+			"assignedTables_other": "Asignadas: {{count}} mesas",
+			"assignTablesPrompt": "Asigna mesas para confirmar",
+			"cancelReasonLabel": "Motivo de cancelación (opcional)"
+		},
+		"actions": {
+			"confirm": "Confirmar",
+			"markSeated": "Marcar sentado",
+			"markCompleted": "Marcar completada",
+			"confirmCancel": "Confirmar cancelación",
+			"back": "Atrás",
+			"cancel": "Cancelar"
+		},
+		"errors": {
+			"actionFailed": "La acción falló"
+		},
+		"reasons": {
+			"notAccepting": "Este restaurante no está aceptando reservaciones en este momento.",
+			"outsideBookingHorizon": "Esa hora está fuera de la ventana de reservación. Prueba con una hora más cercana o más lejana.",
+			"blackoutWindow": "El restaurante está cerrado durante ese periodo.",
+			"noTables": "No hay mesas libres para ese grupo a esa hora."
+		},
+		"customerForm": {
+			"title": "Reservar en {{restaurantName}}",
+			"partySize": "Tamaño del grupo",
+			"dateTime": "Fecha y hora",
+			"name": "Nombre",
+			"phone": "Teléfono",
+			"email": "Correo (opcional)",
+			"notes": "Notas (opcional)",
+			"submit": "Solicitar reservación",
+			"submitting": "Enviando…",
+			"requiredError": "El nombre y el teléfono son obligatorios.",
+			"genericError": "No se pudo crear la reservación",
+			"successTitle": "Reservación solicitada",
+			"successMessage": "{{restaurantName}} confirmará en breve. Registramos tu grupo de {{count}} para {{when}}.",
+			"available": "Disponible · {{turnMinutes}} min de mesa"
+		},
+		"picker": {
+			"selectedCapacity": "Capacidad seleccionada: {{capacity}} / {{partySize}}",
+			"needMoreSeats": "Faltan {{count}} asientos",
+			"seats": "{{count}} asientos",
+			"reservedSuffix": " · reservada",
+			"lockedSuffix": " · bloqueada",
+			"noTables": "Sin mesas activas."
+		},
+		"locks": {
+			"newLock": "Nuevo bloqueo",
+			"tableLabel": "Mesa",
+			"tablePlaceholder": "Seleccionar…",
+			"startsAt": "Inicia",
+			"endsAt": "Termina",
+			"reason": "Motivo",
+			"reasonPlaceholder": "Mantenimiento",
+			"addLock": "Agregar bloqueo",
+			"pickTableError": "Selecciona una mesa",
+			"createError": "Error al crear el bloqueo",
+			"removeError": "Error al eliminar el bloqueo",
+			"tableFormat": "Mesa {{number}}",
+			"empty": "Sin bloqueos. Agrega uno arriba para sacar una mesa de servicio durante un periodo."
+		},
+		"tableLabelPrefix": "Mesa"
 	},
 	"reservationSettings": {
 		"fieldDescriptions": {

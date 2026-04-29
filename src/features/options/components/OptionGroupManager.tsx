@@ -1,5 +1,5 @@
 import { CollapsibleCard, InlineEditInput, LanguageTabBar } from "@/global/components";
-import { Languages } from "@/global/i18n/locales";
+import { Languages, OptionsKeys } from "@/global/i18n";
 import { formatCents, parseDollarsToCents } from "@/global/utils/money";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -8,6 +8,7 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useOptionGroups } from "../hooks/useOptionGroups";
 
 interface OptionGroupManagerProps {
@@ -15,6 +16,7 @@ interface OptionGroupManagerProps {
 }
 
 export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManagerProps>) {
+	const { t } = useTranslation();
 	const {
 		groups,
 		createGroup,
@@ -77,9 +79,8 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 			/>
 
 			{isTranslationMode && (
-				<p className="text-xs" style={{ color: "var(--text-muted)" }}>
-					Translating option group and option names. Configuration and prices are shared across all
-					languages.
+				<p className="text-xs text-faint-foreground" >
+					{t(OptionsKeys.TRANSLATING_HINT)}
 				</p>
 			)}
 
@@ -89,7 +90,7 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 						onClick={() => setShowForm(true)}
 						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 					>
-						<Plus size={16} /> New Option Group
+						<Plus size={16} /> {t(OptionsKeys.NEW_GROUP_BUTTON)}
 					</button>
 				) : (
 					<form
@@ -98,11 +99,8 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 							e.stopPropagation();
 							createGroupForm.handleSubmit();
 						}}
-						className="space-y-3 p-4 rounded-lg"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="space-y-3 p-4 rounded-lg bg-muted border border-border"
+						
 					>
 						<createGroupForm.Field
 							name="name"
@@ -112,21 +110,17 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 									value={field.state.value}
 									onChange={(e) => field.handleChange(e.target.value)}
 									onBlur={field.handleBlur}
-									placeholder='Group name (e.g. "Meat Doneness")'
+									placeholder={t(OptionsKeys.GROUP_NAME_PLACEHOLDER)}
 									required
-									className="w-full px-3 py-2 rounded-lg text-sm"
-									style={{
-										backgroundColor: "var(--bg-primary)",
-										border: "1px solid var(--border-default)",
-										color: "var(--text-primary)",
-									}}
+									className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-border text-foreground"
+									
 								/>
 							)}
 						/>
 						<div className="flex gap-4 items-center">
 							<label
-								className="flex items-center gap-2 text-sm"
-								style={{ color: "var(--text-secondary)" }}
+								className="flex items-center gap-2 text-sm text-muted-foreground"
+								
 							>
 								<createGroupForm.Field
 									name="selType"
@@ -134,22 +128,18 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 										<select
 											value={field.state.value}
 											onChange={(e) => field.handleChange(e.target.value as "single" | "multi")}
-											className="px-2 py-1 rounded text-sm"
-											style={{
-												backgroundColor: "var(--bg-primary)",
-												border: "1px solid var(--border-default)",
-												color: "var(--text-primary)",
-											}}
+											className="px-2 py-1 rounded text-sm bg-background border border-border text-foreground"
+											
 										>
-											<option value="single">Single select</option>
-											<option value="multi">Multi select</option>
+											<option value="single">{t(OptionsKeys.SELECTION_SINGLE)}</option>
+											<option value="multi">{t(OptionsKeys.SELECTION_MULTI)}</option>
 										</select>
 									)}
 								/>
 							</label>
 							<label
-								className="flex items-center gap-2 text-sm"
-								style={{ color: "var(--text-secondary)" }}
+								className="flex items-center gap-2 text-sm text-muted-foreground"
+								
 							>
 								<createGroupForm.Field
 									name="isRequired"
@@ -161,7 +151,7 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 										/>
 									)}
 								/>
-								Required
+								{t(OptionsKeys.REQUIRED_LABEL)}
 							</label>
 						</div>
 						<div className="flex gap-2">
@@ -169,14 +159,14 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 								type="submit"
 								className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 							>
-								Create
+								{t(OptionsKeys.CREATE_BUTTON)}
 							</button>
 							<button
 								type="button"
 								onClick={() => setShowForm(false)}
 								className="px-4 py-2 rounded-lg text-sm hover-btn-secondary"
 							>
-								Cancel
+								{t(OptionsKeys.CANCEL_BUTTON)}
 							</button>
 						</div>
 					</form>
@@ -227,6 +217,7 @@ function GroupCard({
 	onDeleteOption: (args: { optionId: Id<"options"> }) => Promise<unknown>;
 	selectedLang?: string;
 }>) {
+	const { t } = useTranslation();
 	const isTranslating = !!selectedLang;
 	const [expanded, setExpanded] = useState(false);
 	const { data: options } = useQuery(
@@ -255,12 +246,12 @@ function GroupCard({
 
 	const headerContent = isTranslating ? (
 		<>
-			<span className="text-sm shrink-0" style={{ color: "var(--text-muted)" }}>
+			<span className="text-sm shrink-0 text-faint-foreground" >
 				{group.name} &rarr;
 			</span>
 			<InlineEditInput
 				value={group.translations?.[selectedLang]?.name ?? ""}
-				placeholder={`${group.name} translation...`}
+				placeholder={t(OptionsKeys.GROUP_TRANSLATION_PLACEHOLDER, { name: group.name })}
 				onSave={(val) =>
 					setGroupTranslation.mutateAsync({
 						groupId: group._id,
@@ -270,23 +261,23 @@ function GroupCard({
 				}
 			/>
 			{!group.translations?.[selectedLang]?.name && (
-				<AlertTriangle size={14} className="shrink-0" style={{ color: "var(--accent-warning)" }} />
+				<AlertTriangle size={14} className="shrink-0 text-warning"  />
 			)}
 		</>
 	) : (
 		<>
 			<InlineEditInput
 				value={group.name}
-				placeholder="Group name"
+				placeholder={t(OptionsKeys.GROUP_NAME_INLINE_PLACEHOLDER)}
 				onSave={(val) => onUpdateGroup({ groupId: group._id, name: val })}
 				className="text-sm font-medium"
 			/>
 			<span
-				className="text-xs px-2 py-0.5 rounded-full shrink-0"
-				style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-muted)" }}
+				className="text-xs px-2 py-0.5 rounded-full shrink-0 bg-background text-faint-foreground"
+				
 			>
-				{group.selectionType === "single" ? "Single" : "Multi"}{" "}
-				{group.isRequired ? "• Required" : "• Optional"}
+				{group.selectionType === "single" ? t(OptionsKeys.TYPE_SINGLE) : t(OptionsKeys.TYPE_MULTI)}{" "}
+				{group.isRequired ? t(OptionsKeys.TYPE_REQUIRED) : t(OptionsKeys.TYPE_OPTIONAL)}
 			</span>
 		</>
 	);
@@ -303,9 +294,9 @@ function GroupCard({
 							e.stopPropagation();
 							onDelete();
 						}}
-						className="p-1 rounded hover:bg-[var(--bg-hover)]"
+						className="p-1 rounded hover:bg-hover text-destructive"
 					>
-						<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+						<Trash2 size={14}  />
 					</button>
 				) : undefined
 			}
@@ -316,18 +307,15 @@ function GroupCard({
 					return (
 						<div
 							key={opt._id}
-							className="flex items-center gap-3 px-3 py-2 rounded"
-							style={{
-								backgroundColor: "var(--bg-primary)",
-								border: !translated ? "1px solid var(--accent-warning)" : "1px solid transparent",
-							}}
+							className="flex items-center gap-3 px-3 py-2 rounded bg-background"
+							style={{border: !translated ? "1px solid var(--accent-warning)" : "1px solid transparent"}}
 						>
-							<span className="text-xs shrink-0" style={{ color: "var(--text-muted)" }}>
+							<span className="text-xs shrink-0 text-faint-foreground" >
 								{opt.name} &rarr;
 							</span>
 							<InlineEditInput
 								value={translated}
-								placeholder={`${opt.name} translation...`}
+								placeholder={t(OptionsKeys.OPTION_TRANSLATION_PLACEHOLDER, { name: opt.name })}
 								onSave={(val) =>
 									setOptionTranslation.mutateAsync({
 										optionId: opt._id,
@@ -337,15 +325,15 @@ function GroupCard({
 								}
 							/>
 							{opt.priceModifier > 0 && (
-								<span className="text-xs shrink-0" style={{ color: "var(--accent-success)" }}>
+								<span className="text-xs shrink-0 text-success" >
 									+${formatCents(opt.priceModifier)}
 								</span>
 							)}
 							{!translated && (
 								<AlertTriangle
 									size={14}
-									className="shrink-0"
-									style={{ color: "var(--accent-warning)" }}
+									className="shrink-0 text-warning"
+									
 								/>
 							)}
 						</div>
@@ -354,12 +342,12 @@ function GroupCard({
 				return (
 					<div
 						key={opt._id}
-						className="flex items-center gap-3 px-3 py-2 rounded"
-						style={{ backgroundColor: "var(--bg-primary)" }}
+						className="flex items-center gap-3 px-3 py-2 rounded bg-background"
+						
 					>
 						<InlineEditInput
 							value={opt.name}
-							placeholder="Option name"
+							placeholder={t(OptionsKeys.OPTION_NAME_PLACEHOLDER)}
 							onSave={(val) => onUpdateOption({ optionId: opt._id, name: val })}
 							className="text-sm"
 						/>
@@ -378,9 +366,9 @@ function GroupCard({
 						/>
 						<button
 							onClick={() => onDeleteOption({ optionId: opt._id })}
-							className="p-1 rounded hover:bg-[var(--bg-hover)] shrink-0"
+							className="p-1 rounded hover:bg-hover shrink-0 text-destructive"
 						>
-							<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+							<Trash2 size={14}  />
 						</button>
 					</div>
 				);
@@ -402,14 +390,10 @@ function GroupCard({
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
-								placeholder="Option name"
+								placeholder={t(OptionsKeys.OPTION_NAME_PLACEHOLDER)}
 								required
-								className="flex-1 px-2 py-1.5 rounded text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								className="flex-1 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
+								
 							/>
 						)}
 					/>
@@ -421,15 +405,11 @@ function GroupCard({
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
-								placeholder="+$"
+								placeholder={t(OptionsKeys.OPTION_PRICE_PLACEHOLDER)}
 								step="0.01"
 								min="0"
-								className="w-20 px-2 py-1.5 rounded text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								className="w-20 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
+								
 							/>
 						)}
 					/>

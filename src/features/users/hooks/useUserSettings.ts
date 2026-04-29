@@ -5,8 +5,13 @@
  * - Convex's real-time sync engine (via convexQuery) for queries
  * - Direct Convex mutations
  * - TanStack Query's caching and suspense
+ *
+ * Mutation wrappers (`updateTheme`, `updateLanguage`, etc.) throw on
+ * failure. Callers wrap with try/catch or pass them to React Query's
+ * mutation surface — the wrapper layer no longer dresses up errors as
+ * `{success, error}` results.
  */
-import { OrderDashboardStatusFilter, Theme, UserSettings, UserSettingsError } from "@/features";
+import { OrderDashboardStatusFilter, Theme, UserSettings } from "@/features";
 import {
 	transformUserSettings,
 	updateLanguage as updateLanguageService,
@@ -28,10 +33,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Types
 // ============================================================================
 
-export type UserSettingsResult<T> =
-	| { success: true; value: T }
-	| { success: false; error: UserSettingsError | Error };
-
 export type UseUserSettingsReturn = {
 	settings: UserSettings | null;
 	theme: Theme;
@@ -43,12 +44,12 @@ export type UseUserSettingsReturn = {
 	 * the active-status set).
 	 */
 	orderDashboardStatusFilters: OrderDashboardStatusFilter[] | null;
-	updateTheme: (theme: Theme) => Promise<UserSettingsResult<UserSettingsId>>;
-	updateSidebarExpanded: (expanded: boolean) => Promise<UserSettingsResult<UserSettingsId>>;
-	updateLanguage: (language: Language) => Promise<UserSettingsResult<UserSettingsId>>;
+	updateTheme: (theme: Theme) => Promise<UserSettingsId>;
+	updateSidebarExpanded: (expanded: boolean) => Promise<UserSettingsId>;
+	updateLanguage: (language: Language) => Promise<UserSettingsId>;
 	updateOrderDashboardStatusFilters: (
 		statuses: OrderDashboardStatusFilter[]
-	) => Promise<UserSettingsResult<UserSettingsId>>;
+	) => Promise<UserSettingsId>;
 };
 
 // Re-export UserSettingsError for consumers
@@ -63,7 +64,7 @@ export { UserSettingsError } from "../components/UserSettingsService";
  *
  * Features:
  * - Real-time updates via Convex sync engine
- * - Type-safe mutations
+ * - Type-safe mutations (throw on failure; wrap with try/catch)
  * - Default values when settings don't exist
  *
  * @example
@@ -73,11 +74,11 @@ export { UserSettingsError } from "../components/UserSettingsService";
  *
  *   const handleToggle = async () => {
  *     const newTheme = theme === "light" ? "dark" : "light"
- *     const result = await updateTheme(newTheme)
- *     if (result.success) {
- *       console.log('Theme updated:', result.value)
- *     } else {
- *       console.error('Failed to update theme')
+ *     try {
+ *       const id = await updateTheme(newTheme)
+ *       console.log('Theme updated:', id)
+ *     } catch (error) {
+ *       console.error('Failed to update theme', error)
  *     }
  *   }
  *
@@ -163,72 +164,28 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[languageFromSettings, currentI18nLanguage]
 	);
 
-	// Update theme
 	const updateTheme = useCallback(
-		async (theme: Theme): Promise<UserSettingsResult<UserSettingsId>> => {
-			try {
-				const value = await updateThemeService(client, theme);
-				return { success: true, value };
-			} catch (error) {
-				return {
-					success: false,
-					error: error instanceof Error ? error : new Error(String(error)),
-				};
-			}
-		},
+		(newTheme: Theme) => updateThemeService(client, newTheme),
 		[client]
 	);
 
-	// Update sidebar expanded state
 	const updateSidebarExpanded = useCallback(
-		async (expanded: boolean): Promise<UserSettingsResult<UserSettingsId>> => {
-			try {
-				const value = await updateSidebarExpandedService(client, expanded);
-				return { success: true, value };
-			} catch (error) {
-				return {
-					success: false,
-					error: error instanceof Error ? error : new Error(String(error)),
-				};
-			}
-		},
+		(expanded: boolean) => updateSidebarExpandedService(client, expanded),
 		[client]
 	);
 
-	// Update language
-	// On success, syncs with i18n to update UI immediately
 	const updateLanguage = useCallback(
-		async (language: Language): Promise<UserSettingsResult<UserSettingsId>> => {
-			try {
-				const value = await updateLanguageService(client, language);
-				// Sync with i18n on success
-				i18n.changeLanguage(language);
-				return { success: true, value };
-			} catch (error) {
-				return {
-					success: false,
-					error: error instanceof Error ? error : new Error(String(error)),
-				};
-			}
+		async (newLanguage: Language) => {
+			const result = await updateLanguageService(client, newLanguage);
+			i18n.changeLanguage(newLanguage);
+			return result;
 		},
 		[client]
 	);
 
-	// Persist the OrderDashboard status filter selection
 	const updateOrderDashboardStatusFilters = useCallback(
-		async (
-			statuses: OrderDashboardStatusFilter[]
-		): Promise<UserSettingsResult<UserSettingsId>> => {
-			try {
-				const value = await updateOrderDashboardStatusFiltersService(client, statuses);
-				return { success: true, value };
-			} catch (error) {
-				return {
-					success: false,
-					error: error instanceof Error ? error : new Error(String(error)),
-				};
-			}
-		},
+		(statuses: OrderDashboardStatusFilter[]) =>
+			updateOrderDashboardStatusFiltersService(client, statuses),
 		[client]
 	);
 
@@ -259,14 +216,11 @@ export function useUserSettings(): UseUserSettingsReturn {
 			// This avoids unnecessary writes when browser language is already "en"
 			if (normalizedLanguage === Languages.ES) {
 				hasInitializedLanguage.current = true;
-				// Save to Convex asynchronously
 				updateLanguage(normalizedLanguage).catch((error) => {
 					console.error("Failed to initialize language from browser:", error);
-					// Reset flag on error so we can retry
 					hasInitializedLanguage.current = false;
 				});
 			} else {
-				// Mark as initialized even if we don't need to save (browser is "en")
 				hasInitializedLanguage.current = true;
 			}
 		}

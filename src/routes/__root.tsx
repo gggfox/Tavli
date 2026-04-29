@@ -17,6 +17,7 @@ import { useRestaurant } from "@/features/restaurants";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import { ErrorBoundary, NotificationCenter, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
+import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
 import {
 	LOCAL_STORAGE_THEME_KEY,
 	type RemoteThemeSettings,
@@ -29,7 +30,14 @@ import appCss from "../styles.css?url";
 // Inline script that runs synchronously in <head> before any paint.
 // Sets the `dark` class on <html> based on localStorage (and falls back to
 // the OS color scheme on first visit) to prevent a light-mode flash on reload.
-const themeInitScript = `(function(){try{var k=${JSON.stringify(LOCAL_STORAGE_THEME_KEY)};var t=localStorage.getItem(k);var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`;
+// Also mirrors the saved sidebar-expanded preference into a
+// `data-sidebar-expanded` attribute so the sidebar lands at its final width
+// before React hydrates (no LoadingSkeleton flash).
+//
+// Migrates the pre-rename `fierro-viejo-theme` key into the canonical
+// `tavli-theme` key on first visit, so users who saved a preference under
+// the old name don't lose it.
+const initScript = `(function(){try{var k=${JSON.stringify(LOCAL_STORAGE_THEME_KEY)};var t=localStorage.getItem(k);if(t===null){var legacy=localStorage.getItem('fierro-viejo-theme');if(legacy!==null){localStorage.setItem(k,legacy);localStorage.removeItem('fierro-viejo-theme');t=legacy;}}var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');var sk=${JSON.stringify(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED)};var st=localStorage.getItem(sk);if(st==='false')document.documentElement.dataset.sidebarExpanded='false';}catch(e){}})();`;
 
 export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
@@ -87,8 +95,8 @@ function RootLayout() {
 		<ThemeProvider remoteSettings={remoteSettings}>
 			{isCustomerRoute ? (
 				<div
-					className="h-screen flex flex-col overflow-hidden"
-					style={{ backgroundColor: "var(--bg-primary)" }}
+					className="h-screen flex flex-col overflow-hidden bg-background"
+					
 				>
 					<ErrorBoundary>
 						<Outlet />
@@ -106,11 +114,11 @@ function StaffLayout() {
 	useNewReservationListener(restaurant?._id);
 	return (
 		<div
-			className="h-screen flex overflow-hidden"
-			style={{ backgroundColor: "var(--bg-primary)" }}
+			className="h-screen flex overflow-hidden bg-background"
+			
 		>
 			<Sidebar />
-			<main className="flex-1 overflow-auto" style={{ backgroundColor: "var(--bg-primary)" }}>
+			<main className="flex-1 overflow-auto bg-background" >
 				<ErrorBoundary>
 					<Outlet />
 				</ErrorBoundary>
@@ -128,7 +136,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 			<ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
 				<html lang={i18n.language}>
 					<head>
-						<script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+						<script dangerouslySetInnerHTML={{ __html: initScript }} />
 						<HeadContent />
 					</head>
 					<body>

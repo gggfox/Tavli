@@ -1,6 +1,8 @@
 import { FeatureCard } from "@/global/components/FeatureCard/FeatureCard.tsx";
+import { SidebarKeys, WelcomeKeys } from "@/global/i18n";
 import { SignInButton, SignUpButton } from "@clerk/tanstack-react-start";
 import { LogIn, QrCode, Shield, UserPlus, UtensilsCrossed } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function WelcomeSection() {
 	return (
@@ -21,74 +23,73 @@ function WelcomeSectionContainer({ children }: Readonly<{ children: React.ReactN
 }
 
 function Hero() {
+	const { t } = useTranslation();
 	return (
 		<div className="text-center mb-12">
 			<div
-				className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm mb-6"
-				style={{
-					backgroundColor: "var(--accent-success-light)",
-					color: "var(--accent-success)",
-					border: "1px solid var(--accent-success)",
-				}}
+				className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm mb-6 bg-success-subtle text-success border border-success"
+				
 			>
 				<UtensilsCrossed size={14} />
-				<span>Restaurant Menu Management</span>
+				<span>{t(WelcomeKeys.BADGE)}</span>
 			</div>
 			<h1
-				className="text-4xl md:text-5xl font-bold mb-4 tracking-tight"
-				style={{ color: "var(--text-primary)" }}
+				className="text-4xl md:text-5xl font-bold mb-4 tracking-tight text-foreground"
+				
 			>
-				Welcome to <span style={{ color: "var(--btn-primary-bg)" }}>Tavli</span>
+				{t(WelcomeKeys.HEADING_PREFIX)}{" "}
+				<span className="text-primary" >{t(SidebarKeys.BRAND_NAME)}</span>
 			</h1>
-			<p className="text-lg max-w-md mx-auto" style={{ color: "var(--text-secondary)" }}>
-				Manage your restaurants, menus, and orders. Customers scan a QR code to browse and order
-				from their table.
+			<p className="text-lg max-w-md mx-auto text-muted-foreground" >
+				{t(WelcomeKeys.SUBHEADING)}
 			</p>
 		</div>
 	);
 }
 
 function Features() {
+	const { t } = useTranslation();
 	return (
 		<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12 w-full">
 			<FeatureCard
 				icon={<UtensilsCrossed size={24} />}
 				iconColor="var(--accent-success)"
-				title="Menu Builder"
-				description="Create and manage menus with categories, items, and option groups."
+				title={t(WelcomeKeys.FEATURE_MENU_TITLE)}
+				description={t(WelcomeKeys.FEATURE_MENU_DESC)}
 			/>
 			<FeatureCard
 				icon={<QrCode size={24} />}
 				iconColor="var(--accent-warning)"
-				title="Table Ordering"
-				description="Customers order from their table via a unique link or QR code."
+				title={t(WelcomeKeys.FEATURE_TABLE_TITLE)}
+				description={t(WelcomeKeys.FEATURE_TABLE_DESC)}
 			/>
 			<FeatureCard
 				icon={<Shield size={24} />}
 				iconColor="var(--accent-secondary)"
-				title="Secure Auth"
-				description="Manage staff roles with secure authentication via Clerk."
+				title={t(WelcomeKeys.FEATURE_AUTH_TITLE)}
+				description={t(WelcomeKeys.FEATURE_AUTH_DESC)}
 			/>
 		</div>
 	);
 }
 
 function CallToAction() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex items-center justify-center gap-4">
 			<SignInButton mode="redirect">
 				<button
-					className="flex items-center gap-2 px-6 py-3 rounded-xl hover-btn-secondary"
-					style={{ border: "1px solid var(--border-default)" }}
+					className="flex items-center gap-2 px-6 py-3 rounded-xl hover-btn-secondary border border-border"
+					
 				>
 					<LogIn size={20} />
-					Sign In
+					{t(SidebarKeys.SIGN_IN)}
 				</button>
 			</SignInButton>
 			<SignUpButton mode="redirect">
 				<button className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium hover-btn-primary">
 					<UserPlus size={20} />
-					Get Started
+					{t(WelcomeKeys.GET_STARTED)}
 				</button>
 			</SignUpButton>
 		</div>

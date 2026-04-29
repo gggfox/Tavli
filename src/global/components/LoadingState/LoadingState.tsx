@@ -17,8 +17,8 @@ export function LoadingState({
 				{Array.from({ length: skeletonRows }, (_, i) => (
 					<div
 						key={`skeleton-row-${i}`}
-						className="h-12 rounded-lg animate-pulse"
-						style={{ backgroundColor: "var(--bg-hover)" }}
+						className="h-12 rounded-lg animate-pulse bg-hover"
+						
 					/>
 				))}
 			</div>
@@ -30,17 +30,17 @@ export function LoadingState({
 			<div className={`flex items-center justify-center p-8 ${className}`}>
 				<div className="text-center">
 					<div
-						className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-3"
-						style={{ borderColor: "var(--accent-primary)", borderTopColor: "transparent" }}
+						className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-3 border border-accent"
+						style={{borderTopColor: "transparent"}}
 					/>
-					<p style={{ color: "var(--text-secondary)" }}>{message}</p>
+					<p className="text-muted-foreground" >{message}</p>
 				</div>
 			</div>
 		);
 	}
 
 	return (
-		<p className={`text-sm ${className}`} style={{ color: "var(--text-muted)" }}>
+		<p className={`${`text-sm ${className}`} text-faint-foreground`} >
 			{message}
 		</p>
 	);

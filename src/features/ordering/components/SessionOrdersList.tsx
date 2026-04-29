@@ -1,3 +1,4 @@
+import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -12,6 +13,8 @@ import {
 	UtensilsCrossed,
 	XCircle,
 } from "lucide-react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { useSessionStore } from "../hooks/useSession";
 import { SessionOrdersListSkeleton } from "./SessionOrdersListSkeleton";
 
@@ -32,34 +35,34 @@ interface StatusMeta {
 	iconBg: string;
 }
 
-function getStatusMeta(order: OrderDoc): StatusMeta {
+function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 	if (order.status === "draft") {
 		if (order.paymentState === "failed") {
 			return {
-				label: "Payment failed",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_PAYMENT_FAILED),
 				action: "resume-checkout",
-				actionLabel: "Try again",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_TRY_AGAIN),
 				icon: XCircle,
-				iconColor: "var(--accent-danger, #dc2626)",
+				iconColor: "var(--accent-danger)",
 				iconBg: "rgba(220, 38, 38, 0.12)",
 			};
 		}
 		if (order.paymentState === "processing" || order.paymentState === "pending") {
 			return {
-				label: "Payment processing",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_PAYMENT_PROCESSING),
 				action: "view-order",
-				actionLabel: "View",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: CreditCard,
 				iconColor: "var(--btn-primary-bg)",
 				iconBg: "rgba(35, 131, 226, 0.12)",
 			};
 		}
 		return {
-			label: "Unpaid",
+			label: t(OrderingKeys.ORDERS_LIFECYCLE_UNPAID),
 			action: "resume-checkout",
-			actionLabel: "Finish checkout",
+			actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_FINISH_CHECKOUT),
 			icon: CreditCard,
-			iconColor: "var(--accent-warning, #d97706)",
+			iconColor: "var(--accent-warning)",
 			iconBg: "rgba(217, 119, 6, 0.12)",
 		};
 	}
@@ -67,61 +70,61 @@ function getStatusMeta(order: OrderDoc): StatusMeta {
 	switch (order.status) {
 		case "submitted":
 			return {
-				label: "Order placed",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_PLACED),
 				action: "view-order",
-				actionLabel: "View",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: Clock,
 				iconColor: "var(--btn-primary-bg)",
 				iconBg: "rgba(35, 131, 226, 0.12)",
 			};
 		case "preparing":
 			return {
-				label: "Preparing",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_PREPARING),
 				action: "view-order",
-				actionLabel: "View",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: ChefHat,
 				iconColor: "var(--btn-primary-bg)",
 				iconBg: "rgba(35, 131, 226, 0.12)",
 			};
 		case "ready":
 			return {
-				label: "Ready",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_READY),
 				action: "view-order",
-				actionLabel: "View",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: CheckCircle2,
-				iconColor: "var(--accent-success, #059669)",
+				iconColor: "var(--accent-success)",
 				iconBg: "rgba(5, 150, 105, 0.12)",
 			};
 		case "served":
 			return {
-				label: "Served",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_SERVED),
 				action: "view-order",
-				actionLabel: "View",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: UtensilsCrossed,
 				iconColor: "var(--text-muted)",
 				iconBg: "var(--bg-secondary)",
 			};
 		case "cancelled":
 			return {
-				label: "Cancelled",
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_CANCELLED),
 				action: "view-order",
-				actionLabel: "View",
+				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: XCircle,
-				iconColor: "var(--accent-danger, #dc2626)",
+				iconColor: "var(--accent-danger)",
 				iconBg: "rgba(220, 38, 38, 0.12)",
 			};
 	}
 }
 
-function formatTime(timestamp: number): string {
+function formatTime(timestamp: number, t: TFunction, locale: string): string {
 	const now = Date.now();
 	const diffMs = now - timestamp;
 	const diffMin = Math.floor(diffMs / 60_000);
-	if (diffMin < 1) return "Just now";
-	if (diffMin < 60) return `${diffMin}m ago`;
+	if (diffMin < 1) return t(OrderingKeys.ORDERS_TIME_JUST_NOW);
+	if (diffMin < 60) return t(OrderingKeys.ORDERS_TIME_MIN_AGO, { count: diffMin });
 	const diffHr = Math.floor(diffMin / 60);
-	if (diffHr < 24) return `${diffHr}h ago`;
-	return new Date(timestamp).toLocaleDateString();
+	if (diffHr < 24) return t(OrderingKeys.ORDERS_TIME_HOUR_AGO, { count: diffHr });
+	return new Date(timestamp).toLocaleDateString(locale);
 }
 
 export function SessionOrdersList({
@@ -129,6 +132,7 @@ export function SessionOrdersList({
 	onViewOrder,
 	onResumeCheckout,
 }: Readonly<SessionOrdersListProps>) {
+	const { t } = useTranslation();
 	const { sessionId } = useSessionStore();
 
 	if (!sessionId) {
@@ -136,8 +140,8 @@ export function SessionOrdersList({
 			<div className="flex flex-col h-full p-4">
 				<Header onBackToMenu={onBackToMenu} />
 				<div className="flex-1 flex items-center justify-center">
-					<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-						No active session. Please return to the menu.
+					<p className="text-sm text-faint-foreground" >
+						{t(OrderingKeys.SESSION_NO_SESSION)}
 					</p>
 				</div>
 			</div>
@@ -155,17 +159,18 @@ export function SessionOrdersList({
 }
 
 function Header({ onBackToMenu }: Readonly<{ onBackToMenu: () => void }>) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex items-center gap-3 mb-4">
 			<button
 				onClick={onBackToMenu}
-				className="p-2 rounded-lg hover:bg-(--bg-hover)"
-				aria-label="Back to menu"
+				className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
+				aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
 			>
-				<ArrowLeft size={20} style={{ color: "var(--text-primary)" }} />
+				<ArrowLeft size={20}  />
 			</button>
-			<h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-				Your orders
+			<h2 className="text-lg font-bold text-foreground" >
+				{t(OrderingKeys.ORDERS_HEADER)}
 			</h2>
 		</div>
 	);
@@ -182,6 +187,7 @@ function SessionOrdersListContent({
 	onViewOrder: (orderId: Id<"orders">) => void;
 	onResumeCheckout: (orderId: Id<"orders">) => void;
 }>) {
+	const { t } = useTranslation();
 	const { data: orders, isLoading } = useQuery(
 		convexQuery(api.orders.getOrdersBySession, { sessionId })
 	);
@@ -202,21 +208,21 @@ function SessionOrdersListContent({
 
 				{orders && sortedOrders.length === 0 && (
 					<div
-						className="py-12 flex flex-col items-center gap-2 rounded-xl"
-						style={{ backgroundColor: "var(--bg-secondary)" }}
+						className="py-12 flex flex-col items-center gap-2 rounded-xl bg-muted"
+						
 					>
-						<UtensilsCrossed size={32} style={{ color: "var(--text-muted)" }} />
-						<p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-							No orders yet
+						<UtensilsCrossed size={32} className="text-faint-foreground"  />
+						<p className="text-sm font-medium text-foreground" >
+							{t(OrderingKeys.ORDERS_EMPTY_TITLE)}
 						</p>
-						<p className="text-xs text-center px-6" style={{ color: "var(--text-muted)" }}>
-							Start an order from the menu to see it here.
+						<p className="text-xs text-center px-6 text-faint-foreground" >
+							{t(OrderingKeys.ORDERS_EMPTY_DESC)}
 						</p>
 						<button
 							onClick={onBackToMenu}
 							className="mt-2 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 						>
-							Browse menu
+							{t(OrderingKeys.ORDERS_EMPTY_BROWSE)}
 						</button>
 					</div>
 				)}
@@ -243,7 +249,8 @@ function OrderCard({
 	onViewOrder: (orderId: Id<"orders">) => void;
 	onResumeCheckout: (orderId: Id<"orders">) => void;
 }>) {
-	const meta = getStatusMeta(order);
+	const { t, i18n } = useTranslation();
+	const meta = getStatusMeta(order, t);
 	const Icon = meta.icon;
 
 	const handleClick = () => {
@@ -254,33 +261,30 @@ function OrderCard({
 	return (
 		<button
 			onClick={handleClick}
-			className="w-full text-left flex items-center gap-3 p-4 rounded-xl transition-colors hover:bg-(--bg-hover)"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="w-full text-left flex items-center gap-3 p-4 rounded-xl transition-colors hover:bg-(--bg-hover) bg-muted border border-border"
+			
 		>
 			<div
 				className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-				style={{ backgroundColor: meta.iconBg }}
+				style={{backgroundColor: meta.iconBg}}
 			>
-				<Icon size={18} style={{ color: meta.iconColor }} />
+				<Icon size={18} style={{color: meta.iconColor}} />
 			</div>
 
 			<div className="flex-1 min-w-0">
 				<div className="flex items-center justify-between gap-2">
-					<span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+					<span className="text-sm font-semibold text-foreground" >
 						{meta.label}
 					</span>
-					<span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+					<span className="text-sm font-semibold text-foreground" >
 						${formatCents(order.totalAmount)}
 					</span>
 				</div>
 				<div className="flex items-center justify-between mt-1">
-					<span className="text-xs" style={{ color: "var(--text-muted)" }}>
-						{formatTime(order._creationTime)}
+					<span className="text-xs text-faint-foreground" >
+						{formatTime(order._creationTime, t, i18n.language)}
 					</span>
-					<span className="text-xs font-medium" style={{ color: "var(--btn-primary-bg)" }}>
+					<span className="text-xs font-medium text-primary" >
 						{meta.actionLabel} →
 					</span>
 				</div>

@@ -1,11 +1,14 @@
 import { Skeleton } from "@/global/components";
+import { MenusKeys } from "@/global/i18n";
+import { useTranslation } from "react-i18next";
 
 const CATEGORY_COUNT = 3;
 const ITEMS_PER_CATEGORY = 4;
 
 export function MenuEditorSkeleton() {
+	const { t } = useTranslation();
 	return (
-		<div className="space-y-6" aria-label="Loading menu editor" aria-busy="true">
+		<div className="space-y-6" aria-label={t(MenusKeys.EDITOR_LOADING_ARIA)} aria-busy="true">
 			<div className="flex items-center gap-3">
 				<Skeleton rounded="lg" className="h-9 w-32" />
 				<Skeleton rounded="lg" className="h-9 w-24" />
@@ -21,7 +24,7 @@ export function MenuEditorSkeleton() {
 				{(catIndex) => (
 					<Skeleton.Card rounded="xl" className="p-4 space-y-3">
 						<div className="flex items-center justify-between">
-							<Skeleton className="h-5" style={{ width: `${100 + (catIndex % 3) * 30}px` }} />
+							<Skeleton className="h-5" style={{width: `${100 + (catIndex % 3) * 30}px`}} />
 							<Skeleton rounded="md" className="h-7 w-7" />
 						</div>
 						<div className="space-y-2">
@@ -39,7 +42,7 @@ export function MenuEditorSkeleton() {
 										<div className="flex-1 space-y-2">
 											<Skeleton
 												className="h-4"
-												style={{ width: `${50 + (itemIndex % 3) * 12}%` }}
+												style={{width: `${50 + (itemIndex % 3) * 12}%`}}
 											/>
 											<Skeleton className="h-3 w-16" />
 										</div>

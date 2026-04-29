@@ -2,8 +2,7 @@
  * Surface — themed container primitive.
  *
  * Replaces the long-running pattern of writing
- *   <div style={{ backgroundColor: "var(--bg-secondary)",
- *                 border: "1px solid var(--border-default)" }}>
+ *   <div className="bg-muted" style={{*                 border: "1px solid var(--border-default)"}}>
  * by hand. Maps semantic tones to CSS-variable colors so theming stays
  * centralized.
  *

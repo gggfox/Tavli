@@ -6,8 +6,8 @@ export function SelectedCount({ selectedIds }: SelectedCountProps) {
 		return <div className="hidden"></div>;
 	}
 	return (
-		<div className="pt-2 border-t" style={{ borderColor: "var(--border-default)" }}>
-			<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+		<div className="pt-2 border-t border border-border" >
+			<p className="text-xs text-faint-foreground" >
 				{selectedIds.length} {selectedIds.length === 1 ? "item" : "items"} selected
 			</p>
 		</div>

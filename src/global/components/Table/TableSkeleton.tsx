@@ -8,8 +8,8 @@ export function TableSkeleton({ rows = 5 }: TableSkeletonProps) {
 			{Array.from({ length: rows }, (_, i) => (
 				<div
 					key={`skeleton-row-${i}`}
-					className="h-12 rounded-lg animate-pulse"
-					style={{ backgroundColor: "var(--bg-hover)" }}
+					className="h-12 rounded-lg animate-pulse bg-hover"
+					
 				/>
 			))}
 		</div>

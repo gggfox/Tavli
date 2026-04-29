@@ -1,0 +1,14 @@
+/*
+ * Sidebar layout helpers.
+ *
+ * Width is controlled by both the JS-rendered Tailwind class (w-60 / w-16)
+ * AND a CSS attribute selector that mirrors the current localStorage value
+ * via an inline <script> in __root.tsx. The attribute selector takes
+ * precedence on first paint so the sidebar lands at the correct width
+ * before React hydrates, eliminating the layout shift that the previous
+ * isMounted/LoadingSkeleton dance was working around.
+ */
+
+:root[data-sidebar-expanded="false"] .tavli-sidebar-width {
+	width: 4rem;
+}

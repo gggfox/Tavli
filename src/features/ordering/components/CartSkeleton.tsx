@@ -14,8 +14,8 @@ export function CartSkeleton({ onBack }: CartSkeletonProps = {}) {
 				{onBack ? (
 					<button
 						onClick={onBack}
-						className="flex items-center gap-1 text-sm"
-						style={{ color: "var(--btn-primary-bg)" }}
+						className="flex items-center gap-1 text-sm text-primary"
+						
 					>
 						<ArrowLeft size={16} /> Back to menu
 					</button>
@@ -29,11 +29,11 @@ export function CartSkeleton({ onBack }: CartSkeletonProps = {}) {
 					{Array.from({ length: ITEM_COUNT }, (_, i) => (
 						<div
 							key={`cart-item-${i}`}
-							className="flex items-start justify-between px-4 py-3 rounded-xl"
-							style={{ backgroundColor: "var(--bg-secondary)" }}
+							className="flex items-start justify-between px-4 py-3 rounded-xl bg-muted"
+							
 						>
 							<div className="flex-1 space-y-2">
-								<Skeleton className="h-4" style={{ width: `${50 + (i % 3) * 12}%` }} />
+								<Skeleton className="h-4" style={{width: `${50 + (i % 3) * 12}%`}} />
 								<Skeleton className="h-3 w-32" />
 							</div>
 							<div className="flex items-center gap-2">
@@ -46,8 +46,8 @@ export function CartSkeleton({ onBack }: CartSkeletonProps = {}) {
 			</div>
 
 			<div
-				className="px-4 pb-4 pt-3 space-y-3"
-				style={{ borderTop: "1px solid var(--border-default)" }}
+				className="px-4 pb-4 pt-3 space-y-3 border-t border-border"
+				
 			>
 				<div className="flex items-center justify-between">
 					<Skeleton className="h-5 w-16" />

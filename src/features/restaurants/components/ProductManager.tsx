@@ -25,7 +25,7 @@ export function ProductManager() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+					<p className="text-sm text-muted-foreground" >
 						Create and manage products that customers can purchase from the storefront.
 					</p>
 				</div>
@@ -104,23 +104,17 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="rounded-xl p-6 space-y-4"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="rounded-xl p-6 space-y-4 bg-muted border border-border"
+			
 		>
-			<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+			<h3 className="text-sm font-semibold text-foreground" >
 				Create New Product
 			</h3>
 
 			{error && (
 				<div
-					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-					style={{
-						backgroundColor: "rgba(220, 38, 38, 0.1)",
-						color: "var(--accent-danger, #dc2626)",
-					}}
+					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
+					style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
 				>
 					<AlertCircle size={14} />
 					{error}
@@ -131,8 +125,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 			<div className="space-y-1.5">
 				<label
 					htmlFor="product-restaurant"
-					className="text-xs font-medium"
-					style={{ color: "var(--text-secondary)" }}
+					className="text-xs font-medium text-muted-foreground"
+					
 				>
 					Restaurant (Connected Account)
 				</label>
@@ -141,12 +135,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 					value={restaurantId}
 					onChange={(e) => setRestaurantId(e.target.value)}
 					required
-					className="w-full px-3 py-2 rounded-lg text-sm"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						color: "var(--text-primary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="w-full px-3 py-2 rounded-lg text-sm bg-background text-foreground border border-border"
+					
 				>
 					<option value="">Select a restaurant...</option>
 					{onboardedRestaurants.map((r) => (
@@ -156,7 +146,7 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 					))}
 				</select>
 				{onboardedRestaurants.length === 0 && (
-					<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+					<p className="text-xs text-faint-foreground" >
 						No restaurants have completed Stripe onboarding yet.
 					</p>
 				)}
@@ -166,8 +156,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 			<div className="space-y-1.5">
 				<label
 					htmlFor="product-name"
-					className="text-xs font-medium"
-					style={{ color: "var(--text-secondary)" }}
+					className="text-xs font-medium text-muted-foreground"
+					
 				>
 					Product Name
 				</label>
@@ -178,12 +168,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 					onChange={(e) => setName(e.target.value)}
 					required
 					placeholder="e.g. Margherita Pizza"
-					className="w-full px-3 py-2 rounded-lg text-sm"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						color: "var(--text-primary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="w-full px-3 py-2 rounded-lg text-sm bg-background text-foreground border border-border"
+					
 				/>
 			</div>
 
@@ -191,8 +177,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 			<div className="space-y-1.5">
 				<label
 					htmlFor="product-description"
-					className="text-xs font-medium"
-					style={{ color: "var(--text-secondary)" }}
+					className="text-xs font-medium text-muted-foreground"
+					
 				>
 					Description (optional)
 				</label>
@@ -202,12 +188,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 					onChange={(e) => setDescription(e.target.value)}
 					placeholder="A short description of the product"
 					rows={2}
-					className="w-full px-3 py-2 rounded-lg text-sm resize-none"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						color: "var(--text-primary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="w-full px-3 py-2 rounded-lg text-sm resize-none bg-background text-foreground border border-border"
+					
 				/>
 			</div>
 
@@ -216,8 +198,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 				<div className="flex-1 space-y-1.5">
 					<label
 						htmlFor="product-price"
-						className="text-xs font-medium"
-						style={{ color: "var(--text-secondary)" }}
+						className="text-xs font-medium text-muted-foreground"
+						
 					>
 						Price
 					</label>
@@ -230,19 +212,15 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 						min="0.01"
 						step="0.01"
 						placeholder="12.99"
-						className="w-full px-3 py-2 rounded-lg text-sm"
-						style={{
-							backgroundColor: "var(--bg-primary)",
-							color: "var(--text-primary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="w-full px-3 py-2 rounded-lg text-sm bg-background text-foreground border border-border"
+						
 					/>
 				</div>
 				<div className="w-28 space-y-1.5">
 					<label
 						htmlFor="product-currency"
-						className="text-xs font-medium"
-						style={{ color: "var(--text-secondary)" }}
+						className="text-xs font-medium text-muted-foreground"
+						
 					>
 						Currency
 					</label>
@@ -250,12 +228,8 @@ function CreateProductForm({ onSuccess }: Readonly<{ onSuccess: () => void }>) {
 						id="product-currency"
 						value={currency}
 						onChange={(e) => setCurrency(e.target.value)}
-						className="w-full px-3 py-2 rounded-lg text-sm"
-						style={{
-							backgroundColor: "var(--bg-primary)",
-							color: "var(--text-primary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="w-full px-3 py-2 rounded-lg text-sm bg-background text-foreground border border-border"
+						
 					>
 						<option value="usd">USD</option>
 						<option value="eur">EUR</option>
@@ -296,7 +270,7 @@ function ProductList() {
 	if (isLoading) {
 		return (
 			<div className="flex items-center justify-center py-8">
-				<Loader2 size={20} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+				<Loader2 size={20} className="animate-spin text-faint-foreground"  />
 			</div>
 		);
 	}
@@ -304,17 +278,14 @@ function ProductList() {
 	if (!products || products.length === 0) {
 		return (
 			<div
-				className="rounded-xl p-8 text-center"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-				}}
+				className="rounded-xl p-8 text-center bg-muted border border-border"
+				
 			>
-				<Package size={32} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-				<p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+				<Package size={32} className="mx-auto mb-3 text-faint-foreground"  />
+				<p className="text-sm font-medium text-foreground" >
 					No products yet
 				</p>
-				<p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+				<p className="text-xs mt-1 text-faint-foreground" >
 					Create your first product to start selling on the storefront.
 				</p>
 			</div>
@@ -337,17 +308,14 @@ function ProductList() {
 		<div className="space-y-6">
 			{Object.entries(grouped).map(([restaurantId, group]) => (
 				<div key={restaurantId} className="space-y-3">
-					<div className="flex items-center gap-2">
-						<Store size={16} style={{ color: "var(--text-muted)" }} />
-						<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+					<div className="flex items-center gap-2 text-faint-foreground">
+						<Store size={16}  />
+						<h3 className="text-sm font-semibold text-foreground" >
 							{group.restaurantName}
 						</h3>
 						<span
-							className="text-xs px-2 py-0.5 rounded-full"
-							style={{
-								backgroundColor: "var(--bg-tertiary, var(--bg-secondary))",
-								color: "var(--text-muted)",
-							}}
+							className="text-xs px-2 py-0.5 rounded-full text-faint-foreground"
+							style={{backgroundColor: "var(--bg-tertiary))"}}
 						>
 							{group.items.length} {group.items.length === 1 ? "product" : "products"}
 						</span>
@@ -356,25 +324,22 @@ function ProductList() {
 						{group.items.map((product) => (
 							<div
 								key={product._id}
-								className="rounded-xl p-4 space-y-2"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-								}}
+								className="rounded-xl p-4 space-y-2 bg-muted border border-border"
+								
 							>
-								<h4 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+								<h4 className="text-sm font-medium text-foreground" >
 									{product.name}
 								</h4>
 								{product.description && (
-									<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+									<p className="text-xs text-faint-foreground" >
 										{product.description}
 									</p>
 								)}
-								<p className="text-sm font-semibold" style={{ color: "var(--accent-primary)" }}>
+								<p className="text-sm font-semibold text-accent" >
 									${formatCents(product.priceInCents)}{" "}
 									<span
-										className="text-xs font-normal uppercase"
-										style={{ color: "var(--text-muted)" }}
+										className="text-xs font-normal uppercase text-faint-foreground"
+										
 									>
 										{product.currency}
 									</span>

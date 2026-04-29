@@ -1,5 +1,6 @@
 import { Bug, ChevronDown, Shield, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { KEY } from "@/global/utils/keyboard";
 import { AuthDebugPanel } from "../../../features/auth/AuthDebugPanel";
 
 type DebugSection = {
@@ -100,7 +101,7 @@ export function Debugger() {
 									className="fixed inset-0 z-10 cursor-default bg-transparent border-none"
 									onClick={() => setIsSectionMenuOpen(false)}
 									onKeyDown={(e) => {
-										if (e.key === "Escape") setIsSectionMenuOpen(false);
+										if (e.key === KEY.Escape) setIsSectionMenuOpen(false);
 									}}
 								/>
 

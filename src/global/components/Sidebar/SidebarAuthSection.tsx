@@ -18,7 +18,7 @@ export function SidebarAuthSection({ isExpanded }: Readonly<SidebarAuthSectionPr
 	if (!isLoaded || isSignedIn) return null;
 
 	return (
-		<div className="p-2" style={{ borderTop: "1px solid var(--border-default)" }}>
+		<div className="p-2 border-t border-border" >
 			<div className={`space-y-1 ${isExpanded ? "" : "flex flex-col items-center"}`}>
 				<SignInButton mode="redirect">
 					<button

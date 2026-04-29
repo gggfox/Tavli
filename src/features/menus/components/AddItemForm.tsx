@@ -1,8 +1,10 @@
+import { MenusKeys } from "@/global/i18n";
 import { parseDollarsToCents } from "@/global/utils/money";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
 import { ClipboardPaste, ImagePlus, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getImageFromClipboard, uploadImage } from "../utils/imageUtils";
 
 interface AddItemFormProps {
@@ -27,6 +29,7 @@ export function AddItemForm({
 	onCreateItem,
 	onCancel,
 }: Readonly<AddItemFormProps>) {
+	const { t } = useTranslation();
 	const [selectedImage, setSelectedImage] = useState<File | null>(null);
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,14 +104,10 @@ export function AddItemForm({
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
-							placeholder="Item name"
+							placeholder={t(MenusKeys.FORM_ITEM_NAME_PLACEHOLDER)}
 							required
-							className="flex-1 px-2 py-1.5 rounded text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="flex-1 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
+							
 						/>
 					)}
 				/>
@@ -120,16 +119,12 @@ export function AddItemForm({
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
-							placeholder="Price"
+							placeholder={t(MenusKeys.FORM_ITEM_PRICE_PLACEHOLDER)}
 							required
 							step="0.01"
 							min="0"
-							className="w-24 px-2 py-1.5 rounded text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-24 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
+							
 						/>
 					)}
 				/>
@@ -142,26 +137,19 @@ export function AddItemForm({
 						value={field.state.value}
 						onChange={(e) => field.handleChange(e.target.value)}
 						onBlur={field.handleBlur}
-						placeholder="Description (optional)"
-						className="w-full px-2 py-1.5 rounded text-sm"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-							color: "var(--text-primary)",
-						}}
+						placeholder={t(MenusKeys.FORM_ITEM_DESCRIPTION_PLACEHOLDER)}
+						className="w-full px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
+						
 					/>
 				)}
 			/>
 			<div className="flex items-center gap-3">
 				<label
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-[var(--bg-hover)]"
-					style={{
-						border: "1px solid var(--border-default)",
-						color: "var(--text-secondary)",
-					}}
+					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-hover border border-border text-muted-foreground"
+					
 				>
 					<ImagePlus size={14} />
-					{selectedImage ? "Change image" : "Add image"}
+					{selectedImage ? t(MenusKeys.FORM_CHANGE_IMAGE) : t(MenusKeys.FORM_ADD_IMAGE)}
 					<input
 						ref={fileInputRef}
 						type="file"
@@ -171,8 +159,8 @@ export function AddItemForm({
 					/>
 				</label>
 				{!imagePreview && (
-					<span className="flex items-center gap-1 text-xs" style={{ color: "var(--text-muted)" }}>
-						<ClipboardPaste size={12} /> or paste from clipboard
+					<span className="flex items-center gap-1 text-xs text-faint-foreground" >
+						<ClipboardPaste size={12} /> {t(MenusKeys.FORM_PASTE_HINT)}
 					</span>
 				)}
 				{imagePreview && (
@@ -181,11 +169,8 @@ export function AddItemForm({
 						<button
 							type="button"
 							onClick={clearSelectedImage}
-							className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center"
-							style={{
-								backgroundColor: "var(--accent-danger)",
-								color: "white",
-							}}
+							className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center bg-destructive"
+							style={{color: "white"}}
 						>
 							<X size={10} />
 						</button>
@@ -201,7 +186,7 @@ export function AddItemForm({
 							disabled={isSubmitting}
 							className="px-3 py-1.5 rounded text-sm font-medium hover-btn-primary disabled:opacity-50"
 						>
-							{isSubmitting ? "Uploading..." : "Add"}
+							{isSubmitting ? t(MenusKeys.FORM_UPLOADING) : t(MenusKeys.FORM_ADD)}
 						</button>
 					)}
 				/>
@@ -210,7 +195,7 @@ export function AddItemForm({
 					onClick={onCancel}
 					className="px-3 py-1.5 rounded text-sm hover-btn-secondary"
 				>
-					Cancel
+					{t(MenusKeys.FORM_CANCEL)}
 				</button>
 			</div>
 		</form>

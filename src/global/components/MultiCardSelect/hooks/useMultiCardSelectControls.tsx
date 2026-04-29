@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { KEY } from "@/global/utils/keyboard";
 
 interface UseMultiCardSelectControlsProps<T extends { _id: string; name: string; icon?: string }> {
 	options: T[];
@@ -65,16 +66,16 @@ export function useMultiCardSelectControls<T extends { _id: string; name: string
 			let newIndex: number | null;
 
 			switch (e.key) {
-				case "Home":
+				case KEY.Home:
 					e.preventDefault();
 					newIndex = 0;
 					break;
-				case "End":
+				case KEY.End:
 					e.preventDefault();
 					newIndex = flatOptions.length - 1;
 					break;
-				case " ":
-				case "Enter":
+				case KEY.Space:
+				case KEY.Enter:
 					e.preventDefault();
 					if (currentIndex >= 0 && currentIndex < flatOptions.length) {
 						toggleOption(flatOptions[currentIndex]._id);

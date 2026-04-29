@@ -19,35 +19,32 @@ function SuccessPage() {
 	return (
 		<div className="max-w-md mx-auto px-4 py-16 text-center space-y-6">
 			<div
-				className="mx-auto w-16 h-16 rounded-full flex items-center justify-center"
-				style={{ backgroundColor: "var(--accent-success, #22c55e)", opacity: 0.9 }}
+				className="mx-auto w-16 h-16 rounded-full flex items-center justify-center bg-success"
+				style={{opacity: 0.9}}
 			>
 				<CheckCircle2 size={32} color="white" />
 			</div>
 
 			<div className="space-y-2">
-				<h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+				<h1 className="text-2xl font-bold text-foreground" >
 					Payment Successful!
 				</h1>
-				<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+				<p className="text-sm text-faint-foreground" >
 					Thank you for your purchase. Your payment has been processed successfully.
 				</p>
 			</div>
 
 			{session_id && (
 				<div
-					className="rounded-xl p-4 text-left"
-					style={{
-						backgroundColor: "var(--bg-secondary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="rounded-xl p-4 text-left bg-muted border border-border"
+					
 				>
-					<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+					<p className="text-xs text-faint-foreground" >
 						Session ID
 					</p>
 					<p
-						className="text-xs font-mono mt-1 break-all"
-						style={{ color: "var(--text-secondary)" }}
+						className="text-xs font-mono mt-1 break-all text-muted-foreground"
+						
 					>
 						{session_id}
 					</p>

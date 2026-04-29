@@ -1,6 +1,6 @@
 import { OptionGroupManager } from "@/features/options";
 import { LanguageTabBar, Modal } from "@/global/components";
-import { Languages } from "@/global/i18n/locales";
+import { Languages, MenusKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { Globe, LayoutGrid, Plus, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useCategories, useMenus } from "../hooks/useMenus";
 import { CategorySection } from "./CategorySection";
 import { MenuLanguageSettings } from "./MenuLanguageSettings";
@@ -18,6 +19,7 @@ interface MenuEditorProps {
 }
 
 export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) {
+	const { t } = useTranslation();
 	const { data: menu } = useQuery(convexQuery(api.menus.getMenuById, { menuId }));
 	const { categories } = useCategories(menuId);
 	const { createCategory, deleteCategory, updateMenu } = useMenus(restaurantId);
@@ -68,33 +70,29 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 				<button
 					type="button"
 					onClick={() => setLangSettingsOpen((prev) => !prev)}
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
-					title="Configure languages"
+					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors"
+					title={t(MenusKeys.EDITOR_LANGUAGES_TITLE)}
 				>
 					<Globe
 						size={16}
-						style={{
-							color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)",
-						}}
+						style={{color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
 					/>
 					<span
 						className="text-xs"
-						style={{
-							color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)",
-						}}
+						style={{color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
 					>
-						Languages
+						{t(MenusKeys.EDITOR_LANGUAGES_LABEL)}
 					</span>
 				</button>
 				<button
 					type="button"
 					onClick={() => setOptionGroupsModalOpen(true)}
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
-					title="Manage option groups"
+					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors text-faint-foreground"
+					title={t(MenusKeys.EDITOR_OPTIONS_TITLE)}
 				>
-					<LayoutGrid size={16} style={{ color: "var(--text-muted)" }} />
-					<span className="text-xs" style={{ color: "var(--text-muted)" }}>
-						Options
+					<LayoutGrid size={16}  />
+					<span className="text-xs text-faint-foreground" >
+						{t(MenusKeys.EDITOR_OPTIONS_LABEL)}
 					</span>
 				</button>
 			</div>
@@ -102,34 +100,31 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 			<Modal
 				isOpen={optionGroupsModalOpen}
 				onClose={() => setOptionGroupsModalOpen(false)}
-				ariaLabel="Manage Option Groups"
+				ariaLabel={t(MenusKeys.EDITOR_OPTION_GROUPS_MODAL_ARIA)}
 				size="3xl"
 			>
 				<div
-					className="rounded-xl overflow-hidden"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="rounded-xl overflow-hidden bg-background border border-border"
+					
 				>
 					<div
-						className="flex items-center justify-between px-6 py-4"
-						style={{ borderBottom: "1px solid var(--border-default)" }}
+						className="flex items-center justify-between px-6 py-4 border-b border-border"
+						
 					>
 						<div>
-							<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-								Option Groups
+							<h2 className="text-lg font-semibold text-foreground" >
+								{t(MenusKeys.EDITOR_OPTION_GROUPS_HEADING)}
 							</h2>
-							<p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
-								Create reusable option groups and link them to menu items.
+							<p className="text-xs mt-1 text-muted-foreground" >
+								{t(MenusKeys.EDITOR_OPTION_GROUPS_DESCRIPTION)}
 							</p>
 						</div>
 						<button
 							type="button"
 							onClick={() => setOptionGroupsModalOpen(false)}
-							className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)]"
+							className="p-1.5 rounded-lg hover:bg-hover text-faint-foreground"
 						>
-							<X size={18} style={{ color: "var(--text-muted)" }} />
+							<X size={18}  />
 						</button>
 					</div>
 					<div className="p-6 max-h-[70vh] overflow-y-auto">
@@ -164,13 +159,9 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
-								placeholder="New category (e.g. Appetizers)"
-								className="flex-1 px-3 py-2 rounded-lg text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								placeholder={t(MenusKeys.EDITOR_NEW_CATEGORY_PLACEHOLDER)}
+								className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								
 							/>
 						)}
 					/>
@@ -178,15 +169,14 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 						type="submit"
 						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 					>
-						<Plus size={16} /> Add Category
+						<Plus size={16} /> {t(MenusKeys.EDITOR_ADD_CATEGORY)}
 					</button>
 				</form>
 			)}
 
 			{isTranslationMode && (
-				<p className="text-xs" style={{ color: "var(--text-muted)" }}>
-					Translating names and descriptions. Prices, images, and options are shared across all
-					languages.
+				<p className="text-xs text-faint-foreground" >
+					{t(MenusKeys.EDITOR_TRANSLATING_HINT)}
 				</p>
 			)}
 
@@ -200,8 +190,8 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 				/>
 			))}
 			{sorted.length === 0 && (
-				<p className="text-sm py-8 text-center" style={{ color: "var(--text-muted)" }}>
-					No categories yet. Add your first category above.
+				<p className="text-sm py-8 text-center text-faint-foreground" >
+					{t(MenusKeys.EDITOR_NO_CATEGORIES)}
 				</p>
 			)}
 		</div>

@@ -21,10 +21,10 @@ const ICONS: Record<ToastKind, typeof Bell> = {
 };
 
 const ACCENT_VAR: Record<ToastKind, string> = {
-	info: "var(--accent-info, var(--text-secondary))",
-	reservation: "var(--accent-primary, var(--text-primary))",
+	info: "var(--accent-info))",
+	reservation: "var(--accent-primary))",
 	success: "var(--accent-success)",
-	warning: "var(--accent-warning, var(--accent-primary))",
+	warning: "var(--accent-warning))",
 	error: "var(--accent-danger)",
 };
 
@@ -51,7 +51,9 @@ export function NotificationCenter() {
 	return (
 		<section
 			className="fixed z-50 flex flex-col gap-2"
-			style={{ bottom: "1rem", right: "1rem", maxWidth: "22rem" }}
+			style={{bottom: "1rem",
+				right: "1rem",
+				maxWidth: "22rem"}}
 			aria-label="Notifications"
 		>
 			{toasts.map((t) => {
@@ -59,18 +61,16 @@ export function NotificationCenter() {
 				return (
 					<output
 						key={t.id}
-						className="flex items-start gap-3 rounded-lg px-4 py-3 shadow-lg"
-						style={{
-							backgroundColor: "var(--bg-elevated, var(--bg-secondary))",
-							border: "1px solid var(--border-default)",
-							color: "var(--text-primary)",
-						}}
+						className="flex items-start gap-3 rounded-lg px-4 py-3 shadow-lg border border-border text-foreground"
+						style={{backgroundColor: "var(--bg-elevated))"}}
 					>
-						<Icon size={18} style={{ color: ACCENT_VAR[t.kind], flexShrink: 0, marginTop: 2 }} />
+						<Icon size={18} style={{color: ACCENT_VAR[t.kind],
+				flexShrink: 0,
+				marginTop: 2}} />
 						<div className="flex-1 min-w-0">
 							<p className="text-sm font-medium">{t.title}</p>
 							{t.body && (
-								<p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+								<p className="text-xs mt-1 text-muted-foreground" >
 									{t.body}
 								</p>
 							)}
@@ -78,7 +78,7 @@ export function NotificationCenter() {
 								<Link
 									to={t.actionHref}
 									className="text-xs font-medium mt-2 inline-block"
-									style={{ color: ACCENT_VAR[t.kind] }}
+									style={{color: ACCENT_VAR[t.kind]}}
 									onClick={() => dismissToast(t.id)}
 								>
 									{t.actionLabel ?? "View"}
@@ -88,8 +88,8 @@ export function NotificationCenter() {
 						<button
 							type="button"
 							onClick={() => dismissToast(t.id)}
-							className="p-1 rounded-md"
-							style={{ color: "var(--text-muted)" }}
+							className="p-1 rounded-md text-faint-foreground"
+							
 							aria-label="Dismiss"
 						>
 							<X size={14} />

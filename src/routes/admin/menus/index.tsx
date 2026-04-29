@@ -24,10 +24,10 @@ function MenusPage() {
 	return (
 		<div className="p-6 flex flex-col h-full">
 			<div className="mb-6">
-				<h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
+				<h1 className="text-2xl font-semibold text-foreground" >
 					Menus
 				</h1>
-				<p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+				<p className="mt-2 text-sm text-muted-foreground" >
 					Create and manage your restaurant&apos;s menus. Click a menu to edit its categories and
 					items.
 				</p>
@@ -65,7 +65,7 @@ function MenusContent({
 	if (isLoading) return <MenuListSkeleton />;
 	if (!restaurantId) {
 		return (
-			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+			<p className="text-sm text-faint-foreground" >
 				Please set up your restaurant first.
 			</p>
 		);

@@ -1,27 +1,27 @@
 import { Skeleton } from "@/global/components";
+import { OrdersKeys } from "@/global/i18n";
+import { useTranslation } from "react-i18next";
 
 const PLACEHOLDER_CARDS = 6;
 const PLACEHOLDER_ROWS_PER_CARD = 3;
 
 export function OrderDashboardSkeleton() {
+	const { t } = useTranslation();
 	return (
 		<div
 			className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-			aria-label="Loading orders"
+			aria-label={t(OrdersKeys.ARIA_LOADING)}
 			aria-busy="true"
 		>
 			{Array.from({ length: PLACEHOLDER_CARDS }, (_, cardIndex) => (
 				<div
 					key={`order-skeleton-${cardIndex}`}
-					className="rounded-xl overflow-hidden flex flex-col aspect-video"
-					style={{
-						border: "1px solid var(--border-default)",
-						backgroundColor: "var(--bg-secondary)",
-					}}
+					className="rounded-xl overflow-hidden flex flex-col aspect-video border border-border bg-muted"
+					
 				>
 					<div
-						className="px-4 py-3 flex items-start justify-between gap-2"
-						style={{ borderBottom: "1px solid var(--border-default)" }}
+						className="px-4 py-3 flex items-start justify-between gap-2 border-b border-border"
+						
 					>
 						<div className="flex items-center gap-2 min-w-0 flex-1">
 							<Skeleton rounded="full" className="h-5 w-16" />
@@ -38,7 +38,7 @@ export function OrderDashboardSkeleton() {
 							<Skeleton
 								key={`order-skeleton-${cardIndex}-row-${rowIndex}`}
 								className="h-4"
-								style={{ width: `${60 + ((cardIndex + rowIndex) % 4) * 10}%` }}
+								style={{width: `${60 + ((cardIndex + rowIndex) % 4) * 10}%`}}
 							/>
 						))}
 					</div>

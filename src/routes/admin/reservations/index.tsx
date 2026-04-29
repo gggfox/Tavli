@@ -32,10 +32,10 @@ function ReservationsPage() {
 		<div className="p-6 flex flex-col h-full">
 			<div className="mb-6 flex items-start justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
+					<h1 className="text-2xl font-semibold text-foreground" >
 						Reservations
 					</h1>
-					<p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+					<p className="mt-2 text-sm text-muted-foreground" >
 						Confirm, seat, and review reservations. Updates in real time.
 					</p>
 				</div>
@@ -77,7 +77,7 @@ function ReservationsPage() {
 					{restaurant ? (
 						<ReservationSettingsPanel restaurantId={restaurant._id} />
 					) : (
-						<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+						<p className="text-sm text-faint-foreground" >
 							Please set up your restaurant first.
 						</p>
 					)}
@@ -99,7 +99,7 @@ function ReservationsPage() {
 					{restaurant ? (
 						<TableLocksManager restaurantId={restaurant._id} />
 					) : (
-						<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+						<p className="text-sm text-faint-foreground" >
 							Please set up your restaurant first.
 						</p>
 					)}
@@ -116,7 +116,7 @@ function ReservationsContent({
 	if (isLoading) return <ReservationsDashboardSkeleton />;
 	if (!restaurantId) {
 		return (
-			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+			<p className="text-sm text-faint-foreground" >
 				Please set up your restaurant first.
 			</p>
 		);

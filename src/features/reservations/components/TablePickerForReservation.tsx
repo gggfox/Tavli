@@ -6,12 +6,20 @@
  * reservation's [startsAt, endsAt) window. Selection is multi-select so
  * large parties can occupy multiple tables.
  */
-import { unwrapQuery } from "@/global/utils";
+import { ReservationsKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Lock } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
+type WindowReservations = UnwrappedValue<
+	FunctionReturnType<typeof api.reservations.listForRange>
+>;
+type Locks = UnwrappedValue<FunctionReturnType<typeof api.tableLocks.listForRestaurant>>;
 
 interface TablePickerForReservationProps {
 	restaurantId: Id<"restaurants">;
@@ -24,6 +32,7 @@ interface TablePickerForReservationProps {
 }
 
 export function TablePickerForReservation(props: Readonly<TablePickerForReservationProps>) {
+	const { t } = useTranslation();
 	const { data: rawTables } = useQuery(
 		convexQuery(api.tables.getByRestaurant, { restaurantId: props.restaurantId })
 	);
@@ -33,23 +42,23 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 	// correctness. The picker just shows availability based on the same
 	// reservation list the dashboard already has -- if a conflicting
 	// reservation appears mid-edit, the confirm mutation will reject.
-	const { data: rawWindowReservations } = useQuery(
-		convexQuery(api.reservations.listForRange, {
+	const { data: windowReservations } = useQuery({
+		...convexQuery(api.reservations.listForRange, {
 			restaurantId: props.restaurantId,
 			fromMs: Math.min(props.startsAt - 24 * 60 * 60 * 1000, props.startsAt),
 			toMs: props.endsAt + 1,
-		})
-	);
-	const { data: windowReservations } = unwrapQuery(rawWindowReservations);
+		}),
+		select: unwrapResult<WindowReservations>,
+	});
 
-	const { data: rawLocks } = useQuery(
-		convexQuery(api.tableLocks.listForRestaurant, {
+	const { data: locks } = useQuery({
+		...convexQuery(api.tableLocks.listForRestaurant, {
 			restaurantId: props.restaurantId,
 			fromMs: props.startsAt,
 			toMs: props.endsAt,
-		})
-	);
-	const { data: locks } = unwrapQuery(rawLocks);
+		}),
+		select: unwrapResult<Locks>,
+	});
 
 	const isConflicting = (tableId: Id<"tables">) => {
 		const overlapping = (windowReservations ?? []).some((r) => {
@@ -86,13 +95,18 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 
 	return (
 		<div className="space-y-2">
-			<div className="flex items-center justify-between text-xs">
-				<span style={{ color: "var(--text-secondary)" }}>
-					Selected capacity: {totalSelectedCapacity} / {props.partySize}
+			<div className="flex items-center justify-between text-xs text-muted-foreground">
+				<span >
+					{t(ReservationsKeys.PICKER_SELECTED_CAPACITY, {
+						capacity: totalSelectedCapacity,
+						partySize: props.partySize,
+					})}
 				</span>
 				{totalSelectedCapacity < props.partySize && (
-					<span style={{ color: "var(--accent-warning)" }}>
-						Need {props.partySize - totalSelectedCapacity} more seats
+					<span className="text-warning" >
+						{t(ReservationsKeys.PICKER_NEED_MORE_SEATS, {
+							count: props.partySize - totalSelectedCapacity,
+						})}
 					</span>
 				)}
 			</div>
@@ -102,42 +116,43 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 					const locked = isLocked(table._id);
 					const selected = selectedSet.has(table._id);
 					const disabled = conflicting || locked;
+					const seatsLabel = t(ReservationsKeys.PICKER_SEATS, {
+						count: table.capacity ?? 0,
+					});
 					return (
 						<button
 							key={table._id}
 							type="button"
 							onClick={() => !disabled && toggle(table._id)}
 							className="flex flex-col items-start gap-1 rounded-lg px-3 py-2 text-left text-sm"
-							style={{
-								backgroundColor: selected
+							style={{backgroundColor: selected
 									? "var(--btn-primary-bg)"
 									: "var(--bg-secondary)",
-								color: selected ? "var(--btn-primary-fg, white)" : "var(--text-primary)",
-								border: `1px solid ${
+				color: selected ? "var(--btn-primary-fg, white)" : "var(--text-primary)",
+				border: `1px solid ${
 									selected ? "var(--btn-primary-bg)" : "var(--border-default)"
 								}`,
-								opacity: disabled ? 0.45 : 1,
-								cursor: disabled ? "not-allowed" : "pointer",
-							}}
+				opacity: disabled ? 0.45 : 1,
+				cursor: disabled ? "not-allowed" : "pointer"}}
 							aria-pressed={selected}
 							disabled={disabled}
 						>
 							<span className="flex items-center gap-1 font-medium">
-								Table {table.tableNumber}
+								{t(ReservationsKeys.TABLE_LABEL_PREFIX)} {table.tableNumber}
 								{locked && <Lock size={12} />}
 							</span>
 							<span className="text-xs opacity-80">
-								{table.capacity ?? "?"} seats
-								{conflicting && " · reserved"}
-								{locked && " · locked"}
+								{seatsLabel}
+								{conflicting && t(ReservationsKeys.PICKER_RESERVED_SUFFIX)}
+								{locked && t(ReservationsKeys.PICKER_LOCKED_SUFFIX)}
 								{table.label && ` · ${table.label}`}
 							</span>
 						</button>
 					);
 				})}
 				{sorted.length === 0 && (
-					<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-						No active tables.
+					<p className="text-sm text-faint-foreground" >
+						{t(ReservationsKeys.PICKER_NO_TABLES)}
 					</p>
 				)}
 			</div>

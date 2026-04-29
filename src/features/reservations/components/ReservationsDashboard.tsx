@@ -17,57 +17,46 @@ import {
 	StatusBadge,
 	StatusFilterChips,
 	type StatusFilterOption,
-	type StatusTone,
 	Surface,
 	toneByValue,
 } from "@/global/components";
+import { ReservationsKeys } from "@/global/i18n";
 import { useSearch } from "@tanstack/react-router";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { CalendarClock, Clock, Users } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useReservations } from "../hooks/useReservations";
 import {
+	getReservationStatusConfig,
+	RESERVATION_FALLBACK_TONE,
+	RESERVATION_STATUS_CONFIG,
+	type ReservationStatus,
+} from "../statusConfig";
+import {
 	ORDERED_RANGES,
-	RANGE_LABELS,
+	RANGE_LABEL_KEYS,
 	type ReservationRange,
 	formatTimeOnly,
 } from "../utils";
 import { ReservationDetailDrawer } from "./ReservationDetailDrawer";
 import { ReservationsDashboardSkeleton } from "./ReservationsDashboardSkeleton";
 
-type StatusValue =
-	| "pending"
-	| "confirmed"
-	| "seated"
-	| "completed"
-	| "cancelled"
-	| "no_show";
-
-const STATUS_CHIPS: ReadonlyArray<StatusFilterOption<StatusValue>> = [
-	{ value: "pending", label: "Pending", tone: "warning" },
-	{ value: "confirmed", label: "Confirmed", tone: "info" },
-	{ value: "seated", label: "Seated", tone: "success" },
-	{ value: "completed", label: "Completed", tone: "neutral" },
-	{ value: "cancelled", label: "Cancelled", tone: "danger" },
-	{ value: "no_show", label: "No show", tone: "warning" },
-];
-
-const FALLBACK_TONE: StatusTone = "neutral";
-
 interface ReservationsDashboardProps {
 	restaurantId: Id<"restaurants">;
 }
 
 export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDashboardProps>) {
+	const { t } = useTranslation();
 	const [range, setRange] = useState<ReservationRange>("today");
-	const [statusFilter, setStatusFilter] = useState<Set<StatusValue>>(new Set());
+	const [statusFilter, setStatusFilter] = useState<Set<ReservationStatus>>(new Set());
 	const [openId, setOpenId] = useState<Id<"reservations"> | null>(null);
 	const search = useSearch({ strict: false }) as { focus?: string };
 
 	const { reservations, isLoading, error, confirm, cancel, markSeated, markCompleted } =
 		useReservations(restaurantId, range);
 
-	const toggleStatus = useCallback((value: StatusValue) => {
+	const toggleStatus = useCallback((value: ReservationStatus) => {
 		setStatusFilter((prev) => {
 			const next = new Set(prev);
 			if (next.has(value)) next.delete(value);
@@ -78,7 +67,7 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 
 	const filtered = useMemo(() => {
 		if (statusFilter.size === 0) return reservations;
-		return reservations.filter((r) => statusFilter.has(r.status as StatusValue));
+		return reservations.filter((r) => statusFilter.has(r.status as ReservationStatus));
 	}, [reservations, statusFilter]);
 
 	const focusedReservation = useMemo(() => {
@@ -87,19 +76,36 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 		return reservations.find((r) => r._id === id) ?? null;
 	}, [openId, search.focus, reservations]);
 
+	const rangeOptions = useMemo(
+		() => ORDERED_RANGES.map((r) => ({ value: r, label: t(RANGE_LABEL_KEYS[r]) })),
+		[t]
+	);
+
+	const statusChipOptions = useMemo<
+		ReadonlyArray<StatusFilterOption<ReservationStatus>>
+	>(
+		() =>
+			RESERVATION_STATUS_CONFIG.map(({ value, labelKey, tone }) => ({
+				value,
+				label: t(labelKey),
+				tone,
+			})),
+		[t]
+	);
+
 	const header = (
 		<div className="flex flex-col gap-3">
 			<SegmentedControl
-				options={ORDERED_RANGES.map((r) => ({ value: r, label: RANGE_LABELS[r] }))}
+				options={rangeOptions}
 				value={range}
 				onChange={setRange}
-				ariaLabel="Filter reservations by date range"
+				ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
 			/>
 			<StatusFilterChips
-				options={STATUS_CHIPS}
+				options={statusChipOptions}
 				selected={statusFilter}
 				onToggle={toggleStatus}
-				ariaLabel="Filter reservations by status"
+				ariaLabel={t(ReservationsKeys.ARIA_FILTER_STATUS)}
 			/>
 		</div>
 	);
@@ -116,8 +122,8 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 			{filtered.length === 0 ? (
 				<EmptyState
 					icon={CalendarClock}
-					title="No reservations in this view."
-					description="Try a different range or status filter."
+					title={t(ReservationsKeys.EMPTY_TITLE)}
+					description={t(ReservationsKeys.EMPTY_DESCRIPTION)}
 					fill
 				/>
 			) : (
@@ -158,10 +164,14 @@ function ReservationRow({
 	reservation,
 	onClick,
 }: Readonly<{ reservation: Doc<"reservations">; onClick: () => void }>) {
-	const tone = toneByValue(STATUS_CHIPS, reservation.status as StatusValue) ?? FALLBACK_TONE;
+	const { t, i18n } = useTranslation();
+	const tone =
+		toneByValue(RESERVATION_STATUS_CONFIG, reservation.status as ReservationStatus) ??
+		RESERVATION_FALLBACK_TONE;
 	const palette = getStatusToneStyle(tone);
-	const chipMeta = STATUS_CHIPS.find((c) => c.value === reservation.status);
-	const label = chipMeta?.label ?? reservation.status;
+	const config = getReservationStatusConfig(reservation.status);
+	const label = config ? t(config.labelKey) : reservation.status;
+	const startTime = formatTimeOnly(reservation.startsAt, i18n.language);
 
 	return (
 		<Surface
@@ -174,28 +184,28 @@ function ReservationRow({
 			<div className="flex items-center gap-3 min-w-0">
 				<StatusBadge bgColor={palette.solidBg} textColor={palette.solidFg} label={label} />
 				<span
-					className="text-sm font-medium truncate"
-					style={{ color: "var(--text-primary)" }}
+					className="text-sm font-medium truncate text-foreground"
+					
 				>
 					{reservation.contact.name}
 				</span>
 				<span
-					className="text-xs flex items-center gap-1"
-					style={{ color: "var(--text-muted)" }}
+					className="text-xs flex items-center gap-1 text-faint-foreground"
+					
 				>
 					<Users size={12} /> {reservation.partySize}
 				</span>
 			</div>
 			<div className="flex items-center gap-3 shrink-0">
 				<span
-					className="text-xs flex items-center gap-1"
-					style={{ color: "var(--text-secondary)" }}
+					className="text-xs flex items-center gap-1 text-muted-foreground"
+					
 				>
 					<Clock size={12} />
-					{formatTimeOnly(reservation.startsAt)}
+					{startTime}
 				</span>
-				<span className="text-xs" style={{ color: "var(--text-muted)" }}>
-					{new Date(reservation.startsAt).toLocaleDateString()}
+				<span className="text-xs text-faint-foreground" >
+					{new Date(reservation.startsAt).toLocaleDateString(i18n.language)}
 				</span>
 			</div>
 		</Surface>

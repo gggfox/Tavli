@@ -2,23 +2,33 @@ import { AdminRestaurantsListSkeleton } from "@/features/restaurants/components/
 import { RestaurantSettingsForm } from "@/features/restaurants/components/RestaurantSettingsForm";
 import { StripeConnectSetup } from "@/features/restaurants/components/StripeConnectSetup";
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
+import { useCurrentUserRoles } from "@/features/users/hooks";
 import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global/components";
-import { sanitizeSlug, unwrapQuery, unwrapResult } from "@/global/utils";
+import { RestaurantsKeys } from "@/global/i18n";
+import { sanitizeSlug, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, LayoutGrid, Pencil, Plus, ToggleLeft, ToggleRight, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+type OrganizationsValue = UnwrappedValue<
+	FunctionReturnType<typeof api.organizations.getAllOrganizations>
+>;
+type RestaurantsValue = UnwrappedValue<FunctionReturnType<typeof api.restaurants.getAll>>;
 
 function useOrganizations() {
 	const { isAuthenticated } = useConvexAuth();
-	const { data: raw } = useQuery({
+	const { data = [] } = useQuery({
 		...convexQuery(api.organizations.getAllOrganizations, {}),
 		enabled: isAuthenticated,
+		select: unwrapResult<OrganizationsValue>,
 	});
-	return unwrapQuery(raw).data ?? [];
+	return data;
 }
 
 type ModalState =
@@ -28,25 +38,21 @@ type ModalState =
 	| { kind: "tables"; restaurant: Doc<"restaurants"> };
 
 export function AdminRestaurantsList() {
+	const { t } = useTranslation();
 	const { isAuthenticated } = useConvexAuth();
 	const organizations = useOrganizations();
 
-	const { data: rawUserRoles } = useQuery({
-		...convexQuery(api.admin.getCurrentUserRoles, {}),
-		enabled: isAuthenticated,
-	});
-	const userRoles: string[] = useMemo(() => unwrapQuery(rawUserRoles).data ?? [], [rawUserRoles]);
+	const { roles: userRoles } = useCurrentUserRoles();
 	const canManage = useMemo(
 		() => userRoles.includes("admin") || userRoles.includes("owner"),
 		[userRoles]
 	);
 
-	const { data: rawResult, isLoading } = useQuery({
+	const { data: restaurants = [], isLoading, error: queryError } = useQuery({
 		...convexQuery(api.restaurants.getAll, {}),
 		enabled: isAuthenticated,
+		select: unwrapResult<RestaurantsValue>,
 	});
-	const { data, error: queryError } = unwrapQuery(rawResult);
-	const restaurants = data ?? [];
 
 	const updateMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.update),
@@ -66,7 +72,9 @@ export function AdminRestaurantsList() {
 
 	return (
 		<div className="space-y-4">
-			{queryError && <InlineError message={queryError.message ?? "Failed to load restaurants."} />}
+			{queryError && (
+				<InlineError message={queryError.message ?? t(RestaurantsKeys.LIST_LOAD_FAILED)} />
+			)}
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 
 			{canManage && (
@@ -76,7 +84,7 @@ export function AdminRestaurantsList() {
 						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 					>
 						<Plus size={16} />
-						New Restaurant
+						{t(RestaurantsKeys.LIST_NEW_RESTAURANT)}
 					</button>
 				</div>
 			)}
@@ -85,27 +93,28 @@ export function AdminRestaurantsList() {
 				{restaurants.map((r) => (
 					<div
 						key={r._id}
-						className="flex items-center justify-between px-4 py-3 rounded-lg"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
+						
 					>
 						<div className="flex items-center gap-4">
 							<div>
-								<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+								<span className="text-sm font-medium text-foreground" >
 									{r.name}
 								</span>
-								<span className="text-xs ml-2" style={{ color: "var(--text-muted)" }}>
+								<span className="text-xs ml-2 text-faint-foreground" >
 									/{r.slug}
 								</span>
 							</div>
 							<StatusBadge
 								bgColor={r.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
 								textColor={r.isActive ? "white" : "var(--text-muted)"}
-								label={r.isActive ? "Active" : "Inactive"}
+								label={
+									r.isActive
+										? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
+										: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
+								}
 							/>
-							<span className="text-xs" style={{ color: "var(--text-muted)" }}>
+							<span className="text-xs text-faint-foreground" >
 								{r.currency}
 							</span>
 						</div>
@@ -113,33 +122,30 @@ export function AdminRestaurantsList() {
 							{canManage && (
 								<button
 									onClick={() => setModal({ kind: "edit", restaurant: r })}
-									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-									title="Edit restaurant"
+									className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+									title={t(RestaurantsKeys.LIST_EDIT)}
 								>
-									<Pencil size={16} style={{ color: "var(--text-secondary)" }} />
+									<Pencil size={16}  />
 								</button>
 							)}
 							{canManage && (
 								<button
 									onClick={() => setModal({ kind: "tables", restaurant: r })}
-									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-									title="Manage tables"
+									className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+									title={t(RestaurantsKeys.LIST_MANAGE_TABLES)}
 								>
-									<LayoutGrid size={16} style={{ color: "var(--text-secondary)" }} />
+									<LayoutGrid size={16}  />
 								</button>
 							)}
 							<a
 								href={`/r/${r.slug}/en/menu`}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[var(--bg-hover)]"
-								style={{
-									color: "var(--accent-primary)",
-									border: "1px solid var(--border-default)",
-								}}
+								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-hover text-accent border border-border"
+								
 							>
 								<ExternalLink size={14} />
-								Customer View
+								{t(RestaurantsKeys.LIST_CUSTOMER_VIEW)}
 							</a>
 							{canManage && (
 								<button
@@ -152,46 +158,51 @@ export function AdminRestaurantsList() {
 											);
 										} catch (err) {
 											setError(
-												err instanceof Error ? err.message : "Failed to toggle restaurant status"
+												err instanceof Error
+													? err.message
+													: t(RestaurantsKeys.LIST_TOGGLE_FAILED)
 											);
 										}
 									}}
-									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-									title={r.isActive ? "Deactivate" : "Activate"}
+									className="p-1.5 rounded-md hover:bg-hover text-success"
+									title={
+										r.isActive
+											? t(RestaurantsKeys.LIST_DEACTIVATE)
+											: t(RestaurantsKeys.LIST_ACTIVATE)
+									}
 								>
 									{r.isActive ? (
-										<ToggleRight size={20} style={{ color: "var(--accent-success)" }} />
+										<ToggleRight size={20}  />
 									) : (
-										<ToggleLeft size={20} style={{ color: "var(--text-muted)" }} />
+										<ToggleLeft size={20} className="text-faint-foreground"  />
 									)}
 								</button>
 							)}
 						</div>
 					</div>
 				))}
-				{restaurants.length === 0 && <EmptyState variant="inline" title="No restaurants found." />}
+				{restaurants.length === 0 && (
+					<EmptyState variant="inline" title={t(RestaurantsKeys.LIST_EMPTY)} />
+				)}
 			</div>
 
 			{/* Create Modal */}
 			<Modal
 				isOpen={modal.kind === "create"}
 				onClose={closeModal}
-				ariaLabel="Create Restaurant"
+				ariaLabel={t(RestaurantsKeys.MODAL_CREATE_ARIA)}
 				size="md"
 			>
 				<div
-					className="p-6 rounded-xl"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="p-6 rounded-xl bg-background border border-border"
+					
 				>
 					<div className="flex items-center justify-between mb-6">
-						<h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-							New Restaurant
+						<h2 className="text-xl font-semibold text-foreground" >
+							{t(RestaurantsKeys.MODAL_CREATE_HEADING)}
 						</h2>
-						<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]">
-							<X size={20} style={{ color: "var(--text-muted)" }} />
+						<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-hover text-faint-foreground">
+							<X size={20}  />
 						</button>
 					</div>
 					<CreateRestaurantForm onCreated={closeModal} onError={setError} />
@@ -200,20 +211,22 @@ export function AdminRestaurantsList() {
 
 			{/* Edit Modal */}
 			{modal.kind === "edit" && (
-				<Modal isOpen onClose={closeModal} ariaLabel="Edit Restaurant" size="lg">
+				<Modal
+					isOpen
+					onClose={closeModal}
+					ariaLabel={t(RestaurantsKeys.MODAL_EDIT_ARIA)}
+					size="lg"
+				>
 					<div
-						className="p-6 rounded-xl"
-						style={{
-							backgroundColor: "var(--bg-primary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="p-6 rounded-xl bg-background border border-border"
+						
 					>
 						<div className="flex items-center justify-between mb-6">
-							<h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-								Edit Restaurant
+							<h2 className="text-xl font-semibold text-foreground" >
+								{t(RestaurantsKeys.MODAL_EDIT_HEADING)}
 							</h2>
-							<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]">
-								<X size={20} style={{ color: "var(--text-muted)" }} />
+							<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-hover text-faint-foreground">
+								<X size={20}  />
 							</button>
 						</div>
 						<RestaurantSettingsForm
@@ -229,7 +242,9 @@ export function AdminRestaurantsList() {
 									);
 									closeModal();
 								} catch (err) {
-									setError(err instanceof Error ? err.message : "Failed to update restaurant");
+									setError(
+										err instanceof Error ? err.message : t(RestaurantsKeys.FORM_UPDATE_FAILED)
+									);
 								}
 							}}
 							onToggleActive={async (restaurantId) => {
@@ -237,7 +252,7 @@ export function AdminRestaurantsList() {
 									unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
 								} catch (err) {
 									setError(
-										err instanceof Error ? err.message : "Failed to toggle restaurant status"
+										err instanceof Error ? err.message : t(RestaurantsKeys.LIST_TOGGLE_FAILED)
 									);
 								}
 							}}
@@ -252,25 +267,27 @@ export function AdminRestaurantsList() {
 
 			{/* Tables Modal */}
 			{modal.kind === "tables" && (
-				<Modal isOpen onClose={closeModal} ariaLabel="Manage Tables" size="xl">
+				<Modal
+					isOpen
+					onClose={closeModal}
+					ariaLabel={t(RestaurantsKeys.MODAL_TABLES_ARIA)}
+					size="xl"
+				>
 					<div
-						className="p-6 rounded-xl"
-						style={{
-							backgroundColor: "var(--bg-primary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="p-6 rounded-xl bg-background border border-border"
+						
 					>
 						<div className="flex items-center justify-between mb-6">
 							<div>
-								<h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-									Tables
+								<h2 className="text-xl font-semibold text-foreground" >
+									{t(RestaurantsKeys.MODAL_TABLES_HEADING)}
 								</h2>
-								<p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+								<p className="text-sm mt-1 text-muted-foreground" >
 									{modal.restaurant.name}
 								</p>
 							</div>
-							<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]">
-								<X size={20} style={{ color: "var(--text-muted)" }} />
+							<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-hover text-faint-foreground">
+								<X size={20}  />
 							</button>
 						</div>
 						<TablesManager restaurantId={modal.restaurant._id} />
@@ -288,6 +305,7 @@ function CreateRestaurantForm({
 	onCreated: () => void;
 	onError: (msg: string) => void;
 }) {
+	const { t } = useTranslation();
 	const createMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.create),
 	});
@@ -307,7 +325,7 @@ function CreateRestaurantForm({
 				);
 				onCreated();
 			} catch (err) {
-				onError(err instanceof Error ? err.message : "Failed to create restaurant");
+				onError(err instanceof Error ? err.message : t(RestaurantsKeys.FORM_CREATE_FAILED));
 			}
 		},
 	});
@@ -326,7 +344,7 @@ function CreateRestaurantForm({
 				children={(field) => (
 					<TextInput
 						id="admin-rest-name"
-						label="Name"
+						label={t(RestaurantsKeys.FORM_NAME_LABEL)}
 						type="text"
 						value={field.state.value}
 						onChange={(e) => field.handleChange(e.target.value)}
@@ -340,7 +358,7 @@ function CreateRestaurantForm({
 				children={(field) => (
 					<TextInput
 						id="admin-rest-slug"
-						label="Slug"
+						label={t(RestaurantsKeys.FORM_SLUG_LABEL)}
 						type="text"
 						value={field.state.value}
 						onChange={(e) => field.handleChange(sanitizeSlug(e.target.value))}
@@ -355,21 +373,17 @@ function CreateRestaurantForm({
 					<div>
 						<label
 							htmlFor="admin-rest-currency"
-							className="block text-xs font-medium mb-1"
-							style={{ color: "var(--text-secondary)" }}
+							className="block text-xs font-medium mb-1 text-muted-foreground"
+							
 						>
-							Currency
+							{t(RestaurantsKeys.FORM_CURRENCY_LABEL)}
 						</label>
 						<select
 							id="admin-rest-currency"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
-							className="w-full px-3 py-2 rounded-lg text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							
 						>
 							<option value="USD">USD ($)</option>
 							<option value="EUR">EUR</option>
@@ -385,25 +399,21 @@ function CreateRestaurantForm({
 					<div>
 						<label
 							htmlFor="admin-rest-org"
-							className="block text-xs font-medium mb-1"
-							style={{ color: "var(--text-secondary)" }}
+							className="block text-xs font-medium mb-1 text-muted-foreground"
+							
 						>
-							Organization
+							{t(RestaurantsKeys.FORM_ORG_LABEL)}
 						</label>
 						<select
 							id="admin-rest-org"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							required
-							className="w-full px-3 py-2 rounded-lg text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							
 						>
 							<option value="" disabled>
-								Select an organization
+								{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
 							</option>
 							{organizations.map((org) => (
 								<option key={org._id} value={org._id}>
@@ -423,7 +433,7 @@ function CreateRestaurantForm({
 							disabled={isSubmitting}
 							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 						>
-							{isSubmitting ? "Creating..." : "Create"}
+							{isSubmitting ? t(RestaurantsKeys.FORM_CREATING) : t(RestaurantsKeys.FORM_CREATE)}
 						</button>
 					)}
 				/>

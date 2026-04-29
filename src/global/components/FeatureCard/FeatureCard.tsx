@@ -42,11 +42,8 @@ export function FeatureCard({
 
 function FeatureCardContainer({ children, className }: FeatureCardContainerProps) {
   return (
-    <div className={`p-4 rounded-xl ${className}`} 
-    style={{
-      backgroundColor: "var(--bg-secondary)",
-      border: "1px solid var(--border-default)",
-    }}>
+    <div className={`${`p-4 rounded-xl ${className}`} bg-muted border border-border`} 
+    >
       {children}
     </div>
   )
@@ -64,8 +61,8 @@ function FeatureCardIcon({ icon, iconColor }: FeatureCardIconProps) {
 function FeatureCardTitle({ title }: FeatureCardTitleProps) {
   return (
     <h3
-      className="font-medium mb-1"
-      style={{ color: "var(--text-primary)" }}
+      className="font-medium mb-1 text-foreground"
+      
     >
       {title}
     </h3>
@@ -74,7 +71,7 @@ function FeatureCardTitle({ title }: FeatureCardTitleProps) {
 
 function FeatureCardDescription({ description }: FeatureCardDescriptionProps) {
   return (
-    <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
+    <p className="text-sm text-soft-foreground" >
       {description}
     </p>
   )

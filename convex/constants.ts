@@ -41,6 +41,20 @@ export const USER_ROLES = {
 
 export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];
 
+/**
+ * Roles considered "staff" — gated behind the admin layout and
+ * staff-only sidebar entries. Derived from USER_ROLES so renaming a
+ * role flows through automatically.
+ */
+export const STAFF_ROLES = [
+	USER_ROLES.ADMIN,
+	USER_ROLES.OWNER,
+	USER_ROLES.MANAGER,
+	USER_ROLES.EMPLOYEE,
+] as const satisfies ReadonlyArray<UserRole>;
+
+export type StaffRole = (typeof STAFF_ROLES)[number];
+
 export const ORDER_STATUS = {
 	DRAFT: "draft",
 	SUBMITTED: "submitted",

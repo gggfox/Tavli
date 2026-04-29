@@ -1,10 +1,12 @@
 import { EmptyState } from "@/global/components";
+import { localizeName, OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { CartSkeleton } from "./CartSkeleton";
 
 interface CartProps {
@@ -22,6 +24,7 @@ export function Cart({
 	onRemoveItem,
 	isSubmitting,
 }: Readonly<CartProps>) {
+	const { t, i18n } = useTranslation();
 	const { data: orderData } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
 
 	if (!orderData) {
@@ -35,20 +38,20 @@ export function Cart({
 			<div className="flex-1 overflow-y-auto p-4 space-y-4">
 				<button
 					onClick={onBack}
-					className="flex items-center gap-1 text-sm"
-					style={{ color: "var(--btn-primary-bg)" }}
+					className="flex items-center gap-1 text-sm text-primary"
+					
 				>
-					<ArrowLeft size={16} /> Back to menu
+					<ArrowLeft size={16} /> {t(OrderingKeys.CART_BACK)}
 				</button>
 
-				<h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
-					Your Order
+				<h2 className="text-xl font-bold text-foreground" >
+					{t(OrderingKeys.CART_HEADING)}
 				</h2>
 
 				{items.length === 0 ? (
 					<EmptyState
 						variant="inline"
-						title="Your cart is empty. Add some items!"
+						title={t(OrderingKeys.CART_EMPTY)}
 						className="py-8"
 					/>
 				) : (
@@ -56,35 +59,37 @@ export function Cart({
 						{items.map((item) => (
 							<div
 								key={item._id}
-								className="flex items-start justify-between px-4 py-3 rounded-xl"
-								style={{ backgroundColor: "var(--bg-secondary)" }}
+								className="flex items-start justify-between px-4 py-3 rounded-xl bg-muted"
+								
 							>
 								<div className="flex-1">
 									<div className="flex items-center gap-2">
-										<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+										<span className="text-sm font-medium text-foreground" >
 											{item.quantity}x {item.menuItemName}
 										</span>
 									</div>
 									{item.selectedOptions.length > 0 && (
-										<div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-											{item.selectedOptions.map((o) => o.optionName).join(", ")}
+										<div className="text-xs mt-1 text-faint-foreground" >
+											{item.selectedOptions
+												.map((o) => localizeName(o.optionName, undefined, i18n.language))
+												.join(", ")}
 										</div>
 									)}
 									{item.specialInstructions && (
-										<div className="text-xs mt-0.5 italic" style={{ color: "var(--text-muted)" }}>
+										<div className="text-xs mt-0.5 italic text-faint-foreground" >
 											{item.specialInstructions}
 										</div>
 									)}
 								</div>
 								<div className="flex items-center gap-2">
-									<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+									<span className="text-sm font-medium text-foreground" >
 										${formatCents(item.lineTotal)}
 									</span>
 									<button
 										onClick={() => onRemoveItem(item._id)}
-										className="p-1 rounded hover:bg-[var(--bg-hover)]"
+										className="p-1 rounded hover:bg-hover text-destructive"
 									>
-										<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+										<Trash2 size={14}  />
 									</button>
 								</div>
 							</div>
@@ -95,14 +100,14 @@ export function Cart({
 
 			{items.length > 0 && (
 				<div
-					className="px-4 pb-4 pt-3 space-y-3"
-					style={{ borderTop: "1px solid var(--border-default)" }}
+					className="px-4 pb-4 pt-3 space-y-3 border-t border-border"
+					
 				>
 					<div
-						className="flex justify-between text-base font-semibold"
-						style={{ color: "var(--text-primary)" }}
+						className="flex justify-between text-base font-semibold text-foreground"
+						
 					>
-						<span>Total</span>
+						<span>{t(OrderingKeys.CART_TOTAL)}</span>
 						<span>${formatCents(totalAmount)}</span>
 					</div>
 					<button
@@ -110,7 +115,9 @@ export function Cart({
 						disabled={isSubmitting}
 						className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 					>
-						{isSubmitting ? "Placing Order..." : "Place Order"}
+						{isSubmitting
+							? t(OrderingKeys.CART_PLACING_ORDER)
+							: t(OrderingKeys.CART_PLACE_ORDER)}
 					</button>
 				</div>
 			)}

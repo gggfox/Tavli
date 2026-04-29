@@ -6,16 +6,24 @@ import {
 	Surface,
 	Tooltip,
 } from "@/global/components";
+import { CommonKeys, localizeName, PaymentsKeys } from "@/global/i18n";
 import { formatDate } from "@/global/utils/date";
 import { formatCents } from "@/global/utils/money";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { CreditCard, DollarSign, Hash, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { usePayments } from "../hooks/usePayments";
 import { PaymentsDashboardSkeleton } from "./PaymentsDashboardSkeleton";
 
+type LiveNameDescriptionTranslations = Record<string, { name?: string; description?: string }>;
+
+type PaymentsOrderItem = Doc<"orderItems"> & {
+	readonly menuItemTranslations?: LiveNameDescriptionTranslations;
+};
+
 type PaymentsOrder = Doc<"orders"> & {
-	readonly items: ReadonlyArray<Doc<"orderItems">>;
+	readonly items: ReadonlyArray<PaymentsOrderItem>;
 	readonly tableNumber: number;
 };
 
@@ -25,14 +33,16 @@ interface PaymentsDashboardProps {
 
 type TimeFrame = "today" | "week" | "month" | "quarter" | "year" | "all";
 
-const TIME_FRAME_OPTIONS: { key: TimeFrame; label: string }[] = [
-	{ key: "today", label: "Today" },
-	{ key: "week", label: "This Week" },
-	{ key: "month", label: "This Month" },
-	{ key: "quarter", label: "This Quarter" },
-	{ key: "year", label: "This Year" },
-	{ key: "all", label: "All Time" },
-];
+const TIME_FRAME_KEYS: Record<TimeFrame, string> = {
+	today: PaymentsKeys.TIME_FRAME_TODAY,
+	week: PaymentsKeys.TIME_FRAME_WEEK,
+	month: PaymentsKeys.TIME_FRAME_MONTH,
+	quarter: PaymentsKeys.TIME_FRAME_QUARTER,
+	year: PaymentsKeys.TIME_FRAME_YEAR,
+	all: PaymentsKeys.TIME_FRAME_ALL,
+};
+
+const TIME_FRAMES: TimeFrame[] = ["today", "week", "month", "quarter", "year", "all"];
 
 function getTimeFrameStart(frame: TimeFrame): number | undefined {
 	if (frame === "all") return undefined;
@@ -58,6 +68,7 @@ function getTimeFrameStart(frame: TimeFrame): number | undefined {
 }
 
 export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardProps>) {
+	const { t, i18n } = useTranslation();
 	const [timeFrame, setTimeFrame] = useState<TimeFrame>("today");
 
 	const from = useMemo(() => getTimeFrameStart(timeFrame), [timeFrame]);
@@ -77,12 +88,17 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 		[typedOrders]
 	);
 
+	const timeFrameOptions = useMemo(
+		() => TIME_FRAMES.map((value) => ({ value, label: t(TIME_FRAME_KEYS[value]) })),
+		[t]
+	);
+
 	const header = (
 		<SegmentedControl
-			options={TIME_FRAME_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+			options={timeFrameOptions}
 			value={timeFrame}
 			onChange={setTimeFrame}
-			ariaLabel="Filter payments by time frame"
+			ariaLabel={t(PaymentsKeys.ARIA_FILTER)}
 		/>
 	);
 
@@ -98,53 +114,57 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 				<SummaryCard
 					icon={<DollarSign size={20} />}
-					label="Total Revenue"
+					label={t(PaymentsKeys.SUMMARY_TOTAL_REVENUE)}
 					value={`$${formatCents(totalRevenue)}`}
 				/>
-				<SummaryCard icon={<Hash size={20} />} label="Orders" value={String(orderCount)} />
+				<SummaryCard
+					icon={<Hash size={20} />}
+					label={t(PaymentsKeys.SUMMARY_ORDERS)}
+					value={String(orderCount)}
+				/>
 				<SummaryCard
 					icon={<TrendingUp size={20} />}
-					label="Avg. Order"
+					label={t(PaymentsKeys.SUMMARY_AVG_ORDER)}
 					value={`$${formatCents(averageOrder)}`}
 				/>
 			</div>
 
 			{sorted.length === 0 ? (
-				<EmptyState icon={CreditCard} title="No payments in this period." fill />
+				<EmptyState icon={CreditCard} title={t(PaymentsKeys.EMPTY_NO_PAYMENTS)} fill />
 			) : (
 				<Surface tone="secondary" rounded="xl" className="overflow-hidden">
-					<table className="w-full text-sm">
+					<table className="w-full text-sm border-b border-border">
 						<thead>
-							<tr style={{ borderBottom: "1px solid var(--border-default)" }}>
+							<tr >
 								<th
-									className="text-left px-4 py-3 font-medium"
-									style={{ color: "var(--text-muted)" }}
+									className="text-left px-4 py-3 font-medium text-faint-foreground"
+									
 								>
-									Order ID
+									{t(PaymentsKeys.TABLE_ORDER_ID)}
 								</th>
 								<th
-									className="text-left px-4 py-3 font-medium"
-									style={{ color: "var(--text-muted)" }}
+									className="text-left px-4 py-3 font-medium text-faint-foreground"
+									
 								>
-									Date
+									{t(PaymentsKeys.TABLE_DATE)}
 								</th>
 								<th
-									className="text-left px-4 py-3 font-medium"
-									style={{ color: "var(--text-muted)" }}
+									className="text-left px-4 py-3 font-medium text-faint-foreground"
+									
 								>
-									Table
+									{t(PaymentsKeys.TABLE_TABLE)}
 								</th>
 								<th
-									className="text-left px-4 py-3 font-medium"
-									style={{ color: "var(--text-muted)" }}
+									className="text-left px-4 py-3 font-medium text-faint-foreground"
+									
 								>
-									Items
+									{t(PaymentsKeys.TABLE_ITEMS)}
 								</th>
 								<th
-									className="text-right px-4 py-3 font-medium"
-									style={{ color: "var(--text-muted)" }}
+									className="text-right px-4 py-3 font-medium text-faint-foreground"
+									
 								>
-									Total
+									{t(PaymentsKeys.TABLE_TOTAL)}
 								</th>
 							</tr>
 						</thead>
@@ -152,23 +172,23 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 							{sorted.map((order) => (
 								<tr
 									key={order._id}
-									style={{ borderBottom: "1px solid var(--border-default)" }}
+									className="border-b border-border" 
 								>
 									<td className="px-4 py-3">
 										<CopyableId id={order._id} />
 									</td>
-									<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
-										{order.paidAt ? formatDate(order.paidAt) : "—"}
+									<td className="px-4 py-3 text-foreground" >
+										{order.paidAt ? formatDate(order.paidAt, i18n.language) : "—"}
 									</td>
-									<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
-										Table {order.tableNumber}
+									<td className="px-4 py-3 text-foreground" >
+										{t(PaymentsKeys.TABLE_TABLE)} {order.tableNumber}
 									</td>
 									<td className="px-4 py-3">
 										<OrderItemsTooltipTrigger order={order} />
 									</td>
 									<td
-										className="px-4 py-3 text-right font-medium"
-										style={{ color: "var(--text-primary)" }}
+										className="px-4 py-3 text-right font-medium text-foreground"
+										
 									>
 										${formatCents(order.totalAmount)}
 									</td>
@@ -183,8 +203,9 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 }
 
 function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOrder }>) {
+	const { t, i18n } = useTranslation();
 	const itemCount = order.items.reduce((n, item) => n + item.quantity, 0);
-	const label = itemCount === 1 ? "1 item" : `${itemCount} items`;
+	const label = t(CommonKeys.ITEMS_COUNT, { count: itemCount });
 
 	return (
 		<Tooltip
@@ -194,22 +215,23 @@ function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOrder }>)
 						{order.items.map((item) => (
 							<li
 								key={item._id}
-								className="flex items-baseline justify-between gap-3"
-								style={{ color: "var(--text-primary)" }}
+								className="flex items-baseline justify-between gap-3 text-foreground"
+								
 							>
-								<span style={{ color: "var(--text-muted)" }}>{item.quantity}×</span>
-								<span className="flex-1">{item.menuItemName}</span>
+								<span className="text-faint-foreground" >{item.quantity}×</span>
+								<span className="flex-1">
+									{localizeName(item.menuItemName, item.menuItemTranslations, i18n.language)}
+								</span>
 							</li>
 						))}
 					</ul>
 					<div
-						className="flex items-baseline justify-between gap-3 pt-1.5 mt-1 font-medium"
-						style={{
-							borderTop: "1px solid var(--border-default)",
-							color: "var(--text-primary)",
-						}}
+						className="flex items-baseline justify-between gap-3 pt-1.5 mt-1 font-medium border-t border-border text-foreground"
+						
 					>
-						<span style={{ color: "var(--text-muted)" }}>Total</span>
+						<span className="text-faint-foreground" >
+							{t(PaymentsKeys.TOOLTIP_TOTAL)}
+						</span>
 						<span>${formatCents(order.totalAmount)}</span>
 					</div>
 				</div>
@@ -217,13 +239,10 @@ function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOrder }>)
 		>
 			<button
 				type="button"
-				className="bg-transparent p-0 cursor-help"
-				style={{
-					color: "var(--text-secondary)",
-					textDecoration: "underline",
-					textDecorationStyle: "dotted",
-					textUnderlineOffset: "3px",
-				}}
+				className="bg-transparent p-0 cursor-help text-muted-foreground"
+				style={{textDecoration: "underline",
+				textDecorationStyle: "dotted",
+				textUnderlineOffset: "3px"}}
 			>
 				{label}
 			</button>
@@ -240,15 +259,15 @@ function SummaryCard({
 		<Surface tone="secondary" rounded="xl" className="p-4 flex items-center gap-4">
 			<div
 				className="flex items-center justify-center w-10 h-10 rounded-lg"
-				style={{ backgroundColor: "var(--bg-tertiary, var(--bg-primary))" }}
+				style={{backgroundColor: "var(--bg-tertiary))"}}
 			>
-				<span style={{ color: "var(--text-muted)" }}>{icon}</span>
+				<span className="text-faint-foreground" >{icon}</span>
 			</div>
 			<div>
-				<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+				<p className="text-xs text-faint-foreground" >
 					{label}
 				</p>
-				<p className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
+				<p className="text-xl font-semibold text-foreground" >
 					{value}
 				</p>
 			</div>

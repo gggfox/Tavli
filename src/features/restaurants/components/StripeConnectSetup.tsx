@@ -1,3 +1,4 @@
+import { RestaurantsKeys } from "@/global/i18n";
 import { useConvexAction } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -11,6 +12,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
  * V2 account status shape returned by the getAccountStatus action.
@@ -42,6 +44,7 @@ interface StripeConnectSetupProps {
  * to ensure the UI reflects the latest state.
  */
 export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetupProps>) {
+	const { t } = useTranslation();
 	const createAccount = useConvexAction(api.stripe.createConnectAccount);
 	const createLink = useConvexAction(api.stripe.createAccountLink);
 	const checkStatus = useConvexAction(api.stripe.getAccountStatus);
@@ -61,11 +64,11 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 			const result = await checkStatus({ restaurantId });
 			setStatus(result);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to check payment status");
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.STRIPE_STATUS_FAILED));
 		} finally {
 			setLoading(false);
 		}
-	}, [checkStatus, restaurantId]);
+	}, [checkStatus, restaurantId, t]);
 
 	useEffect(() => {
 		refreshStatus();
@@ -103,7 +106,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 
 			globalThis.location.href = linkResult.url;
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to start Stripe setup");
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.STRIPE_SETUP_FAILED));
 			setActionLoading(false);
 		}
 	};
@@ -117,12 +120,14 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 			setConfirmingReset(false);
 			setResetNotice(
 				result.closedStripeAccount
-					? `Disconnected and closed Stripe account ${result.closedStripeAccountId}. You can now onboard a new account.`
-					: "Disconnected from Stripe. The previous account was left open — close it from your Stripe Dashboard if needed."
+					? t(RestaurantsKeys.STRIPE_DISCONNECTED_CLOSED, {
+							accountId: result.closedStripeAccountId,
+						})
+					: t(RestaurantsKeys.STRIPE_DISCONNECTED_LEFT_OPEN)
 			);
 			await refreshStatus();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to reset Stripe setup");
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.STRIPE_RESET_FAILED));
 		} finally {
 			setResetLoading(false);
 		}
@@ -131,16 +136,13 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 	if (loading) {
 		return (
 			<div
-				className="rounded-xl p-6"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-				}}
+				className="rounded-xl p-6 bg-muted border border-border"
+				
 			>
 				<div className="flex items-center gap-2">
-					<Loader2 size={16} className="animate-spin" style={{ color: "var(--text-muted)" }} />
-					<span className="text-sm" style={{ color: "var(--text-muted)" }}>
-						Checking payment setup...
+					<Loader2 size={16} className="animate-spin text-faint-foreground"  />
+					<span className="text-sm text-faint-foreground" >
+						{t(RestaurantsKeys.STRIPE_CHECKING)}
 					</span>
 				</div>
 			</div>
@@ -152,39 +154,33 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 
 	return (
 		<div
-			className="rounded-xl p-6 space-y-4"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="rounded-xl p-6 space-y-4 bg-muted border border-border"
+			
 		>
 			<div className="flex items-center justify-between">
 				<div>
-					<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-						Payment Setup
+					<h3 className="text-sm font-semibold text-foreground" >
+						{t(RestaurantsKeys.STRIPE_HEADING)}
 					</h3>
-					<p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-						Connect your Stripe account to accept customer payments.
+					<p className="text-xs mt-0.5 text-faint-foreground" >
+						{t(RestaurantsKeys.STRIPE_DESCRIPTION)}
 					</p>
 				</div>
 				{isFullySetUp && (
 					<span
-						className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
-						style={{ backgroundColor: "var(--accent-success)", color: "white" }}
+						className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success"
+						style={{color: "white"}}
 					>
 						<CheckCircle2 size={12} />
-						Payments Enabled
+						{t(RestaurantsKeys.STRIPE_PAYMENTS_ENABLED)}
 					</span>
 				)}
 			</div>
 
 			{error && (
 				<div
-					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-					style={{
-						backgroundColor: "rgba(220, 38, 38, 0.1)",
-						color: "var(--accent-danger, #dc2626)",
-					}}
+					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
+					style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
 				>
 					<AlertCircle size={14} />
 					{error}
@@ -193,11 +189,8 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 
 			{resetNotice && (
 				<div
-					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
-					style={{
-						backgroundColor: "rgba(34, 197, 94, 0.1)",
-						color: "var(--accent-success, #16a34a)",
-					}}
+					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-success"
+					style={{backgroundColor: "rgba(34, 197, 94, 0.1)"}}
 				>
 					<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
 					<span>{resetNotice}</span>
@@ -256,36 +249,30 @@ function StripeStatusSection({
 	onCancelReset,
 	onConfirmReset,
 }: Readonly<StripeStatusSectionProps>) {
+	const { t } = useTranslation();
 	if (isFullySetUp) {
 		return (
 			<div className="space-y-3">
-				<p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-					Your Stripe account is connected and ready to receive payments. Customers will be charged
-					when placing orders, and funds will be transferred to your Stripe account automatically.
+				<p className="text-xs text-muted-foreground" >
+					{t(RestaurantsKeys.STRIPE_FULLY_SETUP)}
 				</p>
 				<div className="flex flex-wrap items-center gap-2">
 					<a
 						href="https://dashboard.stripe.com/"
 						target="_blank"
 						rel="noopener noreferrer"
-						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover)"
-						style={{
-							color: "var(--accent-primary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-accent border border-border"
+						
 					>
 						<ExternalLink size={12} />
-						Stripe Dashboard
+						{t(RestaurantsKeys.STRIPE_DASHBOARD)}
 					</a>
 					<button
 						onClick={onRefresh}
-						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover)"
-						style={{
-							color: "var(--text-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-muted-foreground border border-border"
+						
 					>
-						Refresh Status
+						{t(RestaurantsKeys.STRIPE_REFRESH_STATUS)}
 					</button>
 					<ResetStripeControl
 						confirmingReset={confirmingReset}
@@ -306,46 +293,38 @@ function StripeStatusSection({
 				<div className="space-y-2">
 					{status.requirementsStatus && (
 						<div
-							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-							style={{
-								backgroundColor: "rgba(217, 119, 6, 0.1)",
-								color: "var(--accent-warning, #d97706)",
-							}}
+							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"
+							style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
 						>
 							<Clock size={14} />
 							<span>
-								Requirements status: <strong>{status.requirementsStatus}</strong>
+								{t(RestaurantsKeys.STRIPE_REQUIREMENTS_PREFIX)}{" "}
+								<strong>{status.requirementsStatus}</strong>
 								{status.requirementsStatus === "currently_due" &&
-									" — Action needed to complete onboarding."}
+									t(RestaurantsKeys.STRIPE_REQ_CURRENTLY_DUE)}
 								{status.requirementsStatus === "past_due" &&
-									" — Overdue requirements must be completed immediately."}
+									t(RestaurantsKeys.STRIPE_REQ_PAST_DUE)}
 							</span>
 						</div>
 					)}
 
 					{!status.readyToReceivePayments && (
 						<div
-							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-							style={{
-								backgroundColor: "rgba(217, 119, 6, 0.1)",
-								color: "var(--accent-warning, #d97706)",
-							}}
+							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"
+							style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
 						>
 							<AlertCircle size={14} />
-							Payment transfers are not yet active. Complete onboarding to enable payments.
+							{t(RestaurantsKeys.STRIPE_TRANSFERS_INACTIVE)}
 						</div>
 					)}
 
 					{status.readyToReceivePayments && !status.onboardingComplete && (
 						<div
-							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-							style={{
-								backgroundColor: "rgba(217, 119, 6, 0.1)",
-								color: "var(--accent-warning, #d97706)",
-							}}
+							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"
+							style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
 						>
 							<AlertCircle size={14} />
-							Payments are enabled but additional requirements need attention.
+							{t(RestaurantsKeys.STRIPE_PARTIAL_REQ)}
 						</div>
 					)}
 				</div>
@@ -359,24 +338,21 @@ function StripeStatusSection({
 						{actionLoading ? (
 							<>
 								<Loader2 size={14} className="animate-spin" />
-								Redirecting...
+								{t(RestaurantsKeys.STRIPE_REDIRECTING)}
 							</>
 						) : (
 							<>
 								<ExternalLink size={14} />
-								Continue Stripe Setup
+								{t(RestaurantsKeys.STRIPE_CONTINUE_SETUP)}
 							</>
 						)}
 					</button>
 					<button
 						onClick={onRefresh}
-						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover)"
-						style={{
-							color: "var(--text-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-muted-foreground border border-border"
+						
 					>
-						Refresh
+						{t(RestaurantsKeys.STRIPE_REFRESH)}
 					</button>
 					<ResetStripeControl
 						confirmingReset={confirmingReset}
@@ -392,9 +368,8 @@ function StripeStatusSection({
 
 	return (
 		<div className="space-y-3">
-			<p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-				Set up Stripe to accept credit card payments from customers. A 6% platform fee applies on
-				top of Stripe&apos;s standard processing fees.
+			<p className="text-xs text-muted-foreground" >
+				{t(RestaurantsKeys.STRIPE_INTRO)}
 			</p>
 			<button
 				onClick={onSetup}
@@ -404,10 +379,10 @@ function StripeStatusSection({
 				{actionLoading ? (
 					<>
 						<Loader2 size={14} className="animate-spin" />
-						Setting up...
+						{t(RestaurantsKeys.STRIPE_SETTING_UP)}
 					</>
 				) : (
-					"Onboard to collect payments"
+					t(RestaurantsKeys.STRIPE_ONBOARD)
 				)}
 			</button>
 		</div>
@@ -432,21 +407,19 @@ function ResetStripeControl({
 	onCancelReset: () => void;
 	onConfirmReset: () => void;
 }>) {
+	const { t } = useTranslation();
 	if (!confirmingReset) {
 		return (
 			<button
 				type="button"
 				onClick={onRequestReset}
 				disabled={resetLoading}
-				className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50"
-				style={{
-					color: "var(--accent-danger, #dc2626)",
-					border: "1px solid var(--border-default)",
-				}}
+				className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50 border border-border text-destructive"
+				
 				data-testid="stripe-reset-button"
 			>
 				<Trash2 size={12} />
-				Reset Stripe Setup
+				{t(RestaurantsKeys.STRIPE_RESET_BUTTON)}
 			</button>
 		);
 	}
@@ -454,42 +427,36 @@ function ResetStripeControl({
 	return (
 		<div
 			className="flex flex-col gap-2 w-full p-3 rounded-lg"
-			style={{
-				backgroundColor: "rgba(220, 38, 38, 0.08)",
-				border: "1px solid rgba(220, 38, 38, 0.3)",
-			}}
+			style={{backgroundColor: "rgba(220, 38, 38, 0.08)",
+				border: "1px solid rgba(220, 38, 38, 0.3)"}}
 			data-testid="stripe-reset-confirm"
 		>
-			<div className="flex items-start gap-2 text-xs" style={{ color: "var(--text-primary)" }}>
+			<div className="flex items-start gap-2 text-xs text-foreground" >
 				<AlertTriangle
 					size={14}
-					className="mt-0.5 shrink-0"
-					style={{ color: "var(--accent-danger, #dc2626)" }}
+					className="mt-0.5 shrink-0 text-destructive"
+					
 				/>
-				<span>
-					This closes the current Stripe account and unlinks it from this restaurant. You&apos;ll
-					need to complete onboarding again. Any existing products tied to this account will no
-					longer be chargeable.
-				</span>
+				<span>{t(RestaurantsKeys.STRIPE_RESET_WARNING)}</span>
 			</div>
 			<div className="flex items-center gap-2">
 				<button
 					type="button"
 					onClick={onConfirmReset}
 					disabled={resetLoading}
-					className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
-					style={{ backgroundColor: "var(--accent-danger, #dc2626)", color: "#fff" }}
+					className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 bg-destructive"
+					style={{color: "#fff"}}
 					data-testid="stripe-reset-confirm-button"
 				>
 					{resetLoading ? (
 						<>
 							<Loader2 size={12} className="animate-spin" />
-							Resetting...
+							{t(RestaurantsKeys.STRIPE_RESET_RESETTING)}
 						</>
 					) : (
 						<>
 							<Trash2 size={12} />
-							Confirm Reset
+							{t(RestaurantsKeys.STRIPE_RESET_CONFIRM)}
 						</>
 					)}
 				</button>
@@ -497,13 +464,10 @@ function ResetStripeControl({
 					type="button"
 					onClick={onCancelReset}
 					disabled={resetLoading}
-					className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50"
-					style={{
-						color: "var(--text-secondary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50 text-muted-foreground border border-border"
+					
 				>
-					Cancel
+					{t(RestaurantsKeys.STRIPE_RESET_CANCEL)}
 				</button>
 			</div>
 		</div>

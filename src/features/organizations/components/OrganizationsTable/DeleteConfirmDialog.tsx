@@ -43,38 +43,35 @@ export function DeleteConfirmDialog({
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} ariaLabel="Delete Organization" size="sm">
 			<div
-				className="rounded-xl p-6"
-				style={{
-					backgroundColor: "var(--bg-primary)",
-					border: "1px solid var(--border-default)",
-				}}
+				className="rounded-xl p-6 bg-background border border-border"
+				
 			>
 				<div className="flex items-center justify-between mb-4">
-					<div className="flex items-center gap-2">
-						<AlertTriangle size={20} style={{ color: "var(--accent-danger, #e53e3e)" }} />
-						<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+					<div className="flex items-center gap-2 text-destructive">
+						<AlertTriangle size={20}  />
+						<h2 className="text-lg font-semibold text-foreground" >
 							Delete Organization
 						</h2>
 					</div>
 					<button
 						onClick={onClose}
-						className="p-1 rounded-md transition-colors hover:opacity-80"
-						style={{ color: "var(--text-muted)" }}
+						className="p-1 rounded-md transition-colors hover:opacity-80 text-faint-foreground"
+						
 					>
 						<X size={18} />
 					</button>
 				</div>
 
-				<p className="text-sm mb-1" style={{ color: "var(--text-secondary)" }}>
+				<p className="text-sm mb-1 text-muted-foreground" >
 					Are you sure you want to delete{" "}
-					<strong style={{ color: "var(--text-primary)" }}>{organization?.name}</strong>?
+					<strong className="text-foreground" >{organization?.name}</strong>?
 				</p>
-				<p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+				<p className="text-xs mb-4 text-faint-foreground" >
 					This action cannot be undone.
 				</p>
 
 				{error && (
-					<p className="text-xs mb-4" style={{ color: "var(--accent-danger, #e53e3e)" }}>
+					<p className="text-xs mb-4 text-destructive" >
 						{error}
 					</p>
 				)}
@@ -83,12 +80,8 @@ export function DeleteConfirmDialog({
 					<button
 						type="button"
 						onClick={onClose}
-						className="px-4 py-2 rounded-lg text-sm transition-colors"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							color: "var(--text-primary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="px-4 py-2 rounded-lg text-sm transition-colors bg-muted text-foreground border border-border"
+						
 					>
 						Cancel
 					</button>
@@ -96,11 +89,8 @@ export function DeleteConfirmDialog({
 						type="button"
 						onClick={handleDelete}
 						disabled={deleteMutation.isPending}
-						className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-						style={{
-							backgroundColor: "var(--accent-danger, #e53e3e)",
-							color: "#fff",
-						}}
+						className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 bg-destructive"
+						style={{color: "#fff"}}
 					>
 						{deleteMutation.isPending ? "Deleting..." : "Delete"}
 					</button>

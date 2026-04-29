@@ -1,5 +1,5 @@
 import { SidebarKeys } from "@/global/i18n";
-import { Config } from "@/global/utils/config";
+import { config } from "@/global/utils/config";
 import { useTranslation } from "react-i18next";
 import { SidebarAuthSection } from "./SidebarAuthSection";
 import { SidebarUserSection } from "./SidebarUserSection";
@@ -9,7 +9,7 @@ export function AuthSections() {
 	const { t } = useTranslation();
 	const { isExpanded } = useToggleSidebar();
 
-	const hasAuth = Config.instance.hasAuthConfig;
+	const hasAuth = config.hasAuthConfig;
 	return (
 		<>
 			{hasAuth && (
@@ -20,8 +20,8 @@ export function AuthSections() {
 			)}
 
 			{!hasAuth && isExpanded && (
-				<div className="p-3" style={{ borderTop: "1px solid var(--border-default)" }}>
-					<span className="text-xs" style={{ color: "var(--text-muted)" }}>
+				<div className="p-3 border-t border-border" >
+					<span className="text-xs text-faint-foreground" >
 						{t(SidebarKeys.AUTH_NOT_CONFIGURED)}
 					</span>
 				</div>

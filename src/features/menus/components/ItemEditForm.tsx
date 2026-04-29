@@ -1,6 +1,8 @@
+import { MenusKeys } from "@/global/i18n";
 import { formatCents, parseDollarsToCents } from "@/global/utils/money";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
+import { useTranslation } from "react-i18next";
 
 interface ItemEditFormProps {
 	itemId: Id<"menuItems">;
@@ -24,6 +26,7 @@ export function ItemEditForm({
 	onSave,
 	onClose,
 }: Readonly<ItemEditFormProps>) {
+	const { t } = useTranslation();
 	const form = useForm({
 		defaultValues: {
 			name: currentName,
@@ -50,16 +53,11 @@ export function ItemEditForm({
 				e.stopPropagation();
 				form.handleSubmit();
 			}}
-			className="px-3 py-3 rounded-b-lg space-y-2"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				borderLeft: "1px solid var(--border-default)",
-				borderRight: "1px solid var(--border-default)",
-				borderBottom: "1px solid var(--border-default)",
-			}}
+			className="px-3 py-3 rounded-b-lg space-y-2 bg-muted border-l border-border border-r border-border border-b border-border"
+			
 		>
-			<span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-				Edit Item
+			<span className="text-xs font-medium text-faint-foreground" >
+				{t(MenusKeys.FORM_EDIT_HEADER)}
 			</span>
 			<div className="flex gap-2">
 				<form.Field
@@ -70,14 +68,10 @@ export function ItemEditForm({
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
-							placeholder="Item name"
+							placeholder={t(MenusKeys.FORM_ITEM_NAME_PLACEHOLDER)}
 							required
-							className="flex-1 px-2 py-1.5 rounded text-sm"
-							style={{
-								backgroundColor: "var(--bg-primary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="flex-1 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+							
 						/>
 					)}
 				/>
@@ -89,16 +83,12 @@ export function ItemEditForm({
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
-							placeholder="Price"
+							placeholder={t(MenusKeys.FORM_ITEM_PRICE_PLACEHOLDER)}
 							required
 							step="0.01"
 							min="0"
-							className="w-24 px-2 py-1.5 rounded text-sm"
-							style={{
-								backgroundColor: "var(--bg-primary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-24 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+							
 						/>
 					)}
 				/>
@@ -111,13 +101,9 @@ export function ItemEditForm({
 						value={field.state.value}
 						onChange={(e) => field.handleChange(e.target.value)}
 						onBlur={field.handleBlur}
-						placeholder="Description (optional)"
-						className="w-full px-2 py-1.5 rounded text-sm"
-						style={{
-							backgroundColor: "var(--bg-primary)",
-							border: "1px solid var(--border-default)",
-							color: "var(--text-primary)",
-						}}
+						placeholder={t(MenusKeys.FORM_ITEM_DESCRIPTION_PLACEHOLDER)}
+						className="w-full px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+						
 					/>
 				)}
 			/>
@@ -130,7 +116,7 @@ export function ItemEditForm({
 							disabled={isSubmitting}
 							className="px-3 py-1.5 rounded text-sm font-medium hover-btn-primary disabled:opacity-50"
 						>
-							{isSubmitting ? "Saving..." : "Save"}
+							{isSubmitting ? t(MenusKeys.FORM_SAVING) : t(MenusKeys.FORM_SAVE)}
 						</button>
 					)}
 				/>
@@ -139,7 +125,7 @@ export function ItemEditForm({
 					onClick={onClose}
 					className="px-3 py-1.5 rounded text-sm hover-btn-secondary"
 				>
-					Cancel
+					{t(MenusKeys.FORM_CANCEL)}
 				</button>
 			</div>
 		</form>

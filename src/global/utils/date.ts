@@ -17,11 +17,11 @@ export function isValidTimestamp(timestamp: number | undefined): timestamp is nu
 	return timestamp !== undefined && timestamp >= MIN_VALID_TIMESTAMP;
 }
 
-export function formatDate(timestamp: number | undefined): string {
+export function formatDate(timestamp: number | undefined, locale: string = "en-US"): string {
 	if (!isValidTimestamp(timestamp)) {
 		return "—";
 	}
-	return new Intl.DateTimeFormat("en-US", {
+	return new Intl.DateTimeFormat(locale, {
 		year: "numeric",
 		month: "short",
 		day: "numeric",

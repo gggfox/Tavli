@@ -38,31 +38,24 @@ export function OptionCard<T extends { _id: string; name: string; icon?: string 
 					handleKeyDown(e, globalIndex);
 				}
 			}}
-			className="relative flex flex-col items-center justify-start gap-2 px-4 pt-4 rounded-lg border-2 transition-all text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 h-36 w-28"
-			style={{
-				backgroundColor: isSelected ? "rgba(59, 130, 246, 0.1)" : "var(--bg-primary)",
-				borderColor: isSelected ? "rgb(59, 130, 246)" : "var(--border-default)",
-				color: "var(--text-primary)",
-			}}
+			className="relative flex flex-col items-center justify-start gap-2 px-4 pt-4 rounded-lg border-2 transition-all text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 h-36 w-28 text-foreground"
+			style={{backgroundColor: isSelected ? "rgba(59, 130, 246, 0.1)" : "var(--bg-primary)",
+				borderColor: isSelected ? "rgb(59, 130, 246)" : "var(--border-default)"}}
 			aria-label={`${opt.name.replaceAll("_", " ")}${isSelected ? " (selected)" : ""}`}
 		>
 			{/* Icon */}
 			<div
 				className="flex items-center justify-center w-10 h-10 rounded-lg"
-				style={{
-					backgroundColor: isSelected ? "rgba(59, 130, 246, 0.2)" : "var(--bg-tertiary)",
-				}}
+				style={{backgroundColor: isSelected ? "rgba(59, 130, 246, 0.2)" : "var(--bg-tertiary)"}}
 			>
 				<Icon
 					size={20}
 					className="w-5 h-5 shrink-0"
-					style={{
-						color: isSelected ? "rgb(59, 130, 246)" : "var(--text-secondary)",
-						width: "20px",
-						height: "20px",
-						minWidth: "20px",
-						minHeight: "20px",
-					}}
+					style={{color: isSelected ? "rgb(59, 130, 246)" : "var(--text-secondary)",
+				width: "20px",
+				height: "20px",
+				minWidth: "20px",
+				minHeight: "20px"}}
 				/>
 			</div>
 
@@ -75,7 +68,7 @@ export function OptionCard<T extends { _id: string; name: string; icon?: string 
 					<CheckCircle2
 						size={16}
 						className="text-blue-500"
-						style={{ color: "rgb(59, 130, 246)" }}
+						style={{color: "rgb(59, 130, 246)"}}
 					/>
 				</div>
 			)}

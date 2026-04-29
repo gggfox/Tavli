@@ -1,12 +1,10 @@
+import { useCurrentUserRoles } from "@/features/users/hooks";
 import { EmptyState, LoadingState } from "@/global/components";
-import { unwrapQuery } from "@/global/utils";
-import { convexQuery, useConvexAuth } from "@convex-dev/react-query";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet, useMatches } from "@tanstack/react-router";
-import { api } from "convex/_generated/api";
+import { STAFF_ROLES } from "convex/constants";
 import { useMemo } from "react";
 
-const STAFF_ROLES = new Set(["admin", "owner", "manager", "employee"]);
+const STAFF_ROLE_SET = new Set<string>(STAFF_ROLES);
 
 export const Route = createFileRoute("/admin")({
 	component: AdminLayout,
@@ -15,16 +13,10 @@ export const Route = createFileRoute("/admin")({
 function AdminLayout() {
 	const matches = useMatches();
 	const isExactAdminRoute = matches.length > 0 && matches.at(-1)?.pathname === "/admin";
-	const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+	const { roles: userRoles, isLoading, isAuthenticated } = useCurrentUserRoles();
+	const isStaff = useMemo(() => userRoles.some((role) => STAFF_ROLE_SET.has(role)), [userRoles]);
 
-	const { data: rawUserRoles, isLoading: isRolesLoading } = useQuery({
-		...convexQuery(api.admin.getCurrentUserRoles, {}),
-		enabled: isAuthenticated,
-	});
-	const userRoles: string[] = useMemo(() => unwrapQuery(rawUserRoles).data ?? [], [rawUserRoles]);
-	const isStaff = useMemo(() => userRoles.some((role) => STAFF_ROLES.has(role)), [userRoles]);
-
-	if (isAuthLoading || (isAuthenticated && isRolesLoading)) {
+	if (isLoading) {
 		return <LoadingState />;
 	}
 
@@ -42,16 +34,16 @@ function AdminLayout() {
 
 	return (
 		<div
-			className="h-full flex flex-col overflow-hidden"
-			style={{ backgroundColor: "var(--bg-primary)" }}
+			className="h-full flex flex-col overflow-hidden bg-background"
+			
 		>
 			{isExactAdminRoute ? (
 				<div className="p-6 flex flex-col h-full overflow-hidden">
 					<div className="mb-6">
-						<h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
+						<h1 className="text-2xl font-semibold text-foreground" >
 							Admin Dashboard
 						</h1>
-						<p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+						<p className="mt-2 text-sm text-muted-foreground" >
 							Manage users and system settings.
 						</p>
 					</div>

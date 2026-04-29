@@ -1,12 +1,10 @@
+import { useCurrentUserRoles } from "@/features/users/hooks";
 import { SidebarKeys } from "@/global/i18n";
-import { unwrapQuery } from "@/global/utils";
-import { convexQuery, useConvexAuth } from "@convex-dev/react-query";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "convex/_generated/api";
+import { STAFF_ROLES, USER_ROLES } from "convex/constants";
 import { useMemo } from "react";
 import { sidebarItems } from "../constants";
 
-const STAFF_ROLES = ["admin", "owner", "manager", "employee"];
+const STAFF_ROLE_SET = new Set<string>(STAFF_ROLES);
 
 const STAFF_SIDEBAR_KEYS = new Set<string>([
 	SidebarKeys.RESTAURANTS,
@@ -17,17 +15,11 @@ const STAFF_SIDEBAR_KEYS = new Set<string>([
 	SidebarKeys.RESERVATIONS,
 ]);
 
-export function useSidebarItems({ isMounted }: { isMounted: boolean }) {
-	const { isAuthenticated } = useConvexAuth();
+export function useSidebarItems() {
+	const { roles: userRoles } = useCurrentUserRoles();
 
-	const { data: rawUserRoles } = useQuery({
-		...convexQuery(api.admin.getCurrentUserRoles, {}),
-		enabled: isMounted && isAuthenticated,
-	});
-	const userRoles: string[] = useMemo(() => unwrapQuery(rawUserRoles).data ?? [], [rawUserRoles]);
-
-	const isAdmin = useMemo(() => userRoles.includes("admin"), [userRoles]);
-	const isStaff = useMemo(() => userRoles.some((role) => STAFF_ROLES.includes(role)), [userRoles]);
+	const isAdmin = useMemo(() => userRoles.includes(USER_ROLES.ADMIN), [userRoles]);
+	const isStaff = useMemo(() => userRoles.some((role) => STAFF_ROLE_SET.has(role)), [userRoles]);
 
 	const filteredSidebarItems = useMemo(() => {
 		return sidebarItems.filter((item) => {

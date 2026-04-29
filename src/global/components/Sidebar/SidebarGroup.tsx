@@ -22,7 +22,7 @@ export type SidebarGroupProps = Readonly<{
 const navLinkClass = (isActive: boolean, isExpanded: boolean) =>
 	`flex items-center gap-3 rounded-lg transition-all duration-200 ${
 		isExpanded ? "px-3 py-2" : "px-2 py-2 justify-center"
-	} ${isActive ? "bg-[var(--bg-active)]" : "hover:bg-[var(--bg-hover)]"}`;
+	} ${isActive ? "bg-active" : "hover:bg-hover"}`;
 
 export function SidebarGroup({ isExpanded, main, subLinks }: SidebarGroupProps) {
 	const { t } = useTranslation();
@@ -36,13 +36,13 @@ export function SidebarGroup({ isExpanded, main, subLinks }: SidebarGroupProps) 
 
 	return (
 		<div className="relative">
-			<div className="flex items-center pr-1">
+			<div className="flex items-center pr-1 text-muted-foreground">
 				<Link
 					to={main.to}
 					className={`flex-1 ${navLinkClass(false, isExpanded)}`}
 					activeProps={{ className: `flex-1 ${navLinkClass(true, isExpanded)}` }}
 					title={isExpanded ? undefined : t(main.translationKey)}
-					style={{ color: "var(--text-secondary)" }}
+					
 				>
 					{main.icon}
 					{isExpanded && <span className="text-sm truncate">{t(main.translationKey)}</span>}
@@ -59,8 +59,8 @@ export function SidebarGroup({ isExpanded, main, subLinks }: SidebarGroupProps) 
 
 			{groupExpanded && isExpanded && (
 				<div
-					className="ml-4 mt-1 space-y-0.5 pl-2"
-					style={{ borderLeft: "1px solid var(--border-default)" }}
+					className="ml-4 mt-1 space-y-0.5 pl-2 border-l border-border"
+					
 				>
 					{subLinks.map((child) => (
 						<SidebarLink

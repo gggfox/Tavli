@@ -28,11 +28,11 @@ export function Storefront() {
 	if (!products || products.length === 0) {
 		return (
 			<div className="max-w-2xl mx-auto px-4 py-16 text-center">
-				<ShoppingBag size={48} className="mx-auto mb-4" style={{ color: "var(--text-muted)" }} />
-				<h2 className="text-xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+				<ShoppingBag size={48} className="mx-auto mb-4 text-faint-foreground"  />
+				<h2 className="text-xl font-bold mb-2 text-foreground" >
 					No products available
 				</h2>
-				<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+				<p className="text-sm text-faint-foreground" >
 					Check back soon — new products are being added.
 				</p>
 			</div>
@@ -59,10 +59,10 @@ export function Storefront() {
 		<div className="max-w-5xl mx-auto px-4 py-8 space-y-10">
 			{/* Storefront header */}
 			<div className="text-center space-y-2">
-				<h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+				<h1 className="text-2xl font-bold text-foreground" >
 					Storefront
 				</h1>
-				<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+				<p className="text-sm text-faint-foreground" >
 					Browse products from our restaurants and make a purchase.
 				</p>
 			</div>
@@ -70,9 +70,9 @@ export function Storefront() {
 			{/* Products grouped by restaurant */}
 			{Object.entries(grouped).map(([restaurantId, group]) => (
 				<section key={restaurantId} className="space-y-4">
-					<div className="flex items-center gap-2">
-						<Store size={20} style={{ color: "var(--accent-primary)" }} />
-						<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+					<div className="flex items-center gap-2 text-accent">
+						<Store size={20}  />
+						<h2 className="text-lg font-semibold text-foreground" >
 							{group.restaurantName}
 						</h2>
 					</div>
@@ -128,29 +128,26 @@ function ProductCard({
 
 	return (
 		<div
-			className="rounded-xl p-5 flex flex-col justify-between"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="rounded-xl p-5 flex flex-col justify-between bg-muted border border-border"
+			
 		>
 			<div className="space-y-2 mb-4">
-				<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+				<h3 className="text-sm font-semibold text-foreground" >
 					{product.name}
 				</h3>
 				{product.description && (
-					<p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+					<p className="text-xs leading-relaxed text-faint-foreground" >
 						{product.description}
 					</p>
 				)}
 			</div>
 
 			<div className="flex items-center justify-between">
-				<span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+				<span className="text-lg font-bold text-foreground" >
 					${formatCents(product.priceInCents)}
 					<span
-						className="text-xs font-normal uppercase ml-1"
-						style={{ color: "var(--text-muted)" }}
+						className="text-xs font-normal uppercase ml-1 text-faint-foreground"
+						
 					>
 						{product.currency}
 					</span>

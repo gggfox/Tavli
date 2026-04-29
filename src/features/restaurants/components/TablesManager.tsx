@@ -1,4 +1,5 @@
 import { InlineError, TextInput } from "@/global/components";
+import { RestaurantsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -7,12 +8,14 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { Check, Pencil, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface TablesManagerProps {
 	restaurantId: Id<"restaurants">;
 }
 
 export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
+	const { t } = useTranslation();
 	const { data: tables } = useQuery(convexQuery(api.tables.getByRestaurant, { restaurantId }));
 
 	const createTable = useMutation({
@@ -51,7 +54,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				);
 				createForm.reset();
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Failed to create table");
+				setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_CREATE_FAILED));
 			}
 		},
 	});
@@ -75,7 +78,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				);
 				cancelEdit();
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Failed to update table");
+				setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_UPDATE_FAILED));
 			}
 		},
 	});
@@ -105,7 +108,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		try {
 			unwrapResult(await toggleActive.mutateAsync({ tableId }));
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to toggle table status");
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_TOGGLE_FAILED));
 		}
 	};
 
@@ -114,7 +117,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		try {
 			unwrapResult(await removeTable.mutateAsync({ tableId }));
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to remove table");
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_REMOVE_FAILED));
 		}
 	};
 
@@ -137,7 +140,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					children={(field) => (
 						<TextInput
 							id="new-table-number"
-							label="Table #"
+							label={t(RestaurantsKeys.TABLES_NUMBER_LABEL)}
 							type="number"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
@@ -153,12 +156,12 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					children={(field) => (
 						<TextInput
 							id="new-table-label"
-							label="Label (optional)"
+							label={t(RestaurantsKeys.TABLES_LABEL_LABEL)}
 							type="text"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
-							placeholder="Patio 3"
+							placeholder={t(RestaurantsKeys.TABLES_LABEL_PLACEHOLDER)}
 							className="w-40"
 						/>
 					)}
@@ -168,7 +171,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					children={(field) => (
 						<TextInput
 							id="new-table-capacity"
-							label="Seats"
+							label={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
 							type="number"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
@@ -184,7 +187,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 				>
 					<Plus size={16} />
-					Add
+					{t(RestaurantsKeys.TABLES_ADD)}
 				</button>
 			</form>
 
@@ -192,11 +195,8 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				{sorted.map((table) => (
 					<div
 						key={table._id}
-						className="flex items-center justify-between px-4 py-3 rounded-lg"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
+						
 					>
 						{editingId === table._id ? (
 							<div className="flex items-center gap-3 flex-1 mr-3">
@@ -221,7 +221,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 											value={field.state.value}
 											onChange={(e) => field.handleChange(e.target.value)}
 											onBlur={field.handleBlur}
-											placeholder="Label"
+											placeholder={t(RestaurantsKeys.TABLES_LABEL_LABEL)}
 											className="w-32"
 										/>
 									)}
@@ -234,7 +234,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 											value={field.state.value}
 											onChange={(e) => field.handleChange(e.target.value)}
 											onBlur={field.handleBlur}
-											placeholder="Seats"
+											placeholder={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
 											min={1}
 											className="w-20"
 										/>
@@ -242,34 +242,34 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 								/>
 								<button
 									onClick={() => editForm.handleSubmit()}
-									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-									title="Save"
+									className="p-1.5 rounded-md hover:bg-hover text-success"
+									title={t(RestaurantsKeys.TABLES_SAVE)}
 								>
-									<Check size={16} style={{ color: "var(--accent-success)" }} />
+									<Check size={16}  />
 								</button>
 								<button
 									onClick={cancelEdit}
-									className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-									title="Cancel"
+									className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+									title={t(RestaurantsKeys.TABLES_CANCEL)}
 								>
-									<X size={16} style={{ color: "var(--text-muted)" }} />
+									<X size={16}  />
 								</button>
 							</div>
 						) : (
 							<>
 								<div className="flex items-center gap-3">
-									<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-										Table {table.tableNumber}
+									<span className="text-sm font-medium text-foreground" >
+										{t(RestaurantsKeys.TABLES_TABLE_LABEL, { number: table.tableNumber })}
 									</span>
 									{table.label && (
-										<span className="text-xs" style={{ color: "var(--text-muted)" }}>
+										<span className="text-xs text-faint-foreground" >
 											{table.label}
 										</span>
 									)}
-									<span className="text-xs" style={{ color: "var(--text-muted)" }}>
+									<span className="text-xs text-faint-foreground" >
 										{table.capacity !== undefined
-											? `${table.capacity} seats`
-											: "seats not set"}
+											? t(RestaurantsKeys.TABLES_SEATS_FORMAT, { count: table.capacity })
+											: t(RestaurantsKeys.TABLES_SEATS_NOT_SET)}
 									</span>
 								</div>
 								<div className="flex items-center gap-2">
@@ -277,28 +277,32 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 										onClick={() =>
 											startEdit(table._id, table.tableNumber, table.label, table.capacity)
 										}
-										className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-										title="Edit table"
+										className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+										title={t(RestaurantsKeys.TABLES_EDIT_TITLE)}
 									>
-										<Pencil size={16} style={{ color: "var(--text-secondary)" }} />
+										<Pencil size={16}  />
 									</button>
 									<button
 										onClick={() => handleToggleActive(table._id)}
-										className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-										title={table.isActive ? "Deactivate" : "Activate"}
+										className="p-1.5 rounded-md hover:bg-hover text-success"
+										title={
+											table.isActive
+												? t(RestaurantsKeys.TABLES_DEACTIVATE_TITLE)
+												: t(RestaurantsKeys.TABLES_ACTIVATE_TITLE)
+										}
 									>
 										{table.isActive ? (
-											<ToggleRight size={20} style={{ color: "var(--accent-success)" }} />
+											<ToggleRight size={20}  />
 										) : (
-											<ToggleLeft size={20} style={{ color: "var(--text-muted)" }} />
+											<ToggleLeft size={20} className="text-faint-foreground"  />
 										)}
 									</button>
 									<button
 										onClick={() => handleRemove(table._id)}
-										className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-										title="Remove table"
+										className="p-1.5 rounded-md hover:bg-hover text-destructive"
+										title={t(RestaurantsKeys.TABLES_REMOVE_TITLE)}
 									>
-										<Trash2 size={16} style={{ color: "var(--accent-danger)" }} />
+										<Trash2 size={16}  />
 									</button>
 								</div>
 							</>
@@ -306,8 +310,8 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					</div>
 				))}
 				{sorted.length === 0 && (
-					<p className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>
-						No tables yet. Add your first table above.
+					<p className="text-sm py-4 text-center text-faint-foreground" >
+						{t(RestaurantsKeys.TABLES_EMPTY)}
 					</p>
 				)}
 			</div>

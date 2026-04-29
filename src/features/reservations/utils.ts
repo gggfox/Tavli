@@ -102,13 +102,20 @@ export function rangeBounds(range: ReservationRange, now: Date = new Date()): Ra
 	return { fromMs: start.getTime(), toMs: end.getTime() };
 }
 
-export const RANGE_LABELS: Record<ReservationRange, string> = {
-	today: "Today",
-	week: "This week",
-	month: "This month",
-	quarter: "This quarter",
-	year: "This year",
-	all: "All time",
+import { ReservationsKeys } from "@/global/i18n";
+
+/**
+ * Translation keys for each named range. Resolve via `t(RANGE_LABEL_KEYS[range])`
+ * at the call site -- keeping `t` out of this module preserves it as a pure
+ * data file reusable from non-React callers.
+ */
+export const RANGE_LABEL_KEYS: Record<ReservationRange, string> = {
+	today: ReservationsKeys.RANGE_TODAY,
+	week: ReservationsKeys.RANGE_WEEK,
+	month: ReservationsKeys.RANGE_MONTH,
+	quarter: ReservationsKeys.RANGE_QUARTER,
+	year: ReservationsKeys.RANGE_YEAR,
+	all: ReservationsKeys.RANGE_ALL,
 };
 
 export const ORDERED_RANGES: ReservationRange[] = [
@@ -121,11 +128,11 @@ export const ORDERED_RANGES: ReservationRange[] = [
 ];
 
 /**
- * Format a UTC ms timestamp in the browser's locale. Used everywhere the UI
- * renders reservation times.
+ * Format a UTC ms timestamp in the given locale (or the browser's locale
+ * when undefined). Used everywhere the UI renders reservation times.
  */
-export function formatReservationTime(ms: number): string {
-	return new Date(ms).toLocaleString(undefined, {
+export function formatReservationTime(ms: number, locale?: string): string {
+	return new Date(ms).toLocaleString(locale, {
 		weekday: "short",
 		month: "short",
 		day: "numeric",
@@ -134,8 +141,8 @@ export function formatReservationTime(ms: number): string {
 	});
 }
 
-export function formatTimeOnly(ms: number): string {
-	return new Date(ms).toLocaleTimeString(undefined, {
+export function formatTimeOnly(ms: number, locale?: string): string {
+	return new Date(ms).toLocaleTimeString(locale, {
 		hour: "numeric",
 		minute: "2-digit",
 	});

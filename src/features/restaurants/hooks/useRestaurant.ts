@@ -1,13 +1,14 @@
-import { unwrapQuery, unwrapResult } from "@/global/utils";
+import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
-import type { Id } from "convex/_generated/dataModel";
+import type { Doc, Id } from "convex/_generated/dataModel";
 
 export function useRestaurant() {
-	const { data: rawResult, isLoading } = useQuery(convexQuery(api.restaurants.getAll, {}));
-
-	const restaurants = unwrapQuery(rawResult).data ?? [];
+	const { data: restaurants = [], isLoading } = useQuery({
+		...convexQuery(api.restaurants.getAll, {}),
+		select: unwrapResult<Doc<"restaurants">[]>,
+	});
 
 	const restaurant = restaurants[0] ?? null;
 

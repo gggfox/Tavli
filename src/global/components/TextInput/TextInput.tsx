@@ -14,8 +14,8 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function T
 			{label && (
 				<label
 					htmlFor={id}
-					className="block text-xs font-medium mb-1"
-					style={{ color: "var(--text-secondary)" }}
+					className="block text-xs font-medium mb-1 text-muted-foreground"
+					
 				>
 					{label}
 				</label>
@@ -23,16 +23,12 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function T
 			<input
 				ref={ref}
 				id={id}
-				className={`w-full px-3 py-2 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-(--btn-primary-bg) focus:border-transparent ${className}`}
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
+				className={`${`w-full px-3 py-2 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-(--btn-primary-bg) focus:border-transparent ${className}`} bg-muted border border-border text-foreground`}
+			 
 				{...props}
 			/>
 			{error && (
-				<p className="text-xs mt-1" style={{ color: "var(--accent-danger, #e53e3e)" }}>
+				<p className="text-xs mt-1 text-destructive" >
 					{error}
 				</p>
 			)}

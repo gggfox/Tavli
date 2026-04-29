@@ -15,12 +15,36 @@ export const Theme = {
 } as const;
 
 export type Theme = (typeof Theme)[keyof typeof Theme];
-export const LOCAL_STORAGE_THEME_KEY = "fierro-viejo-theme";
+export const LOCAL_STORAGE_THEME_KEY = "tavli-theme";
+const LEGACY_LOCAL_STORAGE_THEME_KEY = "fierro-viejo-theme";
+
+/**
+ * Reads the saved theme value from localStorage. If only the legacy
+ * `fierro-viejo-theme` key is present (pre-rename), copies it into the
+ * canonical `tavli-theme` key once and removes the legacy entry.
+ */
+function readSavedTheme(): string | null {
+	const storage = globalThis.window?.localStorage;
+	if (!storage) return null;
+	try {
+		const saved = storage.getItem(LOCAL_STORAGE_THEME_KEY);
+		if (saved !== null) return saved;
+		const legacy = storage.getItem(LEGACY_LOCAL_STORAGE_THEME_KEY);
+		if (legacy !== null) {
+			storage.setItem(LOCAL_STORAGE_THEME_KEY, legacy);
+			storage.removeItem(LEGACY_LOCAL_STORAGE_THEME_KEY);
+			return legacy;
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
 
 function readInitialTheme(): Theme {
 	if (globalThis.window === undefined) return Theme.LIGHT;
 	try {
-		const saved = globalThis.window.localStorage.getItem(LOCAL_STORAGE_THEME_KEY);
+		const saved = readSavedTheme();
 		if (saved === Theme.DARK) return Theme.DARK;
 		if (saved === Theme.LIGHT) return Theme.LIGHT;
 		// No stored preference — fall back to OS color scheme on first visit.
@@ -44,7 +68,8 @@ function persistTheme(theme: Theme): void {
 
 export interface RemoteThemeSettings {
 	theme: Theme | null;
-	updateTheme: (theme: Theme) => Promise<{ success: boolean; error?: unknown }>;
+	/** Throws if the remote update fails. */
+	updateTheme: (theme: Theme) => Promise<unknown>;
 }
 
 const RemoteThemeContext = createContext<RemoteThemeSettings | null>(null);
@@ -82,8 +107,11 @@ export function useTheme() {
 				saveTheme(newTheme);
 				return;
 			}
-			const result = await remote.updateTheme(newTheme);
-			if (!result.success) {
+			try {
+				await remote.updateTheme(newTheme);
+			} catch {
+				// Remote sync failed — fall back to a local-only update so the UI
+				// still reflects the user's choice on this device.
 				saveTheme(newTheme);
 			}
 		},

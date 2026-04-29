@@ -1,5 +1,7 @@
 import { Skeleton } from "@/global/components";
+import { OrderingKeys, OrdersKeys } from "@/global/i18n";
 import { ArrowLeft } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const ROWS = 4;
 
@@ -8,10 +10,11 @@ interface SessionOrdersListSkeletonProps {
 }
 
 export function SessionOrdersListSkeleton({ onBackToMenu }: SessionOrdersListSkeletonProps = {}) {
+	const { t } = useTranslation();
 	return (
 		<div
 			className="flex flex-col h-full overflow-y-auto"
-			aria-label="Loading orders"
+			aria-label={t(OrdersKeys.ARIA_LOADING)}
 			aria-busy="true"
 		>
 			<div className="max-w-lg w-full mx-auto p-4 pb-8 flex flex-col gap-3">
@@ -19,10 +22,10 @@ export function SessionOrdersListSkeleton({ onBackToMenu }: SessionOrdersListSke
 					{onBackToMenu ? (
 						<button
 							onClick={onBackToMenu}
-							className="p-2 rounded-lg hover:bg-(--bg-hover)"
-							aria-label="Back to menu"
+							className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
+							aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
 						>
-							<ArrowLeft size={20} style={{ color: "var(--text-primary)" }} />
+							<ArrowLeft size={20}  />
 						</button>
 					) : (
 						<Skeleton rounded="lg" className="h-9 w-9" />
@@ -36,7 +39,7 @@ export function SessionOrdersListSkeleton({ onBackToMenu }: SessionOrdersListSke
 							<Skeleton rounded="full" className="w-10 h-10 shrink-0" />
 							<div className="flex-1 space-y-2">
 								<div className="flex items-center justify-between gap-2">
-									<Skeleton className="h-4" style={{ width: `${50 + (i % 3) * 12}%` }} />
+									<Skeleton className="h-4" style={{width: `${50 + (i % 3) * 12}%`}} />
 									<Skeleton className="h-4 w-16" />
 								</div>
 								<div className="flex items-center justify-between gap-2">

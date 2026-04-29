@@ -17,11 +17,11 @@ export const columns = [
 		cell: (info) => {
 			const value = info.getValue();
 			return value ? (
-				<span className="text-sm" style={{ color: "var(--text-primary)" }}>
+				<span className="text-sm text-foreground" >
 					{value}
 				</span>
 			) : (
-				<span style={{ color: "var(--text-muted)" }}>—</span>
+				<span className="text-faint-foreground" >—</span>
 			);
 		},
 	}),
@@ -48,11 +48,11 @@ export const columns = [
 		cell: (info) => {
 			const value = info.getValue();
 			return value ? (
-				<span className="font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
+				<span className="font-mono text-xs text-muted-foreground" >
 					{value.slice(0, 12)}...
 				</span>
 			) : (
-				<span style={{ color: "var(--text-muted)" }}>—</span>
+				<span className="text-faint-foreground" >—</span>
 			);
 		},
 	}),
@@ -64,7 +64,7 @@ export const columns = [
 				info.row.original._creationTime
 			);
 			return (
-				<span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+				<span className="text-sm text-muted-foreground" >
 					{formatDate(displayTimestamp)}
 				</span>
 			);
@@ -78,7 +78,7 @@ export const columns = [
 				info.row.original._creationTime
 			);
 			return (
-				<span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+				<span className="text-sm text-muted-foreground" >
 					{formatDate(displayTimestamp)}
 				</span>
 			);

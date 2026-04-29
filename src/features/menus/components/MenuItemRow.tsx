@@ -1,7 +1,9 @@
+import { MenusKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Eye, EyeOff, ImagePlus, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ItemEditForm } from "./ItemEditForm";
 import { ItemImageManager } from "./ItemImageManager";
 import { ItemOptionGroupPicker } from "./ItemOptionGroupPicker";
@@ -29,6 +31,7 @@ export function MenuItemRow({
 	onRemove,
 	onToggleAvailability,
 }: Readonly<MenuItemRowProps>) {
+	const { t } = useTranslation();
 	const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
 
 	const togglePanel = (panel: ExpandedPanel) => {
@@ -38,13 +41,9 @@ export function MenuItemRow({
 	return (
 		<div className="space-y-0">
 			<div
-				className="flex items-center justify-between px-3 py-2 rounded-lg"
-				style={{
-					backgroundColor: "var(--bg-primary)",
-					border: "1px solid var(--border-default)",
-					borderBottomLeftRadius: expandedPanel ? 0 : undefined,
-					borderBottomRightRadius: expandedPanel ? 0 : undefined,
-				}}
+				className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border"
+				style={{borderBottomLeftRadius: expandedPanel ? 0 : undefined,
+				borderBottomRightRadius: expandedPanel ? 0 : undefined}}
 			>
 				<div className="flex items-center gap-2.5">
 					{item.imageUrl ? (
@@ -55,30 +54,25 @@ export function MenuItemRow({
 						/>
 					) : (
 						<div
-							className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px dashed var(--border-default)",
-							}}
+							className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center bg-muted border border-border"
+							
 						>
-							<ImagePlus size={14} style={{ color: "var(--text-muted)" }} />
+							<ImagePlus size={14} className="text-faint-foreground"  />
 						</div>
 					)}
 					<div>
 						<span
 							className="text-sm font-medium"
-							style={{
-								color: item.isAvailable ? "var(--text-primary)" : "var(--text-muted)",
-							}}
+							style={{color: item.isAvailable ? "var(--text-primary)" : "var(--text-muted)"}}
 						>
 							{item.name}
 						</span>
 						{!item.isAvailable && item.unavailableReason && (
-							<span className="text-xs ml-2" style={{ color: "var(--accent-warning)" }}>
+							<span className="text-xs ml-2 text-warning" >
 								({item.unavailableReason})
 							</span>
 						)}
-						<span className="text-sm ml-3" style={{ color: "var(--text-secondary)" }}>
+						<span className="text-sm ml-3 text-muted-foreground" >
 							${formatCents(item.basePrice)}
 						</span>
 					</div>
@@ -86,57 +80,57 @@ export function MenuItemRow({
 				<div className="flex items-center gap-1">
 					<button
 						onClick={() => togglePanel("edit")}
-						className="p-1 rounded hover:bg-[var(--bg-hover)]"
-						title="Edit item"
+						className="p-1 rounded hover:bg-hover"
+						title={t(MenusKeys.ITEM_EDIT_TITLE)}
 					>
 						<Pencil
 							size={14}
-							style={{
-								color: expandedPanel === "edit" ? "var(--btn-primary-bg)" : "var(--text-muted)",
-							}}
+							style={{color: expandedPanel === "edit" ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
 						/>
 					</button>
 					<button
 						onClick={() => togglePanel("image")}
-						className="p-1 rounded hover:bg-[var(--bg-hover)]"
-						title="Manage image"
+						className="p-1 rounded hover:bg-hover"
+						title={t(MenusKeys.ITEM_IMAGE_TITLE)}
 					>
 						<ImagePlus
 							size={16}
-							style={{
-								color:
+							style={{color:
 									expandedPanel === "image"
 										? "var(--btn-primary-bg)"
 										: item.imageUrl
 											? "var(--accent-success)"
-											: "var(--text-muted)",
-							}}
+											: "var(--text-muted)"}}
 						/>
 					</button>
 					<button
 						onClick={() => togglePanel("options")}
-						className="p-1 rounded hover:bg-[var(--bg-hover)]"
-						title="Link option groups"
+						className="p-1 rounded hover:bg-hover"
+						title={t(MenusKeys.ITEM_OPTIONS_TITLE)}
 					>
 						<ItemOptionsIcon itemId={item._id} isActive={expandedPanel === "options"} />
 					</button>
 					<button
 						onClick={() => onToggleAvailability({ itemId: item._id })}
-						className="p-1 rounded hover:bg-[var(--bg-hover)]"
-						title={item.isAvailable ? "Mark unavailable" : "Mark available"}
+						className="p-1 rounded hover:bg-hover text-success"
+						title={
+							item.isAvailable
+								? t(MenusKeys.ITEM_MARK_UNAVAILABLE)
+								: t(MenusKeys.ITEM_MARK_AVAILABLE)
+						}
 					>
 						{item.isAvailable ? (
-							<Eye size={16} style={{ color: "var(--accent-success)" }} />
+							<Eye size={16}  />
 						) : (
-							<EyeOff size={16} style={{ color: "var(--text-muted)" }} />
+							<EyeOff size={16} className="text-faint-foreground"  />
 						)}
 					</button>
 					<button
 						onClick={() => onRemove({ itemId: item._id })}
-						className="p-1 rounded hover:bg-[var(--bg-hover)]"
-						title="Remove item"
+						className="p-1 rounded hover:bg-hover text-destructive"
+						title={t(MenusKeys.ITEM_REMOVE_TITLE)}
 					>
-						<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+						<Trash2 size={14}  />
 					</button>
 				</div>
 			</div>

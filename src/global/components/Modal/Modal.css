@@ -1,0 +1,55 @@
+/*
+ * Modal styles for native <dialog> top-layer rendering.
+ *
+ * The dialog itself acts as the centered modal "card"; ::backdrop is the
+ * dim overlay rendered behind it. Both fade with the phase machine driven
+ * by the data-state attribute (preparing | open | closing).
+ *
+ * No portal, no manual focus trap, no custom backdrop div: showModal()
+ * provides top-layer + ::backdrop + focus trap + Escape (via cancel event).
+ */
+
+.tavli-modal {
+	position: fixed;
+	inset: 0;
+	margin: auto;
+	max-height: calc(100vh - 2rem);
+	max-height: calc(100dvh - 2rem);
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text-primary);
+	overflow: visible;
+	opacity: 0;
+	transform: scale(0.96);
+	transition:
+		opacity 200ms ease,
+		transform 200ms ease;
+}
+
+.tavli-modal[data-state="open"] {
+	opacity: 1;
+	transform: scale(1);
+}
+
+.tavli-modal::backdrop {
+	background-color: rgba(0, 0, 0, 0);
+	transition: background-color 200ms ease;
+}
+
+.tavli-modal[data-state="open"]::backdrop {
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.tavli-modal-content {
+	max-height: calc(100vh - 2rem);
+	max-height: calc(100dvh - 2rem);
+	overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tavli-modal,
+	.tavli-modal::backdrop {
+		transition-duration: 0ms !important;
+	}
+}

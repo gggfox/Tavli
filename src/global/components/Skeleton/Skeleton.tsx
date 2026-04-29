@@ -48,8 +48,8 @@ interface SkeletonCardProps {
 
 /**
  * Skeleton.Card — `<Surface>` with skeleton-friendly defaults. Replaces
- * the hand-rolled `<div className="rounded-xl" style={{ backgroundColor:
- * "var(--bg-secondary)", border: "1px solid var(--border-default)" }}>`
+ * the hand-rolled `<div className="rounded-xl border border-border" style={{backgroundColor:
+ * "var(--bg-secondary)"}}>`
  * pattern found inside every per-feature skeleton.
  */
 function SkeletonCard({

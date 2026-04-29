@@ -1,7 +1,4 @@
 import {
-	type FocusEvent,
-	type MouseEvent,
-	type Ref,
 	cloneElement,
 	isValidElement,
 	useCallback,
@@ -10,8 +7,11 @@ import {
 	useLayoutEffect,
 	useRef,
 	useState,
+	type FocusEvent,
+	type MouseEvent,
+	type Ref,
 } from "react";
-import { createPortal } from "react-dom";
+import { useClickOutside, useEscapeKey } from "@/global/hooks";
 import type { TooltipPlacement, TooltipProps } from "./types";
 
 const VIEWPORT_GUTTER = 8;
@@ -25,6 +25,7 @@ interface ResolvedPosition {
 
 type TriggerProps = {
 	ref?: Ref<HTMLElement>;
+	title?: string;
 	"aria-describedby"?: string;
 	onMouseEnter?: (event: MouseEvent<HTMLElement>) => void;
 	onMouseLeave?: (event: MouseEvent<HTMLElement>) => void;
@@ -33,16 +34,19 @@ type TriggerProps = {
 };
 
 /**
- * Lightweight headless tooltip.
+ * Lightweight tooltip built on the HTML `popover="manual"` API.
  *
- * Wraps a single trigger element and renders themed content into a portal
- * on `document.body` so it can escape clipping containers (e.g. tables with
- * `overflow: hidden`). Opens on hover and focus, closes on Escape, blur,
- * mouseleave, or pointerdown outside both the trigger and tooltip.
+ * `popover="manual"` provides:
+ *   - Top-layer rendering (no portal, no z-index wrangling).
+ *   - Automatic show/hide via `showPopover()` / `hidePopover()`.
  *
- * Positioning prefers the requested `placement` and flips to the opposite
- * side if the tooltip would clip the viewport. Horizontal position is
- * centered on the trigger and clamped to a small viewport gutter.
+ * Browser support: Chrome 114+, Safari 17+, Firefox 125+. On older
+ * browsers the tooltip falls back to the native `title` attribute on the
+ * trigger element.
+ *
+ * Positioning is calculated manually (preferred placement; flips on
+ * viewport overflow). The hook owns hover/focus → show, mouseleave/blur →
+ * hide, Escape → hide, pointerdown-outside → hide.
  */
 export function Tooltip({
 	children,
@@ -51,6 +55,7 @@ export function Tooltip({
 	delay = 100,
 	disabled = false,
 }: Readonly<TooltipProps>) {
+	const [supportsPopover, setSupportsPopover] = useState(false);
 	const [isOpen, setIsOpen] = useState(false);
 	const [position, setPosition] = useState<ResolvedPosition | null>(null);
 
@@ -58,6 +63,12 @@ export function Tooltip({
 	const tooltipRef = useRef<HTMLDivElement | null>(null);
 	const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const tooltipId = useId();
+
+	useEffect(() => {
+		setSupportsPopover(
+			typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype
+		);
+	}, []);
 
 	const clearShowTimer = useCallback(() => {
 		if (showTimerRef.current !== null) {
@@ -67,14 +78,14 @@ export function Tooltip({
 	}, []);
 
 	const show = useCallback(() => {
-		if (disabled) return;
+		if (disabled || !supportsPopover) return;
 		clearShowTimer();
 		if (delay <= 0) {
 			setIsOpen(true);
 			return;
 		}
 		showTimerRef.current = setTimeout(() => setIsOpen(true), delay);
-	}, [disabled, delay, clearShowTimer]);
+	}, [disabled, delay, clearShowTimer, supportsPopover]);
 
 	const hide = useCallback(() => {
 		clearShowTimer();
@@ -124,6 +135,13 @@ export function Tooltip({
 			setPosition(null);
 			return;
 		}
+		const tooltip = tooltipRef.current;
+		if (!tooltip) return;
+		try {
+			tooltip.showPopover();
+		} catch {
+			// Browser refused to open (likely already-handled state); ignore.
+		}
 		computePosition();
 	}, [isOpen, computePosition]);
 
@@ -138,27 +156,8 @@ export function Tooltip({
 		};
 	}, [isOpen, computePosition]);
 
-	useEffect(() => {
-		if (!isOpen) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") hide();
-		};
-		document.addEventListener("keydown", onKeyDown);
-		return () => document.removeEventListener("keydown", onKeyDown);
-	}, [isOpen, hide]);
-
-	useEffect(() => {
-		if (!isOpen) return;
-		const onPointerDown = (event: PointerEvent) => {
-			const target = event.target as Node | null;
-			if (!target) return;
-			if (triggerRef.current?.contains(target)) return;
-			if (tooltipRef.current?.contains(target)) return;
-			hide();
-		};
-		document.addEventListener("pointerdown", onPointerDown);
-		return () => document.removeEventListener("pointerdown", onPointerDown);
-	}, [isOpen, hide]);
+	useEscapeKey(hide, { enabled: isOpen });
+	useClickOutside([triggerRef, tooltipRef], hide, { enabled: isOpen });
 
 	useEffect(() => () => clearShowTimer(), [clearShowTimer]);
 
@@ -167,6 +166,15 @@ export function Tooltip({
 	}
 
 	const childProps = children.props;
+
+	// Fallback: browsers without popover support get the native title attribute.
+	if (!supportsPopover) {
+		const titleFallback = typeof content === "string" ? content : undefined;
+		return cloneElement<TriggerProps>(children, {
+			title: titleFallback ?? childProps.title,
+		});
+	}
+
 	const existingDescribedBy = childProps["aria-describedby"];
 	const mergedDescribedBy = isOpen
 		? [existingDescribedBy, tooltipId].filter(Boolean).join(" ") || undefined
@@ -203,38 +211,30 @@ export function Tooltip({
 		},
 	});
 
-	const tooltipNode = (
-		<div
-			ref={tooltipRef}
-			role="tooltip"
-			id={tooltipId}
-			style={{
-				position: "fixed",
+	return (
+		<>
+			{wrappedChild}
+			{isOpen && (
+				<div
+					ref={tooltipRef}
+					popover="manual"
+					role="tooltip"
+					id={tooltipId}
+					className="bg-muted text-foreground border border-border" style={{position: "fixed",
 				top: position?.top ?? -9999,
 				left: position?.left ?? -9999,
-				zIndex: 1000,
+				margin: 0,
 				maxWidth: 320,
-				backgroundColor: "var(--bg-secondary)",
-				color: "var(--text-primary)",
-				border: "1px solid var(--border-default)",
 				borderRadius: 8,
 				boxShadow: "0 8px 24px rgba(0, 0, 0, 0.25)",
 				padding: "8px 10px",
 				fontSize: 12,
 				lineHeight: 1.4,
-				visibility: position === null ? "hidden" : "visible",
-			}}
-		>
-			{content}
-		</div>
-	);
-
-	return (
-		<>
-			{wrappedChild}
-			{isOpen && globalThis.window !== undefined
-				? createPortal(tooltipNode, document.body)
-				: null}
+				visibility: position === null ? "hidden" : "visible"}}
+				>
+					{content}
+				</div>
+			)}
 		</>
 	);
 }

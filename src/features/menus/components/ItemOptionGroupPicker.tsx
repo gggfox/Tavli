@@ -1,8 +1,10 @@
+import { MenusKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
+import { useTranslation } from "react-i18next";
 
 interface ItemOptionGroupPickerProps {
 	itemId: Id<"menuItems">;
@@ -13,6 +15,7 @@ export function ItemOptionGroupPicker({
 	itemId,
 	restaurantId,
 }: Readonly<ItemOptionGroupPickerProps>) {
+	const { t } = useTranslation();
 	const { data: allGroups } = useQuery(
 		convexQuery(api.optionGroups.getGroupsByRestaurant, { restaurantId })
 	);
@@ -49,32 +52,21 @@ export function ItemOptionGroupPicker({
 	if (sorted.length === 0) {
 		return (
 			<div
-				className="px-3 py-3 text-xs rounded-b-lg"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					borderLeft: "1px solid var(--border-default)",
-					borderRight: "1px solid var(--border-default)",
-					borderBottom: "1px solid var(--border-default)",
-					color: "var(--text-muted)",
-				}}
+				className="px-3 py-3 text-xs rounded-b-lg bg-muted border-l border-border border-r border-border border-b border-border text-faint-foreground"
+				
 			>
-				No option groups yet. Use the Option Groups button above to create them.
+				{t(MenusKeys.PICKER_NO_GROUPS)}
 			</div>
 		);
 	}
 
 	return (
 		<div
-			className="px-3 py-3 rounded-b-lg space-y-2"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				borderLeft: "1px solid var(--border-default)",
-				borderRight: "1px solid var(--border-default)",
-				borderBottom: "1px solid var(--border-default)",
-			}}
+			className="px-3 py-3 rounded-b-lg space-y-2 bg-muted border-l border-border border-r border-border border-b border-border"
+			
 		>
-			<span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-				Linked Option Groups
+			<span className="text-xs font-medium text-faint-foreground" >
+				{t(MenusKeys.PICKER_LINKED_GROUPS)}
 			</span>
 			<div className="flex flex-wrap gap-2">
 				{sorted.map((group) => {
@@ -85,15 +77,15 @@ export function ItemOptionGroupPicker({
 							onClick={() => handleToggle(group._id)}
 							disabled={linkMutation.isPending || unlinkMutation.isPending}
 							className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors disabled:opacity-50"
-							style={{
-								backgroundColor: isLinked ? "var(--btn-primary-bg)" : "var(--bg-primary)",
-								color: isLinked ? "var(--btn-primary-text)" : "var(--text-secondary)",
-								border: isLinked ? "1px solid transparent" : "1px solid var(--border-default)",
-							}}
+							style={{backgroundColor: isLinked ? "var(--btn-primary-bg)" : "var(--bg-primary)",
+				color: isLinked ? "var(--btn-primary-text)" : "var(--text-secondary)",
+				border: isLinked ? "1px solid transparent" : "1px solid var(--border-default)"}}
 						>
 							{group.name}
 							<span className="ml-1 opacity-70">
-								{group.selectionType === "single" ? "· Single" : "· Multi"}
+								{group.selectionType === "single"
+									? t(MenusKeys.PICKER_GROUP_SINGLE)
+									: t(MenusKeys.PICKER_GROUP_MULTI)}
 							</span>
 						</button>
 					);

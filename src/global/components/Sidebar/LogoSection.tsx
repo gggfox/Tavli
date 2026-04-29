@@ -10,15 +10,15 @@ export function LogoSection() {
 	const ToggleIcon = isExpanded ? PanelLeftClose : PanelLeftOpen;
 	return (
 		<div
-			className={`flex items-center h-12 px-3 transition-all duration-300 ease-in-out ${
+			className={`${`flex items-center h-12 px-3 transition-all duration-300 ease-in-out ${
 				isExpanded ? "" : "justify-center"
-			}`}
-			style={{ borderBottom: "1px solid var(--border-default)" }}
+			}`} border-b border-border`}
+		 
 		>
 			{isExpanded && (
 				<span
-					className="font-semibold text-sm tracking-tight"
-					style={{ color: "var(--text-primary)" }}
+					className="font-semibold text-sm tracking-tight text-foreground"
+					
 				>
 					{t(SidebarKeys.BRAND_NAME)}
 				</span>

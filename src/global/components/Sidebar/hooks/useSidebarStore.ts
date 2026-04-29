@@ -3,30 +3,54 @@ import { useConvexAuth } from "convex/react";
 import { useEffect } from "react";
 import { create } from "zustand";
 
-const LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED = "sidebar-expanded";
+export const LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED = "sidebar-expanded";
 
 interface SidebarStore {
 	isExpanded: boolean;
 	setIsExpanded: (expanded: boolean) => void;
 }
 
-// Initialize from localStorage
-const getInitialState = (): boolean => {
-	if (globalThis.window === undefined) return true;
-	const saved = globalThis.window.localStorage.getItem(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED);
-	if (saved === null) return true;
-	return saved === "true";
-};
-
+/**
+ * Sidebar state defaults to expanded on both server and client first
+ * render so SSR and CSR agree. The actual user preference (from
+ * localStorage on first visit, then Convex when authenticated) is
+ * synced after hydration via `useSidebarHydration`.
+ *
+ * The first-paint width still tracks the user's preference: the inline
+ * <script> in `__root.tsx` reads localStorage and sets a
+ * `data-sidebar-expanded="false"` attribute on `<html>`, which the
+ * `Sidebar.css` rule consumes to override Tailwind's `w-60` class. That
+ * way the visual width is correct before React hydrates, even though
+ * the JS state lags by one effect tick.
+ */
 export const useSidebarStore = create<SidebarStore>((set) => ({
-	isExpanded: getInitialState(),
+	isExpanded: true,
 	setIsExpanded: (expanded: boolean) => {
 		set({ isExpanded: expanded });
 		if (globalThis.window !== undefined) {
 			globalThis.window.localStorage.setItem(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED, String(expanded));
+			document.documentElement.dataset.sidebarExpanded = String(expanded);
 		}
 	},
 }));
+
+/**
+ * Reads the user's saved sidebar-expanded preference once on mount and
+ * pushes it into the Zustand store. Avoids the SSR/CSR hydration
+ * mismatch that would happen if the store read localStorage at module
+ * evaluation time.
+ */
+export function useSidebarHydration(): void {
+	useEffect(() => {
+		if (globalThis.window === undefined) return;
+		const saved = globalThis.window.localStorage.getItem(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED);
+		if (saved === null) return;
+		const value = saved === "true";
+		if (value !== useSidebarStore.getState().isExpanded) {
+			useSidebarStore.setState({ isExpanded: value });
+		}
+	}, []);
+}
 
 /**
  * Hook to access and toggle sidebar state.
@@ -39,45 +63,32 @@ export function useToggleSidebar() {
 	const settings = useUserSettings();
 	const { isAuthenticated } = useConvexAuth();
 
-	// Sync Zustand store with Convex settings when authenticated
 	useEffect(() => {
 		if (isAuthenticated && settings.settings) {
-			// If Convex has a different value, sync it to the store
 			if (settings.sidebarExpanded !== storeIsExpanded) {
 				setIsExpanded(settings.sidebarExpanded);
 			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [
-		isAuthenticated,
-		settings.settings,
-		settings.sidebarExpanded,
-		storeIsExpanded,
-		// setIsExpanded is excluded from dependencies as it's a stable Zustand setter
-		// that doesn't need to trigger re-runs of this effect
-	]);
+	}, [isAuthenticated, settings.settings, settings.sidebarExpanded, storeIsExpanded]);
 
-	// Enhanced toggle that syncs with Convex
 	const toggleSidebar = async () => {
 		const currentState =
 			isAuthenticated && settings.settings ? settings.sidebarExpanded : storeIsExpanded;
 		const newState = !currentState;
 
-		// Update store immediately (optimistic update)
 		setIsExpanded(newState);
 
-		// Sync with Convex if authenticated
 		if (isAuthenticated) {
-			const result = await settings.updateSidebarExpanded(newState);
-			if (!result.success) {
-				console.error("Failed to update sidebar state:", result.error);
-				// Revert to previous state on error
+			try {
+				await settings.updateSidebarExpanded(newState);
+			} catch (error) {
+				console.error("Failed to update sidebar state:", error);
 				setIsExpanded(!newState);
 			}
 		}
 	};
 
-	// Use Convex settings when authenticated, otherwise use Zustand store
 	const isExpanded =
 		isAuthenticated && settings.settings ? settings.sidebarExpanded : storeIsExpanded;
 

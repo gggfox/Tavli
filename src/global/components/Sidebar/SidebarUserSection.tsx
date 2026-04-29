@@ -1,6 +1,8 @@
+import { SettingsModal } from "@/features";
 import { SidebarKeys } from "@/global/i18n";
-import { useClerk, useUser } from "@clerk/tanstack-react-start";
-import { LogOut } from "lucide-react";
+import { useUser } from "@clerk/tanstack-react-start";
+import { Settings } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Avatar, getAvatarFallback } from "../Avatar";
 
@@ -9,21 +11,25 @@ interface SidebarUserSectionProps {
 }
 
 /**
- * User section in sidebar that displays user info and sign out button.
- * Adapts to collapsed/expanded sidebar state.
+ * User section in sidebar that displays user info and a button to open the
+ * settings modal. Adapts to collapsed/expanded sidebar state. Sign out has
+ * moved into the settings modal itself.
  */
 export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionProps>) {
 	const { t } = useTranslation();
 	const { user } = useUser();
-	const { signOut } = useClerk();
+	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
 	if (!user) return null;
 
 	const displayName = user.firstName || user.primaryEmailAddress?.emailAddress || "User";
 	const email = user.primaryEmailAddress?.emailAddress ?? "";
+	const settingsLabel = t(SidebarKeys.SETTINGS);
+
+	const openSettings = () => setIsSettingsOpen(true);
 
 	return (
-		<div className="p-2" style={{ borderTop: "1px solid var(--border-default)" }}>
+		<div className="p-2 border-t border-border" >
 			<div
 				className={`flex items-center gap-3 p-2 rounded-lg transition-colors group hover:bg-(--bg-hover) ${
 					isExpanded ? "flex-row" : "flex-col justify-center"
@@ -31,8 +37,9 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 			>
 				<button
 					className="relative"
-					title={isExpanded ? undefined : `${displayName} - ${t(SidebarKeys.CLICK_TO_SIGN_OUT)}`}
-					onClick={() => signOut()}
+					title={isExpanded ? undefined : `${displayName} - ${settingsLabel}`}
+					onClick={openSettings}
+					aria-label={settingsLabel}
 				>
 					<Avatar
 						src={user.imageUrl}
@@ -43,34 +50,35 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 					/>
 					{!isExpanded && (
 						<div
-							className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-							style={{ color: "var(--btn-primary-bg)" }}
+							className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity text-primary"
+							
 						>
-							<LogOut size={12} />
+							<Settings size={12} />
 						</div>
 					)}
 				</button>
 				{isExpanded && (
 					<div className="flex-1 min-w-0">
-						<p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
+						<p className="text-sm font-medium truncate text-foreground" >
 							{user.firstName} {user.lastName}
 						</p>
-						<p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+						<p className="text-xs truncate text-faint-foreground" >
 							{email}
 						</p>
 					</div>
 				)}
 				{isExpanded && (
 					<button
-						onClick={() => signOut()}
+						onClick={openSettings}
 						className="p-1.5 rounded-md transition-all hover-icon opacity-0 group-hover:opacity-100"
-						aria-label={t(SidebarKeys.SIGN_OUT)}
-						title={t(SidebarKeys.SIGN_OUT)}
+						aria-label={settingsLabel}
+						title={settingsLabel}
 					>
-						<LogOut size={16} />
+						<Settings size={16} />
 					</button>
 				)}
 			</div>
+			<SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 		</div>
 	);
 }

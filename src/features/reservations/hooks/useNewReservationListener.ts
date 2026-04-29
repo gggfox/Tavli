@@ -7,12 +7,15 @@
  * the new row triggers a toast within the network round-trip.
  */
 import { pushToast } from "@/global/components";
-import { unwrapQuery } from "@/global/utils";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
 import type { Id } from "convex/_generated/dataModel";
 import { useEffect, useRef } from "react";
+
+type PendingValue = UnwrappedValue<FunctionReturnType<typeof api.reservations.listRecentPending>>;
 
 export function useNewReservationListener(restaurantId: Id<"restaurants"> | undefined) {
 	// Anchor "since" to the moment the listener mounts so existing pending
@@ -20,7 +23,7 @@ export function useNewReservationListener(restaurantId: Id<"restaurants"> | unde
 	const sinceMsRef = useRef<number>(Date.now());
 	const seenIds = useRef<Set<string>>(new Set());
 
-	const { data: rawResult } = useQuery({
+	const { data: pending } = useQuery({
 		...convexQuery(
 			api.reservations.listRecentPending,
 			restaurantId
@@ -28,9 +31,8 @@ export function useNewReservationListener(restaurantId: Id<"restaurants"> | unde
 				: "skip"
 		),
 		enabled: Boolean(restaurantId),
+		select: unwrapResult<PendingValue>,
 	});
-
-	const { data: pending } = unwrapQuery(rawResult);
 
 	useEffect(() => {
 		if (!pending) return;

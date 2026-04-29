@@ -1,10 +1,12 @@
 import { useConvexMutate } from "@/global/hooks";
+import { MenusKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ClipboardPaste, ImagePlus, Trash2 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getImageFromClipboard, uploadImage } from "../utils/imageUtils";
 
 interface ItemImageManagerProps {
@@ -13,6 +15,7 @@ interface ItemImageManagerProps {
 }
 
 export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImageManagerProps>) {
+	const { t } = useTranslation();
 	// Upload URL generation runs imperatively inside `handleUpload`, not as a
 	// React Query mutation, so it stays on the lower-level convex hook.
 	const generateUploadUrl = useConvexMutation(api.menuItems.generateUploadUrl);
@@ -64,18 +67,13 @@ export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImage
 
 	return (
 		<div
-			className="px-3 py-3 rounded-b-lg space-y-3 outline-none"
+			className="px-3 py-3 rounded-b-lg space-y-3 outline-none bg-muted border-l border-border border-r border-border border-b border-border"
 			tabIndex={0}
 			onPaste={handlePaste}
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				borderLeft: "1px solid var(--border-default)",
-				borderRight: "1px solid var(--border-default)",
-				borderBottom: "1px solid var(--border-default)",
-			}}
+			
 		>
-			<span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-				Item Image
+			<span className="text-xs font-medium text-faint-foreground" >
+				{t(MenusKeys.FORM_IMAGE_HEADER)}
 			</span>
 
 			{currentImageUrl && (
@@ -84,27 +82,21 @@ export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImage
 					<button
 						onClick={handleRemove}
 						disabled={removeImageMut.isPending}
-						className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium disabled:opacity-50"
-						style={{
-							border: "1px solid var(--accent-danger)",
-							color: "var(--accent-danger)",
-						}}
+						className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium disabled:opacity-50 border border-destructive text-destructive"
+						
 					>
-						<Trash2 size={12} /> Remove
+						<Trash2 size={12} /> {t(MenusKeys.FORM_REMOVE)}
 					</button>
 				</div>
 			)}
 
 			<div className="flex items-center gap-3">
 				<label
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer hover:bg-[var(--bg-hover)]"
-					style={{
-						border: "1px solid var(--border-default)",
-						color: "var(--text-secondary)",
-					}}
+					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer hover:bg-hover border border-border text-muted-foreground"
+					
 				>
 					<ImagePlus size={14} />
-					{currentImageUrl ? "Replace image" : "Upload image"}
+					{currentImageUrl ? t(MenusKeys.FORM_REPLACE_IMAGE) : t(MenusKeys.FORM_UPLOAD_IMAGE)}
 					<input
 						ref={fileRef}
 						type="file"
@@ -114,8 +106,8 @@ export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImage
 					/>
 				</label>
 				{!preview && (
-					<span className="flex items-center gap-1 text-xs" style={{ color: "var(--text-muted)" }}>
-						<ClipboardPaste size={12} /> or paste from clipboard
+					<span className="flex items-center gap-1 text-xs text-faint-foreground" >
+						<ClipboardPaste size={12} /> {t(MenusKeys.FORM_PASTE_HINT)}
 					</span>
 				)}
 				{preview && (
@@ -126,7 +118,7 @@ export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImage
 							disabled={isUploading || updateItem.isPending}
 							className="px-2 py-1 rounded text-xs font-medium hover-btn-primary disabled:opacity-50"
 						>
-							{isUploading ? "Uploading..." : "Save"}
+							{isUploading ? t(MenusKeys.FORM_UPLOADING) : t(MenusKeys.FORM_SAVE)}
 						</button>
 						<button
 							onClick={() => {
@@ -136,7 +128,7 @@ export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImage
 							}}
 							className="px-2 py-1 rounded text-xs hover-btn-secondary"
 						>
-							Cancel
+							{t(MenusKeys.FORM_CANCEL)}
 						</button>
 					</div>
 				)}

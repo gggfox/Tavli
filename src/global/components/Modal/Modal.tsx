@@ -1,105 +1,79 @@
-import { useModal } from "@/global";
-import { createPortal } from "react-dom";
+import {
+	useBackdropClick,
+	useBodyScrollLock,
+	useDialogCancel,
+	useDialogPhase,
+} from "@/global/hooks";
+import "./Modal.css";
 import type { ModalProps, ModalSize } from "./types";
 
-/**
- * Size class mappings for the modal container
- */
 const SIZE_CLASSES: Record<ModalSize, string> = {
-	sm: "max-w-sm",
-	md: "max-w-md",
-	lg: "max-w-lg",
-	xl: "max-w-xl",
-	"2xl": "max-w-2xl",
-	"3xl": "max-w-3xl",
-	"4xl": "max-w-4xl",
-	"5xl": "max-w-5xl",
-	full: "max-w-full mx-4",
+	sm: "w-full max-w-sm",
+	md: "w-full max-w-md",
+	lg: "w-full max-w-lg",
+	xl: "w-full max-w-xl",
+	"2xl": "w-full max-w-2xl",
+	"3xl": "w-full max-w-3xl",
+	"4xl": "w-full max-w-4xl",
+	"5xl": "w-full max-w-5xl",
+	full: "w-full max-w-full mx-4",
 };
 
 /**
- * Headless Modal Component
+ * Headless Modal built on the native HTML `<dialog>` element.
  *
- * A fully headless modal component that provides structure and functionality
- * without imposing styling. You can inject any components as children and
- * style them according to your design system.
+ * `dialog.showModal()` provides for free:
+ *   - Top-layer rendering (no portal needed; escapes ancestor `overflow`).
+ *   - Focus trap.
+ *   - Escape via the `cancel` event.
+ *   - The `::backdrop` pseudo-element for the dim overlay.
  *
- * Features:
- * - Portal rendering (renders outside normal DOM hierarchy)
- * - Backdrop click to close
- * - Escape key to close
- * - Focus trap (keeps focus within modal)
- * - Body scroll lock when open
- * - ARIA attributes for accessibility
- * - Configurable size presets (sm, md, lg, xl, 2xl, 3xl, 4xl, 5xl, full)
+ * The phase machine in `useDialogPhase` keeps the dialog mounted long
+ * enough for CSS-driven open/close transitions to play.
  *
  * @example
  * ```tsx
- * <Modal
- *   isOpen={isOpen}
- *   onClose={() => setIsOpen(false)}
- *   ariaLabel="Example Modal"
- *   size="2xl"
- * >
- *   <div className="p-6 bg-white/5 rounded-xl border border-white/5">
- *     <h2 className="text-xl font-semibold text-white mb-4">Modal Title</h2>
- *     <p className="text-gray-400 mb-4">Modal content goes here</p>
- *     <button onClick={() => setIsOpen(false)}>Close</button>
- *   </div>
+ * <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} ariaLabel="Settings" size="2xl">
+ *   <div className="p-6 bg-white rounded-xl">...</div>
  * </Modal>
  * ```
  */
 export function Modal(props: Readonly<ModalProps>) {
-	const modalRef = useModal({ ...props });
+	const { phase, dialogRef } = useDialogPhase({ isOpen: props.isOpen });
 
-	if (!props.isOpen) return null;
+	useDialogCancel(dialogRef, props.onClose, {
+		enabled: phase !== "closed" && props.closeOnEscape !== false,
+	});
+	useBackdropClick(dialogRef, props.onClose, {
+		enabled: phase !== "closed" && props.closeOnBackdropClick !== false,
+	});
+	useBodyScrollLock(phase !== "closed");
+
+	if (phase === "closed") return null;
 
 	const sizeClass = SIZE_CLASSES[props.size ?? "lg"];
-	const backdropClasses = `absolute inset-0 flex items-center justify-center p-4 bg-black/50 ${props.backdropClassName || ""}`;
-	const containerClasses = `relative z-10 w-full max-h-full overflow-y-auto ${sizeClass} ${props.containerClassName || ""}`;
-	const contentClasses = `relative ${props.contentClassName || ""}`;
+	const dialogClassName = [
+		"tavli-modal",
+		sizeClass,
+		props.containerClassName ?? "",
+		props.backdropClassName ?? "",
+	]
+		.filter(Boolean)
+		.join(" ");
+	const contentClassName = ["tavli-modal-content", props.contentClassName ?? ""]
+		.filter(Boolean)
+		.join(" ");
 
-	const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-		// Only close if clicking directly on the backdrop, not on its children
-		if (e.target === e.currentTarget && props.closeOnBackdropClick !== false) {
-			props.onClose();
-		}
-	};
-
-	const handleBackdropKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-		// Keyboard support for accessibility (Escape is already handled by dialog element)
-		// This handler satisfies linter requirements for clickable elements
-		if (e.key === "Escape" && props.closeOnEscape !== false) {
-			props.onClose();
-		}
-	};
-
-	const modalContent = (
+	return (
 		<dialog
-			ref={modalRef}
-			className="fixed inset-0 z-50 m-0 p-0 w-screen h-screen max-w-none max-h-none border-0 bg-transparent"
+			ref={dialogRef}
+			data-state={phase}
+			className={dialogClassName}
 			aria-label={props.ariaLabel}
 			aria-labelledby={props.ariaLabelledBy}
 			aria-describedby={props.ariaDescribedBy}
 		>
-			<div
-				className={backdropClasses}
-				onClick={handleBackdropClick}
-				onKeyDown={handleBackdropKeyDown}
-				tabIndex={-1}
-				role="none"
-			>
-				<div className={containerClasses}>
-					<div className={contentClasses}>{props.children}</div>
-				</div>
-			</div>
+			<div className={contentClassName}>{props.children}</div>
 		</dialog>
 	);
-
-	// Render to portal (outside normal DOM hierarchy)
-	if (globalThis.window !== undefined) {
-		return createPortal(modalContent, document.body);
-	}
-
-	return null;
 }

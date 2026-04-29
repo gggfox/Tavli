@@ -1,6 +1,19 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Tooltip } from "./Tooltip";
+
+beforeEach(() => {
+	if (!("showPopover" in HTMLElement.prototype)) {
+		Object.defineProperty(HTMLElement.prototype, "showPopover", {
+			configurable: true,
+			value: vi.fn(),
+		});
+		Object.defineProperty(HTMLElement.prototype, "hidePopover", {
+			configurable: true,
+			value: vi.fn(),
+		});
+	}
+});
 
 describe("Tooltip", () => {
 	it("renders nothing in the document when not hovered or focused", () => {
@@ -9,7 +22,7 @@ describe("Tooltip", () => {
 				<button type="button">Trigger</button>
 			</Tooltip>
 		);
-		expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+		expect(screen.queryByRole("tooltip", { hidden: true })).not.toBeInTheDocument();
 	});
 
 	it("opens the tooltip on focus", () => {
@@ -19,7 +32,7 @@ describe("Tooltip", () => {
 			</Tooltip>
 		);
 		fireEvent.focus(screen.getByRole("button", { name: "Trigger" }));
-		const tooltip = screen.getByRole("tooltip");
+		const tooltip = screen.getByRole("tooltip", { hidden: true });
 		expect(tooltip).toBeInTheDocument();
 		expect(tooltip).toHaveTextContent("Hello tooltip");
 	});
@@ -31,9 +44,9 @@ describe("Tooltip", () => {
 			</Tooltip>
 		);
 		fireEvent.focus(screen.getByRole("button", { name: "Trigger" }));
-		expect(screen.getByRole("tooltip")).toBeInTheDocument();
+		expect(screen.getByRole("tooltip", { hidden: true })).toBeInTheDocument();
 		fireEvent.keyDown(document, { key: "Escape" });
-		expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+		expect(screen.queryByRole("tooltip", { hidden: true })).not.toBeInTheDocument();
 	});
 
 	it("wires aria-describedby on the trigger to the tooltip id when open", () => {
@@ -46,7 +59,7 @@ describe("Tooltip", () => {
 		expect(trigger).not.toHaveAttribute("aria-describedby");
 
 		fireEvent.focus(trigger);
-		const tooltip = screen.getByRole("tooltip");
+		const tooltip = screen.getByRole("tooltip", { hidden: true });
 		const tooltipId = tooltip.getAttribute("id");
 		expect(tooltipId).toBeTruthy();
 		expect(trigger.getAttribute("aria-describedby")).toBe(tooltipId);
@@ -62,6 +75,6 @@ describe("Tooltip", () => {
 			</Tooltip>
 		);
 		fireEvent.focus(screen.getByRole("button", { name: "Trigger" }));
-		expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+		expect(screen.queryByRole("tooltip", { hidden: true })).not.toBeInTheDocument();
 	});
 });

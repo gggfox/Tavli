@@ -72,13 +72,13 @@ export function CopyableId({ id, truncateLength = 12, className = "" }: Copyable
 				onMouseLeave={hideTooltip}
 				onFocus={showTooltip}
 				onBlur={hideTooltip}
-				className={`group inline-flex items-center gap-1.5 font-mono text-xs rounded px-1.5 py-0.5 -mx-1.5 cursor-pointer transition-colors hover:bg-(--bg-hover) focus:outline-none focus-visible:ring-1 focus-visible:ring-(--input-border-focus) ${className}`}
-				style={{ color: "var(--text-secondary)" }}
+				className={`${`group inline-flex items-center gap-1.5 font-mono text-xs rounded px-1.5 py-0.5 -mx-1.5 cursor-pointer transition-colors hover:bg-(--bg-hover) focus:outline-none focus-visible:ring-1 focus-visible:ring-(--input-border-focus) ${className}`} text-muted-foreground`}
+			 
 				aria-label={copied ? `ID ${id} copied to clipboard` : `Copy ID ${id}`}
 			>
 				<span>{truncated}</span>
 				{copied ? (
-					<Check size={12} style={{ color: "var(--accent-success)" }} aria-hidden />
+					<Check size={12} className="text-success"  aria-hidden />
 				) : (
 					<Copy
 						size={12}
@@ -92,14 +92,9 @@ export function CopyableId({ id, truncateLength = 12, className = "" }: Copyable
 				? createPortal(
 						<div
 							role="tooltip"
-							className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md px-2 py-1 text-xs font-mono shadow-md"
-							style={{
-								top: tooltipPos.top,
-								left: tooltipPos.left,
-								backgroundColor: "var(--bg-elevated)",
-								color: "var(--text-primary)",
-								border: "1px solid var(--border-strong)",
-							}}
+							className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md px-2 py-1 text-xs font-mono shadow-md bg-card text-foreground border border-border-strong"
+							style={{top: tooltipPos.top,
+				left: tooltipPos.left}}
 						>
 							{tooltipLabel}
 						</div>,

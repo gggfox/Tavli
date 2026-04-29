@@ -15,8 +15,8 @@ export function MenuItemDetailSkeleton({ onBack }: MenuItemDetailSkeletonProps =
 				{onBack ? (
 					<button
 						onClick={onBack}
-						className="flex items-center gap-1 text-sm"
-						style={{ color: "var(--btn-primary-bg)" }}
+						className="flex items-center gap-1 text-sm text-primary"
+						
 					>
 						<ArrowLeft size={16} /> Back to menu
 					</button>
@@ -37,15 +37,12 @@ export function MenuItemDetailSkeleton({ onBack }: MenuItemDetailSkeletonProps =
 						{Array.from({ length: OPTIONS_PER_GROUP }, (_, optIndex) => (
 							<div
 								key={`option-group-${groupIndex}-opt-${optIndex}`}
-								className="flex items-center justify-between px-3 py-2.5 rounded-lg"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-								}}
+								className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-muted border border-border"
+								
 							>
 								<Skeleton
 									className="h-4"
-									style={{ width: `${40 + (optIndex % 3) * 12}%` }}
+									style={{width: `${40 + (optIndex % 3) * 12}%`}}
 								/>
 								<Skeleton className="h-4 w-12" />
 							</div>
@@ -55,8 +52,8 @@ export function MenuItemDetailSkeleton({ onBack }: MenuItemDetailSkeletonProps =
 			</div>
 
 			<div
-				className="px-4 pb-4 pt-2 space-y-3"
-				style={{ borderTop: "1px solid var(--border-default)" }}
+				className="px-4 pb-4 pt-2 space-y-3 border-t border-border"
+				
 			>
 				<div className="flex items-center justify-center gap-4">
 					<Skeleton rounded="full" className="h-9 w-9" />

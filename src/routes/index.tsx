@@ -15,8 +15,8 @@ function App() {
 
 	return (
 		<div
-			className="h-full flex flex-col overflow-hidden"
-			style={{ backgroundColor: "var(--bg-primary)" }}
+			className="h-full flex flex-col overflow-hidden bg-background"
+			
 		>
 			<WelcomeSection />
 		</div>

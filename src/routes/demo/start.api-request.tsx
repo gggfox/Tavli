@@ -20,11 +20,9 @@ function Home() {
   return (
     <div
       className="flex items-center justify-center h-full p-4 text-white overflow-hidden"
-      style={{
-        backgroundColor: '#000',
-        backgroundImage:
-          'radial-gradient(ellipse 60% 60% at 0% 100%, #444 0%, #222 60%, #000 100%)',
-      }}
+      style={{backgroundColor: '#000',
+				backgroundImage:
+          'radial-gradient(ellipse 60% 60% at 0% 100%, #444 0%, #222 60%, #000 100%)'}}
     >
       <div className="w-full max-w-2xl max-h-full p-8 rounded-xl backdrop-blur-md bg-black/50 shadow-xl border-8 border-black/10 flex flex-col overflow-hidden">
         <h1 className="text-2xl mb-4 shrink-0">Start API Request Demo - Names List</h1>

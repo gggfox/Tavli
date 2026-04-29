@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rangeBounds, RANGE_LABELS, ORDERED_RANGES } from "./utils";
+import { ORDERED_RANGES, RANGE_LABEL_KEYS, rangeBounds } from "./utils";
 
 const FIXED_NOW = new Date("2026-04-27T14:30:00");
 
@@ -45,9 +45,9 @@ describe("rangeBounds", () => {
 		expect(toMs).toBeGreaterThan(FIXED_NOW.getTime());
 	});
 
-	it("ORDERED_RANGES has labels for every range", () => {
+	it("ORDERED_RANGES has translation keys for every range", () => {
 		for (const range of ORDERED_RANGES) {
-			expect(RANGE_LABELS[range]).toBeTruthy();
+			expect(RANGE_LABEL_KEYS[range]).toBeTruthy();
 		}
 	});
 });

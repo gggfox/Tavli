@@ -17,7 +17,7 @@ function ReservePage() {
 
 	if (isLoading) {
 		return (
-			<div className="p-6 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+			<div className="p-6 text-center text-sm text-faint-foreground" >
 				Loading…
 			</div>
 		);
@@ -25,7 +25,7 @@ function ReservePage() {
 
 	if (!restaurant) {
 		return (
-			<div className="p-6 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+			<div className="p-6 text-center text-sm text-faint-foreground" >
 				Restaurant not found.
 			</div>
 		);

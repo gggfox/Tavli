@@ -1,5 +1,6 @@
 import { StatusBadge } from "@/global/components";
 import { Modal } from "@/global/components/Modal/Modal";
+import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
@@ -8,6 +9,7 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, Minus, Plus, Trash2, UtensilsCrossed, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
 import { toggleOptionSelection } from "../utils";
 
@@ -42,6 +44,7 @@ export function ItemDetailSheet({
 	onRemove,
 	onClose,
 }: Readonly<ItemDetailSheetProps>) {
+	const { t } = useTranslation();
 	const isEditing = !!existingSelection;
 
 	const { data: optionGroups } = useQuery(
@@ -107,12 +110,11 @@ export function ItemDetailSheet({
 			onClose={onClose}
 			ariaLabel={getTranslatedField(item, lang)}
 			size="md"
-			backdropClassName="!items-end sm:!items-center"
-			containerClassName="!max-h-[90vh] sm:!max-h-[85vh]"
+			containerClassName="!mt-auto !mb-0 !mx-0 !max-w-full sm:!my-auto sm:!mx-auto sm:!max-w-md !max-h-[90vh] sm:!max-h-[85vh]"
 		>
 			<div
-				className="flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden max-h-[90vh] sm:max-h-[85vh] animate-slide-up"
-				style={{ backgroundColor: "var(--bg-primary)" }}
+				className="flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden max-h-[90vh] sm:max-h-[85vh] animate-slide-up bg-background"
+				
 			>
 				{/* Header image / close button */}
 				<div className="relative shrink-0">
@@ -124,16 +126,16 @@ export function ItemDetailSheet({
 						/>
 					) : (
 						<div
-							className="w-full h-32 flex items-center justify-center"
-							style={{ backgroundColor: "var(--bg-secondary)" }}
+							className="w-full h-32 flex items-center justify-center bg-muted"
+							
 						>
-							<UtensilsCrossed size={48} style={{ color: "var(--text-muted)" }} />
+							<UtensilsCrossed size={48} className="text-faint-foreground"  />
 						</div>
 					)}
 					<button
 						onClick={onClose}
 						className="absolute top-3 right-3 p-1.5 rounded-full backdrop-blur-sm"
-						style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+						style={{backgroundColor: "rgba(0,0,0,0.5)"}}
 					>
 						<X size={20} className="text-white" />
 					</button>
@@ -143,15 +145,15 @@ export function ItemDetailSheet({
 				<div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
 					{/* Item info */}
 					<div>
-						<h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+						<h2 className="text-lg font-bold text-foreground" >
 							{getTranslatedField(item, lang)}
 						</h2>
 						{description && (
-							<p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+							<p className="text-sm mt-1 text-muted-foreground" >
 								{description}
 							</p>
 						)}
-						<p className="text-base font-semibold mt-1.5" style={{ color: "var(--text-primary)" }}>
+						<p className="text-base font-semibold mt-1.5 text-foreground" >
 							${formatCents(item.basePrice)}
 						</p>
 					</div>
@@ -165,28 +167,29 @@ export function ItemDetailSheet({
 						return (
 							<div key={group._id}>
 								<div className="flex items-center gap-2 mb-2">
-									<span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+									<span className="text-sm font-semibold text-foreground" >
 										{getTranslatedField(group, lang)}
 									</span>
 									{group.isRequired && (
 										<StatusBadge
-											bgColor={hasError ? "#fef2f2" : "var(--accent-warning-light, #fef3c7)"}
-											textColor={hasError ? "#dc2626" : "var(--accent-warning, #d97706)"}
-											label="Required"
+											bgColor={hasError ? "#fef2f2" : "var(--accent-warning-light)"}
+											textColor={hasError ? "#dc2626" : "var(--accent-warning)"}
+											label={t(OrderingKeys.ITEM_REQUIRED)}
 											className="text-[10px]"
 										/>
 									)}
 									{group.selectionType === "single" && (
-										<span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-											Pick one
+										<span className="text-[10px] text-faint-foreground" >
+											{t(OrderingKeys.ITEM_PICK_ONE)}
 										</span>
 									)}
 								</div>
 								{hasError && (
-									<p className="text-xs mb-2" style={{ color: "#dc2626" }}>
-										Please select an option
+									<p className="text-xs mb-2" style={{color: "#dc2626"}}>
+										{t(OrderingKeys.ITEM_PLEASE_SELECT)}
 									</p>
 								)}
+
 								<div className="space-y-1.5">
 									{(group.options ?? [])
 										.filter((o: any) => o.isAvailable)
@@ -196,33 +199,28 @@ export function ItemDetailSheet({
 												<button
 													key={opt._id}
 													onClick={() => handleOptionToggle(group, opt)}
-													className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors"
-													style={{
-														backgroundColor: isOptSelected
-															? "var(--bg-active, #e0e7ff)"
+													className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-foreground"
+													style={{backgroundColor: isOptSelected
+															? "var(--bg-active)"
 															: "var(--bg-secondary)",
-														border: `1.5px solid ${optionBorderColor(isOptSelected, hasError)}`,
-														color: "var(--text-primary)",
-													}}
+				border: `1.5px solid ${optionBorderColor(isOptSelected, hasError)}`}}
 												>
 													<span
 														className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full border-2 transition-colors"
-														style={{
-															borderColor: isOptSelected
+														style={{borderColor: isOptSelected
 																? "var(--btn-primary-bg)"
 																: "var(--border-default)",
-															backgroundColor: isOptSelected
+				backgroundColor: isOptSelected
 																? "var(--btn-primary-bg)"
-																: "transparent",
-														}}
+																: "transparent"}}
 													>
 														{isOptSelected && <Check size={12} className="text-white" />}
 													</span>
 													<span className="flex-1 text-left">{getTranslatedField(opt, lang)}</span>
 													{opt.priceModifier > 0 && (
 														<span
-															className="text-xs shrink-0"
-															style={{ color: "var(--text-muted)" }}
+															className="text-xs shrink-0 text-faint-foreground"
+															
 														>
 															+${formatCents(opt.priceModifier)}
 														</span>
@@ -238,36 +236,28 @@ export function ItemDetailSheet({
 
 				{/* Bottom action bar */}
 				<div
-					className="shrink-0 px-4 pb-4 pt-3 space-y-3"
-					style={{ borderTop: "1px solid var(--border-default)" }}
+					className="shrink-0 px-4 pb-4 pt-3 space-y-3 border-t border-border"
+					
 				>
 					{/* Quantity picker */}
 					<div className="flex items-center justify-center gap-4">
 						<button
 							onClick={() => setQuantity(Math.max(1, quantity - 1))}
-							className="p-2 rounded-full transition-colors"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="p-2 rounded-full transition-colors bg-muted border border-border text-foreground"
+							
 						>
 							<Minus size={16} />
 						</button>
 						<span
-							className="text-lg font-semibold w-8 text-center"
-							style={{ color: "var(--text-primary)" }}
+							className="text-lg font-semibold w-8 text-center text-foreground"
+							
 						>
 							{quantity}
 						</span>
 						<button
 							onClick={() => setQuantity(quantity + 1)}
-							className="p-2 rounded-full transition-colors"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="p-2 rounded-full transition-colors bg-muted border border-border text-foreground"
+							
 						>
 							<Plus size={16} />
 						</button>
@@ -277,17 +267,20 @@ export function ItemDetailSheet({
 						onClick={handleSubmit}
 						className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary"
 					>
-						{isEditing ? "Update Cart" : "Add to Cart"} &mdash; ${formatCents(lineTotal)}
+						{isEditing
+							? t(OrderingKeys.ITEM_UPDATE_CART)
+							: t(OrderingKeys.ITEM_ADD_TO_CART)}{" "}
+						&mdash; ${formatCents(lineTotal)}
 					</button>
 
 					{isEditing && onRemove && (
 						<button
 							onClick={onRemove}
 							className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-colors"
-							style={{ color: "#dc2626" }}
+							style={{color: "#dc2626"}}
 						>
 							<Trash2 size={14} />
-							Remove from order
+							{t(OrderingKeys.ITEM_REMOVE_FROM_ORDER)}
 						</button>
 					)}
 				</div>

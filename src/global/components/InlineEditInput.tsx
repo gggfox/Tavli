@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { KEY } from "@/global/utils/keyboard";
 
 interface InlineEditInputProps {
 	readonly value: string;
@@ -7,6 +8,7 @@ interface InlineEditInputProps {
 	readonly className?: string;
 	readonly inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 	readonly prefix?: string;
+	readonly autoFocus?: boolean;
 }
 
 export function InlineEditInput({
@@ -16,6 +18,7 @@ export function InlineEditInput({
 	className,
 	inputMode,
 	prefix,
+	autoFocus,
 }: InlineEditInputProps) {
 	const form = useForm({
 		defaultValues: { draft: value },
@@ -37,19 +40,15 @@ export function InlineEditInput({
 					onChange={(e) => field.handleChange(e.target.value)}
 					onBlur={() => form.handleSubmit()}
 					onKeyDown={(e) => {
-						if (e.key === "Enter") {
+						if (e.key === KEY.Enter) {
 							e.preventDefault();
 							(e.target as HTMLInputElement).blur();
 						}
 					}}
 					onClick={(e) => e.stopPropagation()}
 					placeholder={placeholder}
-					className={`flex-1 min-w-0 px-2 py-1 rounded ${className ?? "text-sm"}`}
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						border: "1px solid var(--border-default)",
-						color: "var(--text-primary)",
-					}}
+					autoFocus={autoFocus}
+					className={`${`flex-1 min-w-0 px-2 py-1 rounded ${className ?? "text-sm"}`} bg-background border border-border text-foreground`}
 				/>
 			)}
 		/>
@@ -58,7 +57,7 @@ export function InlineEditInput({
 	if (prefix) {
 		return (
 			<div className={`flex items-center gap-1 ${className ?? ""}`}>
-				<span className="text-xs shrink-0" style={{ color: "var(--text-muted)" }}>
+				<span className="text-xs shrink-0 text-faint-foreground" >
 					{prefix}
 				</span>
 				{input}

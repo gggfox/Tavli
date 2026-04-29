@@ -93,18 +93,15 @@ export function AdminTable<TData>({
 					value={globalFilter}
 					onChange={setGlobalFilter}
 				/>
-				<div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+				<div className="text-sm text-muted-foreground" >
 					{filteredCount} {filteredCount === 1 ? singular : plural}
 				</div>
 				{actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
 			</div>
 
 			<div
-				className="flex-1 overflow-auto rounded-lg"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-				}}
+				className="flex-1 overflow-auto rounded-lg bg-muted border border-border"
+				
 			>
 				<table className="w-full border-collapse">
 					<thead>
@@ -113,12 +110,8 @@ export function AdminTable<TData>({
 								{headerGroup.headers.map((header) => (
 									<th
 										key={header.id}
-										className="px-4 py-3 text-left text-sm font-medium sticky top-0"
-										style={{
-											backgroundColor: "var(--bg-secondary)",
-											color: "var(--text-secondary)",
-											borderBottom: "1px solid var(--border-default)",
-										}}
+										className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+										
 									>
 										{header.isPlaceholder ? null : (
 											<button
@@ -133,12 +126,8 @@ export function AdminTable<TData>({
 								))}
 								{renderRowActions && (
 									<th
-										className="px-4 py-3 text-right text-sm font-medium sticky top-0"
-										style={{
-											backgroundColor: "var(--bg-secondary)",
-											color: "var(--text-secondary)",
-											borderBottom: "1px solid var(--border-default)",
-										}}
+										className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+										
 									>
 										Actions
 									</th>
@@ -150,8 +139,8 @@ export function AdminTable<TData>({
 						{table.getRowModel().rows.map((row) => (
 							<tr
 								key={row.id}
-								className="transition-colors"
-								style={{ borderBottom: "1px solid var(--border-default)" }}
+								className="transition-colors border-b border-border"
+								
 							>
 								{row.getVisibleCells().map((cell) => (
 									<td key={cell.id} className="px-4 py-3">

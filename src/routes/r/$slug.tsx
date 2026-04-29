@@ -1,5 +1,5 @@
 import { restoreSession, useSessionStore } from "@/features/ordering";
-import { CustomerKeys } from "@/global/i18n";
+import { CustomerKeys, OrderingKeys } from "@/global/i18n";
 import { SignUpButton, useAuth } from "@clerk/tanstack-react-start";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -17,15 +17,15 @@ import { CalendarClock, Receipt, UserPlus, UtensilsCrossed } from "lucide-react"
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-function getSessionErrorMessage(err: unknown): string {
+function getSessionErrorKey(err: unknown): string {
 	let raw = "";
 	if (err instanceof Error) raw = err.message;
 	else if (typeof err === "string") raw = err;
 
 	if (raw.includes("Restaurant not found")) {
-		return "This restaurant was not found or is currently unavailable. Please check the link.";
+		return OrderingKeys.SESSION_ERROR_NOT_FOUND;
 	}
-	return "Something went wrong. Please try refreshing the page.";
+	return OrderingKeys.SESSION_ERROR_GENERIC;
 }
 
 export const Route = createFileRoute("/r/$slug")({
@@ -33,9 +33,10 @@ export const Route = createFileRoute("/r/$slug")({
 });
 
 function CustomerLayout() {
+	const { t } = useTranslation();
 	const { slug } = Route.useParams();
 	const { sessionId, setSession } = useSessionStore();
-	const [error, setError] = useState<string | null>(null);
+	const [errorKey, setErrorKey] = useState<string | null>(null);
 
 	const createSession = useMutation({
 		mutationFn: useConvexMutation(api.sessions.create),
@@ -61,19 +62,19 @@ function CustomerLayout() {
 				});
 			})
 			.catch((err: unknown) => {
-				setError(getSessionErrorMessage(err));
+				setErrorKey(getSessionErrorKey(err));
 			});
 	}, [slug]);
 
-	if (error) {
+	if (errorKey) {
 		return (
 			<div className="flex-1 flex items-center justify-center p-6">
 				<div className="text-center max-w-sm">
-					<h1 className="text-xl font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
-						Oops!
+					<h1 className="text-xl font-semibold mb-2 text-foreground" >
+						{t(OrderingKeys.SESSION_OOPS)}
 					</h1>
-					<p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-						{error}
+					<p className="text-sm text-muted-foreground" >
+						{t(errorKey)}
 					</p>
 				</div>
 			</div>
@@ -96,11 +97,8 @@ function CustomerHeader({
 }: Readonly<{ slug: string; sessionId: Id<"sessions"> | null }>) {
 	return (
 		<header
-			className="px-3 py-2 flex items-center justify-between gap-2 shrink-0"
-			style={{
-				borderBottom: "1px solid var(--border-default)",
-				backgroundColor: "var(--bg-secondary)",
-			}}
+			className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-border bg-muted"
+			
 		>
 			<CustomerNavTabs slug={slug} />
 			<div className="flex items-center gap-2">
@@ -123,11 +121,8 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 	return (
 		<nav
 			aria-label="Customer sections"
-			className="flex items-center gap-0.5 rounded-full p-0.5"
-			style={{
-				backgroundColor: "var(--bg-primary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="flex items-center gap-0.5 rounded-full p-0.5 bg-background border border-border"
+			
 		>
 			{lang ? (
 				<TabLink
@@ -181,7 +176,7 @@ function TabLink(props: Readonly<TabLinkProps>) {
 	const linkStyle: React.CSSProperties = active
 		? {
 				backgroundColor: "var(--btn-primary-bg)",
-				color: "var(--btn-primary-text, #fff)",
+				color: "var(--btn-primary-text)",
 		  }
 		: {
 				color: "var(--text-secondary)",
@@ -241,6 +236,7 @@ function MyOrdersLink({
 	sessionId,
 	slug,
 }: Readonly<{ sessionId: Id<"sessions">; slug: string }>) {
+	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const params = useParams({ strict: false });
 	const lang = (params as { lang?: string }).lang;
@@ -269,22 +265,16 @@ function MyOrdersLink({
 	return (
 		<button
 			onClick={handleClick}
-			className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium hover:bg-(--bg-hover) transition-colors"
-			style={{
-				color: "var(--text-primary)",
-				border: "1px solid var(--border-default)",
-			}}
-			aria-label="View your orders"
+			className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium hover:bg-(--bg-hover) transition-colors text-foreground border border-border"
+			
+			aria-label={t(OrderingKeys.SESSION_VIEW_ORDERS)}
 		>
-			<Receipt size={14} style={{ color: "var(--text-secondary)" }} />
-			<span>My orders</span>
+			<Receipt size={14} className="text-muted-foreground"  />
+			<span>{t(OrderingKeys.SESSION_MY_ORDERS)}</span>
 			{activeCount > 0 && (
 				<span
-					className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center"
-					style={{
-						backgroundColor: "var(--btn-primary-bg)",
-						color: "white",
-					}}
+					className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary"
+					style={{color: "white"}}
 				>
 					{activeCount}
 				</span>

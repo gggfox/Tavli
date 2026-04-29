@@ -1,7 +1,9 @@
+import { RestaurantsKeys } from "@/global/i18n";
 import { sanitizeSlug } from "@/global/utils/slug";
 import { useForm } from "@tanstack/react-form";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface RestaurantSettingsFormProps {
 	restaurant: Doc<"restaurants"> | null;
@@ -25,6 +27,7 @@ export function RestaurantSettingsForm({
 	onToggleActive,
 	isSaving,
 }: Readonly<RestaurantSettingsFormProps>) {
+	const { t } = useTranslation();
 	const form = useForm({
 		defaultValues: {
 			name: restaurant?.name ?? "",
@@ -60,38 +63,39 @@ export function RestaurantSettingsForm({
 		>
 			{restaurant && (
 				<div
-					className="flex items-center justify-between px-4 py-3 rounded-lg"
-					style={{
-						backgroundColor: "var(--bg-secondary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
+					
 				>
 					<div className="flex items-center gap-3">
-						<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-							Status
+						<span className="text-sm font-medium text-foreground" >
+							{t(RestaurantsKeys.FORM_STATUS_LABEL)}
 						</span>
 						<span
 							className="text-xs px-2 py-0.5 rounded-full font-medium"
-							style={{
-								backgroundColor: restaurant.isActive
+							style={{backgroundColor: restaurant.isActive
 									? "var(--accent-success)"
 									: "var(--bg-tertiary)",
-								color: restaurant.isActive ? "white" : "var(--text-muted)",
-							}}
+				color: restaurant.isActive ? "white" : "var(--text-muted)"}}
 						>
-							{restaurant.isActive ? "Active" : "Inactive"}
+							{restaurant.isActive
+								? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
+								: t(RestaurantsKeys.LIST_STATUS_INACTIVE)}
 						</span>
 					</div>
 					<button
 						type="button"
 						onClick={() => onToggleActive?.(restaurant._id)}
-						className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-						title={restaurant.isActive ? "Deactivate restaurant" : "Activate restaurant"}
+						className="p-1.5 rounded-md hover:bg-hover text-success"
+						title={
+							restaurant.isActive
+								? t(RestaurantsKeys.FORM_TOGGLE_DEACTIVATE_TITLE)
+								: t(RestaurantsKeys.FORM_TOGGLE_ACTIVATE_TITLE)
+						}
 					>
 						{restaurant.isActive ? (
-							<ToggleRight size={24} style={{ color: "var(--accent-success)" }} />
+							<ToggleRight size={24}  />
 						) : (
-							<ToggleLeft size={24} style={{ color: "var(--text-muted)" }} />
+							<ToggleLeft size={24} className="text-faint-foreground"  />
 						)}
 					</button>
 				</div>
@@ -103,10 +107,10 @@ export function RestaurantSettingsForm({
 					<div>
 						<label
 							htmlFor="restaurant-name"
-							className="block text-sm font-medium mb-1"
-							style={{ color: "var(--text-primary)" }}
+							className="block text-sm font-medium mb-1 text-foreground"
+							
 						>
-							Restaurant Name
+							{t(RestaurantsKeys.FORM_NAME_LABEL)}
 						</label>
 						<input
 							id="restaurant-name"
@@ -115,12 +119,8 @@ export function RestaurantSettingsForm({
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
 							required
-							className="w-full px-3 py-2 rounded-lg text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							
 						/>
 					</div>
 				)}
@@ -132,10 +132,10 @@ export function RestaurantSettingsForm({
 					<div>
 						<label
 							htmlFor="restaurant-slug"
-							className="block text-sm font-medium mb-1"
-							style={{ color: "var(--text-primary)" }}
+							className="block text-sm font-medium mb-1 text-foreground"
+							
 						>
-							Slug (URL identifier)
+							{t(RestaurantsKeys.FORM_SLUG_LABEL)}
 						</label>
 						<input
 							id="restaurant-slug"
@@ -144,27 +144,23 @@ export function RestaurantSettingsForm({
 							onChange={(e) => field.handleChange(sanitizeSlug(e.target.value))}
 							onBlur={field.handleBlur}
 							required
-							className="w-full px-3 py-2 rounded-lg text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							
 						/>
 						<div className="flex items-center gap-2 mt-1">
-							<p className="text-xs" style={{ color: "var(--text-muted)" }}>
-								Customers will visit: /r/{slugValue || "your-slug"}/en/menu
+							<p className="text-xs text-faint-foreground" >
+								{t(RestaurantsKeys.FORM_SLUG_HINT, { slug: slugValue || "your-slug" })}
 							</p>
 							{restaurant && slugValue && (
 								<a
 									href={testUrl}
 									target="_blank"
 									rel="noopener noreferrer"
-									className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded hover:bg-[var(--bg-hover)]"
-									style={{ color: "var(--accent-primary)" }}
+									className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded hover:bg-hover text-accent"
+									
 								>
 									<ExternalLink size={12} />
-									Open Test Link
+									{t(RestaurantsKeys.FORM_OPEN_TEST_LINK)}
 								</a>
 							)}
 						</div>
@@ -178,10 +174,10 @@ export function RestaurantSettingsForm({
 					<div>
 						<label
 							htmlFor="restaurant-desc"
-							className="block text-sm font-medium mb-1"
-							style={{ color: "var(--text-primary)" }}
+							className="block text-sm font-medium mb-1 text-foreground"
+							
 						>
-							Description
+							{t(RestaurantsKeys.FORM_DESCRIPTION_LABEL)}
 						</label>
 						<textarea
 							id="restaurant-desc"
@@ -189,12 +185,8 @@ export function RestaurantSettingsForm({
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
 							rows={3}
-							className="w-full px-3 py-2 rounded-lg text-sm"
-							style={{
-								backgroundColor: "var(--bg-secondary)",
-								border: "1px solid var(--border-default)",
-								color: "var(--text-primary)",
-							}}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							
 						/>
 					</div>
 				)}
@@ -207,21 +199,17 @@ export function RestaurantSettingsForm({
 						<div>
 							<label
 								htmlFor="restaurant-currency"
-								className="block text-sm font-medium mb-1"
-								style={{ color: "var(--text-primary)" }}
+								className="block text-sm font-medium mb-1 text-foreground"
+								
 							>
-								Currency
+								{t(RestaurantsKeys.FORM_CURRENCY_LABEL)}
 							</label>
 							<select
 								id="restaurant-currency"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
-								className="w-full px-3 py-2 rounded-lg text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								
 							>
 								<option value="USD">USD ($)</option>
 								<option value="EUR">EUR (&euro;)</option>
@@ -237,10 +225,10 @@ export function RestaurantSettingsForm({
 						<div>
 							<label
 								htmlFor="restaurant-tz"
-								className="block text-sm font-medium mb-1"
-								style={{ color: "var(--text-primary)" }}
+								className="block text-sm font-medium mb-1 text-foreground"
+								
 							>
-								Timezone
+								{t(RestaurantsKeys.FORM_TIMEZONE_LABEL)}
 							</label>
 							<input
 								id="restaurant-tz"
@@ -248,13 +236,9 @@ export function RestaurantSettingsForm({
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
-								placeholder="America/New_York"
-								className="w-full px-3 py-2 rounded-lg text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								placeholder={t(RestaurantsKeys.FORM_TIMEZONE_PLACEHOLDER)}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								
 							/>
 						</div>
 					)}
@@ -268,25 +252,21 @@ export function RestaurantSettingsForm({
 						<div>
 							<label
 								htmlFor="restaurant-org"
-								className="block text-sm font-medium mb-1"
-								style={{ color: "var(--text-primary)" }}
+								className="block text-sm font-medium mb-1 text-foreground"
+								
 							>
-								Organization
+								{t(RestaurantsKeys.FORM_ORG_LABEL)}
 							</label>
 							<select
 								id="restaurant-org"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								required
-								className="w-full px-3 py-2 rounded-lg text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								
 							>
 								<option value="" disabled>
-									Select an organization
+									{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
 								</option>
 								{organizations.map((org) => (
 									<option key={org._id} value={org._id}>
@@ -304,7 +284,9 @@ export function RestaurantSettingsForm({
 				disabled={isSaving}
 				className="px-6 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 			>
-				{restaurant ? "Save Changes" : "Create Restaurant"}
+				{restaurant
+					? t(RestaurantsKeys.FORM_SAVE_CHANGES)
+					: t(RestaurantsKeys.MODAL_CREATE_HEADING)}
 			</button>
 		</form>
 	);

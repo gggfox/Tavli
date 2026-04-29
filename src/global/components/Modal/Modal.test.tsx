@@ -3,8 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Modal } from "./Modal";
 
 beforeEach(() => {
-	HTMLDialogElement.prototype.showModal = vi.fn();
-	HTMLDialogElement.prototype.close = vi.fn();
+	HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+		this.setAttribute("open", "");
+	});
+	HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+		this.removeAttribute("open");
+	});
 });
 
 describe("Modal", () => {
@@ -37,43 +41,43 @@ describe("Modal", () => {
 		expect(dialog).toHaveAttribute("aria-label", "Settings");
 	});
 
-	it("calls onClose on backdrop keydown Escape", () => {
+	it("calls onClose on the dialog cancel event (Escape)", () => {
 		const onClose = vi.fn();
 		render(
 			<Modal isOpen={true} onClose={onClose}>
 				<p>Body</p>
 			</Modal>
 		);
-		const backdrop = screen.getByRole("none", { hidden: true });
-		fireEvent.keyDown(backdrop, { key: "Escape" });
+		const dialog = screen.getByRole("dialog", { hidden: true });
+		fireEvent(dialog, new Event("cancel", { cancelable: true }));
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not call onClose on Escape when closeOnEscape is false", () => {
+	it("does not call onClose on cancel when closeOnEscape is false", () => {
 		const onClose = vi.fn();
 		render(
 			<Modal isOpen={true} onClose={onClose} closeOnEscape={false}>
 				<p>Body</p>
 			</Modal>
 		);
-		const backdrop = screen.getByRole("none", { hidden: true });
-		fireEvent.keyDown(backdrop, { key: "Escape" });
+		const dialog = screen.getByRole("dialog", { hidden: true });
+		fireEvent(dialog, new Event("cancel", { cancelable: true }));
 		expect(onClose).not.toHaveBeenCalled();
 	});
 
-	it("calls onClose when clicking the backdrop directly", () => {
+	it("calls onClose when clicking the backdrop (event.target === dialog)", () => {
 		const onClose = vi.fn();
 		render(
 			<Modal isOpen={true} onClose={onClose}>
 				<p>Body</p>
 			</Modal>
 		);
-		const backdrop = screen.getByRole("none", { hidden: true });
-		fireEvent.click(backdrop);
+		const dialog = screen.getByRole("dialog", { hidden: true });
+		fireEvent.click(dialog);
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not call onClose when clicking content inside the backdrop", () => {
+	it("does not call onClose when clicking content inside the dialog", () => {
 		const onClose = vi.fn();
 		render(
 			<Modal isOpen={true} onClose={onClose}>
@@ -91,8 +95,8 @@ describe("Modal", () => {
 				<p>Body</p>
 			</Modal>
 		);
-		const backdrop = screen.getByRole("none", { hidden: true });
-		fireEvent.click(backdrop);
+		const dialog = screen.getByRole("dialog", { hidden: true });
+		fireEvent.click(dialog);
 		expect(onClose).not.toHaveBeenCalled();
 	});
 });

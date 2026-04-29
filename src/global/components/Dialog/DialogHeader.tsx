@@ -38,12 +38,12 @@ export function DialogHeader({
 
 	return (
 		<div
-			className={classes}
-			style={{ borderBottom: "1px solid var(--border-default)" }}
+			className={`${classes} border-b border-border`}
+		 
 		>
 			<div className="flex flex-col gap-1 min-w-0">
 				{typeof title === "string" ? (
-					<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+					<h2 className="text-lg font-semibold text-foreground" >
 						{title}
 					</h2>
 				) : (
@@ -51,7 +51,7 @@ export function DialogHeader({
 				)}
 				{subtitle &&
 					(typeof subtitle === "string" ? (
-						<p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+						<p className="text-xs text-muted-foreground" >
 							{subtitle}
 						</p>
 					) : (
@@ -62,8 +62,8 @@ export function DialogHeader({
 			<button
 				type="button"
 				onClick={onClose}
-				className="p-1 rounded-md transition-colors hover:opacity-80 shrink-0"
-				style={{ color: "var(--text-muted)" }}
+				className="p-1 rounded-md transition-colors hover:opacity-80 shrink-0 text-faint-foreground"
+				
 				aria-label={closeAriaLabel}
 			>
 				<X size={18} />

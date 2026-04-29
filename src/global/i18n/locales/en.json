@@ -56,6 +56,78 @@
 			"saved": "Saved!",
 			"failed": "Failed",
 			"saving": "Saving..."
+		},
+		"itemsCount_one": "1 item",
+		"itemsCount_other": "{{count}} items"
+	},
+	"orders": {
+		"status": {
+			"submitted": "Pending",
+			"preparing": "Preparing",
+			"ready": "Ready",
+			"served": "Served",
+			"cancelled": "Cancelled"
+		},
+		"actions": {
+			"accept": "Accept Order",
+			"markReady": "Mark Ready",
+			"markServed": "Mark Served",
+			"cancel": "Cancel",
+			"cancelAndRefund": "Cancel & Refund",
+			"confirmCancel": "Confirm Cancel",
+			"keepOrder": "Keep Order",
+			"viewFullOrder": "View full order →"
+		},
+		"cancel": {
+			"prompt": "Cancel this order?",
+			"paidPrompt": "This order has been paid. Cancelling will issue a refund."
+		},
+		"card": {
+			"table": "Table {{number}}",
+			"paid": "Paid",
+			"moreItems_one": "+1 more item",
+			"moreItems_other": "+{{count}} more items"
+		},
+		"empty": {
+			"noFilters": "Select at least one status to view orders.",
+			"noOrders": "No orders match the selected filters."
+		},
+		"aria": {
+			"filter": "Filter orders by status",
+			"fullOrder": "Full order details",
+			"loading": "Loading orders"
+		}
+	},
+	"payments": {
+		"aria": {
+			"filter": "Filter payments by time frame",
+			"loading": "Loading payments"
+		},
+		"timeFrame": {
+			"today": "Today",
+			"week": "This Week",
+			"month": "This Month",
+			"quarter": "This Quarter",
+			"year": "This Year",
+			"all": "All Time"
+		},
+		"summary": {
+			"totalRevenue": "Total Revenue",
+			"orders": "Orders",
+			"avgOrder": "Avg. Order"
+		},
+		"empty": {
+			"noPayments": "No payments in this period."
+		},
+		"table": {
+			"orderId": "Order ID",
+			"date": "Date",
+			"table": "Table",
+			"items": "Items",
+			"total": "Total"
+		},
+		"tooltip": {
+			"total": "Total"
 		}
 	},
 	"customer": {
@@ -79,6 +151,402 @@
 		"ERROR_ADMIN_REQUIRED": "You don't have permission to perform this action.",
 		"ERROR_MANAGER_REQUIRED": "You need manager permissions to perform this action.",
 		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions."
+	},
+	"time": {
+		"relative": {
+			"justNow": "just now",
+			"minAgo": "{{count}} min ago",
+			"hourAgo": "{{count}} h ago",
+			"dayAgo": "{{count}} d ago"
+		}
+	},
+	"ordering": {
+		"session": {
+			"errorNotFound": "This restaurant was not found or is currently unavailable. Please check the link.",
+			"errorGeneric": "Something went wrong. Please try refreshing the page.",
+			"oops": "Oops!",
+			"noSession": "No active session. Please return to the menu.",
+			"viewOrders": "View your orders",
+			"myOrders": "My orders"
+		},
+		"backToMenu": "Back to menu",
+		"backToMenuAria": "Back to menu",
+		"menu": {
+			"proceedToPayment": "Proceed to Payment",
+			"preparing": "Preparing...",
+			"reviewOrder": "Review Your Order",
+			"tableNumber": "Table Number",
+			"selectTable": "Select your table",
+			"tableRequired": "Please select a table to continue",
+			"tableLabel": "Table {{number}}",
+			"notesPlaceholder": "Any allergies, preferences, or notes for the kitchen? (optional)",
+			"totalLabel": "Total",
+			"totalWithCount_one": "Total (1 item)",
+			"totalWithCount_other": "Total ({{count}} items)",
+			"tapToStart": "Tap on items to start your order",
+			"noOnlineOrdering": "Online ordering is not available at this restaurant yet."
+		},
+		"item": {
+			"required": "Required",
+			"pickOne": "Pick one",
+			"pleaseSelect": "Please select an option",
+			"addToCart": "Add to Cart",
+			"updateCart": "Update Cart",
+			"removeFromOrder": "Remove from order",
+			"specialInstructionsLabel": "Special instructions",
+			"specialInstructionsPlaceholder": "Any allergies or preferences?"
+		},
+		"cart": {
+			"back": "Back to menu",
+			"heading": "Your Order",
+			"empty": "Your cart is empty. Add some items!",
+			"total": "Total",
+			"placeOrder": "Place Order",
+			"placingOrder": "Placing Order..."
+		},
+		"checkout": {
+			"heading": "Checkout",
+			"orderSummary": "Order Summary",
+			"total": "Total",
+			"initFailed": "Failed to initialize payment",
+			"paymentFailed": "Payment failed. Please try again.",
+			"genericError": "Payment failed",
+			"unableInit": "Unable to initialize payment. Please try again.",
+			"retry": "Retry",
+			"processing": "Processing...",
+			"payNow": "Pay Now",
+			"securedByStripe": "Payments secured by Stripe"
+		},
+		"orderStatus": {
+			"loading": "Loading order...",
+			"heading": "Order Status",
+			"cancelled": "Order Cancelled",
+			"items": "Items",
+			"summary": "${{total}} · {{count}} items",
+			"orderMore": "Order More",
+			"stepPlaced": "Order Placed",
+			"stepPreparing": "Preparing",
+			"stepReady": "Ready",
+			"stepServed": "Served"
+		},
+		"orders": {
+			"header": "Your orders",
+			"emptyTitle": "No orders yet",
+			"emptyDesc": "Start an order from the menu to see it here.",
+			"emptyBrowse": "Browse menu",
+			"timeJustNow": "Just now",
+			"timeMinAgo": "{{count}}m ago",
+			"timeHourAgo": "{{count}}h ago",
+			"lifecyclePaymentFailed": "Payment failed",
+			"lifecycleTryAgain": "Try again",
+			"lifecyclePaymentProcessing": "Payment processing",
+			"lifecycleView": "View",
+			"lifecycleUnpaid": "Unpaid",
+			"lifecycleFinishCheckout": "Finish checkout",
+			"lifecyclePlaced": "Order placed",
+			"lifecyclePreparing": "Preparing",
+			"lifecycleReady": "Ready",
+			"lifecycleServed": "Served",
+			"lifecycleCancelled": "Cancelled"
+		}
+	},
+	"restaurants": {
+		"list": {
+			"newRestaurant": "New Restaurant",
+			"edit": "Edit restaurant",
+			"manageTables": "Manage tables",
+			"customerView": "Customer View",
+			"deactivate": "Deactivate",
+			"activate": "Activate",
+			"empty": "No restaurants found.",
+			"loadingAria": "Loading restaurants",
+			"loadFailed": "Failed to load restaurants.",
+			"toggleFailed": "Failed to toggle restaurant status",
+			"statusActive": "Active",
+			"statusInactive": "Inactive"
+		},
+		"modal": {
+			"createAria": "Create Restaurant",
+			"editAria": "Edit Restaurant",
+			"tablesAria": "Manage Tables",
+			"createHeading": "New Restaurant",
+			"editHeading": "Edit Restaurant",
+			"tablesHeading": "Tables"
+		},
+		"form": {
+			"nameLabel": "Restaurant Name",
+			"slugLabel": "Slug (URL identifier)",
+			"slugHint": "Customers will visit: /r/{{slug}}/en/menu",
+			"openTestLink": "Open Test Link",
+			"descriptionLabel": "Description",
+			"currencyLabel": "Currency",
+			"timezoneLabel": "Timezone",
+			"timezonePlaceholder": "America/New_York",
+			"orgLabel": "Organization",
+			"orgPlaceholder": "Select an organization",
+			"statusLabel": "Status",
+			"toggleDeactivateTitle": "Deactivate restaurant",
+			"toggleActivateTitle": "Activate restaurant",
+			"saveChanges": "Save Changes",
+			"create": "Create",
+			"creating": "Creating...",
+			"updateFailed": "Failed to update restaurant",
+			"createFailed": "Failed to create restaurant"
+		},
+		"tables": {
+			"numberLabel": "Table #",
+			"labelLabel": "Label (optional)",
+			"labelPlaceholder": "Patio 3",
+			"seatsLabel": "Seats",
+			"add": "Add",
+			"save": "Save",
+			"cancel": "Cancel",
+			"editTitle": "Edit table",
+			"deactivateTitle": "Deactivate",
+			"activateTitle": "Activate",
+			"removeTitle": "Remove table",
+			"tableLabel": "Table {{number}}",
+			"seatsFormat_one": "1 seat",
+			"seatsFormat_other": "{{count}} seats",
+			"seatsNotSet": "seats not set",
+			"empty": "No tables yet. Add your first table above.",
+			"createFailed": "Failed to create table",
+			"updateFailed": "Failed to update table",
+			"toggleFailed": "Failed to toggle table status",
+			"removeFailed": "Failed to remove table"
+		},
+		"stripe": {
+			"heading": "Payment Setup",
+			"description": "Connect your Stripe account to accept customer payments.",
+			"paymentsEnabled": "Payments Enabled",
+			"checking": "Checking payment setup...",
+			"fullySetup": "Your Stripe account is connected and ready to receive payments. Customers will be charged when placing orders, and funds will be transferred to your Stripe account automatically.",
+			"dashboard": "Stripe Dashboard",
+			"refreshStatus": "Refresh Status",
+			"refresh": "Refresh",
+			"requirementsPrefix": "Requirements status:",
+			"requirementsCurrentlyDue": " — Action needed to complete onboarding.",
+			"requirementsPastDue": " — Overdue requirements must be completed immediately.",
+			"transfersInactive": "Payment transfers are not yet active. Complete onboarding to enable payments.",
+			"partialRequirements": "Payments are enabled but additional requirements need attention.",
+			"redirecting": "Redirecting...",
+			"continueSetup": "Continue Stripe Setup",
+			"intro": "Set up Stripe to accept credit card payments from customers. A 6% platform fee applies on top of Stripe's standard processing fees.",
+			"settingUp": "Setting up...",
+			"onboard": "Onboard to collect payments",
+			"resetButton": "Reset Stripe Setup",
+			"resetConfirm": "Confirm Reset",
+			"resetResetting": "Resetting...",
+			"resetCancel": "Cancel",
+			"resetWarning": "This closes the current Stripe account and unlinks it from this restaurant. You'll need to complete onboarding again. Any existing products tied to this account will no longer be chargeable.",
+			"disconnectedClosed": "Disconnected and closed Stripe account {{accountId}}. You can now onboard a new account.",
+			"disconnectedLeftOpen": "Disconnected from Stripe. The previous account was left open — close it from your Stripe Dashboard if needed.",
+			"statusFailed": "Failed to check payment status",
+			"setupFailed": "Failed to start Stripe setup",
+			"resetFailed": "Failed to reset Stripe setup"
+		}
+	},
+	"welcome": {
+		"badge": "Restaurant Menu Management",
+		"headingPrefix": "Welcome to",
+		"subheading": "Manage your restaurants, menus, and orders. Customers scan a QR code to browse and order from their table.",
+		"feature": {
+			"menuTitle": "Menu Builder",
+			"menuDesc": "Create and manage menus with categories, items, and option groups.",
+			"tableTitle": "Table Ordering",
+			"tableDesc": "Customers order from their table via a unique link or QR code.",
+			"authTitle": "Secure Auth",
+			"authDesc": "Manage staff roles with secure authentication via Clerk."
+		},
+		"getStarted": "Get Started"
+	},
+	"menus": {
+		"list": {
+			"newPlaceholder": "New menu name (e.g. Dinner Menu)",
+			"addButton": "Add Menu",
+			"toggleDeactivate": "Deactivate",
+			"toggleActivate": "Activate",
+			"rename": "Rename",
+			"delete": "Delete menu",
+			"empty": "No menus yet. Create your first menu above.",
+			"loadingAria": "Loading menus"
+		},
+		"editor": {
+			"languagesLabel": "Languages",
+			"languagesTitle": "Configure languages",
+			"optionsLabel": "Options",
+			"optionsTitle": "Manage option groups",
+			"optionGroupsModalAria": "Manage Option Groups",
+			"optionGroupsHeading": "Option Groups",
+			"optionGroupsDescription": "Create reusable option groups and link them to menu items.",
+			"newCategoryPlaceholder": "New category (e.g. Appetizers)",
+			"addCategory": "Add Category",
+			"translatingHint": "Translating names and descriptions. Prices, images, and options are shared across all languages.",
+			"noCategories": "No categories yet. Add your first category above.",
+			"loadingAria": "Loading menu editor"
+		},
+		"category": {
+			"itemsCount_one": "(1 item)",
+			"itemsCount_other": "({{count}} items)",
+			"translationPlaceholder": "{{name}} translation...",
+			"deleteTitle": "Delete category",
+			"addItem": "Add item"
+		},
+		"item": {
+			"editTitle": "Edit item",
+			"imageTitle": "Manage image",
+			"optionsTitle": "Link option groups",
+			"markUnavailable": "Mark unavailable",
+			"markAvailable": "Mark available",
+			"removeTitle": "Remove item"
+		},
+		"translation": {
+			"namePlaceholder": "{{name}} translation...",
+			"descPlaceholder": "Description translation...",
+			"descLabel": "desc"
+		},
+		"form": {
+			"itemNamePlaceholder": "Item name",
+			"itemPricePlaceholder": "Price",
+			"itemDescriptionPlaceholder": "Description (optional)",
+			"changeImage": "Change image",
+			"addImage": "Add image",
+			"pasteHint": "or paste from clipboard",
+			"uploading": "Uploading...",
+			"add": "Add",
+			"cancel": "Cancel",
+			"saving": "Saving...",
+			"save": "Save",
+			"editHeader": "Edit Item",
+			"replaceImage": "Replace image",
+			"uploadImage": "Upload image",
+			"remove": "Remove",
+			"imageHeader": "Item Image"
+		},
+		"picker": {
+			"noGroups": "No option groups yet. Use the Option Groups button above to create them.",
+			"linkedGroups": "Linked Option Groups",
+			"groupSingle": "· Single",
+			"groupMulti": "· Multi"
+		},
+		"lang": {
+			"defaultLabel": "Default language (used for main item names)",
+			"additionalLabel": "Additional languages for translations"
+		}
+	},
+	"options": {
+		"translatingHint": "Translating option group and option names. Configuration and prices are shared across all languages.",
+		"newGroupButton": "New Option Group",
+		"groupNamePlaceholder": "Group name (e.g. \"Meat Doneness\")",
+		"selectionSingle": "Single select",
+		"selectionMulti": "Multi select",
+		"requiredLabel": "Required",
+		"createButton": "Create",
+		"cancelButton": "Cancel",
+		"groupTranslationPlaceholder": "{{name}} translation...",
+		"optionTranslationPlaceholder": "{{name}} translation...",
+		"groupNameInlinePlaceholder": "Group name",
+		"typeSingle": "Single",
+		"typeMulti": "Multi",
+		"typeRequired": "• Required",
+		"typeOptional": "• Optional",
+		"optionNamePlaceholder": "Option name",
+		"optionPricePlaceholder": "+$"
+	},
+	"reservations": {
+		"status": {
+			"pending": "Pending",
+			"confirmed": "Confirmed",
+			"seated": "Seated",
+			"completed": "Completed",
+			"cancelled": "Cancelled",
+			"noShow": "No show"
+		},
+		"range": {
+			"today": "Today",
+			"week": "This week",
+			"month": "This month",
+			"quarter": "This quarter",
+			"year": "This year",
+			"all": "All time"
+		},
+		"aria": {
+			"filterRange": "Filter reservations by date range",
+			"filterStatus": "Filter reservations by status",
+			"detailDrawer": "Reservation details",
+			"detailDrawerClose": "Close drawer",
+			"remove": "Remove",
+			"removeLock": "Remove lock"
+		},
+		"empty": {
+			"title": "No reservations in this view.",
+			"description": "Try a different range or status filter."
+		},
+		"drawer": {
+			"partyOf": "Party of {{count}}",
+			"via": "via {{source}}",
+			"assignedTables_one": "Assigned: 1 table",
+			"assignedTables_other": "Assigned: {{count}} tables",
+			"assignTablesPrompt": "Assign tables to confirm",
+			"cancelReasonLabel": "Cancellation reason (optional)"
+		},
+		"actions": {
+			"confirm": "Confirm",
+			"markSeated": "Mark seated",
+			"markCompleted": "Mark completed",
+			"confirmCancel": "Confirm cancel",
+			"back": "Back",
+			"cancel": "Cancel"
+		},
+		"errors": {
+			"actionFailed": "Action failed"
+		},
+		"reasons": {
+			"notAccepting": "This restaurant isn't taking reservations right now.",
+			"outsideBookingHorizon": "That time is outside the booking window. Try a closer or further-out time.",
+			"blackoutWindow": "The restaurant is closed during that window.",
+			"noTables": "No tables are free for that party at that time."
+		},
+		"customerForm": {
+			"title": "Reserve at {{restaurantName}}",
+			"partySize": "Party size",
+			"dateTime": "Date & time",
+			"name": "Name",
+			"phone": "Phone",
+			"email": "Email (optional)",
+			"notes": "Notes (optional)",
+			"submit": "Request reservation",
+			"submitting": "Submitting…",
+			"requiredError": "Name and phone are required.",
+			"genericError": "Could not create reservation",
+			"successTitle": "Reservation requested",
+			"successMessage": "{{restaurantName}} will confirm shortly. We've recorded your party of {{count}} for {{when}}.",
+			"available": "Available · {{turnMinutes}} min turn"
+		},
+		"picker": {
+			"selectedCapacity": "Selected capacity: {{capacity}} / {{partySize}}",
+			"needMoreSeats": "Need {{count}} more seats",
+			"seats": "{{count}} seats",
+			"reservedSuffix": " · reserved",
+			"lockedSuffix": " · locked",
+			"noTables": "No active tables."
+		},
+		"locks": {
+			"newLock": "New lock",
+			"tableLabel": "Table",
+			"tablePlaceholder": "Select…",
+			"startsAt": "Starts at",
+			"endsAt": "Ends at",
+			"reason": "Reason",
+			"reasonPlaceholder": "Maintenance",
+			"addLock": "Add lock",
+			"pickTableError": "Pick a table",
+			"createError": "Failed to create lock",
+			"removeError": "Failed to remove lock",
+			"tableFormat": "Table {{number}}",
+			"empty": "No locks. Add one above to take a table out of service for a window."
+		},
+		"tableLabelPrefix": "Table"
 	},
 	"reservationSettings": {
 		"fieldDescriptions": {

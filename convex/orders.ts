@@ -455,7 +455,24 @@ export const getActiveOrdersByRestaurant = query({
 			})
 		);
 
-		return [ordersWithItems, null];
+		const allItems = ordersWithItems.flatMap((o) => o.items);
+		const { menuItemTranslations, optionTranslations, optionGroupTranslations } =
+			await loadOrderItemTranslations(ctx, allItems);
+
+		const enrichedOrders = ordersWithItems.map((order) => ({
+			...order,
+			items: order.items.map((item) => ({
+				...item,
+				menuItemTranslations: menuItemTranslations.get(item.menuItemId),
+				selectedOptions: item.selectedOptions.map((selected) => ({
+					...selected,
+					optionTranslations: optionTranslations.get(selected.optionId),
+					optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
+				})),
+			})),
+		}));
+
+		return [enrichedOrders, null];
 	},
 });
 
@@ -494,9 +511,29 @@ export const getPaidOrdersByRestaurant = query({
 			})
 		);
 
+		const allItems = ordersWithItems.flatMap((o) => o.items);
+		const { menuItemTranslations, optionTranslations, optionGroupTranslations } =
+			await loadOrderItemTranslations(ctx, allItems);
+
+		const enrichedOrders = ordersWithItems.map((order) => ({
+			...order,
+			items: order.items.map((item) => ({
+				...item,
+				menuItemTranslations: menuItemTranslations.get(item.menuItemId),
+				selectedOptions: item.selectedOptions.map((selected) => ({
+					...selected,
+					optionTranslations: optionTranslations.get(selected.optionId),
+					optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
+				})),
+			})),
+		}));
+
 		const totalRevenue = paidOrders.reduce((sum, o) => sum + o.totalAmount, 0);
 
-		return [{ orders: ordersWithItems, totalRevenue, orderCount: paidOrders.length }, null];
+		return [
+			{ orders: enrichedOrders, totalRevenue, orderCount: paidOrders.length },
+			null,
+		];
 	},
 });
 
@@ -555,6 +592,60 @@ async function normalizeSelectedOptions(
 	}
 
 	return normalized;
+}
+
+/**
+ * Loads `translations` maps for every menu item / option / option group
+ * referenced by the given order items so the kitchen and payments
+ * dashboards can localize names without depending on the snapshot being
+ * perfect at order-placement time. The snapshot (`menuItemName`,
+ * `optionName`, `optionGroupName`) remains the canonical fallback when the
+ * source row has been deleted or has no translation.
+ *
+ * Batches `db.get` calls so the query is O(distinct entities) rather than
+ * O(items). Returns three lookup maps; callers apply them when shaping the
+ * per-item / per-option output.
+ */
+async function loadOrderItemTranslations(
+	ctx: { db: { get: (id: Id<"menuItems"> | Id<"options"> | Id<"optionGroups">) => Promise<any> } },
+	allItems: Array<{
+		menuItemId: Id<"menuItems">;
+		selectedOptions: Array<{
+			optionGroupId: Id<"optionGroups">;
+			optionId: Id<"options">;
+		}>;
+	}>
+) {
+	const menuItemIds = Array.from(new Set(allItems.map((i) => i.menuItemId)));
+	const optionIds = Array.from(
+		new Set(allItems.flatMap((i) => i.selectedOptions.map((o) => o.optionId)))
+	);
+	const optionGroupIds = Array.from(
+		new Set(allItems.flatMap((i) => i.selectedOptions.map((o) => o.optionGroupId)))
+	);
+
+	const [menuItemDocs, optionDocs, optionGroupDocs] = await Promise.all([
+		Promise.all(menuItemIds.map((id) => ctx.db.get(id))),
+		Promise.all(optionIds.map((id) => ctx.db.get(id))),
+		Promise.all(optionGroupIds.map((id) => ctx.db.get(id))),
+	]);
+
+	const menuItemTranslations = new Map<string, Record<string, { name?: string; description?: string }> | undefined>();
+	for (const doc of menuItemDocs) {
+		if (doc) menuItemTranslations.set(doc._id, doc.translations);
+	}
+
+	const optionTranslations = new Map<string, Record<string, { name?: string }> | undefined>();
+	for (const doc of optionDocs) {
+		if (doc) optionTranslations.set(doc._id, doc.translations);
+	}
+
+	const optionGroupTranslations = new Map<string, Record<string, { name?: string }> | undefined>();
+	for (const doc of optionGroupDocs) {
+		if (doc) optionGroupTranslations.set(doc._id, doc.translations);
+	}
+
+	return { menuItemTranslations, optionTranslations, optionGroupTranslations };
 }
 
 async function invalidateActivePayment(

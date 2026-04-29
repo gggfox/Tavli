@@ -50,7 +50,7 @@ describe("Surface", () => {
 	});
 
 	it("merges caller-supplied style on top of computed style", () => {
-		render(<Surface style={{ padding: 12 }}>padded</Surface>);
+		render(<Surface style={{padding: 12}}>padded</Surface>);
 		const node = screen.getByText("padded");
 		expect(node.style.padding).toBe("12px");
 		expect(node.style.backgroundColor).toBe("var(--bg-secondary)");

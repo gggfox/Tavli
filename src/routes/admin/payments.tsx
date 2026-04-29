@@ -25,7 +25,7 @@ function PaymentsContent({
 	if (isLoading) return <PaymentsDashboardSkeleton />;
 	if (!restaurantId) {
 		return (
-			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+			<p className="text-sm text-faint-foreground" >
 				Please set up your restaurant first.
 			</p>
 		);

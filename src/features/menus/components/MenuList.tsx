@@ -1,7 +1,9 @@
-import { EmptyState, TextInput } from "@/global/components";
+import { EmptyState, InlineEditInput, TextInput } from "@/global/components";
+import { MenusKeys } from "@/global/i18n";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Edit, Plus, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface MenuListProps {
 	menus: Doc<"menus">[];
@@ -24,9 +26,9 @@ export function MenuList({
 	onDelete,
 	onSelect,
 }: Readonly<MenuListProps>) {
+	const { t } = useTranslation();
 	const [newName, setNewName] = useState("");
 	const [editingId, setEditingId] = useState<Id<"menus"> | null>(null);
-	const [editName, setEditName] = useState("");
 
 	const sorted = [...menus].sort((a, b) => a.displayOrder - b.displayOrder);
 
@@ -45,14 +47,14 @@ export function MenuList({
 						type="text"
 						value={newName}
 						onChange={(e) => setNewName(e.target.value)}
-						placeholder="New menu name (e.g. Dinner Menu)"
+						placeholder={t(MenusKeys.LIST_NEW_PLACEHOLDER)}
 					/>
 				</div>
 				<button
 					type="submit"
 					className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 				>
-					<Plus size={16} /> Add Menu
+					<Plus size={16} /> {t(MenusKeys.LIST_ADD_BUTTON)}
 				</button>
 			</form>
 
@@ -60,71 +62,56 @@ export function MenuList({
 				{sorted.map((menu) => (
 					<div
 						key={menu._id}
-						className="flex items-center justify-between px-4 py-3 rounded-lg cursor-pointer hover:bg-[var(--bg-hover)]"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="flex items-center justify-between px-4 py-3 rounded-lg cursor-pointer hover:bg-hover bg-muted border border-border"
 						onClick={() => onSelect(menu._id)}
 					>
 						<div className="flex-1">
 							{editingId === menu._id ? (
-								<input
-									type="text"
-									value={editName}
-									onChange={(e) => setEditName(e.target.value)}
-									onBlur={async () => {
-										if (editName.trim() && editName !== menu.name) {
-											await onUpdate({ menuId: menu._id, name: editName.trim() });
+								<InlineEditInput
+									value={menu.name}
+									placeholder={menu.name}
+									autoFocus
+									onSave={async (next) => {
+										const trimmed = next.trim();
+										if (trimmed && trimmed !== menu.name) {
+											await onUpdate({ menuId: menu._id, name: trimmed });
 										}
 										setEditingId(null);
 									}}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-									}}
-									autoFocus
-									className="px-2 py-1 rounded text-sm"
-									style={{
-										backgroundColor: "var(--bg-primary)",
-										border: "1px solid var(--border-default)",
-										color: "var(--text-primary)",
-									}}
-									onClick={(e) => e.stopPropagation()}
 								/>
 							) : (
-								<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-									{menu.name}
-								</span>
+								<span className="text-sm font-medium text-foreground">{menu.name}</span>
 							)}
 						</div>
 						<div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
 							<button
 								onClick={() => onUpdate({ menuId: menu._id, isActive: !menu.isActive })}
-								className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-								title={menu.isActive ? "Deactivate" : "Activate"}
+								className="p-1.5 rounded-md hover:bg-hover text-success"
+								title={
+									menu.isActive
+										? t(MenusKeys.LIST_TOGGLE_DEACTIVATE)
+										: t(MenusKeys.LIST_TOGGLE_ACTIVATE)
+								}
 							>
 								{menu.isActive ? (
-									<ToggleRight size={20} style={{ color: "var(--accent-success)" }} />
+									<ToggleRight size={20} />
 								) : (
-									<ToggleLeft size={20} style={{ color: "var(--text-muted)" }} />
+									<ToggleLeft size={20} className="text-faint-foreground" />
 								)}
 							</button>
 							<button
-								onClick={() => {
-									setEditingId(menu._id);
-									setEditName(menu.name);
-								}}
-								className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-								title="Rename"
+								onClick={() => setEditingId(menu._id)}
+								className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+								title={t(MenusKeys.LIST_RENAME)}
 							>
-								<Edit size={16} style={{ color: "var(--text-secondary)" }} />
+								<Edit size={16} />
 							</button>
 							<button
 								onClick={() => onDelete({ menuId: menu._id })}
-								className="p-1.5 rounded-md hover:bg-[var(--bg-hover)]"
-								title="Delete menu"
+								className="p-1.5 rounded-md hover:bg-hover text-destructive"
+								title={t(MenusKeys.LIST_DELETE)}
 							>
-								<Trash2 size={16} style={{ color: "var(--accent-danger)" }} />
+								<Trash2 size={16} />
 							</button>
 						</div>
 					</div>
@@ -132,7 +119,7 @@ export function MenuList({
 				{sorted.length === 0 && (
 					<EmptyState
 						variant="inline"
-						title="No menus yet. Create your first menu above."
+						title={t(MenusKeys.LIST_EMPTY)}
 						className="py-8"
 					/>
 				)}

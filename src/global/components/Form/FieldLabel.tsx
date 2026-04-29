@@ -13,7 +13,7 @@ export interface FieldLabelProps {
  */
 export function FieldLabel({ htmlFor, label, description }: FieldLabelProps) {
 	return (
-		<span className="flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
+		<span className="flex items-center gap-1.5 text-muted-foreground" >
 			<label htmlFor={htmlFor}>{label}</label>
 			{description ? <InfoTooltip description={description} /> : null}
 		</span>

@@ -9,6 +9,7 @@
  * Used by the Payments and Reservations dashboards for time-range filters.
  */
 import { type CSSProperties, type KeyboardEvent, useCallback, useRef } from "react";
+import { KEY } from "@/global/utils/keyboard";
 
 export interface SegmentedControlOption<T extends string> {
 	readonly value: T;
@@ -56,22 +57,22 @@ export function SegmentedControl<T extends string>({
 			const last = options.length - 1;
 			if (last < 0) return;
 
-			if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+			if (event.key === KEY.ArrowRight || event.key === KEY.ArrowDown) {
 				event.preventDefault();
 				focusAndSelect(index === last ? 0 : index + 1);
 				return;
 			}
-			if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+			if (event.key === KEY.ArrowLeft || event.key === KEY.ArrowUp) {
 				event.preventDefault();
 				focusAndSelect(index === 0 ? last : index - 1);
 				return;
 			}
-			if (event.key === "Home") {
+			if (event.key === KEY.Home) {
 				event.preventDefault();
 				focusAndSelect(0);
 				return;
 			}
-			if (event.key === "End") {
+			if (event.key === KEY.End) {
 				event.preventDefault();
 				focusAndSelect(last);
 			}
@@ -118,12 +119,10 @@ export function SegmentedControl<T extends string>({
 						]
 							.filter(Boolean)
 							.join(" ")}
-						style={{
-							backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
-							color: isActive
-								? "var(--btn-primary-text, #fff)"
-								: "var(--text-secondary)",
-						}}
+						style={{backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
+				color: isActive
+								? "var(--btn-primary-text)"
+								: "var(--text-secondary)"}}
 					>
 						{opt.label}
 					</button>

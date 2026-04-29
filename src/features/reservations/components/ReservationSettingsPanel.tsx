@@ -13,6 +13,7 @@ import {
 	TextField,
 } from "@/global/components";
 import { useConvexMutate } from "@/global/hooks";
+import { ReservationSettingsKeys, ReservationsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -20,22 +21,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-
-const FIELD_DESCRIPTIONS = {
-	accepting:
-		"Master switch. When off, customers cannot create new reservations through any channel.",
-	defaultTurn:
-		"How long, on average, a party occupies a table before it is considered available again.",
-	minAdvance:
-		"Earliest gap (in minutes) between now and a reservation start time that we still accept.",
-	maxAdvance: "How many days into the future customers can book a reservation.",
-	noShowGrace:
-		"How long after the start time we wait before automatically marking a reservation as no-show.",
-	turnRanges:
-		"Override the default turn time for specific party-size ranges. First matching range wins.",
-	blackouts:
-		"Date ranges in which we will not accept any reservations regardless of other settings.",
-} as const;
+import { useTranslation } from "react-i18next";
 
 interface ReservationSettingsPanelProps {
 	restaurantId: Id<"restaurants">;
@@ -56,6 +42,7 @@ interface BlackoutWindow {
 export function ReservationSettingsPanel({
 	restaurantId,
 }: Readonly<ReservationSettingsPanelProps>) {
+	const { t } = useTranslation();
 	const { data: rawSettings } = useQuery(
 		convexQuery(api.reservationSettings.get, { restaurantId })
 	);
@@ -102,7 +89,7 @@ export function ReservationSettingsPanel({
 			);
 			setSaved(true);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save");
+			setError(err instanceof Error ? err.message : t(ReservationSettingsKeys.MSG_SAVE_FAILED));
 		}
 	};
 
@@ -110,20 +97,22 @@ export function ReservationSettingsPanel({
 		<div className="space-y-6 max-w-2xl">
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 			{saved && (
-				<p className="text-xs" style={{ color: "var(--accent-success)" }}>
-					Saved.
+				<p className="text-xs text-success" >
+					{t(ReservationSettingsKeys.MSG_SAVED)}
 				</p>
 			)}
 			{settings?.isDefault && (
-				<p className="text-xs" style={{ color: "var(--text-muted)" }}>
-					Using defaults. Save to persist your own values.
+				<p className="text-xs text-faint-foreground" >
+					{t(ReservationSettingsKeys.MSG_USING_DEFAULTS)}
 				</p>
 			)}
 
 			<div className="flex items-center justify-between">
 				<span className="flex items-center gap-1.5 text-sm font-medium">
-					<label htmlFor="accepting">Accepting reservations</label>
-					<InfoTooltip description={FIELD_DESCRIPTIONS.accepting} />
+					<label htmlFor="accepting">
+						{t(ReservationSettingsKeys.LABEL_ACCEPTING)}
+					</label>
+					<InfoTooltip description={t(ReservationSettingsKeys.DESC_ACCEPTING)} />
 				</span>
 				<input
 					id="accepting"
@@ -135,42 +124,44 @@ export function ReservationSettingsPanel({
 
 			<NumberField
 				id="default-turn"
-				label="Default turn time (minutes)"
+				label={t(ReservationSettingsKeys.LABEL_DEFAULT_TURN)}
 				value={defaultTurnMinutes}
 				onChange={setDefaultTurnMinutes}
 				min={15}
-				description={FIELD_DESCRIPTIONS.defaultTurn}
+				description={t(ReservationSettingsKeys.DESC_DEFAULT_TURN)}
 			/>
 			<NumberField
 				id="min-advance"
-				label="Minimum advance (minutes)"
+				label={t(ReservationSettingsKeys.LABEL_MIN_ADVANCE)}
 				value={minAdvanceMinutes}
 				onChange={setMinAdvanceMinutes}
 				min={0}
-				description={FIELD_DESCRIPTIONS.minAdvance}
+				description={t(ReservationSettingsKeys.DESC_MIN_ADVANCE)}
 			/>
 			<NumberField
 				id="max-advance"
-				label="Booking horizon (days)"
+				label={t(ReservationSettingsKeys.LABEL_MAX_ADVANCE)}
 				value={maxAdvanceDays}
 				onChange={setMaxAdvanceDays}
 				min={1}
-				description={FIELD_DESCRIPTIONS.maxAdvance}
+				description={t(ReservationSettingsKeys.DESC_MAX_ADVANCE)}
 			/>
 			<NumberField
 				id="grace"
-				label="No-show grace (minutes)"
+				label={t(ReservationSettingsKeys.LABEL_NO_SHOW_GRACE)}
 				value={noShowGraceMinutes}
 				onChange={setNoShowGraceMinutes}
 				min={0}
-				description={FIELD_DESCRIPTIONS.noShowGrace}
+				description={t(ReservationSettingsKeys.DESC_NO_SHOW_GRACE)}
 			/>
 
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
 					<span className="flex items-center gap-1.5">
-						<h3 className="text-sm font-medium">Per-party-size turn time</h3>
-						<InfoTooltip description={FIELD_DESCRIPTIONS.turnRanges} />
+						<h3 className="text-sm font-medium">
+							{t(ReservationSettingsKeys.LABEL_TURN_RANGES)}
+						</h3>
+						<InfoTooltip description={t(ReservationSettingsKeys.DESC_TURN_RANGES)} />
 					</span>
 					<button
 						type="button"
@@ -180,20 +171,20 @@ export function ReservationSettingsPanel({
 								{ minPartySize: 1, maxPartySize: 4, turnMinutes: 90 },
 							])
 						}
-						className="flex items-center gap-1 text-xs px-2 py-1 rounded-md"
-						style={{ border: "1px solid var(--border-default)" }}
+						className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border"
+						
 					>
-						<Plus size={12} /> Add range
+						<Plus size={12} /> {t(ReservationSettingsKeys.ACTION_ADD_RANGE)}
 					</button>
 				</div>
-				<p className="text-xs" style={{ color: "var(--text-muted)" }}>
-					First matching range wins. If no range matches, the default turn time is used.
+				<p className="text-xs text-faint-foreground" >
+					{t(ReservationSettingsKeys.MSG_RANGE_FALLBACK)}
 				</p>
 				{turnRanges.map((r, i) => (
 					<div key={`${r.minPartySize}-${r.maxPartySize}-${i}`} className="flex items-end gap-2">
 						<NumberField
 							id={`min-party-${i}`}
-							label="Min party"
+							label={t(ReservationSettingsKeys.LABEL_MIN_PARTY)}
 							value={r.minPartySize}
 							onChange={(v) =>
 								setTurnRanges((rs) =>
@@ -204,7 +195,7 @@ export function ReservationSettingsPanel({
 						/>
 						<NumberField
 							id={`max-party-${i}`}
-							label="Max party"
+							label={t(ReservationSettingsKeys.LABEL_MAX_PARTY)}
 							value={r.maxPartySize}
 							onChange={(v) =>
 								setTurnRanges((rs) =>
@@ -215,7 +206,7 @@ export function ReservationSettingsPanel({
 						/>
 						<NumberField
 							id={`turn-${i}`}
-							label="Turn (min)"
+							label={t(ReservationSettingsKeys.LABEL_TURN_MINUTES)}
 							value={r.turnMinutes}
 							onChange={(v) =>
 								setTurnRanges((rs) =>
@@ -227,10 +218,10 @@ export function ReservationSettingsPanel({
 						<button
 							type="button"
 							onClick={() => setTurnRanges((rs) => rs.filter((_, j) => j !== i))}
-							className="p-2 rounded-md"
-							aria-label="Remove"
+							className="p-2 rounded-md text-destructive"
+							aria-label={t(ReservationsKeys.ARIA_REMOVE)}
 						>
-							<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+							<Trash2 size={14}  />
 						</button>
 					</div>
 				))}
@@ -239,8 +230,10 @@ export function ReservationSettingsPanel({
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
 					<span className="flex items-center gap-1.5">
-						<h3 className="text-sm font-medium">Blackout windows</h3>
-						<InfoTooltip description={FIELD_DESCRIPTIONS.blackouts} />
+						<h3 className="text-sm font-medium">
+							{t(ReservationSettingsKeys.LABEL_BLACKOUTS)}
+						</h3>
+						<InfoTooltip description={t(ReservationSettingsKeys.DESC_BLACKOUTS)} />
 					</span>
 					<button
 						type="button"
@@ -251,10 +244,10 @@ export function ReservationSettingsPanel({
 								{ startsAt: now, endsAt: now + 2 * 60 * 60 * 1000 },
 							]);
 						}}
-						className="flex items-center gap-1 text-xs px-2 py-1 rounded-md"
-						style={{ border: "1px solid var(--border-default)" }}
+						className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border"
+						
 					>
-						<Plus size={12} /> Add window
+						<Plus size={12} /> {t(ReservationSettingsKeys.ACTION_ADD_WINDOW)}
 					</button>
 				</div>
 				{blackouts.map((b, i) => (
@@ -264,7 +257,7 @@ export function ReservationSettingsPanel({
 					>
 						<DateTimeField
 							id={`bo-start-${i}`}
-							label="Starts at"
+							label={t(ReservationSettingsKeys.LABEL_STARTS_AT)}
 							valueMs={b.startsAt}
 							onChangeMs={(v) =>
 								setBlackouts((bs) => bs.map((bb, j) => (j === i ? { ...bb, startsAt: v } : bb)))
@@ -272,7 +265,7 @@ export function ReservationSettingsPanel({
 						/>
 						<DateTimeField
 							id={`bo-end-${i}`}
-							label="Ends at"
+							label={t(ReservationSettingsKeys.LABEL_ENDS_AT)}
 							valueMs={b.endsAt}
 							onChangeMs={(v) =>
 								setBlackouts((bs) => bs.map((bb, j) => (j === i ? { ...bb, endsAt: v } : bb)))
@@ -280,7 +273,7 @@ export function ReservationSettingsPanel({
 						/>
 						<TextField
 							id={`bo-reason-${i}`}
-							label="Reason"
+							label={t(ReservationSettingsKeys.LABEL_REASON)}
 							value={b.reason ?? ""}
 							onChange={(v) =>
 								setBlackouts((bs) => bs.map((bb, j) => (j === i ? { ...bb, reason: v } : bb)))
@@ -289,10 +282,10 @@ export function ReservationSettingsPanel({
 						<button
 							type="button"
 							onClick={() => setBlackouts((bs) => bs.filter((_, j) => j !== i))}
-							className="p-2 rounded-md"
-							aria-label="Remove"
+							className="p-2 rounded-md text-destructive"
+							aria-label={t(ReservationsKeys.ARIA_REMOVE)}
 						>
-							<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+							<Trash2 size={14}  />
 						</button>
 					</div>
 				))}
@@ -303,7 +296,7 @@ export function ReservationSettingsPanel({
 				onClick={handleSave}
 				className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 			>
-				Save settings
+				{t(ReservationSettingsKeys.ACTION_SAVE)}
 			</button>
 		</div>
 	);

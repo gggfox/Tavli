@@ -1,4 +1,4 @@
-import { unwrapQuery } from "@/global/utils";
+import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -10,23 +10,25 @@ interface UsePaymentsArgs {
 	to?: number;
 }
 
+type PaidOrdersValue = {
+	orders: Array<unknown>;
+	totalRevenue: number;
+	orderCount: number;
+};
+
 export function usePayments({ restaurantId, from, to }: UsePaymentsArgs) {
-	const { data: rawResult, isLoading } = useQuery(
-		convexQuery(
+	const { data, isLoading, error } = useQuery({
+		...convexQuery(
 			api.orders.getPaidOrdersByRestaurant,
 			restaurantId ? { restaurantId, from, to } : "skip"
-		)
-	);
-
-	const { data, error } = unwrapQuery(rawResult);
-	const orders = data?.orders ?? [];
-	const totalRevenue = data?.totalRevenue ?? 0;
-	const orderCount = data?.orderCount ?? 0;
+		),
+		select: unwrapResult<PaidOrdersValue>,
+	});
 
 	return {
-		orders,
-		totalRevenue,
-		orderCount,
+		orders: data?.orders ?? [],
+		totalRevenue: data?.totalRevenue ?? 0,
+		orderCount: data?.orderCount ?? 0,
 		isLoading,
 		error,
 	};

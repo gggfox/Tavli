@@ -5,14 +5,10 @@ export function SidebarContainer({ children }: Readonly<{ children: React.ReactN
 
 	return (
 		<aside
-			className={`h-full flex flex-col transition-all duration-300 ease-in-out ${
+			className={`${`tavli-sidebar-width h-full flex flex-col transition-all duration-300 ease-in-out ${
 				isExpanded ? "w-60" : "w-16"
-			}`}
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				color: "var(--text-secondary)",
-				borderRight: "1px solid var(--border-default)",
-			}}
+			}`} bg-muted text-muted-foreground border-r border-border`}
+		 
 		>
 			{children}
 		</aside>

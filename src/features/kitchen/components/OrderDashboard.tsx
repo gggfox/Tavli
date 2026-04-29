@@ -13,7 +13,21 @@ import {
 	Surface,
 } from "@/global/components";
 import { useOptimisticUserSetting } from "@/global/hooks";
+import { CommonKeys, localizeName, OrdersKeys, useLocalizedName } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
+import { getRelativeTime, type Urgency } from "@/global/utils/relativeTime";
+
+const URGENCY_TEXT_CLASS: Record<Urgency, string> = {
+	fresh: "text-success",
+	stale: "text-warning",
+	cold: "text-destructive",
+};
+
+const URGENCY_BG_CLASS: Record<Urgency, string> = {
+	fresh: "bg-success",
+	stale: "bg-warning",
+	cold: "bg-destructive",
+};
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	CheckCircle2,
@@ -24,15 +38,27 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useOrders } from "../hooks/useOrders";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 
-type DashboardOrder = Doc<"orders"> & {
-	readonly items: ReadonlyArray<Doc<"orderItems">>;
-	readonly tableNumber: number;
+type LiveNameTranslations = Record<string, { name?: string }>;
+type LiveNameDescriptionTranslations = Record<string, { name?: string; description?: string }>;
+
+type DashboardSelectedOption = Doc<"orderItems">["selectedOptions"][number] & {
+	readonly optionTranslations?: LiveNameTranslations;
+	readonly optionGroupTranslations?: LiveNameTranslations;
 };
 
-type DashboardOrderItem = Doc<"orderItems">;
+type DashboardOrderItem = Omit<Doc<"orderItems">, "selectedOptions"> & {
+	readonly menuItemTranslations?: LiveNameDescriptionTranslations;
+	readonly selectedOptions: ReadonlyArray<DashboardSelectedOption>;
+};
+
+type DashboardOrder = Doc<"orders"> & {
+	readonly items: ReadonlyArray<DashboardOrderItem>;
+	readonly tableNumber: number;
+};
 
 interface OrderDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -46,42 +72,42 @@ interface OrderDashboardProps {
 type NextOrderStatus = "preparing" | "ready" | "served" | "cancelled";
 
 type StatusConfig = {
-	label: string;
+	labelKey: string;
 	tone: StatusTone;
 	next: NextOrderStatus | null;
-	nextLabel: string | null;
+	nextLabelKey: string | null;
 };
 
 const STATUS_CONFIG: Record<OrderDashboardStatusFilter, StatusConfig> = {
 	submitted: {
-		label: "Pending",
+		labelKey: OrdersKeys.STATUS_SUBMITTED,
 		tone: "warning",
 		next: "preparing",
-		nextLabel: "Accept Order",
+		nextLabelKey: OrdersKeys.ACTION_ACCEPT,
 	},
 	preparing: {
-		label: "Preparing",
+		labelKey: OrdersKeys.STATUS_PREPARING,
 		tone: "info",
 		next: "ready",
-		nextLabel: "Mark Ready",
+		nextLabelKey: OrdersKeys.ACTION_MARK_READY,
 	},
 	ready: {
-		label: "Ready",
+		labelKey: OrdersKeys.STATUS_READY,
 		tone: "success",
 		next: "served",
-		nextLabel: "Mark Served",
+		nextLabelKey: OrdersKeys.ACTION_MARK_SERVED,
 	},
 	served: {
-		label: "Served",
+		labelKey: OrdersKeys.STATUS_SERVED,
 		tone: "neutral",
 		next: null,
-		nextLabel: null,
+		nextLabelKey: null,
 	},
 	cancelled: {
-		label: "Cancelled",
+		labelKey: OrdersKeys.STATUS_CANCELLED,
 		tone: "danger",
 		next: null,
-		nextLabel: null,
+		nextLabelKey: null,
 	},
 };
 
@@ -92,13 +118,6 @@ const ALL_STATUSES: OrderDashboardStatusFilter[] = [
 	"served",
 	"cancelled",
 ];
-
-const STATUS_FILTER_OPTIONS: ReadonlyArray<StatusFilterOption<OrderDashboardStatusFilter>> =
-	ALL_STATUSES.map((status) => ({
-		value: status,
-		label: STATUS_CONFIG[status].label,
-		tone: STATUS_CONFIG[status].tone,
-	}));
 
 const DEFAULT_STATUS_FILTERS: OrderDashboardStatusFilter[] = ["submitted", "preparing", "ready"];
 
@@ -112,54 +131,42 @@ const STATUS_SORT_PRIORITY: Record<OrderDashboardStatusFilter, number> = {
 
 const MAX_VISIBLE_ITEMS = 7;
 
-function formatOrderTime(timestamp: number): string {
-	return new Date(timestamp).toLocaleTimeString(undefined, {
+function formatOrderTime(timestamp: number, locale: string): string {
+	return new Date(timestamp).toLocaleTimeString(locale, {
 		hour: "numeric",
 		minute: "2-digit",
 	});
 }
 
-function formatOrderDate(timestamp: number): string {
-	return new Intl.DateTimeFormat("en-GB", {
+function formatOrderDate(timestamp: number, locale: string): string {
+	return new Intl.DateTimeFormat(locale, {
 		day: "2-digit",
 		month: "short",
 		year: "numeric",
-	})
-		.format(new Date(timestamp))
-		.replaceAll(" ", "-");
-}
-
-function getOrderAge(
-	createdAt: number,
-	now: number
-): { label: string; color: string; minutes: number } {
-	const minutes = Math.max(0, Math.floor((now - createdAt) / 60_000));
-
-	let label: string;
-	if (minutes < 1) label = "just now";
-	else if (minutes < 60) label = `${minutes} min ago`;
-	else if (minutes < 60 * 24) label = `${Math.floor(minutes / 60)} h ago`;
-	else label = `${Math.floor(minutes / (60 * 24))} d ago`;
-
-	let color: string;
-	if (minutes < 10) color = "var(--accent-success)";
-	else if (minutes < 30) color = "var(--accent-warning)";
-	else color = "var(--accent-danger)";
-
-	return { label, color, minutes };
+	}).format(new Date(timestamp));
 }
 
 function OrderItemRow({ item }: Readonly<{ item: DashboardOrderItem }>) {
+	const { i18n } = useTranslation();
+	const itemName = useLocalizedName(item.menuItemName, item.menuItemTranslations);
+	const optionsLabel = useMemo(
+		() =>
+			item.selectedOptions
+				.map((option) => localizeName(option.optionName, option.optionTranslations, i18n.language))
+				.join(", "),
+		[item.selectedOptions, i18n.language]
+	);
+
 	return (
-		<div className="text-sm" style={{ color: "var(--text-primary)" }}>
-			<span className="font-medium">{item.quantity}x</span> {item.menuItemName}
+		<div className="text-sm text-foreground" >
+			<span className="font-medium">{item.quantity}x</span> {itemName}
 			{item.selectedOptions.length > 0 && (
-				<span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>
-					({item.selectedOptions.map((o) => o.optionName).join(", ")})
+				<span className="text-xs ml-1 text-faint-foreground" >
+					({optionsLabel})
 				</span>
 			)}
 			{item.specialInstructions && (
-				<p className="text-xs italic" style={{ color: "var(--accent-warning)" }}>
+				<p className="text-xs italic text-warning" >
 					{item.specialInstructions}
 				</p>
 			)}
@@ -172,6 +179,7 @@ function isDashboardStatus(status: string): status is OrderDashboardStatusFilter
 }
 
 export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) {
+	const { t, i18n } = useTranslation();
 	const { orderDashboardStatusFilters, updateOrderDashboardStatusFilters } = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
@@ -194,6 +202,18 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 	const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
 
+	const statusFilterOptions = useMemo<
+		ReadonlyArray<StatusFilterOption<OrderDashboardStatusFilter>>
+	>(
+		() =>
+			ALL_STATUSES.map((status) => ({
+				value: status,
+				label: t(STATUS_CONFIG[status].labelKey),
+				tone: STATUS_CONFIG[status].tone,
+			})),
+		[t]
+	);
+
 	const handleToggleFilter = (status: OrderDashboardStatusFilter) => {
 		const next = activeFilters.includes(status)
 			? activeFilters.filter((s) => s !== status)
@@ -203,10 +223,10 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 	const filterPills = (
 		<StatusFilterChips
-			options={STATUS_FILTER_OPTIONS}
+			options={statusFilterOptions}
 			selected={activeFilterSet}
 			onToggle={handleToggleFilter}
-			ariaLabel="Filter orders by status"
+			ariaLabel={t(OrdersKeys.ARIA_FILTER)}
 		/>
 	);
 
@@ -223,7 +243,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 	const fullOrderConfig =
 		fullOrder && isDashboardStatus(fullOrder.status) ? STATUS_CONFIG[fullOrder.status] : null;
-	const fullOrderAge = fullOrder ? getOrderAge(fullOrder.createdAt, now) : null;
+	const fullOrderAge = fullOrder ? getRelativeTime(fullOrder.createdAt, now) : null;
 
 	return (
 		<DashboardShell
@@ -238,8 +258,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					icon={ChefHat}
 					title={
 						activeFilters.length === 0
-							? "Select at least one status to view orders."
-							: "No orders match the selected filters."
+							? t(OrdersKeys.EMPTY_NO_FILTERS)
+							: t(OrdersKeys.EMPTY_NO_ORDERS)
 					}
 					fill
 				/>
@@ -249,15 +269,14 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 						const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilter];
 						const visibleItems = order.items.slice(0, MAX_VISIBLE_ITEMS);
 						const hiddenCount = order.items.length - visibleItems.length;
-						const age = getOrderAge(order.createdAt, now);
-						const absoluteTimestamp = `${formatOrderDate(order.createdAt)}, ${formatOrderTime(order.createdAt)}`;
-						const hasNextAction = config.next !== null && config.nextLabel !== null;
+						const age = getRelativeTime(order.createdAt, now);
+						const absoluteTimestamp = `${formatOrderDate(order.createdAt, i18n.language)}, ${formatOrderTime(order.createdAt, i18n.language)}`;
+						const hasNextAction = config.next !== null && config.nextLabelKey !== null;
 						const isCancelling = cancelConfirm === order._id;
-						const itemNoun = hiddenCount === 1 ? "item" : "items";
-						const viewFullOrderLabel =
+						const moreItemsLabel =
 							hiddenCount > 0
-								? `+${hiddenCount} more ${itemNoun} · View full order →`
-								: "View full order →";
+								? `${t(OrdersKeys.CARD_MORE_ITEMS, { count: hiddenCount })} · ${t(OrdersKeys.ACTION_VIEW_FULL_ORDER)}`
+								: t(OrdersKeys.ACTION_VIEW_FULL_ORDER);
 
 						return (
 							<Surface
@@ -267,35 +286,35 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 								className="overflow-hidden flex flex-col aspect-video"
 							>
 								<div
-									className="px-4 py-3 shrink-0"
-									style={{ borderBottom: "1px solid var(--border-default)" }}
+									className="px-4 py-3 shrink-0 border-b border-border"
+									
 								>
 									<div className="flex items-center justify-between gap-2">
 										<div className="flex items-center gap-2 min-w-0">
 											<StatusBadge
 												bgColor={getStatusToneStyle(config.tone).solidBg}
 												textColor={getStatusToneStyle(config.tone).solidFg}
-												label={config.label}
+												label={t(config.labelKey)}
 											/>
 											<span
-												className="text-sm font-medium truncate"
-												style={{ color: "var(--text-primary)" }}
+												className="text-sm font-medium truncate text-foreground"
+												
 											>
-												Table {order.tableNumber}
+												{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
 											</span>
 											{order.paidAt && (
 												<span
-													className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
-													style={{ backgroundColor: "var(--accent-success)", color: "white" }}
+													className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-success"
+													style={{color: "white"}}
 												>
 													<CreditCard size={10} />
-													Paid
+													{t(OrdersKeys.CARD_PAID)}
 												</span>
 											)}
 										</div>
 										<span
-											className="text-sm font-semibold shrink-0"
-											style={{ color: "var(--text-primary)" }}
+											className="text-sm font-semibold shrink-0 text-foreground"
+											
 										>
 											${formatCents(order.totalAmount)}
 										</span>
@@ -303,27 +322,22 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 									<div className="flex items-center justify-between gap-2 mt-1">
 										<span
-											className="text-[11px] font-mono truncate"
-											style={{ color: "var(--text-muted)" }}
+											className="text-[11px] font-mono truncate text-faint-foreground"
+											
 											title={order._id}
 										>
 											#{order._id.slice(-6)}
 										</span>
 										<span className="relative group flex items-center gap-1 text-[11px] font-medium shrink-0 cursor-help">
 											<span
-												className="flex items-center gap-1 underline decoration-dotted decoration-from-font underline-offset-2"
-												style={{ color: age.color }}
+												className={`flex items-center gap-1 underline decoration-dotted decoration-from-font underline-offset-2 ${URGENCY_TEXT_CLASS[age.urgency]}`}
 											>
 												<Clock size={11} />
-												{age.label}
+												{t(age.key, age.vars)}
 											</span>
 											<span
-												className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1 whitespace-nowrap text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-10"
-												style={{
-													backgroundColor: "var(--bg-elevated)",
-													color: "var(--text-primary)",
-													border: "1px solid var(--border-default)",
-												}}
+												className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1 whitespace-nowrap text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-10 bg-card text-foreground border border-border"
+												
 											>
 												{absoluteTimestamp}
 											</span>
@@ -341,27 +355,25 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 									<button
 										type="button"
 										onClick={() => setFullOrder(order)}
-										className="w-full text-right text-[11px] font-medium transition-opacity hover:opacity-70"
-										style={{ color: "var(--text-muted)" }}
+										className="w-full text-right text-[11px] font-medium transition-opacity hover:opacity-70 text-faint-foreground"
+										
 									>
-										{viewFullOrderLabel}
+										{moreItemsLabel}
 									</button>
 
 									{isCancelling ? (
 										<div
 											className="p-3 rounded-lg space-y-2"
-											style={{
-												backgroundColor: "rgba(220, 38, 38, 0.05)",
-												border: "1px solid rgba(220, 38, 38, 0.2)",
-											}}
+											style={{backgroundColor: "rgba(220, 38, 38, 0.05)",
+				border: "1px solid rgba(220, 38, 38, 0.2)"}}
 										>
 											<p
-												className="text-xs font-medium"
-												style={{ color: "var(--accent-danger)" }}
+												className="text-xs font-medium text-destructive"
+												
 											>
 												{order.stripePaymentIntentId
-													? "This order has been paid. Cancelling will issue a refund."
-													: "Cancel this order?"}
+													? t(OrdersKeys.CANCEL_PAID_PROMPT)
+													: t(OrdersKeys.CANCEL_PROMPT)}
 											</p>
 											<div className="flex gap-2">
 												<button
@@ -372,57 +384,48 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 														});
 														setCancelConfirm(null);
 													}}
-													className="flex-1 py-1.5 rounded-lg text-xs font-medium"
-													style={{
-														backgroundColor: "var(--accent-danger)",
-														color: "white",
-													}}
+													className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-destructive"
+													style={{color: "white"}}
 												>
 													{order.stripePaymentIntentId
-														? "Cancel & Refund"
-														: "Confirm Cancel"}
+														? t(OrdersKeys.ACTION_CANCEL_AND_REFUND)
+														: t(OrdersKeys.ACTION_CONFIRM_CANCEL)}
 												</button>
 												<button
 													onClick={() => setCancelConfirm(null)}
-													className="flex-1 py-1.5 rounded-lg text-xs font-medium"
-													style={{
-														border: "1px solid var(--border-default)",
-														color: "var(--text-secondary)",
-													}}
+													className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground"
+													
 												>
-													Keep Order
+													{t(OrdersKeys.ACTION_KEEP_ORDER)}
 												</button>
 											</div>
 										</div>
 									) : (
 										hasNextAction && (
 											<div className="flex gap-2">
-												{config.next && (
+												{config.next && config.nextLabelKey && (
 													<button
-												onClick={() =>
-														updateStatus({
-															orderId: order._id,
-															newStatus: config.next as NextOrderStatus,
-														})
-													}
+														onClick={() =>
+															updateStatus({
+																orderId: order._id,
+																newStatus: config.next as NextOrderStatus,
+															})
+														}
 														className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 													>
 														{config.next === "preparing" && <ChefHat size={14} />}
 														{config.next === "ready" && <CheckCircle2 size={14} />}
 														{config.next === "served" && <UtensilsCrossed size={14} />}
-														{config.nextLabel}
+														{t(config.nextLabelKey)}
 													</button>
 												)}
 												<button
 													onClick={() => setCancelConfirm(order._id)}
-													className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm"
-													style={{
-														border: "1px solid var(--border-default)",
-														color: "var(--accent-danger)",
-													}}
+													className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
+													
 												>
 													<XCircle size={14} />
-													Cancel
+													{t(OrdersKeys.ACTION_CANCEL)}
 												</button>
 											</div>
 										)
@@ -437,7 +440,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			<Modal
 				isOpen={fullOrder !== null}
 				onClose={() => setFullOrder(null)}
-				ariaLabel="Full order details"
+				ariaLabel={t(OrdersKeys.ARIA_FULL_ORDER)}
 				size="lg"
 			>
 				{fullOrder && (
@@ -449,33 +452,30 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 										<StatusBadge
 											bgColor={getStatusToneStyle(fullOrderConfig.tone).solidBg}
 											textColor={getStatusToneStyle(fullOrderConfig.tone).solidFg}
-											label={fullOrderConfig.label}
+											label={t(fullOrderConfig.labelKey)}
 										/>
 									)}
 									<h2
-										className="text-lg font-semibold"
-										style={{ color: "var(--text-primary)" }}
+										className="text-lg font-semibold text-foreground"
+										
 									>
-										Table {fullOrder.tableNumber}
+										{t(OrdersKeys.CARD_TABLE, { number: fullOrder.tableNumber })}
 									</h2>
 									{fullOrder.paidAt && (
 										<span
-											className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-											style={{
-												backgroundColor: "var(--accent-success)",
-												color: "white",
-											}}
+											className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-success"
+											style={{color: "white"}}
 										>
 											<CreditCard size={10} />
-											Paid
+											{t(OrdersKeys.CARD_PAID)}
 										</span>
 									)}
 								</div>
 							}
 							subtitle={
 								<span
-									className="text-xs font-mono break-all"
-									style={{ color: "var(--text-muted)" }}
+									className="text-xs font-mono break-all text-faint-foreground"
+									
 								>
 									#{fullOrder._id}
 								</span>
@@ -484,31 +484,27 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 						/>
 
 						<div
-							className="px-6 py-3 flex items-center justify-between text-xs gap-4 flex-wrap"
-							style={{
-								color: "var(--text-muted)",
-								borderBottom: "1px solid var(--border-default)",
-							}}
+							className="px-6 py-3 flex items-center justify-between text-xs gap-4 flex-wrap text-faint-foreground border-b border-border"
+							
 						>
 							<div className="flex items-center gap-3 flex-wrap">
 								{fullOrderAge && (
 									<span
-										className="px-2 py-0.5 rounded-full text-[11px] font-medium"
-										style={{ backgroundColor: fullOrderAge.color, color: "white" }}
+										className={`px-2 py-0.5 rounded-full text-[11px] font-medium text-inverse-foreground ${URGENCY_BG_CLASS[fullOrderAge.urgency]}`}
 									>
-										{fullOrderAge.label}
+										{t(fullOrderAge.key, fullOrderAge.vars)}
 									</span>
 								)}
 								<span>
-									{fullOrder.items.length} {fullOrder.items.length === 1 ? "item" : "items"}
+									{t(CommonKeys.ITEMS_COUNT, { count: fullOrder.items.length })}
 								</span>
 								<span className="flex items-center gap-1">
 									<Clock size={12} />
-									{formatOrderDate(fullOrder.createdAt)} ·{" "}
-									{formatOrderTime(fullOrder.createdAt)}
+									{formatOrderDate(fullOrder.createdAt, i18n.language)} ·{" "}
+									{formatOrderTime(fullOrder.createdAt, i18n.language)}
 								</span>
 							</div>
-							<span className="font-medium" style={{ color: "var(--text-primary)" }}>
+							<span className="font-medium text-foreground" >
 								${formatCents(fullOrder.totalAmount)}
 							</span>
 						</div>

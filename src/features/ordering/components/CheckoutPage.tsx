@@ -1,3 +1,4 @@
+import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery, useConvexAction } from "@convex-dev/react-query";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -7,6 +8,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft, CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -70,6 +72,7 @@ export function CheckoutPage({
 	onBackToMenu,
 	onOrderPlaced,
 }: Readonly<CheckoutPageProps>) {
+	const { t } = useTranslation();
 	const createPaymentIntent = useConvexAction(api.stripe.createPaymentIntent);
 	const [clientSecret, setClientSecret] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -92,12 +95,12 @@ export function CheckoutPage({
 				setClientSecret(null);
 			}
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to initialize payment");
+			setError(err instanceof Error ? err.message : t(OrderingKeys.CHECKOUT_INIT_FAILED));
 			setClientSecret(null);
 		} finally {
 			setLoading(false);
 		}
-	}, [createPaymentIntent, orderId]);
+	}, [createPaymentIntent, orderId, t]);
 
 	useEffect(() => {
 		if (!orderData || orderData.status !== "draft") {
@@ -110,7 +113,9 @@ export function CheckoutPage({
 		if (orderData.paymentState === "failed") {
 			setLoading(false);
 			setClientSecret(null);
-			setError(orderData.activePayment?.failureMessage ?? "Payment failed. Please try again.");
+			setError(
+				orderData.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_PAYMENT_FAILED)
+			);
 			return;
 		}
 		if (
@@ -133,7 +138,7 @@ export function CheckoutPage({
 	if (!orderData) {
 		return (
 			<div className="flex items-center justify-center h-full p-8">
-				<Loader2 size={24} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+				<Loader2 size={24} className="animate-spin text-faint-foreground"  />
 			</div>
 		);
 	}
@@ -147,30 +152,31 @@ export function CheckoutPage({
 		<div className="flex flex-col h-full w-full overflow-y-auto">
 			<div className="flex flex-col max-w-lg w-full mx-auto p-4 pb-8 space-y-6">
 				<div className="flex items-center gap-3">
-					<button onClick={onBackToMenu} className="p-2 rounded-lg hover:bg-(--bg-hover)">
-						<ArrowLeft size={20} style={{ color: "var(--text-primary)" }} />
+					<button
+						onClick={onBackToMenu}
+						className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
+						aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
+					>
+						<ArrowLeft size={20}  />
 					</button>
-					<h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-						Checkout
+					<h2 className="text-lg font-bold text-foreground" >
+						{t(OrderingKeys.CHECKOUT_HEADING)}
 					</h2>
 				</div>
 
 				{/* Order Summary */}
 				<div
-					className="rounded-xl p-4 space-y-3"
-					style={{
-						backgroundColor: "var(--bg-secondary)",
-						border: "1px solid var(--border-default)",
-					}}
+					className="rounded-xl p-4 space-y-3 bg-muted border border-border"
+					
 				>
-					<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-						Order Summary
+					<h3 className="text-sm font-semibold text-foreground" >
+						{t(OrderingKeys.CHECKOUT_ORDER_SUMMARY)}
 					</h3>
 					{orderData.items.map((item) => (
 						<div
 							key={item._id}
-							className="flex justify-between text-sm"
-							style={{ color: "var(--text-secondary)" }}
+							className="flex justify-between text-sm text-muted-foreground"
+							
 						>
 							<span>
 								{item.quantity}x {item.menuItemName}
@@ -179,24 +185,18 @@ export function CheckoutPage({
 						</div>
 					))}
 					<div
-						className="flex justify-between pt-3 text-sm font-semibold"
-						style={{
-							borderTop: "1px solid var(--border-default)",
-							color: "var(--text-primary)",
-						}}
+						className="flex justify-between pt-3 text-sm font-semibold border-t border-border text-foreground"
+						
 					>
-						<span>Total</span>
+						<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
 						<span>${formatCents(orderData.totalAmount)}</span>
 					</div>
 				</div>
 
 				{error && (
 					<div
-						className="px-4 py-3 rounded-lg text-sm"
-						style={{
-							backgroundColor: "rgba(220, 38, 38, 0.1)",
-							color: "var(--accent-danger, #dc2626)",
-						}}
+						className="px-4 py-3 rounded-lg text-sm text-destructive"
+						style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
 					>
 						{error}
 					</div>
@@ -211,11 +211,11 @@ export function CheckoutPage({
 				/>
 
 				<div
-					className="flex items-center justify-center gap-2 text-xs"
-					style={{ color: "var(--text-muted)" }}
+					className="flex items-center justify-center gap-2 text-xs text-faint-foreground"
+					
 				>
 					<ShieldCheck size={14} />
-					<span>Payments secured by Stripe</span>
+					<span>{t(OrderingKeys.CHECKOUT_SECURED_BY_STRIPE)}</span>
 				</div>
 			</div>
 		</div>
@@ -235,6 +235,7 @@ function PaymentSection({
 	onOrderPlaced: (orderId: string) => void;
 	onRetry: () => void;
 }>) {
+	const { t } = useTranslation();
 	const isDark = useIsDarkTheme();
 	const elementsOptions = useMemo(
 		() =>
@@ -250,7 +251,7 @@ function PaymentSection({
 	if (loading) {
 		return (
 			<div className="flex items-center justify-center py-8">
-				<Loader2 size={24} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+				<Loader2 size={24} className="animate-spin text-faint-foreground"  />
 			</div>
 		);
 	}
@@ -266,14 +267,14 @@ function PaymentSection({
 
 	return (
 		<div className="text-center py-8">
-			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-				Unable to initialize payment. Please try again.
+			<p className="text-sm text-faint-foreground" >
+				{t(OrderingKeys.CHECKOUT_UNABLE_INIT)}
 			</p>
 			<button
 				onClick={onRetry}
 				className="mt-3 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 			>
-				Retry
+				{t(OrderingKeys.CHECKOUT_RETRY)}
 			</button>
 		</div>
 	);
@@ -286,6 +287,7 @@ function PaymentForm({
 	orderId: string;
 	onSuccess: () => void;
 }>) {
+	const { t } = useTranslation();
 	const stripe = useStripe();
 	const elements = useElements();
 	const [processing, setProcessing] = useState(false);
@@ -304,9 +306,11 @@ function PaymentForm({
 	useEffect(() => {
 		if (orderData?.paymentState === "failed") {
 			setProcessing(false);
-			setError(orderData.activePayment?.failureMessage ?? "Payment failed");
+			setError(
+				orderData.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR)
+			);
 		}
-	}, [orderData?.activePayment?.failureMessage, orderData?.paymentState]);
+	}, [orderData?.activePayment?.failureMessage, orderData?.paymentState, t]);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -317,7 +321,7 @@ function PaymentForm({
 
 		const { error: submitError } = await elements.submit();
 		if (submitError) {
-			setError(submitError.message ?? "Payment failed");
+			setError(submitError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR));
 			setProcessing(false);
 			return;
 		}
@@ -331,7 +335,7 @@ function PaymentForm({
 		});
 
 		if (confirmError) {
-			setError(confirmError.message ?? "Payment failed");
+			setError(confirmError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR));
 			setProcessing(false);
 		}
 
@@ -345,11 +349,8 @@ function PaymentForm({
 
 			{error && (
 				<div
-					className="px-4 py-3 rounded-lg text-sm"
-					style={{
-						backgroundColor: "rgba(220, 38, 38, 0.1)",
-						color: "var(--accent-danger, #dc2626)",
-					}}
+					className="px-4 py-3 rounded-lg text-sm text-destructive"
+					style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
 				>
 					{error}
 				</div>
@@ -363,12 +364,12 @@ function PaymentForm({
 				{processing ? (
 					<>
 						<Loader2 size={16} className="animate-spin" />
-						Processing...
+						{t(OrderingKeys.CHECKOUT_PROCESSING)}
 					</>
 				) : (
 					<>
 						<CreditCard size={16} />
-						Pay Now
+						{t(OrderingKeys.CHECKOUT_PAY_NOW)}
 					</>
 				)}
 			</button>

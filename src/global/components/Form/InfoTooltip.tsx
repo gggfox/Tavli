@@ -17,8 +17,8 @@ export function InfoTooltip({ description, size = 14 }: InfoTooltipProps) {
 			<button
 				type="button"
 				aria-label="More info"
-				className="inline-flex items-center justify-center rounded-full"
-				style={{ color: "var(--text-muted)" }}
+				className="inline-flex items-center justify-center rounded-full text-faint-foreground"
+				
 			>
 				<Info size={size} />
 			</button>

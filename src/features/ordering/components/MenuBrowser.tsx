@@ -1,3 +1,4 @@
+import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
@@ -6,6 +7,7 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 
@@ -38,6 +40,7 @@ export function MenuBrowser({
 	onSubmitOrder,
 	isSubmitting,
 }: Readonly<MenuBrowserProps>) {
+	const { t } = useTranslation();
 	const { data: paymentsEnabled } = useQuery(
 		convexQuery(api.restaurants.getPaymentsEnabled, { restaurantId })
 	);
@@ -130,11 +133,9 @@ export function MenuBrowser({
 							className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-colors ${
 								currentMenuId === menu._id ? "font-medium" : ""
 							}`}
-							style={{
-								backgroundColor:
+							style={{backgroundColor:
 									currentMenuId === menu._id ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-								color: currentMenuId === menu._id ? "white" : "var(--text-secondary)",
-							}}
+				color: currentMenuId === menu._id ? "white" : "var(--text-secondary)"}}
 						>
 							{getTranslatedField(menu, lang)}
 						</button>
@@ -156,57 +157,47 @@ export function MenuBrowser({
 			{/* Bottom bar: total + pay */}
 			{paymentsEnabled === false && itemCount > 0 && (
 				<div
-					className="shrink-0 px-4 py-3 text-center text-sm"
-					style={{
-						borderTop: "1px solid var(--border-default)",
-						backgroundColor: "rgba(217, 119, 6, 0.1)",
-						color: "var(--accent-warning, #d97706)",
-					}}
+					className="shrink-0 px-4 py-3 text-center text-sm border-t border-border text-warning"
+					style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
 				>
-					Online ordering is not available at this restaurant yet.
+					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
 			)}
 			{itemCount === 0 && (
 				<div
-					className="shrink-0 px-4 py-4 text-center"
-					style={{
-						borderTop: "1px solid var(--border-default)",
-						backgroundColor: "var(--bg-primary)",
-						color: "var(--text-muted)",
-					}}
+					className="shrink-0 px-4 py-4 text-center border-t border-border bg-background text-faint-foreground"
+					
 				>
-					<p className="text-sm">Tap on items to start your order</p>
+					<p className="text-sm">{t(OrderingKeys.MENU_TAP_TO_START)}</p>
 				</div>
 			)}
 			{itemCount > 0 && (
 				<div
-					className="shrink-0 px-4 pb-4 pt-3 space-y-3"
-					style={{
-						borderTop: "1px solid var(--border-default)",
-						backgroundColor: "var(--bg-primary)",
-					}}
+					className="shrink-0 px-4 pb-4 pt-3 space-y-3 border-t border-border bg-background"
+					
 				>
 					{showPayFlow ? (
 						<>
 							<div className="flex items-center justify-between">
-								<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-									Review Your Order
+								<h3 className="text-sm font-semibold text-foreground" >
+									{t(OrderingKeys.MENU_REVIEW_ORDER)}
 								</h3>
 								<button
 									onClick={() => setShowPayFlow(false)}
-									className="p-1 rounded hover:bg-(--bg-hover)"
+									className="p-1 rounded hover:bg-(--bg-hover) text-faint-foreground"
 								>
-									<X size={16} style={{ color: "var(--text-muted)" }} />
+									<X size={16}  />
 								</button>
 							</div>
 
 							<div>
 								<label
 									htmlFor="table-select"
-									className="block text-xs font-semibold mb-1"
-									style={{ color: "var(--text-secondary)" }}
+									className="block text-xs font-semibold mb-1 text-muted-foreground"
+									
 								>
-									Table Number <span style={{ color: "#dc2626" }}>*</span>
+									{t(OrderingKeys.MENU_TABLE_NUMBER)}{" "}
+									<span style={{color: "#dc2626"}}>*</span>
 								</label>
 								<select
 									id="table-select"
@@ -214,26 +205,22 @@ export function MenuBrowser({
 									onChange={(e) =>
 										setSelectedTableId(e.target.value ? (e.target.value as Id<"tables">) : null)
 									}
-									className="w-full px-3 py-2 rounded-lg text-sm"
-									style={{
-										backgroundColor: "var(--bg-secondary)",
-										border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`,
-										color: "var(--text-primary)",
-									}}
+									className="w-full px-3 py-2 rounded-lg text-sm bg-muted text-foreground"
+									style={{border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`}}
 								>
-									<option value="">Select your table</option>
+									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
 									{(tables ?? [])
 										.sort((a, b) => a.tableNumber - b.tableNumber)
-										.map((t) => (
-											<option key={t._id} value={t._id}>
-												Table {t.tableNumber}
-												{t.label ? ` – ${t.label}` : ""}
+										.map((tab) => (
+											<option key={tab._id} value={tab._id}>
+												{t(OrderingKeys.MENU_TABLE_LABEL, { number: tab.tableNumber })}
+												{tab.label ? ` – ${tab.label}` : ""}
 											</option>
 										))}
 								</select>
 								{!selectedTableId && (
-									<p className="text-[11px] mt-1" style={{ color: "#dc2626" }}>
-										Please select a table to continue
+									<p className="text-[11px] mt-1" style={{color: "#dc2626"}}>
+										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
 								)}
 							</div>
@@ -241,20 +228,16 @@ export function MenuBrowser({
 							<textarea
 								value={comment}
 								onChange={(e) => setComment(e.target.value)}
-								placeholder="Any allergies, preferences, or notes for the kitchen? (optional)"
+								placeholder={t(OrderingKeys.MENU_NOTES_PLACEHOLDER)}
 								rows={2}
-								className="w-full px-3 py-2 rounded-lg text-sm"
-								style={{
-									backgroundColor: "var(--bg-secondary)",
-									border: "1px solid var(--border-default)",
-									color: "var(--text-primary)",
-								}}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								
 							/>
 							<div
-								className="flex justify-between text-base font-semibold"
-								style={{ color: "var(--text-primary)" }}
+								className="flex justify-between text-base font-semibold text-foreground"
+								
 							>
-								<span>Total</span>
+								<span>{t(OrderingKeys.MENU_TOTAL_LABEL)}</span>
 								<span>${formatCents(orderTotal)}</span>
 							</div>
 							<button
@@ -262,18 +245,18 @@ export function MenuBrowser({
 								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								{isSubmitting ? "Preparing..." : "Proceed to Payment"}
+								{isSubmitting
+									? t(OrderingKeys.MENU_PREPARING)
+									: t(OrderingKeys.MENU_PROCEED_TO_PAYMENT)}
 							</button>
 						</>
 					) : (
 						<>
 							<div
-								className="flex justify-between text-base font-semibold"
-								style={{ color: "var(--text-primary)" }}
+								className="flex justify-between text-base font-semibold text-foreground"
+								
 							>
-								<span>
-									Total ({itemCount} {itemCount === 1 ? "item" : "items"})
-								</span>
+								<span>{t(OrderingKeys.MENU_TOTAL_WITH_COUNT, { count: itemCount })}</span>
 								<span>${formatCents(orderTotal)}</span>
 							</div>
 							<button
@@ -281,7 +264,7 @@ export function MenuBrowser({
 								disabled={paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								Proceed to Payment
+								{t(OrderingKeys.MENU_PROCEED_TO_PAYMENT)}
 							</button>
 						</>
 					)}
@@ -368,7 +351,7 @@ function CategoryItems({
 
 	return (
 		<div>
-			<h3 className="text-lg font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
+			<h3 className="text-lg font-semibold mb-3 text-foreground" >
 				{getTranslatedField(category, lang)}
 			</h3>
 			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -381,23 +364,21 @@ function CategoryItems({
 							key={item._id}
 							onClick={() => onOpenDetail(item)}
 							className="relative w-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
-							style={{
-								backgroundColor: isSelected ? "var(--bg-active, #e0e7ff)" : "var(--bg-secondary)",
-								border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
-							}}
+							style={{backgroundColor: isSelected ? "var(--bg-active)" : "var(--bg-secondary)",
+				border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent"}}
 						>
 							{isSelected && (
 								<span
-									className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full"
-									style={{ backgroundColor: "var(--btn-primary-bg)" }}
+									className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary"
+									
 								>
 									<Check size={14} className="text-white" />
 								</span>
 							)}
 							{isSelected && selection && selection.quantity > 1 && (
 								<span
-									className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white"
-									style={{ backgroundColor: "var(--btn-primary-bg)" }}
+									className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white bg-primary"
+									
 								>
 									{selection.quantity}
 								</span>
@@ -410,25 +391,25 @@ function CategoryItems({
 								/>
 							) : (
 								<div
-									className="w-full h-36 sm:h-40 flex items-center justify-center"
-									style={{ backgroundColor: "var(--bg-primary)" }}
+									className="w-full h-36 sm:h-40 flex items-center justify-center bg-background"
+									
 								>
-									<UtensilsCrossed size={48} style={{ color: "var(--text-muted)" }} />
+									<UtensilsCrossed size={48} className="text-faint-foreground"  />
 								</div>
 							)}
 							<div className="px-3 py-2.5 mt-auto">
-								<div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+								<div className="text-sm font-medium text-foreground" >
 									{getTranslatedField(item, lang)}
 								</div>
 								{description && (
 									<div
-										className="text-xs mt-0.5 line-clamp-2"
-										style={{ color: "var(--text-muted)" }}
+										className="text-xs mt-0.5 line-clamp-2 text-faint-foreground"
+										
 									>
 										{description}
 									</div>
 								)}
-								<div className="text-sm font-bold mt-1" style={{ color: "var(--text-primary)" }}>
+								<div className="text-sm font-bold mt-1 text-foreground" >
 									${formatCents(item.basePrice)}
 								</div>
 							</div>

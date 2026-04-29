@@ -14,8 +14,15 @@ export {
 	formatTimeOnly,
 	fromDateTimeLocalValue,
 	ORDERED_RANGES,
-	RANGE_LABELS,
+	RANGE_LABEL_KEYS,
 	rangeBounds,
 	toDateTimeLocalValue,
 } from "./utils";
 export type { RangeBounds, ReservationRange } from "./utils";
+
+export {
+	RESERVATION_FALLBACK_TONE,
+	RESERVATION_STATUS_CONFIG,
+	getReservationStatusConfig,
+} from "./statusConfig";
+export type { ReservationStatus, ReservationStatusConfig } from "./statusConfig";

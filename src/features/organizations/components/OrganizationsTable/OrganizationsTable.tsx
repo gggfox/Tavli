@@ -38,11 +38,8 @@ export function OrganizationsTable() {
 				actions={
 					<button
 						onClick={() => setModal({ kind: "create" })}
-						className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-						style={{
-							backgroundColor: "var(--btn-primary-bg)",
-							color: "var(--btn-primary-text)",
-						}}
+						className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-primary text-primary-foreground"
+						
 					>
 						<Plus size={16} />
 						New Organization
@@ -52,16 +49,16 @@ export function OrganizationsTable() {
 					<div className="flex justify-end gap-2">
 						<button
 							onClick={() => setModal({ kind: "edit", organization: org })}
-							className="p-1.5 rounded-md transition-colors hover:opacity-80"
-							style={{ color: "var(--text-secondary)" }}
+							className="p-1.5 rounded-md transition-colors hover:opacity-80 text-muted-foreground"
+							
 							title="Edit"
 						>
 							<Pencil size={15} />
 						</button>
 						<button
 							onClick={() => setModal({ kind: "delete", organization: org })}
-							className="p-1.5 rounded-md transition-colors hover:opacity-80"
-							style={{ color: "var(--accent-danger, #e53e3e)" }}
+							className="p-1.5 rounded-md transition-colors hover:opacity-80 text-destructive"
+							
 							title="Delete"
 						>
 							<Trash2 size={15} />

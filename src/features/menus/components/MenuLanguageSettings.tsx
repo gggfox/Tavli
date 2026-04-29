@@ -1,3 +1,5 @@
+import { MenusKeys } from "@/global/i18n";
+import { useTranslation } from "react-i18next";
 import { ALL_LANGUAGES, LANGUAGE_LABELS } from "../constants";
 
 interface MenuLanguageSettingsProps {
@@ -13,32 +15,26 @@ export function MenuLanguageSettings({
 	onDefaultChange,
 	onToggleLanguage,
 }: Readonly<MenuLanguageSettingsProps>) {
+	const { t } = useTranslation();
 	return (
 		<div
-			className="space-y-3 p-4 rounded-lg"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="space-y-3 p-4 rounded-lg bg-muted border border-border"
+			
 		>
 			<div>
 				<label
 					htmlFor="menu-default-language"
-					className="block text-xs mb-1"
-					style={{ color: "var(--text-muted)" }}
+					className="block text-xs mb-1 text-faint-foreground"
+					
 				>
-					Default language (used for main item names)
+					{t(MenusKeys.LANG_DEFAULT_LABEL)}
 				</label>
 				<select
 					id="menu-default-language"
 					value={defaultLanguage}
 					onChange={(e) => onDefaultChange(e.target.value)}
-					className="w-full px-3 py-2 rounded-lg text-sm"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						border: "1px solid var(--border-default)",
-						color: "var(--text-primary)",
-					}}
+					className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-border text-foreground"
+					
 				>
 					{ALL_LANGUAGES.map((lang) => (
 						<option key={lang} value={lang}>
@@ -48,8 +44,8 @@ export function MenuLanguageSettings({
 				</select>
 			</div>
 			<div>
-				<span className="block text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>
-					Additional languages for translations
+				<span className="block text-xs mb-1.5 text-faint-foreground" >
+					{t(MenusKeys.LANG_ADDITIONAL_LABEL)}
 				</span>
 				<div className="flex flex-wrap gap-2">
 					{ALL_LANGUAGES.filter((l) => l !== defaultLanguage).map((lang) => (
@@ -57,14 +53,11 @@ export function MenuLanguageSettings({
 							key={lang}
 							type="button"
 							onClick={() => onToggleLanguage(lang)}
-							className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-							style={{
-								backgroundColor: supportedLanguages.includes(lang)
+							className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-border"
+							style={{backgroundColor: supportedLanguages.includes(lang)
 									? "var(--accent-primary)"
 									: "var(--bg-tertiary)",
-								color: supportedLanguages.includes(lang) ? "white" : "var(--text-secondary)",
-								border: "1px solid var(--border-default)",
-							}}
+				color: supportedLanguages.includes(lang) ? "white" : "var(--text-secondary)"}}
 						>
 							{LANGUAGE_LABELS[lang] ?? lang}
 						</button>

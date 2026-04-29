@@ -5,6 +5,7 @@
  * availability query reactively so users see whether their pick is bookable
  * before submitting, then calls the public `reservations.create` mutation.
  */
+import { ReservationsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -12,6 +13,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { CalendarClock, Check } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	formatReservationTime,
 	fromDateTimeLocalValue,
@@ -23,19 +25,18 @@ interface CustomerReservationFormProps {
 	restaurantName: string;
 }
 
-const REASON_LABELS: Record<string, string> = {
-	ERROR_NOT_ACCEPTING_RESERVATIONS:
-		"This restaurant isn't taking reservations right now.",
-	ERROR_OUTSIDE_BOOKING_HORIZON:
-		"That time is outside the booking window. Try a closer or further-out time.",
-	ERROR_BLACKOUT_WINDOW: "The restaurant is closed during that window.",
-	ERROR_NO_TABLES_AVAILABLE: "No tables are free for that party at that time.",
+const REASON_KEYS: Record<string, string> = {
+	ERROR_NOT_ACCEPTING_RESERVATIONS: ReservationsKeys.REASON_NOT_ACCEPTING,
+	ERROR_OUTSIDE_BOOKING_HORIZON: ReservationsKeys.REASON_OUTSIDE_BOOKING_HORIZON,
+	ERROR_BLACKOUT_WINDOW: ReservationsKeys.REASON_BLACKOUT_WINDOW,
+	ERROR_NO_TABLES_AVAILABLE: ReservationsKeys.REASON_NO_TABLES,
 };
 
 export function CustomerReservationForm({
 	restaurantId,
 	restaurantName,
 }: Readonly<CustomerReservationFormProps>) {
+	const { t, i18n } = useTranslation();
 	const defaultStartMs = useMemo(() => {
 		const d = new Date();
 		d.setMinutes(d.getMinutes() + 60);
@@ -70,7 +71,7 @@ export function CustomerReservationForm({
 		e.preventDefault();
 		setError(null);
 		if (!name.trim() || !phone.trim()) {
-			setError("Name and phone are required.");
+			setError(t(ReservationsKeys.FORM_REQUIRED_ERROR));
 			return;
 		}
 		setSubmitting(true);
@@ -90,7 +91,7 @@ export function CustomerReservationForm({
 			);
 			setCreatedId(id);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Could not create reservation");
+			setError(err instanceof Error ? err.message : t(ReservationsKeys.FORM_GENERIC_ERROR));
 		} finally {
 			setSubmitting(false);
 		}
@@ -99,43 +100,41 @@ export function CustomerReservationForm({
 	if (createdId) {
 		return (
 			<div
-				className="max-w-md mx-auto rounded-xl p-6 text-center space-y-3"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-				}}
+				className="max-w-md mx-auto rounded-xl p-6 text-center space-y-3 bg-muted border border-border"
+				
 			>
-				<Check size={32} style={{ color: "var(--accent-success)", margin: "0 auto" }} />
-				<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-					Reservation requested
+				<Check size={32} className="text-success" style={{margin: "0 auto"}} />
+				<h2 className="text-lg font-semibold text-foreground" >
+					{t(ReservationsKeys.FORM_SUCCESS_TITLE)}
 				</h2>
-				<p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-					{restaurantName} will confirm shortly. We've recorded your party of {partySize} for{" "}
-					{formatReservationTime(startsAtMs)}.
+				<p className="text-sm text-muted-foreground" >
+					{t(ReservationsKeys.FORM_SUCCESS_MESSAGE, {
+						restaurantName,
+						count: partySize,
+						when: formatReservationTime(startsAtMs, i18n.language),
+					})}
 				</p>
 			</div>
 		);
 	}
 
-	const reasonLabel =
-		availability && !availability.available && availability.reason
-			? REASON_LABELS[availability.reason] ?? availability.reason
-			: null;
+	const reasonLabel = (() => {
+		if (!availability || availability.available || !availability.reason) return null;
+		const key = REASON_KEYS[availability.reason];
+		return key ? t(key) : availability.reason;
+	})();
 
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="max-w-md mx-auto rounded-xl p-6 space-y-4"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="max-w-md mx-auto rounded-xl p-6 space-y-4 bg-muted border border-border"
+			
 		>
 			<header className="space-y-1">
-				<div className="flex items-center gap-2">
-					<CalendarClock size={18} style={{ color: "var(--text-secondary)" }} />
-					<h1 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-						Reserve at {restaurantName}
+				<div className="flex items-center gap-2 text-muted-foreground">
+					<CalendarClock size={18}  />
+					<h1 className="text-lg font-semibold text-foreground" >
+						{t(ReservationsKeys.FORM_TITLE, { restaurantName })}
 					</h1>
 				</div>
 			</header>
@@ -143,14 +142,14 @@ export function CustomerReservationForm({
 			<div className="grid grid-cols-2 gap-3">
 				<NumberField
 					id="rf-party"
-					label="Party size"
+					label={t(ReservationsKeys.FORM_PARTY_SIZE)}
 					value={partySize}
 					onChange={setPartySize}
 					min={1}
 				/>
 				<DateTimeField
 					id="rf-start"
-					label="Date & time"
+					label={t(ReservationsKeys.FORM_DATE_TIME)}
 					valueMs={startsAtMs}
 					onChangeMs={setStartsAtMs}
 				/>
@@ -159,22 +158,22 @@ export function CustomerReservationForm({
 			{availability && (
 				<div
 					className="rounded-md px-3 py-2 text-xs"
-					style={{
-						backgroundColor: availability.available
+					style={{backgroundColor: availability.available
 							? "var(--bg-primary)"
 							: "rgba(220, 38, 38, 0.08)",
-						color: availability.available
+				color: availability.available
 							? "var(--accent-success)"
 							: "var(--accent-danger)",
-						border: `1px solid ${
+				border: `1px solid ${
 							availability.available
 								? "var(--border-default)"
 								: "rgba(220, 38, 38, 0.3)"
-						}`,
-					}}
+						}`}}
 				>
 					{availability.available
-						? `Available · ${availability.turnMinutes} min turn`
+						? t(ReservationsKeys.FORM_AVAILABLE, {
+								turnMinutes: availability.turnMinutes,
+							})
 						: reasonLabel}
 					{!availability.available && availability.suggestedTimes.length > 0 && (
 						<div className="mt-1 flex flex-wrap gap-1">
@@ -183,14 +182,10 @@ export function CustomerReservationForm({
 									key={ms}
 									type="button"
 									onClick={() => setStartsAtMs(ms)}
-									className="text-xs px-2 py-0.5 rounded-full"
-									style={{
-										backgroundColor: "var(--bg-secondary)",
-										border: "1px solid var(--border-default)",
-										color: "var(--text-primary)",
-									}}
+									className="text-xs px-2 py-0.5 rounded-full bg-muted border border-border text-foreground"
+									
 								>
-									{new Date(ms).toLocaleTimeString(undefined, {
+									{new Date(ms).toLocaleTimeString(i18n.language, {
 										hour: "numeric",
 										minute: "2-digit",
 									})}
@@ -201,28 +196,43 @@ export function CustomerReservationForm({
 				</div>
 			)}
 
-			<TextField id="rf-name" label="Name" value={name} onChange={setName} required />
-			<TextField id="rf-phone" label="Phone" value={phone} onChange={setPhone} required />
-			<TextField id="rf-email" label="Email (optional)" value={email} onChange={setEmail} />
+			<TextField
+				id="rf-name"
+				label={t(ReservationsKeys.FORM_NAME)}
+				value={name}
+				onChange={setName}
+				required
+			/>
+			<TextField
+				id="rf-phone"
+				label={t(ReservationsKeys.FORM_PHONE)}
+				value={phone}
+				onChange={setPhone}
+				required
+			/>
+			<TextField
+				id="rf-email"
+				label={t(ReservationsKeys.FORM_EMAIL)}
+				value={email}
+				onChange={setEmail}
+			/>
 
-			<label htmlFor="rf-notes" className="flex flex-col gap-1 text-xs">
-				<span style={{ color: "var(--text-secondary)" }}>Notes (optional)</span>
+			<label htmlFor="rf-notes" className="flex flex-col gap-1 text-xs text-muted-foreground">
+				<span >
+					{t(ReservationsKeys.FORM_NOTES)}
+				</span>
 				<textarea
 					id="rf-notes"
 					value={notes}
 					onChange={(e) => setNotes(e.target.value)}
 					rows={2}
-					className="rounded-md px-3 py-2 text-sm"
-					style={{
-						backgroundColor: "var(--bg-primary)",
-						border: "1px solid var(--border-default)",
-						color: "var(--text-primary)",
-					}}
+					className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
+					
 				/>
 			</label>
 
 			{error && (
-				<p className="text-xs" style={{ color: "var(--accent-danger)" }}>
+				<p className="text-xs text-destructive" >
 					{error}
 				</p>
 			)}
@@ -231,11 +241,11 @@ export function CustomerReservationForm({
 				type="submit"
 				disabled={submitting || (availability ? !availability.available : false)}
 				className="w-full px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-				style={{
-					opacity: submitting || (availability ? !availability.available : false) ? 0.6 : 1,
-				}}
+				style={{opacity: submitting || (availability ? !availability.available : false) ? 0.6 : 1}}
 			>
-				{submitting ? "Submitting…" : "Request reservation"}
+				{submitting
+					? t(ReservationsKeys.FORM_SUBMITTING)
+					: t(ReservationsKeys.FORM_SUBMIT)}
 			</button>
 		</form>
 	);
@@ -247,22 +257,24 @@ function NumberField({
 	value,
 	onChange,
 	min,
-}: Readonly<{ id: string; label: string; value: number; onChange: (v: number) => void; min?: number }>) {
+}: Readonly<{
+	id: string;
+	label: string;
+	value: number;
+	onChange: (v: number) => void;
+	min?: number;
+}>) {
 	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs">
-			<span style={{ color: "var(--text-secondary)" }}>{label}</span>
+		<label htmlFor={id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+			<span >{label}</span>
 			<input
 				id={id}
 				type="number"
 				value={value}
 				min={min}
 				onChange={(e) => onChange(Number.parseInt(e.target.value, 10) || 0)}
-				className="rounded-md px-3 py-2 text-sm"
-				style={{
-					backgroundColor: "var(--bg-primary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
+				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
+				
 			/>
 		</label>
 	);
@@ -275,19 +287,15 @@ function DateTimeField({
 	onChangeMs,
 }: Readonly<{ id: string; label: string; valueMs: number; onChangeMs: (v: number) => void }>) {
 	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs">
-			<span style={{ color: "var(--text-secondary)" }}>{label}</span>
+		<label htmlFor={id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+			<span >{label}</span>
 			<input
 				id={id}
 				type="datetime-local"
 				value={toDateTimeLocalValue(valueMs)}
 				onChange={(e) => onChangeMs(fromDateTimeLocalValue(e.target.value))}
-				className="rounded-md px-3 py-2 text-sm"
-				style={{
-					backgroundColor: "var(--bg-primary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
+				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
+				
 			/>
 		</label>
 	);
@@ -307,20 +315,16 @@ function TextField({
 	required?: boolean;
 }>) {
 	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs">
-			<span style={{ color: "var(--text-secondary)" }}>{label}</span>
+		<label htmlFor={id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+			<span >{label}</span>
 			<input
 				id={id}
 				type="text"
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				required={required}
-				className="rounded-md px-3 py-2 text-sm"
-				style={{
-					backgroundColor: "var(--bg-primary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
+				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
+				
 			/>
 		</label>
 	);

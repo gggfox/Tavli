@@ -18,13 +18,13 @@ export function CollapsibleCard({
 }: CollapsibleCardProps) {
 	return (
 		<div
-			className="rounded-lg overflow-hidden"
-			style={{ border: "1px solid var(--border-default)" }}
+			className="rounded-lg overflow-hidden border border-border"
+			
 		>
 			<button
 				type="button"
-				className="flex w-full items-center justify-between px-4 py-3 cursor-pointer hover:bg-(--bg-hover)"
-				style={{ backgroundColor: "var(--bg-secondary)" }}
+				className="flex w-full items-center justify-between px-4 py-3 cursor-pointer hover:bg-(--bg-hover) bg-muted"
+				
 				onClick={onToggle}
 			>
 				<div className="flex items-center gap-2 flex-1 min-w-0">

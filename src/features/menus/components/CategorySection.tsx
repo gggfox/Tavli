@@ -1,10 +1,12 @@
 import { CollapsibleCard, InlineEditInput } from "@/global/components";
+import { MenusKeys } from "@/global/i18n";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMenuItems } from "../hooks/useMenus";
 import { AddItemForm } from "./AddItemForm";
 import { MenuItemRow } from "./MenuItemRow";
@@ -23,6 +25,7 @@ export function CategorySection({
 	onDeleteCategory,
 	selectedLang,
 }: Readonly<CategorySectionProps>) {
+	const { t } = useTranslation();
 	const isTranslating = !!selectedLang;
 	const [expanded, setExpanded] = useState(true);
 	const {
@@ -46,12 +49,12 @@ export function CategorySection({
 
 	const headerContent = isTranslating ? (
 		<div className="flex items-center gap-2 flex-1 min-w-0">
-			<span className="text-sm shrink-0" style={{ color: "var(--text-muted)" }}>
+			<span className="text-sm shrink-0 text-faint-foreground" >
 				{category.name} &rarr;
 			</span>
 			<InlineEditInput
 				value={category.translations?.[selectedLang]?.name ?? ""}
-				placeholder={`${category.name} translation...`}
+				placeholder={t(MenusKeys.CATEGORY_TRANSLATION_PLACEHOLDER, { name: category.name })}
 				onSave={(val) =>
 					setCategoryTranslation.mutateAsync({
 						categoryId: category._id,
@@ -61,16 +64,16 @@ export function CategorySection({
 				}
 			/>
 			{!category.translations?.[selectedLang]?.name && (
-				<AlertTriangle size={14} style={{ color: "var(--accent-warning)" }} />
+				<AlertTriangle size={14} className="text-warning"  />
 			)}
 		</div>
 	) : (
 		<>
-			<span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+			<span className="text-sm font-medium text-foreground" >
 				{category.name}
 			</span>
-			<span className="text-xs" style={{ color: "var(--text-muted)" }}>
-				({sorted.length} items)
+			<span className="text-xs text-faint-foreground" >
+				{t(MenusKeys.CATEGORY_ITEMS_COUNT, { count: sorted.length })}
 			</span>
 		</>
 	);
@@ -87,10 +90,10 @@ export function CategorySection({
 							e.stopPropagation();
 							onDeleteCategory();
 						}}
-						className="p-1 rounded hover:bg-(--bg-hover)"
-						title="Delete category"
+						className="p-1 rounded hover:bg-(--bg-hover) text-destructive"
+						title={t(MenusKeys.CATEGORY_DELETE_TITLE)}
 					>
-						<Trash2 size={14} style={{ color: "var(--accent-danger)" }} />
+						<Trash2 size={14}  />
 					</button>
 				) : undefined
 			}
@@ -127,10 +130,10 @@ export function CategorySection({
 				) : (
 					<button
 						onClick={() => setShowAddForm(true)}
-						className="flex items-center gap-1 text-sm py-2 hover:underline"
-						style={{ color: "var(--btn-primary-bg)" }}
+						className="flex items-center gap-1 text-sm py-2 hover:underline text-primary"
+						
 					>
-						<Plus size={14} /> Add item
+						<Plus size={14} /> {t(MenusKeys.CATEGORY_ADD_ITEM)}
 					</button>
 				)}
 			</div>

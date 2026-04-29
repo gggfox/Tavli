@@ -1,4 +1,5 @@
 import { StatusBadge } from "@/global/components";
+import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -6,6 +7,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
 import { toggleOptionSelection } from "../utils";
 import { MenuItemDetailSkeleton } from "./MenuItemDetailSkeleton";
@@ -22,6 +24,7 @@ interface MenuItemDetailProps {
 }
 
 export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuItemDetailProps>) {
+	const { t } = useTranslation();
 	const { data: menuItem } = useQuery(convexQuery(api.menuItems.getById, { itemId }));
 	const { data: optionGroups } = useQuery(
 		convexQuery(api.optionGroups.getGroupsForMenuItem, { menuItemId: itemId })
@@ -77,22 +80,22 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 			<div className="flex-1 overflow-y-auto p-4 space-y-6">
 				<button
 					onClick={onBack}
-					className="flex items-center gap-1 text-sm"
-					style={{ color: "var(--btn-primary-bg)" }}
+					className="flex items-center gap-1 text-sm text-primary"
+					
 				>
-					<ArrowLeft size={16} /> Back to menu
+					<ArrowLeft size={16} /> {t(OrderingKeys.BACK_TO_MENU)}
 				</button>
 
 				<div>
-					<h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
+					<h2 className="text-xl font-bold text-foreground" >
 						{menuItem.name}
 					</h2>
 					{menuItem.description && (
-						<p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+						<p className="text-sm mt-1 text-muted-foreground" >
 							{menuItem.description}
 						</p>
 					)}
-					<p className="text-lg font-semibold mt-2" style={{ color: "var(--text-primary)" }}>
+					<p className="text-lg font-semibold mt-2 text-foreground" >
 						${formatCents(menuItem.basePrice)}
 					</p>
 				</div>
@@ -103,14 +106,14 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 					return (
 						<div key={group._id}>
 							<div className="flex items-center gap-2 mb-2">
-								<h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+								<h3 className="text-sm font-semibold text-foreground" >
 									{group.name}
 								</h3>
 								{group.isRequired && (
 									<StatusBadge
-										bgColor="var(--accent-warning-light, #fef3c7)"
-										textColor="var(--accent-warning, #d97706)"
-										label="Required"
+										bgColor="var(--accent-warning-light)"
+										textColor="var(--accent-warning)"
+										label={t(OrderingKeys.ITEM_REQUIRED)}
 									/>
 								)}
 							</div>
@@ -132,18 +135,15 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 														group.selectionType
 													)
 												}
-												className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors"
-												style={{
-													backgroundColor: isSelected
-														? "var(--bg-active, #e0e7ff)"
+												className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors text-foreground"
+												style={{backgroundColor: isSelected
+														? "var(--bg-active)"
 														: "var(--bg-secondary)",
-													border: `1px solid ${isSelected ? "var(--btn-primary-bg)" : "var(--border-default)"}`,
-													color: "var(--text-primary)",
-												}}
+				border: `1px solid ${isSelected ? "var(--btn-primary-bg)" : "var(--border-default)"}`}}
 											>
 												<span>{opt.name}</span>
 												{opt.priceModifier > 0 && (
-													<span style={{ color: "var(--text-muted)" }}>
+													<span className="text-faint-foreground" >
 														+${formatCents(opt.priceModifier)}
 													</span>
 												)}
@@ -159,56 +159,46 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 				<div>
 					<label
 						htmlFor="special-instructions"
-						className="text-sm font-medium"
-						style={{ color: "var(--text-primary)" }}
+						className="text-sm font-medium text-foreground"
+						
 					>
-						Special instructions
+						{t(OrderingKeys.ITEM_SPECIAL_INSTRUCTIONS_LABEL)}
 					</label>
 					<textarea
 						id="special-instructions"
 						value={instructions}
 						onChange={(e) => setInstructions(e.target.value)}
-						placeholder="Any allergies or preferences?"
+						placeholder={t(OrderingKeys.ITEM_SPECIAL_INSTRUCTIONS_PLACEHOLDER)}
 						rows={2}
-						className="w-full mt-1 px-3 py-2 rounded-lg text-sm"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-							color: "var(--text-primary)",
-						}}
+						className="w-full mt-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+						
 					/>
 				</div>
 			</div>
 
 			{/* Bottom bar */}
 			<div
-				className="px-4 pb-4 pt-2 space-y-3"
-				style={{ borderTop: "1px solid var(--border-default)" }}
+				className="px-4 pb-4 pt-2 space-y-3 border-t border-border"
+				
 			>
 				<div className="flex items-center justify-center gap-4">
 					<button
 						onClick={() => setQuantity(Math.max(1, quantity - 1))}
-						className="p-2 rounded-full"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="p-2 rounded-full bg-muted border border-border"
+						
 					>
 						<Minus size={16} />
 					</button>
 					<span
-						className="text-lg font-medium w-8 text-center"
-						style={{ color: "var(--text-primary)" }}
+						className="text-lg font-medium w-8 text-center text-foreground"
+						
 					>
 						{quantity}
 					</span>
 					<button
 						onClick={() => setQuantity(quantity + 1)}
-						className="p-2 rounded-full"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
+						className="p-2 rounded-full bg-muted border border-border"
+						
 					>
 						<Plus size={16} />
 					</button>
@@ -217,7 +207,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 					onClick={handleAdd}
 					className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary"
 				>
-					Add to Cart - ${formatCents(itemTotal)}
+					{t(OrderingKeys.ITEM_ADD_TO_CART)} - ${formatCents(itemTotal)}
 				</button>
 			</div>
 		</div>

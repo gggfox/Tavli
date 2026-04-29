@@ -10,10 +10,10 @@ export function AdminPageLayout({ title, description, children }: AdminPageLayou
 	return (
 		<div className="p-6 flex flex-col h-full">
 			<div className="mb-6">
-				<h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
+				<h1 className="text-2xl font-semibold text-foreground" >
 					{title}
 				</h1>
-				<p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+				<p className="mt-2 text-sm text-muted-foreground" >
 					{description}
 				</p>
 			</div>

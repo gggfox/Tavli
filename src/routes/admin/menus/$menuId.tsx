@@ -17,15 +17,15 @@ function MenuEditorPage() {
 			<div className="mb-6">
 				<Link
 					to="/admin/menus"
-					className="flex items-center gap-1 text-sm mb-3 hover:underline"
-					style={{ color: "var(--btn-primary-bg)" }}
+					className="flex items-center gap-1 text-sm mb-3 hover:underline text-primary"
+					
 				>
 					<ArrowLeft size={16} /> Back to Menus
 				</Link>
-				<h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
+				<h1 className="text-2xl font-semibold text-foreground" >
 					Menu Editor
 				</h1>
-				<p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+				<p className="mt-2 text-sm text-muted-foreground" >
 					Add categories and items to this menu.
 				</p>
 			</div>

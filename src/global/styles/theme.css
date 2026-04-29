@@ -1,6 +1,24 @@
 /*
  * Notion-Inspired Theme System
  * Light mode by default, dark mode via .dark class on <html>
+ *
+ * Theme tokens are declared in two layers:
+ *   1. CSS custom properties on `:root` and `.dark` so the cascade owns
+ *      light/dark switching (single class flip = whole-tree restyle).
+ *   2. A Tailwind v4 `@theme` block below that aliases each token under
+ *      the `--color-*` namespace. That generates utilities like
+ *      `bg-background`, `text-foreground`, `border-border`,
+ *      `bg-primary text-primary-foreground`, etc. Every component should
+ *      consume tokens via these utilities; raw `var(--...)` references in
+ *      JSX (inline styles, arbitrary `bg-[var(--x)]` values) are an
+ *      antipattern.
+ *
+ * Naming is hybrid:
+ *   - shadcn/ui canonical names where the surface maps cleanly
+ *     (background, foreground, card, muted, border, primary, success,
+ *     warning, destructive, info, plus *-foreground / *-subtle pairs).
+ *   - Custom flat names where the palette is richer than shadcn's
+ *     (hover, active, tertiary, text-secondary, border-strong, etc.).
  */
 
 :root {
@@ -114,4 +132,66 @@
 
 	--scrollbar-thumb: rgba(255, 255, 255, 0.13);
 	--scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+}
+
+/*
+ * Tailwind v4 @theme bridge. Every key becomes a utility class:
+ *   --color-foreground -> text-foreground, bg-foreground, border-foreground
+ *   --color-muted -> bg-muted, text-muted, border-muted
+ *   --color-border -> border-border, bg-border, text-border
+ *
+ * Values reference the CSS variables above so theme switching is still
+ * driven by the cascade, not by Tailwind regenerating utilities.
+ */
+@theme {
+	/* Surface (backgrounds) */
+	--color-background: var(--bg-primary);
+	--color-card: var(--bg-elevated);
+	--color-muted: var(--bg-secondary);
+	--color-tertiary: var(--bg-tertiary);
+	--color-hover: var(--bg-hover);
+	--color-active: var(--bg-active);
+
+	/* Text */
+	--color-foreground: var(--text-primary);
+	--color-muted-foreground: var(--text-secondary);
+	--color-soft-foreground: var(--text-tertiary);
+	--color-faint-foreground: var(--text-muted);
+	--color-inverse-foreground: var(--text-inverse);
+
+	/* Borders */
+	--color-border: var(--border-default);
+	--color-border-strong: var(--border-strong);
+
+	/* Interactive */
+	--color-primary: var(--btn-primary-bg);
+	--color-primary-hover: var(--btn-primary-hover);
+	--color-primary-foreground: var(--btn-primary-text);
+	--color-secondary: var(--btn-secondary-bg);
+	--color-secondary-hover: var(--btn-secondary-hover);
+	--color-secondary-foreground: var(--btn-secondary-text);
+	--color-disabled: var(--btn-disabled-bg);
+	--color-disabled-foreground: var(--btn-disabled-text);
+
+	/* Inputs */
+	--color-input: var(--input-bg);
+	--color-input-border: var(--input-border);
+	--color-input-border-focus: var(--input-border-focus);
+	--color-input-placeholder: var(--input-placeholder);
+
+	/* Status */
+	--color-success: var(--accent-success);
+	--color-success-subtle: var(--accent-success-light);
+	--color-warning: var(--accent-warning);
+	--color-warning-subtle: var(--accent-warning-light);
+	--color-destructive: var(--accent-danger);
+	--color-destructive-hover: var(--accent-primary-hover);
+	--color-destructive-subtle: var(--accent-danger-light);
+	--color-info: var(--accent-info);
+	--color-info-subtle: var(--accent-info-light);
+
+	/* Accents */
+	--color-accent: var(--accent-primary);
+	--color-accent-secondary: var(--accent-secondary);
+	--color-neutral-subtle: var(--accent-neutral-light);
 }

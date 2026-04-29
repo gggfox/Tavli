@@ -17,7 +17,8 @@ export function RoleBadge({ role }: Readonly<{ role: string }>) {
 	return (
 		<span
 			className="px-2 py-0.5 rounded-full text-xs font-medium"
-			style={{ backgroundColor: colors.bg, color: colors.text }}
+			style={{backgroundColor: colors.bg,
+				color: colors.text}}
 		>
 			{t(`roles.${role}`, role)}
 		</span>

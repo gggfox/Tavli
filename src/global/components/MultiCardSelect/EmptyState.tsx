@@ -7,13 +7,10 @@ export function EmptyState({ isEmpty }: EmptyStateProps) {
 	}
 	return (
 		<div
-			className="p-6 rounded-lg text-center"
-			style={{
-				backgroundColor: "var(--bg-primary)",
-				border: "1px solid var(--border-default)",
-			}}
+			className="p-6 rounded-lg text-center bg-background border border-border"
+			
 		>
-			<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+			<p className="text-sm text-faint-foreground" >
 				No options found
 			</p>
 		</div>

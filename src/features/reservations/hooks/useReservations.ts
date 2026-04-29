@@ -1,10 +1,13 @@
-import { unwrapQuery, unwrapResult } from "@/global/utils";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
 import type { Id } from "convex/_generated/dataModel";
 import { useMemo } from "react";
 import { rangeBounds, type ReservationRange } from "../utils";
+
+type ReservationsValue = UnwrappedValue<FunctionReturnType<typeof api.reservations.listForRange>>;
 
 /**
  * Reservations for a restaurant filtered by named date range. Wraps the
@@ -17,7 +20,7 @@ export function useReservations(
 ) {
 	const bounds = useMemo(() => rangeBounds(range), [range]);
 
-	const { data: rawResult, isLoading } = useQuery({
+	const { data: reservations, isLoading, error } = useQuery({
 		...convexQuery(
 			api.reservations.listForRange,
 			restaurantId
@@ -29,8 +32,8 @@ export function useReservations(
 				: "skip"
 		),
 		enabled: Boolean(restaurantId),
+		select: unwrapResult<ReservationsValue>,
 	});
-	const { data: reservations, error } = unwrapQuery(rawResult);
 
 	const confirmMutation = useMutation({
 		mutationFn: useConvexMutation(api.reservations.confirm),

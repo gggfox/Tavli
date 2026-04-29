@@ -1,4 +1,4 @@
-import { unwrapQuery } from "@/global/utils";
+import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -33,17 +33,11 @@ export function useAdminTable<TData>({
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 
-	const {
-		data: rawData,
-		isLoading,
-		error,
-		isError,
-		refetch,
-	} = useQuery({
+	const { data, isLoading, error, isError, refetch } = useQuery({
 		...queryOptions,
 		enabled: enabled ?? isAuthenticated,
+		select: unwrapResult<TData[]>,
 	});
-	const data = unwrapQuery(rawData).data as TData[] | null;
 
 	const table = useReactTable({
 		data: data ?? [],
