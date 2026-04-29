@@ -1,4 +1,4 @@
-import { SidebarKeys } from "@/global/i18n/locales";
+import { SidebarKeys } from "@/global/i18n/keys/sidebar";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useToggleSidebar } from "./hooks";
