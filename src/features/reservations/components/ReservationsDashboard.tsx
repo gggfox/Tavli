@@ -10,12 +10,16 @@
  * transitions appear instantly without manual invalidation.
  */
 import {
+	DashboardShell,
 	EmptyState,
 	getStatusToneStyle,
 	SegmentedControl,
+	StatusBadge,
 	StatusFilterChips,
 	type StatusFilterOption,
 	type StatusTone,
+	Surface,
+	toneByValue,
 } from "@/global/components";
 import { useSearch } from "@tanstack/react-router";
 import type { Doc, Id } from "convex/_generated/dataModel";
@@ -48,13 +52,7 @@ const STATUS_CHIPS: ReadonlyArray<StatusFilterOption<StatusValue>> = [
 	{ value: "no_show", label: "No show", tone: "warning" },
 ];
 
-const STATUS_TONE_MAP: Record<StatusValue, StatusTone> = STATUS_CHIPS.reduce(
-	(acc, chip) => {
-		acc[chip.value] = chip.tone;
-		return acc;
-	},
-	{} as Record<StatusValue, StatusTone>
-);
+const FALLBACK_TONE: StatusTone = "neutral";
 
 interface ReservationsDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -89,40 +87,38 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 		return reservations.find((r) => r._id === id) ?? null;
 	}, [openId, search.focus, reservations]);
 
-	if (isLoading) return <ReservationsDashboardSkeleton />;
-	if (error) {
-		return (
-			<EmptyState
-				icon={CalendarClock}
-				title="Could not load reservations."
-				description={error.message ?? "Please check your permissions and try again."}
+	const header = (
+		<div className="flex flex-col gap-3">
+			<SegmentedControl
+				options={ORDERED_RANGES.map((r) => ({ value: r, label: RANGE_LABELS[r] }))}
+				value={range}
+				onChange={setRange}
+				ariaLabel="Filter reservations by date range"
 			/>
-		);
-	}
+			<StatusFilterChips
+				options={STATUS_CHIPS}
+				selected={statusFilter}
+				onToggle={toggleStatus}
+				ariaLabel="Filter reservations by status"
+			/>
+		</div>
+	);
 
 	return (
-		<div className="flex flex-col gap-6">
-			<div className="flex flex-col gap-3">
-				<SegmentedControl
-					options={ORDERED_RANGES.map((r) => ({ value: r, label: RANGE_LABELS[r] }))}
-					value={range}
-					onChange={setRange}
-					ariaLabel="Filter reservations by date range"
-				/>
-
-				<StatusFilterChips
-					options={STATUS_CHIPS}
-					selected={statusFilter}
-					onToggle={toggleStatus}
-					ariaLabel="Filter reservations by status"
-				/>
-			</div>
-
+		<DashboardShell
+			isLoading={isLoading}
+			error={error}
+			entityName="reservations"
+			skeleton={<ReservationsDashboardSkeleton />}
+			header={header}
+			gap="6"
+		>
 			{filtered.length === 0 ? (
 				<EmptyState
 					icon={CalendarClock}
 					title="No reservations in this view."
 					description="Try a different range or status filter."
+					fill
 				/>
 			) : (
 				<div className="space-y-2">
@@ -154,7 +150,7 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 					}}
 				/>
 			)}
-		</div>
+		</DashboardShell>
 	);
 }
 
@@ -162,27 +158,21 @@ function ReservationRow({
 	reservation,
 	onClick,
 }: Readonly<{ reservation: Doc<"reservations">; onClick: () => void }>) {
-	const color = getStatusToneStyle(STATUS_TONE_MAP[reservation.status as StatusValue]).solidBg;
+	const tone = toneByValue(STATUS_CHIPS, reservation.status as StatusValue) ?? FALLBACK_TONE;
+	const palette = getStatusToneStyle(tone);
+	const chipMeta = STATUS_CHIPS.find((c) => c.value === reservation.status);
+	const label = chipMeta?.label ?? reservation.status;
+
 	return (
-		<button
+		<Surface
+			as="button"
 			type="button"
 			onClick={onClick}
-			className="w-full flex items-center justify-between gap-4 px-4 py-3 rounded-lg text-left"
-			style={{
-				backgroundColor: "var(--bg-secondary)",
-				border: "1px solid var(--border-default)",
-			}}
+			tone="secondary"
+			className="w-full flex items-center justify-between gap-4 px-4 py-3 text-left"
 		>
 			<div className="flex items-center gap-3 min-w-0">
-				<span
-					className="text-xs px-2 py-0.5 rounded-full"
-					style={{
-						backgroundColor: color,
-						color: "white",
-					}}
-				>
-					{reservation.status}
-				</span>
+				<StatusBadge bgColor={palette.solidBg} textColor={palette.solidFg} label={label} />
 				<span
 					className="text-sm font-medium truncate"
 					style={{ color: "var(--text-primary)" }}
@@ -208,6 +198,6 @@ function ReservationRow({
 					{new Date(reservation.startsAt).toLocaleDateString()}
 				</span>
 			</div>
-		</button>
+		</Surface>
 	);
 }

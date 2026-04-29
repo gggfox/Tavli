@@ -51,6 +51,13 @@
 			"assigningAdmin": "Assigning..."
 		}
 	},
+	"common": {
+		"button": {
+			"saved": "Saved!",
+			"failed": "Failed",
+			"saving": "Saving..."
+		}
+	},
 	"customer": {
 		"nav": {
 			"menu": "Menu",
@@ -72,5 +79,44 @@
 		"ERROR_ADMIN_REQUIRED": "You don't have permission to perform this action.",
 		"ERROR_MANAGER_REQUIRED": "You need manager permissions to perform this action.",
 		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions."
+	},
+	"reservationSettings": {
+		"fieldDescriptions": {
+			"accepting": "Master switch. When off, customers cannot create new reservations through any channel.",
+			"defaultTurn": "How long, on average, a party occupies a table before it is considered available again.",
+			"minAdvance": "Earliest gap (in minutes) between now and a reservation start time that we still accept.",
+			"maxAdvance": "How many days into the future customers can book a reservation.",
+			"noShowGrace": "How long after the start time we wait before automatically marking a reservation as no-show.",
+			"turnRanges": "Override the default turn time for specific party-size ranges. First matching range wins.",
+			"blackouts": "Date ranges in which we will not accept any reservations regardless of other settings."
+		},
+		"labels": {
+			"accepting": "Accepting reservations",
+			"defaultTurn": "Default turn time (minutes)",
+			"minAdvance": "Minimum advance (minutes)",
+			"maxAdvance": "Booking horizon (days)",
+			"noShowGrace": "No-show grace (minutes)",
+			"turnRanges": "Per-party-size turn time",
+			"blackouts": "Blackout windows",
+			"minParty": "Min party",
+			"maxParty": "Max party",
+			"turnMinutes": "Turn (min)",
+			"startsAt": "Starts at",
+			"endsAt": "Ends at",
+			"reason": "Reason"
+		},
+		"actions": {
+			"addRange": "Add range",
+			"addWindow": "Add window",
+			"save": "Save settings",
+			"remove": "Remove",
+			"moreInfo": "More info"
+		},
+		"messages": {
+			"saved": "Saved.",
+			"saveFailed": "Failed to save",
+			"usingDefaults": "Using defaults. Save to persist your own values.",
+			"rangeFallback": "First matching range wins. If no range matches, the default turn time is used."
+		}
 	}
 }

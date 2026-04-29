@@ -5,15 +5,37 @@
  * booking horizon, no-show grace, blackout windows, and the global
  * "accepting reservations" toggle.
  */
-import { InlineError } from "@/global/components";
+import {
+	DateTimeField,
+	InfoTooltip,
+	InlineError,
+	NumberField,
+	TextField,
+} from "@/global/components";
+import { useConvexMutate } from "@/global/hooks";
 import { unwrapResult } from "@/global/utils";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fromDateTimeLocalValue, toDateTimeLocalValue } from "../utils";
+
+const FIELD_DESCRIPTIONS = {
+	accepting:
+		"Master switch. When off, customers cannot create new reservations through any channel.",
+	defaultTurn:
+		"How long, on average, a party occupies a table before it is considered available again.",
+	minAdvance:
+		"Earliest gap (in minutes) between now and a reservation start time that we still accept.",
+	maxAdvance: "How many days into the future customers can book a reservation.",
+	noShowGrace:
+		"How long after the start time we wait before automatically marking a reservation as no-show.",
+	turnRanges:
+		"Override the default turn time for specific party-size ranges. First matching range wins.",
+	blackouts:
+		"Date ranges in which we will not accept any reservations regardless of other settings.",
+} as const;
 
 interface ReservationSettingsPanelProps {
 	restaurantId: Id<"restaurants">;
@@ -39,9 +61,7 @@ export function ReservationSettingsPanel({
 	);
 	const settings = rawSettings ?? null;
 
-	const updateMutation = useMutation({
-		mutationFn: useConvexMutation(api.reservationSettings.update),
-	});
+	const updateMutation = useConvexMutate(api.reservationSettings.update);
 
 	const [defaultTurnMinutes, setDefaultTurnMinutes] = useState(90);
 	const [minAdvanceMinutes, setMinAdvanceMinutes] = useState(30);
@@ -101,9 +121,10 @@ export function ReservationSettingsPanel({
 			)}
 
 			<div className="flex items-center justify-between">
-				<label htmlFor="accepting" className="text-sm font-medium">
-					Accepting reservations
-				</label>
+				<span className="flex items-center gap-1.5 text-sm font-medium">
+					<label htmlFor="accepting">Accepting reservations</label>
+					<InfoTooltip description={FIELD_DESCRIPTIONS.accepting} />
+				</span>
 				<input
 					id="accepting"
 					type="checkbox"
@@ -118,6 +139,7 @@ export function ReservationSettingsPanel({
 				value={defaultTurnMinutes}
 				onChange={setDefaultTurnMinutes}
 				min={15}
+				description={FIELD_DESCRIPTIONS.defaultTurn}
 			/>
 			<NumberField
 				id="min-advance"
@@ -125,6 +147,7 @@ export function ReservationSettingsPanel({
 				value={minAdvanceMinutes}
 				onChange={setMinAdvanceMinutes}
 				min={0}
+				description={FIELD_DESCRIPTIONS.minAdvance}
 			/>
 			<NumberField
 				id="max-advance"
@@ -132,6 +155,7 @@ export function ReservationSettingsPanel({
 				value={maxAdvanceDays}
 				onChange={setMaxAdvanceDays}
 				min={1}
+				description={FIELD_DESCRIPTIONS.maxAdvance}
 			/>
 			<NumberField
 				id="grace"
@@ -139,11 +163,15 @@ export function ReservationSettingsPanel({
 				value={noShowGraceMinutes}
 				onChange={setNoShowGraceMinutes}
 				min={0}
+				description={FIELD_DESCRIPTIONS.noShowGrace}
 			/>
 
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
-					<h3 className="text-sm font-medium">Per-party-size turn time</h3>
+					<span className="flex items-center gap-1.5">
+						<h3 className="text-sm font-medium">Per-party-size turn time</h3>
+						<InfoTooltip description={FIELD_DESCRIPTIONS.turnRanges} />
+					</span>
 					<button
 						type="button"
 						onClick={() =>
@@ -210,7 +238,10 @@ export function ReservationSettingsPanel({
 
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
-					<h3 className="text-sm font-medium">Blackout windows</h3>
+					<span className="flex items-center gap-1.5">
+						<h3 className="text-sm font-medium">Blackout windows</h3>
+						<InfoTooltip description={FIELD_DESCRIPTIONS.blackouts} />
+					</span>
 					<button
 						type="button"
 						onClick={() => {
@@ -275,93 +306,5 @@ export function ReservationSettingsPanel({
 				Save settings
 			</button>
 		</div>
-	);
-}
-
-function NumberField({
-	id,
-	label,
-	value,
-	onChange,
-	min,
-}: Readonly<{
-	id: string;
-	label: string;
-	value: number;
-	onChange: (v: number) => void;
-	min?: number;
-}>) {
-	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs">
-			<span style={{ color: "var(--text-secondary)" }}>{label}</span>
-			<input
-				id={id}
-				type="number"
-				value={value}
-				min={min}
-				onChange={(e) => onChange(Number.parseInt(e.target.value, 10) || 0)}
-				className="rounded-md px-3 py-2 text-sm"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
-			/>
-		</label>
-	);
-}
-
-function DateTimeField({
-	id,
-	label,
-	valueMs,
-	onChangeMs,
-}: Readonly<{
-	id: string;
-	label: string;
-	valueMs: number;
-	onChangeMs: (v: number) => void;
-}>) {
-	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs">
-			<span style={{ color: "var(--text-secondary)" }}>{label}</span>
-			<input
-				id={id}
-				type="datetime-local"
-				value={toDateTimeLocalValue(valueMs)}
-				onChange={(e) => onChangeMs(fromDateTimeLocalValue(e.target.value))}
-				className="rounded-md px-3 py-2 text-sm"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
-			/>
-		</label>
-	);
-}
-
-function TextField({
-	id,
-	label,
-	value,
-	onChange,
-}: Readonly<{ id: string; label: string; value: string; onChange: (v: string) => void }>) {
-	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs">
-			<span style={{ color: "var(--text-secondary)" }}>{label}</span>
-			<input
-				id={id}
-				type="text"
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-				className="rounded-md px-3 py-2 text-sm"
-				style={{
-					backgroundColor: "var(--bg-secondary)",
-					border: "1px solid var(--border-default)",
-					color: "var(--text-primary)",
-				}}
-			/>
-		</label>
 	);
 }

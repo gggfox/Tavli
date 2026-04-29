@@ -4,7 +4,6 @@ import {
 	CalendarClock,
 	ClipboardList,
 	DollarSign,
-	Home,
 	ListOrdered,
 	Settings,
 	Store,
@@ -13,12 +12,6 @@ import {
 import { SidebarItem } from "./SidebarLink";
 
 export const sidebarItems: SidebarItem[] = [
-	{
-		type: "link",
-		translationKey: SidebarKeys.HOME,
-		icon: <Home size={18} className="shrink-0" />,
-		to: "/",
-	},
 	{
 		type: "link",
 		translationKey: SidebarKeys.RESTAURANTS,

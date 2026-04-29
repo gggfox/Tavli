@@ -23,7 +23,7 @@ import {
 	ThemeProvider,
 } from "@/global/utils/theme";
 import "../global/i18n/config";
-import { convexClient } from "../router";
+import { convexClient } from "../convexClient";
 import appCss from "../styles.css?url";
 
 // Inline script that runs synchronously in <head> before any paint.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Languages, SidebarKeys } from "./locales";
+import { CommonKeys, Languages, ReservationSettingsKeys, SidebarKeys } from "./locales";
 import en from "./locales/en.json";
 import es from "./locales/es.json";
 
@@ -45,6 +45,29 @@ describe("SidebarKeys", () => {
 		for (const key of Object.values(SidebarKeys)) {
 			const value = key.split(".").reduce((o: any, k) => o?.[k], en);
 			expect(value, `Missing en.json key for SidebarKeys value "${key}"`).toBeDefined();
+		}
+	});
+});
+
+describe("ReservationSettingsKeys", () => {
+	it("all reservation settings key values exist in en.json", () => {
+		const enPaths = new Set(flattenKeys(en));
+		for (const key of Object.values(ReservationSettingsKeys)) {
+			expect(
+				enPaths.has(key),
+				`Missing en.json key for ReservationSettingsKeys value "${key}"`
+			).toBe(true);
+		}
+	});
+});
+
+describe("CommonKeys", () => {
+	it("all common key values exist in en.json", () => {
+		const enPaths = new Set(flattenKeys(en));
+		for (const key of Object.values(CommonKeys)) {
+			expect(enPaths.has(key), `Missing en.json key for CommonKeys value "${key}"`).toBe(
+				true
+			);
 		}
 	});
 });

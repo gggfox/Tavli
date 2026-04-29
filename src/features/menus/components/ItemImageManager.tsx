@@ -1,6 +1,6 @@
+import { useConvexMutate } from "@/global/hooks";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useConvexMutation } from "@convex-dev/react-query";
-import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { ClipboardPaste, ImagePlus, Trash2 } from "lucide-react";
@@ -13,11 +13,11 @@ interface ItemImageManagerProps {
 }
 
 export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImageManagerProps>) {
+	// Upload URL generation runs imperatively inside `handleUpload`, not as a
+	// React Query mutation, so it stays on the lower-level convex hook.
 	const generateUploadUrl = useConvexMutation(api.menuItems.generateUploadUrl);
-	const updateItem = useMutation({ mutationFn: useConvexMutation(api.menuItems.update) });
-	const removeImageMut = useMutation({
-		mutationFn: useConvexMutation(api.menuItems.removeImage),
-	});
+	const updateItem = useConvexMutate(api.menuItems.update);
+	const removeImageMut = useConvexMutate(api.menuItems.removeImage);
 
 	const [selectedFile, setSelectedFile] = useState<File | null>(null);
 	const [preview, setPreview] = useState<string | null>(null);

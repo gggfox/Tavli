@@ -1,13 +1,12 @@
-import { useConvexMutation } from "@convex-dev/react-query";
-import { useMutation } from "@tanstack/react-query";
+import { useConvexMutate } from "@/global/hooks";
 import { api } from "convex/_generated/api";
 
 export function useCart() {
-	const createDraft = useMutation({ mutationFn: useConvexMutation(api.orders.createDraft) });
-	const addItem = useMutation({ mutationFn: useConvexMutation(api.orders.addItem) });
-	const updateItem = useMutation({ mutationFn: useConvexMutation(api.orders.updateItem) });
-	const removeItem = useMutation({ mutationFn: useConvexMutation(api.orders.removeItem) });
-	const submitOrder = useMutation({ mutationFn: useConvexMutation(api.orders.submitOrder) });
+	const createDraft = useConvexMutate(api.orders.createDraft);
+	const addItem = useConvexMutate(api.orders.addItem);
+	const updateItem = useConvexMutate(api.orders.updateItem);
+	const removeItem = useConvexMutate(api.orders.removeItem);
+	const submitOrder = useConvexMutate(api.orders.submitOrder);
 
 	return {
 		createDraft: createDraft.mutateAsync,

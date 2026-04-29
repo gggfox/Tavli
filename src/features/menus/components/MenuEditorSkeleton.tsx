@@ -17,37 +17,40 @@ export function MenuEditorSkeleton() {
 				<Skeleton rounded="lg" className="h-10 w-36" />
 			</div>
 
-			{Array.from({ length: CATEGORY_COUNT }, (_, catIndex) => (
-				<div
-					key={`menu-cat-${catIndex}`}
-					className="rounded-xl p-4 space-y-3"
-					style={{
-						backgroundColor: "var(--bg-secondary)",
-						border: "1px solid var(--border-default)",
-					}}
-				>
-					<div className="flex items-center justify-between">
-						<Skeleton className="h-5" style={{ width: `${100 + (catIndex % 3) * 30}px` }} />
-						<Skeleton rounded="md" className="h-7 w-7" />
-					</div>
-					<div className="space-y-2">
-						{Array.from({ length: ITEMS_PER_CATEGORY }, (_, itemIndex) => (
-							<div
-								key={`menu-cat-${catIndex}-item-${itemIndex}`}
-								className="flex items-center gap-3 px-3 py-2.5 rounded-lg"
-								style={{ backgroundColor: "var(--bg-primary)" }}
+			<Skeleton.Repeat count={CATEGORY_COUNT} keyPrefix="menu-cat">
+				{(catIndex) => (
+					<Skeleton.Card rounded="xl" className="p-4 space-y-3">
+						<div className="flex items-center justify-between">
+							<Skeleton className="h-5" style={{ width: `${100 + (catIndex % 3) * 30}px` }} />
+							<Skeleton rounded="md" className="h-7 w-7" />
+						</div>
+						<div className="space-y-2">
+							<Skeleton.Repeat
+								count={ITEMS_PER_CATEGORY}
+								keyPrefix={`menu-cat-${catIndex}-item`}
 							>
-								<Skeleton rounded="md" className="h-10 w-10 shrink-0" />
-								<div className="flex-1 space-y-2">
-									<Skeleton className="h-4" style={{ width: `${50 + (itemIndex % 3) * 12}%` }} />
-									<Skeleton className="h-3 w-16" />
-								</div>
-								<Skeleton className="h-4 w-12" />
-							</div>
-						))}
-					</div>
-				</div>
-			))}
+								{(itemIndex) => (
+									<Skeleton.Card
+										tone="primary"
+										bordered={false}
+										className="flex items-center gap-3 px-3 py-2.5"
+									>
+										<Skeleton rounded="md" className="h-10 w-10 shrink-0" />
+										<div className="flex-1 space-y-2">
+											<Skeleton
+												className="h-4"
+												style={{ width: `${50 + (itemIndex % 3) * 12}%` }}
+											/>
+											<Skeleton className="h-3 w-16" />
+										</div>
+										<Skeleton className="h-4 w-12" />
+									</Skeleton.Card>
+								)}
+							</Skeleton.Repeat>
+						</div>
+					</Skeleton.Card>
+				)}
+			</Skeleton.Repeat>
 		</div>
 	);
 }

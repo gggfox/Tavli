@@ -51,6 +51,13 @@
 			"assigningAdmin": "Asignando..."
 		}
 	},
+	"common": {
+		"button": {
+			"saved": "¡Guardado!",
+			"failed": "Error",
+			"saving": "Guardando..."
+		}
+	},
 	"customer": {
 		"nav": {
 			"menu": "Menú",
@@ -72,5 +79,44 @@
 		"ERROR_ADMIN_REQUIRED": "No tienes permiso para realizar esta acción.",
 		"ERROR_MANAGER_REQUIRED": "Necesitas permisos de gerente para realizar esta acción.",
 		"ERROR_INSUFFICIENT_PERMISSIONS": "No tienes los permisos necesarios."
+	},
+	"reservationSettings": {
+		"fieldDescriptions": {
+			"accepting": "Interruptor principal. Cuando está desactivado, los clientes no pueden crear nuevas reservaciones por ningún canal.",
+			"defaultTurn": "Cuánto tiempo, en promedio, ocupa una mesa un grupo antes de considerarse disponible de nuevo.",
+			"minAdvance": "Tiempo mínimo (en minutos) entre el momento actual y el inicio de una reservación que aún aceptamos.",
+			"maxAdvance": "Cuántos días en el futuro pueden los clientes hacer una reservación.",
+			"noShowGrace": "Cuánto tiempo esperamos después de la hora de inicio antes de marcar automáticamente una reservación como inasistencia.",
+			"turnRanges": "Anula el tiempo de mesa predeterminado para rangos específicos de tamaño de grupo. Gana el primer rango que coincida.",
+			"blackouts": "Rangos de fechas en los que no aceptaremos reservaciones, sin importar otras configuraciones."
+		},
+		"labels": {
+			"accepting": "Aceptar reservaciones",
+			"defaultTurn": "Tiempo de mesa predeterminado (minutos)",
+			"minAdvance": "Anticipación mínima (minutos)",
+			"maxAdvance": "Horizonte de reservación (días)",
+			"noShowGrace": "Margen de inasistencia (minutos)",
+			"turnRanges": "Tiempo de mesa por tamaño de grupo",
+			"blackouts": "Periodos bloqueados",
+			"minParty": "Grupo mín.",
+			"maxParty": "Grupo máx.",
+			"turnMinutes": "Tiempo (min)",
+			"startsAt": "Inicia",
+			"endsAt": "Termina",
+			"reason": "Motivo"
+		},
+		"actions": {
+			"addRange": "Agregar rango",
+			"addWindow": "Agregar periodo",
+			"save": "Guardar configuración",
+			"remove": "Eliminar",
+			"moreInfo": "Más información"
+		},
+		"messages": {
+			"saved": "Guardado.",
+			"saveFailed": "Error al guardar",
+			"usingDefaults": "Usando valores predeterminados. Guarda para mantener tus propios valores.",
+			"rangeFallback": "Gana el primer rango que coincida. Si ningún rango coincide, se usa el tiempo de mesa predeterminado."
+		}
 	}
 }

@@ -58,3 +58,17 @@ export const STATUS_TONE_PALETTE: Record<StatusTone, StatusToneStyle> = {
 export function getStatusToneStyle(tone: StatusTone): StatusToneStyle {
 	return STATUS_TONE_PALETTE[tone];
 }
+
+/**
+ * Look up the tone for a given value in a chip array. Lets dashboards
+ * declare their `(value, label, tone)` triples once (typically as
+ * `STATUS_CHIPS` for `<StatusFilterChips>`) and then reach for the same
+ * tone elsewhere (row pills, badges, indicators) without maintaining
+ * a parallel `Record<value, tone>` map by hand.
+ */
+export function toneByValue<T extends string>(
+	chips: ReadonlyArray<{ readonly value: T; readonly tone: StatusTone }>,
+	value: T
+): StatusTone | undefined {
+	return chips.find((chip) => chip.value === value)?.tone;
+}

@@ -90,7 +90,7 @@ export function SegmentedControl<T extends string>({
 			aria-label={ariaLabel}
 			className={[
 				"inline-flex flex-wrap gap-1 p-1 rounded-lg",
-				fullWidth ? "w-full" : "",
+				fullWidth ? "w-full" : "w-fit",
 				className,
 			]
 				.filter(Boolean)

@@ -1,5 +1,6 @@
+import { useConvexMutate } from "@/global/hooks";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 
@@ -8,13 +9,13 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 		convexQuery(api.menus.getMenusByRestaurant, restaurantId ? { restaurantId } : "skip")
 	);
 
-	const createMenu = useMutation({ mutationFn: useConvexMutation(api.menus.createMenu) });
-	const updateMenu = useMutation({ mutationFn: useConvexMutation(api.menus.updateMenu) });
-	const deleteMenu = useMutation({ mutationFn: useConvexMutation(api.menus.deleteMenu) });
+	const createMenu = useConvexMutate(api.menus.createMenu);
+	const updateMenu = useConvexMutate(api.menus.updateMenu);
+	const deleteMenu = useConvexMutate(api.menus.deleteMenu);
 
-	const createCategory = useMutation({ mutationFn: useConvexMutation(api.menus.createCategory) });
-	const updateCategory = useMutation({ mutationFn: useConvexMutation(api.menus.updateCategory) });
-	const deleteCategory = useMutation({ mutationFn: useConvexMutation(api.menus.deleteCategory) });
+	const createCategory = useConvexMutate(api.menus.createCategory);
+	const updateCategory = useConvexMutate(api.menus.updateCategory);
+	const deleteCategory = useConvexMutate(api.menus.deleteCategory);
 
 	return {
 		menus: menus ?? [],
@@ -41,12 +42,14 @@ export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
 		convexQuery(api.menuItems.getByCategory, categoryId ? { categoryId } : "skip")
 	);
 
-	const createItem = useMutation({ mutationFn: useConvexMutation(api.menuItems.create) });
-	const updateItem = useMutation({ mutationFn: useConvexMutation(api.menuItems.update) });
-	const removeItem = useMutation({ mutationFn: useConvexMutation(api.menuItems.remove) });
-	const toggleAvailability = useMutation({
-		mutationFn: useConvexMutation(api.menuItems.toggleAvailability),
-	});
+	const createItem = useConvexMutate(api.menuItems.create);
+	const updateItem = useConvexMutate(api.menuItems.update);
+	const removeItem = useConvexMutate(api.menuItems.remove);
+	const toggleAvailability = useConvexMutate(api.menuItems.toggleAvailability);
+	// `generateUploadUrl` is intentionally NOT wrapped in React Query: callers
+	// invoke it imperatively as part of an upload pipeline (request URL ->
+	// upload file -> persist storageId), not as a top-level mutation whose
+	// status the UI tracks.
 	const generateUploadUrl = useConvexMutation(api.menuItems.generateUploadUrl);
 
 	return {

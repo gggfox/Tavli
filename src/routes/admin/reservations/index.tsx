@@ -1,18 +1,32 @@
-import { ReservationsDashboard, ReservationsDashboardSkeleton } from "@/features/reservations";
+import { DialogHeader, Drawer } from "@/global/components";
+import {
+	ReservationSettingsPanel,
+	ReservationsDashboard,
+	ReservationsDashboardSkeleton,
+	TableLocksManager,
+} from "@/features/reservations";
 import { useRestaurant } from "@/features/restaurants";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import type { Id } from "convex/_generated/dataModel";
 import { Lock, Settings } from "lucide-react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/admin/reservations/")({
 	component: ReservationsPage,
 	validateSearch: (search: Record<string, unknown>) => ({
-		focus: typeof search.focus === "string" ? (search.focus as string) : undefined,
+		focus: typeof search.focus === "string" ? search.focus : undefined,
 	}),
 });
 
 function ReservationsPage() {
 	const { restaurant, isLoading } = useRestaurant();
+	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+	const [isLocksOpen, setIsLocksOpen] = useState(false);
+
+	const triggerStyle = {
+		border: "1px solid var(--border-default)",
+		color: "var(--text-secondary)",
+	} as const;
 
 	return (
 		<div className="p-6 flex flex-col h-full">
@@ -26,31 +40,71 @@ function ReservationsPage() {
 					</p>
 				</div>
 				<div className="flex items-center gap-2">
-					<Link
-						to="/admin/reservations/locks"
+					<button
+						type="button"
+						onClick={() => setIsLocksOpen(true)}
 						className="flex items-center gap-1 text-sm px-3 py-2 rounded-md"
-						style={{
-							border: "1px solid var(--border-default)",
-							color: "var(--text-secondary)",
-						}}
+						style={triggerStyle}
 					>
 						<Lock size={14} /> Locks
-					</Link>
-					<Link
-						to="/admin/reservations/settings"
+					</button>
+					<button
+						type="button"
+						onClick={() => setIsSettingsOpen(true)}
 						className="flex items-center gap-1 text-sm px-3 py-2 rounded-md"
-						style={{
-							border: "1px solid var(--border-default)",
-							color: "var(--text-secondary)",
-						}}
+						style={triggerStyle}
 					>
 						<Settings size={14} /> Settings
-					</Link>
+					</button>
 				</div>
 			</div>
 			<div className="flex-1 overflow-y-auto">
 				<ReservationsContent restaurantId={restaurant?._id} isLoading={isLoading} />
 			</div>
+
+			<Drawer
+				isOpen={isSettingsOpen}
+				onClose={() => setIsSettingsOpen(false)}
+				ariaLabel="Reservation settings"
+			>
+				<DialogHeader
+					title="Reservation settings"
+					subtitle="Default turn time, per-party-size overrides, booking horizon, blackout windows, and the global accepting toggle."
+					onClose={() => setIsSettingsOpen(false)}
+					closeAriaLabel="Close drawer"
+				/>
+				<div className="flex-1 overflow-y-auto px-6 py-4">
+					{restaurant ? (
+						<ReservationSettingsPanel restaurantId={restaurant._id} />
+					) : (
+						<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+							Please set up your restaurant first.
+						</p>
+					)}
+				</div>
+			</Drawer>
+
+			<Drawer
+				isOpen={isLocksOpen}
+				onClose={() => setIsLocksOpen(false)}
+				ariaLabel="Table locks"
+			>
+				<DialogHeader
+					title="Table locks"
+					subtitle="Take a table out of service for a window. Locked tables are hidden from public availability and the staff table picker for that window."
+					onClose={() => setIsLocksOpen(false)}
+					closeAriaLabel="Close drawer"
+				/>
+				<div className="flex-1 overflow-y-auto px-6 py-4">
+					{restaurant ? (
+						<TableLocksManager restaurantId={restaurant._id} />
+					) : (
+						<p className="text-sm" style={{ color: "var(--text-muted)" }}>
+							Please set up your restaurant first.
+						</p>
+					)}
+				</div>
+			</Drawer>
 		</div>
 	);
 }

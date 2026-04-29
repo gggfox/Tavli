@@ -10,23 +10,18 @@ export function MenuListSkeleton() {
 				<Skeleton rounded="lg" className="h-10 w-32" />
 			</div>
 			<div className="space-y-2">
-				{Array.from({ length: ROWS }, (_, i) => (
-					<div
-						key={`menu-row-${i}`}
-						className="flex items-center justify-between px-4 py-3 rounded-lg"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
-					>
-						<Skeleton className="h-4" style={{ width: `${30 + (i % 3) * 12}%` }} />
-						<div className="flex items-center gap-2">
-							<Skeleton rounded="md" className="h-7 w-7" />
-							<Skeleton rounded="md" className="h-7 w-7" />
-							<Skeleton rounded="md" className="h-7 w-7" />
-						</div>
-					</div>
-				))}
+				<Skeleton.Repeat count={ROWS} keyPrefix="menu-row">
+					{(i) => (
+						<Skeleton.Card className="flex items-center justify-between px-4 py-3">
+							<Skeleton className="h-4" style={{ width: `${30 + (i % 3) * 12}%` }} />
+							<div className="flex items-center gap-2">
+								<Skeleton rounded="md" className="h-7 w-7" />
+								<Skeleton rounded="md" className="h-7 w-7" />
+								<Skeleton rounded="md" className="h-7 w-7" />
+							</div>
+						</Skeleton.Card>
+					)}
+				</Skeleton.Repeat>
 			</div>
 		</div>
 	);

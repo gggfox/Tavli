@@ -29,8 +29,6 @@ import { Route as RSlugLangRouteImport } from './routes/r/$slug/$lang'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
-import { Route as AdminReservationsSettingsRouteImport } from './routes/admin/reservations/settings'
-import { Route as AdminReservationsLocksRouteImport } from './routes/admin/reservations/locks'
 import { Route as AdminMenusMenuIdRouteImport } from './routes/admin/menus/$menuId'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
 import { Route as RSlugOrderOrderIdRouteImport } from './routes/r/$slug/order/$orderId'
@@ -143,17 +141,6 @@ const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
   path: '/demo/api/names',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminReservationsSettingsRoute =
-  AdminReservationsSettingsRouteImport.update({
-    id: '/reservations/settings',
-    path: '/reservations/settings',
-    getParentRoute: () => AdminRoute,
-  } as any)
-const AdminReservationsLocksRoute = AdminReservationsLocksRouteImport.update({
-  id: '/reservations/locks',
-  path: '/reservations/locks',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
   id: '/menus/$menuId',
   path: '/menus/$menuId',
@@ -223,8 +210,6 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
-  '/admin/reservations/locks': typeof AdminReservationsLocksRoute
-  '/admin/reservations/settings': typeof AdminReservationsSettingsRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
@@ -258,8 +243,6 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
-  '/admin/reservations/locks': typeof AdminReservationsLocksRoute
-  '/admin/reservations/settings': typeof AdminReservationsSettingsRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
@@ -294,8 +277,6 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
-  '/admin/reservations/locks': typeof AdminReservationsLocksRoute
-  '/admin/reservations/settings': typeof AdminReservationsSettingsRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
@@ -331,8 +312,6 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/r/$slug'
     | '/admin/menus/$menuId'
-    | '/admin/reservations/locks'
-    | '/admin/reservations/settings'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
@@ -366,8 +345,6 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/r/$slug'
     | '/admin/menus/$menuId'
-    | '/admin/reservations/locks'
-    | '/admin/reservations/settings'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
@@ -401,8 +378,6 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/r/$slug'
     | '/admin/menus/$menuId'
-    | '/admin/reservations/locks'
-    | '/admin/reservations/settings'
     | '/demo/api/names'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
@@ -581,20 +556,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoApiNamesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/reservations/settings': {
-      id: '/admin/reservations/settings'
-      path: '/reservations/settings'
-      fullPath: '/admin/reservations/settings'
-      preLoaderRoute: typeof AdminReservationsSettingsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/reservations/locks': {
-      id: '/admin/reservations/locks'
-      path: '/reservations/locks'
-      fullPath: '/admin/reservations/locks'
-      preLoaderRoute: typeof AdminReservationsLocksRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/menus/$menuId': {
       id: '/admin/menus/$menuId'
       path: '/menus/$menuId'
@@ -683,8 +644,6 @@ interface AdminRouteChildren {
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
-  AdminReservationsLocksRoute: typeof AdminReservationsLocksRoute
-  AdminReservationsSettingsRoute: typeof AdminReservationsSettingsRoute
   AdminMenusIndexRoute: typeof AdminMenusIndexRoute
   AdminReservationsIndexRoute: typeof AdminReservationsIndexRoute
 }
@@ -697,8 +656,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
-  AdminReservationsLocksRoute: AdminReservationsLocksRoute,
-  AdminReservationsSettingsRoute: AdminReservationsSettingsRoute,
   AdminMenusIndexRoute: AdminMenusIndexRoute,
   AdminReservationsIndexRoute: AdminReservationsIndexRoute,
 }

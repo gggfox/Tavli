@@ -212,7 +212,7 @@ export function Tooltip({
 				position: "fixed",
 				top: position?.top ?? -9999,
 				left: position?.left ?? -9999,
-				zIndex: 60,
+				zIndex: 1000,
 				maxWidth: 320,
 				backgroundColor: "var(--bg-secondary)",
 				color: "var(--text-primary)",

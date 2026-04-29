@@ -1,10 +1,15 @@
 export { AdminPageLayout } from "./AdminPageLayout";
 export { Avatar, getAvatarFallback } from "./Avatar";
+export * from "./Button";
 export { CollapsibleCard } from "./CollapsibleCard";
 export { CopyableId } from "./CopyableId";
+export * from "./DashboardShell";
+export * from "./Dialog";
+export * from "./Drawer";
 export { EmptyState } from "./EmptyState";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { FeatureCard } from "./FeatureCard";
+export * from "./Form";
 export { InlineEditInput } from "./InlineEditInput";
 export { InlineError } from "./InlineError";
 export { LanguageTabBar } from "./LanguageTabBar";
@@ -24,10 +29,12 @@ export type { SegmentedControlOption, SegmentedControlProps } from "./SegmentedC
 export { Sidebar } from "./Sidebar";
 export { Skeleton } from "./Skeleton";
 export { StatusBadge } from "./StatusBadge";
+export * from "./Surface";
 export {
 	getStatusToneStyle,
 	STATUS_TONE_PALETTE,
 	StatusFilterChips,
+	toneByValue,
 } from "./StatusFilterChips";
 export type {
 	StatusFilterChipsProps,

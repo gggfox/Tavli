@@ -60,17 +60,24 @@ export function AdminTable<TData>({
 	if (isLoading) return <TableSkeleton />;
 	if (isError && error) {
 		const errorObj = error instanceof Error ? error : new Error(String(error));
-		return <TableErrorState error={errorObj} entityName={entityName} onRetry={() => refetch()} />;
+		return (
+			<div className="flex flex-col min-h-full">
+				<TableErrorState error={errorObj} entityName={entityName} onRetry={() => refetch()} fill />
+			</div>
+		);
 	}
 	if (data === undefined || data === null) return <TableSkeleton />;
 
 	if (data.length === 0) {
 		return (
-			<EmptyState
-				icon={EmptyIcon}
-				title={emptyTitle ?? `No ${entityName} found`}
-				description={emptyDescription}
-			/>
+			<div className="flex flex-col min-h-full">
+				<EmptyState
+					icon={EmptyIcon}
+					title={emptyTitle ?? `No ${entityName} found`}
+					description={emptyDescription}
+					fill
+				/>
+			</div>
 		);
 	}
 

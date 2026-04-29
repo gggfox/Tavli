@@ -12,7 +12,15 @@ const config = defineConfig({
       projects: ["./tsconfig.json"],
     }),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({
+      router: {
+        // Test files colocated with route files (e.g. routes/success.test.tsx)
+        // are not routes — exclude them so the router-generator stops touching
+        // routeTree.gen.ts on every test edit, which otherwise spams HMR and
+        // can crash the dev server in a regenerate loop.
+        routeFileIgnorePattern: String.raw`\.(test|spec)\.`,
+      },
+    }),
     nitro(),
     viteReact({
       babel: {

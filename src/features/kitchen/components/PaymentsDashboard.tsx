@@ -1,11 +1,23 @@
-import { CopyableId, EmptyState, SegmentedControl, Tooltip } from "@/global/components";
+import {
+	CopyableId,
+	DashboardShell,
+	EmptyState,
+	SegmentedControl,
+	Surface,
+	Tooltip,
+} from "@/global/components";
 import { formatDate } from "@/global/utils/date";
 import { formatCents } from "@/global/utils/money";
-import type { Id } from "convex/_generated/dataModel";
-import { AlertTriangle, CreditCard, DollarSign, Hash, TrendingUp } from "lucide-react";
+import type { Doc, Id } from "convex/_generated/dataModel";
+import { CreditCard, DollarSign, Hash, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { usePayments } from "../hooks/usePayments";
 import { PaymentsDashboardSkeleton } from "./PaymentsDashboardSkeleton";
+
+type PaymentsOrder = Doc<"orders"> & {
+	readonly items: ReadonlyArray<Doc<"orderItems">>;
+	readonly tableNumber: number;
+};
 
 interface PaymentsDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -58,35 +70,31 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 
 	const averageOrder = orderCount > 0 ? totalRevenue / orderCount : 0;
 
+	const typedOrders = orders as ReadonlyArray<PaymentsOrder>;
+
 	const sorted = useMemo(
-		() => [...orders].sort((a: any, b: any) => (b.paidAt ?? 0) - (a.paidAt ?? 0)),
-		[orders]
+		() => [...typedOrders].sort((a, b) => (b.paidAt ?? 0) - (a.paidAt ?? 0)),
+		[typedOrders]
 	);
 
-	if (isLoading) {
-		return <PaymentsDashboardSkeleton />;
-	}
-
-	if (error) {
-		return (
-			<EmptyState
-				icon={AlertTriangle}
-				title="Could not load payments."
-				description={error.message ?? "Please check your permissions and try again."}
-			/>
-		);
-	}
+	const header = (
+		<SegmentedControl
+			options={TIME_FRAME_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+			value={timeFrame}
+			onChange={setTimeFrame}
+			ariaLabel="Filter payments by time frame"
+		/>
+	);
 
 	return (
-		<div className="space-y-6">
-			<SegmentedControl
-				options={TIME_FRAME_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-				value={timeFrame}
-				onChange={setTimeFrame}
-				ariaLabel="Filter payments by time frame"
-			/>
-
-			{/* Summary cards */}
+		<DashboardShell
+			isLoading={isLoading}
+			error={error}
+			entityName="payments"
+			skeleton={<PaymentsDashboardSkeleton />}
+			header={header}
+			gap="6"
+		>
 			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 				<SummaryCard
 					icon={<DollarSign size={20} />}
@@ -101,17 +109,10 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 				/>
 			</div>
 
-			{/* Orders list */}
 			{sorted.length === 0 ? (
-				<EmptyState icon={CreditCard} title="No payments in this period." />
+				<EmptyState icon={CreditCard} title="No payments in this period." fill />
 			) : (
-				<div
-					className="rounded-xl overflow-hidden"
-					style={{
-						border: "1px solid var(--border-default)",
-						backgroundColor: "var(--bg-secondary)",
-					}}
-				>
+				<Surface tone="secondary" rounded="xl" className="overflow-hidden">
 					<table className="w-full text-sm">
 						<thead>
 							<tr style={{ borderBottom: "1px solid var(--border-default)" }}>
@@ -148,48 +149,40 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 							</tr>
 						</thead>
 						<tbody>
-						{sorted.map((order: any) => (
-							<tr key={order._id} style={{ borderBottom: "1px solid var(--border-default)" }}>
-								<td className="px-4 py-3">
-									<CopyableId id={order._id} />
-								</td>
-								<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
-									{order.paidAt ? formatDate(order.paidAt) : "—"}
-								</td>
-								<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
-									Table {order.tableNumber}
-								</td>
-								<td className="px-4 py-3">
-									<OrderItemsTooltipTrigger order={order} />
-								</td>
-								<td
-									className="px-4 py-3 text-right font-medium"
-									style={{ color: "var(--text-primary)" }}
+							{sorted.map((order) => (
+								<tr
+									key={order._id}
+									style={{ borderBottom: "1px solid var(--border-default)" }}
 								>
-									${formatCents(order.totalAmount)}
-								</td>
-							</tr>
-						))}
+									<td className="px-4 py-3">
+										<CopyableId id={order._id} />
+									</td>
+									<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
+										{order.paidAt ? formatDate(order.paidAt) : "—"}
+									</td>
+									<td className="px-4 py-3" style={{ color: "var(--text-primary)" }}>
+										Table {order.tableNumber}
+									</td>
+									<td className="px-4 py-3">
+										<OrderItemsTooltipTrigger order={order} />
+									</td>
+									<td
+										className="px-4 py-3 text-right font-medium"
+										style={{ color: "var(--text-primary)" }}
+									>
+										${formatCents(order.totalAmount)}
+									</td>
+								</tr>
+							))}
 						</tbody>
 					</table>
-				</div>
+				</Surface>
 			)}
-		</div>
+		</DashboardShell>
 	);
 }
 
-interface OrderItem {
-	_id: string;
-	menuItemName: string;
-	quantity: number;
-}
-
-interface OrderForTooltip {
-	items: OrderItem[];
-	totalAmount: number;
-}
-
-function OrderItemsTooltipTrigger({ order }: Readonly<{ order: OrderForTooltip }>) {
+function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOrder }>) {
 	const itemCount = order.items.reduce((n, item) => n + item.quantity, 0);
 	const label = itemCount === 1 ? "1 item" : `${itemCount} items`;
 
@@ -244,13 +237,7 @@ function SummaryCard({
 	value,
 }: Readonly<{ icon: React.ReactNode; label: string; value: string }>) {
 	return (
-		<div
-			className="rounded-xl p-4 flex items-center gap-4"
-			style={{
-				border: "1px solid var(--border-default)",
-				backgroundColor: "var(--bg-secondary)",
-			}}
-		>
+		<Surface tone="secondary" rounded="xl" className="p-4 flex items-center gap-4">
 			<div
 				className="flex items-center justify-center w-10 h-10 rounded-lg"
 				style={{ backgroundColor: "var(--bg-tertiary, var(--bg-primary))" }}
@@ -265,6 +252,6 @@ function SummaryCard({
 					{value}
 				</p>
 			</div>
-		</div>
+		</Surface>
 	);
 }

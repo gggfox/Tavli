@@ -30,28 +30,23 @@ export function SessionOrdersListSkeleton({ onBackToMenu }: SessionOrdersListSke
 					<Skeleton className="h-5 w-32" />
 				</div>
 
-				{Array.from({ length: ROWS }, (_, i) => (
-					<div
-						key={`session-order-${i}`}
-						className="w-full flex items-center gap-3 p-4 rounded-xl"
-						style={{
-							backgroundColor: "var(--bg-secondary)",
-							border: "1px solid var(--border-default)",
-						}}
-					>
-						<Skeleton rounded="full" className="w-10 h-10 shrink-0" />
-						<div className="flex-1 space-y-2">
-							<div className="flex items-center justify-between gap-2">
-								<Skeleton className="h-4" style={{ width: `${50 + (i % 3) * 12}%` }} />
-								<Skeleton className="h-4 w-16" />
+				<Skeleton.Repeat count={ROWS} keyPrefix="session-order">
+					{(i) => (
+						<Skeleton.Card rounded="xl" className="w-full flex items-center gap-3 p-4">
+							<Skeleton rounded="full" className="w-10 h-10 shrink-0" />
+							<div className="flex-1 space-y-2">
+								<div className="flex items-center justify-between gap-2">
+									<Skeleton className="h-4" style={{ width: `${50 + (i % 3) * 12}%` }} />
+									<Skeleton className="h-4 w-16" />
+								</div>
+								<div className="flex items-center justify-between gap-2">
+									<Skeleton className="h-3 w-20" />
+									<Skeleton className="h-3 w-16" />
+								</div>
 							</div>
-							<div className="flex items-center justify-between gap-2">
-								<Skeleton className="h-3 w-20" />
-								<Skeleton className="h-3 w-16" />
-							</div>
-						</div>
-					</div>
-				))}
+						</Skeleton.Card>
+					)}
+				</Skeleton.Repeat>
 			</div>
 		</div>
 	);

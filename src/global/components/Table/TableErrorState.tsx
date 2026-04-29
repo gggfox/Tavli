@@ -2,12 +2,24 @@ interface TableErrorStateProps {
 	readonly error: Error;
 	readonly entityName?: string;
 	readonly onRetry?: () => void;
+	/**
+	 * When true, the error card grows to fill the remaining vertical space of
+	 * its parent. The parent must be a flex column with a defined or
+	 * `min-h-full` height for this to take effect.
+	 */
+	readonly fill?: boolean;
 }
 
-export function TableErrorState({ error, entityName = "data", onRetry }: TableErrorStateProps) {
+export function TableErrorState({
+	error,
+	entityName = "data",
+	onRetry,
+	fill = false,
+}: TableErrorStateProps) {
+	const sizing = fill ? "flex-1 self-stretch min-h-0 py-12" : "py-12";
 	return (
 		<div
-			className="flex flex-col items-center justify-center py-12 rounded-lg"
+			className={`flex flex-col items-center justify-center rounded-lg ${sizing}`}
 			style={{ backgroundColor: "var(--accent-danger-bg, rgba(239, 68, 68, 0.1))" }}
 		>
 			<p className="text-lg font-medium" style={{ color: "var(--accent-danger, #e53e3e)" }}>

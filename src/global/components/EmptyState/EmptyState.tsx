@@ -7,6 +7,13 @@ interface EmptyStateProps {
 	readonly description?: string;
 	readonly action?: ReactNode;
 	readonly variant?: "card" | "inline";
+	/**
+	 * When true, the card variant grows to fill the remaining vertical space of
+	 * its parent instead of sitting at its natural height. The parent must be a
+	 * flex column with a defined or `min-h-full` height for this to take
+	 * effect. Has no effect on the inline variant.
+	 */
+	readonly fill?: boolean;
 	readonly className?: string;
 }
 
@@ -16,6 +23,7 @@ export function EmptyState({
 	description,
 	action,
 	variant = "card",
+	fill = false,
 	className = "",
 }: EmptyStateProps) {
 	if (variant === "inline") {
@@ -26,9 +34,11 @@ export function EmptyState({
 		);
 	}
 
+	const sizing = fill ? "flex-1 self-stretch min-h-0 py-12" : "py-12";
+
 	return (
 		<div
-			className={`flex flex-col items-center justify-center py-12 rounded-lg ${className}`}
+			className={`flex flex-col items-center justify-center rounded-lg ${sizing} ${className}`}
 			style={{ backgroundColor: "var(--bg-secondary)" }}
 		>
 			{Icon && (

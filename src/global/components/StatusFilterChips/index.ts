@@ -6,6 +6,7 @@ export type {
 export {
 	getStatusToneStyle,
 	STATUS_TONE_PALETTE,
+	toneByValue,
 	type StatusTone,
 	type StatusToneStyle,
 } from "./statusPalette";

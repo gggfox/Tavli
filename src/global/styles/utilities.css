@@ -63,6 +63,30 @@
 	background-color: var(--btn-secondary-hover);
 }
 
+/* Danger button hover */
+.hover-btn-danger {
+	background-color: var(--accent-danger);
+	color: var(--text-inverse);
+	transition: background-color 0.15s ease;
+}
+
+.hover-btn-danger:hover {
+	background-color: var(--accent-primary-hover);
+}
+
+/* Ghost button hover - transparent until hover */
+.hover-btn-ghost {
+	background-color: transparent;
+	color: var(--text-primary);
+	transition:
+		background-color 0.15s ease,
+		color 0.15s ease;
+}
+
+.hover-btn-ghost:hover {
+	background-color: var(--bg-hover);
+}
+
 /* Danger/delete hover - muted to danger */
 .hover-danger {
 	color: var(--text-muted);

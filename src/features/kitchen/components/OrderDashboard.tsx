@@ -1,6 +1,8 @@
 import type { OrderDashboardStatusFilter } from "@/features";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import {
+	DashboardShell,
+	DialogHeader,
 	EmptyState,
 	getStatusToneStyle,
 	Modal,
@@ -8,31 +10,45 @@ import {
 	StatusFilterChips,
 	type StatusFilterOption,
 	type StatusTone,
+	Surface,
 } from "@/global/components";
+import { useOptimisticUserSetting } from "@/global/hooks";
 import { formatCents } from "@/global/utils/money";
-import type { Id } from "convex/_generated/dataModel";
+import type { Doc, Id } from "convex/_generated/dataModel";
 import {
-	AlertTriangle,
 	CheckCircle2,
 	ChefHat,
 	Clock,
 	CreditCard,
 	UtensilsCrossed,
-	X,
 	XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useOrders } from "../hooks/useOrders";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 
+type DashboardOrder = Doc<"orders"> & {
+	readonly items: ReadonlyArray<Doc<"orderItems">>;
+	readonly tableNumber: number;
+};
+
+type DashboardOrderItem = Doc<"orderItems">;
+
 interface OrderDashboardProps {
 	restaurantId: Id<"restaurants">;
 }
 
+/**
+ * Subset of order statuses accepted by `api.orders.updateStatus`. Note
+ * the explicit absence of `"submitted"` -- the dashboard never advances
+ * an order back into the queue.
+ */
+type NextOrderStatus = "preparing" | "ready" | "served" | "cancelled";
+
 type StatusConfig = {
 	label: string;
 	tone: StatusTone;
-	next: string | null;
+	next: NextOrderStatus | null;
 	nextLabel: string | null;
 };
 
@@ -133,13 +149,13 @@ function getOrderAge(
 	return { label, color, minutes };
 }
 
-function OrderItemRow({ item }: Readonly<{ item: any }>) {
+function OrderItemRow({ item }: Readonly<{ item: DashboardOrderItem }>) {
 	return (
 		<div className="text-sm" style={{ color: "var(--text-primary)" }}>
 			<span className="font-medium">{item.quantity}x</span> {item.menuItemName}
 			{item.selectedOptions.length > 0 && (
 				<span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>
-					({item.selectedOptions.map((o: any) => o.optionName).join(", ")})
+					({item.selectedOptions.map((o) => o.optionName).join(", ")})
 				</span>
 			)}
 			{item.specialInstructions && (
@@ -158,24 +174,16 @@ function isDashboardStatus(status: string): status is OrderDashboardStatusFilter
 export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) {
 	const { orderDashboardStatusFilters, updateOrderDashboardStatusFilters } = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
-	const [fullOrder, setFullOrder] = useState<any>(null);
+	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
 	const [now, setNow] = useState(() => Date.now());
 
-	// Optimistic local copy so toggling pills feels instant. Once the persisted
-	// value arrives (or changes), we sync to it.
-	const [localFilters, setLocalFilters] = useState<OrderDashboardStatusFilter[] | null>(null);
-
-	useEffect(() => {
-		if (orderDashboardStatusFilters !== null) {
-			setLocalFilters(orderDashboardStatusFilters);
-		}
-	}, [orderDashboardStatusFilters]);
-
-	const activeFilters = useMemo<OrderDashboardStatusFilter[]>(() => {
-		if (localFilters !== null) return localFilters;
-		if (orderDashboardStatusFilters !== null) return orderDashboardStatusFilters;
-		return DEFAULT_STATUS_FILTERS;
-	}, [localFilters, orderDashboardStatusFilters]);
+	const [activeFilters, setActiveFilters] = useOptimisticUserSetting<
+		OrderDashboardStatusFilter[]
+	>({
+		serverValue: orderDashboardStatusFilters,
+		persist: updateOrderDashboardStatusFilters,
+		fallback: DEFAULT_STATUS_FILTERS,
+	});
 
 	const { orders, isLoading, error, updateStatus } = useOrders(restaurantId, activeFilters);
 
@@ -187,69 +195,44 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
 
 	const handleToggleFilter = (status: OrderDashboardStatusFilter) => {
-		const current = activeFilters;
-		const next = current.includes(status)
-			? current.filter((s) => s !== status)
-			: [...current, status];
-		setLocalFilters(next);
-		// Fire-and-forget: errors here only mean the choice doesn't persist
-		// across devices, the UI already reflects the change locally.
-		updateOrderDashboardStatusFilters(next).catch(() => {
-			// Intentionally swallowed -- local state already reflects the toggle.
-		});
+		const next = activeFilters.includes(status)
+			? activeFilters.filter((s) => s !== status)
+			: [...activeFilters, status];
+		setActiveFilters(next);
 	};
 
 	const filterPills = (
-		<div className="mb-4">
-			<StatusFilterChips
-				options={STATUS_FILTER_OPTIONS}
-				selected={activeFilterSet}
-				onToggle={handleToggleFilter}
-				ariaLabel="Filter orders by status"
-			/>
-		</div>
+		<StatusFilterChips
+			options={STATUS_FILTER_OPTIONS}
+			selected={activeFilterSet}
+			onToggle={handleToggleFilter}
+			ariaLabel="Filter orders by status"
+		/>
 	);
 
-	if (isLoading) {
-		return (
-			<>
-				{filterPills}
-				<OrderDashboardSkeleton />
-			</>
-		);
-	}
+	const typedOrders = orders as ReadonlyArray<DashboardOrder>;
 
-	if (error) {
-		return (
-			<>
-				{filterPills}
-				<EmptyState
-					icon={AlertTriangle}
-					title="Could not load orders."
-					description={error.message ?? "Please check your permissions and try again."}
-				/>
-			</>
-		);
-	}
-
-	const sorted = (orders as any[])
-		.filter((o: any) => isDashboardStatus(o.status))
-		.sort((a: any, b: any) => {
+	const sorted = typedOrders
+		.filter((o) => isDashboardStatus(o.status))
+		.slice()
+		.sort((a, b) => {
 			const aPriority = STATUS_SORT_PRIORITY[a.status as OrderDashboardStatusFilter];
 			const bPriority = STATUS_SORT_PRIORITY[b.status as OrderDashboardStatusFilter];
 			return aPriority - bPriority || a.createdAt - b.createdAt;
 		});
 
 	const fullOrderConfig =
-		fullOrder && isDashboardStatus(fullOrder.status)
-			? STATUS_CONFIG[fullOrder.status as OrderDashboardStatusFilter]
-			: null;
+		fullOrder && isDashboardStatus(fullOrder.status) ? STATUS_CONFIG[fullOrder.status] : null;
 	const fullOrderAge = fullOrder ? getOrderAge(fullOrder.createdAt, now) : null;
 
 	return (
-		<>
-			{filterPills}
-
+		<DashboardShell
+			isLoading={isLoading}
+			error={error}
+			entityName="orders"
+			skeleton={<OrderDashboardSkeleton />}
+			header={filterPills}
+		>
 			{sorted.length === 0 ? (
 				<EmptyState
 					icon={ChefHat}
@@ -258,10 +241,11 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 							? "Select at least one status to view orders."
 							: "No orders match the selected filters."
 					}
+					fill
 				/>
 			) : (
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-					{sorted.map((order: any) => {
+					{sorted.map((order) => {
 						const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilter];
 						const visibleItems = order.items.slice(0, MAX_VISIBLE_ITEMS);
 						const hiddenCount = order.items.length - visibleItems.length;
@@ -276,13 +260,11 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 								: "View full order →";
 
 						return (
-							<div
+							<Surface
 								key={order._id}
-								className="rounded-xl overflow-hidden flex flex-col aspect-video"
-								style={{
-									border: "1px solid var(--border-default)",
-									backgroundColor: "var(--bg-secondary)",
-								}}
+								tone="secondary"
+								rounded="xl"
+								className="overflow-hidden flex flex-col aspect-video"
 							>
 								<div
 									className="px-4 py-3 shrink-0"
@@ -350,7 +332,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 								</div>
 
 								<div className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto">
-									{visibleItems.map((item: any) => (
+									{visibleItems.map((item) => (
 										<OrderItemRow key={item._id} item={item} />
 									))}
 								</div>
@@ -417,12 +399,12 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 											<div className="flex gap-2">
 												{config.next && (
 													<button
-														onClick={() =>
-															updateStatus({
-																orderId: order._id,
-																newStatus: config.next as any,
-															})
-														}
+												onClick={() =>
+														updateStatus({
+															orderId: order._id,
+															newStatus: config.next as NextOrderStatus,
+														})
+													}
 														className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 													>
 														{config.next === "preparing" && <ChefHat size={14} />}
@@ -446,7 +428,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 										)
 									)}
 								</div>
-							</div>
+							</Surface>
 						);
 					})}
 				</div>
@@ -459,18 +441,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				size="lg"
 			>
 				{fullOrder && (
-					<div
-						className="rounded-xl"
-						style={{
-							backgroundColor: "var(--bg-primary)",
-							border: "1px solid var(--border-default)",
-						}}
-					>
-						<div
-							className="px-6 py-4 flex items-start justify-between gap-4"
-							style={{ borderBottom: "1px solid var(--border-default)" }}
-						>
-							<div className="flex flex-col gap-1 min-w-0">
+					<Surface tone="primary" rounded="xl">
+						<DialogHeader
+							title={
 								<div className="flex items-center gap-2 flex-wrap">
 									{fullOrderConfig && (
 										<StatusBadge
@@ -479,35 +452,36 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 											label={fullOrderConfig.label}
 										/>
 									)}
-									<h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+									<h2
+										className="text-lg font-semibold"
+										style={{ color: "var(--text-primary)" }}
+									>
 										Table {fullOrder.tableNumber}
 									</h2>
 									{fullOrder.paidAt && (
 										<span
 											className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-											style={{ backgroundColor: "var(--accent-success)", color: "white" }}
+											style={{
+												backgroundColor: "var(--accent-success)",
+												color: "white",
+											}}
 										>
 											<CreditCard size={10} />
 											Paid
 										</span>
 									)}
 								</div>
+							}
+							subtitle={
 								<span
 									className="text-xs font-mono break-all"
 									style={{ color: "var(--text-muted)" }}
 								>
 									#{fullOrder._id}
 								</span>
-							</div>
-							<button
-								onClick={() => setFullOrder(null)}
-								className="p-1 rounded-md transition-colors hover:opacity-80 shrink-0"
-								style={{ color: "var(--text-muted)" }}
-								aria-label="Close"
-							>
-								<X size={18} />
-							</button>
-						</div>
+							}
+							onClose={() => setFullOrder(null)}
+						/>
 
 						<div
 							className="px-6 py-3 flex items-center justify-between text-xs gap-4 flex-wrap"
@@ -530,7 +504,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 								</span>
 								<span className="flex items-center gap-1">
 									<Clock size={12} />
-									{formatOrderDate(fullOrder.createdAt)} · {formatOrderTime(fullOrder.createdAt)}
+									{formatOrderDate(fullOrder.createdAt)} ·{" "}
+									{formatOrderTime(fullOrder.createdAt)}
 								</span>
 							</div>
 							<span className="font-medium" style={{ color: "var(--text-primary)" }}>
@@ -539,13 +514,13 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 						</div>
 
 						<div className="px-6 py-4 space-y-2 max-h-[60vh] overflow-y-auto">
-							{fullOrder.items.map((item: any) => (
+							{fullOrder.items.map((item) => (
 								<OrderItemRow key={item._id} item={item} />
 							))}
 						</div>
-					</div>
+					</Surface>
 				)}
 			</Modal>
-		</>
+		</DashboardShell>
 	);
 }

@@ -1,0 +1,149 @@
+/*
+ * Button styles — animated state machine on top of the existing
+ * `hover-btn-*` utility classes.
+ *
+ * Architecture:
+ *   - `.tavli-button` is the polymorphic root. It owns disabled/focus
+ *     styling and the cross-state background transition.
+ *   - `.tavli-button-stack` is a CSS grid where every state's content
+ *     occupies the same cell, so the button is sized to the widest
+ *     label and never re-flows when state flips.
+ *   - `data-state="success|error"` overrides the variant background to
+ *     the matching accent color, then a state-aware label fades in.
+ *
+ * The variant background colors come from the same `hover-btn-*`
+ * utility classes used everywhere else in the codebase, so theming
+ * stays centralized.
+ */
+
+.tavli-button {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 0.5rem;
+	font-weight: 500;
+	transition:
+		background-color 250ms ease,
+		color 250ms ease,
+		opacity 150ms ease;
+	cursor: pointer;
+}
+
+.tavli-button:disabled {
+	cursor: not-allowed;
+}
+
+.tavli-button[data-state="loading"] {
+	cursor: wait;
+}
+
+.tavli-button[data-state="success"] {
+	background-color: var(--accent-success) !important;
+	color: var(--text-inverse) !important;
+}
+
+.tavli-button[data-state="error"] {
+	background-color: var(--accent-danger) !important;
+	color: var(--text-inverse) !important;
+}
+
+/* Disabled-but-not-success/error: dim. Success/error keep their tint. */
+.tavli-button:disabled[data-state="idle"],
+.tavli-button:disabled[data-state="loading"] {
+	opacity: 0.6;
+}
+
+/* ============================================
+ * Content stack — keeps the button width stable
+ * across idle/loading/success/error labels.
+ * ============================================ */
+
+.tavli-button-stack {
+	display: grid;
+	grid-template-areas: "stack";
+	align-items: center;
+	justify-items: center;
+}
+
+.tavli-button-stack > * {
+	grid-area: stack;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	transition:
+		opacity 180ms ease,
+		transform 180ms ease;
+}
+
+.tavli-button-layer[data-active="false"] {
+	opacity: 0;
+	transform: scale(0.96);
+	pointer-events: none;
+}
+
+.tavli-button-layer[data-active="true"] {
+	opacity: 1;
+	transform: scale(1);
+}
+
+/* ============================================
+ * Icon entrance animation (success / error)
+ * ============================================ */
+
+@keyframes tavli-button-icon-pop {
+	0% {
+		opacity: 0;
+		transform: scale(0.4);
+	}
+	60% {
+		opacity: 1;
+		transform: scale(1.15);
+	}
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+.tavli-button-state-icon {
+	display: inline-flex;
+	animation: tavli-button-icon-pop 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ============================================
+ * Loading spinner
+ * ============================================ */
+
+@keyframes tavli-button-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.tavli-button-spinner {
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	border-radius: 9999px;
+	border: 2px solid currentColor;
+	border-top-color: transparent;
+	animation: tavli-button-spin 700ms linear infinite;
+}
+
+/* ============================================
+ * Reduced-motion: skip the entrance animation
+ * but keep the color cross-fade so feedback is
+ * still legible.
+ * ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+	.tavli-button-state-icon,
+	.tavli-button-spinner {
+		animation-duration: 0ms !important;
+	}
+
+	.tavli-button-stack > * {
+		transition-duration: 0ms !important;
+	}
+}

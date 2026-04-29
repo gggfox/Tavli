@@ -1,5 +1,6 @@
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useConvexMutate } from "@/global/hooks";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 
@@ -8,26 +9,16 @@ export function useOptionGroups(restaurantId: Id<"restaurants"> | undefined) {
 		convexQuery(api.optionGroups.getGroupsByRestaurant, restaurantId ? { restaurantId } : "skip")
 	);
 
-	const createGroup = useMutation({ mutationFn: useConvexMutation(api.optionGroups.createGroup) });
-	const updateGroup = useMutation({ mutationFn: useConvexMutation(api.optionGroups.updateGroup) });
-	const deleteGroup = useMutation({ mutationFn: useConvexMutation(api.optionGroups.deleteGroup) });
+	const createGroup = useConvexMutate(api.optionGroups.createGroup);
+	const updateGroup = useConvexMutate(api.optionGroups.updateGroup);
+	const deleteGroup = useConvexMutate(api.optionGroups.deleteGroup);
 
-	const createOption = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.createOption),
-	});
-	const updateOption = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.updateOption),
-	});
-	const deleteOption = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.deleteOption),
-	});
+	const createOption = useConvexMutate(api.optionGroups.createOption);
+	const updateOption = useConvexMutate(api.optionGroups.updateOption);
+	const deleteOption = useConvexMutate(api.optionGroups.deleteOption);
 
-	const linkToMenuItem = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.linkToMenuItem),
-	});
-	const unlinkFromMenuItem = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.unlinkFromMenuItem),
-	});
+	const linkToMenuItem = useConvexMutate(api.optionGroups.linkToMenuItem);
+	const unlinkFromMenuItem = useConvexMutate(api.optionGroups.unlinkFromMenuItem);
 
 	return {
 		groups: data ?? [],
