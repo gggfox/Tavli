@@ -283,6 +283,51 @@ export const createAccountLink = action({
 // =============================================================================
 
 /**
+ * Fetches a V2 connected account and infers its onboarding-status fields.
+ *
+ * The retrieve call and the field inspection are tightly coupled: the
+ * `include` parameter dictates which V2 fields are present on the response,
+ * and the inference reads exactly those fields. Centralising both keeps
+ * `getAccountStatus` and the thin-event handler in lockstep so they cannot
+ * drift (e.g. one starts checking a new capability while the other doesn't).
+ *
+ * Lives here (not in `stripeHelpers.ts`) because it both calls the Stripe
+ * SDK and inspects V2 account fields — `stripeHelpers.ts` is not `"use node"`.
+ */
+async function inferV2AccountStatus(
+	stripeClient: Stripe,
+	stripeAccountId: string
+): Promise<{
+	readyToReceivePayments: boolean;
+	requirementsStatus: string | null;
+	onboardingComplete: boolean;
+	isComplete: boolean;
+}> {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const account: any = await stripeClient.v2.core.accounts.retrieve(stripeAccountId, {
+		include: ["configuration.recipient", "requirements"],
+	});
+
+	const readyToReceivePayments: boolean =
+		account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ===
+		"active";
+
+	const requirementsStatus: string | null =
+		account?.requirements?.summary?.minimum_deadline?.status ?? null;
+	const onboardingComplete =
+		requirementsStatus !== "currently_due" && requirementsStatus !== "past_due";
+
+	const isComplete = readyToReceivePayments && onboardingComplete;
+
+	return {
+		readyToReceivePayments,
+		requirementsStatus,
+		onboardingComplete,
+		isComplete,
+	};
+}
+
+/**
  * Retrieves the current status of a connected account using the V2 API.
  *
  * Returns a status object the frontend uses to decide what to show:
@@ -310,22 +355,9 @@ export const getAccountStatus = action({
 		}
 
 		const stripeClient = getStripeClient();
+		const { readyToReceivePayments, requirementsStatus, onboardingComplete, isComplete } =
+			await inferV2AccountStatus(stripeClient, restaurant.stripeAccountId);
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const account: any = await stripeClient.v2.core.accounts.retrieve(restaurant.stripeAccountId, {
-			include: ["configuration.recipient", "requirements"],
-		});
-
-		const readyToReceivePayments: boolean =
-			account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ===
-			"active";
-
-		const requirementsStatus: string | null =
-			account?.requirements?.summary?.minimum_deadline?.status ?? null;
-		const onboardingComplete =
-			requirementsStatus !== "currently_due" && requirementsStatus !== "past_due";
-
-		const isComplete = readyToReceivePayments && onboardingComplete;
 		if (isComplete !== restaurant.stripeOnboardingComplete) {
 			await ctx.runMutation(internal.stripeHelpers.updateOnboardingStatus, {
 				restaurantId: args.restaurantId,
@@ -428,21 +460,7 @@ async function handleAccountStatusChange(
 	stripeClient: Stripe,
 	stripeAccountId: string
 ): Promise<void> {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const account: any = await stripeClient.v2.core.accounts.retrieve(stripeAccountId, {
-		include: ["configuration.recipient", "requirements"],
-	});
-
-	const readyToReceivePayments: boolean =
-		account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ===
-		"active";
-
-	const requirementsStatus: string | null =
-		account?.requirements?.summary?.minimum_deadline?.status ?? null;
-	const onboardingComplete =
-		requirementsStatus !== "currently_due" && requirementsStatus !== "past_due";
-
-	const isComplete = readyToReceivePayments && onboardingComplete;
+	const { isComplete } = await inferV2AccountStatus(stripeClient, stripeAccountId);
 
 	await ctx.runMutation(internal.stripeHelpers.updateOnboardingByAccountId, {
 		stripeAccountId,
