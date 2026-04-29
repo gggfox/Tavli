@@ -1,4 +1,4 @@
-import { type Language, Languages } from "@/global/i18n/locales";
+import { type Language, Languages } from "@/global/i18n/keys/languages";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";

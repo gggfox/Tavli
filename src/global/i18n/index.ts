@@ -1,35 +1,18 @@
 export * from "./config";
 export { default as i18n } from "./config";
-export {
-	CommonKeys,
-	CustomerKeys,
-	Languages,
-	MenusKeys,
-	OptionsKeys,
-	OrderingKeys,
-	OrdersKeys,
-	PaymentsKeys,
-	ReservationSettingsKeys,
-	ReservationsKeys,
-	RestaurantsKeys,
-	RoleKeys,
-	SidebarKeys,
-	TimeKeys,
-	WelcomeKeys,
-	type CommonKey,
-	type CustomerKey,
-	type Language,
-	type MenusKey,
-	type OptionsKey,
-	type OrderingKey,
-	type OrdersKey,
-	type PaymentsKey,
-	type ReservationSettingsKey,
-	type ReservationsKey,
-	type RestaurantsKey,
-	type RoleKey,
-	type SidebarKey,
-	type TimeKey,
-	type WelcomeKey,
-} from "./locales";
+export { CommonKeys, type CommonKey } from "./keys/common";
+export { CustomerKeys, type CustomerKey } from "./keys/customer";
+export { Languages, type Language } from "./keys/languages";
+export { MenusKeys, type MenusKey } from "./keys/menus";
+export { OptionsKeys, type OptionsKey } from "./keys/options";
+export { OrderingKeys, type OrderingKey } from "./keys/ordering";
+export { OrdersKeys, type OrdersKey } from "./keys/orders";
+export { PaymentsKeys, type PaymentsKey } from "./keys/payments";
+export { ReservationSettingsKeys, type ReservationSettingsKey } from "./keys/reservationSettings";
+export { ReservationsKeys, type ReservationsKey } from "./keys/reservations";
+export { RestaurantsKeys, type RestaurantsKey } from "./keys/restaurants";
+export { RoleKeys, type RoleKey } from "./keys/role";
+export { SidebarKeys, type SidebarKey } from "./keys/sidebar";
+export { TimeKeys, type TimeKey } from "./keys/time";
+export { WelcomeKeys, type WelcomeKey } from "./keys/welcome";
 export { localizeName, useLocalizedName } from "./useLocalizedName";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	CommonKeys,
+	CustomerKeys,
 	Languages,
 	MenusKeys,
 	OptionsKeys,
@@ -14,7 +15,7 @@ import {
 	SidebarKeys,
 	TimeKeys,
 	WelcomeKeys,
-} from "./locales";
+} from "@/global/i18n";
 import en from "./locales/en.json";
 import es from "./locales/es.json";
 
@@ -84,6 +85,7 @@ describe("Key enums resolve in every locale", () => {
 	it.each([
 		["SidebarKeys", SidebarKeys as Record<string, string>],
 		["CommonKeys", CommonKeys as Record<string, string>],
+		["CustomerKeys", CustomerKeys as Record<string, string>],
 		["ReservationSettingsKeys", ReservationSettingsKeys as Record<string, string>],
 		["RoleKeys", RoleKeys as Record<string, string>],
 		["TimeKeys", TimeKeys as Record<string, string>],
