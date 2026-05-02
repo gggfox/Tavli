@@ -70,6 +70,14 @@ export function OrderCard({
 						>
 							{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
 						</span>
+						{order.dailyOrderNumber != null && (
+							<span
+								className="text-sm font-bold tabular-nums shrink-0 text-foreground"
+								title={order._id}
+							>
+								{t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })}
+							</span>
+						)}
 						{order.paidAt && (
 							<span
 								className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-success"
@@ -94,7 +102,9 @@ export function OrderCard({
 						
 						title={order._id}
 					>
-						#{order._id.slice(-6)}
+						{order.dailyOrderNumber != null
+							? `${t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })} · ${order._id.slice(-6)}`
+							: `#${order._id.slice(-6)}`}
 					</span>
 					<span className="relative group flex items-center gap-1 text-[11px] font-medium shrink-0 cursor-help">
 						<span

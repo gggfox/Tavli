@@ -84,6 +84,7 @@
 		},
 		"card": {
 			"table": "Table {{number}}",
+			"dayNumber": "#{{n}}",
 			"paid": "Paid",
 			"moreItems_one": "+1 more item",
 			"moreItems_other": "+{{count}} more items"
@@ -120,6 +121,7 @@
 			"noPayments": "No payments in this period."
 		},
 		"table": {
+			"dayOrderNumber": "Order # (day)",
 			"orderId": "Order ID",
 			"date": "Date",
 			"table": "Table",
@@ -220,6 +222,7 @@
 		"orderStatus": {
 			"loading": "Loading order...",
 			"heading": "Order Status",
+			"dayNumber": "Order #{{n}}",
 			"cancelled": "Order Cancelled",
 			"items": "Items",
 			"summary": "${{total}} · {{count}} items",
@@ -231,6 +234,7 @@
 		},
 		"orders": {
 			"header": "Your orders",
+			"dayNumber": "#{{n}}",
 			"emptyTitle": "No orders yet",
 			"emptyDesc": "Start an order from the menu to see it here.",
 			"emptyBrowse": "Browse menu",
@@ -282,6 +286,9 @@
 			"currencyLabel": "Currency",
 			"timezoneLabel": "Timezone",
 			"timezonePlaceholder": "America/New_York",
+			"timezoneMissingHint": "Set a valid IANA timezone so daily order numbers use your local business day. Until then, UTC is used.",
+			"orderDayStartLabel": "Start of order day",
+			"orderDayStartHint": "Orders are numbered per business day starting at this local time (not midnight). Example: 04:00 groups late-night sales with the previous calendar day.",
 			"orgLabel": "Organization",
 			"orgPlaceholder": "Select an organization",
 			"statusLabel": "Status",

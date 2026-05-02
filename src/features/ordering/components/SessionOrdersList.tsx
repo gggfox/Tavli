@@ -273,8 +273,13 @@ function OrderCard({
 
 			<div className="flex-1 min-w-0">
 				<div className="flex items-center justify-between gap-2">
-					<span className="text-sm font-semibold text-foreground" >
-						{meta.label}
+					<span className="text-sm font-semibold text-foreground flex items-center gap-2 min-w-0" >
+						{order.dailyOrderNumber != null && (
+							<span className="tabular-nums shrink-0 text-foreground">
+								{t(OrderingKeys.ORDERS_DAY_NUMBER, { n: order.dailyOrderNumber })}
+							</span>
+						)}
+						<span className="truncate">{meta.label}</span>
 					</span>
 					<span className="text-sm font-semibold text-foreground" >
 						${formatCents(order.totalAmount)}

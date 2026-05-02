@@ -101,6 +101,8 @@ export default defineSchema({
 		description: v.optional(v.string()),
 		currency: v.string(),
 		timezone: v.optional(v.string()),
+		/** Minutes from local midnight (0–1439) when the business “order day” starts; default 240 (04:00) in app logic. */
+		orderDayStartMinutesFromMidnight: v.optional(v.number()),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),
@@ -242,11 +244,22 @@ export default defineSchema({
 		stripePaymentIntentId: v.optional(v.string()),
 		submittedAt: v.optional(v.number()),
 		paidAt: v.optional(v.number()),
+		/** Monotonic per restaurant per business day; assigned in confirmPayment only. */
+		dailyOrderNumber: v.optional(v.number()),
+		/** YYYY-MM-DD business-day label at assignment time. */
+		orderServiceDateKey: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
 		.index("by_session", ["sessionId"])
 		.index("by_restaurant", ["restaurantId"]),
+
+	[TABLE.ORDER_DAY_COUNTERS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		serviceDateKey: v.string(),
+		lastIssuedNumber: v.number(),
+		updatedAt: v.number(),
+	}).index("by_restaurant", ["restaurantId"]),
 
 	[TABLE.ORDER_ITEMS]: defineTable({
 		orderId: v.id(TABLE.ORDERS),

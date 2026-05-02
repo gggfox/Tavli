@@ -22,6 +22,7 @@ export const TABLE = {
 	RESERVATIONS: "reservations",
 	TABLE_LOCKS: "tableLocks",
 	RESERVATION_SETTINGS: "reservationSettings",
+	ORDER_DAY_COUNTERS: "orderDayCounters",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];

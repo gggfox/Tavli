@@ -1,7 +1,8 @@
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { getOrderServiceDateKey } from "../orderServiceDate";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -770,6 +771,179 @@ describe("orders", () => {
 			expect(orders).toBeNull();
 			if (error === null || Array.isArray(error)) throw new Error("Expected error object");
 			expect(error.name).toBe("NOT_AUTHORIZED");
+		});
+	});
+
+	describe("confirmPayment daily order numbers", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		async function seedPaymentForOrder(
+			t: ReturnType<typeof convexTest>,
+			args: {
+				restaurantId: Id<"restaurants">;
+				sessionId: Id<"sessions">;
+				tableId: Id<"tables">;
+				menuItemId: Id<"menuItems">;
+			}
+		) {
+			const orderId = await t.mutation(api.orders.createDraft, {
+				sessionId: args.sessionId,
+				tableId: args.tableId,
+			});
+			await t.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId: args.menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			const snap = (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt;
+			const paymentId = await t.mutation(internal.stripeHelpers.createPayment, {
+				restaurantId: args.restaurantId,
+				orderId,
+				amount: 800,
+				currency: "usd",
+				status: "processing",
+				refundStatus: "none",
+				attemptNumber: 1,
+				orderUpdatedAtSnapshot: snap,
+			});
+			await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId,
+				paymentState: "processing",
+				activePaymentId: paymentId,
+				stripePaymentIntentId: `pi_${orderId}`,
+			});
+			return { orderId, paymentId };
+		}
+
+		it("assigns 1 then 2 on the same service date and creates a counter row", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+			});
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				menuItemId,
+			});
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: paymentId1,
+				stripePaymentIntentId: `pi_${orderId1}`,
+			});
+
+			const expectedKey = getOrderServiceDateKey(Date.now(), "UTC", 240);
+			const o1 = await t.query(api.orders.getOrderWithItems, { orderId: orderId1 });
+			expect(o1!.dailyOrderNumber).toBe(1);
+			expect(o1!.orderServiceDateKey).toBe(expectedKey);
+
+			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				menuItemId,
+			});
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: paymentId2,
+				stripePaymentIntentId: `pi_${orderId2}`,
+			});
+			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
+			expect(o2!.dailyOrderNumber).toBe(2);
+			expect(o2!.orderServiceDateKey).toBe(expectedKey);
+
+			const counter = await t.run(async (ctx) =>
+				ctx.db
+					.query("orderDayCounters")
+					.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+					.first()
+			);
+			expect(counter?.lastIssuedNumber).toBe(2);
+			expect(counter?.serviceDateKey).toBe(expectedKey);
+		});
+
+		it("resets sequence when the service date changes", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+			});
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				menuItemId,
+			});
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: paymentId1,
+				stripePaymentIntentId: `pi_${orderId1}`,
+			});
+
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 16, 12, 0, 0)));
+			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				menuItemId,
+			});
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: paymentId2,
+				stripePaymentIntentId: `pi_${orderId2}`,
+			});
+
+			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
+			expect(o2!.dailyOrderNumber).toBe(1);
+			expect(o2!.orderServiceDateKey).toBe(getOrderServiceDateKey(Date.now(), "UTC", 240));
+		});
+
+		it("keeps the same service date before the UTC cutoff after midnight", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+			});
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				menuItemId,
+			});
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: paymentId1,
+				stripePaymentIntentId: `pi_${orderId1}`,
+			});
+			const key15 = getOrderServiceDateKey(Date.now(), "UTC", 240);
+			expect(key15).toBe("2024-06-15");
+
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 16, 2, 0, 0)));
+			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				menuItemId,
+			});
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: paymentId2,
+				stripePaymentIntentId: `pi_${orderId2}`,
+			});
+
+			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
+			expect(o2!.orderServiceDateKey).toBe("2024-06-15");
+			expect(o2!.dailyOrderNumber).toBe(2);
 		});
 	});
 });

@@ -41,6 +41,11 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 				<h2 className="text-xl font-bold text-foreground" >
 					{t(OrderingKeys.ORDER_STATUS_HEADING)}
 				</h2>
+				{orderData.dailyOrderNumber != null && (
+					<p className="text-base font-semibold tabular-nums mt-1 text-foreground" >
+						{t(OrderingKeys.ORDER_STATUS_DAY_NUMBER, { n: orderData.dailyOrderNumber })}
+					</p>
+				)}
 				<p className="text-sm mt-1 text-faint-foreground" >
 					{t(OrderingKeys.ORDER_STATUS_SUMMARY, {
 						total: formatCents(orderData.totalAmount),

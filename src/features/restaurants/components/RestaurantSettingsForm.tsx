@@ -5,6 +5,23 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+const DEFAULT_ORDER_DAY_START_MINUTES = 240;
+
+function minutesToTimeInput(totalMinutes: number): string {
+	const m = Math.min(1439, Math.max(0, totalMinutes));
+	const h = Math.floor(m / 60);
+	const min = m % 60;
+	return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function timeInputToMinutes(s: string): number {
+	const parts = s.split(":");
+	const h = Number.parseInt(parts[0] ?? "0", 10);
+	const min = Number.parseInt(parts[1] ?? "0", 10);
+	if (Number.isNaN(h) || Number.isNaN(min)) return DEFAULT_ORDER_DAY_START_MINUTES;
+	return Math.min(1439, Math.max(0, h * 60 + min));
+}
+
 interface RestaurantSettingsFormProps {
 	restaurant: Doc<"restaurants"> | null;
 	organizations?: Doc<"organizations">[];
@@ -14,6 +31,7 @@ interface RestaurantSettingsFormProps {
 		description?: string;
 		currency: string;
 		timezone?: string;
+		orderDayStartMinutesFromMidnight: number;
 		organizationId: Id<"organizations">;
 	}) => Promise<unknown>;
 	onToggleActive?: (restaurantId: Id<"restaurants">) => Promise<unknown>;
@@ -35,6 +53,9 @@ export function RestaurantSettingsForm({
 			description: restaurant?.description ?? "",
 			currency: restaurant?.currency ?? "USD",
 			timezone: restaurant?.timezone ?? "",
+			orderDayStartTime: minutesToTimeInput(
+				restaurant?.orderDayStartMinutesFromMidnight ?? DEFAULT_ORDER_DAY_START_MINUTES
+			),
 			organizationId: (restaurant?.organizationId as string) ?? "",
 		},
 		onSubmit: async ({ value }) => {
@@ -44,6 +65,7 @@ export function RestaurantSettingsForm({
 				description: value.description || undefined,
 				currency: value.currency,
 				timezone: value.timezone || undefined,
+				orderDayStartMinutesFromMidnight: timeInputToMinutes(value.orderDayStartTime),
 				organizationId: value.organizationId as Id<"organizations">,
 			});
 		},
@@ -240,10 +262,41 @@ export function RestaurantSettingsForm({
 								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
 								
 							/>
+							{restaurant && !field.state.value.trim() && (
+								<p className="mt-1 text-xs text-amber-700 dark:text-amber-400/90">
+									{t(RestaurantsKeys.FORM_TIMEZONE_MISSING_HINT)}
+								</p>
+							)}
 						</div>
 					)}
 				/>
 			</div>
+
+			<form.Field
+				name="orderDayStartTime"
+				children={(field) => (
+					<div>
+						<label
+							htmlFor="restaurant-order-day-start"
+							className="block text-sm font-medium mb-1 text-foreground"
+							
+						>
+							{t(RestaurantsKeys.FORM_ORDER_DAY_START_LABEL)}
+						</label>
+						<input
+							id="restaurant-order-day-start"
+							type="time"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							className="w-full max-w-48 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							
+						/>
+						<p className="mt-1 text-xs text-faint-foreground max-w-lg">
+							{t(RestaurantsKeys.FORM_ORDER_DAY_START_HINT)}
+						</p>
+					</div>
+				)}
+			/>
 
 			{organizations && organizations.length > 0 && (
 				<form.Field

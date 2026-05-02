@@ -19,6 +19,7 @@ describe("TABLE constants", () => {
 			"menuItemOptionGroups",
 			"sessions",
 			"orders",
+			"orderDayCounters",
 			"orderItems",
 			"payments",
 			"stripeWebhookEvents",

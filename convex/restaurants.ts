@@ -76,6 +76,7 @@ export const update = mutation({
 		timezone: v.optional(v.string()),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
+		orderDayStartMinutesFromMidnight: v.optional(v.number()),
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
 	handler: async function (
@@ -96,6 +97,24 @@ export const update = mutation({
 		const userIsAdmin = await isAdmin(ctx, userId);
 		if (!userIsAdmin && restaurant.ownerId !== userId) {
 			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
+		if (
+			args.orderDayStartMinutesFromMidnight !== undefined &&
+			(args.orderDayStartMinutesFromMidnight < 0 ||
+				args.orderDayStartMinutesFromMidnight > 1439)
+		) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{
+							field: "orderDayStartMinutesFromMidnight",
+							message: "Order day start must be between 0 and 1439 minutes from midnight",
+						},
+					],
+				}).toObject(),
+			];
 		}
 
 		if (args.slug && args.slug !== restaurant.slug) {
@@ -122,6 +141,9 @@ export const update = mutation({
 			...(args.timezone !== undefined && { timezone: args.timezone }),
 			...(args.defaultLanguage !== undefined && { defaultLanguage: args.defaultLanguage }),
 			...(args.supportedLanguages !== undefined && { supportedLanguages: args.supportedLanguages }),
+			...(args.orderDayStartMinutesFromMidnight !== undefined && {
+				orderDayStartMinutesFromMidnight: args.orderDayStartMinutesFromMidnight,
+			}),
 			...(args.organizationId !== undefined && { organizationId: args.organizationId }),
 			updatedAt: now,
 		});

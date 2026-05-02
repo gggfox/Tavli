@@ -11,6 +11,8 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireRestaurantStaffAccess, requireStaffRole } from "./_util/auth";
 import { ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
+import { allocateNextDailyOrderNumber } from "./orderDayCounters";
+import { getOrderServiceDateKey } from "./orderServiceDate";
 import {
 	DASHBOARD_STATUS_VALIDATOR,
 	invalidateActivePayment,
@@ -257,6 +259,28 @@ export const confirmPayment = internalMutation({
 			succeededAt: now,
 			updatedAt: now,
 		});
+
+		const restaurant = await ctx.db.get(order.restaurantId);
+		if (!restaurant) {
+			throw new Error(`Restaurant ${order.restaurantId} not found`);
+		}
+
+		let dailyOrderNumber: number | undefined;
+		let orderServiceDateKey: string | undefined;
+		if (order.dailyOrderNumber === undefined) {
+			orderServiceDateKey = getOrderServiceDateKey(
+				now,
+				restaurant.timezone,
+				restaurant.orderDayStartMinutesFromMidnight
+			);
+			dailyOrderNumber = await allocateNextDailyOrderNumber(
+				ctx,
+				order.restaurantId,
+				orderServiceDateKey,
+				now
+			);
+		}
+
 		await ctx.db.patch(order._id, {
 			status: "submitted",
 			paymentState: ORDER_PAYMENT_STATE.PAID,
@@ -264,6 +288,8 @@ export const confirmPayment = internalMutation({
 			paidAt: now,
 			submittedAt: now,
 			updatedAt: now,
+			...(dailyOrderNumber !== undefined && { dailyOrderNumber }),
+			...(orderServiceDateKey !== undefined && { orderServiceDateKey }),
 		});
 	},
 });

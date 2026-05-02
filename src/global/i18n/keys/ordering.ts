@@ -57,6 +57,7 @@ export const OrderingKeys = {
 
 	ORDER_STATUS_LOADING: "ordering.orderStatus.loading",
 	ORDER_STATUS_HEADING: "ordering.orderStatus.heading",
+	ORDER_STATUS_DAY_NUMBER: "ordering.orderStatus.dayNumber",
 	ORDER_STATUS_CANCELLED: "ordering.orderStatus.cancelled",
 	ORDER_STATUS_ITEMS: "ordering.orderStatus.items",
 	ORDER_STATUS_SUMMARY: "ordering.orderStatus.summary",
@@ -67,6 +68,7 @@ export const OrderingKeys = {
 	ORDER_STATUS_STEP_SERVED: "ordering.orderStatus.stepServed",
 
 	ORDERS_HEADER: "ordering.orders.header",
+	ORDERS_DAY_NUMBER: "ordering.orders.dayNumber",
 	ORDERS_EMPTY_TITLE: "ordering.orders.emptyTitle",
 	ORDERS_EMPTY_DESC: "ordering.orders.emptyDesc",
 	ORDERS_EMPTY_BROWSE: "ordering.orders.emptyBrowse",

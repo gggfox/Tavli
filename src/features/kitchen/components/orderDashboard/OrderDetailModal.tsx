@@ -61,6 +61,14 @@ export function OrderDetailModal({
 								>
 									{t(OrdersKeys.CARD_TABLE, { number: fullOrder.tableNumber })}
 								</h2>
+								{fullOrder.dailyOrderNumber != null && (
+									<span
+										className="text-lg font-bold tabular-nums text-foreground"
+										title={fullOrder._id}
+									>
+										{t(OrdersKeys.CARD_DAY_NUMBER, { n: fullOrder.dailyOrderNumber })}
+									</span>
+								)}
 								{fullOrder.paidAt && (
 									<span
 										className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-success"

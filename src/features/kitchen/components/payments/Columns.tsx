@@ -20,6 +20,25 @@ export function usePaymentsColumns(): ColumnDef<PaymentsOrder, unknown>[] {
 	return useMemo(
 		() =>
 			[
+				columnHelper.accessor("dailyOrderNumber", {
+					header: t(PaymentsKeys.TABLE_DAY_ORDER_NUMBER),
+					cell: (info) => {
+						const n = info.getValue();
+						return (
+							<span className="text-foreground tabular-nums font-medium">
+								{n === null || n === undefined ? "—" : `#${n}`}
+							</span>
+						);
+					},
+					sortingFn: (rowA, rowB) => {
+						const av = rowA.original.dailyOrderNumber;
+						const bv = rowB.original.dailyOrderNumber;
+						if (av == null && bv == null) return 0;
+						if (av == null) return 1;
+						if (bv == null) return -1;
+						return av - bv;
+					},
+				}),
 				columnHelper.accessor("_id", {
 					header: t(PaymentsKeys.TABLE_ORDER_ID),
 					cell: (info) => <CopyableId id={info.getValue()} />,

@@ -84,6 +84,7 @@
 		},
 		"card": {
 			"table": "Mesa {{number}}",
+			"dayNumber": "#{{n}}",
 			"paid": "Pagado",
 			"moreItems_one": "+1 artículo más",
 			"moreItems_other": "+{{count}} artículos más"
@@ -120,6 +121,7 @@
 			"noPayments": "Sin pagos en este periodo."
 		},
 		"table": {
+			"dayOrderNumber": "N.º del día",
 			"orderId": "ID del pedido",
 			"date": "Fecha",
 			"table": "Mesa",
@@ -220,6 +222,7 @@
 		"orderStatus": {
 			"loading": "Cargando pedido...",
 			"heading": "Estado del pedido",
+			"dayNumber": "Pedido n.º {{n}}",
 			"cancelled": "Pedido cancelado",
 			"items": "Productos",
 			"summary": "${{total}} · {{count}} productos",
@@ -231,6 +234,7 @@
 		},
 		"orders": {
 			"header": "Tus pedidos",
+			"dayNumber": "#{{n}}",
 			"emptyTitle": "Aún no hay pedidos",
 			"emptyDesc": "Inicia un pedido desde el menú para verlo aquí.",
 			"emptyBrowse": "Ver menú",
@@ -282,6 +286,9 @@
 			"currencyLabel": "Moneda",
 			"timezoneLabel": "Zona horaria",
 			"timezonePlaceholder": "America/Mexico_City",
+			"timezoneMissingHint": "Define una zona horaria IANA válida para que los números diarios usen tu día hábil local. Hasta entonces se usa UTC.",
+			"orderDayStartLabel": "Inicio del día de pedidos",
+			"orderDayStartHint": "Los pedidos se numeran por día hábil a partir de esta hora local (no a medianoche). Ej.: 04:00 agrupa ventas nocturnas con el día calendario anterior.",
 			"orgLabel": "Organización",
 			"orgPlaceholder": "Selecciona una organización",
 			"statusLabel": "Estado",

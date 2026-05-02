@@ -18,6 +18,7 @@ export const PaymentsKeys = {
 
 	EMPTY_NO_PAYMENTS: "payments.empty.noPayments",
 
+	TABLE_DAY_ORDER_NUMBER: "payments.table.dayOrderNumber",
 	TABLE_ORDER_ID: "payments.table.orderId",
 	TABLE_DATE: "payments.table.date",
 	TABLE_TABLE: "payments.table.table",

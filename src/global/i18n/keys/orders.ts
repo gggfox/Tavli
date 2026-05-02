@@ -26,6 +26,7 @@ export const OrdersKeys = {
 	CANCEL_PAID_PROMPT: "orders.cancel.paidPrompt",
 
 	CARD_TABLE: "orders.card.table",
+	CARD_DAY_NUMBER: "orders.card.dayNumber",
 	CARD_PAID: "orders.card.paid",
 	CARD_MORE_ITEMS: "orders.card.moreItems",
 
