@@ -19,7 +19,7 @@ export function SearchInput({ placeholder, value, onChange }: SearchInputProps) 
 				placeholder={placeholder}
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="w-full pl-9 pr-4 py-2 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-(--btn-primary-bg) focus:border-transparent bg-muted text-foreground border border-border"
+				className="w-full pl-9 pr-4 py-2 rounded-lg text-sm transition-colors focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-inset focus:ring-(--btn-primary-bg) focus:border-transparent bg-muted text-foreground border border-border"
 				
 			/>
 		</div>

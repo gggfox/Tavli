@@ -60,10 +60,15 @@ html.theme-ready {
 		color 0.2s ease-in-out;
 }
 
-/* Focus visible styles - Notion style */
-:focus-visible {
-	outline: 2px solid var(--btn-primary-bg);
-	outline-offset: 1px;
+/* Focus visible styles - Notion style. Layered into `base` so component-level
+   Tailwind utilities (e.g. `focus-visible:outline-none` on a SearchInput that
+   sits flush against an `overflow-y-auto` boundary and would otherwise have
+   its outline clipped) can override it without `!important`. */
+@layer base {
+	:focus-visible {
+		outline: 2px solid var(--btn-primary-bg);
+		outline-offset: 1px;
+	}
 }
 
 /* Selection - Notion blue */

@@ -1,6 +1,10 @@
 import { Table } from "@tanstack/react-table";
 
 export function Pagination<TData>({ table }: Readonly<{ table: Table<TData> }>) {
+	// `table.getState()` and `table.getCanNextPage()` are mutating reads that
+	// React Compiler would freeze; opt out so pagination updates render.
+	"use no memo";
+
 	return (
 		<div
 			className="mt-4 flex items-center justify-between text-muted-foreground"

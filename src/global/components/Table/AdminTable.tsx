@@ -34,6 +34,12 @@ export function AdminTable<TData>({
 	actions,
 	renderRowActions,
 }: Readonly<AdminTableProps<TData>>) {
+	// `table.getRowModel()` etc. are read during render and rely on internal
+	// mutation, which React Compiler would otherwise memoize. Without this opt
+	// out, sorting/filtering state changes never reach the rendered rows until
+	// some other prop forces a re-render.
+	"use no memo";
+
 	const {
 		table,
 		data,
@@ -61,32 +67,20 @@ export function AdminTable<TData>({
 	if (isError && error) {
 		const errorObj = error instanceof Error ? error : new Error(String(error));
 		return (
-			<div className="flex flex-col min-h-full">
+			<div className="flex flex-col flex-1 h-full min-h-0">
 				<TableErrorState error={errorObj} entityName={entityName} onRetry={() => refetch()} fill />
 			</div>
 		);
 	}
 	if (data === undefined || data === null) return <TableSkeleton />;
 
-	if (data.length === 0) {
-		return (
-			<div className="flex flex-col min-h-full">
-				<EmptyState
-					icon={EmptyIcon}
-					title={emptyTitle ?? `No ${entityName} found`}
-					description={emptyDescription}
-					fill
-				/>
-			</div>
-		);
-	}
-
+	const isEmpty = data.length === 0;
 	const filteredCount = table.getFilteredRowModel().rows.length;
 	const singular = entityName.endsWith("s") ? entityName.slice(0, -1) : entityName;
 	const plural = entityName.endsWith("s") ? entityName : `${entityName}s`;
 
 	return (
-		<div className="flex flex-col h-full">
+		<div className="flex flex-col flex-1 h-full min-h-0">
 			<div className="mb-4 flex gap-4 items-center">
 				<SearchInput
 					placeholder={searchPlaceholder ?? `Search ${entityName}...`}
@@ -99,64 +93,75 @@ export function AdminTable<TData>({
 				{actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
 			</div>
 
-			<div
-				className="flex-1 overflow-auto rounded-lg bg-muted border border-border"
-				
-			>
-				<table className="w-full border-collapse">
-					<thead>
-						{table.getHeaderGroups().map((headerGroup) => (
-							<tr key={headerGroup.id}>
-								{headerGroup.headers.map((header) => (
-									<th
-										key={header.id}
-										className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
-										
-									>
-										{header.isPlaceholder ? null : (
-											<button
-												className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-												onClick={header.column.getToggleSortingHandler()}
+			{isEmpty ? (
+				<EmptyState
+					icon={EmptyIcon}
+					title={emptyTitle ?? `No ${entityName} found`}
+					description={emptyDescription}
+					fill
+				/>
+			) : (
+				<>
+					<div
+						className="flex-1 overflow-auto rounded-lg bg-muted border border-border"
+						
+					>
+						<table className="w-full border-collapse">
+							<thead>
+								{table.getHeaderGroups().map((headerGroup) => (
+									<tr key={headerGroup.id}>
+										{headerGroup.headers.map((header) => (
+											<th
+												key={header.id}
+												className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+												
 											>
-												{flexRender(header.column.columnDef.header, header.getContext())}
-												<SortIcon column={header.column} />
-											</button>
+												{header.isPlaceholder ? null : (
+													<button
+														className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+														onClick={header.column.getToggleSortingHandler()}
+													>
+														{flexRender(header.column.columnDef.header, header.getContext())}
+														<SortIcon column={header.column} />
+													</button>
+												)}
+											</th>
+										))}
+										{renderRowActions && (
+											<th
+												className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+												
+											>
+												Actions
+											</th>
 										)}
-									</th>
+									</tr>
 								))}
-								{renderRowActions && (
-									<th
-										className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+							</thead>
+							<tbody>
+								{table.getRowModel().rows.map((row) => (
+									<tr
+										key={row.id}
+										className="transition-colors border-b border-border"
 										
 									>
-										Actions
-									</th>
-								)}
-							</tr>
-						))}
-					</thead>
-					<tbody>
-						{table.getRowModel().rows.map((row) => (
-							<tr
-								key={row.id}
-								className="transition-colors border-b border-border"
-								
-							>
-								{row.getVisibleCells().map((cell) => (
-									<td key={cell.id} className="px-4 py-3">
-										{flexRender(cell.column.columnDef.cell, cell.getContext())}
-									</td>
+										{row.getVisibleCells().map((cell) => (
+											<td key={cell.id} className="px-4 py-3">
+												{flexRender(cell.column.columnDef.cell, cell.getContext())}
+											</td>
+										))}
+										{renderRowActions && (
+											<td className="px-4 py-3">{renderRowActions(row.original)}</td>
+										)}
+									</tr>
 								))}
-								{renderRowActions && (
-									<td className="px-4 py-3">{renderRowActions(row.original)}</td>
-								)}
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
+							</tbody>
+						</table>
+					</div>
 
-			<Pagination table={table} />
+					<Pagination table={table} />
+				</>
+			)}
 		</div>
 	);
 }

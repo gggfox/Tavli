@@ -94,19 +94,21 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 	);
 
 	const header = (
-		<div className="flex flex-col gap-3">
-			<SegmentedControl
-				options={rangeOptions}
-				value={range}
-				onChange={setRange}
-				ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
-			/>
+		<div className="flex flex-wrap items-center gap-3">
 			<StatusFilterChips
 				options={statusChipOptions}
 				selected={statusFilter}
 				onToggle={toggleStatus}
 				ariaLabel={t(ReservationsKeys.ARIA_FILTER_STATUS)}
 			/>
+			<div className="ml-auto">
+				<SegmentedControl
+					options={rangeOptions}
+					value={range}
+					onChange={setRange}
+					ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
+				/>
+			</div>
 		</div>
 	);
 

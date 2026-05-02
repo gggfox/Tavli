@@ -12,7 +12,7 @@ function PaymentsPage() {
 	const { restaurant, isLoading } = useRestaurant();
 
 	return (
-		<AdminPageLayout title="Payments" description="View revenue and payment history.">
+		<AdminPageLayout>
 			<PaymentsContent restaurantId={restaurant?._id} isLoading={isLoading} />
 		</AdminPageLayout>
 	);

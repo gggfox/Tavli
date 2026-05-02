@@ -28,6 +28,12 @@ export function useAdminTable<TData>({
 	enabled,
 	pageSize = 10,
 }: UseAdminTableOptions<TData>) {
+	// React Compiler memoizes calls inside this hook, which freezes the
+	// `useReactTable` row models so sorting and filtering only update when an
+	// unrelated render is triggered. Opting this hook out keeps the table
+	// reactive. See https://github.com/TanStack/table/issues/5567.
+	"use no memo";
+
 	const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);

@@ -30,17 +30,16 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 
 	return (
 		<div className="p-2 border-t border-border" >
-			<div
-				className={`flex items-center gap-3 p-2 rounded-lg transition-colors group hover:bg-(--bg-hover) ${
-					isExpanded ? "flex-row" : "flex-col justify-center"
+			<button
+				type="button"
+				onClick={openSettings}
+				aria-label={settingsLabel}
+				title={isExpanded ? settingsLabel : `${displayName} - ${settingsLabel}`}
+				className={`group w-full flex items-center gap-3 p-2 rounded-lg transition-colors hover:bg-(--bg-hover) ${
+					isExpanded ? "flex-row text-left" : "flex-col justify-center"
 				}`}
 			>
-				<button
-					className="relative"
-					title={isExpanded ? undefined : `${displayName} - ${settingsLabel}`}
-					onClick={openSettings}
-					aria-label={settingsLabel}
-				>
+				<span className="relative shrink-0">
 					<Avatar
 						src={user.imageUrl}
 						alt={displayName}
@@ -49,35 +48,27 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 						className="transition-all"
 					/>
 					{!isExpanded && (
-						<div
-							className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity text-primary"
-							
-						>
+						<span className="absolute -top-1 -right-1 text-primary">
 							<Settings size={12} />
-						</div>
+						</span>
 					)}
-				</button>
+				</span>
 				{isExpanded && (
-					<div className="flex-1 min-w-0">
-						<p className="text-sm font-medium truncate text-foreground" >
+					<span className="flex-1 min-w-0">
+						<span className="block text-sm font-medium truncate text-foreground">
 							{user.firstName} {user.lastName}
-						</p>
-						<p className="text-xs truncate text-faint-foreground" >
+						</span>
+						<span className="block text-xs truncate text-faint-foreground">
 							{email}
-						</p>
-					</div>
+						</span>
+					</span>
 				)}
 				{isExpanded && (
-					<button
-						onClick={openSettings}
-						className="p-1.5 rounded-md transition-all hover-icon opacity-0 group-hover:opacity-100"
-						aria-label={settingsLabel}
-						title={settingsLabel}
-					>
+					<span className="p-1.5 rounded-md transition-colors text-(--text-tertiary) group-hover:text-(--text-primary)">
 						<Settings size={16} />
-					</button>
+					</span>
 				)}
-			</div>
+			</button>
 			<SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 		</div>
 	);
