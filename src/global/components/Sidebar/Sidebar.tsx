@@ -4,10 +4,11 @@ import { LogoSection } from "./LogoSection";
 import "./Sidebar.css";
 import { SidebarContainer } from "./SidebarContainer";
 import { SidebarItemsList } from "./SidebarItemsList";
-import { useSidebarHydration, useSidebarItems } from "./hooks";
+import { useSidebarGroupsHydration, useSidebarHydration, useSidebarItems } from "./hooks";
 
 export function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
 	useSidebarHydration();
+	useSidebarGroupsHydration();
 	const { filteredSidebarItems } = useSidebarItems();
 
 	return (

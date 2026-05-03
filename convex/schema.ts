@@ -55,6 +55,10 @@ export default defineSchema({
 				)
 			)
 		),
+		// Sidebar accordion groups the user has open. Identified by the group's
+		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
+		// render time so removing groups later is safe.
+		expandedSidebarGroups: v.optional(v.array(v.string())),
 		updatedBy: v.optional(v.string()),
 	}).index("by_user", ["userId"]),
 

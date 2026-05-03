@@ -17,18 +17,14 @@ const orderDashboardStatusValidator = v.union(
 	v.literal("cancelled")
 );
 
-type OrderDashboardStatus =
-	| "submitted"
-	| "preparing"
-	| "ready"
-	| "served"
-	| "cancelled";
+type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "cancelled";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
 	sidebarExpanded?: boolean;
 	language?: "en" | "es";
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
+	expandedSidebarGroups?: string[];
 };
 
 type SettingsDefaults = {
@@ -80,12 +76,19 @@ export const get = query({
  * This pattern works with Convex's optimistic concurrency control to prevent
  * duplicate records even when mutations execute concurrently.
  */
-async function upsertUserSettings(
-	ctx: MutationCtx,
-	userId: string,
-	updates: SettingsUpdates,
-	defaults: SettingsDefaults
-): Promise<Id<"userSettings">> {
+
+interface UpsertUserSettingsArgs {
+	ctx: MutationCtx;
+	userId: string;
+	updates: SettingsUpdates;
+	defaults: SettingsDefaults;
+}
+async function upsertUserSettings({
+	ctx,
+	userId,
+	updates,
+	defaults,
+}: UpsertUserSettingsArgs): Promise<Id<"userSettings">> {
 	const existing = await ctx.db
 		.query("userSettings")
 		.withIndex("by_user", (q) => q.eq("userId", userId))
@@ -103,6 +106,9 @@ async function upsertUserSettings(
 		language: updates.language ?? defaults.language,
 		...(updates.orderDashboardStatusFilters !== undefined && {
 			orderDashboardStatusFilters: updates.orderDashboardStatusFilters,
+		}),
+		...(updates.expandedSidebarGroups !== undefined && {
+			expandedSidebarGroups: updates.expandedSidebarGroups,
 		}),
 	});
 
@@ -145,12 +151,12 @@ export const updateTheme = mutation({
 		if (error) {
 			throw error;
 		}
-		return await upsertUserSettings(
+		return await upsertUserSettings({
 			ctx,
 			userId,
-			{ theme: args.theme },
-			{ theme: args.theme, sidebarExpanded: true, language: "en" }
-		);
+			updates: { theme: args.theme },
+			defaults: { theme: args.theme, sidebarExpanded: true, language: "en" },
+		});
 	},
 });
 
@@ -170,12 +176,12 @@ export const updateSidebarExpanded = mutation({
 		if (error) {
 			throw error;
 		}
-		return await upsertUserSettings(
+		return await upsertUserSettings({
 			ctx,
 			userId,
-			{ sidebarExpanded: args.sidebarExpanded },
-			{ theme: "light", sidebarExpanded: args.sidebarExpanded, language: "en" }
-		);
+			updates: { sidebarExpanded: args.sidebarExpanded },
+			defaults: { theme: "light", sidebarExpanded: args.sidebarExpanded, language: "en" },
+		});
 	},
 });
 
@@ -195,12 +201,12 @@ export const updateLanguage = mutation({
 		if (error) {
 			throw error;
 		}
-		return await upsertUserSettings(
+		return await upsertUserSettings({
 			ctx,
 			userId,
-			{ language: args.language },
-			{ theme: "light", sidebarExpanded: true, language: args.language }
-		);
+			updates: { language: args.language },
+			defaults: { theme: "light", sidebarExpanded: true, language: args.language },
+		});
 	},
 });
 
@@ -221,11 +227,51 @@ export const updateOrderDashboardStatusFilters = mutation({
 			throw error;
 		}
 		const deduped = Array.from(new Set(args.statuses)) as OrderDashboardStatus[];
-		return await upsertUserSettings(
+		return await upsertUserSettings({
 			ctx,
 			userId,
-			{ orderDashboardStatusFilters: deduped },
-			{ theme: "light", sidebarExpanded: true, language: "en" }
-		);
+			updates: { orderDashboardStatusFilters: deduped },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Toggle membership of a sidebar group in the user's persisted
+ * `expandedSidebarGroups` set.
+ *
+ * Per-key semantics (vs. overwriting the whole array) makes concurrent
+ * toggles from multiple tabs race-safe: each call only adds or removes
+ * the single key it was given.
+ */
+export const setSidebarGroupExpanded = mutation({
+	args: {
+		key: v.string(),
+		expanded: v.boolean(),
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		const existing = await ctx.db
+			.query("userSettings")
+			.withIndex("by_user", (q) => q.eq("userId", userId))
+			.first();
+
+		const current = existing?.expandedSidebarGroups ?? [];
+		const next = new Set(current);
+		if (args.expanded) {
+			next.add(args.key);
+		} else {
+			next.delete(args.key);
+		}
+
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { expandedSidebarGroups: Array.from(next) },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
 	},
 });

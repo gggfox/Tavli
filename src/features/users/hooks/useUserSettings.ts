@@ -13,6 +13,7 @@
  */
 import { OrderDashboardStatusFilter, Theme, UserSettings } from "@/features";
 import {
+	setSidebarGroupExpanded as setSidebarGroupExpandedService,
 	transformUserSettings,
 	updateLanguage as updateLanguageService,
 	updateOrderDashboardStatusFilters as updateOrderDashboardStatusFiltersService,
@@ -44,12 +45,18 @@ export type UseUserSettingsReturn = {
 	 * the active-status set).
 	 */
 	orderDashboardStatusFilters: OrderDashboardStatusFilter[] | null;
+	/**
+	 * Sidebar accordion group keys the user has open. Empty when no
+	 * preference has been saved yet.
+	 */
+	expandedSidebarGroups: string[];
 	updateTheme: (theme: Theme) => Promise<UserSettingsId>;
 	updateSidebarExpanded: (expanded: boolean) => Promise<UserSettingsId>;
 	updateLanguage: (language: Language) => Promise<UserSettingsId>;
 	updateOrderDashboardStatusFilters: (
 		statuses: OrderDashboardStatusFilter[]
 	) => Promise<UserSettingsId>;
+	setSidebarGroupExpanded: (key: string, expanded: boolean) => Promise<UserSettingsId>;
 };
 
 // Re-export UserSettingsError for consumers
@@ -124,6 +131,13 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[settings]
 	);
 
+	// Persisted sidebar accordion groups the user has open. Defaults to an
+	// empty list so a brand-new user starts with all groups collapsed.
+	const expandedSidebarGroups = useMemo<string[]>(
+		() => settings?.expandedSidebarGroups ?? [],
+		[settings]
+	);
+
 	// Extract language with default
 	// Use i18n's current language as fallback to ensure UI reflects actual language
 	// Normalize i18n language to supported codes (e.g., "en-US" -> "en", "es-ES" -> "es")
@@ -189,6 +203,12 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
+	const setSidebarGroupExpanded = useCallback(
+		(key: string, expanded: boolean) =>
+			setSidebarGroupExpandedService(client, key, expanded),
+		[client]
+	);
+
 	// Sync i18n language when settings change (for initial load and real-time updates)
 	useEffect(() => {
 		if (settings?.language && i18n.language !== settings.language) {
@@ -237,9 +257,11 @@ export function useUserSettings(): UseUserSettingsReturn {
 		sidebarExpanded,
 		language,
 		orderDashboardStatusFilters,
+		expandedSidebarGroups,
 		updateTheme,
 		updateSidebarExpanded,
 		updateLanguage,
 		updateOrderDashboardStatusFilters,
+		setSidebarGroupExpanded,
 	};
 }

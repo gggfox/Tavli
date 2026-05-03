@@ -1,8 +1,9 @@
 import { SidebarKey } from "@/global/i18n";
 import { LinkProps } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useSidebarGroups } from "./hooks";
 import { SidebarLink } from "./SidebarLink";
 
 export type SidebarGroupProps = Readonly<{
@@ -38,23 +39,37 @@ function isPathInsideGroup(
 
 export function SidebarGroup({ isExpanded, pathname, main, subLinks }: SidebarGroupProps) {
 	const { t } = useTranslation();
+	const { isOpen, setGroupExpanded, toggleGroup } = useSidebarGroups();
+	const groupKey = main.translationKey;
+
 	const routeActive = useMemo(
 		() => isPathInsideGroup(pathname, subLinks),
 		[pathname, subLinks]
 	);
 
-	const [groupExpanded, setGroupExpanded] = useState(false);
+	const groupExpanded = isOpen(groupKey);
+
+	// Auto-open on entering the group's route (e.g. deep link to a
+	// sub-page or first navigation into a sublink). The ref starts at
+	// `false` so the very first mount with `routeActive === true`
+	// triggers the auto-open. We deliberately do not auto-close when
+	// leaving so groups stay open until the user explicitly closes
+	// them.
 	const prevRouteActive = useRef(false);
-
 	useEffect(() => {
-		if (routeActive && !prevRouteActive.current) setGroupExpanded(true);
-		if (!routeActive) setGroupExpanded(false);
+		if (routeActive && !prevRouteActive.current) {
+			setGroupExpanded(groupKey, true);
+		}
 		prevRouteActive.current = routeActive;
-	}, [routeActive]);
+	}, [routeActive, groupKey, setGroupExpanded]);
 
-	const toggleGroup = useCallback(() => {
-		setGroupExpanded((prev) => !prev);
-	}, []);
+	const toggleGroupHandler = useCallback(() => {
+		// In rail mode (sidebar collapsed) the chevron and sublinks are
+		// hidden, so toggling has no visible effect. Skip the toggle to
+		// avoid silently mutating the persisted preference.
+		if (!isExpanded) return;
+		toggleGroup(groupKey);
+	}, [isExpanded, toggleGroup, groupKey]);
 
 	const ChevronIcon = groupExpanded ? ChevronDown : ChevronRight;
 
@@ -62,7 +77,7 @@ export function SidebarGroup({ isExpanded, pathname, main, subLinks }: SidebarGr
 		<div className="relative">
 			<button
 				type="button"
-				onClick={toggleGroup}
+				onClick={toggleGroupHandler}
 				className={`${navRowClass(routeActive, isExpanded)} text-muted-foreground`}
 				title={isExpanded ? undefined : t(main.translationKey)}
 				aria-expanded={groupExpanded}

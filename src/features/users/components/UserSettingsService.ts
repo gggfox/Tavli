@@ -60,7 +60,8 @@ export class UserSettingsError {
 			| "updateTheme"
 			| "updateSidebarExpanded"
 			| "updateLanguage"
-			| "updateOrderDashboardStatusFilters",
+			| "updateOrderDashboardStatusFilters"
+			| "setSidebarGroupExpanded",
 		readonly cause: unknown
 	) {}
 }
@@ -132,5 +133,26 @@ export async function updateOrderDashboardStatusFilters(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardStatusFilters", error);
+	}
+}
+
+/**
+ * Toggle membership of a sidebar accordion group in the user's persisted
+ * `expandedSidebarGroups` set. Per-key semantics make concurrent toggles
+ * across tabs race-safe.
+ * @returns The ID of the updated settings document
+ */
+export async function setSidebarGroupExpanded(
+	client: ConvexReactClient,
+	key: string,
+	expanded: boolean
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.setSidebarGroupExpanded, {
+			key,
+			expanded,
+		});
+	} catch (error) {
+		throw new UserSettingsError("setSidebarGroupExpanded", error);
 	}
 }
