@@ -4,7 +4,8 @@ import { SidebarItem, SidebarLink } from "./SidebarLink";
 export function RenderSidebarItem({
 	item,
 	isExpanded,
-}: Readonly<{ item: SidebarItem; isExpanded: boolean }>) {
+	pathname,
+}: Readonly<{ item: SidebarItem; isExpanded: boolean; pathname: string }>) {
 	if (item.type === "link") {
 		return (
 			<SidebarLink
@@ -13,6 +14,7 @@ export function RenderSidebarItem({
 				translationKey={item.translationKey}
 				icon={item.icon}
 				to={item.to}
+				search={item.search}
 			/>
 		);
 	}
@@ -20,7 +22,8 @@ export function RenderSidebarItem({
 		<SidebarGroup
 			key={`${item.translationKey}`}
 			isExpanded={isExpanded}
-			main={item}
+			main={{ translationKey: item.translationKey, icon: item.icon }}
+			pathname={pathname}
 			subLinks={item.subLinks}
 		/>
 	);

@@ -9,9 +9,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 		convexQuery(api.menus.getMenusByRestaurant, restaurantId ? { restaurantId } : "skip")
 	);
 
-	const createMenu = useConvexMutate(api.menus.createMenu);
 	const updateMenu = useConvexMutate(api.menus.updateMenu);
-	const deleteMenu = useConvexMutate(api.menus.deleteMenu);
 
 	const createCategory = useConvexMutate(api.menus.createCategory);
 	const updateCategory = useConvexMutate(api.menus.updateCategory);
@@ -20,9 +18,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 	return {
 		menus: menus ?? [],
 		isLoading,
-		createMenu: createMenu.mutateAsync,
 		updateMenu: updateMenu.mutateAsync,
-		deleteMenu: deleteMenu.mutateAsync,
 		createCategory: createCategory.mutateAsync,
 		updateCategory: updateCategory.mutateAsync,
 		deleteCategory: deleteCategory.mutateAsync,
@@ -37,7 +33,10 @@ export function useCategories(menuId: Id<"menus"> | undefined) {
 	return { categories: data ?? [], isLoading };
 }
 
-export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
+export function useMenuItems(
+	categoryId: Id<"menuCategories"> | undefined,
+	restaurantId: Id<"restaurants"> | undefined
+) {
 	const { data, isLoading } = useQuery(
 		convexQuery(api.menuItems.getByCategory, categoryId ? { categoryId } : "skip")
 	);
@@ -46,11 +45,20 @@ export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
 	const updateItem = useConvexMutate(api.menuItems.update);
 	const removeItem = useConvexMutate(api.menuItems.remove);
 	const toggleAvailability = useConvexMutate(api.menuItems.toggleAvailability);
+	const bulkRemoveItems = useConvexMutate(api.menuItems.bulkRemove);
+	const bulkSetAvailability = useConvexMutate(api.menuItems.bulkSetAvailability);
 	// `generateUploadUrl` is intentionally NOT wrapped in React Query: callers
 	// invoke it imperatively as part of an upload pipeline (request URL ->
 	// upload file -> persist storageId), not as a top-level mutation whose
 	// status the UI tracks.
-	const generateUploadUrl = useConvexMutation(api.menuItems.generateUploadUrl);
+	const generateUploadUrlMutation = useConvexMutation(api.menuItems.generateUploadUrl);
+
+	const generateUploadUrl = (): Promise<[string, null] | [null, unknown]> => {
+		if (!restaurantId) {
+			return Promise.resolve([null, { code: "MISSING_RESTAURANT_ID" }]);
+		}
+		return generateUploadUrlMutation({ restaurantId }) as Promise<[string, null] | [null, unknown]>;
+	};
 
 	return {
 		items: data ?? [],
@@ -59,6 +67,8 @@ export function useMenuItems(categoryId: Id<"menuCategories"> | undefined) {
 		updateItem: updateItem.mutateAsync,
 		removeItem: removeItem.mutateAsync,
 		toggleAvailability: toggleAvailability.mutateAsync,
+		bulkRemoveItems: bulkRemoveItems.mutateAsync,
+		bulkSetAvailability: bulkSetAvailability.mutateAsync,
 		generateUploadUrl,
 	};
 }

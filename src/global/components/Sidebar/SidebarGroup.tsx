@@ -1,16 +1,16 @@
 import { SidebarKey } from "@/global/i18n";
-import { Link, LinkProps } from "@tanstack/react-router";
+import { LinkProps } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarLink } from "./SidebarLink";
 
 export type SidebarGroupProps = Readonly<{
 	isExpanded: boolean;
+	pathname: string;
 	main: {
 		translationKey: SidebarKey;
 		icon: React.ReactNode;
-		to: LinkProps["to"];
 	};
 	subLinks: Array<{
 		translationKey: SidebarKey;
@@ -19,14 +19,38 @@ export type SidebarGroupProps = Readonly<{
 	}>;
 }>;
 
-const navLinkClass = (isActive: boolean, isExpanded: boolean) =>
-	`flex items-center gap-3 rounded-lg transition-all duration-200 ${
+const navRowClass = (isActive: boolean, isExpanded: boolean) =>
+	`flex items-center gap-3 rounded-lg transition-all duration-200 w-full text-left ${
 		isExpanded ? "px-3 py-2" : "px-2 py-2 justify-center"
 	} ${isActive ? "bg-active" : "hover:bg-hover"}`;
 
-export function SidebarGroup({ isExpanded, main, subLinks }: SidebarGroupProps) {
+function pathnameMatchesGroupRoute(pathname: string, route: string): boolean {
+	if (pathname === route) return true;
+	return pathname.startsWith(`${route}/`);
+}
+
+function isPathInsideGroup(
+	pathname: string,
+	subLinks: ReadonlyArray<{ to: LinkProps["to"] }>
+): boolean {
+	return subLinks.some((s) => pathnameMatchesGroupRoute(pathname, String(s.to)));
+}
+
+export function SidebarGroup({ isExpanded, pathname, main, subLinks }: SidebarGroupProps) {
 	const { t } = useTranslation();
-	const [groupExpanded, setGroupExpanded] = useState<boolean>(false);
+	const routeActive = useMemo(
+		() => isPathInsideGroup(pathname, subLinks),
+		[pathname, subLinks]
+	);
+
+	const [groupExpanded, setGroupExpanded] = useState(false);
+	const prevRouteActive = useRef(false);
+
+	useEffect(() => {
+		if (routeActive && !prevRouteActive.current) setGroupExpanded(true);
+		if (!routeActive) setGroupExpanded(false);
+		prevRouteActive.current = routeActive;
+	}, [routeActive]);
 
 	const toggleGroup = useCallback(() => {
 		setGroupExpanded((prev) => !prev);
@@ -36,32 +60,24 @@ export function SidebarGroup({ isExpanded, main, subLinks }: SidebarGroupProps) 
 
 	return (
 		<div className="relative">
-			<div className="flex items-center pr-1 text-muted-foreground">
-				<Link
-					to={main.to}
-					className={`flex-1 ${navLinkClass(false, isExpanded)}`}
-					activeProps={{ className: `flex-1 ${navLinkClass(true, isExpanded)}` }}
-					title={isExpanded ? undefined : t(main.translationKey)}
-					
-				>
-					{main.icon}
-					{isExpanded && <span className="text-sm truncate">{t(main.translationKey)}</span>}
-				</Link>
+			<button
+				type="button"
+				onClick={toggleGroup}
+				className={`${navRowClass(routeActive, isExpanded)} text-muted-foreground`}
+				title={isExpanded ? undefined : t(main.translationKey)}
+				aria-expanded={groupExpanded}
+			>
+				{main.icon}
 				{isExpanded && (
-					<button
-						className="p-1.5 rounded-md hover-icon transition-all duration-300 ease-in-out"
-						onClick={toggleGroup}
-					>
-						<ChevronIcon size={14} />
-					</button>
+					<>
+						<span className="text-sm truncate flex-1">{t(main.translationKey)}</span>
+						<ChevronIcon size={14} className="shrink-0" />
+					</>
 				)}
-			</div>
+			</button>
 
 			{groupExpanded && isExpanded && (
-				<div
-					className="ml-4 mt-1 space-y-0.5 pl-2 border-l border-border"
-					
-				>
+				<div className="ml-4 mt-1 space-y-0.5 pl-2 border-l border-border">
 					{subLinks.map((child) => (
 						<SidebarLink
 							key={child.translationKey}

@@ -7,6 +7,19 @@
  * because it predates this file's per-feature pattern.
  */
 export const ReservationsKeys = {
+	PAGE_TITLE: "reservations.page.title",
+	PAGE_DESCRIPTION: "reservations.page.description",
+	PAGE_LOCKS_BUTTON: "reservations.page.locksButton",
+	PAGE_SETTINGS_BUTTON: "reservations.page.settingsButton",
+
+	SETTINGS_DRAWER_TITLE: "reservations.settingsDrawer.title",
+	SETTINGS_DRAWER_DESCRIPTION: "reservations.settingsDrawer.description",
+	SETTINGS_DRAWER_ARIA: "reservations.settingsDrawer.ariaLabel",
+
+	LOCKS_DRAWER_TITLE: "reservations.locksDrawer.title",
+	LOCKS_DRAWER_DESCRIPTION: "reservations.locksDrawer.description",
+	LOCKS_DRAWER_ARIA: "reservations.locksDrawer.ariaLabel",
+
 	STATUS_PENDING: "reservations.status.pending",
 	STATUS_CONFIRMED: "reservations.status.confirmed",
 	STATUS_SEATED: "reservations.status.seated",
@@ -20,9 +33,31 @@ export const ReservationsKeys = {
 	RANGE_QUARTER: "reservations.range.quarter",
 	RANGE_YEAR: "reservations.range.year",
 	RANGE_ALL: "reservations.range.all",
+	RANGE_CUSTOM: "reservations.range.custom",
+	/** Compact label beside range pills for the calendar jump control. */
+	DASHBOARD_DAY_PICKER_LABEL: "reservations.dashboard.dayPickerLabel",
+
+	VIEW_MODE_CARDS: "reservations.viewMode.cards",
+	VIEW_MODE_TABLE: "reservations.viewMode.table",
+
+	SOURCE_UI: "reservations.sources.ui",
+	SOURCE_WHATSAPP: "reservations.sources.whatsapp",
+	SOURCE_STAFF: "reservations.sources.staff",
+
+	TABLE_SEARCH_PLACEHOLDER: "reservations.table.searchPlaceholder",
+	COLUMN_STATUS: "reservations.table.columns.status",
+	COLUMN_GUEST: "reservations.table.columns.guest",
+	COLUMN_PARTY: "reservations.table.columns.party",
+	COLUMN_DATE: "reservations.table.columns.date",
+	COLUMN_TIME: "reservations.table.columns.time",
+	COLUMN_SOURCE: "reservations.table.columns.source",
+	COLUMN_TABLES: "reservations.table.columns.tables",
+	COLUMN_NOTES: "reservations.table.columns.notes",
+	COLUMN_RESTAURANT: "reservations.table.columns.restaurant",
 
 	ARIA_FILTER_RANGE: "reservations.aria.filterRange",
 	ARIA_FILTER_STATUS: "reservations.aria.filterStatus",
+	ARIA_FILTER_VIEW_MODE: "reservations.aria.filterViewMode",
 	ARIA_DETAIL_DRAWER: "reservations.aria.detailDrawer",
 	ARIA_DETAIL_DRAWER_CLOSE: "reservations.aria.detailDrawerClose",
 	ARIA_REMOVE: "reservations.aria.remove",
@@ -54,6 +89,9 @@ export const ReservationsKeys = {
 	FORM_TITLE: "reservations.customerForm.title",
 	FORM_PARTY_SIZE: "reservations.customerForm.partySize",
 	FORM_DATE_TIME: "reservations.customerForm.dateTime",
+	FORM_DATE: "reservations.customerForm.date",
+	FORM_TIME: "reservations.customerForm.time",
+	FORM_SLOTS_EMPTY: "reservations.customerForm.slotsEmpty",
 	FORM_NAME: "reservations.customerForm.name",
 	FORM_PHONE: "reservations.customerForm.phone",
 	FORM_EMAIL: "reservations.customerForm.email",

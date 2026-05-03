@@ -7,17 +7,23 @@ import {
 	NotFoundErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireManagerRole } from "./_util/auth";
+import { appendAuditEvent, stampUpdated } from "./_util/audit";
+import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
 import { TABLE } from "./constants";
 
-type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
+type AuthErrors =
+	| NotAuthenticatedErrorObject
+	| NotAuthorizedErrorObject
+	| NotFoundErrorObject;
 
 export const generateUploadUrl = mutation({
-	args: {},
-	handler: async function (ctx): AsyncReturn<string, AuthErrors> {
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (error2) return [null, error2];
 
 		const url = await ctx.storage.generateUploadUrl();
@@ -39,7 +45,7 @@ export const create = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -61,6 +67,15 @@ export const create = mutation({
 			tags: args.tags,
 			createdAt: now,
 			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.MENU_ITEMS,
+			aggregateId: id,
+			eventType: "menuItems.created",
+			payload: { name: args.name },
+			userId,
 		});
 
 		return [id, null];
@@ -81,11 +96,12 @@ export const update = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
 		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
+		if (error2) return [null, error2];
 
 		if (args.imageStorageId !== undefined && item.imageStorageId) {
 			await ctx.storage.delete(item.imageStorageId);
@@ -99,7 +115,15 @@ export const update = mutation({
 			...(args.tags !== undefined && { tags: args.tags }),
 			...(args.displayOrder !== undefined && { displayOrder: args.displayOrder }),
 			...(args.availableDays !== undefined && { availableDays: args.availableDays }),
-			updatedAt: Date.now(),
+			...stampUpdated(userId),
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.MENU_ITEMS,
+			aggregateId: args.itemId,
+			eventType: "menuItems.updated",
+			payload: args,
+			userId,
 		});
 
 		return [args.itemId, null];
@@ -108,14 +132,15 @@ export const update = mutation({
 
 export const remove = mutation({
 	args: { itemId: v.id(TABLE.MENU_ITEMS) },
-	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
 		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
+		if (error2) return [null, error2];
 
 		if (item.imageStorageId) {
 			await ctx.storage.delete(item.imageStorageId);
@@ -128,20 +153,28 @@ export const remove = mutation({
 		for (const link of links) await ctx.db.delete(link._id);
 
 		await ctx.db.delete(args.itemId);
-		return [undefined, null];
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.MENU_ITEMS,
+			aggregateId: args.itemId,
+			eventType: "menuItems.deleted",
+			payload: {},
+			userId,
+		});
+		return [null, null];
 	},
 });
 
 export const removeImage = mutation({
 	args: { itemId: v.id(TABLE.MENU_ITEMS) },
-	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
 		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
+		if (error2) return [null, error2];
 
 		if (item.imageStorageId) {
 			await ctx.storage.delete(item.imageStorageId);
@@ -149,10 +182,10 @@ export const removeImage = mutation({
 
 		await ctx.db.patch(args.itemId, {
 			imageStorageId: undefined,
-			updatedAt: Date.now(),
+			...stampUpdated(userId),
 		});
 
-		return [undefined, null];
+		return [null, null];
 	},
 });
 
@@ -164,31 +197,114 @@ export const toggleAvailability = mutation({
 	handler: async function (ctx, args): AsyncReturn<boolean, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
 		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
+		if (error2) return [null, error2];
 
 		const newState = !item.isAvailable;
 		await ctx.db.patch(args.itemId, {
 			isAvailable: newState,
 			unavailableReason: newState ? undefined : args.unavailableReason,
-			updatedAt: Date.now(),
+			...stampUpdated(userId),
 		});
 
 		return [newState, null];
 	},
 });
 
+export const bulkRemove = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		itemIds: v.array(v.id(TABLE.MENU_ITEMS)),
+	},
+	handler: async function (ctx, args): AsyncReturn<number, AuthErrors> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [null, error2];
+
+		const unique = [...new Set(args.itemIds)];
+		let removed = 0;
+		for (const itemId of unique) {
+			const item = await ctx.db.get(itemId);
+			if (!item || item.restaurantId !== args.restaurantId) continue;
+
+			if (item.imageStorageId) {
+				await ctx.storage.delete(item.imageStorageId);
+			}
+
+			const links = await ctx.db
+				.query(TABLE.MENU_ITEM_OPTION_GROUPS)
+				.withIndex("by_menuItem", (q) => q.eq("menuItemId", itemId))
+				.collect();
+			for (const link of links) await ctx.db.delete(link._id);
+
+			await ctx.db.delete(itemId);
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.MENU_ITEMS,
+				aggregateId: itemId,
+				eventType: "menuItems.deleted",
+				payload: {},
+				userId,
+			});
+			removed++;
+		}
+
+		return [removed, null];
+	},
+});
+
+export const bulkSetAvailability = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		itemIds: v.array(v.id(TABLE.MENU_ITEMS)),
+		isAvailable: v.boolean(),
+		unavailableReason: v.optional(v.string()),
+	},
+	handler: async function (ctx, args): AsyncReturn<number, AuthErrors> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [null, error2];
+
+		const unique = [...new Set(args.itemIds)];
+		let updated = 0;
+		for (const itemId of unique) {
+			const item = await ctx.db.get(itemId);
+			if (!item || item.restaurantId !== args.restaurantId) continue;
+
+			await ctx.db.patch(itemId, {
+				isAvailable: args.isAvailable,
+				unavailableReason: args.isAvailable ? undefined : args.unavailableReason,
+				...stampUpdated(userId),
+			});
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.MENU_ITEMS,
+				aggregateId: itemId,
+				eventType: "menuItems.updated",
+				payload: { isAvailable: args.isAvailable },
+				userId,
+			});
+			updated++;
+		}
+
+		return [updated, null];
+	},
+});
+
 async function resolveImageUrls(
-	ctx: { storage: { getUrl: (id: any) => Promise<string | null> } },
-	items: any[]
+	ctx: { storage: { getUrl: (id: unknown) => Promise<string | null> } },
+	items: Array<{ imageStorageId?: unknown }>
 ) {
 	return Promise.all(
 		items.map(async (item) => ({
 			...item,
-			imageUrl: item.imageStorageId ? await ctx.storage.getUrl(item.imageStorageId) : null,
+			imageUrl: item.imageStorageId ? await ctx.storage.getUrl(item.imageStorageId as never) : null,
 		}))
 	);
 }
@@ -203,11 +319,12 @@ export const setTranslation = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const item = await ctx.db.get(args.itemId);
 		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
+		if (error2) return [null, error2];
 
 		const translations = { ...item.translations };
 		translations[args.lang] = {
@@ -216,7 +333,14 @@ export const setTranslation = mutation({
 			...(args.description !== undefined && { description: args.description }),
 		};
 
-		await ctx.db.patch(args.itemId, { translations, updatedAt: Date.now() });
+		await ctx.db.patch(args.itemId, { translations, ...stampUpdated(userId) });
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.MENU_ITEMS,
+			aggregateId: args.itemId,
+			eventType: "menuItems.translation_set",
+			payload: { lang: args.lang },
+			userId,
+		});
 		return [args.itemId, null];
 	},
 });

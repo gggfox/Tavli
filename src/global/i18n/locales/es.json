@@ -17,6 +17,12 @@
 			"orders": "Pedidos",
 			"payments": "Pagos",
 			"reservations": "Reservaciones",
+			"team": "Miembros",
+			"teamInvites": "Invitaciones",
+			"schedule": "Horarios",
+			"attendance": "Asistencia",
+			"tips": "Propinas",
+			"performance": "Rendimiento",
 			"admin": "Administración",
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones"
@@ -38,6 +44,12 @@
 			"clickToSignOut": "Haz clic para cerrar sesión",
 			"notConfigured": "Autenticación no configurada"
 		},
+		"clock": {
+			"title": "Reloj",
+			"in": "Entrada",
+			"out": "Salida",
+			"loading": "Cargando…"
+		},
 		"settings": {
 			"title": "Configuración",
 			"close": "Cerrar",
@@ -51,6 +63,136 @@
 			"assigningAdmin": "Asignando..."
 		}
 	},
+	"adminStaff": {
+		"team": {
+			"descriptionNoRestaurant": "Gestiona invitaciones y membresías.",
+			"description": "Revisa miembros e invitaciones pendientes del restaurante seleccionado.",
+			"setupRestaurantFirst": "Selecciona o crea un restaurante primero.",
+			"sendInvitation": "Enviar invitación",
+			"emailLabel": "Correo electrónico",
+			"roleLabel": "Rol",
+			"roleOwnerOption": "Propietario de la organización",
+			"roleManagerOption": "Gerente de restaurante",
+			"roleEmployeeOption": "Empleado",
+			"restaurantsLabel": "Restaurantes",
+			"restaurantsPlaceholder": "Elige restaurantes…",
+			"restaurantsAria": "Elige restaurantes para esta invitación",
+			"restaurantsSummaryMany": "{{first}}, {{second}} (+{{rest}} más)",
+			"inviteNoRole": "No tienes permiso para enviar invitaciones en esta organización.",
+			"inviteSingleRoleHint": "Solo puedes asignar este rol.",
+			"sendInvite": "Enviar invitación",
+			"sending": "Enviando…",
+			"pendingInvitations": "Invitaciones pendientes",
+			"noPendingInvitations": "No hay invitaciones pendientes.",
+			"revoke": "Revocar",
+			"membersTitle": "Miembros · {{restaurantName}}",
+			"noMembers": "Aún no hay miembros en este restaurante.",
+			"memberInactive": "inactivo",
+			"roleDisplay": {
+				"owner": "Propietario de la organización",
+				"manager": "Gerente de restaurante",
+				"employee": "Empleado"
+			},
+			"directoryColIdentity": "Correo / usuario",
+			"directoryColRole": "Rol",
+			"directoryColStatus": "Estado",
+			"statusPendingInvite": "Invitación pendiente",
+			"statusActive": "Activo",
+			"directoryEmptyTitle": "Aún no hay personal ni invitaciones",
+			"directoryEmptyDescription": "Aquí aparecen los propietarios del restaurante y de la organización, las personas con rol de gerente o empleado en este local y las invitaciones por correo pendientes.",
+			"directoryFilteredEmptyTitle": "Sin resultados",
+			"directoryFilteredEmptyDescription": "Prueba con otro correo, id de usuario, rol o palabra de estado.",
+			"directorySearchPlaceholder": "Buscar por correo o id de usuario…",
+			"inviteModalTitle": "Enviar invitación",
+			"directoryEntityName": "miembros e invitaciones"
+		},
+		"schedule": {
+			"descriptionNoRestaurant": "Turnos semanales para tu equipo.",
+			"description": "Próximos turnos (créalos y edítalos en el panel de Convex o en una futura interfaz de horarios).",
+			"noRestaurant": "No hay restaurante disponible.",
+			"prevWeek": "← Semana anterior",
+			"nextWeek": "Semana siguiente →",
+			"empty": "No hay turnos en este periodo.",
+			"colMember": "Miembro",
+			"colStart": "Inicio",
+			"colEnd": "Fin",
+			"colStatus": "Estado",
+			"statusPublished": "Publicado",
+			"statusCancelled": "Cancelado",
+			"statusScheduled": "Programado"
+		},
+		"attendance": {
+			"descriptionNoRestaurant": "Fichajes y solicitudes de ausencia.",
+			"description": "Revisa los fichajes y ausencias del equipo. Envía tus propias solicitudes de días libres en la sección inferior.",
+			"descriptionEmployee": "Solicita días libres y consulta el estado de tus solicitudes.",
+			"noRestaurant": "No hay restaurante disponible.",
+			"rangeLabel": "Rango",
+			"range24h": "24 h",
+			"range7d": "7 días",
+			"range30d": "30 días",
+			"clockEvents": "Fichajes",
+			"noEvents": "No hay eventos en el rango.",
+			"absences": "Ausencias",
+			"noAbsences": "No hay registros de ausencia.",
+			"colMember": "Miembro",
+			"colType": "Tipo",
+			"colTime": "Hora",
+			"colDate": "Fecha",
+			"colStatus": "Estado",
+			"myAbsences": "Mis solicitudes de ausencia",
+			"myAbsencesEmpty": "Aún no tienes solicitudes de ausencia.",
+			"requestOpen": "Solicitar día libre",
+			"requestModalTitle": "Solicitar día libre",
+			"requestDrawerSwipeHandle": "Arrastra hacia abajo para cerrar",
+			"requestDateLabel": "Fecha",
+			"requestTypeLabel": "Tipo",
+			"requestReasonLabel": "Nota (opcional)",
+			"requestReasonPlaceholder": "Breve explicación para tu gerente",
+			"requestOneDayNote": "Cada solicitud es para un día natural. Envía otra solicitud para días adicionales.",
+			"requestSubmit": "Enviar solicitud",
+			"requestCancel": "Cancelar",
+			"requestErrorDate": "Elige una fecha.",
+			"typeVacation": "Vacaciones",
+			"typeSick": "Baja por enfermedad",
+			"typeOther": "Otro",
+			"statusPending": "Pendiente",
+			"statusApproved": "Aprobada",
+			"statusDenied": "Rechazada"
+		},
+		"tips": {
+			"descriptionNoRestaurant": "Bolsa de propinas diaria y reparto.",
+			"description": "Entradas de propinas en efectivo y finalización equitativa según horas trabajadas.",
+			"noRestaurant": "No hay restaurante disponible.",
+			"businessDateLabel": "Fecha de negocio (AAAA-MM-DD)",
+			"totalPool": "Bolsa total: {{amount}} {{currency}}",
+			"statusLabel": "Estado:",
+			"statusFinalized": "Finalizada",
+			"statusOpen": "Abierta",
+			"statusPaid": "Pagada",
+			"addCashTitle": "Añadir propina en efectivo",
+			"placeholderAmount": "Importe",
+			"placeholderNotes": "Notas (opcional)",
+			"addToPool": "Añadir a la bolsa",
+			"saving": "Guardando…",
+			"finalize": "Finalizar bolsa (equitativo por horas)",
+			"finalizing": "Finalizando…",
+			"shares": "Repartos"
+		},
+		"performance": {
+			"descriptionNoRestaurant": "Totales por miembro del servicio.",
+			"description": "Pedidos atribuidos y horas trabajadas (según asistencia a turnos).",
+			"noRestaurant": "No hay restaurante disponible.",
+			"rangeLabel": "Rango",
+			"range7": "7 días",
+			"range30": "30 días",
+			"range90": "90 días",
+			"empty": "No hay actividad atribuida en este periodo.",
+			"colMember": "Miembro",
+			"colPaidOrders": "Pedidos pagados",
+			"colAttributedRevenue": "Ingresos atribuidos",
+			"colHours": "Horas"
+		}
+	},
 	"common": {
 		"button": {
 			"saved": "¡Guardado!",
@@ -61,6 +203,10 @@
 		"itemsCount_other": "{{count}} artículos"
 	},
 	"orders": {
+		"page": {
+			"title": "Pedidos",
+			"description": "Panel de pedidos en vivo. Los pedidos se actualizan en tiempo real."
+		},
 		"status": {
 			"submitted": "Pendiente",
 			"preparing": "Preparando",
@@ -120,6 +266,9 @@
 		"empty": {
 			"noPayments": "Sin pagos en este periodo."
 		},
+		"searchPlaceholder": "Buscar pagos...",
+		"resultCount_one": "1 pago",
+		"resultCount_other": "{{count}} pagos",
 		"table": {
 			"dayOrderNumber": "N.º del día",
 			"orderId": "ID del pedido",
@@ -255,6 +404,10 @@
 		}
 	},
 	"restaurants": {
+		"adminAll": {
+			"title": "Todos los restaurantes",
+			"description": "Consulta y administra todos los restaurantes del sistema."
+		},
 		"list": {
 			"newRestaurant": "Nuevo restaurante",
 			"edit": "Editar restaurante",
@@ -267,15 +420,36 @@
 			"loadFailed": "Error al cargar restaurantes.",
 			"toggleFailed": "Error al cambiar el estado del restaurante",
 			"statusActive": "Activo",
-			"statusInactive": "Inactivo"
+			"statusInactive": "Inactivo",
+			"delete": "Eliminar restaurante",
+			"deleteFailed": "Error al eliminar el restaurante",
+			"restoreFailed": "Error al restaurar el restaurante",
+			"showTrash": "Ver eliminados",
+			"hideTrash": "Ocultar eliminados"
+		},
+		"trash": {
+			"heading": "Eliminados (recuperación en 30 días)",
+			"empty": "No hay restaurantes eliminados.",
+			"deletedAt": "Eliminado el {{date}}",
+			"deletedBy": "Eliminado por el usuario {{userId}}",
+			"restore": "Restaurar",
+			"publicSlug": "La URL pública era /{{slug}}"
+		},
+		"switcher": {
+			"label": "Restaurante activo"
 		},
 		"modal": {
 			"createAria": "Crear restaurante",
 			"editAria": "Editar restaurante",
 			"tablesAria": "Gestionar mesas",
+			"deleteAria": "Confirmar eliminación del restaurante",
 			"createHeading": "Nuevo restaurante",
 			"editHeading": "Editar restaurante",
-			"tablesHeading": "Mesas"
+			"tablesHeading": "Mesas",
+			"deleteHeading": "¿Eliminar este restaurante?",
+			"deleteBody": "Se desactivará de inmediato, se desvinculará Stripe de este local y los datos seguirán recuperables durante 30 días. Después, el sistema eliminará permanentemente el restaurante y los registros relacionados (se conserva un registro de la eliminación).",
+			"deleteConfirm": "Eliminar",
+			"deleteCancel": "Cancelar"
 		},
 		"form": {
 			"nameLabel": "Nombre del restaurante",
@@ -299,6 +473,16 @@
 			"creating": "Creando...",
 			"updateFailed": "Error al actualizar el restaurante",
 			"createFailed": "Error al crear el restaurante"
+		},
+		"managers": {
+			"sectionTitle": "Gerentes del local",
+			"sectionHint": "Estas personas pueden administrar este restaurante. Quitar a alguien como gerente lo mantiene en el equipo como empleado.",
+			"placeholder": "Seleccionar gerentes…",
+			"summary_one": "1 gerente",
+			"summary_other": "{{count}} gerentes",
+			"aria": "Elegir gerentes para este restaurante",
+			"emptyDirectory": "No hay personas en esta organización. Invita o agrega usuarios en Equipo.",
+			"mutationFailed": "Error al actualizar los gerentes"
 		},
 		"tables": {
 			"numberLabel": "Mesa #",
@@ -368,6 +552,11 @@
 		"getStarted": "Empezar"
 	},
 	"menus": {
+		"page": {
+			"title": "Menús",
+			"description": "Crea y administra los menús de tu restaurante. Haz clic en un menú para editar sus categorías y artículos.",
+			"setupRestaurantFirst": "Configura tu restaurante primero."
+		},
 		"list": {
 			"newPlaceholder": "Nombre del menú (p. ej. Menú Cena)",
 			"addButton": "Agregar menú",
@@ -375,7 +564,7 @@
 			"toggleActivate": "Activar",
 			"rename": "Renombrar",
 			"delete": "Eliminar menú",
-			"empty": "Aún no hay menús. Crea tu primero arriba.",
+			"empty": "No hay menús para este restaurante.",
 			"loadingAria": "Cargando menús"
 		},
 		"editor": {
@@ -390,14 +579,22 @@
 			"addCategory": "Agregar categoría",
 			"translatingHint": "Traduciendo nombres y descripciones. Los precios, imágenes y opciones se comparten entre todos los idiomas.",
 			"noCategories": "Aún no hay categorías. Agrega tu primera arriba.",
-			"loadingAria": "Cargando editor del menú"
+			"loadingAria": "Cargando editor del menú",
+			"backToList": "Volver a todos los menús",
+			"headerTitle": "Editor del menú",
+			"headerDescription": "Agrega categorías y artículos a este menú."
 		},
 		"category": {
 			"itemsCount_one": "(1 producto)",
 			"itemsCount_other": "({{count}} productos)",
 			"translationPlaceholder": "Traducción de {{name}}...",
 			"deleteTitle": "Eliminar categoría",
-			"addItem": "Agregar producto"
+			"addItem": "Agregar producto",
+			"selectAll": "Seleccionar todos en la categoría",
+			"deselectAll": "Quitar selección",
+			"bulkHide": "Ocultar seleccionados",
+			"bulkShow": "Mostrar seleccionados",
+			"bulkDelete": "Eliminar seleccionados"
 		},
 		"item": {
 			"editTitle": "Editar producto",
@@ -432,6 +629,8 @@
 		},
 		"picker": {
 			"noGroups": "Aún no hay grupos de opciones. Usa el botón Grupos de opciones de arriba para crearlos.",
+			"loading": "Cargando grupos de opciones…",
+			"error": "No se pudieron cargar los grupos de opciones. Inténtalo de nuevo.",
 			"linkedGroups": "Grupos de opciones vinculados",
 			"groupSingle": "· Único",
 			"groupMulti": "· Múltiple"
@@ -461,6 +660,22 @@
 		"optionPricePlaceholder": "+$"
 	},
 	"reservations": {
+		"page": {
+			"title": "Reservaciones",
+			"description": "Confirma, asienta y revisa reservaciones. Se actualizan en tiempo real.",
+			"locksButton": "Bloqueos",
+			"settingsButton": "Configuración"
+		},
+		"settingsDrawer": {
+			"title": "Configuración de reservaciones",
+			"description": "Tiempo de mesa predeterminado, tiempos por tamaño de grupo, horizonte de reservación, periodos bloqueados y la opción general de aceptar reservaciones.",
+			"ariaLabel": "Configuración de reservaciones"
+		},
+		"locksDrawer": {
+			"title": "Bloqueos de mesa",
+			"description": "Retira una mesa del servicio durante un periodo. Las mesas bloqueadas no se muestran como disponibles al público ni en el selector de mesas del personal durante ese lapso.",
+			"ariaLabel": "Bloqueos de mesa"
+		},
 		"status": {
 			"pending": "Pendiente",
 			"confirmed": "Confirmada",
@@ -475,11 +690,39 @@
 			"month": "Este mes",
 			"quarter": "Este trimestre",
 			"year": "Este año",
-			"all": "Todo el tiempo"
+			"all": "Todo el tiempo",
+			"custom": "Día concreto"
+		},
+		"dashboard": {
+			"dayPickerLabel": "Ir al día"
+		},
+		"viewMode": {
+			"cards": "Lista de tarjetas",
+			"table": "Tabla"
+		},
+		"sources": {
+			"ui": "Sitio web",
+			"whatsapp": "WhatsApp",
+			"staff": "Personal"
+		},
+		"table": {
+			"searchPlaceholder": "Buscar por nombre o teléfono…",
+			"columns": {
+				"status": "Estado",
+				"guest": "Invitado",
+				"party": "Grupo",
+				"date": "Fecha",
+				"time": "Hora",
+				"source": "Origen",
+				"tables": "Mesas",
+				"notes": "Notas",
+				"restaurant": "Restaurante"
+			}
 		},
 		"aria": {
 			"filterRange": "Filtrar reservaciones por rango de fechas",
 			"filterStatus": "Filtrar reservaciones por estado",
+			"filterViewMode": "Cambiar entre lista de tarjetas y tabla",
 			"detailDrawer": "Detalles de la reservación",
 			"detailDrawerClose": "Cerrar panel",
 			"remove": "Eliminar",
@@ -518,6 +761,9 @@
 			"title": "Reservar en {{restaurantName}}",
 			"partySize": "Tamaño del grupo",
 			"dateTime": "Fecha y hora",
+			"date": "Fecha",
+			"time": "Hora",
+			"slotsEmpty": "No hay horarios disponibles este día para su grupo. Pruebe otra fecha.",
 			"name": "Nombre",
 			"phone": "Teléfono",
 			"email": "Correo (opcional)",

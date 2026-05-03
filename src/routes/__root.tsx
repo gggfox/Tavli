@@ -13,7 +13,7 @@ import { useTranslation } from "react-i18next";
 
 import { AuthDebugPanel } from "@/features";
 import { useNewReservationListener } from "@/features/reservations";
-import { useRestaurant } from "@/features/restaurants";
+import { RestaurantAdminProvider, useRestaurant } from "@/features/restaurants";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import { ErrorBoundary, NotificationCenter, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
@@ -39,9 +39,21 @@ import appCss from "../styles.css?url";
 // the old name don't lose it.
 const initScript = `(function(){try{var k=${JSON.stringify(LOCAL_STORAGE_THEME_KEY)};var t=localStorage.getItem(k);if(t===null){var legacy=localStorage.getItem('fierro-viejo-theme');if(legacy!==null){localStorage.setItem(k,legacy);localStorage.removeItem('fierro-viejo-theme');t=legacy;}}var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');var sk=${JSON.stringify(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED)};var st=localStorage.getItem(sk);if(st==='false')document.documentElement.dataset.sidebarExpanded='false';}catch(e){}})();`;
 
+function RootNotFound() {
+	return (
+		<div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 p-8 text-center">
+			<h1 className="text-lg font-medium text-foreground">Page not found</h1>
+			<p className="max-w-sm text-sm text-muted-foreground">
+				The URL may be mistyped, or the page may have been removed.
+			</p>
+		</div>
+	);
+}
+
 export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
 }>()({
+	notFoundComponent: RootNotFound,
 	head: () => ({
 		meta: [
 			{
@@ -103,22 +115,22 @@ function RootLayout() {
 					</ErrorBoundary>
 				</div>
 			) : (
-				<StaffLayout />
+				<RestaurantAdminProvider>
+					<StaffLayout />
+				</RestaurantAdminProvider>
 			)}
 		</ThemeProvider>
 	);
 }
 
 function StaffLayout() {
+	const pathname = useRouterState({ select: (s) => s.location.pathname });
 	const { restaurant } = useRestaurant();
 	useNewReservationListener(restaurant?._id);
 	return (
-		<div
-			className="h-screen flex overflow-hidden bg-background"
-			
-		>
-			<Sidebar />
-			<main className="flex-1 overflow-auto bg-background" >
+		<div className="h-screen flex overflow-hidden bg-background">
+			<Sidebar pathname={pathname} />
+			<main className="flex-1 overflow-auto bg-background">
 				<ErrorBoundary>
 					<Outlet />
 				</ErrorBoundary>

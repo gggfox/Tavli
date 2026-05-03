@@ -14,10 +14,16 @@ import { TableSkeleton } from "./TableSkeleton";
 interface AdminTableProps<TData> {
 	readonly tableState: ReturnType<typeof useAdminTable<TData>>;
 	readonly searchPlaceholder?: string;
+	/** When set, replaces the default "{n} {entity}" filtered-row count line. */
+	readonly getResultCountText?: (filteredCount: number) => string;
 	readonly entityName: string;
 	readonly emptyIcon?: LucideIcon;
 	readonly emptyTitle?: string;
 	readonly emptyDescription?: string;
+	/** Shown when `data` is non-empty but the global filter hides every row. */
+	readonly filteredEmptyIcon?: LucideIcon;
+	readonly filteredEmptyTitle?: string;
+	readonly filteredEmptyDescription?: string;
 	readonly notAuthenticatedMessage?: string;
 	readonly actions?: ReactNode;
 	readonly renderRowActions?: (row: TData) => ReactNode;
@@ -26,10 +32,14 @@ interface AdminTableProps<TData> {
 export function AdminTable<TData>({
 	tableState,
 	searchPlaceholder,
+	getResultCountText,
 	entityName,
 	emptyIcon: EmptyIcon = Search,
 	emptyTitle,
 	emptyDescription,
+	filteredEmptyIcon: FilteredEmptyIcon = Search,
+	filteredEmptyTitle,
+	filteredEmptyDescription,
 	notAuthenticatedMessage,
 	actions,
 	renderRowActions,
@@ -76,8 +86,86 @@ export function AdminTable<TData>({
 
 	const isEmpty = data.length === 0;
 	const filteredCount = table.getFilteredRowModel().rows.length;
+	const isFilteredEmpty = !isEmpty && filteredCount === 0;
 	const singular = entityName.endsWith("s") ? entityName.slice(0, -1) : entityName;
 	const plural = entityName.endsWith("s") ? entityName : `${entityName}s`;
+	const defaultResultCountText = `${filteredCount} ${filteredCount === 1 ? singular : plural}`;
+	const resultCountLabel = getResultCountText
+		? getResultCountText(filteredCount)
+		: defaultResultCountText;
+
+	let tableSection: ReactNode;
+	if (isEmpty) {
+		tableSection = (
+			<EmptyState
+				icon={EmptyIcon}
+				title={emptyTitle ?? `No ${entityName} found`}
+				description={emptyDescription}
+				fill
+			/>
+		);
+	} else if (isFilteredEmpty) {
+		tableSection = (
+			<EmptyState
+				icon={FilteredEmptyIcon}
+				title={filteredEmptyTitle ?? `No matching ${entityName}`}
+				description={filteredEmptyDescription}
+				fill
+			/>
+		);
+	} else {
+		tableSection = (
+			<>
+				<div className="flex-1 overflow-auto rounded-lg bg-muted border border-border">
+					<table className="w-full border-collapse">
+						<thead>
+							{table.getHeaderGroups().map((headerGroup) => (
+								<tr key={headerGroup.id}>
+									{headerGroup.headers.map((header) => (
+										<th
+											key={header.id}
+											className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+										>
+											{header.isPlaceholder ? null : (
+												<button
+													className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+													onClick={header.column.getToggleSortingHandler()}
+												>
+													{flexRender(header.column.columnDef.header, header.getContext())}
+													<SortIcon column={header.column} />
+												</button>
+											)}
+										</th>
+									))}
+									{renderRowActions && (
+										<th className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
+											Actions
+										</th>
+									)}
+								</tr>
+							))}
+						</thead>
+						<tbody>
+							{table.getRowModel().rows.map((row) => (
+								<tr key={row.id} className="transition-colors border-b border-border">
+									{row.getVisibleCells().map((cell) => (
+										<td key={cell.id} className="px-4 py-3">
+											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+										</td>
+									))}
+									{renderRowActions && (
+										<td className="px-4 py-3">{renderRowActions(row.original)}</td>
+									)}
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+
+				<Pagination table={table} />
+			</>
+		);
+	}
 
 	return (
 		<div className="flex flex-col flex-1 h-full min-h-0">
@@ -87,81 +175,11 @@ export function AdminTable<TData>({
 					value={globalFilter}
 					onChange={setGlobalFilter}
 				/>
-				<div className="text-sm text-muted-foreground" >
-					{filteredCount} {filteredCount === 1 ? singular : plural}
-				</div>
+				<div className="text-sm text-muted-foreground">{resultCountLabel}</div>
 				{actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
 			</div>
 
-			{isEmpty ? (
-				<EmptyState
-					icon={EmptyIcon}
-					title={emptyTitle ?? `No ${entityName} found`}
-					description={emptyDescription}
-					fill
-				/>
-			) : (
-				<>
-					<div
-						className="flex-1 overflow-auto rounded-lg bg-muted border border-border"
-						
-					>
-						<table className="w-full border-collapse">
-							<thead>
-								{table.getHeaderGroups().map((headerGroup) => (
-									<tr key={headerGroup.id}>
-										{headerGroup.headers.map((header) => (
-											<th
-												key={header.id}
-												className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
-												
-											>
-												{header.isPlaceholder ? null : (
-													<button
-														className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-														onClick={header.column.getToggleSortingHandler()}
-													>
-														{flexRender(header.column.columnDef.header, header.getContext())}
-														<SortIcon column={header.column} />
-													</button>
-												)}
-											</th>
-										))}
-										{renderRowActions && (
-											<th
-												className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
-												
-											>
-												Actions
-											</th>
-										)}
-									</tr>
-								))}
-							</thead>
-							<tbody>
-								{table.getRowModel().rows.map((row) => (
-									<tr
-										key={row.id}
-										className="transition-colors border-b border-border"
-										
-									>
-										{row.getVisibleCells().map((cell) => (
-											<td key={cell.id} className="px-4 py-3">
-												{flexRender(cell.column.columnDef.cell, cell.getContext())}
-											</td>
-										))}
-										{renderRowActions && (
-											<td className="px-4 py-3">{renderRowActions(row.original)}</td>
-										)}
-									</tr>
-								))}
-							</tbody>
-						</table>
-					</div>
-
-					<Pagination table={table} />
-				</>
-			)}
+			{tableSection}
 		</div>
 	);
 }

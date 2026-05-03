@@ -1,13 +1,18 @@
+import { useConvexMutate } from "@/global/hooks";
 import { MenusKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { useTranslation } from "react-i18next";
 
+const panelClassName =
+	"px-3 py-3 text-xs rounded-b-lg bg-muted border-l border-border border-r border-border border-b border-border";
+
 interface ItemOptionGroupPickerProps {
 	itemId: Id<"menuItems">;
+	/** Must match the owning menu item's `restaurantId` (not necessarily the navbar selection). */
 	restaurantId: Id<"restaurants">;
 }
 
@@ -16,21 +21,25 @@ export function ItemOptionGroupPicker({
 	restaurantId,
 }: Readonly<ItemOptionGroupPickerProps>) {
 	const { t } = useTranslation();
-	const { data: allGroups } = useQuery(
+	const allGroupsQuery = useQuery(
 		convexQuery(api.optionGroups.getGroupsByRestaurant, { restaurantId })
 	);
-	const { data: linkedGroups } = useQuery(
+	const linkedGroupsQuery = useQuery(
 		convexQuery(api.optionGroups.getGroupsForMenuItem, { menuItemId: itemId })
 	);
 
-	const linkMutation = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.linkToMenuItem),
-	});
-	const unlinkMutation = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.unlinkFromMenuItem),
-	});
+	const linkMutation = useConvexMutate(api.optionGroups.linkToMenuItem);
+	const unlinkMutation = useConvexMutate(api.optionGroups.unlinkFromMenuItem);
 
-	const linkedIds = new Set((linkedGroups ?? []).map((g: any) => g._id as string));
+	const loading = allGroupsQuery.isPending || linkedGroupsQuery.isPending;
+	const loadError = allGroupsQuery.isError || linkedGroupsQuery.isError;
+
+	const allGroups = allGroupsQuery.data;
+	const linkedGroups = linkedGroupsQuery.data;
+
+	const linkedIds = new Set(
+		(linkedGroups ?? []).filter((g): g is NonNullable<typeof g> => g != null).map((g) => g._id)
+	);
 	const sorted = [...(allGroups ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
 
 	const handleToggle = async (groupId: Id<"optionGroups">) => {
@@ -49,23 +58,27 @@ export function ItemOptionGroupPicker({
 		}
 	};
 
-	if (sorted.length === 0) {
+	if (loading) {
 		return (
-			<div
-				className="px-3 py-3 text-xs rounded-b-lg bg-muted border-l border-border border-r border-border border-b border-border text-faint-foreground"
-				
-			>
-				{t(MenusKeys.PICKER_NO_GROUPS)}
+			<div className={`${panelClassName} text-muted-foreground animate-pulse`}>
+				{t(MenusKeys.PICKER_LOADING)}
 			</div>
 		);
 	}
 
+	if (loadError) {
+		return (
+			<div className={`${panelClassName} text-destructive`}>{t(MenusKeys.PICKER_ERROR)}</div>
+		);
+	}
+
+	if (sorted.length === 0) {
+		return <div className={`${panelClassName} text-faint-foreground`}>{t(MenusKeys.PICKER_NO_GROUPS)}</div>;
+	}
+
 	return (
-		<div
-			className="px-3 py-3 rounded-b-lg space-y-2 bg-muted border-l border-border border-r border-border border-b border-border"
-			
-		>
-			<span className="text-xs font-medium text-faint-foreground" >
+		<div className="px-3 py-3 rounded-b-lg space-y-2 bg-muted border-l border-border border-r border-border border-b border-border">
+			<span className="text-xs font-medium text-faint-foreground">
 				{t(MenusKeys.PICKER_LINKED_GROUPS)}
 			</span>
 			<div className="flex flex-wrap gap-2">
@@ -74,12 +87,15 @@ export function ItemOptionGroupPicker({
 					return (
 						<button
 							key={group._id}
+							type="button"
 							onClick={() => handleToggle(group._id)}
 							disabled={linkMutation.isPending || unlinkMutation.isPending}
 							className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors disabled:opacity-50"
-							style={{backgroundColor: isLinked ? "var(--btn-primary-bg)" : "var(--bg-primary)",
-				color: isLinked ? "var(--btn-primary-text)" : "var(--text-secondary)",
-				border: isLinked ? "1px solid transparent" : "1px solid var(--border-default)"}}
+							style={{
+								backgroundColor: isLinked ? "var(--btn-primary-bg)" : "var(--bg-primary)",
+								color: isLinked ? "var(--btn-primary-text)" : "var(--text-secondary)",
+								border: isLinked ? "1px solid transparent" : "1px solid var(--border-default)",
+							}}
 						>
 							{group.name}
 							<span className="ml-1 opacity-70">

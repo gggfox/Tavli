@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { getOrderServiceDateKey } from "../orderServiceDate";
+import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -39,6 +40,12 @@ async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>) {
 			isActive: true,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
+		});
+
+		await insertMenuForRestaurant(ctx, {
+			restaurantId,
+			name: "test-r",
+			userId: "owner1",
 		});
 
 		tableId = await ctx.db.insert("tables", {
@@ -90,14 +97,16 @@ async function seedMenuItem(t: ReturnType<typeof convexTest>, restaurantId: Id<"
 	let menuItemId: Id<"menuItems">;
 
 	await t.run(async (ctx) => {
-		const menuId = await ctx.db.insert("menus", {
-			restaurantId,
-			name: "Main",
-			isActive: true,
-			displayOrder: 0,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		});
+		const allMenus = await ctx.db.query("menus").collect();
+		const forRestaurant = allMenus.filter((m) => m.restaurantId === restaurantId);
+		const sortedMenus = [...forRestaurant].sort((a, b) => a.displayOrder - b.displayOrder);
+		const menuId =
+			sortedMenus[0]?._id ??
+			(await insertMenuForRestaurant(ctx, {
+				restaurantId,
+				name: "main",
+				userId: "owner1",
+			}));
 
 		const categoryId = await ctx.db.insert("menuCategories", {
 			menuId,
@@ -386,6 +395,16 @@ describe("orders", () => {
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
 				});
+				await ctx.db.insert("restaurantMembers", {
+					userId: "employee1",
+					restaurantId,
+					organizationId,
+					role: "employee",
+					isActive: true,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					updatedBy: "system",
+				});
 			});
 
 			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
@@ -434,6 +453,16 @@ describe("orders", () => {
 					organizationId,
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("restaurantMembers", {
+					userId: "employee1",
+					restaurantId,
+					organizationId,
+					role: "employee",
+					isActive: true,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					updatedBy: "system",
 				});
 			});
 

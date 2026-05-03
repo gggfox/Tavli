@@ -171,10 +171,19 @@ export async function handlePaymentIntentSuccess(
 			? paymentIntent.latest_charge
 			: (paymentIntent.latest_charge?.id ?? undefined);
 
+	const gratuityRaw = paymentIntent.metadata?.gratuityAmount;
+	const gratuityAmount =
+		typeof gratuityRaw === "string"
+			? Number.parseInt(gratuityRaw, 10)
+			: typeof gratuityRaw === "number"
+				? gratuityRaw
+				: 0;
+
 	await ctx.runMutation(internal.orders.confirmPayment, {
 		paymentId: payment._id,
 		stripePaymentIntentId: paymentIntent.id,
 		stripeChargeId: chargeId,
+		gratuityAmount: Number.isFinite(gratuityAmount) ? gratuityAmount : 0,
 	});
 	return payment._id;
 }

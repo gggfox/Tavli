@@ -12,11 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
+import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminTipsRouteImport } from './routes/admin/tips'
+import { Route as AdminTeamRouteImport } from './routes/admin/team'
+import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
+import { Route as AdminPerformanceRouteImport } from './routes/admin/performance'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
+import { Route as AdminAttendanceRouteImport } from './routes/admin/attendance'
 import { Route as AdminReservationsIndexRouteImport } from './routes/admin/reservations/index'
 import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
 import { Route as RSlugReserveRouteImport } from './routes/r/$slug/reserve'
@@ -53,14 +59,39 @@ const RSlugRoute = RSlugRouteImport.update({
   path: '/r/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvitesTokenRoute = InvitesTokenRouteImport.update({
+  id: '/invites/$token',
+  path: '/invites/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTipsRoute = AdminTipsRouteImport.update({
+  id: '/tips',
+  path: '/tips',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTeamRoute = AdminTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminScheduleRoute = AdminScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
   id: '/restaurants',
   path: '/restaurants',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPerformanceRoute = AdminPerformanceRouteImport.update({
+  id: '/performance',
+  path: '/performance',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
@@ -76,6 +107,11 @@ const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
 const AdminOrdersRoute = AdminOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminReservationsIndexRoute = AdminReservationsIndexRouteImport.update({
@@ -182,11 +218,17 @@ const RSlugLangOrderOrderIdRoute = RSlugLangOrderOrderIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/performance': typeof AdminPerformanceRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
+  '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/team': typeof AdminTeamRoute
+  '/admin/tips': typeof AdminTipsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
@@ -212,11 +254,17 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/performance': typeof AdminPerformanceRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
+  '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/team': typeof AdminTeamRoute
+  '/admin/tips': typeof AdminTipsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
@@ -243,11 +291,17 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/performance': typeof AdminPerformanceRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
+  '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/team': typeof AdminTeamRoute
+  '/admin/tips': typeof AdminTipsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
@@ -275,11 +329,17 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/admin/attendance'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
+    | '/admin/performance'
     | '/admin/restaurants'
+    | '/admin/schedule'
+    | '/admin/team'
+    | '/admin/tips'
     | '/admin/users'
+    | '/invites/$token'
     | '/r/$slug'
     | '/admin/menus/$menuId'
     | '/demo/api/names'
@@ -305,11 +365,17 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/admin/attendance'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
+    | '/admin/performance'
     | '/admin/restaurants'
+    | '/admin/schedule'
+    | '/admin/team'
+    | '/admin/tips'
     | '/admin/users'
+    | '/invites/$token'
     | '/r/$slug'
     | '/admin/menus/$menuId'
     | '/demo/api/names'
@@ -335,11 +401,17 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/admin/attendance'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
+    | '/admin/performance'
     | '/admin/restaurants'
+    | '/admin/schedule'
+    | '/admin/team'
+    | '/admin/tips'
     | '/admin/users'
+    | '/invites/$token'
     | '/r/$slug'
     | '/admin/menus/$menuId'
     | '/demo/api/names'
@@ -366,6 +438,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  InvitesTokenRoute: typeof InvitesTokenRoute
   RSlugRoute: typeof RSlugRouteWithChildren
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
@@ -399,6 +472,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invites/$token': {
+      id: '/invites/$token'
+      path: '/invites/$token'
+      fullPath: '/invites/$token'
+      preLoaderRoute: typeof InvitesTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -406,11 +486,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/tips': {
+      id: '/admin/tips'
+      path: '/tips'
+      fullPath: '/admin/tips'
+      preLoaderRoute: typeof AdminTipsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/team': {
+      id: '/admin/team'
+      path: '/team'
+      fullPath: '/admin/team'
+      preLoaderRoute: typeof AdminTeamRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/schedule': {
+      id: '/admin/schedule'
+      path: '/schedule'
+      fullPath: '/admin/schedule'
+      preLoaderRoute: typeof AdminScheduleRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/restaurants': {
       id: '/admin/restaurants'
       path: '/restaurants'
       fullPath: '/admin/restaurants'
       preLoaderRoute: typeof AdminRestaurantsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/performance': {
+      id: '/admin/performance'
+      path: '/performance'
+      fullPath: '/admin/performance'
+      preLoaderRoute: typeof AdminPerformanceRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/payments': {
@@ -432,6 +540,13 @@ declare module '@tanstack/react-router' {
       path: '/orders'
       fullPath: '/admin/orders'
       preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/attendance': {
+      id: '/admin/attendance'
+      path: '/attendance'
+      fullPath: '/admin/attendance'
+      preLoaderRoute: typeof AdminAttendanceRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/reservations/': {
@@ -578,10 +693,15 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
+  AdminPerformanceRoute: typeof AdminPerformanceRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
+  AdminScheduleRoute: typeof AdminScheduleRoute
+  AdminTeamRoute: typeof AdminTeamRoute
+  AdminTipsRoute: typeof AdminTipsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
   AdminMenusIndexRoute: typeof AdminMenusIndexRoute
@@ -589,10 +709,15 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAttendanceRoute: AdminAttendanceRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
+  AdminPerformanceRoute: AdminPerformanceRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
+  AdminScheduleRoute: AdminScheduleRoute,
+  AdminTeamRoute: AdminTeamRoute,
+  AdminTipsRoute: AdminTipsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
   AdminMenusIndexRoute: AdminMenusIndexRoute,
@@ -642,6 +767,7 @@ const RSlugRouteWithChildren = RSlugRoute._addFileChildren(RSlugRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  InvitesTokenRoute: InvitesTokenRoute,
   RSlugRoute: RSlugRouteWithChildren,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoStartApiRequestRoute: DemoStartApiRequestRoute,

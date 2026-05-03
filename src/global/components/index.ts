@@ -1,3 +1,5 @@
+export { AppDatePicker } from "./AppDatePicker";
+export type { AppDatePickerProps } from "./AppDatePicker";
 export { AdminPageLayout } from "./AdminPageLayout";
 export { Avatar, getAvatarFallback } from "./Avatar";
 export * from "./Button";

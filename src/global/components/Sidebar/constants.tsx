@@ -2,12 +2,18 @@ import { SidebarKeys } from "@/global/i18n";
 import {
 	Building2,
 	CalendarClock,
+	CalendarRange,
 	ClipboardList,
+	Clock,
+	Coins,
 	DollarSign,
+	LineChart,
 	ListOrdered,
+	Mail,
 	Settings,
 	Store,
 	Users,
+	UsersRound,
 } from "lucide-react";
 import { SidebarItem } from "./SidebarLink";
 
@@ -23,6 +29,7 @@ export const sidebarItems: SidebarItem[] = [
 		translationKey: SidebarKeys.MENUS,
 		icon: <ClipboardList size={18} className="shrink-0" />,
 		to: "/admin/menus",
+		search: {},
 	},
 
 	{
@@ -45,9 +52,40 @@ export const sidebarItems: SidebarItem[] = [
 	},
 	{
 		type: "group",
+		translationKey: SidebarKeys.TEAM,
+		icon: <UsersRound size={18} className="shrink-0" />,
+		subLinks: [
+			{
+				translationKey: SidebarKeys.TEAM_INVITES,
+				icon: <Mail size={18} className="shrink-0" />,
+				to: "/admin/team",
+			},
+			{
+				translationKey: SidebarKeys.SCHEDULE,
+				icon: <CalendarRange size={18} className="shrink-0" />,
+				to: "/admin/schedule",
+			},
+			{
+				translationKey: SidebarKeys.ATTENDANCE,
+				icon: <Clock size={18} className="shrink-0" />,
+				to: "/admin/attendance",
+			},
+			{
+				translationKey: SidebarKeys.TIPS,
+				icon: <Coins size={18} className="shrink-0" />,
+				to: "/admin/tips",
+			},
+			{
+				translationKey: SidebarKeys.PERFORMANCE,
+				icon: <LineChart size={18} className="shrink-0" />,
+				to: "/admin/performance",
+			},
+		],
+	},
+	{
+		type: "group",
 		translationKey: SidebarKeys.ADMIN,
 		icon: <Settings size={18} className="shrink-0" />,
-		to: "/admin",
 		subLinks: [
 			{
 				translationKey: SidebarKeys.ADMIN_USERS,

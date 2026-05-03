@@ -11,14 +11,20 @@ import { getImageFromClipboard, uploadImage } from "../utils/imageUtils";
 
 interface ItemImageManagerProps {
 	itemId: Id<"menuItems">;
+	restaurantId: Id<"restaurants">;
 	currentImageUrl: string | null;
 }
 
-export function ItemImageManager({ itemId, currentImageUrl }: Readonly<ItemImageManagerProps>) {
+export function ItemImageManager({
+	itemId,
+	restaurantId,
+	currentImageUrl,
+}: Readonly<ItemImageManagerProps>) {
 	const { t } = useTranslation();
 	// Upload URL generation runs imperatively inside `handleUpload`, not as a
 	// React Query mutation, so it stays on the lower-level convex hook.
-	const generateUploadUrl = useConvexMutation(api.menuItems.generateUploadUrl);
+	const generateUploadUrlMutation = useConvexMutation(api.menuItems.generateUploadUrl);
+	const generateUploadUrl = () => generateUploadUrlMutation({ restaurantId });
 	const updateItem = useConvexMutate(api.menuItems.update);
 	const removeImageMut = useConvexMutate(api.menuItems.removeImage);
 

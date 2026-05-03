@@ -7,6 +7,9 @@
  * `_other` suffixes; pass `{ count }` to `t()`.
  */
 export const OrdersKeys = {
+	PAGE_TITLE: "orders.page.title",
+	PAGE_DESCRIPTION: "orders.page.description",
+
 	STATUS_SUBMITTED: "orders.status.submitted",
 	STATUS_PREPARING: "orders.status.preparing",
 	STATUS_READY: "orders.status.ready",

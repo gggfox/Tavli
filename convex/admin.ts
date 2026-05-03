@@ -22,13 +22,17 @@ import { TABLE } from "./constants";
 export const DEV_ONLY_ERROR_MESSAGE = "ERROR_DEV_ENVIRONMENT_ONLY";
 
 /**
- * Get current user's roles.
- * Returns empty array if user has no roles assigned.
+ * Get current user's roles and optional organization scope from userRoles.
  */
 type GetCurrentUserRolesErrors = NotAuthenticatedErrorObject;
 
+export type CurrentUserRolesPayload = {
+	roles: string[];
+	organizationId?: string;
+};
+
 export const getCurrentUserRoles = query({
-	handler: async function (ctx): AsyncReturn<string[], GetCurrentUserRolesErrors> {
+	handler: async function (ctx): AsyncReturn<CurrentUserRolesPayload, GetCurrentUserRolesErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) {
 			return [null, error];
@@ -38,7 +42,13 @@ export const getCurrentUserRoles = query({
 			.withIndex("by_user", (q) => q.eq("userId", userId))
 			.first();
 
-		return [userRole?.roles ?? [], null];
+		return [
+			{
+				roles: userRole?.roles ?? [],
+				organizationId: userRole?.organizationId,
+			},
+			null,
+		];
 	},
 });
 
@@ -284,7 +294,7 @@ export const deleteUserRole = mutation({
 		userId: v.string(),
 		idempotencyKey: v.optional(v.string()),
 	},
-	handler: async function (ctx, args): AsyncReturn<void, DeleteUserRoleErrors> {
+	handler: async function (ctx, args): AsyncReturn<null, DeleteUserRoleErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) {
 			return [null, error];
@@ -327,13 +337,13 @@ export const deleteUserRole = mutation({
 			}
 
 			if (existing) {
-				return [undefined, null];
+				return [null, null];
 			}
 		}
 
 		await ctx.db.delete(existingUser._id);
 
-		return [undefined, null];
+		return [null, null];
 	},
 });
 

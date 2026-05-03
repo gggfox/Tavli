@@ -28,7 +28,7 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import {
 	getCurrentUserId,
-	requireManagerRole,
+	requireRestaurantManagerOrAbove,
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
 import { findOverlappingReservations } from "./_util/availability";
@@ -53,7 +53,13 @@ export const create = mutation({
 	handler: async function (ctx, args): AsyncReturn<Id<typeof TABLE.TABLE_LOCKS>, CreateErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, managerError] = await requireManagerRole(ctx, userId);
+		const tablePreview = await ctx.db.get(args.tableId);
+		if (!tablePreview) return [null, new NotFoundError("Table not found").toObject()];
+		const [, managerError] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			tablePreview.restaurantId
+		);
 		if (managerError) return [null, managerError];
 
 		if (args.endsAt <= args.startsAt) {
@@ -65,8 +71,7 @@ export const create = mutation({
 			];
 		}
 
-		const table = await ctx.db.get(args.tableId);
-		if (!table) return [null, new NotFoundError("Table not found").toObject()];
+		const table = tablePreview;
 
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, table.restaurantId);
 		if (restError) return [null, restError];
@@ -101,20 +106,25 @@ type RemoveErrors = StaffAuthErrors | NotFoundErrorObject;
 
 export const remove = mutation({
 	args: { lockId: v.id(TABLE.TABLE_LOCKS) },
-	handler: async function (ctx, args): AsyncReturn<void, RemoveErrors> {
+	handler: async function (ctx, args): AsyncReturn<null, RemoveErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, managerError] = await requireManagerRole(ctx, userId);
+		const lockPreview = await ctx.db.get(args.lockId);
+		if (!lockPreview) return [null, new NotFoundError("Lock not found").toObject()];
+		const [, managerError] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			lockPreview.restaurantId
+		);
 		if (managerError) return [null, managerError];
 
-		const lock = await ctx.db.get(args.lockId);
-		if (!lock) return [null, new NotFoundError("Lock not found").toObject()];
+		const lock = lockPreview;
 
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, lock.restaurantId);
 		if (restError) return [null, restError];
 
 		await ctx.db.delete(lock._id);
-		return [undefined, null];
+		return [null, null];
 	},
 });
 

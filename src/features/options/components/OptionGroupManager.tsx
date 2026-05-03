@@ -1,9 +1,11 @@
 import { CollapsibleCard, InlineEditInput, LanguageTabBar } from "@/global/components";
+import { useConvexMutate } from "@/global/hooks";
 import { Languages, OptionsKeys } from "@/global/i18n";
 import { formatCents, parseDollarsToCents } from "@/global/utils/money";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { unwrapResult } from "@/global/utils/unwrapResult";
+import { convexQuery } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
@@ -54,14 +56,16 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 		},
 		onSubmit: async ({ value }) => {
 			if (!value.name.trim()) return;
-			await createGroup({
-				restaurantId,
-				name: value.name.trim(),
-				selectionType: value.selType,
-				isRequired: value.isRequired,
-				minSelections: value.isRequired ? 1 : 0,
-				maxSelections: value.selType === "single" ? 1 : 10,
-			});
+			unwrapResult(
+				await createGroup({
+					restaurantId,
+					name: value.name.trim(),
+					selectionType: value.selType,
+					isRequired: value.isRequired,
+					minSelections: value.isRequired ? 1 : 0,
+					maxSelections: value.selType === "single" ? 1 : 10,
+				})
+			);
 			createGroupForm.reset();
 			setShowForm(false);
 		},
@@ -177,11 +181,21 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 					key={group._id}
 					group={group}
 					restaurantId={restaurantId}
-					onDelete={() => deleteGroup({ groupId: group._id })}
-					onUpdateGroup={updateGroup}
-					onCreateOption={createOption}
-					onUpdateOption={updateOption}
-					onDeleteOption={deleteOption}
+					onDelete={() =>
+						void deleteGroup({ groupId: group._id }).then((r) => unwrapResult(r))
+					}
+					onUpdateGroup={async (args) => {
+						unwrapResult(await updateGroup(args));
+					}}
+					onCreateOption={async (args) => {
+						unwrapResult(await createOption(args));
+					}}
+					onUpdateOption={async (args) => {
+						unwrapResult(await updateOption(args));
+					}}
+					onDeleteOption={async (args) => {
+						unwrapResult(await deleteOption(args));
+					}}
 					selectedLang={isTranslationMode ? selectedLang : undefined}
 				/>
 			))}
@@ -223,12 +237,8 @@ function GroupCard({
 	const { data: options } = useQuery(
 		convexQuery(api.optionGroups.getOptionsByGroup, { optionGroupId: group._id })
 	);
-	const setGroupTranslation = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.setGroupTranslation),
-	});
-	const setOptionTranslation = useMutation({
-		mutationFn: useConvexMutation(api.optionGroups.setOptionTranslation),
-	});
+	const setGroupTranslation = useConvexMutate(api.optionGroups.setGroupTranslation);
+	const setOptionTranslation = useConvexMutate(api.optionGroups.setOptionTranslation);
 
 	const addOptionForm = useForm({
 		defaultValues: { name: "", price: "0" },
@@ -252,12 +262,14 @@ function GroupCard({
 			<InlineEditInput
 				value={group.translations?.[selectedLang]?.name ?? ""}
 				placeholder={t(OptionsKeys.GROUP_TRANSLATION_PLACEHOLDER, { name: group.name })}
-				onSave={(val) =>
-					setGroupTranslation.mutateAsync({
-						groupId: group._id,
-						lang: selectedLang,
-						name: val,
-					})
+				onSave={async (val) =>
+					unwrapResult(
+						await setGroupTranslation.mutateAsync({
+							groupId: group._id,
+							lang: selectedLang,
+							name: val,
+						})
+					)
 				}
 			/>
 			{!group.translations?.[selectedLang]?.name && (
@@ -269,7 +281,9 @@ function GroupCard({
 			<InlineEditInput
 				value={group.name}
 				placeholder={t(OptionsKeys.GROUP_NAME_INLINE_PLACEHOLDER)}
-				onSave={(val) => onUpdateGroup({ groupId: group._id, name: val })}
+				onSave={async (val) => {
+					await onUpdateGroup({ groupId: group._id, name: val });
+				}}
 				className="text-sm font-medium"
 			/>
 			<span
@@ -316,12 +330,14 @@ function GroupCard({
 							<InlineEditInput
 								value={translated}
 								placeholder={t(OptionsKeys.OPTION_TRANSLATION_PLACEHOLDER, { name: opt.name })}
-								onSave={(val) =>
-									setOptionTranslation.mutateAsync({
-										optionId: opt._id,
-										lang: selectedLang,
-										name: val,
-									})
+								onSave={async (val) =>
+									unwrapResult(
+										await setOptionTranslation.mutateAsync({
+											optionId: opt._id,
+											lang: selectedLang,
+											name: val,
+										})
+									)
 								}
 							/>
 							{opt.priceModifier > 0 && (
@@ -348,24 +364,26 @@ function GroupCard({
 						<InlineEditInput
 							value={opt.name}
 							placeholder={t(OptionsKeys.OPTION_NAME_PLACEHOLDER)}
-							onSave={(val) => onUpdateOption({ optionId: opt._id, name: val })}
+							onSave={async (val) => {
+								await onUpdateOption({ optionId: opt._id, name: val });
+							}}
 							className="text-sm"
 						/>
 						<InlineEditInput
 							value={formatCents(opt.priceModifier)}
 							placeholder="0"
-							onSave={(val) =>
-								onUpdateOption({
+							onSave={async (val) => {
+								await onUpdateOption({
 									optionId: opt._id,
 									priceModifier: parseDollarsToCents(val) || 0,
-								})
-							}
+								});
+							}}
 							className="text-sm w-20 shrink-0"
 							inputMode="decimal"
 							prefix="$"
 						/>
 						<button
-							onClick={() => onDeleteOption({ optionId: opt._id })}
+							onClick={() => void onDeleteOption({ optionId: opt._id })}
 							className="p-1 rounded hover:bg-hover shrink-0 text-destructive"
 						>
 							<Trash2 size={14}  />

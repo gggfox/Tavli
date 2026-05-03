@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	AdminStaffKeys,
 	CommonKeys,
 	CustomerKeys,
 	Languages,
@@ -83,6 +84,7 @@ describe("Languages constant", () => {
 
 describe("Key enums resolve in every locale", () => {
 	it.each([
+		["AdminStaffKeys", AdminStaffKeys as Record<string, string>],
 		["SidebarKeys", SidebarKeys as Record<string, string>],
 		["CommonKeys", CommonKeys as Record<string, string>],
 		["CustomerKeys", CustomerKeys as Record<string, string>],

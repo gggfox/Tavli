@@ -18,6 +18,10 @@ export const PaymentsKeys = {
 
 	EMPTY_NO_PAYMENTS: "payments.empty.noPayments",
 
+	/** Pass `{ count }` for i18next `_one` / `_other` plural forms. */
+	RESULT_COUNT: "payments.resultCount",
+	SEARCH_PLACEHOLDER: "payments.searchPlaceholder",
+
 	TABLE_DAY_ORDER_NUMBER: "payments.table.dayOrderNumber",
 	TABLE_ORDER_ID: "payments.table.orderId",
 	TABLE_DATE: "payments.table.date",

@@ -7,6 +7,7 @@
  * here as an inline error.
  */
 import { InlineError } from "@/global/components";
+import { formInputClasses, formInputStyle } from "@/global/components/Form/styles";
 import { ReservationsKeys } from "@/global/i18n";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
@@ -21,7 +22,7 @@ import {
 	formatReservationTime,
 	fromDateTimeLocalValue,
 	toDateTimeLocalValue,
-} from "../utils";
+} from "@/features/reservations/utils";
 
 type LocksValue = UnwrappedValue<FunctionReturnType<typeof api.tableLocks.listForRestaurant>>;
 
@@ -134,8 +135,8 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 							type="datetime-local"
 							value={toDateTimeLocalValue(startsAtMs)}
 							onChange={(e) => setStartsAtMs(fromDateTimeLocalValue(e.target.value))}
-							className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-							
+							className={formInputClasses}
+							style={formInputStyle}
 						/>
 					</label>
 					<label htmlFor="lock-end" className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -147,8 +148,8 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 							type="datetime-local"
 							value={toDateTimeLocalValue(endsAtMs)}
 							onChange={(e) => setEndsAtMs(fromDateTimeLocalValue(e.target.value))}
-							className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-							
+							className={formInputClasses}
+							style={formInputStyle}
 						/>
 					</label>
 					<label htmlFor="lock-reason" className="flex flex-col gap-1 text-xs text-muted-foreground">

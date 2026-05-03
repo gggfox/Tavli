@@ -16,11 +16,8 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import {
-	getCurrentUserId,
-	requireManagerRole,
-	requireRestaurantStaffAccess,
-} from "./_util/auth";
+import { stampUpdated } from "./_util/audit";
+import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
 import {
 	EffectiveReservationSettings,
 	loadEffectiveSettings,
@@ -77,10 +74,8 @@ export const update = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, UpdateErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, managerError] = await requireManagerRole(ctx, userId);
+		const [, managerError] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (managerError) return [null, managerError];
-		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
-		if (restError) return [null, restError];
 
 		const validation = validateSettingsArgs(args);
 		if (validation) return [null, validation];
@@ -90,7 +85,6 @@ export const update = mutation({
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.first();
 
-		const now = Date.now();
 		if (existing) {
 			await ctx.db.patch(existing._id, {
 				...(args.defaultTurnMinutes !== undefined && {
@@ -110,13 +104,14 @@ export const update = mutation({
 				...(args.acceptingReservations !== undefined && {
 					acceptingReservations: args.acceptingReservations,
 				}),
-				updatedAt: now,
+				...stampUpdated(userId),
 			});
 			return [existing._id, null];
 		}
 
 		// First save: seed with provided values OR defaults from loadEffectiveSettings.
 		const defaults = await loadEffectiveSettings(ctx, args.restaurantId);
+		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.RESERVATION_SETTINGS, {
 			restaurantId: args.restaurantId,
 			defaultTurnMinutes: args.defaultTurnMinutes ?? defaults.defaultTurnMinutes,
@@ -129,6 +124,7 @@ export const update = mutation({
 			acceptingReservations: args.acceptingReservations ?? defaults.acceptingReservations,
 			createdAt: now,
 			updatedAt: now,
+			updatedBy: userId,
 		});
 		return [id, null];
 	},

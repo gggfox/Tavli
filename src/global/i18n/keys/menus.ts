@@ -3,6 +3,10 @@
  * categories, items, image manager, translations, and language settings.
  */
 export const MenusKeys = {
+	PAGE_TITLE: "menus.page.title",
+	PAGE_DESCRIPTION: "menus.page.description",
+	PAGE_SETUP_RESTAURANT_FIRST: "menus.page.setupRestaurantFirst",
+
 	LIST_NEW_PLACEHOLDER: "menus.list.newPlaceholder",
 	LIST_ADD_BUTTON: "menus.list.addButton",
 	LIST_TOGGLE_DEACTIVATE: "menus.list.toggleDeactivate",
@@ -24,11 +28,19 @@ export const MenusKeys = {
 	EDITOR_TRANSLATING_HINT: "menus.editor.translatingHint",
 	EDITOR_NO_CATEGORIES: "menus.editor.noCategories",
 	EDITOR_LOADING_ARIA: "menus.editor.loadingAria",
+	EDITOR_BACK_TO_LIST: "menus.editor.backToList",
+	EDITOR_HEADER_TITLE: "menus.editor.headerTitle",
+	EDITOR_HEADER_DESCRIPTION: "menus.editor.headerDescription",
 
 	CATEGORY_ITEMS_COUNT: "menus.category.itemsCount",
 	CATEGORY_TRANSLATION_PLACEHOLDER: "menus.category.translationPlaceholder",
 	CATEGORY_DELETE_TITLE: "menus.category.deleteTitle",
 	CATEGORY_ADD_ITEM: "menus.category.addItem",
+	CATEGORY_SELECT_ALL: "menus.category.selectAll",
+	CATEGORY_DESELECT_ALL: "menus.category.deselectAll",
+	CATEGORY_BULK_HIDE: "menus.category.bulkHide",
+	CATEGORY_BULK_SHOW: "menus.category.bulkShow",
+	CATEGORY_BULK_DELETE: "menus.category.bulkDelete",
 
 	ITEM_EDIT_TITLE: "menus.item.editTitle",
 	ITEM_IMAGE_TITLE: "menus.item.imageTitle",
@@ -59,6 +71,8 @@ export const MenusKeys = {
 	FORM_IMAGE_HEADER: "menus.form.imageHeader",
 
 	PICKER_NO_GROUPS: "menus.picker.noGroups",
+	PICKER_LOADING: "menus.picker.loading",
+	PICKER_ERROR: "menus.picker.error",
 	PICKER_LINKED_GROUPS: "menus.picker.linkedGroups",
 	PICKER_GROUP_SINGLE: "menus.picker.groupSingle",
 	PICKER_GROUP_MULTI: "menus.picker.groupMulti",

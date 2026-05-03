@@ -7,10 +7,14 @@ import {
 	NotFoundErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireManagerRole } from "./_util/auth";
+import { appendAuditEvent, stampUpdated } from "./_util/audit";
+import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
 import { TABLE } from "./constants";
 
-type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
+type AuthErrors =
+	| NotAuthenticatedErrorObject
+	| NotAuthorizedErrorObject
+	| NotFoundErrorObject;
 
 // ============================================================================
 // Option Group CRUD
@@ -28,7 +32,7 @@ export const createGroup = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -47,6 +51,15 @@ export const createGroup = mutation({
 			displayOrder: existing.length,
 			createdAt: now,
 			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.OPTION_GROUPS,
+			aggregateId: id,
+			eventType: "optionGroups.created",
+			payload: { name: args.name },
+			userId,
 		});
 
 		return [id, null];
@@ -66,11 +79,12 @@ export const updateGroup = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const group = await ctx.db.get(args.groupId);
 		if (!group) return [null, new NotFoundError("Option group not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, group.restaurantId);
+		if (error2) return [null, error2];
 
 		await ctx.db.patch(args.groupId, {
 			...(args.name !== undefined && { name: args.name }),
@@ -79,7 +93,15 @@ export const updateGroup = mutation({
 			...(args.minSelections !== undefined && { minSelections: args.minSelections }),
 			...(args.maxSelections !== undefined && { maxSelections: args.maxSelections }),
 			...(args.displayOrder !== undefined && { displayOrder: args.displayOrder }),
-			updatedAt: Date.now(),
+			...stampUpdated(userId),
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.OPTION_GROUPS,
+			aggregateId: args.groupId,
+			eventType: "optionGroups.updated",
+			payload: args,
+			userId,
 		});
 
 		return [args.groupId, null];
@@ -88,14 +110,15 @@ export const updateGroup = mutation({
 
 export const deleteGroup = mutation({
 	args: { groupId: v.id(TABLE.OPTION_GROUPS) },
-	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const group = await ctx.db.get(args.groupId);
 		if (!group) return [null, new NotFoundError("Option group not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, group.restaurantId);
+		if (error2) return [null, error2];
 
 		const options = await ctx.db
 			.query(TABLE.OPTIONS)
@@ -110,7 +133,14 @@ export const deleteGroup = mutation({
 		for (const link of links) await ctx.db.delete(link._id);
 
 		await ctx.db.delete(args.groupId);
-		return [undefined, null];
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.OPTION_GROUPS,
+			aggregateId: args.groupId,
+			eventType: "optionGroups.deleted",
+			payload: {},
+			userId,
+		});
+		return [null, null];
 	},
 });
 
@@ -123,11 +153,12 @@ export const setGroupTranslation = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const group = await ctx.db.get(args.groupId);
 		if (!group) return [null, new NotFoundError("Option group not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, group.restaurantId);
+		if (error2) return [null, error2];
 
 		const translations = { ...group.translations };
 		translations[args.lang] = {
@@ -135,7 +166,7 @@ export const setGroupTranslation = mutation({
 			...(args.name !== undefined && { name: args.name }),
 		};
 
-		await ctx.db.patch(args.groupId, { translations, updatedAt: Date.now() });
+		await ctx.db.patch(args.groupId, { translations, ...stampUpdated(userId) });
 		return [args.groupId, null];
 	},
 });
@@ -164,7 +195,7 @@ export const createOption = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -172,6 +203,7 @@ export const createOption = mutation({
 			.withIndex("by_optionGroup", (q) => q.eq("optionGroupId", args.optionGroupId))
 			.collect();
 
+		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.OPTIONS, {
 			optionGroupId: args.optionGroupId,
 			restaurantId: args.restaurantId,
@@ -179,7 +211,17 @@ export const createOption = mutation({
 			priceModifier: args.priceModifier,
 			isAvailable: true,
 			displayOrder: existing.length,
-			createdAt: Date.now(),
+			createdAt: now,
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.OPTIONS,
+			aggregateId: id,
+			eventType: "options.created",
+			payload: { name: args.name },
+			userId,
 		});
 
 		return [id, null];
@@ -197,17 +239,27 @@ export const updateOption = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const option = await ctx.db.get(args.optionId);
 		if (!option) return [null, new NotFoundError("Option not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, option.restaurantId);
+		if (error2) return [null, error2];
 
 		await ctx.db.patch(args.optionId, {
 			...(args.name !== undefined && { name: args.name }),
 			...(args.priceModifier !== undefined && { priceModifier: args.priceModifier }),
 			...(args.isAvailable !== undefined && { isAvailable: args.isAvailable }),
 			...(args.displayOrder !== undefined && { displayOrder: args.displayOrder }),
+			...stampUpdated(userId),
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.OPTIONS,
+			aggregateId: args.optionId,
+			eventType: "options.updated",
+			payload: args,
+			userId,
 		});
 
 		return [args.optionId, null];
@@ -216,17 +268,25 @@ export const updateOption = mutation({
 
 export const deleteOption = mutation({
 	args: { optionId: v.id(TABLE.OPTIONS) },
-	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const option = await ctx.db.get(args.optionId);
 		if (!option) return [null, new NotFoundError("Option not found").toObject()];
 
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, option.restaurantId);
+		if (error2) return [null, error2];
+
 		await ctx.db.delete(args.optionId);
-		return [undefined, null];
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.OPTIONS,
+			aggregateId: args.optionId,
+			eventType: "options.deleted",
+			payload: {},
+			userId,
+		});
+		return [null, null];
 	},
 });
 
@@ -239,11 +299,12 @@ export const setOptionTranslation = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const option = await ctx.db.get(args.optionId);
 		if (!option) return [null, new NotFoundError("Option not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, option.restaurantId);
+		if (error2) return [null, error2];
 
 		const translations = { ...option.translations };
 		translations[args.lang] = {
@@ -251,7 +312,7 @@ export const setOptionTranslation = mutation({
 			...(args.name !== undefined && { name: args.name }),
 		};
 
-		await ctx.db.patch(args.optionId, { translations });
+		await ctx.db.patch(args.optionId, { translations, ...stampUpdated(userId) });
 		return [args.optionId, null];
 	},
 });
@@ -279,7 +340,7 @@ export const linkToMenuItem = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (error2) return [null, error2];
 
 		const existing = await ctx.db
@@ -306,10 +367,14 @@ export const unlinkFromMenuItem = mutation({
 		menuItemId: v.id(TABLE.MENU_ITEMS),
 		optionGroupId: v.id(TABLE.OPTION_GROUPS),
 	},
-	handler: async function (ctx, args): AsyncReturn<void, AuthErrors> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireManagerRole(ctx, userId);
+
+		const item = await ctx.db.get(args.menuItemId);
+		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
 		if (error2) return [null, error2];
 
 		const links = await ctx.db
@@ -320,7 +385,7 @@ export const unlinkFromMenuItem = mutation({
 		const link = links.find((l) => l.optionGroupId === args.optionGroupId);
 		if (link) await ctx.db.delete(link._id);
 
-		return [undefined, null];
+		return [null, null];
 	},
 });
 

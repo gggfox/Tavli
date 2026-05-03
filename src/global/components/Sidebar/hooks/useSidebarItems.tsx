@@ -13,6 +13,7 @@ const STAFF_SIDEBAR_KEYS = new Set<string>([
 	SidebarKeys.ORDERS,
 	SidebarKeys.PAYMENTS,
 	SidebarKeys.RESERVATIONS,
+	SidebarKeys.TEAM,
 ]);
 
 export function useSidebarItems() {

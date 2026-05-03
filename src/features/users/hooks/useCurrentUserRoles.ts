@@ -18,10 +18,11 @@ export function useCurrentUserRoles() {
 	const query = useQuery({
 		...convexQuery(api.admin.getCurrentUserRoles, {}),
 		enabled: isAuthenticated,
-		select: unwrapResult<string[]>,
+		select: unwrapResult<{ roles: string[]; organizationId?: string }>,
 	});
 	return {
-		roles: query.data ?? [],
+		roles: query.data?.roles ?? [],
+		organizationId: query.data?.organizationId,
 		isLoading: query.isLoading || isAuthLoading,
 		isAuthenticated,
 	};

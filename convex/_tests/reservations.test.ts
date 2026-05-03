@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -50,6 +51,11 @@ async function seedRestaurant(t: T, options: SeedOptions = {}) {
 			isActive: true,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
+		});
+		await insertMenuForRestaurant(ctx, {
+			restaurantId,
+			name: "bistro",
+			userId: ownerId,
 		});
 		const tables = options.tables ?? [
 			{ tableNumber: 1, capacity: 4 },
@@ -257,13 +263,12 @@ describe("reservations.confirm (no double booking)", () => {
 
 	it("rejects confirming when the selected tables don't cover the party", async () => {
 		const t = convexTest(schema, modules);
-		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+		const { restaurantId } = await seedRestaurant(t, {
 			tables: [
 				{ tableNumber: 1, capacity: 2 },
 				{ tableNumber: 2, capacity: 2 },
 			],
 		});
-		const owner = t.withIdentity({ subject: ownerId });
 
 		const [reservationId] = await t.mutation(api.reservations.create, {
 			restaurantId,
@@ -362,10 +367,9 @@ describe("reservations.markSeated", () => {
 describe("reservations.sweepNoShows", () => {
 	it("flips overdue confirmed reservations to no_show", async () => {
 		const t = convexTest(schema, modules);
-		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+		const { restaurantId, tableIds } = await seedRestaurant(t, {
 			settings: { noShowGraceMinutes: 15 },
 		});
-		const owner = t.withIdentity({ subject: ownerId });
 
 		// Reservation that started 30 min ago, still pending → should flip.
 		const startsAt = Date.now() - 30 * 60_000;
@@ -474,6 +478,38 @@ describe("reservations.getAvailability", () => {
 			startsAt,
 		});
 		expect(result.available).toBe(false);
+	});
+});
+
+describe("reservations.listReservationSlotsForDay", () => {
+	it("returns sorted bookable starts inside the window", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurant(t);
+		const fromMs = nowPlusHours(5);
+		const toMs = fromMs + ONE_DAY_MS;
+		const { slots, turnMinutes } = await t.query(api.reservations.listReservationSlotsForDay, {
+			restaurantId,
+			partySize: 2,
+			fromMs,
+			toMs,
+		});
+		expect(turnMinutes).toBe(90);
+		expect(slots.length).toBeGreaterThan(0);
+		for (let i = 1; i < slots.length; i++) {
+			expect(slots[i]!).toBeGreaterThan(slots[i - 1]!);
+		}
+	});
+
+	it("returns empty when span is invalid", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurant(t);
+		const r = await t.query(api.reservations.listReservationSlotsForDay, {
+			restaurantId,
+			partySize: 2,
+			fromMs: 100,
+			toMs: 50,
+		});
+		expect(r.slots).toEqual([]);
 	});
 });
 

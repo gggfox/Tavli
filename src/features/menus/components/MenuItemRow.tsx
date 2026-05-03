@@ -13,7 +13,6 @@ type ExpandedPanel = "edit" | "image" | "options" | null;
 
 interface MenuItemRowProps {
 	item: Doc<"menuItems"> & { imageUrl?: string | null };
-	restaurantId: Id<"restaurants">;
 	onUpdate: (args: {
 		itemId: Id<"menuItems">;
 		name?: string;
@@ -22,14 +21,16 @@ interface MenuItemRowProps {
 	}) => Promise<unknown>;
 	onRemove: (args: { itemId: Id<"menuItems"> }) => void;
 	onToggleAvailability: (args: { itemId: Id<"menuItems"> }) => void;
+	/** When set, shows a bulk-selection checkbox before the item row. */
+	bulkSelect?: { isSelected: boolean; onToggle: () => void };
 }
 
 export function MenuItemRow({
 	item,
-	restaurantId,
 	onUpdate,
 	onRemove,
 	onToggleAvailability,
+	bulkSelect,
 }: Readonly<MenuItemRowProps>) {
 	const { t } = useTranslation();
 	const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
@@ -46,6 +47,18 @@ export function MenuItemRow({
 				borderBottomRightRadius: expandedPanel ? 0 : undefined}}
 			>
 				<div className="flex items-center gap-2.5">
+					{bulkSelect ? (
+						<input
+							type="checkbox"
+							checked={bulkSelect.isSelected}
+							onChange={(e) => {
+								e.stopPropagation();
+								bulkSelect.onToggle();
+							}}
+							className="h-4 w-4 rounded border-border accent-[var(--btn-primary-bg)] shrink-0"
+							aria-label={item.name}
+						/>
+					) : null}
 					{item.imageUrl ? (
 						<img
 							src={item.imageUrl}
@@ -145,10 +158,14 @@ export function MenuItemRow({
 				/>
 			)}
 			{expandedPanel === "options" && (
-				<ItemOptionGroupPicker itemId={item._id} restaurantId={restaurantId} />
+				<ItemOptionGroupPicker itemId={item._id} restaurantId={item.restaurantId} />
 			)}
 			{expandedPanel === "image" && (
-				<ItemImageManager itemId={item._id} currentImageUrl={item.imageUrl ?? null} />
+				<ItemImageManager
+					itemId={item._id}
+					restaurantId={item.restaurantId}
+					currentImageUrl={item.imageUrl ?? null}
+				/>
 			)}
 		</div>
 	);

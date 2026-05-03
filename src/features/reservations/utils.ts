@@ -8,6 +8,9 @@
  * browser timezone for display).
  */
 
+import { ReservationsKeys } from "@/global/i18n";
+import { isValidYmd, ymdToLocalDate } from "@/global/utils/calendarMonth";
+
 export type ReservationRange =
 	| "today"
 	| "week"
@@ -102,7 +105,22 @@ export function rangeBounds(range: ReservationRange, now: Date = new Date()): Ra
 	return { fromMs: start.getTime(), toMs: end.getTime() };
 }
 
-import { ReservationsKeys } from "@/global/i18n";
+/** Local calendar day as `[startOfDay, startOfNextDay)` in the browser timezone. */
+export function customDayBounds(ymd: string): RangeBounds {
+	const start = ymdToLocalDate(ymd);
+	const end = new Date(start);
+	end.setDate(end.getDate() + 1);
+	return { fromMs: start.getTime(), toMs: end.getTime() };
+}
+
+export function dashboardReservationBounds(
+	range: ReservationRange,
+	customDay: string | undefined,
+	now?: Date
+): RangeBounds {
+	if (customDay && isValidYmd(customDay)) return customDayBounds(customDay);
+	return rangeBounds(range, now);
+}
 
 /**
  * Translation keys for each named range. Resolve via `t(RANGE_LABEL_KEYS[range])`

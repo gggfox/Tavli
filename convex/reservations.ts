@@ -33,14 +33,10 @@ import { AsyncReturn } from "./_shared/types";
 import {
 	getCurrentUserId,
 	requireRestaurantStaffAccess,
-	requireStaffRole,
 } from "./_util/auth";
 import {
 	computeEndsAt,
 	computeTurnMinutes,
-	findFreeTablesForParty,
-	findOverlappingLocks,
-	findOverlappingReservations,
 	intersectsBlackout,
 	isWithinHorizon,
 	requiredCapacityCovered,
@@ -53,6 +49,7 @@ import {
 	CreateErrors,
 	ensureConfirmable,
 	findSuggestedTimes,
+	isPartyBookableAt,
 	loadAndValidateTables,
 	sourceValidator,
 	validateTableSelection,
@@ -121,7 +118,7 @@ export const getAvailability = query({
 			};
 		}
 
-		const free = await findFreeTablesForParty(
+		const bookable = await isPartyBookableAt(
 			ctx,
 			args.restaurantId,
 			args.partySize,
@@ -129,39 +126,7 @@ export const getAvailability = query({
 			endsAt
 		);
 
-		if (free.length > 0) {
-			return {
-				available: true,
-				reason: null,
-				turnMinutes,
-				endsAt,
-				suggestedTimes: [] as number[],
-			};
-		}
-
-		// No single table covers the party? Try multi-table cover with the
-		// active set of tables sorted by descending capacity (greedy).
-		const allActive = await ctx.db
-			.query(TABLE.TABLES)
-			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
-			.collect();
-		const candidates: typeof allActive = [];
-		for (const t of allActive.filter((x) => x.isActive)) {
-			const reservations = await findOverlappingReservations(
-				ctx,
-				t._id,
-				args.startsAt,
-				endsAt
-			);
-			if (reservations.length > 0) continue;
-			const locks = await findOverlappingLocks(ctx, t._id, args.startsAt, endsAt);
-			if (locks.length > 0) continue;
-			candidates.push(t);
-		}
-		candidates.sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
-
-		// Could the staff cover the party using >1 free table?
-		if (requiredCapacityCovered(candidates, args.partySize)) {
+		if (bookable) {
 			return {
 				available: true,
 				reason: null,
@@ -178,6 +143,50 @@ export const getAvailability = query({
 			endsAt,
 			suggestedTimes: await findSuggestedTimes(ctx, args.restaurantId, args.partySize, args.startsAt, turnMinutes),
 		};
+	},
+});
+
+const SLOT_STEP_MS = 15 * 60_000;
+const MAX_DAY_SPAN_MS = 28 * 60 * 60 * 1000;
+const MAX_SLOTS_RETURNED = 64;
+
+/**
+ * Public: bookable start times for a local calendar window (typically one day).
+ * Uses the same capacity rules as `getAvailability`, at 15-minute steps.
+ */
+export const listReservationSlotsForDay = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		partySize: v.number(),
+		fromMs: v.number(),
+		toMs: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const span = args.toMs - args.fromMs;
+		if (span <= 0 || span > MAX_DAY_SPAN_MS) {
+			return { slots: [] as number[], turnMinutes: 0 };
+		}
+		const settings = await loadEffectiveSettings(ctx, args.restaurantId);
+		const turnMinutes = computeTurnMinutes(settings, args.partySize);
+		const now = Date.now();
+		if (!settings.acceptingReservations) {
+			return { slots: [] as number[], turnMinutes };
+		}
+		const maxStart = args.toMs - turnMinutes * 60_000;
+		const slots: number[] = [];
+		for (
+			let t = args.fromMs;
+			t <= maxStart && slots.length < MAX_SLOTS_RETURNED;
+			t += SLOT_STEP_MS
+		) {
+			const endsAt = computeEndsAt(t, turnMinutes);
+			if (endsAt > args.toMs) break;
+			if (!isWithinHorizon(settings, t, now)) continue;
+			if (intersectsBlackout(settings, t, endsAt)) continue;
+			const ok = await isPartyBookableAt(ctx, args.restaurantId, args.partySize, t, endsAt);
+			if (ok) slots.push(t);
+		}
+		return { slots, turnMinutes };
 	},
 });
 
@@ -257,9 +266,6 @@ export const confirm = mutation({
 	handler: async function (ctx, args): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, ConfirmErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, staffError] = await requireStaffRole(ctx, userId);
-		if (staffError) return [null, staffError];
-
 		const reservation = await ctx.db.get(args.reservationId);
 		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
 
@@ -322,9 +328,6 @@ export const cancel = mutation({
 	handler: async function (ctx, args): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, CancelErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, staffError] = await requireStaffRole(ctx, userId);
-		if (staffError) return [null, staffError];
-
 		const reservation = await ctx.db.get(args.reservationId);
 		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
 
@@ -377,6 +380,7 @@ export const markSeated = mutation({
 		// only links to one table; multi-table reservations carry the rest in
 		// the reservation row itself.
 		tableId: v.optional(v.id(TABLE.TABLES)),
+		serverMemberId: v.optional(v.id(TABLE.RESTAURANT_MEMBERS)),
 	},
 	handler: async function (
 		ctx,
@@ -384,9 +388,6 @@ export const markSeated = mutation({
 	): AsyncReturn<{ reservationId: Id<typeof TABLE.RESERVATIONS>; sessionId: Id<typeof TABLE.SESSIONS> }, MarkSeatedErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, staffError] = await requireStaffRole(ctx, userId);
-		if (staffError) return [null, staffError];
-
 		const reservation = await ctx.db.get(args.reservationId);
 		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
 
@@ -428,6 +429,7 @@ export const markSeated = mutation({
 		const sessionId = await createSessionForReservation(ctx, {
 			restaurantId: reservation.restaurantId,
 			tableId,
+			...(args.serverMemberId !== undefined && { serverMemberId: args.serverMemberId }),
 		});
 		const now = Date.now();
 		await ctx.db.patch(reservation._id, {
@@ -449,9 +451,6 @@ export const markCompleted = mutation({
 	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, MarkSeatedErrors> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, staffError] = await requireStaffRole(ctx, userId);
-		if (staffError) return [null, staffError];
-
 		const reservation = await ctx.db.get(args.reservationId);
 		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
 
@@ -490,23 +489,25 @@ export const markCompleted = mutation({
  * Range read used by the staff dashboard tabs. `[fromMs, toMs)` matches
  * reservations whose `startsAt` falls in the range.
  */
+const reservationStatusesOptionalValidator = v.optional(
+	v.array(
+		v.union(
+			v.literal(RESERVATION_STATUS.PENDING),
+			v.literal(RESERVATION_STATUS.CONFIRMED),
+			v.literal(RESERVATION_STATUS.SEATED),
+			v.literal(RESERVATION_STATUS.COMPLETED),
+			v.literal(RESERVATION_STATUS.CANCELLED),
+			v.literal(RESERVATION_STATUS.NO_SHOW)
+		)
+	)
+);
+
 export const listForRange = query({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		fromMs: v.number(),
 		toMs: v.number(),
-		statuses: v.optional(
-			v.array(
-				v.union(
-					v.literal(RESERVATION_STATUS.PENDING),
-					v.literal(RESERVATION_STATUS.CONFIRMED),
-					v.literal(RESERVATION_STATUS.SEATED),
-					v.literal(RESERVATION_STATUS.COMPLETED),
-					v.literal(RESERVATION_STATUS.CANCELLED),
-					v.literal(RESERVATION_STATUS.NO_SHOW)
-				)
-			)
-		),
+		statuses: reservationStatusesOptionalValidator,
 	},
 	handler: async function (
 		ctx,
@@ -514,8 +515,6 @@ export const listForRange = query({
 	): AsyncReturn<ReservationDoc[], StaffAuthErrors | NotFoundErrorObject> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, staffError] = await requireStaffRole(ctx, userId);
-		if (staffError) return [null, staffError];
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
 		if (restError) return [null, restError];
 
@@ -534,6 +533,53 @@ export const listForRange = query({
 });
 
 /**
+ * Same as {@link listForRange} but across multiple restaurants. Staff must
+ * have access to every `restaurantId`. Results are merged and sorted by
+ * `startsAt` ascending.
+ */
+export const listForRangeMulti = query({
+	args: {
+		restaurantIds: v.array(v.id(TABLE.RESTAURANTS)),
+		fromMs: v.number(),
+		toMs: v.number(),
+		statuses: reservationStatusesOptionalValidator,
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<ReservationDoc[], StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+
+		const uniqueIds = [...new Set(args.restaurantIds)];
+		if (uniqueIds.length === 0) return [[], null];
+
+		for (const rid of uniqueIds) {
+			const [, restError] = await requireRestaurantStaffAccess(ctx, userId, rid);
+			if (restError) return [null, restError];
+		}
+
+		const batches = await Promise.all(
+			uniqueIds.map((restaurantId) =>
+				ctx.db
+					.query(TABLE.RESERVATIONS)
+					.withIndex("by_restaurant_time", (q) =>
+						q.eq("restaurantId", restaurantId).gte("startsAt", args.fromMs).lt("startsAt", args.toMs)
+					)
+					.order("asc")
+					.collect()
+			)
+		);
+
+		const merged = batches.flat().sort((a, b) => a.startsAt - b.startsAt);
+
+		if (!args.statuses) return [merged, null];
+		const allow = new Set(args.statuses);
+		return [merged.filter((r) => allow.has(r.status)), null];
+	},
+});
+
+/**
  * Drives the staff "new reservation" toast. Subscribers get push updates via
  * Convex reactivity; the client tracks IDs it has already shown.
  */
@@ -548,8 +594,6 @@ export const listRecentPending = query({
 	): AsyncReturn<ReservationDoc[], StaffAuthErrors | NotFoundErrorObject> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
-		const [, staffError] = await requireStaffRole(ctx, userId);
-		if (staffError) return [null, staffError];
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
 		if (restError) return [null, restError];
 

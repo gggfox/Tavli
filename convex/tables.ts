@@ -180,7 +180,7 @@ export const backfillCapacity = mutation({
 
 export const remove = mutation({
 	args: { tableId: v.id(TABLE.TABLES) },
-	handler: async function (ctx, args): AsyncReturn<void, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 		const [, error2] = await requireOwnerRole(ctx, userId);
@@ -196,7 +196,7 @@ export const remove = mutation({
 		}
 
 		await ctx.db.delete(args.tableId);
-		return [undefined, null];
+		return [null, null];
 	},
 });
 

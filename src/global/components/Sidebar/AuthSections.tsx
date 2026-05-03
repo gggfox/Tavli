@@ -1,3 +1,4 @@
+import { EmployeeClockCard } from "@/features/attendance/EmployeeClockCard";
 import { SidebarKeys } from "@/global/i18n";
 import { config } from "@/global/utils/config";
 import { useTranslation } from "react-i18next";
@@ -14,6 +15,7 @@ export function AuthSections() {
 		<>
 			{hasAuth && (
 				<>
+					<EmployeeClockCard isExpanded={isExpanded} />
 					<SidebarUserSection isExpanded={isExpanded} />
 					<SidebarAuthSection isExpanded={isExpanded} />
 				</>

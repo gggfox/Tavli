@@ -9,10 +9,11 @@ import {
 	UserInputValidationError,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireRestaurantStaffAccess, requireStaffRole } from "./_util/auth";
-import { ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
+import { getCurrentUserId, requireRestaurantStaffAccess } from "./_util/auth";
+import { AUDIT_SYSTEM_USER_ID, ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
 import { allocateNextDailyOrderNumber } from "./orderDayCounters";
 import { getOrderServiceDateKey } from "./orderServiceDate";
+import { resolveAttributedMemberId } from "./_util/attribution";
 import {
 	DASHBOARD_STATUS_VALIDATOR,
 	invalidateActivePayment,
@@ -208,6 +209,7 @@ export const confirmPayment = internalMutation({
 		paymentId: v.id(TABLE.PAYMENTS),
 		stripePaymentIntentId: v.string(),
 		stripeChargeId: v.optional(v.string()),
+		gratuityAmount: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
@@ -251,6 +253,14 @@ export const confirmPayment = internalMutation({
 			throw new Error(`Order ${payment.orderId} has no items`);
 		}
 
+		const session = await ctx.db.get(order.sessionId);
+		const attributedMemberId = await resolveAttributedMemberId(ctx, {
+			restaurantId: order.restaurantId,
+			tableId: order.tableId,
+			atMs: Date.now(),
+			sessionServerMemberId: session?.serverMemberId,
+		});
+
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {
 			status: PAYMENT_STATUS.SUCCEEDED,
@@ -258,6 +268,10 @@ export const confirmPayment = internalMutation({
 			...(args.stripeChargeId !== undefined && { stripeChargeId: args.stripeChargeId }),
 			succeededAt: now,
 			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+			...(args.gratuityAmount !== undefined && args.gratuityAmount > 0
+				? { gratuityAmount: args.gratuityAmount }
+				: {}),
 		});
 
 		const restaurant = await ctx.db.get(order.restaurantId);
@@ -288,8 +302,10 @@ export const confirmPayment = internalMutation({
 			paidAt: now,
 			submittedAt: now,
 			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
 			...(dailyOrderNumber !== undefined && { dailyOrderNumber }),
 			...(orderServiceDateKey !== undefined && { orderServiceDateKey }),
+			...(attributedMemberId !== undefined && { attributedMemberId }),
 		});
 	},
 });
@@ -375,9 +391,6 @@ export const updateStatus = mutation({
 	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireStaffRole(ctx, userId);
-		if (error2) return [null, error2];
-
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
@@ -404,6 +417,7 @@ export const updateStatus = mutation({
 					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 				}),
 			updatedAt: now,
+			updatedBy: userId,
 		});
 
 		if (args.newStatus === "cancelled" && order.activePaymentId) {
@@ -429,8 +443,8 @@ export const getActiveOrdersByRestaurant = query({
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireStaffRole(ctx, userId);
-		if (error2) return [null, error2];
+		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
+		if (accessError) return [null, accessError];
 
 		const requestedStatuses =
 			args.statuses && args.statuses.length > 0
@@ -486,8 +500,8 @@ export const getPaidOrdersByRestaurant = query({
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireStaffRole(ctx, userId);
-		if (error2) return [null, error2];
+		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
+		if (accessError) return [null, accessError];
 
 		const allOrders = await ctx.db
 			.query(TABLE.ORDERS)

@@ -10,7 +10,12 @@
  */
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader, DatabaseWriter } from "../_generated/server";
-import { TABLE, USER_ROLES, UserRole } from "../constants";
+import {
+	RESTAURANT_MEMBER_ROLE,
+	TABLE,
+	USER_ROLES,
+	type UserRole,
+} from "../constants";
 
 import {
 	NotAuthenticatedError,
@@ -50,7 +55,7 @@ async function fetchUserRoles(ctx: RoleDbContext, userId: string): Promise<UserR
 	return userRole?.roles ?? [];
 }
 
-async function fetchUserRoleRecord(
+export async function fetchUserRoleRecord(
 	ctx: RoleDbContext,
 	userId: string
 ): Promise<Doc<"userRoles"> | null> {
@@ -60,6 +65,101 @@ async function fetchUserRoleRecord(
 		.first();
 
 	return userRole;
+}
+
+/** All `userRoles` rows for this user (schema allows more than one per `userId`). */
+export async function fetchUserRoleRecordsByUserId(
+	ctx: RoleDbContext,
+	userId: string
+): Promise<Doc<"userRoles">[]> {
+	return await ctx.db
+		.query(TABLE.USER_ROLES)
+		.withIndex("by_user", (q) => q.eq("userId", userId))
+		.collect();
+}
+
+function someRowHasAdmin(rows: Doc<"userRoles">[]): boolean {
+	return rows.some((r) => (r.roles ?? []).includes(USER_ROLES.ADMIN));
+}
+
+function someRowIsOrgOwnerForRestaurant(
+	rows: Doc<"userRoles">[],
+	restaurant: Doc<"restaurants">
+): boolean {
+	return rows.some(
+		(r) =>
+			(r.roles ?? []).includes(USER_ROLES.OWNER) &&
+			orgIdsMatch(r.organizationId, restaurant.organizationId)
+	);
+}
+
+/** Active membership row for a user at a restaurant (manager or employee). */
+export async function getRestaurantMembership(
+	ctx: RoleDbContext,
+	userId: string,
+	restaurantId: Id<"restaurants">
+): Promise<Doc<"restaurantMembers"> | null> {
+	return await ctx.db
+		.query(TABLE.RESTAURANT_MEMBERS)
+		.withIndex("by_restaurant_user", (q) =>
+			q.eq("restaurantId", restaurantId).eq("userId", userId)
+		)
+		.first();
+}
+
+function orgIdsMatch(
+	orgIdA: string | undefined,
+	orgIdB: Id<"organizations">
+): boolean {
+	if (!orgIdA) return false;
+	return orgIdA === orgIdB;
+}
+
+/** Primary account on the restaurant row (creator / billing owner). */
+export function isRestaurantDocumentOwner(
+	restaurant: Doc<"restaurants">,
+	userId: string
+): boolean {
+	return restaurant.ownerId === userId;
+}
+
+/**
+ * Admin, document owner (`restaurants.ownerId`), org-level owner for this
+ * restaurant's org, or active restaurant-scoped manager.
+ */
+export async function requireRestaurantManagerOrAbove(
+	ctx: RoleDbContext,
+	userId: string,
+	restaurantId: Id<"restaurants">
+): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {
+	const restaurant = await ctx.db.get(restaurantId);
+	if (!restaurant) {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+
+	if (restaurant.deletedAt != null) {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+
+	const userRoleRows = await fetchUserRoleRecordsByUserId(ctx, userId);
+	if (someRowHasAdmin(userRoleRows)) {
+		return [restaurant, null];
+	}
+
+	if (isRestaurantDocumentOwner(restaurant, userId)) {
+		return [restaurant, null];
+	}
+
+	if (someRowIsOrgOwnerForRestaurant(userRoleRows, restaurant)) {
+		return [restaurant, null];
+	}
+
+	const member = await getRestaurantMembership(ctx, userId, restaurantId);
+	if (member?.isActive && member.role === RESTAURANT_MEMBER_ROLE.MANAGER) {
+		return [restaurant, null];
+	}
+
+	return [null, new NotAuthorizedError(RoleErrorMessages.MANAGER_REQUIRED).toObject()];
 }
 
 /**
@@ -176,10 +276,8 @@ type RestaurantAccessErrors = NotAuthorizedErrorObject | NotFoundErrorObject;
 
 type RestaurantAccessScope = "owner_admin" | "staff";
 
-type RestaurantAccessContext = RoleDbContext;
-
 async function requireRestaurantAccess(
-	ctx: RestaurantAccessContext,
+	ctx: RoleDbContext,
 	userId: string,
 	restaurantId: Id<"restaurants">,
 	scope: RestaurantAccessScope
@@ -189,32 +287,47 @@ async function requireRestaurantAccess(
 		return [null, new NotFoundError("Restaurant not found").toObject()];
 	}
 
-	const userRoleRecord = await fetchUserRoleRecord(ctx, userId);
-	const roles = userRoleRecord?.roles ?? [];
-	if (roles.includes(USER_ROLES.ADMIN)) {
+	if (restaurant.deletedAt != null && scope === "staff") {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+
+	const userRoleRows = await fetchUserRoleRecordsByUserId(ctx, userId);
+	if (someRowHasAdmin(userRoleRows)) {
 		return [restaurant, null];
 	}
 
-	if (restaurant.ownerId === userId) {
+	if (isRestaurantDocumentOwner(restaurant, userId)) {
 		return [restaurant, null];
 	}
 
-	if (
-		scope === "staff" &&
-		userRoleRecord?.organizationId &&
-		userRoleRecord.organizationId === restaurant.organizationId &&
-		(roles.includes(USER_ROLES.OWNER) ||
-			roles.includes(USER_ROLES.MANAGER) ||
-			roles.includes(USER_ROLES.EMPLOYEE))
-	) {
+	if (scope === "owner_admin" && someRowIsOrgOwnerForRestaurant(userRoleRows, restaurant)) {
 		return [restaurant, null];
+	}
+
+	if (scope === "staff") {
+		if (someRowIsOrgOwnerForRestaurant(userRoleRows, restaurant)) {
+			return [restaurant, null];
+		}
+
+		const member = await getRestaurantMembership(ctx, userId, restaurantId);
+		if (
+			member?.isActive &&
+			(member.role === RESTAURANT_MEMBER_ROLE.MANAGER ||
+				member.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE)
+		) {
+			return [restaurant, null];
+		}
 	}
 
 	return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
 }
 
+/**
+ * Admin, document owner (`restaurants.ownerId`), or org-level owner for this
+ * restaurant's organization.
+ */
 export async function requireRestaurantOwnerOrAdmin(
-	ctx: RestaurantAccessContext,
+	ctx: RoleDbContext,
 	userId: string,
 	restaurantId: Id<"restaurants">
 ): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {
@@ -222,7 +335,7 @@ export async function requireRestaurantOwnerOrAdmin(
 }
 
 export async function requireRestaurantStaffAccess(
-	ctx: RestaurantAccessContext,
+	ctx: RoleDbContext,
 	userId: string,
 	restaurantId: Id<"restaurants">
 ): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {

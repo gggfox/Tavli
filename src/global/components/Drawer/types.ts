@@ -84,4 +84,17 @@ export interface DrawerProps {
 	 * Optional class name applied to the backdrop element.
 	 */
 	backdropClassName?: string;
+
+	/**
+	 * When true with `side="bottom"`, shows a drag handle and allows vertical
+	 * swipe-to-dismiss (pointer-driven). No-op for other sides.
+	 * @default false
+	 */
+	swipeToClose?: boolean;
+
+	/**
+	 * Accessible name for the swipe handle (required for assistive tech when
+	 * `swipeToClose` is used).
+	 */
+	swipeHandleAriaLabel?: string;
 }

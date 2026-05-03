@@ -19,6 +19,12 @@ export const SidebarKeys = {
 	ORDERS: "sidebar.nav.orders",
 	PAYMENTS: "sidebar.nav.payments",
 	RESERVATIONS: "sidebar.nav.reservations",
+	TEAM: "sidebar.nav.team",
+	TEAM_INVITES: "sidebar.nav.teamInvites",
+	SCHEDULE: "sidebar.nav.schedule",
+	ATTENDANCE: "sidebar.nav.attendance",
+	TIPS: "sidebar.nav.tips",
+	PERFORMANCE: "sidebar.nav.performance",
 	ADMIN: "sidebar.nav.admin",
 	ADMIN_USERS: "sidebar.nav.adminUsers",
 	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",
@@ -39,6 +45,11 @@ export const SidebarKeys = {
 	SIGN_OUT: "sidebar.auth.signOut",
 	CLICK_TO_SIGN_OUT: "sidebar.auth.clickToSignOut",
 	AUTH_NOT_CONFIGURED: "sidebar.auth.notConfigured",
+
+	CLOCK_TITLE: "sidebar.clock.title",
+	CLOCK_IN: "sidebar.clock.in",
+	CLOCK_OUT: "sidebar.clock.out",
+	CLOCK_LOADING: "sidebar.clock.loading",
 
 	// Settings
 	SETTINGS: "sidebar.settings.title",

@@ -3,6 +3,7 @@
  *
  * - Date-range tab pills (today/week/month/quarter/year/all).
  * - Status filter chips (pending/confirmed/seated/no_show/...).
+ * - Card list or table view (persisted via URL + localStorage).
  * - Per-row click opens the detail drawer.
  * - Auto-focuses the row whose ID is in `?focus=` (used by the toast deep link).
  *
@@ -10,6 +11,7 @@
  * transitions appear instantly without manual invalidation.
  */
 import {
+	AppDatePicker,
 	DashboardShell,
 	EmptyState,
 	getStatusToneStyle,
@@ -20,64 +22,148 @@ import {
 	Surface,
 	toneByValue,
 } from "@/global/components";
+import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import { ReservationsKeys } from "@/global/i18n";
+import { useRestaurant } from "@/features/restaurants";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { convexQuery } from "@convex-dev/react-query";
 import { useSearch } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { CalendarClock, Clock, Users } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { CalendarClock, Clock, LayoutList, Table as TableIcon, Users } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useReservations } from "../hooks/useReservations";
+import {
+	type ReservationDashboardRangeValue,
+	type ReservationsDashboardSearch,
+	useReservationsDashboardPrefs,
+} from "@/features/reservations/hooks/useReservationsDashboardPrefs";
+import { useReservations } from "@/features/reservations/hooks/useReservations";
 import {
 	getReservationStatusConfig,
 	RESERVATION_FALLBACK_TONE,
 	RESERVATION_STATUS_CONFIG,
 	type ReservationStatus,
-} from "../statusConfig";
+} from "@/features/reservations/statusConfig";
 import {
 	ORDERED_RANGES,
 	RANGE_LABEL_KEYS,
-	type ReservationRange,
 	formatTimeOnly,
-} from "../utils";
-import { ReservationDetailDrawer } from "./ReservationDetailDrawer";
-import { ReservationsDashboardSkeleton } from "./ReservationsDashboardSkeleton";
+	type ReservationRange,
+} from "@/features/reservations/utils";
+import { ReservationDetailDrawer } from "@/features/reservations/components/ReservationDetailDrawer";
+import { ReservationsDashboardSkeleton } from "@/features/reservations/components/ReservationsDashboardSkeleton";
+import { ReservationsTable } from "@/features/reservations/components/ReservationsTable";
 
-interface ReservationsDashboardProps {
-	restaurantId: Id<"restaurants">;
-}
+const RES_DASH_DAY_ID = "reservations-dashboard-day";
 
-export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDashboardProps>) {
-	const { t } = useTranslation();
-	const [range, setRange] = useState<ReservationRange>("today");
-	const [statusFilter, setStatusFilter] = useState<Set<ReservationStatus>>(new Set());
+type ReservationGetValue = UnwrappedValue<FunctionReturnType<typeof api.reservations.get>>;
+
+export function ReservationsDashboard() {
+	const { t, i18n } = useTranslation();
+	const { restaurants, isMultiRestaurant } = useRestaurant();
+	const restaurantIds = useMemo(() => restaurants.map((r) => r._id), [restaurants]);
+
+	const restaurantNameById = useMemo(
+		() => Object.fromEntries(restaurants.map((r) => [r._id, r.name] as const)),
+		[restaurants]
+	);
+
+	const {
+		range,
+		customDay,
+		rangeSegmentValue,
+		setRange,
+		setCustomDay,
+		statusFilter,
+		toggleStatus,
+		viewMode,
+		setViewMode,
+	} = useReservationsDashboardPrefs();
+
 	const [openId, setOpenId] = useState<Id<"reservations"> | null>(null);
-	const search = useSearch({ strict: false }) as { focus?: string };
+	const search = useSearch({ strict: false }) as ReservationsDashboardSearch & {
+		focus?: string;
+	};
+
+	const statusesForQuery = useMemo((): ReservationStatus[] | undefined => {
+		if (statusFilter.size === 0) return undefined;
+		return [...statusFilter].sort((a, b) => a.localeCompare(b));
+	}, [statusFilter]);
 
 	const { reservations, isLoading, error, confirm, cancel, markSeated, markCompleted } =
-		useReservations(restaurantId, range);
+		useReservations(
+			restaurantIds.length ? restaurantIds : undefined,
+			range,
+			customDay,
+			statusesForQuery
+		);
 
-	const toggleStatus = useCallback((value: ReservationStatus) => {
-		setStatusFilter((prev) => {
-			const next = new Set(prev);
-			if (next.has(value)) next.delete(value);
-			else next.add(value);
-			return next;
-		});
-	}, []);
+	const enriched = useMemo(
+		() =>
+			reservations.map((r) => ({
+				...r,
+				restaurantName: restaurantNameById[r.restaurantId],
+			})),
+		[reservations, restaurantNameById]
+	);
 
-	const filtered = useMemo(() => {
-		if (statusFilter.size === 0) return reservations;
-		return reservations.filter((r) => statusFilter.has(r.status as ReservationStatus));
-	}, [reservations, statusFilter]);
+	const focusId = useMemo(
+		() => openId ?? (search.focus as Id<"reservations"> | undefined) ?? null,
+		[openId, search.focus]
+	);
+
+	const focusedFromList = useMemo(() => {
+		if (!focusId) return null;
+		return reservations.find((r) => r._id === focusId) ?? null;
+	}, [focusId, reservations]);
+
+	const needsFocusedFetch = Boolean(focusId && !focusedFromList);
+
+	const focusedFetchQuery = useQuery({
+		...convexQuery(
+			api.reservations.get,
+			needsFocusedFetch && focusId ? { reservationId: focusId } : "skip"
+		),
+		enabled: needsFocusedFetch,
+		select: unwrapResult<ReservationGetValue>,
+	});
 
 	const focusedReservation = useMemo(() => {
-		const id = openId ?? (search.focus as Id<"reservations"> | undefined) ?? null;
-		if (!id) return null;
-		return reservations.find((r) => r._id === id) ?? null;
-	}, [openId, search.focus, reservations]);
+		if (!focusId) return null;
+		if (focusedFromList) return focusedFromList;
+		return focusedFetchQuery.data ?? null;
+	}, [focusId, focusedFromList, focusedFetchQuery.data]);
 
 	const rangeOptions = useMemo(
-		() => ORDERED_RANGES.map((r) => ({ value: r, label: t(RANGE_LABEL_KEYS[r]) })),
+		(): ReadonlyArray<{ value: ReservationDashboardRangeValue; label: string }> => [
+			...ORDERED_RANGES.map((r) => ({
+				value: r as ReservationDashboardRangeValue,
+				label: t(RANGE_LABEL_KEYS[r]),
+			})),
+			{
+				value: "custom",
+				label: t(ReservationsKeys.RANGE_CUSTOM),
+			},
+		],
+		[t]
+	);
+
+	const viewModeOptions = useMemo(
+		() => [
+			{
+				value: "cards" as const,
+				label: t(ReservationsKeys.VIEW_MODE_CARDS),
+				icon: LayoutList,
+			},
+			{
+				value: "table" as const,
+				label: t(ReservationsKeys.VIEW_MODE_TABLE),
+				icon: TableIcon,
+			},
+		],
 		[t]
 	);
 
@@ -101,12 +187,33 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 				onToggle={toggleStatus}
 				ariaLabel={t(ReservationsKeys.ARIA_FILTER_STATUS)}
 			/>
-			<div className="ml-auto">
+			<div className="ml-auto flex flex-wrap items-center gap-2">
 				<SegmentedControl
+					options={viewModeOptions}
+					value={viewMode}
+					onChange={setViewMode}
+					ariaLabel={t(ReservationsKeys.ARIA_FILTER_VIEW_MODE)}
+					iconOnly
+					size="sm"
+				/>
+				<SegmentedControl<ReservationDashboardRangeValue>
 					options={rangeOptions}
-					value={range}
-					onChange={setRange}
+					value={rangeSegmentValue}
+					onChange={(v) => {
+						if (v === "custom") {
+							setCustomDay(todayLocalYmd());
+							return;
+						}
+						setRange(v as ReservationRange);
+					}}
 					ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
+				/>
+				<AppDatePicker
+					id={RES_DASH_DAY_ID}
+					label={t(ReservationsKeys.DASHBOARD_DAY_PICKER_LABEL)}
+					value={customDay ?? ""}
+					onChange={setCustomDay}
+					localeTag={i18n.language}
 				/>
 			</div>
 		</div>
@@ -121,19 +228,26 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 			header={header}
 			gap="6"
 		>
-			{filtered.length === 0 ? (
+			{enriched.length === 0 ? (
 				<EmptyState
 					icon={CalendarClock}
 					title={t(ReservationsKeys.EMPTY_TITLE)}
 					description={t(ReservationsKeys.EMPTY_DESCRIPTION)}
 					fill
 				/>
+			) : viewMode === "table" ? (
+				<ReservationsTable
+					data={enriched}
+					isMultiRestaurant={isMultiRestaurant}
+					onOpen={setOpenId}
+				/>
 			) : (
 				<div className="space-y-2">
-					{filtered.map((r) => (
+					{enriched.map((r) => (
 						<ReservationRow
 							key={r._id}
 							reservation={r}
+							restaurantLabel={isMultiRestaurant ? r.restaurantName : undefined}
 							onClick={() => setOpenId(r._id)}
 						/>
 					))}
@@ -164,8 +278,13 @@ export function ReservationsDashboard({ restaurantId }: Readonly<ReservationsDas
 
 function ReservationRow({
 	reservation,
+	restaurantLabel,
 	onClick,
-}: Readonly<{ reservation: Doc<"reservations">; onClick: () => void }>) {
+}: Readonly<{
+	reservation: Doc<"reservations">;
+	restaurantLabel?: string;
+	onClick: () => void;
+}>) {
 	const { t, i18n } = useTranslation();
 	const tone =
 		toneByValue(RESERVATION_STATUS_CONFIG, reservation.status as ReservationStatus) ??
@@ -185,28 +304,24 @@ function ReservationRow({
 		>
 			<div className="flex items-center gap-3 min-w-0">
 				<StatusBadge bgColor={palette.solidBg} textColor={palette.solidFg} label={label} />
-				<span
-					className="text-sm font-medium truncate text-foreground"
-					
-				>
+				<span className="text-sm font-medium truncate text-foreground">
 					{reservation.contact.name}
 				</span>
-				<span
-					className="text-xs flex items-center gap-1 text-faint-foreground"
-					
-				>
+				{restaurantLabel ? (
+					<span className="text-xs text-faint-foreground truncate max-w-[8rem]">
+						· {restaurantLabel}
+					</span>
+				) : null}
+				<span className="text-xs flex items-center gap-1 text-faint-foreground">
 					<Users size={12} /> {reservation.partySize}
 				</span>
 			</div>
 			<div className="flex items-center gap-3 shrink-0">
-				<span
-					className="text-xs flex items-center gap-1 text-muted-foreground"
-					
-				>
+				<span className="text-xs flex items-center gap-1 text-muted-foreground">
 					<Clock size={12} />
 					{startTime}
 				</span>
-				<span className="text-xs text-faint-foreground" >
+				<span className="text-xs text-faint-foreground">
 					{new Date(reservation.startsAt).toLocaleDateString(i18n.language)}
 				</span>
 			</div>

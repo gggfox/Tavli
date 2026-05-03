@@ -9,11 +9,13 @@
  * Used by the Payments and Reservations dashboards for time-range filters.
  */
 import { type CSSProperties, type KeyboardEvent, useCallback, useRef } from "react";
+import type { LucideIcon } from "lucide-react";
 import { KEY } from "@/global/utils/keyboard";
 
 export interface SegmentedControlOption<T extends string> {
 	readonly value: T;
 	readonly label: string;
+	readonly icon?: LucideIcon;
 }
 
 export interface SegmentedControlProps<T extends string> {
@@ -24,6 +26,8 @@ export interface SegmentedControlProps<T extends string> {
 	readonly size?: "sm" | "md";
 	readonly fullWidth?: boolean;
 	readonly className?: string;
+	/** When true, only icons render; each option must include `icon`. Labels are used for `aria-label` / `title`. */
+	readonly iconOnly?: boolean;
 }
 
 const SIZE_CLASSES = {
@@ -39,6 +43,7 @@ export function SegmentedControl<T extends string>({
 	size = "md",
 	fullWidth = false,
 	className = "",
+	iconOnly = false,
 }: SegmentedControlProps<T>) {
 	const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -100,6 +105,7 @@ export function SegmentedControl<T extends string>({
 		>
 			{options.map((opt, index) => {
 				const isActive = opt.value === value;
+				const Icon = opt.icon;
 				return (
 					<button
 						key={opt.value}
@@ -109,13 +115,16 @@ export function SegmentedControl<T extends string>({
 						type="button"
 						role="radio"
 						aria-checked={isActive}
+						aria-label={iconOnly ? opt.label : undefined}
+						title={iconOnly ? opt.label : undefined}
 						tabIndex={isActive ? 0 : -1}
 						onClick={() => onChange(opt.value)}
 						onKeyDown={(event) => handleKeyDown(event, index)}
 						className={[
-							"rounded-md font-medium transition-colors",
+							"rounded-md font-medium transition-colors inline-flex items-center justify-center gap-1.5",
 							SIZE_CLASSES[size],
 							fullWidth ? "flex-1" : "",
+							iconOnly ? "min-w-9 px-2" : "",
 						]
 							.filter(Boolean)
 							.join(" ")}
@@ -124,7 +133,10 @@ export function SegmentedControl<T extends string>({
 								? "var(--btn-primary-text)"
 								: "var(--text-secondary)"}}
 					>
-						{opt.label}
+						{Icon ? (
+							<Icon size={iconOnly ? 16 : 14} className="shrink-0" aria-hidden />
+						) : null}
+						{!iconOnly ? opt.label : null}
 					</button>
 				);
 			})}

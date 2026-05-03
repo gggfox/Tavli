@@ -7,6 +7,7 @@ export type SidebarLinkProps = Readonly<{
 	translationKey: SidebarKey;
 	icon: React.ReactNode;
 	to: LinkProps["to"];
+	search?: LinkProps["search"];
 }>;
 
 export type SidebarLinkConfig = {
@@ -14,13 +15,13 @@ export type SidebarLinkConfig = {
 	translationKey: SidebarKey;
 	icon: React.ReactNode;
 	to: LinkProps["to"];
+	search?: LinkProps["search"];
 };
 
 export type SidebarGroupConfig = {
 	type: "group";
 	translationKey: SidebarKey;
 	icon: React.ReactNode;
-	to: LinkProps["to"];
 	subLinks: Array<{
 		translationKey: SidebarKey;
 		icon?: React.ReactNode;
@@ -35,11 +36,12 @@ const navLinkClass = (isActive: boolean, isExpanded: boolean) =>
 		isExpanded ? "px-3 py-2" : "px-2 py-2 justify-center"
 	} ${isActive ? "bg-active" : "hover:bg-hover"}`;
 
-export function SidebarLink({ isExpanded, icon, translationKey, to }: SidebarLinkProps) {
+export function SidebarLink({ isExpanded, icon, translationKey, to, search }: SidebarLinkProps) {
 	const { t } = useTranslation();
 	return (
 		<Link
 			to={to}
+			{...(search === undefined ? {} : { search })}
 			className={`${navLinkClass(false, isExpanded)} text-muted-foreground`}
 			activeProps={{ className: navLinkClass(true, isExpanded) }}
 			title={isExpanded ? undefined : t(translationKey)}

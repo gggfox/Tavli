@@ -34,6 +34,14 @@
 	will-change: transform;
 }
 
+.tavli-drawer__inner {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+}
+
 .dark .tavli-drawer {
 	box-shadow:
 		0 1px 3px rgba(0, 0, 0, 0.5),

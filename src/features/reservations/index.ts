@@ -8,8 +8,16 @@ export { TablePickerForReservation } from "./components/TablePickerForReservatio
 
 export { useNewReservationListener } from "./hooks/useNewReservationListener";
 export { useReservations } from "./hooks/useReservations";
+export {
+	useReservationsDashboardPrefs,
+	type ReservationDashboardRangeValue,
+	type ReservationsDashboardSearch,
+	type ReservationsViewMode,
+} from "./hooks/useReservationsDashboardPrefs";
 
 export {
+	customDayBounds,
+	dashboardReservationBounds,
 	formatReservationTime,
 	formatTimeOnly,
 	fromDateTimeLocalValue,

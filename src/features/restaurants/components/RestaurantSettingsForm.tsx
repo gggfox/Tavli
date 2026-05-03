@@ -51,7 +51,7 @@ export function RestaurantSettingsForm({
 			name: restaurant?.name ?? "",
 			slug: restaurant?.slug ?? "",
 			description: restaurant?.description ?? "",
-			currency: restaurant?.currency ?? "USD",
+			currency: restaurant?.currency ?? "MXN",
 			timezone: restaurant?.timezone ?? "",
 			orderDayStartTime: minutesToTimeInput(
 				restaurant?.orderDayStartMinutesFromMidnight ?? DEFAULT_ORDER_DAY_START_MINUTES

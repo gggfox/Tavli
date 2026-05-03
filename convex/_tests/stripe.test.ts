@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -67,17 +68,23 @@ async function seedRestaurant(
 	let restaurantId: Id<"restaurants">;
 
 	await t.run(async (ctx) => {
+		const slug = `stripe-test-${Math.random().toString(36).slice(2, 10)}`;
 		restaurantId = await ctx.db.insert("restaurants", {
 			ownerId: args.ownerId,
 			organizationId: args.organizationId,
 			name: "Stripe Test Restaurant",
-			slug: `stripe-test-${Math.random().toString(36).slice(2, 10)}`,
+			slug,
 			currency: "USD",
 			stripeAccountId: args.stripeAccountId,
 			stripeOnboardingComplete: args.stripeOnboardingComplete,
 			isActive: true,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
+		});
+		await insertMenuForRestaurant(ctx, {
+			restaurantId,
+			name: slug,
+			userId: args.ownerId,
 		});
 	});
 

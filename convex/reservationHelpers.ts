@@ -81,8 +81,40 @@ export const sourceValidator = v.union(
  * Look 3 hours forward at 30-minute increments and return the first three
  * slots where capacity covers the party. Cheap heuristic; staff can override.
  */
+type ReservationReadDb = Parameters<typeof loadEffectiveSettings>[0]["db"];
+
+/**
+ * True if the party can be seated at [startsAt, endsAt) using one or more
+ * active tables (same rules as the public availability query).
+ */
+export async function isPartyBookableAt(
+	ctx: { db: ReservationReadDb },
+	restaurantId: Id<typeof TABLE.RESTAURANTS>,
+	partySize: number,
+	startsAt: number,
+	endsAt: number
+): Promise<boolean> {
+	const free = await findFreeTablesForParty(ctx, restaurantId, partySize, startsAt, endsAt);
+	if (free.length > 0) return true;
+
+	const allActive = await ctx.db
+		.query(TABLE.TABLES)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	const candidates: typeof allActive = [];
+	for (const t of allActive.filter((x) => x.isActive)) {
+		const reservations = await findOverlappingReservations(ctx, t._id, startsAt, endsAt);
+		if (reservations.length > 0) continue;
+		const locks = await findOverlappingLocks(ctx, t._id, startsAt, endsAt);
+		if (locks.length > 0) continue;
+		candidates.push(t);
+	}
+	candidates.sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
+	return requiredCapacityCovered(candidates, partySize);
+}
+
 export async function findSuggestedTimes(
-	ctx: { db: Parameters<typeof loadEffectiveSettings>[0]["db"] },
+	ctx: { db: ReservationReadDb },
 	restaurantId: Id<typeof TABLE.RESTAURANTS>,
 	partySize: number,
 	startsAt: number,

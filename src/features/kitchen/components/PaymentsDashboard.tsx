@@ -1,3 +1,6 @@
+/* eslint-disable boundaries/no-unknown -- feature-internal hooks/types not in eslint-boundaries map */
+import { usePaymentsDashboardPrefs } from "../hooks/usePaymentsDashboardPrefs";
+import type { PaymentsTimePeriod } from "../paymentsDashboardSearch";
 import { AdminTable, DashboardShell, SegmentedControl, Surface } from "@/global/components";
 import { useAdminTable } from "@/global/hooks";
 import { PaymentsKeys } from "@/global/i18n";
@@ -6,7 +9,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { CreditCard, DollarSign, Hash, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { PaymentsDashboardSkeleton } from "./PaymentsDashboardSkeleton";
 import { usePaymentsColumns } from "./payments/Columns";
@@ -16,9 +19,7 @@ interface PaymentsDashboardProps {
 	restaurantId: Id<"restaurants">;
 }
 
-type TimeFrame = "today" | "week" | "month" | "quarter" | "year" | "all";
-
-const TIME_FRAME_KEYS: Record<TimeFrame, string> = {
+const TIME_FRAME_KEYS: Record<PaymentsTimePeriod, string> = {
 	today: PaymentsKeys.TIME_FRAME_TODAY,
 	week: PaymentsKeys.TIME_FRAME_WEEK,
 	month: PaymentsKeys.TIME_FRAME_MONTH,
@@ -27,9 +28,9 @@ const TIME_FRAME_KEYS: Record<TimeFrame, string> = {
 	all: PaymentsKeys.TIME_FRAME_ALL,
 };
 
-const TIME_FRAMES: TimeFrame[] = ["today", "week", "month", "quarter", "year", "all"];
+const TIME_FRAMES: PaymentsTimePeriod[] = ["today", "week", "month", "quarter", "year", "all"];
 
-function getTimeFrameStart(frame: TimeFrame): number | undefined {
+function getTimeFrameStart(frame: PaymentsTimePeriod): number | undefined {
 	if (frame === "all") return undefined;
 
 	const now = new Date();
@@ -67,9 +68,9 @@ function deriveAggregates(orders: ReadonlyArray<PaymentsOrder>): PaymentsAggrega
 
 export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardProps>) {
 	const { t } = useTranslation();
-	const [timeFrame, setTimeFrame] = useState<TimeFrame>("today");
+	const { period, setPeriod, q, setSearch } = usePaymentsDashboardPrefs(restaurantId);
 
-	const from = useMemo(() => getTimeFrameStart(timeFrame), [timeFrame]);
+	const from = useMemo(() => getTimeFrameStart(period), [period]);
 	const columns = usePaymentsColumns();
 
 	const tableState = useAdminTable<PaymentsOrder>({
@@ -79,6 +80,8 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			to: undefined,
 		}),
 		columns,
+		globalFilter: q,
+		onGlobalFilterChange: setSearch,
 	});
 
 	const aggregates = useMemo(() => deriveAggregates(tableState.data ?? []), [tableState.data]);
@@ -91,8 +94,8 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 	const timeFrameControl = (
 		<SegmentedControl
 			options={timeFrameOptions}
-			value={timeFrame}
-			onChange={setTimeFrame}
+			value={period}
+			onChange={setPeriod}
 			ariaLabel={t(PaymentsKeys.ARIA_FILTER)}
 		/>
 	);
@@ -126,6 +129,8 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			<AdminTable
 				tableState={tableState}
 				entityName="payments"
+				searchPlaceholder={t(PaymentsKeys.SEARCH_PLACEHOLDER)}
+				getResultCountText={(count) => t(PaymentsKeys.RESULT_COUNT, { count })}
 				emptyIcon={CreditCard}
 				emptyTitle={t(PaymentsKeys.EMPTY_NO_PAYMENTS)}
 				actions={timeFrameControl}

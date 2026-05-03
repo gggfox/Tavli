@@ -3,6 +3,9 @@
  * settings form, tables manager, Stripe Connect onboarding, and skeletons.
  */
 export const RestaurantsKeys = {
+	ADMIN_ALL_TITLE: "restaurants.adminAll.title",
+	ADMIN_ALL_DESCRIPTION: "restaurants.adminAll.description",
+
 	LIST_NEW_RESTAURANT: "restaurants.list.newRestaurant",
 	LIST_EDIT: "restaurants.list.edit",
 	LIST_MANAGE_TABLES: "restaurants.list.manageTables",
@@ -15,6 +18,27 @@ export const RestaurantsKeys = {
 	LIST_TOGGLE_FAILED: "restaurants.list.toggleFailed",
 	LIST_STATUS_ACTIVE: "restaurants.list.statusActive",
 	LIST_STATUS_INACTIVE: "restaurants.list.statusInactive",
+	LIST_DELETE: "restaurants.list.delete",
+	LIST_DELETE_FAILED: "restaurants.list.deleteFailed",
+	LIST_RESTORE_FAILED: "restaurants.list.restoreFailed",
+	LIST_SHOW_TRASH: "restaurants.list.showTrash",
+	LIST_HIDE_TRASH: "restaurants.list.hideTrash",
+
+	TRASH_HEADING: "restaurants.trash.heading",
+	TRASH_EMPTY: "restaurants.trash.empty",
+	TRASH_DELETED_AT: "restaurants.trash.deletedAt",
+	TRASH_DELETED_BY: "restaurants.trash.deletedBy",
+	TRASH_RESTORE: "restaurants.trash.restore",
+	TRASH_PUBLIC_SLUG: "restaurants.trash.publicSlug",
+
+	MODAL_DELETE_ARIA: "restaurants.modal.deleteAria",
+	MODAL_DELETE_HEADING: "restaurants.modal.deleteHeading",
+	MODAL_DELETE_BODY: "restaurants.modal.deleteBody",
+	MODAL_DELETE_CONFIRM: "restaurants.modal.deleteConfirm",
+	MODAL_DELETE_CANCEL: "restaurants.modal.deleteCancel",
+
+	/** Sidebar: which restaurant staff admin routes apply to */
+	SWITCHER_LABEL: "restaurants.switcher.label",
 
 	MODAL_CREATE_ARIA: "restaurants.modal.createAria",
 	MODAL_EDIT_ARIA: "restaurants.modal.editAria",
@@ -44,6 +68,14 @@ export const RestaurantsKeys = {
 	FORM_CREATING: "restaurants.form.creating",
 	FORM_UPDATE_FAILED: "restaurants.form.updateFailed",
 	FORM_CREATE_FAILED: "restaurants.form.createFailed",
+
+	MANAGERS_SECTION_TITLE: "restaurants.managers.sectionTitle",
+	MANAGERS_SECTION_HINT: "restaurants.managers.sectionHint",
+	MANAGERS_PLACEHOLDER: "restaurants.managers.placeholder",
+	MANAGERS_SUMMARY: "restaurants.managers.summary",
+	MANAGERS_ARIA: "restaurants.managers.aria",
+	MANAGERS_EMPTY_DIRECTORY: "restaurants.managers.emptyDirectory",
+	MANAGERS_MUTATION_FAILED: "restaurants.managers.mutationFailed",
 
 	TABLES_NUMBER_LABEL: "restaurants.tables.numberLabel",
 	TABLES_LABEL_LABEL: "restaurants.tables.labelLabel",

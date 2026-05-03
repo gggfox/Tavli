@@ -17,6 +17,12 @@
 			"orders": "Orders",
 			"payments": "Payments",
 			"reservations": "Reservations",
+			"team": "Members",
+			"teamInvites": "Invites",
+			"schedule": "Schedule",
+			"attendance": "Attendance",
+			"tips": "Tips",
+			"performance": "Performance",
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations"
@@ -38,6 +44,12 @@
 			"clickToSignOut": "Click to sign out",
 			"notConfigured": "Auth not configured"
 		},
+		"clock": {
+			"title": "Time clock",
+			"in": "Clock in",
+			"out": "Clock out",
+			"loading": "Loading…"
+		},
 		"settings": {
 			"title": "Settings",
 			"close": "Close",
@@ -51,6 +63,136 @@
 			"assigningAdmin": "Assigning..."
 		}
 	},
+	"adminStaff": {
+		"team": {
+			"descriptionNoRestaurant": "Manage invitations and memberships.",
+			"description": "Review members and pending invitations for the selected restaurant.",
+			"setupRestaurantFirst": "Select or create a restaurant first.",
+			"sendInvitation": "Send invitation",
+			"emailLabel": "Email",
+			"roleLabel": "Role",
+			"roleOwnerOption": "Organization owner",
+			"roleManagerOption": "Restaurant manager",
+			"roleEmployeeOption": "Employee",
+			"restaurantsLabel": "Restaurants",
+			"restaurantsPlaceholder": "Choose restaurants…",
+			"restaurantsAria": "Choose restaurants for this invitation",
+			"restaurantsSummaryMany": "{{first}}, {{second}} (+{{rest}} more)",
+			"inviteNoRole": "You do not have permission to send invitations for this organization.",
+			"inviteSingleRoleHint": "Only this role is available for you to assign.",
+			"sendInvite": "Send invite",
+			"sending": "Sending…",
+			"pendingInvitations": "Pending invitations",
+			"noPendingInvitations": "No pending invitations.",
+			"revoke": "Revoke",
+			"membersTitle": "Members · {{restaurantName}}",
+			"noMembers": "No members yet for this restaurant.",
+			"memberInactive": "inactive",
+			"roleDisplay": {
+				"owner": "Organization owner",
+				"manager": "Restaurant manager",
+				"employee": "Employee"
+			},
+			"directoryColIdentity": "Email / user",
+			"directoryColRole": "Role",
+			"directoryColStatus": "Status",
+			"statusPendingInvite": "Pending invitation",
+			"statusActive": "Active",
+			"directoryEmptyTitle": "No staff or invitations yet",
+			"directoryEmptyDescription": "Restaurant owners, organization owners, and people with a manager or employee seat at this location appear here, along with pending email invitations.",
+			"directoryFilteredEmptyTitle": "No matches",
+			"directoryFilteredEmptyDescription": "Try another email, user id, role, or status keyword.",
+			"directorySearchPlaceholder": "Search by email or user id…",
+			"inviteModalTitle": "Send invitation",
+			"directoryEntityName": "members and invitations"
+		},
+		"schedule": {
+			"descriptionNoRestaurant": "Weekly shifts for your team.",
+			"description": "Upcoming shifts (create and edit in Convex dashboard or future scheduling UI).",
+			"noRestaurant": "No restaurant available.",
+			"prevWeek": "← Prev week",
+			"nextWeek": "Next week →",
+			"empty": "No shifts in this window.",
+			"colMember": "Member",
+			"colStart": "Start",
+			"colEnd": "End",
+			"colStatus": "Status",
+			"statusPublished": "Published",
+			"statusCancelled": "Cancelled",
+			"statusScheduled": "Scheduled"
+		},
+		"attendance": {
+			"descriptionNoRestaurant": "Clock events and absence requests.",
+			"description": "Review team clock punches and absences. Submit your own time-off requests in the section below.",
+			"descriptionEmployee": "Request time off and track the status of your requests.",
+			"noRestaurant": "No restaurant available.",
+			"rangeLabel": "Range",
+			"range24h": "24h",
+			"range7d": "7 days",
+			"range30d": "30 days",
+			"clockEvents": "Clock events",
+			"noEvents": "No events in range.",
+			"absences": "Absences",
+			"noAbsences": "No absence records.",
+			"colMember": "Member",
+			"colType": "Type",
+			"colTime": "Time",
+			"colDate": "Date",
+			"colStatus": "Status",
+			"myAbsences": "My absence requests",
+			"myAbsencesEmpty": "You have no absence requests yet.",
+			"requestOpen": "Request time off",
+			"requestModalTitle": "Request time off",
+			"requestDrawerSwipeHandle": "Drag down to close",
+			"requestDateLabel": "Date",
+			"requestTypeLabel": "Type",
+			"requestReasonLabel": "Note (optional)",
+			"requestReasonPlaceholder": "Short explanation for your manager",
+			"requestOneDayNote": "Each request is for one calendar day. Submit another request for additional days.",
+			"requestSubmit": "Submit request",
+			"requestCancel": "Cancel",
+			"requestErrorDate": "Choose a date.",
+			"typeVacation": "Vacation",
+			"typeSick": "Sick leave",
+			"typeOther": "Other",
+			"statusPending": "Pending",
+			"statusApproved": "Approved",
+			"statusDenied": "Denied"
+		},
+		"tips": {
+			"descriptionNoRestaurant": "Daily tip pool and distribution.",
+			"description": "Cash tip entries and equal-by-hours finalization.",
+			"noRestaurant": "No restaurant available.",
+			"businessDateLabel": "Business date (YYYY-MM-DD)",
+			"totalPool": "Total pool: {{amount}} {{currency}}",
+			"statusLabel": "Status:",
+			"statusFinalized": "Finalized",
+			"statusOpen": "Open",
+			"statusPaid": "Paid",
+			"addCashTitle": "Add cash tip",
+			"placeholderAmount": "Amount",
+			"placeholderNotes": "Notes (optional)",
+			"addToPool": "Add to pool",
+			"saving": "Saving…",
+			"finalize": "Finalize pool (equal by hours)",
+			"finalizing": "Finalizing…",
+			"shares": "Shares"
+		},
+		"performance": {
+			"descriptionNoRestaurant": "Per-server aggregates.",
+			"description": "Attributed orders and hours worked (from shift attendance).",
+			"noRestaurant": "No restaurant available.",
+			"rangeLabel": "Range",
+			"range7": "7 days",
+			"range30": "30 days",
+			"range90": "90 days",
+			"empty": "No attributed activity in this window.",
+			"colMember": "Member",
+			"colPaidOrders": "Paid orders",
+			"colAttributedRevenue": "Attributed revenue",
+			"colHours": "Hours"
+		}
+	},
 	"common": {
 		"button": {
 			"saved": "Saved!",
@@ -61,6 +203,10 @@
 		"itemsCount_other": "{{count}} items"
 	},
 	"orders": {
+		"page": {
+			"title": "Orders",
+			"description": "Live order dashboard. Orders update in real time."
+		},
 		"status": {
 			"submitted": "Pending",
 			"preparing": "Preparing",
@@ -120,6 +266,9 @@
 		"empty": {
 			"noPayments": "No payments in this period."
 		},
+		"searchPlaceholder": "Search payments...",
+		"resultCount_one": "1 payment",
+		"resultCount_other": "{{count}} payments",
 		"table": {
 			"dayOrderNumber": "Order # (day)",
 			"orderId": "Order ID",
@@ -255,6 +404,10 @@
 		}
 	},
 	"restaurants": {
+		"adminAll": {
+			"title": "All Restaurants",
+			"description": "View and manage all restaurants in the system."
+		},
 		"list": {
 			"newRestaurant": "New Restaurant",
 			"edit": "Edit restaurant",
@@ -267,15 +420,36 @@
 			"loadFailed": "Failed to load restaurants.",
 			"toggleFailed": "Failed to toggle restaurant status",
 			"statusActive": "Active",
-			"statusInactive": "Inactive"
+			"statusInactive": "Inactive",
+			"delete": "Delete restaurant",
+			"deleteFailed": "Failed to delete restaurant",
+			"restoreFailed": "Failed to restore restaurant",
+			"showTrash": "Show deleted",
+			"hideTrash": "Hide deleted"
+		},
+		"trash": {
+			"heading": "Deleted (recover within 30 days)",
+			"empty": "No deleted restaurants.",
+			"deletedAt": "Deleted on {{date}}",
+			"deletedBy": "Deleted by user {{userId}}",
+			"restore": "Restore",
+			"publicSlug": "Public URL was /{{slug}}"
+		},
+		"switcher": {
+			"label": "Active restaurant"
 		},
 		"modal": {
 			"createAria": "Create Restaurant",
 			"editAria": "Edit Restaurant",
 			"tablesAria": "Manage Tables",
+			"deleteAria": "Confirm delete restaurant",
 			"createHeading": "New Restaurant",
 			"editHeading": "Edit Restaurant",
-			"tablesHeading": "Tables"
+			"tablesHeading": "Tables",
+			"deleteHeading": "Delete this restaurant?",
+			"deleteBody": "It will go offline immediately, Stripe will be disconnected from this location, and all data stays recoverable for 30 days. After that, the system permanently removes the restaurant and related records (a deletion log is kept).",
+			"deleteConfirm": "Delete",
+			"deleteCancel": "Cancel"
 		},
 		"form": {
 			"nameLabel": "Restaurant Name",
@@ -299,6 +473,16 @@
 			"creating": "Creating...",
 			"updateFailed": "Failed to update restaurant",
 			"createFailed": "Failed to create restaurant"
+		},
+		"managers": {
+			"sectionTitle": "Location managers",
+			"sectionHint": "These users can administer this restaurant. Removing someone as manager keeps them on the team as an employee.",
+			"placeholder": "Select managers…",
+			"summary_one": "1 manager",
+			"summary_other": "{{count}} managers",
+			"aria": "Choose managers for this restaurant",
+			"emptyDirectory": "No people found for this organization. Invite or add users under Team.",
+			"mutationFailed": "Failed to update manager assignment"
 		},
 		"tables": {
 			"numberLabel": "Table #",
@@ -368,6 +552,11 @@
 		"getStarted": "Get Started"
 	},
 	"menus": {
+		"page": {
+			"title": "Menus",
+			"description": "Create and manage your restaurant's menus. Click a menu to edit its categories and items.",
+			"setupRestaurantFirst": "Please set up your restaurant first."
+		},
 		"list": {
 			"newPlaceholder": "New menu name (e.g. Dinner Menu)",
 			"addButton": "Add Menu",
@@ -375,7 +564,7 @@
 			"toggleActivate": "Activate",
 			"rename": "Rename",
 			"delete": "Delete menu",
-			"empty": "No menus yet. Create your first menu above.",
+			"empty": "No menus found for this restaurant.",
 			"loadingAria": "Loading menus"
 		},
 		"editor": {
@@ -390,14 +579,22 @@
 			"addCategory": "Add Category",
 			"translatingHint": "Translating names and descriptions. Prices, images, and options are shared across all languages.",
 			"noCategories": "No categories yet. Add your first category above.",
-			"loadingAria": "Loading menu editor"
+			"loadingAria": "Loading menu editor",
+			"backToList": "Back to all menus",
+			"headerTitle": "Menu editor",
+			"headerDescription": "Add categories and items to this menu."
 		},
 		"category": {
 			"itemsCount_one": "(1 item)",
 			"itemsCount_other": "({{count}} items)",
 			"translationPlaceholder": "{{name}} translation...",
 			"deleteTitle": "Delete category",
-			"addItem": "Add item"
+			"addItem": "Add item",
+			"selectAll": "Select all in category",
+			"deselectAll": "Deselect all",
+			"bulkHide": "Hide selected",
+			"bulkShow": "Show selected",
+			"bulkDelete": "Delete selected"
 		},
 		"item": {
 			"editTitle": "Edit item",
@@ -432,6 +629,8 @@
 		},
 		"picker": {
 			"noGroups": "No option groups yet. Use the Option Groups button above to create them.",
+			"loading": "Loading option groups…",
+			"error": "Could not load option groups. Try again.",
 			"linkedGroups": "Linked Option Groups",
 			"groupSingle": "· Single",
 			"groupMulti": "· Multi"
@@ -461,6 +660,22 @@
 		"optionPricePlaceholder": "+$"
 	},
 	"reservations": {
+		"page": {
+			"title": "Reservations",
+			"description": "Confirm, seat, and review reservations. Updates in real time.",
+			"locksButton": "Locks",
+			"settingsButton": "Settings"
+		},
+		"settingsDrawer": {
+			"title": "Reservation settings",
+			"description": "Default turn time, per-party-size overrides, booking horizon, blackout windows, and the global accepting toggle.",
+			"ariaLabel": "Reservation settings"
+		},
+		"locksDrawer": {
+			"title": "Table locks",
+			"description": "Take a table out of service for a window. Locked tables are hidden from public availability and the staff table picker for that window.",
+			"ariaLabel": "Table locks"
+		},
 		"status": {
 			"pending": "Pending",
 			"confirmed": "Confirmed",
@@ -475,11 +690,39 @@
 			"month": "This month",
 			"quarter": "This quarter",
 			"year": "This year",
-			"all": "All time"
+			"all": "All time",
+			"custom": "Custom day"
+		},
+		"dashboard": {
+			"dayPickerLabel": "Go to day"
+		},
+		"viewMode": {
+			"cards": "Card list",
+			"table": "Table"
+		},
+		"sources": {
+			"ui": "Website",
+			"whatsapp": "WhatsApp",
+			"staff": "Staff"
+		},
+		"table": {
+			"searchPlaceholder": "Search by name or phone…",
+			"columns": {
+				"status": "Status",
+				"guest": "Guest",
+				"party": "Party",
+				"date": "Date",
+				"time": "Time",
+				"source": "Source",
+				"tables": "Tables",
+				"notes": "Notes",
+				"restaurant": "Restaurant"
+			}
 		},
 		"aria": {
 			"filterRange": "Filter reservations by date range",
 			"filterStatus": "Filter reservations by status",
+			"filterViewMode": "Switch between card list and table view",
 			"detailDrawer": "Reservation details",
 			"detailDrawerClose": "Close drawer",
 			"remove": "Remove",
@@ -518,6 +761,9 @@
 			"title": "Reserve at {{restaurantName}}",
 			"partySize": "Party size",
 			"dateTime": "Date & time",
+			"date": "Date",
+			"time": "Time",
+			"slotsEmpty": "No open times on this day for your party size. Try another date.",
 			"name": "Name",
 			"phone": "Phone",
 			"email": "Email (optional)",

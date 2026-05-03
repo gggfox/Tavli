@@ -23,6 +23,16 @@ export const TABLE = {
 	TABLE_LOCKS: "tableLocks",
 	RESERVATION_SETTINGS: "reservationSettings",
 	ORDER_DAY_COUNTERS: "orderDayCounters",
+	RESTAURANT_MEMBERS: "restaurantMembers",
+	INVITATIONS: "invitations",
+	SHIFTS: "shifts",
+	SHIFT_TABLE_ASSIGNMENTS: "shiftTableAssignments",
+	CLOCK_EVENTS: "clockEvents",
+	ABSENCES: "absences",
+	SHIFT_ATTENDANCE: "shiftAttendance",
+	TIP_POOLS: "tipPools",
+	TIP_POOL_SHARES: "tipPoolShares",
+	TIP_ENTRIES: "tipEntries",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -168,3 +178,104 @@ export const DEFAULT_RESERVATION_SETTINGS = {
  * availability checks until the backfill mutation has run.
  */
 export const FALLBACK_TABLE_CAPACITY = 4;
+
+/** Per-restaurant roles (stored on restaurantMembers). Org-level owner/admin stay on userRoles. */
+export const RESTAURANT_MEMBER_ROLE = {
+	MANAGER: "manager",
+	EMPLOYEE: "employee",
+} as const;
+
+export type RestaurantMemberRole =
+	(typeof RESTAURANT_MEMBER_ROLE)[keyof typeof RESTAURANT_MEMBER_ROLE];
+
+export const INVITATION_STATUS = {
+	PENDING: "pending",
+	ACCEPTED: "accepted",
+	REVOKED: "revoked",
+	EXPIRED: "expired",
+} as const;
+
+export type InvitationStatus = (typeof INVITATION_STATUS)[keyof typeof INVITATION_STATUS];
+
+export const SHIFT_STATUS = {
+	SCHEDULED: "scheduled",
+	PUBLISHED: "published",
+	CANCELLED: "cancelled",
+} as const;
+
+export type ShiftStatus = (typeof SHIFT_STATUS)[keyof typeof SHIFT_STATUS];
+
+export const CLOCK_EVENT_TYPE = {
+	IN: "in",
+	OUT: "out",
+} as const;
+
+export type ClockEventType = (typeof CLOCK_EVENT_TYPE)[keyof typeof CLOCK_EVENT_TYPE];
+
+export const CLOCK_EVENT_SOURCE = {
+	WEB: "web",
+	KIOSK: "kiosk",
+	API: "api",
+} as const;
+
+export type ClockEventSource = (typeof CLOCK_EVENT_SOURCE)[keyof typeof CLOCK_EVENT_SOURCE];
+
+export const ABSENCE_TYPE = {
+	VACATION: "vacation",
+	SICK: "sick",
+	UNEXCUSED: "unexcused",
+	OTHER: "other",
+} as const;
+
+export type AbsenceType = (typeof ABSENCE_TYPE)[keyof typeof ABSENCE_TYPE];
+
+export const ABSENCE_REQUEST_STATUS = {
+	PENDING: "pending",
+	APPROVED: "approved",
+	DENIED: "denied",
+} as const;
+
+export type AbsenceRequestStatus =
+	(typeof ABSENCE_REQUEST_STATUS)[keyof typeof ABSENCE_REQUEST_STATUS];
+
+export const ATTENDANCE_STATUS = {
+	SCHEDULED: "scheduled",
+	PRESENT: "present",
+	EARLY_DEPARTURE: "early_departure",
+	NO_CLOCKOUT: "no_clockout",
+	ABSENT_EXCUSED: "absent_excused",
+	ABSENT_UNEXCUSED: "absent_unexcused",
+} as const;
+
+export type AttendanceStatus = (typeof ATTENDANCE_STATUS)[keyof typeof ATTENDANCE_STATUS];
+
+export const TIP_DISTRIBUTION_RULE = {
+	EQUAL: "equal",
+	EQUAL_BY_HOURS: "equal_by_hours",
+	ROLE_WEIGHTED_POINTS: "role_weighted_points",
+	MANUAL: "manual",
+} as const;
+
+export type TipDistributionRule =
+	(typeof TIP_DISTRIBUTION_RULE)[keyof typeof TIP_DISTRIBUTION_RULE];
+
+export const TIP_POOL_STATUS = {
+	OPEN: "open",
+	FINALIZED: "finalized",
+	PAID: "paid",
+} as const;
+
+export type TipPoolStatus = (typeof TIP_POOL_STATUS)[keyof typeof TIP_POOL_STATUS];
+
+export const TIP_ENTRY_SOURCE = {
+	CASH: "cash",
+	OTHER: "other",
+} as const;
+
+export type TipEntrySource = (typeof TIP_ENTRY_SOURCE)[keyof typeof TIP_ENTRY_SOURCE];
+
+/** System actor for migrations and webhooks when no Clerk user applies. */
+export const AUDIT_SYSTEM_USER_ID = "system";
+
+/** Soft-deleted restaurants become eligible for hard delete after this interval. */
+export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

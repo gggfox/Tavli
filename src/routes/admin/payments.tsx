@@ -1,4 +1,8 @@
-import { PaymentsDashboard, PaymentsDashboardSkeleton } from "@/features/kitchen";
+import {
+	PaymentsDashboard,
+	PaymentsDashboardSkeleton,
+	validatePaymentsSearch,
+} from "@/features/kitchen";
 import { useRestaurant } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
 import { createFileRoute } from "@tanstack/react-router";
@@ -6,6 +10,7 @@ import type { Id } from "convex/_generated/dataModel";
 
 export const Route = createFileRoute("/admin/payments")({
 	component: PaymentsPage,
+	validateSearch: validatePaymentsSearch,
 });
 
 function PaymentsPage() {

@@ -70,6 +70,7 @@ export async function createSessionForReservation(
 	args: {
 		restaurantId: Id<typeof TABLE.RESTAURANTS>;
 		tableId: Id<typeof TABLE.TABLES>;
+		serverMemberId?: Id<"restaurantMembers">;
 	}
 ): Promise<Id<typeof TABLE.SESSIONS>> {
 	return await ctx.db.insert(TABLE.SESSIONS, {
@@ -77,5 +78,6 @@ export async function createSessionForReservation(
 		tableId: args.tableId,
 		status: SESSION_STATUS.ACTIVE,
 		startedAt: Date.now(),
+		...(args.serverMemberId !== undefined && { serverMemberId: args.serverMemberId }),
 	});
 }

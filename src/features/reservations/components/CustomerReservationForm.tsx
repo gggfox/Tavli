@@ -6,19 +6,23 @@
  * before submitting, then calls the public `reservations.create` mutation.
  */
 import { ReservationsKeys } from "@/global/i18n";
+import { AppDatePicker } from "@/global/components";
+import { DateTimeField } from "@/global/components/Form";
+import { useCalendarVariant } from "@/global/hooks/useCalendarVariant";
 import { unwrapResult } from "@/global/utils";
+import { isValidYmd, todayLocalYmd } from "@/global/utils/calendarMonth";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { CalendarClock, Check } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+	customDayBounds,
 	formatReservationTime,
-	fromDateTimeLocalValue,
-	toDateTimeLocalValue,
-} from "../utils";
+	formatTimeOnly,
+} from "@/features/reservations/utils";
 
 interface CustomerReservationFormProps {
 	restaurantId: Id<"restaurants">;
@@ -37,6 +41,7 @@ export function CustomerReservationForm({
 	restaurantName,
 }: Readonly<CustomerReservationFormProps>) {
 	const { t, i18n } = useTranslation();
+	const calendarVariant = useCalendarVariant();
 	const defaultStartMs = useMemo(() => {
 		const d = new Date();
 		d.setMinutes(d.getMinutes() + 60);
@@ -45,6 +50,7 @@ export function CustomerReservationForm({
 	}, []);
 
 	const [partySize, setPartySize] = useState(2);
+	const [selectedYmd, setSelectedYmd] = useState(todayLocalYmd);
 	const [startsAtMs, setStartsAtMs] = useState<number>(defaultStartMs);
 	const [name, setName] = useState("");
 	const [phone, setPhone] = useState("");
@@ -53,6 +59,38 @@ export function CustomerReservationForm({
 	const [submitting, setSubmitting] = useState(false);
 	const [createdId, setCreatedId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+
+	const dayBounds = useMemo(
+		() => (isValidYmd(selectedYmd) ? customDayBounds(selectedYmd) : null),
+		[selectedYmd]
+	);
+
+	const { data: slotsResult } = useQuery({
+		...convexQuery(
+			api.reservations.listReservationSlotsForDay,
+			calendarVariant === "custom" && dayBounds && partySize >= 1
+				? {
+						restaurantId,
+						partySize,
+						fromMs: dayBounds.fromMs,
+						toMs: dayBounds.toMs,
+					}
+				: "skip"
+		),
+	});
+
+	const slots = useMemo(
+		() => (calendarVariant === "custom" ? (slotsResult?.slots ?? []) : []),
+		[calendarVariant, slotsResult?.slots]
+	);
+
+	useEffect(() => {
+		if (calendarVariant !== "custom") return;
+		if (slots.length === 0) return;
+		if (!slots.includes(startsAtMs)) {
+			setStartsAtMs(slots[0]!);
+		}
+	}, [calendarVariant, slots, startsAtMs]);
 
 	const { data: rawAvailability } = useQuery(
 		convexQuery(api.reservations.getAvailability, {
@@ -147,12 +185,50 @@ export function CustomerReservationForm({
 					onChange={setPartySize}
 					min={1}
 				/>
-				<DateTimeField
-					id="rf-start"
-					label={t(ReservationsKeys.FORM_DATE_TIME)}
-					valueMs={startsAtMs}
-					onChangeMs={setStartsAtMs}
-				/>
+				{calendarVariant === "native" ? (
+					<DateTimeField
+						id="rf-start"
+						label={t(ReservationsKeys.FORM_DATE_TIME)}
+						valueMs={startsAtMs}
+						onChangeMs={setStartsAtMs}
+					/>
+				) : (
+					<div className="col-span-2 space-y-3">
+						<AppDatePicker
+							id="rf-date"
+							label={t(ReservationsKeys.FORM_DATE)}
+							value={selectedYmd}
+							onChange={setSelectedYmd}
+							localeTag={i18n.language}
+						/>
+						<div className="flex flex-col gap-1 text-xs">
+							<span className="text-muted-foreground">{t(ReservationsKeys.FORM_TIME)}</span>
+							{slots.length > 0 ? (
+								<div className="flex flex-wrap gap-1">
+									{slots.map((ms) => {
+										const active = ms === startsAtMs;
+										return (
+											<button
+												key={ms}
+												type="button"
+												onClick={() => setStartsAtMs(ms)}
+												className="text-xs px-2 py-1 rounded-full border border-border bg-background text-foreground"
+												style={{
+													borderColor: active ? "var(--btn-primary-bg)" : undefined,
+													boxShadow: active ? "0 0 0 1px var(--btn-primary-bg)" : undefined,
+												}}
+											>
+												{formatTimeOnly(ms, i18n.language)}
+											</button>
+										);
+									})}
+								</div>
+							) : (
+								<p className="text-xs text-muted-foreground">{t(ReservationsKeys.FORM_SLOTS_EMPTY)}</p>
+							)}
+						</div>
+					</div>
+				)}
 			</div>
 
 			{availability && (
@@ -239,9 +315,20 @@ export function CustomerReservationForm({
 
 			<button
 				type="submit"
-				disabled={submitting || (availability ? !availability.available : false)}
+				disabled={
+					submitting ||
+					(availability ? !availability.available : false) ||
+					(calendarVariant === "custom" && slots.length === 0)
+				}
 				className="w-full px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-				style={{opacity: submitting || (availability ? !availability.available : false) ? 0.6 : 1}}
+				style={{
+					opacity:
+						submitting ||
+						(availability ? !availability.available : false) ||
+						(calendarVariant === "custom" && slots.length === 0)
+							? 0.6
+							: 1,
+				}}
 			>
 				{submitting
 					? t(ReservationsKeys.FORM_SUBMITTING)
@@ -273,27 +360,6 @@ function NumberField({
 				value={value}
 				min={min}
 				onChange={(e) => onChange(Number.parseInt(e.target.value, 10) || 0)}
-				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-				
-			/>
-		</label>
-	);
-}
-
-function DateTimeField({
-	id,
-	label,
-	valueMs,
-	onChangeMs,
-}: Readonly<{ id: string; label: string; valueMs: number; onChangeMs: (v: number) => void }>) {
-	return (
-		<label htmlFor={id} className="flex flex-col gap-1 text-xs text-muted-foreground">
-			<span >{label}</span>
-			<input
-				id={id}
-				type="datetime-local"
-				value={toDateTimeLocalValue(valueMs)}
-				onChange={(e) => onChangeMs(fromDateTimeLocalValue(e.target.value))}
 				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
 				
 			/>

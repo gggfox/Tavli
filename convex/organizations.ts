@@ -155,7 +155,7 @@ export const updateOrganization = mutation({
 
 export const deleteOrganization = mutation({
 	args: { id: v.id(TABLE.ORGANIZATIONS) },
-	handler: async function (ctx, args): AsyncReturn<void, MutationErrors> {
+	handler: async function (ctx, args): AsyncReturn<null, MutationErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 		const [_, error2] = await requireAdminRole(ctx, userId);
@@ -186,6 +186,6 @@ export const deleteOrganization = mutation({
 		}
 
 		await ctx.db.delete(args.id);
-		return [undefined, null];
+		return [null, null];
 	},
 });
