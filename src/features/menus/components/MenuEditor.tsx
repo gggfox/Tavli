@@ -1,5 +1,5 @@
 import { OptionGroupManager } from "@/features/options";
-import { LanguageTabBar, Modal } from "@/global/components";
+import { EmptyState, LanguageTabBar, Modal } from "@/global/components";
 import { Languages, MenusKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { Globe, LayoutGrid, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCategories, useMenus } from "../hooks/useMenus";
 import { CategorySection } from "./CategorySection";
@@ -31,6 +31,7 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 
 	const [langSettingsOpen, setLangSettingsOpen] = useState(false);
 	const [optionGroupsModalOpen, setOptionGroupsModalOpen] = useState(false);
+	const categoryInputRef = useRef<HTMLInputElement>(null);
 
 	const categoryForm = useForm({
 		defaultValues: { name: "" },
@@ -59,7 +60,7 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 	};
 
 	return (
-		<div className="space-y-6">
+		<div className="flex flex-col gap-6 h-full">
 			<div className="flex items-center gap-3">
 				<LanguageTabBar
 					languages={supportedLangs}
@@ -155,6 +156,7 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 						name="name"
 						children={(field) => (
 							<input
+								ref={categoryInputRef}
 								type="text"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
@@ -189,10 +191,22 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 					selectedLang={isTranslationMode ? selectedLang : undefined}
 				/>
 			))}
-			{sorted.length === 0 && (
-				<p className="text-sm py-8 text-center text-faint-foreground" >
-					{t(MenusKeys.EDITOR_NO_CATEGORIES)}
-				</p>
+			{sorted.length === 0 && !isTranslationMode && (
+				<EmptyState
+					fill
+					icon={LayoutGrid}
+					title={t(MenusKeys.EDITOR_NO_CATEGORIES_TITLE)}
+					description={t(MenusKeys.EDITOR_NO_CATEGORIES_DESCRIPTION)}
+					action={
+						<button
+							type="button"
+							onClick={() => categoryInputRef.current?.focus()}
+							className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+						>
+							<Plus size={16} /> {t(MenusKeys.EDITOR_NO_CATEGORIES_ACTION)}
+						</button>
+					}
+				/>
 			)}
 		</div>
 	);

@@ -12,16 +12,17 @@ import {
 	type ScheduledShiftView,
 	type ShiftDrawerInitial,
 } from "@/features/schedule";
-import { AdminPageLayout, LoadingState, SegmentedControl } from "@/global/components";
+import { AdminPageLayout, EmptyState, LoadingState, SegmentedControl } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { SHIFT_STATUS } from "convex/constants";
+import { Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -110,6 +111,32 @@ function AdminSchedulePage() {
 				description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION_NO_RESTAURANT)}
 			>
 				<p className="text-sm text-faint-foreground">{t(AdminStaffKeys.SCHEDULE_NO_RESTAURANT)}</p>
+			</AdminPageLayout>
+		);
+	}
+
+	if (members.length === 0) {
+		return (
+			<AdminPageLayout
+				title={t(SidebarKeys.SCHEDULE)}
+				description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION)}
+			>
+				<div className="flex flex-col h-full">
+					<EmptyState
+						fill
+						icon={Users}
+						title={t(AdminStaffKeys.SCHEDULE_GRID_NO_MEMBERS)}
+						description={t(AdminStaffKeys.SCHEDULE_GRID_NO_MEMBERS_DESCRIPTION)}
+						action={
+							<Link
+								to="/admin/team"
+								className="text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-background hover:bg-(--bg-hover)"
+							>
+								{t(AdminStaffKeys.SCHEDULE_INVITE_TEAM_ACTION)}
+							</Link>
+						}
+					/>
+				</div>
 			</AdminPageLayout>
 		);
 	}

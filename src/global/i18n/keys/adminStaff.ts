@@ -67,6 +67,7 @@ export const AdminStaffKeys = {
 	SCHEDULE_GRID_DAY_HEADER_FORMAT: "adminStaff.schedule.gridDayHeaderFormat",
 	SCHEDULE_GRID_NO_MEMBERS: "adminStaff.schedule.gridNoMembers",
 	SCHEDULE_GRID_NO_MEMBERS_DESCRIPTION: "adminStaff.schedule.gridNoMembersDescription",
+	SCHEDULE_INVITE_TEAM_ACTION: "adminStaff.schedule.inviteTeamAction",
 	SCHEDULE_GRID_ADD_SHIFT_ARIA: "adminStaff.schedule.gridAddShiftAria",
 	SCHEDULE_GRID_TEMPLATE_BADGE: "adminStaff.schedule.gridTemplateBadge",
 	SCHEDULE_GRID_DRAFT_BADGE: "adminStaff.schedule.gridDraftBadge",

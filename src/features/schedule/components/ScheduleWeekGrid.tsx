@@ -11,8 +11,7 @@
  * mutation; the parent route shapes shifts + members and passes callbacks.
  */
 import { AdminStaffKeys } from "@/global/i18n";
-import { EmptyState } from "@/global/components";
-import { Plus, Users } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -84,16 +83,6 @@ export function ScheduleWeekGrid({
 		}
 		return map;
 	}, [shifts, timezone]);
-
-	if (members.length === 0) {
-		return (
-			<EmptyState
-				icon={Users}
-				title={t(AdminStaffKeys.SCHEDULE_GRID_NO_MEMBERS)}
-				description={t(AdminStaffKeys.SCHEDULE_GRID_NO_MEMBERS_DESCRIPTION)}
-			/>
-		);
-	}
 
 	return (
 		<div className="overflow-x-auto rounded-lg border border-border">
