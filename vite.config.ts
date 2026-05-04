@@ -6,6 +6,16 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
 const config = defineConfig({
+  // fsevents on macOS intermittently fails to deliver change notifications to
+  // chokidar inside this dev stack (concurrently → vite under TanStack Start +
+  // Nitro), so HMR silently dies even though the server is up. Polling is
+  // ~10x more reliable in practice and the CPU cost on this repo is negligible.
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
+  },
   plugins: [
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
