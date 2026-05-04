@@ -14,5 +14,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     exclude: [...configDefaults.exclude, "e2e/**/*"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "json-summary"],
+    },
   },
 });
