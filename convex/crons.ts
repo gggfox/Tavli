@@ -35,4 +35,14 @@ crons.interval(
 	internal.restaurantPurge.purgeExpiredSoftDeletes
 );
 
+// Daily sweep that extends the rolling 4-week materialized horizon for every
+// active `shiftTemplates` row. 09:00 UTC ≈ 03:00 in MX; for restaurants in
+// other zones the only effect is a slightly different sweep moment of day.
+// Idempotent — the per-template overlap check skips slots already covered.
+crons.daily(
+	"shift template materialization",
+	{ hourUTC: 9, minuteUTC: 0 },
+	internal.shiftTemplates.materializeAllTemplates
+);
+
 export default crons;

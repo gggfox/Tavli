@@ -26,6 +26,7 @@ export const TABLE = {
 	RESTAURANT_MEMBERS: "restaurantMembers",
 	INVITATIONS: "invitations",
 	SHIFTS: "shifts",
+	SHIFT_TEMPLATES: "shiftTemplates",
 	SHIFT_TABLE_ASSIGNMENTS: "shiftTableAssignments",
 	CLOCK_EVENTS: "clockEvents",
 	ABSENCES: "absences",
@@ -204,6 +205,40 @@ export const SHIFT_STATUS = {
 } as const;
 
 export type ShiftStatus = (typeof SHIFT_STATUS)[keyof typeof SHIFT_STATUS];
+
+/**
+ * Fixed taxonomy of shift roles. Stored as the literal string in `shifts.shiftRole`
+ * and rendered with a role-specific chip color in the schedule grid.
+ */
+export const SHIFT_ROLE = {
+	SERVER: "server",
+	BARTENDER: "bartender",
+	HOST: "host",
+	KITCHEN: "kitchen",
+	MANAGER: "manager",
+} as const;
+
+export type ShiftRole = (typeof SHIFT_ROLE)[keyof typeof SHIFT_ROLE];
+
+/** How many weeks ahead the cron + eager save materialize template-derived shifts. */
+export const SHIFT_TEMPLATE_HORIZON_WEEKS = 4;
+
+/**
+ * Day-of-week index used by `shiftTemplates.dayOfWeek`. Monday-start, matching the
+ * Mon→Sun layout of the manager schedule grid.
+ */
+export const SHIFT_TEMPLATE_DAY_OF_WEEK = {
+	MONDAY: 0,
+	TUESDAY: 1,
+	WEDNESDAY: 2,
+	THURSDAY: 3,
+	FRIDAY: 4,
+	SATURDAY: 5,
+	SUNDAY: 6,
+} as const;
+
+export type ShiftTemplateDayOfWeek =
+	(typeof SHIFT_TEMPLATE_DAY_OF_WEEK)[keyof typeof SHIFT_TEMPLATE_DAY_OF_WEEK];
 
 export const CLOCK_EVENT_TYPE = {
 	IN: "in",

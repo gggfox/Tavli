@@ -1,6 +1,7 @@
 import { AdminStaffKeys } from "@/global/i18n";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Id } from "convex/_generated/dataModel";
+import { RESTAURANT_MEMBER_ROLE } from "convex/constants";
 import type { TFunction } from "i18next";
 
 export type TeamDirectoryRow =
@@ -40,8 +41,19 @@ export function createTeamDirectoryColumns(args: {
 	staffRoleLabel: (role: string) => string;
 	onRevokeInvite: (invitationId: Id<"invitations">) => void;
 	revokePendingId: Id<"invitations"> | null;
+	/** When provided, member rows the actor can target render an "Asignar turno…" action. */
+	onAssignShift?: (memberId: Id<"restaurantMembers">) => void;
+	/** Member ids the current actor can schedule shifts for; used to gate the row action. */
+	assignableMemberIds?: ReadonlySet<string>;
 }) {
-	const { t, staffRoleLabel, onRevokeInvite, revokePendingId } = args;
+	const {
+		t,
+		staffRoleLabel,
+		onRevokeInvite,
+		revokePendingId,
+		onAssignShift,
+		assignableMemberIds,
+	} = args;
 
 	return [
 		columnHelper.display({
@@ -99,18 +111,44 @@ export function createTeamDirectoryColumns(args: {
 			header: () => "",
 			cell: ({ row }) => {
 				const r = row.original;
-				if (r.rowType !== "invite") return null;
-				const busy = revokePendingId === r._id;
-				return (
-					<button
-						type="button"
-						className="text-xs text-destructive hover:underline disabled:opacity-50"
-						disabled={busy}
-						onClick={() => onRevokeInvite(r._id)}
-					>
-						{t(AdminStaffKeys.TEAM_REVOKE)}
-					</button>
-				);
+				if (r.rowType === "invite") {
+					const busy = revokePendingId === r._id;
+					return (
+						<button
+							type="button"
+							className="text-xs text-destructive hover:underline disabled:opacity-50"
+							disabled={busy}
+							onClick={() => onRevokeInvite(r._id)}
+						>
+							{t(AdminStaffKeys.TEAM_REVOKE)}
+						</button>
+					);
+				}
+				if (
+					r.rowType === "member" &&
+					r.isActive &&
+					onAssignShift &&
+					assignableMemberIds?.has(String(r._id))
+				) {
+					// Owners only render via the synthetic owner row (no `_id`), so
+					// `member` rowType already excludes the org/restaurant owners we
+					// can't schedule.
+					if (
+						r.role === RESTAURANT_MEMBER_ROLE.MANAGER ||
+						r.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE
+					) {
+						return (
+							<button
+								type="button"
+								className="text-xs text-foreground hover:underline"
+								onClick={() => onAssignShift(r._id)}
+							>
+								{t(AdminStaffKeys.SCHEDULE_TEAM_ROW_ASSIGN)}
+							</button>
+						);
+					}
+				}
+				return null;
 			},
 		}),
 	];

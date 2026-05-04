@@ -22,6 +22,7 @@ export const SidebarKeys = {
 	TEAM: "sidebar.nav.team",
 	TEAM_INVITES: "sidebar.nav.teamInvites",
 	SCHEDULE: "sidebar.nav.schedule",
+	MY_SCHEDULE: "sidebar.nav.mySchedule",
 	ATTENDANCE: "sidebar.nav.attendance",
 	TIPS: "sidebar.nav.tips",
 	PERFORMANCE: "sidebar.nav.performance",

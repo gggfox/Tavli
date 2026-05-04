@@ -66,6 +66,11 @@ export const sidebarItems: SidebarItem[] = [
 				to: "/admin/schedule",
 			},
 			{
+				translationKey: SidebarKeys.MY_SCHEDULE,
+				icon: <CalendarRange size={18} className="shrink-0" />,
+				to: "/admin/my-schedule",
+			},
+			{
 				translationKey: SidebarKeys.ATTENDANCE,
 				icon: <Clock size={18} className="shrink-0" />,
 				to: "/admin/attendance",

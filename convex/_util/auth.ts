@@ -334,6 +334,62 @@ export async function requireRestaurantOwnerOrAdmin(
 	return requireRestaurantAccess(ctx, userId, restaurantId, "owner_admin");
 }
 
+/**
+ * Tier-aware authorization for actions targeting a `restaurantMembers` row
+ * (creating / editing / cancelling shifts and shift templates for that
+ * member).
+ *
+ * Matrix:
+ *   - Admin / restaurant document owner / org owner for this restaurant's org → may target any role
+ *   - Active manager at this restaurant → may target employees only (and self)
+ *   - Anyone else → denied
+ *
+ * This mirrors `assertCanManageMembership` in `convex/restaurantMembers.ts`
+ * so a manager who can't promote another manager via invitations also can't
+ * schedule a peer manager.
+ */
+export async function requireShiftTargetAuthority(
+	ctx: RoleDbContext,
+	actorUserId: string,
+	args: {
+		restaurantId: Id<"restaurants">;
+		targetMember: Doc<"restaurantMembers">;
+	}
+): AsyncReturn<null, NotAuthorizedErrorObject | NotFoundErrorObject> {
+	const restaurant = await ctx.db.get(args.restaurantId);
+	if (!restaurant) {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+	if (restaurant.deletedAt != null) {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+	if (args.targetMember.restaurantId !== args.restaurantId) {
+		return [null, new NotFoundError("Team member not found for restaurant").toObject()];
+	}
+
+	if (await isAdmin(ctx, actorUserId)) {
+		return [null, null];
+	}
+
+	if (isRestaurantDocumentOwner(restaurant, actorUserId)) {
+		return [null, null];
+	}
+
+	const actorRoleRows = await fetchUserRoleRecordsByUserId(ctx, actorUserId);
+	if (someRowIsOrgOwnerForRestaurant(actorRoleRows, restaurant)) {
+		return [null, null];
+	}
+
+	if (args.targetMember.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
+		const actorMember = await getRestaurantMembership(ctx, actorUserId, args.restaurantId);
+		if (actorMember?.isActive && actorMember.role === RESTAURANT_MEMBER_ROLE.MANAGER) {
+			return [null, null];
+		}
+	}
+
+	return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+}
+
 export async function requireRestaurantStaffAccess(
 	ctx: RoleDbContext,
 	userId: string,

@@ -552,13 +552,59 @@ export default defineSchema({
 			v.literal(SHIFT_STATUS.CANCELLED)
 		),
 		notes: v.optional(v.string()),
+		/**
+		 * When set, this shift was materialized from a `shiftTemplates` row and
+		 * will be re-aligned by template edits. Edit / cancel detaches the row
+		 * (clears `templateId`) so the override survives template changes.
+		 */
+		templateId: v.optional(v.id(TABLE.SHIFT_TEMPLATES)),
+		/** Stamped on transition from SCHEDULED to PUBLISHED via `publishWeek`. */
+		publishedAt: v.optional(v.number()),
 		createdBy: v.string(),
 		updatedBy: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
 		.index("by_restaurant_time", ["restaurantId", "startsAt"])
-		.index("by_member_time", ["memberId", "startsAt"]),
+		.index("by_member_time", ["memberId", "startsAt"])
+		.index("by_restaurant_status_time", ["restaurantId", "status", "startsAt"])
+		.index("by_template", ["templateId"]),
+
+	// ============================================================================
+	// Shift templates (weekly recurring patterns; cron-materialized into `shifts`)
+	// ============================================================================
+	//
+	// One template = "Member M, every <dayOfWeek>, starting at
+	// <startMinutesFromMidnight> in the restaurant's timezone, lasting
+	// <durationMinutes>". Concrete `shifts` rows are inserted by
+	// `shiftTemplates.materializeAllTemplates` (daily cron) and eagerly on save
+	// for SHIFT_TEMPLATE_HORIZON_WEEKS weeks ahead. Editing a single concrete
+	// instance detaches it from its template (clears `shifts.templateId`).
+	[TABLE.SHIFT_TEMPLATES]: defineTable({
+		memberId: v.id(TABLE.RESTAURANT_MEMBERS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		organizationId: v.id(TABLE.ORGANIZATIONS),
+		/** 0 = Monday … 6 = Sunday (Mon-start week). */
+		dayOfWeek: v.number(),
+		/** 0..1439 minutes after local midnight in the restaurant's timezone. */
+		startMinutesFromMidnight: v.number(),
+		/** Length of the shift in minutes; must be > 0 and ≤ 24h. */
+		durationMinutes: v.number(),
+		shiftRole: v.optional(v.string()),
+		notes: v.optional(v.string()),
+		/** Inclusive YYYY-MM-DD start date; weeks before this aren't materialized. */
+		activeFromYmd: v.string(),
+		/** Inclusive YYYY-MM-DD end date; null = open-ended (rolling horizon). */
+		activeUntilYmd: v.optional(v.string()),
+		isActive: v.boolean(),
+		createdBy: v.string(),
+		updatedBy: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_member", ["memberId"])
+		.index("by_restaurant_active", ["restaurantId", "isActive"]),
 
 	[TABLE.SHIFT_TABLE_ASSIGNMENTS]: defineTable({
 		shiftId: v.id(TABLE.SHIFTS),

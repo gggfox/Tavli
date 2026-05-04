@@ -1,3 +1,4 @@
+import { ShiftDrawer, useAssignableMembers, type ShiftDrawerInitial } from "@/features/schedule";
 import { RestaurantInviteMultiSelect } from "@/features/team/components/RestaurantInviteMultiSelect";
 import { createTeamDirectoryColumns, type TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
 import { useRestaurant } from "@/features/restaurants";
@@ -73,6 +74,22 @@ function AdminTeamPage() {
 	const [selectedRestaurantIds, setSelectedRestaurantIds] = useState<Id<"restaurants">[]>([]);
 	const [inviteModalOpen, setInviteModalOpen] = useState(false);
 	const [revokePendingId, setRevokePendingId] = useState<Id<"invitations"> | null>(null);
+
+	const { members: assignableMembers } = useAssignableMembers(restaurant?._id);
+	const assignableMemberIdSet = useMemo(
+		() => new Set(assignableMembers.map((m) => String(m.memberId))),
+		[assignableMembers]
+	);
+	const [shiftDrawerOpen, setShiftDrawerOpen] = useState(false);
+	const [shiftDrawerInitial, setShiftDrawerInitial] = useState<ShiftDrawerInitial | null>(null);
+
+	const handleOpenAssignShift = useCallback(
+		(memberId: Id<"restaurantMembers">) => {
+			setShiftDrawerInitial({ mode: "create", memberId });
+			setShiftDrawerOpen(true);
+		},
+		[]
+	);
 
 	const isAdmin = roles.includes(USER_ROLES.ADMIN);
 
@@ -202,8 +219,10 @@ function AdminTeamPage() {
 					void handleRevokeInvite(id);
 				},
 				revokePendingId,
+				onAssignShift: handleOpenAssignShift,
+				assignableMemberIds: assignableMemberIdSet,
 			}),
-		[t, staffRoleLabelCb, handleRevokeInvite, revokePendingId]
+		[t, staffRoleLabelCb, handleRevokeInvite, revokePendingId, handleOpenAssignShift, assignableMemberIdSet]
 	);
 
 	const globalFilterFn = useMemo(
@@ -390,6 +409,18 @@ function AdminTeamPage() {
 						</div>
 					</div>
 				</Modal>
+
+				{shiftDrawerInitial && restaurant ? (
+					<ShiftDrawer
+						isOpen={shiftDrawerOpen}
+						onClose={() => setShiftDrawerOpen(false)}
+						restaurantId={restaurant._id}
+						restaurantTimezone={restaurant.timezone ?? "UTC"}
+						members={assignableMembers}
+						initial={shiftDrawerInitial}
+						hideRecurringTab
+					/>
+				) : null}
 			</section>
 		</AdminPageLayout>
 	);

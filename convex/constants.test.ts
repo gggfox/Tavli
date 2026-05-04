@@ -26,6 +26,17 @@ describe("TABLE constants", () => {
 			"reservations",
 			"tableLocks",
 			"reservationSettings",
+			"restaurantMembers",
+			"invitations",
+			"shifts",
+			"shiftTemplates",
+			"shiftTableAssignments",
+			"clockEvents",
+			"absences",
+			"shiftAttendance",
+			"tipPools",
+			"tipPoolShares",
+			"tipEntries",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});
