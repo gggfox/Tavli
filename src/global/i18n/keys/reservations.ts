@@ -33,9 +33,6 @@ export const ReservationsKeys = {
 	RANGE_QUARTER: "reservations.range.quarter",
 	RANGE_YEAR: "reservations.range.year",
 	RANGE_ALL: "reservations.range.all",
-	RANGE_CUSTOM: "reservations.range.custom",
-	/** Compact label beside range pills for the calendar jump control. */
-	DASHBOARD_DAY_PICKER_LABEL: "reservations.dashboard.dayPickerLabel",
 
 	VIEW_MODE_CARDS: "reservations.viewMode.cards",
 	VIEW_MODE_TABLE: "reservations.viewMode.table",

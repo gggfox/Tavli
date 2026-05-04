@@ -773,11 +773,7 @@
 			"month": "This month",
 			"quarter": "This quarter",
 			"year": "This year",
-			"all": "All time",
-			"custom": "Custom day"
-		},
-		"dashboard": {
-			"dayPickerLabel": "Go to day"
+			"all": "All time"
 		},
 		"viewMode": {
 			"cards": "Card list",

@@ -318,7 +318,7 @@ function AdminTeamPage() {
 			description={t(AdminStaffKeys.TEAM_DESCRIPTION)}
 			actions={headerActions}
 		>
-			<section className="flex flex-col flex-1 min-h-0 gap-6 max-w-5xl">
+			<section className="flex flex-col h-full min-h-0 gap-6">
 				<AdminTable
 					tableState={tableState}
 					entityName={t(AdminStaffKeys.TEAM_DIRECTORY_ENTITY_NAME)}

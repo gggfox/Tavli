@@ -8,9 +8,9 @@
  *
  * Used by the Payments and Reservations dashboards for time-range filters.
  */
-import { type CSSProperties, type KeyboardEvent, useCallback, useRef } from "react";
-import type { LucideIcon } from "lucide-react";
 import { KEY } from "@/global/utils/keyboard";
+import type { LucideIcon } from "lucide-react";
+import { type CSSProperties, type KeyboardEvent, useCallback, useRef } from "react";
 
 export interface SegmentedControlOption<T extends string> {
 	readonly value: T;
@@ -30,9 +30,10 @@ export interface SegmentedControlProps<T extends string> {
 	readonly iconOnly?: boolean;
 }
 
+/** Per-size padding + text + fixed-height classes. The fixed `h-*` ensures icon-only buttons render at the same height as text buttons of the same size (otherwise the smaller icon would shrink the box). */
 const SIZE_CLASSES = {
-	sm: "px-2.5 py-1 text-xs",
-	md: "px-3 py-1.5 text-sm",
+	sm: "px-2.5 py-1 text-xs h-6",
+	md: "px-3 py-1.5 text-sm h-8",
 } as const;
 
 export function SegmentedControl<T extends string>({
@@ -128,14 +129,12 @@ export function SegmentedControl<T extends string>({
 						]
 							.filter(Boolean)
 							.join(" ")}
-						style={{backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
-				color: isActive
-								? "var(--btn-primary-text)"
-								: "var(--text-secondary)"}}
+						style={{
+							backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
+							color: isActive ? "var(--btn-primary-text)" : "var(--text-secondary)",
+						}}
 					>
-						{Icon ? (
-							<Icon size={iconOnly ? 16 : 14} className="shrink-0" aria-hidden />
-						) : null}
+						{Icon ? <Icon size={iconOnly ? 16 : 14} className="shrink-0" aria-hidden /> : null}
 						{!iconOnly ? opt.label : null}
 					</button>
 				);

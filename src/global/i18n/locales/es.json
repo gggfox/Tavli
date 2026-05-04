@@ -773,11 +773,7 @@
 			"month": "Este mes",
 			"quarter": "Este trimestre",
 			"year": "Este año",
-			"all": "Todo el tiempo",
-			"custom": "Día concreto"
-		},
-		"dashboard": {
-			"dayPickerLabel": "Ir al día"
+			"all": "Todo el tiempo"
 		},
 		"viewMode": {
 			"cards": "Lista de tarjetas",

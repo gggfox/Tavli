@@ -10,8 +10,29 @@
  * The reservations list is a Convex reactive query, so new rows / state
  * transitions appear instantly without manual invalidation.
  */
+import { ReservationDetailDrawer } from "@/features/reservations/components/ReservationDetailDrawer";
+import { ReservationsDashboardSkeleton } from "@/features/reservations/components/ReservationsDashboardSkeleton";
+import { ReservationsTable } from "@/features/reservations/components/ReservationsTable";
+import { useReservations } from "@/features/reservations/hooks/useReservations";
 import {
-	AppDatePicker,
+	type ReservationDashboardRangeValue,
+	type ReservationsDashboardSearch,
+	useReservationsDashboardPrefs,
+} from "@/features/reservations/hooks/useReservationsDashboardPrefs";
+import {
+	getReservationStatusConfig,
+	RESERVATION_FALLBACK_TONE,
+	RESERVATION_STATUS_CONFIG,
+	type ReservationStatus,
+} from "@/features/reservations/statusConfig";
+import {
+	formatTimeOnly,
+	ORDERED_RANGES,
+	RANGE_LABEL_KEYS,
+	type ReservationRange,
+} from "@/features/reservations/utils";
+import { useRestaurant } from "@/features/restaurants";
+import {
 	DashboardShell,
 	EmptyState,
 	getStatusToneStyle,
@@ -22,47 +43,22 @@ import {
 	Surface,
 	toneByValue,
 } from "@/global/components";
-import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import { ReservationsKeys } from "@/global/i18n";
-import { useRestaurant } from "@/features/restaurants";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { type UnwrappedValue, unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
-import { useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
-import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "convex/_generated/dataModel";
+import type { FunctionReturnType } from "convex/server";
 import { CalendarClock, Clock, LayoutList, Table as TableIcon, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	type ReservationDashboardRangeValue,
-	type ReservationsDashboardSearch,
-	useReservationsDashboardPrefs,
-} from "@/features/reservations/hooks/useReservationsDashboardPrefs";
-import { useReservations } from "@/features/reservations/hooks/useReservations";
-import {
-	getReservationStatusConfig,
-	RESERVATION_FALLBACK_TONE,
-	RESERVATION_STATUS_CONFIG,
-	type ReservationStatus,
-} from "@/features/reservations/statusConfig";
-import {
-	ORDERED_RANGES,
-	RANGE_LABEL_KEYS,
-	formatTimeOnly,
-	type ReservationRange,
-} from "@/features/reservations/utils";
-import { ReservationDetailDrawer } from "@/features/reservations/components/ReservationDetailDrawer";
-import { ReservationsDashboardSkeleton } from "@/features/reservations/components/ReservationsDashboardSkeleton";
-import { ReservationsTable } from "@/features/reservations/components/ReservationsTable";
-
-const RES_DASH_DAY_ID = "reservations-dashboard-day";
 
 type ReservationGetValue = UnwrappedValue<FunctionReturnType<typeof api.reservations.get>>;
 
 export function ReservationsDashboard() {
-	const { t, i18n } = useTranslation();
+	const { t } = useTranslation();
 	const { restaurants, isMultiRestaurant } = useRestaurant();
 	const restaurantIds = useMemo(() => restaurants.map((r) => r._id), [restaurants]);
 
@@ -76,7 +72,6 @@ export function ReservationsDashboard() {
 		customDay,
 		rangeSegmentValue,
 		setRange,
-		setCustomDay,
 		statusFilter,
 		toggleStatus,
 		viewMode,
@@ -138,16 +133,11 @@ export function ReservationsDashboard() {
 	}, [focusId, focusedFromList, focusedFetchQuery.data]);
 
 	const rangeOptions = useMemo(
-		(): ReadonlyArray<{ value: ReservationDashboardRangeValue; label: string }> => [
-			...ORDERED_RANGES.map((r) => ({
+		(): ReadonlyArray<{ value: ReservationDashboardRangeValue; label: string }> =>
+			ORDERED_RANGES.map((r) => ({
 				value: r as ReservationDashboardRangeValue,
 				label: t(RANGE_LABEL_KEYS[r]),
 			})),
-			{
-				value: "custom",
-				label: t(ReservationsKeys.RANGE_CUSTOM),
-			},
-		],
 		[t]
 	);
 
@@ -167,9 +157,7 @@ export function ReservationsDashboard() {
 		[t]
 	);
 
-	const statusChipOptions = useMemo<
-		ReadonlyArray<StatusFilterOption<ReservationStatus>>
-	>(
+	const statusChipOptions = useMemo<ReadonlyArray<StatusFilterOption<ReservationStatus>>>(
 		() =>
 			RESERVATION_STATUS_CONFIG.map(({ value, labelKey, tone }) => ({
 				value,
@@ -194,26 +182,12 @@ export function ReservationsDashboard() {
 					onChange={setViewMode}
 					ariaLabel={t(ReservationsKeys.ARIA_FILTER_VIEW_MODE)}
 					iconOnly
-					size="sm"
 				/>
 				<SegmentedControl<ReservationDashboardRangeValue>
 					options={rangeOptions}
 					value={rangeSegmentValue}
-					onChange={(v) => {
-						if (v === "custom") {
-							setCustomDay(todayLocalYmd());
-							return;
-						}
-						setRange(v as ReservationRange);
-					}}
+					onChange={(v) => setRange(v as ReservationRange)}
 					ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
-				/>
-				<AppDatePicker
-					id={RES_DASH_DAY_ID}
-					label={t(ReservationsKeys.DASHBOARD_DAY_PICKER_LABEL)}
-					value={customDay ?? ""}
-					onChange={setCustomDay}
-					localeTag={i18n.language}
 				/>
 			</div>
 		</div>
