@@ -1,0 +1,587 @@
+import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import {
+	RESTAURANT_MEMBER_ROLE,
+	SHIFT_STATUS,
+	USER_ROLES,
+} from "../constants";
+import { insertMenuForRestaurant } from "../menus";
+import schema from "../schema";
+
+const modules = import.meta.glob("../**/*.ts");
+
+const HOUR = 60 * 60 * 1000;
+
+interface SeedOut {
+	orgId: Id<"organizations">;
+	restaurantId: Id<"restaurants">;
+	ownerUserId: string;
+	managerUserId: string;
+	managerMember: Id<"restaurantMembers">;
+	otherMember: Id<"restaurantMembers">;
+	tableId: Id<"tables">;
+	sessionId: Id<"sessions">;
+	menuItemId: Id<"menuItems">;
+}
+
+async function seed(t: ReturnType<typeof convexTest>): Promise<SeedOut> {
+	return await t.run(async (ctx) => {
+		const now = Date.now();
+		const orgId = await ctx.db.insert("organizations", {
+			name: "Sections Org",
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const restaurantId = await ctx.db.insert("restaurants", {
+			ownerId: "owner-user",
+			organizationId: orgId,
+			name: "Sections R",
+			slug: "sections-r",
+			currency: "USD",
+			timezone: "UTC",
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.insert("userRoles", {
+			userId: "owner-user",
+			roles: [USER_ROLES.OWNER],
+			organizationId: orgId,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const managerMember = await ctx.db.insert("restaurantMembers", {
+			userId: "manager-user",
+			restaurantId,
+			organizationId: orgId,
+			role: RESTAURANT_MEMBER_ROLE.MANAGER,
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const otherMember = await ctx.db.insert("restaurantMembers", {
+			userId: "other-user",
+			restaurantId,
+			organizationId: orgId,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		await insertMenuForRestaurant(ctx, {
+			restaurantId,
+			name: "main",
+			userId: "owner-user",
+		});
+
+		const tableId = await ctx.db.insert("tables", {
+			restaurantId,
+			tableNumber: 1,
+			isActive: true,
+			createdAt: now,
+		});
+		const sessionId = await ctx.db.insert("sessions", {
+			restaurantId,
+			tableId,
+			status: "active",
+			startedAt: now,
+		});
+
+		const allMenus = await ctx.db.query("menus").collect();
+		const menuId = allMenus.filter((m) => m.restaurantId === restaurantId)[0]._id;
+		const categoryId = await ctx.db.insert("menuCategories", {
+			menuId,
+			restaurantId,
+			name: "Mains",
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const menuItemId = await ctx.db.insert("menuItems", {
+			categoryId,
+			restaurantId,
+			name: "Burger",
+			basePrice: 800,
+			isAvailable: true,
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return {
+			orgId,
+			restaurantId,
+			ownerUserId: "owner-user",
+			managerUserId: "manager-user",
+			managerMember,
+			otherMember,
+			tableId,
+			sessionId,
+			menuItemId,
+		};
+	});
+}
+
+async function createPaidOrder(
+	t: ReturnType<typeof convexTest>,
+	args: {
+		restaurantId: Id<"restaurants">;
+		sessionId: Id<"sessions">;
+		tableId: Id<"tables">;
+		menuItemId: Id<"menuItems">;
+	}
+): Promise<Id<"orders">> {
+	const orderId = await t.mutation(api.orders.createDraft, {
+		sessionId: args.sessionId,
+		tableId: args.tableId,
+	});
+	await t.mutation(api.orders.addItem, {
+		orderId,
+		menuItemId: args.menuItemId,
+		quantity: 1,
+		selectedOptions: [],
+	});
+	const snap = (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt;
+	const paymentId = await t.mutation(internal.stripeHelpers.createPayment, {
+		restaurantId: args.restaurantId,
+		orderId,
+		amount: 800,
+		currency: "usd",
+		status: "processing",
+		refundStatus: "none",
+		attemptNumber: 1,
+		orderUpdatedAtSnapshot: snap,
+	});
+	await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+		orderId,
+		paymentState: "processing",
+		activePaymentId: paymentId,
+		stripePaymentIntentId: `pi_${orderId}`,
+	});
+	await t.mutation(internal.orders.confirmPayment, {
+		paymentId,
+		stripePaymentIntentId: `pi_${orderId}`,
+	});
+	return orderId;
+}
+
+describe("sections.backfillDefault", () => {
+	it("creates a Default section and patches every table that lacks one", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, ownerUserId } = await seed(t);
+
+		const owner = t.withIdentity({ subject: ownerUserId });
+		const [result, err] = await owner.mutation(api.sections.backfillDefault, {
+			restaurantId,
+		});
+		expect(err).toBeNull();
+		expect(result?.tablesPatched).toBe(1);
+		expect(result?.defaultSectionId).toBeTruthy();
+
+		const patchedTable = await t.run(async (ctx) => ctx.db.get(tableId));
+		expect(patchedTable?.sectionId).toBe(result!.defaultSectionId);
+
+		const sections = await t.query(api.sections.getByRestaurant, { restaurantId });
+		expect(sections).toHaveLength(1);
+		expect(sections[0].isSystem).toBe(true);
+		expect(sections[0].name).toBe("Default");
+	});
+
+	it("is idempotent — re-running does not add a second Default", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, ownerUserId } = await seed(t);
+		const owner = t.withIdentity({ subject: ownerUserId });
+
+		const [first] = await owner.mutation(api.sections.backfillDefault, { restaurantId });
+		const [second, err] = await owner.mutation(api.sections.backfillDefault, {
+			restaurantId,
+		});
+		expect(err).toBeNull();
+		expect(second?.defaultSectionId).toBe(first?.defaultSectionId);
+		expect(second?.tablesPatched).toBe(0);
+		expect(second?.assignmentsConverted).toBe(0);
+
+		const sections = await t.query(api.sections.getByRestaurant, { restaurantId });
+		expect(sections).toHaveLength(1);
+	});
+
+	it("converts existing shiftTableAssignments into shiftSectionAssignments", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, managerMember, ownerUserId } = await seed(t);
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			const shiftId = await ctx.db.insert("shifts", {
+				memberId: managerMember,
+				restaurantId,
+				startsAt: now - HOUR,
+				endsAt: now + HOUR,
+				status: SHIFT_STATUS.PUBLISHED,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("shiftTableAssignments", {
+				shiftId,
+				restaurantId,
+				tableId,
+				startsAt: now - HOUR,
+				endsAt: now + HOUR,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const owner = t.withIdentity({ subject: ownerUserId });
+		const [result] = await owner.mutation(api.sections.backfillDefault, { restaurantId });
+		expect(result?.assignmentsConverted).toBe(1);
+
+		const ssas = await t.run(async (ctx) =>
+			ctx.db
+				.query("shiftSectionAssignments")
+				.withIndex("by_restaurant_time", (q) => q.eq("restaurantId", restaurantId))
+				.collect()
+		);
+		expect(ssas).toHaveLength(1);
+		expect(ssas[0].sectionId).toBe(result!.defaultSectionId);
+	});
+});
+
+describe("sections.create / remove", () => {
+	it("manager can create, rename, and delete an empty section", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [createId, createErr] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Patio",
+		});
+		expect(createErr).toBeNull();
+		expect(createId).toBeTruthy();
+
+		const [renamedId, renameErr] = await manager.mutation(api.sections.update, {
+			sectionId: createId!,
+			name: "Terrace",
+		});
+		expect(renameErr).toBeNull();
+		expect(renamedId).toBe(createId);
+
+		const renamed = await t.run(async (ctx) => ctx.db.get(createId!));
+		expect(renamed?.name).toBe("Terrace");
+
+		const [, removeErr] = await manager.mutation(api.sections.remove, {
+			sectionId: createId!,
+		});
+		expect(removeErr).toBeNull();
+	});
+
+	it("blocks deletion of a section that still owns tables", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [sectionId] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Patio",
+		});
+		await manager.mutation(api.sections.assignTable, {
+			tableId,
+			sectionId: sectionId!,
+		});
+
+		const [removed, err] = await manager.mutation(api.sections.remove, {
+			sectionId: sectionId!,
+		});
+		expect(removed).toBeNull();
+		expect(err?.name).toBe("VALIDATION_ERROR");
+	});
+
+	it("blocks deletion of a section with future shiftSectionAssignments", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerMember, managerUserId, ownerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [sectionId] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Bar",
+		});
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("shiftSectionAssignments", {
+				shiftId: await ctx.db.insert("shifts", {
+					memberId: managerMember,
+					restaurantId,
+					startsAt: now + HOUR,
+					endsAt: now + 9 * HOUR,
+					status: SHIFT_STATUS.PUBLISHED,
+					createdBy: ownerUserId,
+					createdAt: now,
+					updatedAt: now,
+				}),
+				restaurantId,
+				sectionId: sectionId!,
+				startsAt: now + HOUR,
+				endsAt: now + 9 * HOUR,
+				createdBy: managerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const [removed, err] = await manager.mutation(api.sections.remove, {
+			sectionId: sectionId!,
+		});
+		expect(removed).toBeNull();
+		expect(err?.name).toBe("VALIDATION_ERROR");
+	});
+
+	it("blocks deletion of the system Default section", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, ownerUserId } = await seed(t);
+		const owner = t.withIdentity({ subject: ownerUserId });
+
+		const [{ defaultSectionId }] = (await owner.mutation(
+			api.sections.backfillDefault,
+			{ restaurantId }
+		)) as [{ defaultSectionId: Id<"sections">; tablesPatched: number; assignmentsConverted: number }, null];
+
+		const [removed, err] = await owner.mutation(api.sections.remove, {
+			sectionId: defaultSectionId,
+		});
+		expect(removed).toBeNull();
+		expect(err?.name).toBe("VALIDATION_ERROR");
+	});
+});
+
+describe("shifts.upsertSectionAssignment", () => {
+	it("rejects an overlapping assignment for the same section", async () => {
+		const t = convexTest(schema, modules);
+		const {
+			restaurantId,
+			managerMember,
+			otherMember,
+			managerUserId,
+			ownerUserId,
+		} = await seed(t);
+
+		const owner = t.withIdentity({ subject: ownerUserId });
+		const [sectionId] = await owner.mutation(api.sections.create, {
+			restaurantId,
+			name: "Patio",
+		});
+
+		const now = Date.now();
+		const baseStart = now - HOUR;
+		const baseEnd = now + 5 * HOUR;
+		const { firstShiftId, secondShiftId } = await t.run(async (ctx) => {
+			const a = await ctx.db.insert("shifts", {
+				memberId: managerMember,
+				restaurantId,
+				startsAt: baseStart,
+				endsAt: baseEnd,
+				status: SHIFT_STATUS.PUBLISHED,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const b = await ctx.db.insert("shifts", {
+				memberId: otherMember,
+				restaurantId,
+				startsAt: baseStart,
+				endsAt: baseEnd,
+				status: SHIFT_STATUS.PUBLISHED,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+			return { firstShiftId: a, secondShiftId: b };
+		});
+
+		const manager = t.withIdentity({ subject: managerUserId });
+		const [firstId, firstErr] = await manager.mutation(
+			api.shifts.upsertSectionAssignment,
+			{
+				shiftId: firstShiftId,
+				sectionId: sectionId!,
+				startsAt: baseStart,
+				endsAt: baseEnd,
+			}
+		);
+		expect(firstErr).toBeNull();
+		expect(firstId).toBeTruthy();
+
+		const [secondId, secondErr] = await manager.mutation(
+			api.shifts.upsertSectionAssignment,
+			{
+				shiftId: secondShiftId,
+				sectionId: sectionId!,
+				startsAt: baseStart,
+				endsAt: baseEnd,
+			}
+		);
+		expect(secondId).toBeNull();
+		expect(secondErr?.name).toBe("VALIDATION_ERROR");
+	});
+
+	it("allows back-to-back assignments without overlap (handoff)", async () => {
+		const t = convexTest(schema, modules);
+		const {
+			restaurantId,
+			managerMember,
+			otherMember,
+			managerUserId,
+			ownerUserId,
+		} = await seed(t);
+
+		const owner = t.withIdentity({ subject: ownerUserId });
+		const [sectionId] = await owner.mutation(api.sections.create, {
+			restaurantId,
+			name: "Patio",
+		});
+
+		const now = Date.now();
+		const handoff = now + 3 * HOUR;
+		const { firstShiftId, secondShiftId } = await t.run(async (ctx) => {
+			const a = await ctx.db.insert("shifts", {
+				memberId: managerMember,
+				restaurantId,
+				startsAt: now,
+				endsAt: handoff,
+				status: SHIFT_STATUS.PUBLISHED,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const b = await ctx.db.insert("shifts", {
+				memberId: otherMember,
+				restaurantId,
+				startsAt: handoff,
+				endsAt: handoff + 3 * HOUR,
+				status: SHIFT_STATUS.PUBLISHED,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			});
+			return { firstShiftId: a, secondShiftId: b };
+		});
+
+		const manager = t.withIdentity({ subject: managerUserId });
+		const [, firstErr] = await manager.mutation(api.shifts.upsertSectionAssignment, {
+			shiftId: firstShiftId,
+			sectionId: sectionId!,
+			startsAt: now,
+			endsAt: handoff,
+		});
+		expect(firstErr).toBeNull();
+
+		const [, secondErr] = await manager.mutation(api.shifts.upsertSectionAssignment, {
+			shiftId: secondShiftId,
+			sectionId: sectionId!,
+			startsAt: handoff,
+			endsAt: handoff + 3 * HOUR,
+		});
+		expect(secondErr).toBeNull();
+	});
+});
+
+describe("confirmPayment attribution", () => {
+	it("credits the member whose shift covers the table's section", async () => {
+		const t = convexTest(schema, modules);
+		const {
+			restaurantId,
+			tableId,
+			sessionId,
+			menuItemId,
+			managerMember,
+			managerUserId,
+			ownerUserId,
+		} = await seed(t);
+
+		const owner = t.withIdentity({ subject: ownerUserId });
+		const [sectionId] = await owner.mutation(api.sections.create, {
+			restaurantId,
+			name: "Patio",
+		});
+		await owner.mutation(api.sections.assignTable, {
+			tableId,
+			sectionId: sectionId!,
+		});
+
+		const now = Date.now();
+		const shiftId = await t.run(async (ctx) =>
+			ctx.db.insert("shifts", {
+				memberId: managerMember,
+				restaurantId,
+				startsAt: now - HOUR,
+				endsAt: now + HOUR,
+				status: SHIFT_STATUS.PUBLISHED,
+				createdBy: ownerUserId,
+				createdAt: now,
+				updatedAt: now,
+			})
+		);
+		const manager = t.withIdentity({ subject: managerUserId });
+		await manager.mutation(api.shifts.upsertSectionAssignment, {
+			shiftId,
+			sectionId: sectionId!,
+			startsAt: now - HOUR,
+			endsAt: now + HOUR,
+		});
+
+		const orderId = await createPaidOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			menuItemId,
+		});
+
+		const order = await t.query(api.orders.getOrderWithItems, { orderId });
+		expect(order?.attributedMemberId).toBe(managerMember);
+	});
+
+	it("falls back to session.serverMemberId when no section assignment is active", async () => {
+		const t = convexTest(schema, modules);
+		const {
+			restaurantId,
+			tableId,
+			sessionId,
+			menuItemId,
+			otherMember,
+		} = await seed(t);
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(sessionId, { serverMemberId: otherMember });
+		});
+
+		const orderId = await createPaidOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			menuItemId,
+		});
+
+		const order = await t.query(api.orders.getOrderWithItems, { orderId });
+		expect(order?.attributedMemberId).toBe(otherMember);
+	});
+
+	it("leaves attributedMemberId undefined when neither section nor session covers the order", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, sessionId, menuItemId } = await seed(t);
+
+		const orderId = await createPaidOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			menuItemId,
+		});
+
+		const order = await t.query(api.orders.getOrderWithItems, { orderId });
+		expect(order?.attributedMemberId).toBeUndefined();
+	});
+});

@@ -269,11 +269,32 @@ export default defineSchema({
 		// fall back to FALLBACK_TABLE_CAPACITY in availability checks until the
 		// `tables.backfillCapacity` admin mutation has run.
 		capacity: v.optional(v.number()),
+		// Optional during the section rollout (Phase 1). New rows always set it
+		// (`tables.create` requires it once the restaurant has a Default section);
+		// existing rows are backfilled by `sections.backfillDefault`. Phase 2 will
+		// tighten this to non-optional.
+		sectionId: v.optional(v.id(TABLE.SECTIONS)),
 		isActive: v.boolean(),
 		createdAt: v.number(),
 	})
 		.index("by_restaurant_number", ["restaurantId", "tableNumber"])
-		.index("by_restaurant", ["restaurantId"]),
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_section", ["sectionId"]),
+
+	// Floor sections (zones) tables belong to. A waiter is assigned to a
+	// section for the duration of (a sub-window of) a shift via
+	// `shiftSectionAssignments`. The auto-created Default section is
+	// `isSystem: true` and undeletable.
+	[TABLE.SECTIONS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		name: v.optional(v.string()),
+		displayOrder: v.number(),
+		isActive: v.boolean(),
+		isSystem: v.optional(v.boolean()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedBy: v.optional(v.string()),
+	}).index("by_restaurant", ["restaurantId"]),
 
 	[TABLE.SESSIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -636,6 +657,25 @@ export default defineSchema({
 	})
 		.index("by_shift", ["shiftId"])
 		.index("by_table_time", ["tableId", "startsAt"])
+		.index("by_restaurant_time", ["restaurantId", "startsAt"]),
+
+	// Time-windowed assignment of a shift's member to a section. The
+	// authoritative source for waiter attribution at `confirmPayment`. Mirrors
+	// the shape of `shiftTableAssignments`. Overlapping windows for the same
+	// section are rejected at insert time.
+	[TABLE.SHIFT_SECTION_ASSIGNMENTS]: defineTable({
+		shiftId: v.id(TABLE.SHIFTS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		sectionId: v.id(TABLE.SECTIONS),
+		startsAt: v.number(),
+		endsAt: v.number(),
+		createdBy: v.string(),
+		updatedBy: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_shift", ["shiftId"])
+		.index("by_section_time", ["sectionId", "startsAt"])
 		.index("by_restaurant_time", ["restaurantId", "startsAt"]),
 
 	// ============================================================================

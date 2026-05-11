@@ -1,8 +1,8 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
-	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
@@ -10,8 +10,9 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, isAdmin, requireOwnerRole, RoleErrorMessages } from "./_util/auth";
+import { getCurrentUserId, requireOwnerOrManager } from "./_util/auth";
 import { FALLBACK_TABLE_CAPACITY, TABLE } from "./constants";
+import { ensureDefaultSection } from "./sections";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -21,6 +22,7 @@ export const create = mutation({
 		tableNumber: v.number(),
 		label: v.optional(v.string()),
 		capacity: v.optional(v.number()),
+		sectionId: v.optional(v.id(TABLE.SECTIONS)),
 	},
 	handler: async function (
 		ctx,
@@ -28,15 +30,9 @@ export const create = mutation({
 	): AsyncReturn<string, AuthErrors | UserInputValidationErrorObject | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
-		if (error2) return [null, error2];
 
-		const restaurant = await ctx.db.get(args.restaurantId);
-		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
-		const userIsAdmin = await isAdmin(ctx, userId);
-		if (!userIsAdmin && restaurant.ownerId !== userId) {
-			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-		}
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, args.restaurantId);
+		if (permErr) return [null, permErr];
 
 		if (args.capacity !== undefined && args.capacity < 1) {
 			return [
@@ -45,6 +41,19 @@ export const create = mutation({
 					fields: [{ field: "capacity", message: "Must be at least 1" }],
 				}).toObject(),
 			];
+		}
+
+		let sectionId: Id<"sections"> | undefined = args.sectionId;
+		if (sectionId === undefined) {
+			sectionId = await ensureDefaultSection(ctx, {
+				restaurantId: args.restaurantId,
+				userId,
+			});
+		} else {
+			const section = await ctx.db.get(sectionId);
+			if (section?.restaurantId !== args.restaurantId) {
+				return [null, new NotFoundError("Section not found").toObject()];
+			}
 		}
 
 		const existing = await ctx.db
@@ -68,6 +77,7 @@ export const create = mutation({
 			tableNumber: args.tableNumber,
 			label: args.label,
 			capacity: args.capacity,
+			sectionId,
 			isActive: true,
 			createdAt: Date.now(),
 		});
@@ -89,17 +99,12 @@ export const update = mutation({
 	): AsyncReturn<string, AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const table = await ctx.db.get(args.tableId);
 		if (!table) return [null, new NotFoundError("Table not found").toObject()];
 
-		const restaurant = await ctx.db.get(table.restaurantId);
-		const userIsAdmin = await isAdmin(ctx, userId);
-		if (!userIsAdmin && restaurant?.ownerId !== userId) {
-			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-		}
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, table.restaurantId);
+		if (permErr) return [null, permErr];
 
 		if (args.capacity !== undefined && args.capacity < 1) {
 			return [
@@ -151,16 +156,9 @@ export const backfillCapacity = mutation({
 	handler: async function (ctx, args): AsyncReturn<{ updated: number }, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
-		if (error2) return [null, error2];
 
-		const restaurant = await ctx.db.get(args.restaurantId);
-		if (!restaurant) return [null, new NotFoundError("Restaurant not found").toObject()];
-
-		const userIsAdmin = await isAdmin(ctx, userId);
-		if (!userIsAdmin && restaurant.ownerId !== userId) {
-			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-		}
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, args.restaurantId);
+		if (permErr) return [null, permErr];
 
 		const tables = await ctx.db
 			.query(TABLE.TABLES)
@@ -183,17 +181,12 @@ export const remove = mutation({
 	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const table = await ctx.db.get(args.tableId);
 		if (!table) return [null, new NotFoundError("Table not found").toObject()];
 
-		const restaurant = await ctx.db.get(table.restaurantId);
-		const userIsAdmin = await isAdmin(ctx, userId);
-		if (!userIsAdmin && restaurant?.ownerId !== userId) {
-			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-		}
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, table.restaurantId);
+		if (permErr) return [null, permErr];
 
 		await ctx.db.delete(args.tableId);
 		return [null, null];
@@ -205,17 +198,12 @@ export const toggleActive = mutation({
 	handler: async function (ctx, args): AsyncReturn<boolean, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, error2] = await requireOwnerRole(ctx, userId);
-		if (error2) return [null, error2];
 
 		const table = await ctx.db.get(args.tableId);
 		if (!table) return [null, new NotFoundError("Table not found").toObject()];
 
-		const restaurant = await ctx.db.get(table.restaurantId);
-		const userIsAdmin = await isAdmin(ctx, userId);
-		if (!userIsAdmin && restaurant?.ownerId !== userId) {
-			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
-		}
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, table.restaurantId);
+		if (permErr) return [null, permErr];
 
 		const newState = !table.isActive;
 		await ctx.db.patch(args.tableId, { isActive: newState });

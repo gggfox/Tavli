@@ -593,6 +593,140 @@ export const upsertTableAssignment = mutation({
 	},
 });
 
+// ============================================================================
+// Shift -> section assignments (the post-sections-rollout authoritative
+// surface for waiter attribution; mirrors the upsertTableAssignment shape).
+// ============================================================================
+
+export const upsertSectionAssignment = mutation({
+	args: {
+		shiftId: v.id(TABLE.SHIFTS),
+		sectionId: v.id(TABLE.SECTIONS),
+		startsAt: v.number(),
+		endsAt: v.number(),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<
+		Id<"shiftSectionAssignments">,
+		AuthE | NotFoundErrorObject | UserInputValidationErrorObject
+	> {
+		const [userId, err] = await getCurrentUserId(ctx);
+		if (err) return [null, err];
+
+		const shift = await ctx.db.get(args.shiftId);
+		if (!shift) return [null, new NotFoundError("Shift not found").toObject()];
+		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, shift.restaurantId);
+		if (aerr) return [null, aerr];
+
+		if (args.endsAt <= args.startsAt) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "endsAt", message: "Must be after startsAt" }],
+				}).toObject(),
+			];
+		}
+
+		const section = await ctx.db.get(args.sectionId);
+		if (!section || section.restaurantId !== shift.restaurantId) {
+			return [null, new NotFoundError("Section not found").toObject()];
+		}
+
+		const windowStart = Math.max(args.startsAt, shift.startsAt);
+		const windowEnd = Math.min(args.endsAt, shift.endsAt);
+		if (windowEnd <= windowStart) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "startsAt", message: "Assignment must overlap the shift window" }],
+				}).toObject(),
+			];
+		}
+
+		const others = await ctx.db
+			.query(TABLE.SHIFT_SECTION_ASSIGNMENTS)
+			.withIndex("by_section_time", (q) => q.eq("sectionId", args.sectionId))
+			.collect();
+		for (const o of others) {
+			if (o.shiftId === args.shiftId) continue;
+			if (rangesOverlap(o.startsAt, o.endsAt, windowStart, windowEnd)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [
+							{ field: "sectionId", message: "Section already covered in this window" },
+						],
+					}).toObject(),
+				];
+			}
+		}
+
+		const now = Date.now();
+		const id = await ctx.db.insert(TABLE.SHIFT_SECTION_ASSIGNMENTS, {
+			shiftId: args.shiftId,
+			restaurantId: shift.restaurantId,
+			sectionId: args.sectionId,
+			startsAt: windowStart,
+			endsAt: windowEnd,
+			createdBy: userId,
+			createdAt: now,
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		return [id, null];
+	},
+});
+
+export const removeSectionAssignment = mutation({
+	args: { assignmentId: v.id(TABLE.SHIFT_SECTION_ASSIGNMENTS) },
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<null, AuthE | NotFoundErrorObject> {
+		const [userId, err] = await getCurrentUserId(ctx);
+		if (err) return [null, err];
+
+		const assignment = await ctx.db.get(args.assignmentId);
+		if (!assignment) return [null, new NotFoundError("Assignment not found").toObject()];
+
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			assignment.restaurantId
+		);
+		if (aerr) return [null, aerr];
+
+		await ctx.db.delete(args.assignmentId);
+		return [null, null];
+	},
+});
+
+export const listSectionAssignmentsForShift = query({
+	args: { shiftId: v.id(TABLE.SHIFTS) },
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Doc<"shiftSectionAssignments">[], AuthE | NotFoundErrorObject> {
+		const [userId, err] = await getCurrentUserId(ctx);
+		if (err) return [null, err];
+
+		const shift = await ctx.db.get(args.shiftId);
+		if (!shift) return [null, new NotFoundError("Shift not found").toObject()];
+
+		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, shift.restaurantId);
+		if (aerr) return [null, aerr];
+
+		const rows = await ctx.db
+			.query(TABLE.SHIFT_SECTION_ASSIGNMENTS)
+			.withIndex("by_shift", (q) => q.eq("shiftId", args.shiftId))
+			.collect();
+		return [rows, null];
+	},
+});
+
 /** For CSV export actions — caller must pass an authenticated acting user id. */
 export const internalListShiftsForExport = internalQuery({
 	args: {

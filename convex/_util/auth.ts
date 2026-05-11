@@ -126,6 +126,9 @@ export function isRestaurantDocumentOwner(
 /**
  * Admin, document owner (`restaurants.ownerId`), org-level owner for this
  * restaurant's org, or active restaurant-scoped manager.
+ *
+ * Aliased as `requireOwnerOrManager` for sites where the
+ * "owner or manager can edit" intent reads more naturally.
  */
 export async function requireRestaurantManagerOrAbove(
 	ctx: RoleDbContext,
@@ -161,6 +164,13 @@ export async function requireRestaurantManagerOrAbove(
 
 	return [null, new NotAuthorizedError(RoleErrorMessages.MANAGER_REQUIRED).toObject()];
 }
+
+/**
+ * Friendlier name for `requireRestaurantManagerOrAbove` used by surfaces
+ * (sections, table↔section moves, shift→section assignments) where the
+ * intent reads more naturally as "owner or manager can do this".
+ */
+export const requireOwnerOrManager = requireRestaurantManagerOrAbove;
 
 /**
  * Check if a user has a specific role.

@@ -29,6 +29,7 @@ import {
 	USER_ROLES,
 } from "./constants";
 import { insertMenuForRestaurant } from "./menus";
+import { ensureDefaultSection } from "./sections";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -195,6 +196,8 @@ export const create = mutation({
 			name: args.slug,
 			userId,
 		});
+
+		await ensureDefaultSection(ctx, { restaurantId: id, userId });
 
 		return [id, null];
 	},

@@ -59,6 +59,7 @@ import type * as reservations from "../reservations.js";
 import type * as restaurantMembers from "../restaurantMembers.js";
 import type * as restaurantPurge from "../restaurantPurge.js";
 import type * as restaurants from "../restaurants.js";
+import type * as sections from "../sections.js";
 import type * as sessions from "../sessions.js";
 import type * as shiftTemplates from "../shiftTemplates.js";
 import type * as shifts from "../shifts.js";
@@ -127,6 +128,7 @@ declare const fullApi: ApiFromModules<{
   restaurantMembers: typeof restaurantMembers;
   restaurantPurge: typeof restaurantPurge;
   restaurants: typeof restaurants;
+  sections: typeof sections;
   sessions: typeof sessions;
   shiftTemplates: typeof shiftTemplates;
   shifts: typeof shifts;

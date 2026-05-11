@@ -24,10 +24,10 @@ import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
 import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import { unwrapResult } from "@/global/utils/unwrapResult";
-import { useConvexMutation } from "@convex-dev/react-query";
-import { useMutation } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
-import type { Id } from "convex/_generated/dataModel";
+import type { Doc, Id } from "convex/_generated/dataModel";
 import { SHIFT_STATUS, type ShiftRole } from "convex/constants";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -356,6 +356,15 @@ export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {
 						localeTag={i18n.language}
 					/>
 				)}
+
+				{tab === "oneoff" && editingShift ? (
+					<SectionsCoveredPanel
+						restaurantId={restaurantId}
+						shiftId={editingShift._id}
+						shiftStartsAt={editingShift.startsAt}
+						shiftEndsAt={editingShift.endsAt}
+					/>
+				) : null}
 
 				{isPublishedEdit ? (
 					<p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200">
@@ -770,6 +779,135 @@ function parseHmInTz(utcMs: number, timezone: string): number {
 	const hm = utcMsToHmInTimezone(utcMs, timezone);
 	const parsed = parseHm(hm);
 	return parsed ?? 0;
+}
+
+interface SectionsCoveredPanelProps {
+	readonly restaurantId: Id<"restaurants">;
+	readonly shiftId: Id<"shifts">;
+	readonly shiftStartsAt: number;
+	readonly shiftEndsAt: number;
+}
+
+function SectionsCoveredPanel({
+	restaurantId,
+	shiftId,
+	shiftStartsAt,
+	shiftEndsAt,
+}: SectionsCoveredPanelProps) {
+	const { t } = useTranslation();
+	const sectionsQuery = useQuery(
+		convexQuery(api.sections.getByRestaurant, { restaurantId })
+	);
+	const assignmentsQuery = useQuery(
+		convexQuery(api.shifts.listSectionAssignmentsForShift, { shiftId })
+	);
+
+	const upsertSectionAssignment = useMutation({
+		mutationFn: useConvexMutation(api.shifts.upsertSectionAssignment),
+	});
+	const removeSectionAssignment = useMutation({
+		mutationFn: useConvexMutation(api.shifts.removeSectionAssignment),
+	});
+
+	const [error, setError] = useState<string | null>(null);
+
+	const sections: readonly Doc<"sections">[] = sectionsQuery.data ?? [];
+	const assignmentsResult = assignmentsQuery.data;
+	const assignments: readonly Doc<"shiftSectionAssignments">[] = useMemo(() => {
+		if (!assignmentsResult) return [];
+		const [rows] = assignmentsResult;
+		return rows ?? [];
+	}, [assignmentsResult]);
+
+	const assignmentBySection = useMemo(() => {
+		const m = new Map<Id<"sections">, Doc<"shiftSectionAssignments">>();
+		for (const a of assignments) m.set(a.sectionId, a);
+		return m;
+	}, [assignments]);
+
+	const sectionLabel = (section: Doc<"sections">, fallbackIndex: number): string => {
+		if (section.isSystem === true && (section.name === undefined || section.name === "Default")) {
+			return t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_DEFAULT);
+		}
+		if (section.name && section.name.length > 0) return section.name;
+		return t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_UNNAMED, { number: fallbackIndex + 1 });
+	};
+
+	const handleToggle = async (sectionId: Id<"sections">, nextChecked: boolean) => {
+		setError(null);
+		try {
+			if (nextChecked) {
+				unwrapResult(
+					await upsertSectionAssignment.mutateAsync({
+						shiftId,
+						sectionId,
+						startsAt: shiftStartsAt,
+						endsAt: shiftEndsAt,
+					})
+				);
+			} else {
+				const existing = assignmentBySection.get(sectionId);
+				if (!existing) return;
+				unwrapResult(
+					await removeSectionAssignment.mutateAsync({ assignmentId: existing._id })
+				);
+			}
+		} catch (e) {
+			setError(extractSectionsError(e, t));
+		}
+	};
+
+	return (
+		<div className="rounded-md border border-border p-3 space-y-2">
+			<div>
+				<p className="text-xs font-semibold text-foreground">
+					{t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_LABEL)}
+				</p>
+				<p className="text-xs text-faint-foreground">
+					{t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_HINT)}
+				</p>
+			</div>
+			{sections.length === 0 ? (
+				<p className="text-xs text-faint-foreground">
+					{t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_EMPTY)}
+				</p>
+			) : (
+				<ul className="space-y-1.5">
+					{sections.map((section, idx) => {
+						const checked = assignmentBySection.has(section._id);
+						return (
+							<li key={section._id} className="flex items-center gap-2">
+								<label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+									<input
+										type="checkbox"
+										checked={checked}
+										onChange={(e) => void handleToggle(section._id, e.target.checked)}
+										className="h-4 w-4 accent-primary"
+									/>
+									<span>{sectionLabel(section, idx)}</span>
+								</label>
+							</li>
+						);
+					})}
+				</ul>
+			)}
+			{error ? <p className="text-xs text-destructive">{error}</p> : null}
+		</div>
+	);
+}
+
+function extractSectionsError(e: unknown, t: (k: string, params?: Record<string, unknown>) => string): string {
+	if (typeof e === "object" && e != null) {
+		const message = (e as { message?: unknown }).message;
+		if (typeof message === "string") {
+			const lower = message.toLowerCase();
+			if (lower.includes("already covered") || lower.includes("ya cubre")) {
+				return t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_OVERLAP);
+			}
+			return message;
+		}
+	}
+	return t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_GENERIC);
 }
 
 function extractError(e: unknown, t: (k: string) => string): string {
