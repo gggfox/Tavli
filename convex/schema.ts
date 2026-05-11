@@ -283,8 +283,9 @@ export default defineSchema({
 
 	// Floor sections (zones) tables belong to. A waiter is assigned to a
 	// section for the duration of (a sub-window of) a shift via
-	// `shiftSectionAssignments`. The auto-created Default section is
-	// `isSystem: true` and undeletable.
+	// `shiftSectionAssignments`. `isSystem` is a deprecated flag retained for
+	// schema compatibility with rows created before the flag was dropped; the
+	// `sections.removeSystemFlag` admin migration clears it everywhere.
 	[TABLE.SECTIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.optional(v.string()),

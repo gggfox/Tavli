@@ -9,13 +9,16 @@
  *     via `requireOwnerOrManager` (alias for `requireRestaurantManagerOrAbove`).
  *   - Reads: same surface.
  *
- * System Default section:
- *   - Auto-created by `restaurants.create` (and lazily by `backfillDefault`).
- *   - `isSystem: true`, undeletable, always renamable.
+ * Section auto-create:
+ *   - No section is created at restaurant-create time anymore.
+ *   - `tables.create` lazily auto-creates a regular section the first time a
+ *     table is added to a restaurant that has none. Auto-created sections are
+ *     unnamed, fully renamable, and fully deletable.
  *
- * Phase 1 rollout (see plan):
- *   - `tables.sectionId` is `v.optional` in the schema; `backfillDefault`
- *     patches existing rows. Phase 2 will tighten the schema.
+ * Legacy `isSystem: true` rows (from before the deprecation) are flattened by
+ * the one-shot admin migration `removeSystemFlag`. The `isSystem` field stays
+ * in the schema as `v.optional(v.boolean())` so existing data validates; we
+ * just stop writing `true` to it.
  */
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -31,7 +34,11 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { stampUpdated } from "./_util/audit";
-import { getCurrentUserId, requireOwnerOrManager } from "./_util/auth";
+import {
+	getCurrentUserId,
+	requireAdminRole,
+	requireOwnerOrManager,
+} from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -40,13 +47,16 @@ type SectionMutationErrors =
 	| NotFoundErrorObject
 	| UserInputValidationErrorObject;
 
-const DEFAULT_SECTION_NAME = "Default";
-
 /**
- * Create the system Default section for a restaurant. Idempotent: returns
- * the existing system section if one is already present.
+ * Return the id of *some* section for the restaurant — preferring the
+ * lowest-`displayOrder` existing one — or, if none exist, lazily create a
+ * single regular section and return its id.
  *
- * Used by `restaurants.create` and `backfillDefault`.
+ * The created section has no name (the UI renders the "Section N" fallback)
+ * and no `isSystem` flag, so owners can rename or delete it like any other.
+ *
+ * Used by `tables.create` (lazy auto-create on first add) and
+ * `sections.backfillDefault` (data migration).
  */
 export async function ensureDefaultSection(
 	ctx: MutationCtx,
@@ -57,17 +67,15 @@ export async function ensureDefaultSection(
 		.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 		.collect();
 
-	const systemRow = existing.find((s) => s.isSystem === true);
-	if (systemRow) return systemRow._id;
+	if (existing.length > 0) {
+		return [...existing].sort((a, b) => a.displayOrder - b.displayOrder)[0]._id;
+	}
 
 	const now = Date.now();
-	const nextOrder = existing.reduce((max, s) => Math.max(max, s.displayOrder), -1) + 1;
 	return await ctx.db.insert(TABLE.SECTIONS, {
 		restaurantId: args.restaurantId,
-		name: DEFAULT_SECTION_NAME,
-		displayOrder: nextOrder,
+		displayOrder: 0,
 		isActive: true,
-		isSystem: true,
 		createdAt: now,
 		updatedAt: now,
 		updatedBy: args.userId,
@@ -287,15 +295,16 @@ export const getByRestaurant = query({
 
 /**
  * Idempotent backfill that ensures:
- *  1) The restaurant has an `isSystem: true` Default section.
+ *  1) The restaurant has at least one section (creates an unnamed regular
+ *     section via `ensureDefaultSection` if none exist).
  *  2) Every table in the restaurant whose `sectionId` is unset points at the
- *     Default section.
+ *     resolved fallback section.
  *  3) Existing `shiftTableAssignments` rows are converted into one
  *     `shiftSectionAssignments` row per (shift, section) pair, preserving the
  *     widest combined window from the source rows. Past coverage is preserved
  *     so historical attribution lookups still work.
  *
- * Safe to re-run: only inserts the Default if missing, only patches tables
+ * Safe to re-run: only inserts a section if missing, only patches tables
  * with `sectionId === undefined`, and only inserts a per-(shift, section) row
  * when no equivalent one exists.
  */
@@ -404,5 +413,41 @@ export const backfillDefault = mutation({
 			{ defaultSectionId, tablesPatched, assignmentsConverted },
 			null,
 		];
+	},
+});
+
+/**
+ * One-shot, admin-only migration that clears the legacy `isSystem: true`
+ * flag from every section row in the database. After this runs, the
+ * field is `undefined` everywhere — nothing else writes `true` anymore,
+ * so the defensive `isSystem === true` check inside `sections.remove`
+ * becomes inert.
+ *
+ * Idempotent: re-running scans the table again but only patches rows
+ * whose flag is still set, so subsequent runs report `patched: 0`.
+ */
+export const removeSystemFlag = mutation({
+	args: {},
+	handler: async function (
+		ctx,
+		_args
+	): AsyncReturn<{ patched: number }, AuthErrors> {
+		const [userId, authErr] = await getCurrentUserId(ctx);
+		if (authErr) return [null, authErr];
+		const [, permErr] = await requireAdminRole(ctx, userId);
+		if (permErr) return [null, permErr];
+
+		const rows = await ctx.db.query(TABLE.SECTIONS).collect();
+		let patched = 0;
+		for (const row of rows) {
+			if (row.isSystem === true) {
+				await ctx.db.patch(row._id, {
+					isSystem: undefined,
+					...stampUpdated(userId),
+				});
+				patched++;
+			}
+		}
+		return [{ patched }, null];
 	},
 });

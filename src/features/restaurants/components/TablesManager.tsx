@@ -7,6 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
 	closestCenter,
 	DndContext,
+	DragOverlay,
 	type DragEndEvent,
 	type DragStartEvent,
 	KeyboardSensor,
@@ -28,6 +29,7 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	Check,
 	GripVertical,
+	MoreVertical,
 	Pencil,
 	Plus,
 	ToggleLeft,
@@ -35,7 +37,15 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactElement,
+	type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 interface TablesManagerProps {
@@ -53,6 +63,9 @@ const COLS_GRID_CLASS: Record<1 | 2 | 3, string> = {
 	3: "grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
 };
 
+// 1, 2, 3 sections → matching column count. 4 sections look better as 2×2,
+// 5+ stays at 3 columns and wraps. Since the system Default is gone, every
+// section participates in the count.
 function gridColumnsForCount(count: number): 1 | 2 | 3 {
 	if (count <= 1) return 1;
 	if (count === 2) return 2;
@@ -86,6 +99,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const [error, setError] = useState<string | null>(null);
 	const [showInactive, setShowInactive] = useState(false);
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
+	const [openKebab, setOpenKebab] = useState<Id<"tables"> | null>(null);
 
 	// Optimistic overrides: cleared once server state catches up.
 	const [tableSectionOverrides, setTableSectionOverrides] = useState<
@@ -96,6 +110,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	>(null);
 
 	const clearError = () => setError(null);
+	const closeKebab = useCallback(() => setOpenKebab(null), []);
 
 	const sectionsList = useMemo(() => sections ?? [], [sections]);
 
@@ -137,25 +152,13 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		return ordered;
 	}, [sectionsList, sectionOrderOverride]);
 
-	const defaultSection = useMemo(
-		() => orderedSections.find((s) => s.isSystem === true),
-		[orderedSections]
+	const sectionLabel = useCallback(
+		(section: Doc<"sections">, fallbackIndex: number): string => {
+			if (section.name && section.name.length > 0) return section.name;
+			return t(RestaurantsKeys.SECTIONS_UNNAMED, { number: fallbackIndex + 1 });
+		},
+		[t]
 	);
-	const nonDefaultSections = useMemo(
-		() => orderedSections.filter((s) => s.isSystem !== true),
-		[orderedSections]
-	);
-
-	const sectionLabel = (section: Doc<"sections">, fallbackIndex: number): string => {
-		if (
-			section.isSystem === true &&
-			(section.name === undefined || section.name === "Default")
-		) {
-			return t(RestaurantsKeys.SECTIONS_DEFAULT_BADGE);
-		}
-		if (section.name && section.name.length > 0) return section.name;
-		return t(RestaurantsKeys.SECTIONS_UNNAMED, { number: fallbackIndex + 1 });
-	};
 
 	const editForm = useForm({
 		defaultValues: { editNumber: "", editLabel: "", editCapacity: "" },
@@ -219,6 +222,39 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		},
 	});
 
+	const newTableForm = useForm({
+		defaultValues: {
+			tableNumber: "",
+			label: "",
+			capacity: "",
+			sectionId: "",
+		},
+		onSubmit: async ({ value }) => {
+			clearError();
+			const num = Number.parseInt(value.tableNumber, 10);
+			if (Number.isNaN(num) || num < 1) return;
+			const cap = Number.parseInt(value.capacity, 10);
+			const sectionId =
+				value.sectionId.length > 0
+					? (value.sectionId as Id<"sections">)
+					: undefined;
+			try {
+				unwrapResult(
+					await createTable.mutateAsync({
+						restaurantId,
+						tableNumber: num,
+						label: value.label || undefined,
+						capacity: Number.isNaN(cap) ? DEFAULT_CAPACITY : cap,
+						sectionId,
+					})
+				);
+				newTableForm.reset();
+			} catch (err) {
+				setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_CREATE_FAILED));
+			}
+		},
+	});
+
 	const startEdit = (
 		tableId: Id<"tables">,
 		tableNumber: number,
@@ -227,6 +263,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	) => {
 		clearError();
 		setEditingId(tableId);
+		setOpenKebab(null);
 		editForm.reset({
 			editNumber: String(tableNumber),
 			editLabel: label ?? "",
@@ -305,25 +342,6 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		}
 	};
 
-	const handleAddTableToSection = async (sectionId: Id<"sections">) => {
-		clearError();
-		const nextNumber =
-			(tables ?? []).reduce((max, tt) => Math.max(max, tt.tableNumber), 0) + 1;
-		try {
-			const newId = unwrapResult(
-				await createTable.mutateAsync({
-					restaurantId,
-					tableNumber: nextNumber,
-					capacity: DEFAULT_CAPACITY,
-					sectionId,
-				})
-			) as Id<"tables">;
-			startEdit(newId, nextNumber, undefined, DEFAULT_CAPACITY);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_CREATE_FAILED));
-		}
-	};
-
 	const reorderSections = async (orderedIds: Id<"sections">[]) => {
 		clearError();
 		setSectionOrderOverride(orderedIds);
@@ -372,6 +390,11 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		[tables]
 	);
 
+	const nextTableNumber = useMemo(
+		() => (tables ?? []).reduce((max, tt) => Math.max(max, tt.tableNumber), 0) + 1,
+		[tables]
+	);
+
 	const sensors = useSensors(
 		useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
 		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -379,6 +402,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 
 	const handleDragStart = (event: DragStartEvent) => {
 		setActiveDragId(String(event.active.id));
+		setOpenKebab(null);
 	};
 
 	const handleDragEnd = (event: DragEndEvent) => {
@@ -390,8 +414,6 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 
 		if (activeId.startsWith(TABLE_DRAG_PREFIX + ":")) {
 			const tableId = activeId.slice(TABLE_DRAG_PREFIX.length + 1) as Id<"tables">;
-			// over is either a section card (section: prefix) or a section drop area
-			// (section-drop: prefix). Both encode the destination section ID.
 			let destSectionId: Id<"sections"> | null = null;
 			if (overId.startsWith(SECTION_DROP_PREFIX + ":")) {
 				destSectionId = overId.slice(SECTION_DROP_PREFIX.length + 1) as Id<"sections">;
@@ -415,26 +437,23 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				toId = overId.slice(SECTION_DROP_PREFIX.length + 1) as Id<"sections">;
 			}
 			if (!toId || fromId === toId) return;
-			const currentOrder = nonDefaultSections.map((s) => s._id);
+			const currentOrder = orderedSections.map((s) => s._id);
 			const fromIndex = currentOrder.indexOf(fromId);
 			const toIndex = currentOrder.indexOf(toId);
-			// Dropping a section onto the default's drop area shouldn't reorder.
 			if (fromIndex < 0 || toIndex < 0) return;
 			const reordered = [...currentOrder];
 			reordered.splice(fromIndex, 1);
 			reordered.splice(toIndex, 0, fromId);
-			// Pin the default section at the front so the persisted displayOrder
-			// keeps it first.
-			const fullOrder: Id<"sections">[] = defaultSection
-				? [defaultSection._id, ...reordered]
-				: reordered;
-			void reorderSections(fullOrder);
+			void reorderSections(reordered);
 			return;
 		}
 	};
 
 	const renderTableEditableRow = (table: Doc<"tables">) => (
-		<div className="flex items-center gap-3 flex-1 mr-3" key={`${table._id}-edit`}>
+		<div
+			className="flex flex-wrap items-center gap-2 flex-1 mr-3"
+			key={`${table._id}-edit`}
+		>
 			<editForm.Field
 				name="editNumber"
 				children={(field) => (
@@ -514,6 +533,9 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				onStartEdit={() => startEdit(table._id, table.tableNumber, table.label, table.capacity)}
 				onToggleActive={() => handleToggleActive(table._id)}
 				onRemove={() => handleRemoveTable(table._id)}
+				isKebabOpen={openKebab === table._id}
+				onOpenKebab={() => setOpenKebab(table._id)}
+				onCloseKebab={closeKebab}
 				labels={{
 					table: t(RestaurantsKeys.TABLES_TABLE_LABEL, { number: table.tableNumber }),
 					seatsFormat:
@@ -526,15 +548,42 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 						? t(RestaurantsKeys.TABLES_DEACTIVATE_TITLE)
 						: t(RestaurantsKeys.TABLES_ACTIVATE_TITLE),
 					moveTableAria: t(RestaurantsKeys.SECTIONS_MOVE_TABLE_LABEL),
+					rowActionsAria: t(RestaurantsKeys.TABLES_ROW_ACTIONS),
 				}}
 			/>
 		);
 	};
 
-	const cols = gridColumnsForCount(nonDefaultSections.length);
+	const cols = gridColumnsForCount(orderedSections.length);
 	const gridClass = COLS_GRID_CLASS[cols];
 
 	const isDraggingTable = activeDragId?.startsWith(TABLE_DRAG_PREFIX + ":") ?? false;
+
+	const dragOverlayContent = useMemo(() => {
+		if (!activeDragId) return null;
+		if (activeDragId.startsWith(TABLE_DRAG_PREFIX + ":")) {
+			const tableId = activeDragId.slice(TABLE_DRAG_PREFIX.length + 1) as Id<"tables">;
+			const table = (tables ?? []).find((tt) => tt._id === tableId);
+			if (!table) return null;
+			return <TableDragGhost table={table} t={t} />;
+		}
+		if (activeDragId.startsWith(SECTION_DRAG_PREFIX + ":")) {
+			const sectionId = activeDragId.slice(SECTION_DRAG_PREFIX.length + 1) as Id<"sections">;
+			const idx = orderedSections.findIndex((s) => s._id === sectionId);
+			const section = idx >= 0 ? orderedSections[idx] : undefined;
+			if (!section) return null;
+			return (
+				<SectionDragGhost
+					label={sectionLabel(section, idx)}
+					count={(tablesBySection.byId.get(section._id) ?? []).length}
+					countText={t(RestaurantsKeys.SECTIONS_TABLE_COUNT_SHORT, {
+						count: (tablesBySection.byId.get(section._id) ?? []).length,
+					})}
+				/>
+			);
+		}
+		return null;
+	}, [activeDragId, tables, orderedSections, tablesBySection, sectionLabel, t]);
 
 	const renameInput = (
 		<renameSectionForm.Field
@@ -578,7 +627,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 							e.stopPropagation();
 							newSectionForm.handleSubmit();
 						}}
-						className="flex gap-2 items-end"
+						className="flex gap-2 items-end flex-wrap"
 					>
 						<newSectionForm.Field
 							name="name"
@@ -602,68 +651,122 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 							{t(RestaurantsKeys.SECTIONS_ADD)}
 						</button>
 					</form>
+					<form
+						onSubmit={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							newTableForm.handleSubmit();
+						}}
+						className="flex gap-2 items-end flex-wrap"
+					>
+						<newTableForm.Field
+							name="tableNumber"
+							children={(field) => (
+								<TextInput
+									type="number"
+									label={t(RestaurantsKeys.TABLES_NUMBER_LABEL)}
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									min={1}
+									required
+									placeholder={String(nextTableNumber)}
+									className="w-24"
+								/>
+							)}
+						/>
+						<newTableForm.Field
+							name="label"
+							children={(field) => (
+								<TextInput
+									type="text"
+									label={t(RestaurantsKeys.TABLES_LABEL_LABEL)}
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									placeholder={t(RestaurantsKeys.TABLES_LABEL_PLACEHOLDER)}
+									className="w-40"
+								/>
+							)}
+						/>
+						<newTableForm.Field
+							name="capacity"
+							children={(field) => (
+								<TextInput
+									type="number"
+									label={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									min={1}
+									placeholder={String(DEFAULT_CAPACITY)}
+									className="w-24"
+								/>
+							)}
+						/>
+						<newTableForm.Field
+							name="sectionId"
+							children={(field) => (
+								<div>
+									<label
+										htmlFor="new-table-section"
+										className="block text-xs font-medium mb-1 text-muted-foreground"
+									>
+										{t(RestaurantsKeys.TABLES_SECTION_LABEL)}
+									</label>
+									<select
+										id="new-table-section"
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+									>
+										{orderedSections.length === 0 ? (
+											<option value="">
+												{t(RestaurantsKeys.SECTIONS_AUTO_CREATE_PLACEHOLDER)}
+											</option>
+										) : (
+											orderedSections.map((s, idx) => (
+												<option key={s._id} value={s._id}>
+													{sectionLabel(s, idx)}
+												</option>
+											))
+										)}
+									</select>
+								</div>
+							)}
+						/>
+						<button
+							type="submit"
+							className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+						>
+							<Plus size={16} />
+							{t(RestaurantsKeys.TABLES_ADD)}
+						</button>
+					</form>
 				</div>
 
 				<div className={gridClass}>
 					<SortableContext
-						items={nonDefaultSections.map((s) => `${SECTION_DRAG_PREFIX}:${s._id}`)}
+						items={orderedSections.map((s) => `${SECTION_DRAG_PREFIX}:${s._id}`)}
 						strategy={rectSortingStrategy}
 					>
-						{defaultSection && (
-							<SectionCard
-								key={defaultSection._id}
-								section={defaultSection}
-								sectionIndex={0}
-								isSortable={false}
-								isEditing={editingSectionId === defaultSection._id}
-								renameInput={renameInput}
-								tables={(tablesBySection.byId.get(defaultSection._id) ?? []).filter(
-									(tt) => showInactive || tt.isActive
-								)}
-								isDraggingTable={isDraggingTable}
-								sectionLabel={sectionLabel(defaultSection, 0)}
-								translations={{
-									defaultBadge: t(RestaurantsKeys.SECTIONS_DEFAULT_BADGE),
-									tableCount: t(RestaurantsKeys.SECTIONS_TABLE_COUNT, {
-										count: (tablesBySection.byId.get(defaultSection._id) ?? []).length,
-									}),
-									addTable: t(RestaurantsKeys.TABLES_ADD_IN_SECTION),
-									dropHere: t(RestaurantsKeys.TABLES_DROP_HERE),
-									renameTitle: t(RestaurantsKeys.SECTIONS_RENAME_TITLE),
-									deleteTitle: t(RestaurantsKeys.SECTIONS_DEFAULT_DELETE_TOOLTIP),
-									save: t(RestaurantsKeys.TABLES_SAVE),
-									cancel: t(RestaurantsKeys.TABLES_CANCEL),
-									dragHandle: t(RestaurantsKeys.SECTIONS_DRAG_HANDLE),
-								}}
-								onStartRename={() => startSectionEdit(defaultSection)}
-								onCancelRename={cancelSectionEdit}
-								onSubmitRename={() => renameSectionForm.handleSubmit()}
-								onAddTable={() => handleAddTableToSection(defaultSection._id)}
-								onRemove={() => handleRemoveSection(defaultSection._id)}
-								renderTableRow={renderTableRow}
-								deleteDisabled
-							/>
-						)}
-						{nonDefaultSections.map((section, idx) => {
+						{orderedSections.map((section, idx) => {
 							const tablesInSection = tablesBySection.byId.get(section._id) ?? [];
 							const filtered = tablesInSection.filter((tt) => showInactive || tt.isActive);
 							return (
 								<SectionCard
 									key={section._id}
 									section={section}
-									sectionIndex={defaultSection ? idx + 1 : idx}
-									isSortable
 									isEditing={editingSectionId === section._id}
 									renameInput={renameInput}
 									tables={filtered}
 									isDraggingTable={isDraggingTable}
-									sectionLabel={sectionLabel(section, idx + (defaultSection ? 1 : 0))}
+									sectionLabel={sectionLabel(section, idx)}
 									translations={{
-										defaultBadge: t(RestaurantsKeys.SECTIONS_DEFAULT_BADGE),
-										tableCount: t(RestaurantsKeys.SECTIONS_TABLE_COUNT, {
+										tableCount: t(RestaurantsKeys.SECTIONS_TABLE_COUNT_SHORT, {
 											count: tablesInSection.length,
 										}),
-										addTable: t(RestaurantsKeys.TABLES_ADD_IN_SECTION),
 										dropHere: t(RestaurantsKeys.TABLES_DROP_HERE),
 										renameTitle: t(RestaurantsKeys.SECTIONS_RENAME_TITLE),
 										deleteTitle:
@@ -677,7 +780,6 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 									onStartRename={() => startSectionEdit(section)}
 									onCancelRename={cancelSectionEdit}
 									onSubmitRename={() => renameSectionForm.handleSubmit()}
-									onAddTable={() => handleAddTableToSection(section._id)}
 									onRemove={() => handleRemoveSection(section._id)}
 									renderTableRow={renderTableRow}
 									deleteDisabled={tablesInSection.length > 0}
@@ -690,7 +792,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				{tablesBySection.unassigned.length > 0 && (
 					<div className="space-y-2">
 						<h4 className="text-sm font-semibold text-foreground">
-							{t(RestaurantsKeys.SECTIONS_DEFAULT_BADGE)}
+							{t(RestaurantsKeys.SECTIONS_UNNAMED, { number: 0 })}
 						</h4>
 						<div className="space-y-2">
 							{tablesBySection.unassigned
@@ -720,23 +822,20 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					</div>
 				)}
 			</div>
+			<DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
 		</DndContext>
 	);
 }
 
 interface SectionCardProps {
 	section: Doc<"sections">;
-	sectionIndex: number;
-	isSortable: boolean;
 	isEditing: boolean;
 	renameInput: ReactNode;
 	tables: Doc<"tables">[];
 	isDraggingTable: boolean;
 	sectionLabel: string;
 	translations: {
-		defaultBadge: string;
 		tableCount: string;
-		addTable: string;
 		dropHere: string;
 		renameTitle: string;
 		deleteTitle: string;
@@ -747,7 +846,6 @@ interface SectionCardProps {
 	onStartRename: () => void;
 	onCancelRename: () => void;
 	onSubmitRename: () => void;
-	onAddTable: () => void;
 	onRemove: () => void;
 	renderTableRow: (table: Doc<"tables">) => ReactElement;
 	deleteDisabled: boolean;
@@ -756,7 +854,6 @@ interface SectionCardProps {
 function SectionCard(props: Readonly<SectionCardProps>) {
 	const {
 		section,
-		isSortable,
 		isEditing,
 		renameInput,
 		tables,
@@ -766,72 +863,58 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 		onStartRename,
 		onCancelRename,
 		onSubmitRename,
-		onAddTable,
 		onRemove,
 		renderTableRow,
 		deleteDisabled,
 	} = props;
 
 	const sortableId = `${SECTION_DRAG_PREFIX}:${section._id}`;
-	const sortable = useSortable({
-		id: sortableId,
-		disabled: !isSortable,
-	});
+	const sortable = useSortable({ id: sortableId });
 	const dropTarget = useDroppable({ id: `${SECTION_DROP_PREFIX}:${section._id}` });
 
-	const style = isSortable
-		? {
-				transform: CSS.Transform.toString(sortable.transform),
-				transition: sortable.transition,
-			}
-		: undefined;
+	const style = {
+		transform: CSS.Transform.toString(sortable.transform),
+		transition: sortable.transition,
+		// Hide the source card while dragging — the DragOverlay clone follows
+		// the cursor.
+		opacity: sortable.isDragging ? 0 : 1,
+	};
 
 	const isOverForTable = isDraggingTable && (sortable.isOver || dropTarget.isOver);
 	const outlineClass = isOverForTable
 		? "border-2 border-dashed border-primary"
 		: "border-2 border-dashed border-border";
-	const isDefault = section.isSystem === true;
-
-	const setRef = (node: HTMLDivElement | null) => {
-		sortable.setNodeRef(node);
-	};
 
 	return (
 		<div
-			ref={setRef}
+			ref={sortable.setNodeRef}
 			style={style}
-			className={`rounded-xl ${outlineClass} bg-background/50 p-3 space-y-3 ${
-				sortable.isDragging ? "opacity-60" : ""
-			}`}
+			className={`rounded-xl ${outlineClass} bg-background/50 p-3 space-y-3`}
 		>
-			<div className="flex items-center gap-2">
-				{isSortable ? (
-					<button
-						type="button"
-						className="p-1 rounded text-faint-foreground hover:text-foreground hover:bg-hover cursor-grab active:cursor-grabbing touch-none"
-						title={translations.dragHandle}
-						aria-label={translations.dragHandle}
-						{...sortable.attributes}
-						{...sortable.listeners}
-					>
-						<GripVertical size={16} />
-					</button>
-				) : (
-					<span className="w-6" aria-hidden="true" />
-				)}
+			<div className="flex items-center gap-2 min-w-0">
+				<button
+					type="button"
+					className="p-1 rounded text-faint-foreground hover:text-foreground hover:bg-hover cursor-grab active:cursor-grabbing touch-none shrink-0"
+					title={translations.dragHandle}
+					aria-label={translations.dragHandle}
+					{...sortable.attributes}
+					{...sortable.listeners}
+				>
+					<GripVertical size={16} />
+				</button>
 				{isEditing ? (
-					<div className="flex items-center gap-2 flex-1">
+					<div className="flex items-center gap-2 flex-1 min-w-0">
 						{renameInput}
 						<button
 							onClick={onSubmitRename}
-							className="p-1.5 rounded-md hover:bg-hover text-success"
+							className="p-1.5 rounded-md hover:bg-hover text-success shrink-0"
 							title={translations.save}
 						>
 							<Check size={16} />
 						</button>
 						<button
 							onClick={onCancelRename}
-							className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+							className="p-1.5 rounded-md hover:bg-hover text-faint-foreground shrink-0"
 							title={translations.cancel}
 						>
 							<X size={16} />
@@ -839,14 +922,16 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 					</div>
 				) : (
 					<>
-						<h4 className="text-sm font-semibold text-foreground">{sectionLabel}</h4>
-						{isDefault && (
-							<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-faint-foreground border border-border">
-								{translations.defaultBadge}
-							</span>
-						)}
-						<span className="text-xs text-faint-foreground">{translations.tableCount}</span>
-						<div className="ml-auto flex items-center gap-1">
+						<h4
+							className="text-sm font-semibold text-foreground truncate min-w-0"
+							title={sectionLabel}
+						>
+							{sectionLabel}
+						</h4>
+						<span className="text-xs text-faint-foreground shrink-0">
+							{translations.tableCount}
+						</span>
+						<div className="ml-auto flex items-center gap-1 shrink-0">
 							<button
 								onClick={onStartRename}
 								className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
@@ -870,7 +955,7 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 			<div
 				ref={dropTarget.setNodeRef}
 				className="space-y-2 min-h-12"
-				aria-label={section.name ?? translations.defaultBadge}
+				aria-label={section.name ?? sectionLabel}
 			>
 				{tables.length === 0 ? (
 					<div
@@ -886,15 +971,6 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 					tables.map((table) => renderTableRow(table))
 				)}
 			</div>
-
-			<button
-				type="button"
-				onClick={onAddTable}
-				className="w-full flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-medium border border-dashed border-border hover:bg-hover text-faint-foreground hover:text-foreground"
-			>
-				<Plus size={14} />
-				{translations.addTable}
-			</button>
 		</div>
 	);
 }
@@ -908,6 +984,9 @@ interface DraggableTableRowProps {
 	onStartEdit: () => void;
 	onToggleActive: () => void;
 	onRemove: () => void;
+	isKebabOpen: boolean;
+	onOpenKebab: () => void;
+	onCloseKebab: () => void;
 	labels: {
 		table: string;
 		seatsFormat: string;
@@ -915,6 +994,7 @@ interface DraggableTableRowProps {
 		removeTitle: string;
 		activateTitle: string;
 		moveTableAria: string;
+		rowActionsAria: string;
 	};
 }
 
@@ -928,12 +1008,15 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 		onStartEdit,
 		onToggleActive,
 		onRemove,
+		isKebabOpen,
+		onOpenKebab,
+		onCloseKebab,
 		labels,
 	} = props;
 	const draggable = useDraggable({ id: `${TABLE_DRAG_PREFIX}:${table._id}` });
+	// Hide the source row while dragging — the DragOverlay clone takes over.
 	const style = {
-		transform: CSS.Translate.toString(draggable.transform),
-		opacity: draggable.isDragging ? 0.5 : 1,
+		opacity: draggable.isDragging ? 0 : 1,
 	};
 	const inactive = !table.isActive;
 	const rowClass = `flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border ${
@@ -979,31 +1062,140 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 						</option>
 					))}
 				</select>
-				<button
-					onClick={onStartEdit}
-					className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
-					title={labels.editTitle}
+				<TableActionsKebab
+					isOpen={isKebabOpen}
+					onOpen={onOpenKebab}
+					onClose={onCloseKebab}
+					ariaLabel={labels.rowActionsAria}
+					items={
+						<>
+							<button
+								type="button"
+								onClick={() => {
+									onCloseKebab();
+									onStartEdit();
+								}}
+								className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
+							>
+								<Pencil size={14} />
+								{labels.editTitle}
+							</button>
+							<button
+								type="button"
+								onClick={() => {
+									onCloseKebab();
+									onToggleActive();
+								}}
+								className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
+							>
+								{table.isActive ? (
+									<ToggleRight size={14} className="text-success" />
+								) : (
+									<ToggleLeft size={14} className="text-faint-foreground" />
+								)}
+								{labels.activateTitle}
+							</button>
+							<button
+								type="button"
+								onClick={() => {
+									onCloseKebab();
+									onRemove();
+								}}
+								className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-destructive w-full text-left"
+							>
+								<Trash2 size={14} />
+								{labels.removeTitle}
+							</button>
+						</>
+					}
+				/>
+			</div>
+		</div>
+	);
+}
+
+interface TableActionsKebabProps {
+	isOpen: boolean;
+	onOpen: () => void;
+	onClose: () => void;
+	ariaLabel: string;
+	items: ReactNode;
+}
+
+function TableActionsKebab(props: Readonly<TableActionsKebabProps>) {
+	const { isOpen, onOpen, onClose, ariaLabel, items } = props;
+	const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		const onDown = (e: MouseEvent) => {
+			if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+				onClose();
+			}
+		};
+		document.addEventListener("mousedown", onDown);
+		return () => document.removeEventListener("mousedown", onDown);
+	}, [isOpen, onClose]);
+
+	return (
+		<div ref={wrapperRef} className="relative">
+			<button
+				type="button"
+				onClick={() => (isOpen ? onClose() : onOpen())}
+				className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+				title={ariaLabel}
+				aria-label={ariaLabel}
+				aria-haspopup="menu"
+				aria-expanded={isOpen}
+			>
+				<MoreVertical size={16} />
+			</button>
+			{isOpen && (
+				<div
+					role="menu"
+					className="absolute right-0 top-full mt-1 z-30 min-w-40 rounded-md border border-border bg-background shadow-md p-1 flex flex-col gap-0.5"
 				>
-					<Pencil size={16} />
-				</button>
-				<button
-					onClick={onToggleActive}
-					className="p-1.5 rounded-md hover:bg-hover text-success"
-					title={labels.activateTitle}
-				>
-					{table.isActive ? (
-						<ToggleRight size={20} />
-					) : (
-						<ToggleLeft size={20} className="text-faint-foreground" />
-					)}
-				</button>
-				<button
-					onClick={onRemove}
-					className="p-1.5 rounded-md hover:bg-hover text-destructive"
-					title={labels.removeTitle}
-				>
-					<Trash2 size={16} />
-				</button>
+					{items}
+				</div>
+			)}
+		</div>
+	);
+}
+
+interface TableDragGhostProps {
+	table: Doc<"tables">;
+	t: ReturnType<typeof useTranslation>["t"];
+}
+
+function TableDragGhost({ table, t }: Readonly<TableDragGhostProps>) {
+	return (
+		<div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-muted border border-border shadow-lg">
+			<GripVertical size={16} className="text-faint-foreground" />
+			<span className="text-sm font-medium text-foreground">
+				{t(RestaurantsKeys.TABLES_TABLE_LABEL, { number: table.tableNumber })}
+			</span>
+			{table.label && (
+				<span className="text-xs text-faint-foreground truncate">{table.label}</span>
+			)}
+		</div>
+	);
+}
+
+interface SectionDragGhostProps {
+	label: string;
+	count: number;
+	countText: string;
+}
+
+function SectionDragGhost({ label, countText }: Readonly<SectionDragGhostProps>) {
+	return (
+		<div className="rounded-xl border-2 border-dashed border-border bg-background/95 p-3 shadow-lg w-64">
+			<div className="flex items-center gap-2">
+				<GripVertical size={16} className="text-faint-foreground" />
+				<h4 className="text-sm font-semibold text-foreground truncate" title={label}>
+					{label}
+				</h4>
+				<span className="text-xs text-faint-foreground">{countText}</span>
 			</div>
 		</div>
 	);

@@ -1,9 +1,9 @@
 import { AuthLoadingState, NotAuthenticatedState } from "@/features/auth";
 import type { useAdminTable } from "@/global/hooks/useAdminTable";
-import { flexRender } from "@tanstack/react-table";
+import { flexRender, type Row } from "@tanstack/react-table";
 import type { LucideIcon } from "lucide-react";
 import { Search } from "lucide-react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { EmptyState } from "../EmptyState";
 import { SearchInput } from "../SearchInput";
 import { Pagination } from "./Pagination";
@@ -27,6 +27,12 @@ interface AdminTableProps<TData> {
 	readonly notAuthenticatedMessage?: string;
 	readonly actions?: ReactNode;
 	readonly renderRowActions?: (row: TData) => ReactNode;
+	/**
+	 * When provided, clicking a row body invokes this handler and the row gets
+	 * a hover/pointer affordance. Row-action buttons rendered in cells must
+	 * call `e.stopPropagation()` so they don't also trigger this.
+	 */
+	readonly onRowClick?: (row: TData) => void;
 }
 
 export function AdminTable<TData>({
@@ -43,6 +49,7 @@ export function AdminTable<TData>({
 	notAuthenticatedMessage,
 	actions,
 	renderRowActions,
+	onRowClick,
 }: Readonly<AdminTableProps<TData>>) {
 	// `table.getRowModel()` etc. are read during render and rely on internal
 	// mutation, which React Compiler would otherwise memoize. Without this opt
@@ -147,16 +154,12 @@ export function AdminTable<TData>({
 						</thead>
 						<tbody>
 							{table.getRowModel().rows.map((row) => (
-								<tr key={row.id} className="transition-colors border-b border-border">
-									{row.getVisibleCells().map((cell) => (
-										<td key={cell.id} className="px-4 py-3">
-											{flexRender(cell.column.columnDef.cell, cell.getContext())}
-										</td>
-									))}
-									{renderRowActions && (
-										<td className="px-4 py-3">{renderRowActions(row.original)}</td>
-									)}
-								</tr>
+								<AdminTableRow
+									key={row.id}
+									row={row}
+									onRowClick={onRowClick}
+									renderRowActions={renderRowActions}
+								/>
 							))}
 						</tbody>
 					</table>
@@ -184,6 +187,45 @@ export function AdminTable<TData>({
 	);
 }
 
+interface AdminTableRowProps<TData> {
+	readonly row: Row<TData>;
+	readonly onRowClick?: (row: TData) => void;
+	readonly renderRowActions?: (row: TData) => ReactNode;
+}
 
+function AdminTableRow<TData>({
+	row,
+	onRowClick,
+	renderRowActions,
+}: Readonly<AdminTableRowProps<TData>>) {
+	"use no memo";
+	const clickable = Boolean(onRowClick);
+	const className = clickable
+		? "transition-colors border-b border-border cursor-pointer hover:bg-(--bg-hover) focus:bg-(--bg-hover) outline-none"
+		: "transition-colors border-b border-border";
 
+	const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
+		if (!onRowClick) return;
+		if (event.key !== "Enter" && event.key !== " ") return;
+		event.preventDefault();
+		onRowClick(row.original);
+	};
 
+	return (
+		<tr
+			className={className}
+			onClick={clickable ? () => onRowClick?.(row.original) : undefined}
+			onKeyDown={clickable ? handleKeyDown : undefined}
+			tabIndex={clickable ? 0 : undefined}
+		>
+			{row.getVisibleCells().map((cell) => (
+				<td key={cell.id} className="px-4 py-3">
+					{flexRender(cell.column.columnDef.cell, cell.getContext())}
+				</td>
+			))}
+			{renderRowActions && (
+				<td className="px-4 py-3">{renderRowActions(row.original)}</td>
+			)}
+		</tr>
+	);
+}

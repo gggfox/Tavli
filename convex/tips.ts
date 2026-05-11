@@ -259,6 +259,71 @@ export const getTipPoolForDate = query({
 	},
 });
 
+/**
+ * Aggregate tip-pool shares for a single member across a business-date range.
+ *
+ * Returns the per-day shares (one row per business date that has a pool and
+ * a finalized share for the given member) plus the total amount in cents.
+ * Drives the per-user `Propinas` section of the team-member drawer.
+ *
+ * Both bounds are inclusive YYYY-MM-DD strings; ordering uses lexical compare
+ * (safe for the ISO date format).
+ */
+export const getTipSharesForMemberRange = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		memberId: v.id(TABLE.RESTAURANT_MEMBERS),
+		fromBusinessDate: v.string(),
+		toBusinessDate: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const [userId, err] = await getCurrentUserId(ctx);
+		if (err) return [null, err];
+		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (aerr) return [null, aerr];
+
+		const pools = await ctx.db
+			.query(TABLE.TIP_POOLS)
+			.withIndex("by_restaurant_date", (q) =>
+				q
+					.eq("restaurantId", args.restaurantId)
+					.gte("businessDate", args.fromBusinessDate)
+					.lte("businessDate", args.toBusinessDate)
+			)
+			.collect();
+
+		const perDay: Array<{
+			businessDate: string;
+			amountCents: number;
+			sharePercent: number;
+			hoursWorked: number;
+			poolStatus: string;
+		}> = [];
+		let totalCents = 0;
+
+		for (const pool of pools) {
+			const share = await ctx.db
+				.query(TABLE.TIP_POOL_SHARES)
+				.withIndex("by_pool", (q) => q.eq("poolId", pool._id))
+				.filter((q) => q.eq(q.field("memberId"), args.memberId))
+				.first();
+			if (!share) continue;
+			totalCents += share.amountCents;
+			perDay.push({
+				businessDate: pool.businessDate,
+				amountCents: share.amountCents,
+				sharePercent: share.sharePercent,
+				hoursWorked: share.hoursWorked,
+				poolStatus: pool.status,
+			});
+		}
+
+		perDay.sort((a, b) => (a.businessDate < b.businessDate ? 1 : -1));
+
+		return [{ totalCents, perDay }, null];
+	},
+});
+
 export const internalListTipEntriesForExport = internalQuery({
 	args: {
 		actingUserId: v.string(),

@@ -170,7 +170,7 @@ async function createPaidOrder(
 }
 
 describe("sections.backfillDefault", () => {
-	it("creates a Default section and patches every table that lacks one", async () => {
+	it("creates a fallback section and patches every table that lacks one", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, tableId, ownerUserId } = await seed(t);
 
@@ -185,10 +185,12 @@ describe("sections.backfillDefault", () => {
 		const patchedTable = await t.run(async (ctx) => ctx.db.get(tableId));
 		expect(patchedTable?.sectionId).toBe(result!.defaultSectionId);
 
+		// The fallback section is a regular section now: no `isSystem` flag,
+		// no auto-named "Default", fully renamable / deletable like any other.
 		const sections = await t.query(api.sections.getByRestaurant, { restaurantId });
 		expect(sections).toHaveLength(1);
-		expect(sections[0].isSystem).toBe(true);
-		expect(sections[0].name).toBe("Default");
+		expect(sections[0].isSystem).toBeUndefined();
+		expect(sections[0].name).toBeUndefined();
 	});
 
 	it("is idempotent — re-running does not add a second Default", async () => {
@@ -341,21 +343,142 @@ describe("sections.create / remove", () => {
 		expect(err?.name).toBe("VALIDATION_ERROR");
 	});
 
-	it("blocks deletion of the system Default section", async () => {
+	it("allows deletion of the auto-created fallback section once empty", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, ownerUserId } = await seed(t);
+		const owner = t.withIdentity({ subject: ownerUserId });
+
+		// Backfill creates a regular fallback section and assigns the seeded
+		// table to it. Detach the table, then delete the section — should
+		// succeed because no `isSystem` guard applies.
+		const [{ defaultSectionId }] = (await owner.mutation(
+			api.sections.backfillDefault,
+			{ restaurantId }
+		)) as [
+			{
+				defaultSectionId: Id<"sections">;
+				tablesPatched: number;
+				assignmentsConverted: number;
+			},
+			null,
+		];
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(tableId, { sectionId: undefined });
+		});
+
+		const [, err] = await owner.mutation(api.sections.remove, {
+			sectionId: defaultSectionId,
+		});
+		expect(err).toBeNull();
+
+		const remaining = await t.query(api.sections.getByRestaurant, { restaurantId });
+		expect(remaining).toHaveLength(0);
+	});
+
+	it("still rejects deletion of legacy isSystem rows (defensive guard)", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, ownerUserId } = await seed(t);
 		const owner = t.withIdentity({ subject: ownerUserId });
 
-		const [{ defaultSectionId }] = (await owner.mutation(
-			api.sections.backfillDefault,
-			{ restaurantId }
-		)) as [{ defaultSectionId: Id<"sections">; tablesPatched: number; assignmentsConverted: number }, null];
+		// Simulate a row created before the deprecation: nothing in the app
+		// writes `isSystem: true` anymore, but until `removeSystemFlag` runs
+		// against an existing database, legacy rows can still appear.
+		const legacyId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("sections", {
+				restaurantId,
+				displayOrder: 0,
+				isActive: true,
+				isSystem: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
 
 		const [removed, err] = await owner.mutation(api.sections.remove, {
-			sectionId: defaultSectionId,
+			sectionId: legacyId,
 		});
 		expect(removed).toBeNull();
 		expect(err?.name).toBe("VALIDATION_ERROR");
+	});
+});
+
+describe("sections.removeSystemFlag", () => {
+	it("clears the legacy isSystem flag from every row", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seed(t);
+
+		// Two legacy rows + one already-clean row.
+		const legacyIds = await t.run(async (ctx) => {
+			const now = Date.now();
+			const a = await ctx.db.insert("sections", {
+				restaurantId,
+				displayOrder: 0,
+				isActive: true,
+				isSystem: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const b = await ctx.db.insert("sections", {
+				restaurantId,
+				name: "Patio",
+				displayOrder: 1,
+				isActive: true,
+				isSystem: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const c = await ctx.db.insert("sections", {
+				restaurantId,
+				name: "Bar",
+				displayOrder: 2,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			return [a, b, c];
+		});
+
+		// Seed a dedicated admin identity. `fetchUserRoles` returns the first
+		// `userRoles` row for a user, so we cannot just stack ADMIN onto the
+		// existing owner row — give the admin its own subject.
+		const adminUserId = "admin-user-removeSystemFlag";
+		await t.run(async (ctx) => {
+			await ctx.db.insert("userRoles", {
+				userId: adminUserId,
+				roles: [USER_ROLES.ADMIN],
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		});
+
+		const admin = t.withIdentity({ subject: adminUserId });
+		const [first, err] = await admin.mutation(api.sections.removeSystemFlag, {});
+		expect(err).toBeNull();
+		expect(first?.patched).toBe(2);
+
+		// Idempotent — re-running patches nothing.
+		const [second, err2] = await admin.mutation(api.sections.removeSystemFlag, {});
+		expect(err2).toBeNull();
+		expect(second?.patched).toBe(0);
+
+		const rows = await t.run(async (ctx) =>
+			Promise.all(legacyIds.map((id) => ctx.db.get(id)))
+		);
+		for (const row of rows) {
+			expect(row?.isSystem).toBeUndefined();
+		}
+	});
+
+	it("requires admin role", async () => {
+		const t = convexTest(schema, modules);
+		const { managerUserId } = await seed(t);
+
+		const manager = t.withIdentity({ subject: managerUserId });
+		const [value, err] = await manager.mutation(api.sections.removeSystemFlag, {});
+		expect(value).toBeNull();
+		expect(err?.name).toBe("NOT_AUTHORIZED");
 	});
 });
 

@@ -118,7 +118,10 @@ export function createTeamDirectoryColumns(args: {
 							type="button"
 							className="text-xs text-destructive hover:underline disabled:opacity-50"
 							disabled={busy}
-							onClick={() => onRevokeInvite(r._id)}
+							onClick={(e) => {
+								e.stopPropagation();
+								onRevokeInvite(r._id);
+							}}
 						>
 							{t(AdminStaffKeys.TEAM_REVOKE)}
 						</button>
@@ -141,7 +144,10 @@ export function createTeamDirectoryColumns(args: {
 							<button
 								type="button"
 								className="text-xs text-foreground hover:underline"
-								onClick={() => onAssignShift(r._id)}
+								onClick={(e) => {
+									e.stopPropagation();
+									onAssignShift(r._id);
+								}}
 							>
 								{t(AdminStaffKeys.SCHEDULE_TEAM_ROW_ASSIGN)}
 							</button>

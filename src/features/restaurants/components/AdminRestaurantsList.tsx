@@ -15,6 +15,7 @@ import { api } from "convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
+	ChevronLeft,
 	ExternalLink,
 	LayoutGrid,
 	Pencil,
@@ -50,7 +51,6 @@ type ModalState =
 	| { kind: "closed" }
 	| { kind: "create" }
 	| { kind: "edit"; restaurant: Doc<"restaurants"> }
-	| { kind: "tables"; restaurant: Doc<"restaurants"> }
 	| { kind: "confirmDelete"; restaurant: Doc<"restaurants"> };
 
 export function AdminRestaurantsList() {
@@ -86,6 +86,9 @@ export function AdminRestaurantsList() {
 
 	const [showTrash, setShowTrash] = useState(false);
 	const [modal, setModal] = useState<ModalState>({ kind: "closed" });
+	const [expandedTablesId, setExpandedTablesId] = useState<Id<"restaurants"> | null>(
+		null
+	);
 	const [error, setError] = useState<string | null>(null);
 
 	const { data: deletedRestaurants = [], isLoading: deletedLoading } = useQuery({
@@ -192,109 +195,114 @@ export function AdminRestaurantsList() {
 			)}
 
 			<div className="space-y-2">
-				{restaurants.map((r) => (
-					<div
-						key={r._id}
-						className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
-						
-					>
-						<div className="flex items-center gap-4">
-							<div>
-								<span className="text-sm font-medium text-foreground" >
-									{r.name}
-								</span>
-								<span className="text-xs ml-2 text-faint-foreground" >
-									/{r.slug}
-								</span>
-							</div>
-							<StatusBadge
-								bgColor={r.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
-								textColor={r.isActive ? "white" : "var(--text-muted)"}
-								label={
-									r.isActive
-										? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
-										: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
-								}
+				{restaurants.map((r) => {
+					const isExpanded = expandedTablesId === r._id;
+					if (expandedTablesId !== null && !isExpanded) return null;
+					if (isExpanded) {
+						return (
+							<ExpandedTablesRow
+								key={r._id}
+								restaurant={r}
+								onClose={() => setExpandedTablesId(null)}
 							/>
-							<span className="text-xs text-faint-foreground" >
-								{r.currency}
-							</span>
-						</div>
-						<div className="flex items-center gap-2">
-							{canManage && (
-								<button
-									type="button"
-									onClick={() => setModal({ kind: "edit", restaurant: r })}
-									className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
-									title={t(RestaurantsKeys.LIST_EDIT)}
-								>
-									<Pencil size={16}  />
-								</button>
-							)}
-							{canManage && (
-								<button
-									type="button"
-									onClick={() => setModal({ kind: "confirmDelete", restaurant: r })}
-									className="p-1.5 rounded-md hover:bg-hover text-destructive"
-									title={t(RestaurantsKeys.LIST_DELETE)}
-								>
-									<Trash2 size={16} />
-								</button>
-							)}
-							{canManage && (
-								<button
-									onClick={() => setModal({ kind: "tables", restaurant: r })}
-									className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
-									title={t(RestaurantsKeys.LIST_MANAGE_TABLES)}
-								>
-									<LayoutGrid size={16}  />
-								</button>
-							)}
-							<a
-								href={`/r/${r.slug}/en/menu`}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-hover text-accent border border-border"
-								
-							>
-								<ExternalLink size={14} />
-								{t(RestaurantsKeys.LIST_CUSTOMER_VIEW)}
-							</a>
-							{canManage && (
-								<button
-									onClick={async () => {
-										try {
-											unwrapResult(
-												await toggleActiveMutation.mutateAsync({
-													restaurantId: r._id as Id<"restaurants">,
-												})
-											);
-										} catch (err) {
-											setError(
-												err instanceof Error
-													? err.message
-													: t(RestaurantsKeys.LIST_TOGGLE_FAILED)
-											);
-										}
-									}}
-									className="p-1.5 rounded-md hover:bg-hover text-success"
-									title={
+						);
+					}
+					return (
+						<div
+							key={r._id}
+							className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
+						>
+							<div className="flex items-center gap-4">
+								<div>
+									<span className="text-sm font-medium text-foreground">{r.name}</span>
+									<span className="text-xs ml-2 text-faint-foreground">/{r.slug}</span>
+								</div>
+								<StatusBadge
+									bgColor={r.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
+									textColor={r.isActive ? "white" : "var(--text-muted)"}
+									label={
 										r.isActive
-											? t(RestaurantsKeys.LIST_DEACTIVATE)
-											: t(RestaurantsKeys.LIST_ACTIVATE)
+											? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
+											: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
 									}
+								/>
+								<span className="text-xs text-faint-foreground">{r.currency}</span>
+							</div>
+							<div className="flex items-center gap-2">
+								{canManage && (
+									<button
+										type="button"
+										onClick={() => setModal({ kind: "edit", restaurant: r })}
+										className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+										title={t(RestaurantsKeys.LIST_EDIT)}
+									>
+										<Pencil size={16} />
+									</button>
+								)}
+								{canManage && (
+									<button
+										type="button"
+										onClick={() => setModal({ kind: "confirmDelete", restaurant: r })}
+										className="p-1.5 rounded-md hover:bg-hover text-destructive"
+										title={t(RestaurantsKeys.LIST_DELETE)}
+									>
+										<Trash2 size={16} />
+									</button>
+								)}
+								{canManage && (
+									<button
+										onClick={() => setExpandedTablesId(r._id)}
+										className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+										title={t(RestaurantsKeys.LIST_MANAGE_TABLES)}
+									>
+										<LayoutGrid size={16} />
+									</button>
+								)}
+								<a
+									href={`/r/${r.slug}/en/menu`}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-hover text-accent border border-border"
 								>
-									{r.isActive ? (
-										<ToggleRight size={20}  />
-									) : (
-										<ToggleLeft size={20} className="text-faint-foreground"  />
-									)}
-								</button>
-							)}
+									<ExternalLink size={14} />
+									{t(RestaurantsKeys.LIST_CUSTOMER_VIEW)}
+								</a>
+								{canManage && (
+									<button
+										onClick={async () => {
+											try {
+												unwrapResult(
+													await toggleActiveMutation.mutateAsync({
+														restaurantId: r._id as Id<"restaurants">,
+													})
+												);
+											} catch (err) {
+												setError(
+													err instanceof Error
+														? err.message
+														: t(RestaurantsKeys.LIST_TOGGLE_FAILED)
+												);
+											}
+										}}
+										className="p-1.5 rounded-md hover:bg-hover text-success"
+										title={
+											r.isActive
+												? t(RestaurantsKeys.LIST_DEACTIVATE)
+												: t(RestaurantsKeys.LIST_ACTIVATE)
+										}
+									>
+										{r.isActive ? (
+											<ToggleRight size={20} />
+										) : (
+											<ToggleLeft size={20} className="text-faint-foreground" />
+										)}
+									</button>
+								)}
+							</div>
 						</div>
-					</div>
-				))}
-				{restaurants.length === 0 && (
+					);
+				})}
+				{restaurants.length === 0 && expandedTablesId === null && (
 					<EmptyState variant="inline" title={t(RestaurantsKeys.LIST_EMPTY)} />
 				)}
 			</div>
@@ -446,37 +454,59 @@ export function AdminRestaurantsList() {
 				</Modal>
 			)}
 
-			{/* Tables Modal */}
-			{modal.kind === "tables" && (
-				<Modal
-					isOpen
-					onClose={closeModal}
-					ariaLabel={t(RestaurantsKeys.MODAL_TABLES_ARIA)}
-					size="4xl"
+		</div>
+	);
+}
+
+interface ExpandedTablesRowProps {
+	restaurant: Doc<"restaurants">;
+	onClose: () => void;
+}
+
+function ExpandedTablesRow({ restaurant, onClose }: Readonly<ExpandedTablesRowProps>) {
+	const { t } = useTranslation();
+	return (
+		<div className="rounded-xl bg-background border border-border min-h-[calc(100vh-12rem)] flex flex-col">
+			<div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-6 py-4 bg-background border-b border-border rounded-t-xl">
+				<button
+					type="button"
+					onClick={onClose}
+					className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-hover text-sm text-muted-foreground"
+					title={t(RestaurantsKeys.TABLES_EXPANDED_CLOSE)}
+					aria-label={t(RestaurantsKeys.TABLES_EXPANDED_CLOSE)}
 				>
-					<div className="rounded-xl bg-background border border-border">
-						<div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-background border-b border-border rounded-t-xl">
-							<div>
-								<h2 className="text-xl font-semibold text-foreground">
-									{t(RestaurantsKeys.MODAL_TABLES_HEADING)}
-								</h2>
-								<p className="text-sm mt-1 text-muted-foreground">
-									{modal.restaurant.name}
-								</p>
-							</div>
-							<button
-								onClick={closeModal}
-								className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
-							>
-								<X size={20} />
-							</button>
-						</div>
-						<div className="px-6 py-4">
-							<TablesManager restaurantId={modal.restaurant._id} />
-						</div>
-					</div>
-				</Modal>
-			)}
+					<ChevronLeft size={16} />
+				</button>
+				<div className="flex items-center gap-3 min-w-0 flex-1">
+					<h2 className="text-xl font-semibold text-foreground truncate">
+						{restaurant.name}
+					</h2>
+					<StatusBadge
+						bgColor={
+							restaurant.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"
+						}
+						textColor={restaurant.isActive ? "white" : "var(--text-muted)"}
+						label={
+							restaurant.isActive
+								? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
+								: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
+						}
+					/>
+					<span className="text-xs text-faint-foreground">{restaurant.currency}</span>
+				</div>
+				<button
+					type="button"
+					onClick={onClose}
+					className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+					title={t(RestaurantsKeys.TABLES_EXPANDED_CLOSE)}
+					aria-label={t(RestaurantsKeys.TABLES_EXPANDED_CLOSE)}
+				>
+					<X size={20} />
+				</button>
+			</div>
+			<div className="px-6 py-4 flex-1">
+				<TablesManager restaurantId={restaurant._id} />
+			</div>
 		</div>
 	);
 }

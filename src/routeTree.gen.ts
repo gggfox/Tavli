@@ -15,11 +15,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as AdminTipsRouteImport } from './routes/admin/tips'
 import { Route as AdminTeamRouteImport } from './routes/admin/team'
 import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
-import { Route as AdminPerformanceRouteImport } from './routes/admin/performance'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
@@ -76,11 +74,6 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminTipsRoute = AdminTipsRouteImport.update({
-  id: '/tips',
-  path: '/tips',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminTeamRoute = AdminTeamRouteImport.update({
   id: '/team',
   path: '/team',
@@ -94,11 +87,6 @@ const AdminScheduleRoute = AdminScheduleRouteImport.update({
 const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
   id: '/restaurants',
   path: '/restaurants',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPerformanceRoute = AdminPerformanceRouteImport.update({
-  id: '/performance',
-  path: '/performance',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
@@ -236,11 +224,9 @@ export interface FileRoutesByFullPath {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
-  '/admin/performance': typeof AdminPerformanceRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
-  '/admin/tips': typeof AdminTipsRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -274,11 +260,9 @@ export interface FileRoutesByTo {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
-  '/admin/performance': typeof AdminPerformanceRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
-  '/admin/tips': typeof AdminTipsRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -313,11 +297,9 @@ export interface FileRoutesById {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
-  '/admin/performance': typeof AdminPerformanceRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
-  '/admin/tips': typeof AdminTipsRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
@@ -353,11 +335,9 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
-    | '/admin/performance'
     | '/admin/restaurants'
     | '/admin/schedule'
     | '/admin/team'
-    | '/admin/tips'
     | '/admin/users'
     | '/invites/$token'
     | '/r/$slug'
@@ -391,11 +371,9 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
-    | '/admin/performance'
     | '/admin/restaurants'
     | '/admin/schedule'
     | '/admin/team'
-    | '/admin/tips'
     | '/admin/users'
     | '/invites/$token'
     | '/r/$slug'
@@ -429,11 +407,9 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
-    | '/admin/performance'
     | '/admin/restaurants'
     | '/admin/schedule'
     | '/admin/team'
-    | '/admin/tips'
     | '/admin/users'
     | '/invites/$token'
     | '/r/$slug'
@@ -518,13 +494,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/tips': {
-      id: '/admin/tips'
-      path: '/tips'
-      fullPath: '/admin/tips'
-      preLoaderRoute: typeof AdminTipsRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/team': {
       id: '/admin/team'
       path: '/team'
@@ -544,13 +513,6 @@ declare module '@tanstack/react-router' {
       path: '/restaurants'
       fullPath: '/admin/restaurants'
       preLoaderRoute: typeof AdminRestaurantsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/performance': {
-      id: '/admin/performance'
-      path: '/performance'
-      fullPath: '/admin/performance'
-      preLoaderRoute: typeof AdminPerformanceRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/payments': {
@@ -737,11 +699,9 @@ interface AdminRouteChildren {
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
-  AdminPerformanceRoute: typeof AdminPerformanceRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
   AdminTeamRoute: typeof AdminTeamRoute
-  AdminTipsRoute: typeof AdminTipsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
   AdminMenusIndexRoute: typeof AdminMenusIndexRoute
@@ -754,11 +714,9 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
-  AdminPerformanceRoute: AdminPerformanceRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
   AdminTeamRoute: AdminTeamRoute,
-  AdminTipsRoute: AdminTipsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
   AdminMenusIndexRoute: AdminMenusIndexRoute,

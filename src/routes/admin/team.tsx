@@ -1,5 +1,9 @@
 import { ShiftDrawer, useAssignableMembers, type ShiftDrawerInitial } from "@/features/schedule";
 import { RestaurantInviteMultiSelect } from "@/features/team/components/RestaurantInviteMultiSelect";
+import {
+	TeamMemberDrawer,
+	type TeamMemberDrawerRow,
+} from "@/features/team/components/TeamMemberDrawer";
 import { createTeamDirectoryColumns, type TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
 import { useRestaurant } from "@/features/restaurants";
 import { useCurrentUserRoles } from "@/features/users/hooks";
@@ -83,6 +87,7 @@ function AdminTeamPage() {
 	);
 	const [shiftDrawerOpen, setShiftDrawerOpen] = useState(false);
 	const [shiftDrawerInitial, setShiftDrawerInitial] = useState<ShiftDrawerInitial | null>(null);
+	const [memberDrawerRow, setMemberDrawerRow] = useState<TeamMemberDrawerRow | null>(null);
 
 	const handleOpenAssignShift = useCallback(
 		(memberId: Id<"restaurantMembers">) => {
@@ -91,6 +96,16 @@ function AdminTeamPage() {
 		},
 		[]
 	);
+
+	const handleRowClick = useCallback((row: TeamDirectoryRow) => {
+		// Pending invites have no associated user yet; clicking should be a no-op.
+		if (row.rowType === "invite") return;
+		setMemberDrawerRow(row);
+	}, []);
+
+	const handleCloseMemberDrawer = useCallback(() => {
+		setMemberDrawerRow(null);
+	}, []);
 
 	const isAdmin = roles.includes(USER_ROLES.ADMIN);
 
@@ -331,6 +346,17 @@ function AdminTeamPage() {
 					filteredEmptyTitle={t(AdminStaffKeys.TEAM_DIRECTORY_FILTERED_EMPTY_TITLE)}
 					filteredEmptyDescription={t(AdminStaffKeys.TEAM_DIRECTORY_FILTERED_EMPTY_DESCRIPTION)}
 					notAuthenticatedMessage={t(AdminStaffKeys.TEAM_DESCRIPTION)}
+					onRowClick={handleRowClick}
+				/>
+
+				<TeamMemberDrawer
+					isOpen={memberDrawerRow !== null}
+					row={memberDrawerRow}
+					restaurantId={restaurant?._id ?? null}
+					restaurantTimezone={restaurant?.timezone ?? "UTC"}
+					restaurantCurrency={restaurant?.currency ?? ""}
+					staffRoleLabel={staffRoleLabelCb}
+					onClose={handleCloseMemberDrawer}
 				/>
 
 				<Drawer
