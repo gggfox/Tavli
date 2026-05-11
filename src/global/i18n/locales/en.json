@@ -9,6 +9,7 @@
 		},
 		"nav": {
 			"home": "Dashboard",
+			"dashboard": "Dashboard",
 			"restaurants": "Restaurants",
 			"restaurant": "Restaurant",
 			"tables": "Tables",
@@ -26,7 +27,8 @@
 			"performance": "Performance",
 			"admin": "Admin",
 			"adminUsers": "Users",
-			"adminOrganizations": "Organizations"
+			"adminOrganizations": "Organizations",
+			"adminFeatureFlags": "Feature flags"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -547,6 +549,12 @@
 			"timezoneMissingHint": "Set a valid IANA timezone so daily order numbers use your local business day. Until then, UTC is used.",
 			"orderDayStartLabel": "Start of order day",
 			"orderDayStartHint": "Orders are numbered per business day starting at this local time (not midnight). Example: 04:00 groups late-night sales with the previous calendar day.",
+			"orderNumberResetLabel": "Order number reset frequency (admin)",
+			"orderNumberResetHint": "How often the per-restaurant order counter resets to 1. Calendar-aligned in the restaurant's timezone, rolling over at the order-day start time above.",
+			"orderNumberResetOptionDaily": "Daily",
+			"orderNumberResetOptionWeekly": "Weekly",
+			"orderNumberResetOptionBiweekly": "Bi-weekly",
+			"orderNumberResetOptionMonthly": "Monthly",
 			"orgLabel": "Organization",
 			"orgPlaceholder": "Select an organization",
 			"statusLabel": "Status",
@@ -922,5 +930,165 @@
 			"usingDefaults": "Using defaults. Save to persist your own values.",
 			"rangeFallback": "First matching range wins. If no range matches, the default turn time is used."
 		}
+	},
+	"dashboard": {
+		"page": {
+			"title": "Dashboard",
+			"description": "Live metrics for your restaurant. Build the layout you need.",
+			"noRestaurantTitle": "Pick a restaurant",
+			"noRestaurantDescription": "Select or create a restaurant first to see its dashboard.",
+			"portfolioLabel": "All restaurants"
+		},
+		"tabs": {
+			"new": "New view",
+			"rename": "Rename",
+			"duplicate": "Duplicate",
+			"delete": "Delete",
+			"overflow": "More views",
+			"defaultName": "View {{number}}",
+			"deleteConfirm": "Delete this view? This cannot be undone.",
+			"emptyTitle": "No dashboards yet",
+			"emptyDescription": "Create your first view to start tracking the metrics that matter.",
+			"emptyAction": "Create a view"
+		},
+		"edit": {
+			"enter": "Edit layout",
+			"save": "Save",
+			"discard": "Discard",
+			"addWidget": "Add widget",
+			"unsavedChanges": "You have unsaved changes",
+			"saved": "Layout saved.",
+			"saveFailed": "Could not save layout. Try again.",
+			"removeWidget": "Remove widget",
+			"dragHandle": "Drag to move"
+		},
+		"globalRange": {
+			"label": "Date range",
+			"today": "Today",
+			"week": "This week",
+			"month": "This month",
+			"quarter": "This quarter",
+			"year": "This year",
+			"custom": "Custom",
+			"compareToPrev": "Compare",
+			"compareToPrevLabel": "Compare to previous period"
+		},
+		"widget": {
+			"overrideBadge": "Custom range",
+			"overrideRemove": "Use global range",
+			"loading": "Loading…",
+			"errorTitle": "Could not load widget.",
+			"errorDescription": "Try again or pick a different range.",
+			"errorRangeTooLarge": "Date range too large for this widget. Pick a shorter range.",
+			"errorAccessDenied": "You don't have permission to view this metric.",
+			"unavailableTitle": "Widget unavailable",
+			"unavailableDescription": "This widget type is no longer available.",
+			"empty": "No data for this range.",
+			"deltaUp": "+{{value}}",
+			"deltaDown": "{{value}}",
+			"deltaNeutral": "0",
+			"deltaVsPrev": "vs previous"
+		},
+		"picker": {
+			"title": "Add widget",
+			"description": "Pick a metric to add to this view.",
+			"lockedBadge": "Locked",
+			"lockedTooltip": "Manager role required to view this metric.",
+			"portfolioBadge": "Portfolio",
+			"notPortfolioCapable": "Not available in portfolio view.",
+			"close": "Close"
+		},
+		"templates": {
+			"title": "Templates",
+			"description": "Pre-built layouts published for this restaurant.",
+			"browse": "Browse templates",
+			"publish": "Save as template",
+			"publishNameLabel": "Template name",
+			"publishDescriptionLabel": "Short description (optional)",
+			"publishSave": "Publish",
+			"useThis": "Use this layout",
+			"delete": "Delete template",
+			"deleteConfirm": "Delete this template? Existing copies are unaffected.",
+			"emptyTitle": "No templates yet",
+			"emptyDescription": "Managers can publish a layout that everyone on the team can clone.",
+			"publishedBy": "by {{user}}"
+		},
+		"widgets": {
+			"numberWithDelta": {
+				"label": "Number with delta",
+				"description": "A single big number with comparison to the previous period.",
+				"metricLabel": "Metric",
+				"metric": {
+					"reservationsCount": "Reservations",
+					"reservationsConfirmed": "Confirmed reservations",
+					"ordersCount": "Paid orders",
+					"paymentsRevenueTotal": "Revenue",
+					"covers": "Covers"
+				}
+			},
+			"topMenuItems": {
+				"label": "Top menu items",
+				"description": "Highest-selling items by quantity in the date range.",
+				"limitLabel": "How many items",
+				"quantity": "{{count}} sold"
+			},
+			"revenueOverTime": {
+				"label": "Revenue over time",
+				"description": "Successful payment totals bucketed by day.",
+				"axis": "Revenue"
+			},
+			"ordersByHour": {
+				"label": "Orders by hour",
+				"description": "Average paid orders per hour-of-day across the range.",
+				"axis": "Avg / day"
+			},
+			"reservationsByStatus": {
+				"label": "Reservations by status",
+				"description": "Count of reservations starting in the window grouped by status."
+			},
+			"tipsTotal": {
+				"label": "Tips total",
+				"description": "Tip pool entries summed over the date range with a daily sparkline."
+			},
+			"tableOccupancy": {
+				"label": "Table occupancy",
+				"description": "Average number of seated tables across the day."
+			},
+			"busyTimesHeatmap": {
+				"label": "Busy times heatmap",
+				"description": "Order volume by day-of-week and hour-of-day."
+			}
+		},
+		"day": {
+			"sun": "Sun",
+			"mon": "Mon",
+			"tue": "Tue",
+			"wed": "Wed",
+			"thu": "Thu",
+			"fri": "Fri",
+			"sat": "Sat"
+		}
+	},
+	"exports": {
+		"button": "Export",
+		"button.aria": "Export to Excel",
+		"dialog": {
+			"title": {
+				"orders": "Export orders",
+				"payments": "Export payments",
+				"reservations": "Export reservations"
+			},
+			"description": "Choose a year. The export will contain one sheet per month, plus a summary sheet.",
+			"yearLabel": "Year",
+			"cancel": "Cancel",
+			"confirm": "Export"
+		},
+		"status": {
+			"preparing": "Preparing your Excel file...",
+			"success": "Export ready. The download should start automatically.",
+			"error": "Could not export. Please try again.",
+			"tooLarge": "This export is too large to download in a single file. Please contact support."
+		},
+		"noYears": "No data available to export yet."
 	}
 }

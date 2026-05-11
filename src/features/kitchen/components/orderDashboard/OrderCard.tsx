@@ -99,7 +99,6 @@ export function OrderCard({
 				<div className="flex items-center justify-between gap-2 mt-1">
 					<span
 						className="text-[11px] font-mono truncate text-faint-foreground"
-						
 						title={order._id}
 					>
 						{order.dailyOrderNumber != null

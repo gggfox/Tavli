@@ -10,6 +10,8 @@ import {
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
+	UserInputValidationError,
+	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
@@ -21,7 +23,8 @@ import { getCurrentUserId, requireAdminRole } from "./_util/auth";
 type DeleteFeatureFlagErrors =
 	| NotAuthenticatedErrorObject
 	| NotAuthorizedErrorObject
-	| NotFoundErrorObject;
+	| NotFoundErrorObject
+	| UserInputValidationErrorObject;
 
 // ============================================================================
 // Feature Flag Keys
@@ -30,10 +33,42 @@ type DeleteFeatureFlagErrors =
 /**
  * Available feature flag keys.
  * Add new feature flags here as constants for type safety.
+ *
+ * When adding a flag, also add a matching entry to FEATURE_FLAG_METADATA so the
+ * admin UI has a description to render.
  */
 export const FEATURE_FLAGS = {} as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
+
+/**
+ * Human-readable metadata for each registered flag.
+ * The admin UI reads descriptions from here so code stays the source of truth.
+ */
+export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string }> =
+	{} as Record<FeatureFlagKey, { description: string }>;
+
+const REGISTERED_FLAG_KEYS = new Set<string>(Object.values(FEATURE_FLAGS));
+
+/**
+ * Returns true when the given key is registered in FEATURE_FLAGS.
+ * Use this to keep the registry as the single source of truth for which
+ * flags exist, even when callers pass arbitrary strings.
+ */
+export function isRegisteredFlagKey(key: string): key is FeatureFlagKey {
+	return REGISTERED_FLAG_KEYS.has(key);
+}
+
+function unregisteredFlagKeyError(key: string): UserInputValidationError {
+	return new UserInputValidationError({
+		fields: [
+			{
+				field: "key",
+				message: `Feature flag "${key}" is not registered. Add it to FEATURE_FLAGS in convex/featureFlags.ts.`,
+			},
+		],
+	});
+}
 
 // ============================================================================
 // Queries
@@ -99,31 +134,34 @@ export const setFeatureFlag = mutation({
 			throw error2;
 		}
 
+		if (!isRegisteredFlagKey(args.key)) {
+			throw unregisteredFlagKeyError(args.key);
+		}
+
 		const now = Date.now();
 
-		// Check if flag already exists
 		const existing = await ctx.db
 			.query("featureFlags")
 			.withIndex("by_key", (q) => q.eq("key", args.key))
 			.first();
 
 		if (existing) {
-			// Update existing flag
 			await ctx.db.patch(existing._id, {
 				enabled: args.enabled,
 				description: args.description ?? existing.description,
 				updatedAt: now,
+				updatedBy: userId,
 			});
 			return existing._id;
 		}
 
-		// Create new flag
 		return await ctx.db.insert("featureFlags", {
 			key: args.key,
 			enabled: args.enabled,
 			description: args.description,
 			createdAt: now,
 			updatedAt: now,
+			updatedBy: userId,
 		});
 	},
 });
@@ -142,6 +180,10 @@ export const deleteFeatureFlag = mutation({
 		const [_, error2] = await requireAdminRole(ctx, userId);
 		if (error2) {
 			return [null, error2];
+		}
+
+		if (!isRegisteredFlagKey(args.key)) {
+			return [null, unregisteredFlagKeyError(args.key).toObject()];
 		}
 
 		const flag = await ctx.db

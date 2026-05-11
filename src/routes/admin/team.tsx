@@ -3,8 +3,8 @@ import { RestaurantInviteMultiSelect } from "@/features/team/components/Restaura
 import { createTeamDirectoryColumns, type TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
 import { useRestaurant } from "@/features/restaurants";
 import { useCurrentUserRoles } from "@/features/users/hooks";
-import { AdminPageLayout, AdminTable, DialogHeader, LoadingState, Modal } from "@/global/components";
-import { useAdminTable } from "@/global/hooks";
+import { AdminPageLayout, AdminTable, DialogHeader, Drawer, LoadingState } from "@/global/components";
+import { useAdminTable, useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
@@ -54,6 +54,7 @@ function inviteAssignableRoleLabel(role: InviteRole, t: (key: string) => string)
 
 function AdminTeamPage() {
 	const { t } = useTranslation();
+	const isNarrow = useIsNarrowViewport();
 	const { isAuthenticated } = useConvexAuth();
 	const { userId } = useAuth();
 	const { roles, organizationId: userOrgId, isLoading: rolesLoading } = useCurrentUserRoles();
@@ -332,83 +333,87 @@ function AdminTeamPage() {
 					notAuthenticatedMessage={t(AdminStaffKeys.TEAM_DESCRIPTION)}
 				/>
 
-				<Modal
+				<Drawer
 					isOpen={inviteModalOpen}
 					onClose={closeInviteModal}
 					ariaLabel={t(AdminStaffKeys.TEAM_INVITE_MODAL_TITLE)}
-					size="lg"
+					side={isNarrow ? "bottom" : "right"}
+					size={isNarrow ? "92dvh" : "min(520px, 90vw)"}
+					swipeToClose={isNarrow}
+					swipeHandleAriaLabel={t(AdminStaffKeys.SCHEDULE_DRAWER_SWIPE_HANDLE)}
+					panelClassName="bg-background border border-border overflow-hidden"
 				>
-					<div className="rounded-lg border border-border bg-card overflow-hidden">
-						<DialogHeader title={t(AdminStaffKeys.TEAM_INVITE_MODAL_TITLE)} onClose={closeInviteModal} />
-						<div className="p-4 space-y-3">
-							<label className="block text-xs text-faint-foreground">
-								{t(AdminStaffKeys.TEAM_EMAIL_LABEL)}
-								<input
+					<DialogHeader title={t(AdminStaffKeys.TEAM_INVITE_MODAL_TITLE)} onClose={closeInviteModal} />
+					<div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
+						<label className="block text-xs text-faint-foreground">
+							{t(AdminStaffKeys.TEAM_EMAIL_LABEL)}
+							<input
+								className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+								value={email}
+								onChange={(e) => setEmail(e.target.value)}
+								type="email"
+								autoComplete="email"
+							/>
+						</label>
+						<div className="block text-xs text-faint-foreground">
+							<span>{t(AdminStaffKeys.TEAM_ROLE_LABEL)}</span>
+							{allowedInviteRoles.length === 0 ? (
+								<p className="mt-1 text-sm text-faint-foreground">{t(AdminStaffKeys.TEAM_INVITE_NO_ROLE)}</p>
+							) : allowedInviteRoles.length === 1 ? (
+								<>
+									<p className="mt-1 text-sm text-foreground">
+										{inviteAssignableRoleLabel(allowedInviteRoles[0], t)}
+									</p>
+									<p className="mt-1 text-xs text-muted-foreground">
+										{t(AdminStaffKeys.TEAM_INVITE_SINGLE_ROLE_HINT)}
+									</p>
+								</>
+							) : (
+								<select
 									className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
-									value={email}
-									onChange={(e) => setEmail(e.target.value)}
-									type="email"
-									autoComplete="email"
-								/>
-							</label>
-							<div className="block text-xs text-faint-foreground">
-								<span>{t(AdminStaffKeys.TEAM_ROLE_LABEL)}</span>
-								{allowedInviteRoles.length === 0 ? (
-									<p className="mt-1 text-sm text-faint-foreground">{t(AdminStaffKeys.TEAM_INVITE_NO_ROLE)}</p>
-								) : allowedInviteRoles.length === 1 ? (
-									<>
-										<p className="mt-1 text-sm text-foreground">
-											{inviteAssignableRoleLabel(allowedInviteRoles[0], t)}
-										</p>
-										<p className="mt-1 text-xs text-muted-foreground">
-											{t(AdminStaffKeys.TEAM_INVITE_SINGLE_ROLE_HINT)}
-										</p>
-									</>
-								) : (
-									<select
-										className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
-										value={role}
-										onChange={(e) => setRole(e.target.value as InviteRole)}
-									>
-										{allowedInviteRoles.map((r) => (
-											<option key={r} value={r}>
-												{inviteAssignableRoleLabel(r, t)}
-											</option>
-										))}
-									</select>
-								)}
-							</div>
-							{role !== USER_ROLES.OWNER && (
-								<div className="text-xs text-faint-foreground space-y-1">
-									<span className="font-medium text-foreground">{t(AdminStaffKeys.TEAM_RESTAURANTS_LABEL)}</span>
-									<RestaurantInviteMultiSelect
-										options={restaurantInviteOptions}
-										selectedIds={selectedRestaurantIds}
-										onChange={setSelectedRestaurantIds}
-										placeholder={t(AdminStaffKeys.TEAM_RESTAURANTS_PLACEHOLDER)}
-										summaryText={restaurantSummaryText}
-										ariaLabel={t(AdminStaffKeys.TEAM_RESTAURANTS_ARIA)}
-										disabled={createInvitation.isPending}
-									/>
-								</div>
+									value={role}
+									onChange={(e) => setRole(e.target.value as InviteRole)}
+								>
+									{allowedInviteRoles.map((r) => (
+										<option key={r} value={r}>
+											{inviteAssignableRoleLabel(r, t)}
+										</option>
+									))}
+								</select>
 							)}
-							<button
-								type="button"
-								onClick={() => void onInvite()}
-								disabled={
-									createInvitation.isPending ||
-									!email.trim() ||
-									allowedInviteRoles.length === 0 ||
-									(role !== USER_ROLES.OWNER &&
-										(selectedRestaurantIds.length === 0 || restaurantInviteOptions.length === 0))
-								}
-								className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-							>
-								{createInvitation.isPending ? t(AdminStaffKeys.TEAM_SENDING) : t(AdminStaffKeys.TEAM_SEND_INVITE)}
-							</button>
 						</div>
+						{role !== USER_ROLES.OWNER && (
+							<div className="text-xs text-faint-foreground space-y-1">
+								<span className="font-medium text-foreground">{t(AdminStaffKeys.TEAM_RESTAURANTS_LABEL)}</span>
+								<RestaurantInviteMultiSelect
+									options={restaurantInviteOptions}
+									selectedIds={selectedRestaurantIds}
+									onChange={setSelectedRestaurantIds}
+									placeholder={t(AdminStaffKeys.TEAM_RESTAURANTS_PLACEHOLDER)}
+									summaryText={restaurantSummaryText}
+									ariaLabel={t(AdminStaffKeys.TEAM_RESTAURANTS_ARIA)}
+									disabled={createInvitation.isPending}
+								/>
+							</div>
+						)}
 					</div>
-				</Modal>
+					<div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border">
+						<button
+							type="button"
+							onClick={() => void onInvite()}
+							disabled={
+								createInvitation.isPending ||
+								!email.trim() ||
+								allowedInviteRoles.length === 0 ||
+								(role !== USER_ROLES.OWNER &&
+									(selectedRestaurantIds.length === 0 || restaurantInviteOptions.length === 0))
+							}
+							className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+						>
+							{createInvitation.isPending ? t(AdminStaffKeys.TEAM_SENDING) : t(AdminStaffKeys.TEAM_SEND_INVITE)}
+						</button>
+					</div>
+				</Drawer>
 
 				{shiftDrawerInitial && restaurant ? (
 					<ShiftDrawer

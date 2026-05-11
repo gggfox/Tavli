@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
@@ -23,6 +24,7 @@ import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminMyScheduleRouteImport } from './routes/admin/my-schedule'
+import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-flags'
 import { Route as AdminAttendanceRouteImport } from './routes/admin/attendance'
 import { Route as AdminReservationsIndexRouteImport } from './routes/admin/reservations/index'
 import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
@@ -45,6 +47,11 @@ import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
 import { Route as RSlugLangOrderOrderIdRouteImport } from './routes/r/$slug/$lang/order/$orderId'
 
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -113,6 +120,11 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
 const AdminMyScheduleRoute = AdminMyScheduleRouteImport.update({
   id: '/my-schedule',
   path: '/my-schedule',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFeatureFlagsRoute = AdminFeatureFlagsRouteImport.update({
+  id: '/feature-flags',
+  path: '/feature-flags',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
@@ -224,7 +236,9 @@ const RSlugLangOrderOrderIdRoute = RSlugLangOrderOrderIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/dashboard': typeof DashboardRoute
   '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -261,7 +275,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/dashboard': typeof DashboardRoute
   '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -299,7 +315,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/dashboard': typeof DashboardRoute
   '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -338,7 +356,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/dashboard'
     | '/admin/attendance'
+    | '/admin/feature-flags'
     | '/admin/my-schedule'
     | '/admin/orders'
     | '/admin/organizations'
@@ -375,7 +395,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/dashboard'
     | '/admin/attendance'
+    | '/admin/feature-flags'
     | '/admin/my-schedule'
     | '/admin/orders'
     | '/admin/organizations'
@@ -412,7 +434,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/dashboard'
     | '/admin/attendance'
+    | '/admin/feature-flags'
     | '/admin/my-schedule'
     | '/admin/orders'
     | '/admin/organizations'
@@ -450,6 +474,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  DashboardRoute: typeof DashboardRoute
   InvitesTokenRoute: typeof InvitesTokenRoute
   RSlugRoute: typeof RSlugRouteWithChildren
   DemoApiNamesRoute: typeof DemoApiNamesRoute
@@ -463,6 +488,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -559,6 +591,13 @@ declare module '@tanstack/react-router' {
       path: '/my-schedule'
       fullPath: '/admin/my-schedule'
       preLoaderRoute: typeof AdminMyScheduleRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/feature-flags': {
+      id: '/admin/feature-flags'
+      path: '/feature-flags'
+      fullPath: '/admin/feature-flags'
+      preLoaderRoute: typeof AdminFeatureFlagsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/attendance': {
@@ -713,6 +752,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminAttendanceRoute: typeof AdminAttendanceRoute
+  AdminFeatureFlagsRoute: typeof AdminFeatureFlagsRoute
   AdminMyScheduleRoute: typeof AdminMyScheduleRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
@@ -730,6 +770,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAttendanceRoute: AdminAttendanceRoute,
+  AdminFeatureFlagsRoute: AdminFeatureFlagsRoute,
   AdminMyScheduleRoute: AdminMyScheduleRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
@@ -788,6 +829,7 @@ const RSlugRouteWithChildren = RSlugRoute._addFileChildren(RSlugRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  DashboardRoute: DashboardRoute,
   InvitesTokenRoute: InvitesTokenRoute,
   RSlugRoute: RSlugRouteWithChildren,
   DemoApiNamesRoute: DemoApiNamesRoute,

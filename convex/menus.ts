@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -355,5 +355,149 @@ export const getCategoriesByMenu = query({
 			.query(TABLE.MENU_CATEGORIES)
 			.withIndex("by_menu", (q) => q.eq("menuId", args.menuId))
 			.collect();
+	},
+});
+
+/**
+ * Internal export query: returns the current menu snapshot for a restaurant
+ * as five denormalized slices (Menus, Categories, Items, OptionGroups, Options).
+ * No date dimension — this is a "what does the catalog look like right now"
+ * export.
+ */
+export const internalListMenuSnapshotForExport = internalQuery({
+	args: {
+		actingUserId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async (ctx, args) => {
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
+		if (aerr) throw new Error("Unauthorized");
+
+		const menus = await ctx.db
+			.query(TABLE.MENUS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+
+		const categories: {
+			id: string;
+			menuId: string;
+			menuName: string;
+			name: string;
+			description: string;
+			displayOrder: number;
+		}[] = [];
+		const items: {
+			id: string;
+			menuId: string;
+			menuName: string;
+			categoryId: string;
+			categoryName: string;
+			name: string;
+			description: string;
+			basePriceCents: number;
+			isAvailable: boolean;
+			unavailableReason: string;
+			displayOrder: number;
+			tags: string;
+		}[] = [];
+
+		for (const menu of menus) {
+			const cats = await ctx.db
+				.query(TABLE.MENU_CATEGORIES)
+				.withIndex("by_menu", (q) => q.eq("menuId", menu._id))
+				.collect();
+			for (const cat of cats) {
+				categories.push({
+					id: cat._id as string,
+					menuId: menu._id as string,
+					menuName: menu.name,
+					name: cat.name,
+					description: cat.description ?? "",
+					displayOrder: cat.displayOrder,
+				});
+				const catItems = await ctx.db
+					.query(TABLE.MENU_ITEMS)
+					.withIndex("by_category", (q) => q.eq("categoryId", cat._id))
+					.collect();
+				for (const it of catItems) {
+					items.push({
+						id: it._id as string,
+						menuId: menu._id as string,
+						menuName: menu.name,
+						categoryId: cat._id as string,
+						categoryName: cat.name,
+						name: it.name,
+						description: it.description ?? "",
+						basePriceCents: it.basePrice,
+						isAvailable: it.isAvailable,
+						unavailableReason: it.unavailableReason ?? "",
+						displayOrder: it.displayOrder,
+						tags: (it.tags ?? []).join(", "),
+					});
+				}
+			}
+		}
+
+		const optionGroups = await ctx.db
+			.query(TABLE.OPTION_GROUPS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+
+		const optionGroupRows = optionGroups.map((g) => ({
+			id: g._id as string,
+			name: g.name,
+			selectionType: g.selectionType,
+			isRequired: g.isRequired,
+			minSelections: g.minSelections,
+			maxSelections: g.maxSelections,
+			displayOrder: g.displayOrder,
+		}));
+
+		const optionRows: {
+			id: string;
+			optionGroupId: string;
+			optionGroupName: string;
+			name: string;
+			priceModifierCents: number;
+			isAvailable: boolean;
+			displayOrder: number;
+		}[] = [];
+		for (const g of optionGroups) {
+			const opts = await ctx.db
+				.query(TABLE.OPTIONS)
+				.withIndex("by_optionGroup", (q) => q.eq("optionGroupId", g._id))
+				.collect();
+			for (const o of opts) {
+				optionRows.push({
+					id: o._id as string,
+					optionGroupId: g._id as string,
+					optionGroupName: g.name,
+					name: o.name,
+					priceModifierCents: o.priceModifier,
+					isAvailable: o.isAvailable,
+					displayOrder: o.displayOrder,
+				});
+			}
+		}
+
+		return {
+			menus: menus.map((m) => ({
+				id: m._id as string,
+				name: m.name,
+				description: m.description ?? "",
+				isActive: m.isActive,
+				displayOrder: m.displayOrder,
+				defaultLanguage: m.defaultLanguage ?? "",
+				supportedLanguages: (m.supportedLanguages ?? []).join(", "),
+			})),
+			categories,
+			items,
+			optionGroups: optionGroupRows,
+			options: optionRows,
+		};
 	},
 });

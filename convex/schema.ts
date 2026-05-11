@@ -145,6 +145,18 @@ export default defineSchema({
 		timezone: v.optional(v.string()),
 		/** Minutes from local midnight (0–1439) when the business “order day” starts; default 240 (04:00) in app logic. */
 		orderDayStartMinutesFromMidnight: v.optional(v.number()),
+		/**
+		 * Cadence at which the per-restaurant order-number counter resets.
+		 * Missing → DEFAULT_ORDER_NUMBER_RESET_FREQUENCY (monthly).
+		 */
+		orderNumberResetFrequency: v.optional(
+			v.union(
+				v.literal("daily"),
+				v.literal("weekly"),
+				v.literal("biweekly"),
+				v.literal("monthly")
+			)
+		),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),
@@ -318,6 +330,11 @@ export default defineSchema({
 		.index("by_session", ["sessionId"])
 		.index("by_restaurant", ["restaurantId"]),
 
+	// One counter row per restaurant. `serviceDateKey` is a generic period key
+	// derived from `restaurants.orderNumberResetFrequency` — for daily resets
+	// this is `YYYY-MM-DD` (legacy shape), for monthly `YYYY-MM`, for weekly
+	// `YYYY-Www` (ISO Mon-start), for bi-weekly `YYYY-Bnn`. The counter resets
+	// to 1 whenever the key changes between two confirmPayment calls.
 	[TABLE.ORDER_DAY_COUNTERS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		serviceDateKey: v.string(),
@@ -745,6 +762,67 @@ export default defineSchema({
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
 	}).index("by_restaurant_date", ["restaurantId", "businessDate"]),
+
+	// ============================================================================
+	// Dashboard layouts & templates
+	// ============================================================================
+	//
+	// Configurable per-user dashboard. A layout is owned by exactly one user
+	// (`userId`) and bound to either a single restaurant (`scopeKind: "restaurant"`,
+	// `restaurantId` set) or to the user's full restaurant portfolio
+	// (`scopeKind: "portfolio"`, `restaurantId` absent). Each user may have many
+	// layouts per restaurant; `position` orders the tabs.
+	//
+	// `config.widgets[].options` is widget-specific and parsed via per-widget
+	// Zod schemas in the frontend registry.
+	[TABLE.DASHBOARD_LAYOUTS]: defineTable({
+		userId: v.string(),
+		scopeKind: v.union(v.literal("restaurant"), v.literal("portfolio")),
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
+		name: v.string(),
+		position: v.number(),
+		config: v.object({
+			globalDateRange: v.string(),
+			customRange: v.optional(v.object({ from: v.number(), to: v.number() })),
+			compareToPrev: v.boolean(),
+			widgets: v.array(
+				v.object({
+					instanceId: v.string(),
+					widgetType: v.string(),
+					gridPosition: v.object({
+						x: v.number(),
+						y: v.number(),
+						w: v.number(),
+						h: v.number(),
+					}),
+					options: v.any(),
+					dateRangeOverride: v.optional(
+						v.object({
+							kind: v.string(),
+							custom: v.optional(v.object({ from: v.number(), to: v.number() })),
+						})
+					),
+				})
+			),
+		}),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_user_restaurant", ["userId", "restaurantId"])
+		.index("by_user_scopeKind", ["userId", "scopeKind"]),
+
+	// Restaurant-scoped dashboard templates published by managers and cloneable
+	// by any staff member with access to that restaurant. The cloned layout is
+	// independent — later edits to the template do NOT propagate to clones.
+	[TABLE.DASHBOARD_TEMPLATES]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		publishedBy: v.string(),
+		name: v.string(),
+		description: v.optional(v.string()),
+		config: v.any(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_restaurant", ["restaurantId"]),
 
 	// ============================================================================
 	// Unified Event Store

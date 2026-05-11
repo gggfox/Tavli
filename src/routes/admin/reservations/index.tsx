@@ -1,4 +1,5 @@
 import { DialogHeader, Drawer } from "@/global/components";
+import { ExportYearDialog, useCanExport } from "@/features/exports";
 import {
 	ReservationSettingsPanel,
 	ReservationsDashboard,
@@ -46,6 +47,7 @@ export const Route = createFileRoute("/admin/reservations/")({
 function ReservationsPage() {
 	const { t } = useTranslation();
 	const { restaurant, isLoading } = useRestaurant();
+	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [isLocksOpen, setIsLocksOpen] = useState(false);
 
@@ -66,6 +68,9 @@ function ReservationsPage() {
 					</p>
 				</div>
 				<div className="flex items-center gap-2">
+					{restaurant && canExport ? (
+						<ExportYearDialog restaurantId={restaurant._id} kind="reservations" />
+					) : null}
 					<button
 						type="button"
 						onClick={() => setIsLocksOpen(true)}

@@ -11,6 +11,7 @@ export const SidebarKeys = {
 
 	// Navigation
 	HOME: "sidebar.nav.home",
+	DASHBOARD: "sidebar.nav.dashboard",
 	RESTAURANTS: "sidebar.nav.restaurants",
 	RESTAURANT: "sidebar.nav.restaurant",
 	TABLES: "sidebar.nav.tables",
@@ -29,6 +30,7 @@ export const SidebarKeys = {
 	ADMIN: "sidebar.nav.admin",
 	ADMIN_USERS: "sidebar.nav.adminUsers",
 	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",
+	ADMIN_FEATURE_FLAGS: "sidebar.nav.adminFeatureFlags",
 
 	// Theme
 	DARK_MODE: "sidebar.theme.darkMode",

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -9,10 +9,20 @@ import {
 	UserInputValidationError,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireRestaurantStaffAccess } from "./_util/auth";
-import { AUDIT_SYSTEM_USER_ID, ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
-import { allocateNextDailyOrderNumber } from "./orderDayCounters";
-import { getOrderServiceDateKey } from "./orderServiceDate";
+import {
+	getCurrentUserId,
+	requireRestaurantManagerOrAbove,
+	requireRestaurantStaffAccess,
+} from "./_util/auth";
+import {
+	AUDIT_SYSTEM_USER_ID,
+	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
+	ORDER_PAYMENT_STATE,
+	PAYMENT_STATUS,
+	TABLE,
+} from "./constants";
+import { allocateNextOrderNumber } from "./orderDayCounters";
+import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
 import { resolveAttributedMemberId } from "./_util/attribution";
 import {
 	DASHBOARD_STATUS_VALIDATOR,
@@ -287,10 +297,16 @@ export const confirmPayment = internalMutation({
 				restaurant.timezone,
 				restaurant.orderDayStartMinutesFromMidnight
 			);
-			dailyOrderNumber = await allocateNextDailyOrderNumber(
+			const periodKey = getOrderResetPeriodKey(
+				now,
+				restaurant.timezone,
+				restaurant.orderDayStartMinutesFromMidnight,
+				restaurant.orderNumberResetFrequency ?? DEFAULT_ORDER_NUMBER_RESET_FREQUENCY
+			);
+			dailyOrderNumber = await allocateNextOrderNumber(
 				ctx,
 				order.restaurantId,
-				orderServiceDateKey,
+				periodKey,
 				now
 			);
 		}
@@ -410,12 +426,46 @@ export const updateStatus = mutation({
 		}
 
 		const now = Date.now();
+
+		// Defensive backfill: any pre-feature / seed order without a daily number
+		// gets one allocated against today's live counter the first time the
+		// kitchen touches it. Should never fire in steady state because
+		// confirmPayment is the canonical allocator.
+		let backfilledNumberPatch: {
+			dailyOrderNumber?: number;
+			orderServiceDateKey?: string;
+		} = {};
+		if (order.dailyOrderNumber === undefined) {
+			const restaurant = await ctx.db.get(order.restaurantId);
+			if (restaurant) {
+				const orderServiceDateKey = getOrderServiceDateKey(
+					now,
+					restaurant.timezone,
+					restaurant.orderDayStartMinutesFromMidnight
+				);
+				const periodKey = getOrderResetPeriodKey(
+					now,
+					restaurant.timezone,
+					restaurant.orderDayStartMinutesFromMidnight,
+					restaurant.orderNumberResetFrequency ?? DEFAULT_ORDER_NUMBER_RESET_FREQUENCY
+				);
+				const dailyOrderNumber = await allocateNextOrderNumber(
+					ctx,
+					order.restaurantId,
+					periodKey,
+					now
+				);
+				backfilledNumberPatch = { dailyOrderNumber, orderServiceDateKey };
+			}
+		}
+
 		await ctx.db.patch(args.orderId, {
 			status: args.newStatus,
 			...(args.newStatus === "cancelled" &&
 				order.paymentState === ORDER_PAYMENT_STATE.PAID && {
 					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 				}),
+			...backfilledNumberPatch,
 			updatedAt: now,
 			updatedBy: userId,
 		});
@@ -546,6 +596,102 @@ export const getPaidOrdersByRestaurant = query({
 			.sort((a, b) => (b.paidAt ?? 0) - (a.paidAt ?? 0));
 
 		return [enrichedOrders, null];
+	},
+});
+
+/**
+ * Internal export query: returns denormalized order rows for a given calendar
+ * year bucketed by `orderServiceDateKey` (the business-day key, which is
+ * already timezone-aware). Orders without a service-date key (drafts /
+ * never-paid) are excluded — by design, exports are for finalized business
+ * data only.
+ */
+export const internalListOrdersForExportYear = internalQuery({
+	args: {
+		actingUserId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		year: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
+		if (aerr) throw new Error("Unauthorized");
+
+		const yearPrefix = `${args.year}-`;
+		const orders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+
+		const filtered = orders.filter((o) => o.orderServiceDateKey?.startsWith(yearPrefix));
+
+		const tableNumberCache = new Map<string, number>();
+		const memberEmailCache = new Map<string, string>();
+
+		const denormRows = await Promise.all(
+			filtered.map(async (order) => {
+				let tableNumber: number | null = null;
+				if (tableNumberCache.has(order.tableId)) {
+					tableNumber = tableNumberCache.get(order.tableId) ?? null;
+				} else {
+					const table = await ctx.db.get(order.tableId);
+					if (table) {
+						tableNumber = table.tableNumber;
+						tableNumberCache.set(order.tableId, table.tableNumber);
+					}
+				}
+
+				let serverDisplay = "";
+				if (order.attributedMemberId) {
+					if (memberEmailCache.has(order.attributedMemberId)) {
+						serverDisplay = memberEmailCache.get(order.attributedMemberId) ?? "";
+					} else {
+						const member = await ctx.db.get(order.attributedMemberId);
+						if (member) {
+							const userRole = await ctx.db
+								.query(TABLE.USER_ROLES)
+								.withIndex("by_user", (q) => q.eq("userId", member.userId))
+								.first();
+							serverDisplay = userRole?.email ?? member.userId;
+						}
+						memberEmailCache.set(order.attributedMemberId, serverDisplay);
+					}
+				}
+
+				const items = await ctx.db
+					.query(TABLE.ORDER_ITEMS)
+					.withIndex("by_order", (q) => q.eq("orderId", order._id))
+					.collect();
+
+				const ITEM_PREVIEW_LIMIT = 5;
+				const preview = items.slice(0, ITEM_PREVIEW_LIMIT).map(
+					(it) => `${it.quantity}× ${it.menuItemName}`
+				);
+				const remaining = items.length - preview.length;
+				const itemsSummary =
+					remaining > 0 ? `${preview.join(", ")}, +${remaining} more` : preview.join(", ");
+
+				return {
+					id: order._id as string,
+					orderServiceDateKey: order.orderServiceDateKey ?? "",
+					dailyOrderNumber: order.dailyOrderNumber ?? null,
+					tableNumber,
+					status: order.status,
+					paymentState: order.paymentState ?? "",
+					submittedAt: order.submittedAt ?? null,
+					paidAt: order.paidAt ?? null,
+					serverDisplay,
+					itemsSummary,
+					totalAmountCents: order.totalAmount,
+					specialInstructions: order.specialInstructions ?? "",
+				};
+			})
+		);
+
+		return denormRows;
 	},
 });
 

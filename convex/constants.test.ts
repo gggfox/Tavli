@@ -37,6 +37,8 @@ describe("TABLE constants", () => {
 			"tipPools",
 			"tipPoolShares",
 			"tipEntries",
+			"dashboardLayouts",
+			"dashboardTemplates",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});

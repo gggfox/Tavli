@@ -33,6 +33,7 @@ type RestaurantAdminContextValue = {
 		defaultLanguage?: string;
 		supportedLanguages?: string[];
 		orderDayStartMinutesFromMidnight?: number;
+		orderNumberResetFrequency?: "daily" | "weekly" | "biweekly" | "monthly";
 	}) => Promise<Id<"restaurants">>;
 	toggleActive: (restaurantId: Id<"restaurants">) => Promise<boolean>;
 };
@@ -141,6 +142,7 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 			defaultLanguage?: string;
 			supportedLanguages?: string[];
 			orderDayStartMinutesFromMidnight?: number;
+			orderNumberResetFrequency?: "daily" | "weekly" | "biweekly" | "monthly";
 		}) => unwrapResult(await updateMutation.mutateAsync(args)),
 		[updateMutation]
 	);

@@ -1,3 +1,4 @@
+import { ExportYearDialog, useCanExport } from "@/features/exports";
 import { OrderDashboard, OrderDashboardSkeleton } from "@/features/kitchen";
 import { useRestaurant } from "@/features/restaurants";
 import { OrdersKeys } from "@/global/i18n/keys/orders";
@@ -12,16 +13,22 @@ export const Route = createFileRoute("/admin/orders")({
 function OrdersPage() {
 	const { t } = useTranslation();
 	const { restaurant, isLoading } = useRestaurant();
+	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
 
 	return (
 		<div className="p-6 flex flex-col h-full">
-			<div className="mb-6">
-				<h1 className="text-2xl font-semibold text-foreground" >
-					{t(OrdersKeys.PAGE_TITLE)}
-				</h1>
-				<p className="mt-2 text-sm text-muted-foreground" >
-					{t(OrdersKeys.PAGE_DESCRIPTION)}
-				</p>
+			<div className="mb-6 flex items-start justify-between gap-4">
+				<div>
+					<h1 className="text-2xl font-semibold text-foreground">
+						{t(OrdersKeys.PAGE_TITLE)}
+					</h1>
+					<p className="mt-2 text-sm text-muted-foreground">
+						{t(OrdersKeys.PAGE_DESCRIPTION)}
+					</p>
+				</div>
+				{restaurant && canExport ? (
+					<ExportYearDialog restaurantId={restaurant._id} kind="orders" />
+				) : null}
 			</div>
 			<div className="flex-1 overflow-y-auto">
 				<OrdersContent restaurantId={restaurant?._id} isLoading={isLoading} />

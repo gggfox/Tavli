@@ -34,6 +34,8 @@ export const TABLE = {
 	TIP_POOLS: "tipPools",
 	TIP_POOL_SHARES: "tipPoolShares",
 	TIP_ENTRIES: "tipEntries",
+	DASHBOARD_LAYOUTS: "dashboardLayouts",
+	DASHBOARD_TEMPLATES: "dashboardTemplates",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -77,6 +79,24 @@ export const ORDER_STATUS = {
 } as const;
 
 export type OrderStatus = (typeof ORDER_STATUS)[keyof typeof ORDER_STATUS];
+
+/**
+ * How often the per-restaurant order-number counter resets. Stored on
+ * `restaurants.orderNumberResetFrequency`; missing rows behave as
+ * `DEFAULT_ORDER_NUMBER_RESET_FREQUENCY`.
+ */
+export const ORDER_NUMBER_RESET_FREQUENCY = {
+	DAILY: "daily",
+	WEEKLY: "weekly",
+	BIWEEKLY: "biweekly",
+	MONTHLY: "monthly",
+} as const;
+
+export type OrderNumberResetFrequency =
+	(typeof ORDER_NUMBER_RESET_FREQUENCY)[keyof typeof ORDER_NUMBER_RESET_FREQUENCY];
+
+export const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency =
+	ORDER_NUMBER_RESET_FREQUENCY.MONTHLY;
 
 export const ORDER_PAYMENT_STATE = {
 	UNPAID: "unpaid",

@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { getOrderServiceDateKey } from "../orderServiceDate";
+import { getOrderResetPeriodKey, getOrderServiceDateKey } from "../orderServiceDate";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
@@ -506,6 +506,80 @@ describe("orders", () => {
 			expect(value).toBeNull();
 			expect(error!.name).toBe("NOT_AUTHENTICATED");
 		});
+
+		it("backfills dailyOrderNumber and orderServiceDateKey for a legacy order missing them", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			try {
+				const t = convexTest(schema, modules);
+				const { organizationId, sessionId, restaurantId, tableId } =
+					await seedRestaurantAndSession(t);
+				const menuItemId = await seedMenuItem(t, restaurantId);
+				const authed = t.withIdentity({ subject: "employee1" });
+
+				await t.run(async (ctx) => {
+					await ctx.db.patch(restaurantId, {
+						timezone: "UTC",
+						orderNumberResetFrequency: "daily",
+					});
+					await ctx.db.insert("userRoles", {
+						userId: "employee1",
+						roles: ["employee"],
+						organizationId,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					});
+					await ctx.db.insert("restaurantMembers", {
+						userId: "employee1",
+						restaurantId,
+						organizationId,
+						role: "employee",
+						isActive: true,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+						updatedBy: "system",
+					});
+				});
+
+				let legacyOrderId: Id<"orders">;
+				await t.run(async (ctx) => {
+					legacyOrderId = await ctx.db.insert("orders", {
+						sessionId,
+						restaurantId,
+						tableId,
+						status: "submitted",
+						totalAmount: 800,
+						paymentState: "paid",
+						submittedAt: Date.now(),
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					});
+					await ctx.db.insert("orderItems", {
+						orderId: legacyOrderId,
+						menuItemId,
+						menuItemName: "Bruschetta",
+						quantity: 1,
+						unitPrice: 800,
+						selectedOptions: [],
+						lineTotal: 800,
+						createdAt: Date.now(),
+					});
+				});
+
+				const [, err] = await authed.mutation(api.orders.updateStatus, {
+					orderId: legacyOrderId!,
+					newStatus: "preparing",
+				});
+				expect(err).toBeNull();
+
+				const order = await t.query(api.orders.getOrderWithItems, { orderId: legacyOrderId! });
+				expect(order!.status).toBe("preparing");
+				expect(order!.dailyOrderNumber).toBe(1);
+				expect(order!.orderServiceDateKey).toBe(getOrderServiceDateKey(Date.now(), "UTC", 240));
+			} finally {
+				vi.useRealTimers();
+			}
+		});
 	});
 
 	describe("getOrderWithItems", () => {
@@ -855,7 +929,10 @@ describe("orders", () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
-				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "daily",
+				});
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
@@ -904,7 +981,10 @@ describe("orders", () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
-				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "daily",
+				});
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
@@ -941,7 +1021,10 @@ describe("orders", () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
-				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "daily",
+				});
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
@@ -973,6 +1056,353 @@ describe("orders", () => {
 			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
 			expect(o2!.orderServiceDateKey).toBe("2024-06-15");
 			expect(o2!.dailyOrderNumber).toBe(2);
+		});
+
+		it("monthly (default) keeps incrementing across days within the same month", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			// No frequency patch — should default to monthly.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, { timezone: "UTC" });
+			});
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const first = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: first.paymentId,
+				stripePaymentIntentId: `pi_${first.orderId}`,
+			});
+
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 16, 12, 0, 0)));
+			const second = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: second.paymentId,
+				stripePaymentIntentId: `pi_${second.orderId}`,
+			});
+
+			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: second.orderId });
+			// Counter does NOT reset — same month → number = 2.
+			expect(o2!.dailyOrderNumber).toBe(2);
+			// orderServiceDateKey on the order is still daily, for tip-pool matching.
+			expect(o2!.orderServiceDateKey).toBe("2024-06-16");
+
+			const counter = await t.run(async (ctx) =>
+				ctx.db
+					.query("orderDayCounters")
+					.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+					.first()
+			);
+			expect(counter?.serviceDateKey).toBe("2024-06");
+			expect(counter?.lastIssuedNumber).toBe(2);
+		});
+
+		it("monthly resets the counter when crossing a month boundary", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 30, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "monthly",
+				});
+			});
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const first = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: first.paymentId,
+				stripePaymentIntentId: `pi_${first.orderId}`,
+			});
+
+			vi.setSystemTime(new Date(Date.UTC(2024, 6, 2, 12, 0, 0)));
+			const second = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: second.paymentId,
+				stripePaymentIntentId: `pi_${second.orderId}`,
+			});
+
+			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: second.orderId });
+			expect(o2!.dailyOrderNumber).toBe(1);
+			expect(o2!.orderServiceDateKey).toBe("2024-07-02");
+
+			const counter = await t.run(async (ctx) =>
+				ctx.db
+					.query("orderDayCounters")
+					.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+					.first()
+			);
+			expect(counter?.serviceDateKey).toBe("2024-07");
+			expect(counter?.lastIssuedNumber).toBe(1);
+		});
+
+		it("weekly increments across days in the same ISO week and resets on new week", async () => {
+			// 2024-06-12 is Wednesday of ISO week 24.
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 12, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "weekly",
+				});
+			});
+			const menuItemId = await seedMenuItem(t, restaurantId);
+
+			const first = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: first.paymentId,
+				stripePaymentIntentId: `pi_${first.orderId}`,
+			});
+
+			// Two days later, still ISO week 24.
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 14, 12, 0, 0)));
+			const second = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: second.paymentId,
+				stripePaymentIntentId: `pi_${second.orderId}`,
+			});
+			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: second.orderId });
+			expect(o2!.dailyOrderNumber).toBe(2);
+
+			// Jump to the next ISO week (2024-06-17 is Mon of week 25).
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 17, 12, 0, 0)));
+			const third = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId: third.paymentId,
+				stripePaymentIntentId: `pi_${third.orderId}`,
+			});
+			const o3 = await t.query(api.orders.getOrderWithItems, { orderId: third.orderId });
+			expect(o3!.dailyOrderNumber).toBe(1);
+
+			const counter = await t.run(async (ctx) =>
+				ctx.db
+					.query("orderDayCounters")
+					.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+					.first()
+			);
+			expect(counter?.serviceDateKey).toBe("2024-W25");
+			expect(counter?.lastIssuedNumber).toBe(1);
+		});
+	});
+
+	describe("backfillDailyOrderNumber migration", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		async function seedAdmin(
+			t: ReturnType<typeof convexTest>,
+			organizationId: Id<"organizations">
+		) {
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "admin1",
+					roles: ["admin"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+		}
+
+		async function insertLegacyOrder(
+			t: ReturnType<typeof convexTest>,
+			args: {
+				restaurantId: Id<"restaurants">;
+				sessionId: Id<"sessions">;
+				tableId: Id<"tables">;
+				status: "draft" | "submitted" | "preparing" | "ready" | "served" | "cancelled";
+				dailyOrderNumber?: number;
+				orderServiceDateKey?: string;
+				submittedAt?: number;
+				createdAt?: number;
+			}
+		): Promise<Id<"orders">> {
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const now = Date.now();
+				orderId = await ctx.db.insert("orders", {
+					sessionId: args.sessionId,
+					restaurantId: args.restaurantId,
+					tableId: args.tableId,
+					status: args.status,
+					totalAmount: 800,
+					...(args.status === "draft" || args.status === "cancelled"
+						? {}
+						: { paymentState: "paid" as const }),
+					...(args.submittedAt === undefined ? {} : { submittedAt: args.submittedAt }),
+					...(args.dailyOrderNumber === undefined
+						? {}
+						: { dailyOrderNumber: args.dailyOrderNumber }),
+					...(args.orderServiceDateKey === undefined
+						? {}
+						: { orderServiceDateKey: args.orderServiceDateKey }),
+					createdAt: args.createdAt ?? now,
+					updatedAt: now,
+				});
+			});
+			return orderId!;
+		}
+
+		it("patches submitted/preparing/ready/served, skips draft/cancelled/already-numbered", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { organizationId, sessionId, restaurantId, tableId } =
+				await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "daily",
+				});
+			});
+			await seedAdmin(t, organizationId);
+			const authed = t.withIdentity({ subject: "admin1" });
+
+			const baseTs = Date.UTC(2024, 5, 14, 10, 0, 0);
+			const submittedId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "submitted",
+				submittedAt: baseTs + 30 * 60 * 1000,
+				createdAt: baseTs,
+			});
+			const preparingId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "preparing",
+				submittedAt: baseTs + 10 * 60 * 1000,
+				createdAt: baseTs,
+			});
+			const readyId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "ready",
+				submittedAt: baseTs + 20 * 60 * 1000,
+				createdAt: baseTs,
+			});
+			const servedId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "served",
+				submittedAt: baseTs + 5 * 60 * 1000,
+				createdAt: baseTs,
+			});
+			const cancelledId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "cancelled",
+			});
+			const draftId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "draft",
+			});
+			const alreadyNumberedId = await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "submitted",
+				submittedAt: Date.now(),
+				dailyOrderNumber: 99,
+				orderServiceDateKey: "2024-06-14",
+			});
+
+			const result = await authed.mutation(api.migrations.backfillDailyOrderNumber.run, {});
+			expect(result.ok).toBe(true);
+			if (!result.ok) throw new Error("expected ok");
+			expect(result.patched).toBe(4);
+
+			const todayKey = getOrderServiceDateKey(Date.now(), "UTC", 240);
+			const todayPeriodKey = getOrderResetPeriodKey(Date.now(), "UTC", 240, "daily");
+			expect(todayPeriodKey).toBe(todayKey);
+
+			const fetch = async (id: Id<"orders">) =>
+				await t.run(async (ctx) => ctx.db.get(id));
+
+			const submitted = await fetch(submittedId);
+			const preparing = await fetch(preparingId);
+			const ready = await fetch(readyId);
+			const served = await fetch(servedId);
+			const cancelled = await fetch(cancelledId);
+			const draft = await fetch(draftId);
+			const alreadyNumbered = await fetch(alreadyNumberedId);
+
+			for (const o of [submitted, preparing, ready, served]) {
+				expect(o!.dailyOrderNumber).toBeDefined();
+				expect(o!.orderServiceDateKey).toBe(todayKey);
+			}
+
+			// Eligible orders allocate sequentially in submittedAt order:
+			// served (+5m), preparing (+10m), ready (+20m), submitted (+30m).
+			expect(served!.dailyOrderNumber).toBe(1);
+			expect(preparing!.dailyOrderNumber).toBe(2);
+			expect(ready!.dailyOrderNumber).toBe(3);
+			expect(submitted!.dailyOrderNumber).toBe(4);
+
+			expect(cancelled!.dailyOrderNumber).toBeUndefined();
+			expect(draft!.dailyOrderNumber).toBeUndefined();
+			expect(alreadyNumbered!.dailyOrderNumber).toBe(99);
+			expect(alreadyNumbered!.orderServiceDateKey).toBe("2024-06-14");
+		});
+
+		it("is idempotent across reruns", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			const { organizationId, sessionId, restaurantId, tableId } =
+				await seedRestaurantAndSession(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(restaurantId, {
+					timezone: "UTC",
+					orderNumberResetFrequency: "daily",
+				});
+			});
+			await seedAdmin(t, organizationId);
+			const authed = t.withIdentity({ subject: "admin1" });
+
+			await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "submitted",
+				submittedAt: Date.now(),
+			});
+			await insertLegacyOrder(t, {
+				restaurantId,
+				sessionId,
+				tableId,
+				status: "preparing",
+				submittedAt: Date.now(),
+			});
+
+			const first = await authed.mutation(api.migrations.backfillDailyOrderNumber.run, {});
+			expect(first.ok).toBe(true);
+			if (!first.ok) throw new Error("expected ok");
+			expect(first.patched).toBe(2);
+
+			const second = await authed.mutation(api.migrations.backfillDailyOrderNumber.run, {});
+			expect(second.ok).toBe(true);
+			if (!second.ok) throw new Error("expected ok");
+			expect(second.patched).toBe(0);
+		});
+
+		it("rejects non-admin callers", async () => {
+			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
+			const t = convexTest(schema, modules);
+			await seedRestaurantAndSession(t);
+			const authed = t.withIdentity({ subject: "nobody" });
+
+			const result = await authed.mutation(api.migrations.backfillDailyOrderNumber.run, {});
+			expect(result.ok).toBe(false);
 		});
 	});
 });

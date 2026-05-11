@@ -1,3 +1,4 @@
+import { ExportMenuButton, useCanExport } from "@/features/exports";
 import { MenuList, MenuListSkeleton, useMenus } from "@/features/menus";
 import { useRestaurant } from "@/features/restaurants";
 import { MenusKeys } from "@/global/i18n";
@@ -23,6 +24,7 @@ function MenusPage() {
 	const { t } = useTranslation();
 	const { view } = Route.useSearch();
 	const { restaurant, isLoading } = useRestaurant();
+	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
 	const { menus, updateMenu, isLoading: menusLoading } = useMenus(restaurant?._id);
 	const navigate = useNavigate();
 
@@ -46,9 +48,12 @@ function MenusPage() {
 
 	return (
 		<div className="p-6 flex flex-col h-full">
-			<div className="mb-6">
-				<h1 className="text-2xl font-semibold text-foreground">{t(MenusKeys.PAGE_TITLE)}</h1>
-				<p className="mt-2 text-sm text-muted-foreground">{t(MenusKeys.PAGE_DESCRIPTION)}</p>
+			<div className="mb-6 flex items-start justify-between gap-4">
+				<div>
+					<h1 className="text-2xl font-semibold text-foreground">{t(MenusKeys.PAGE_TITLE)}</h1>
+					<p className="mt-2 text-sm text-muted-foreground">{t(MenusKeys.PAGE_DESCRIPTION)}</p>
+				</div>
+				{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
 			</div>
 			<div className="flex-1 overflow-y-auto">
 				{shouldAutoRedirect ? (

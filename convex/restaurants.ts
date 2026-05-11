@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
@@ -211,6 +211,14 @@ export const update = mutation({
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
 		orderDayStartMinutesFromMidnight: v.optional(v.number()),
+		orderNumberResetFrequency: v.optional(
+			v.union(
+				v.literal("daily"),
+				v.literal("weekly"),
+				v.literal("biweekly"),
+				v.literal("monthly")
+			)
+		),
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
 	handler: async function (
@@ -235,6 +243,17 @@ export const update = mutation({
 		if (
 			args.organizationId !== undefined &&
 			args.organizationId !== restaurant.organizationId &&
+			!(await isAdmin(ctx, userId))
+		) {
+			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+		}
+
+		// orderNumberResetFrequency is an internal experiment knob — only platform
+		// admins may flip it while we're still gathering client feedback on the
+		// right cadence. Owners/managers can keep using the rest of the form.
+		if (
+			args.orderNumberResetFrequency !== undefined &&
+			args.orderNumberResetFrequency !== restaurant.orderNumberResetFrequency &&
 			!(await isAdmin(ctx, userId))
 		) {
 			return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
@@ -283,6 +302,9 @@ export const update = mutation({
 			...(args.supportedLanguages !== undefined && { supportedLanguages: args.supportedLanguages }),
 			...(args.orderDayStartMinutesFromMidnight !== undefined && {
 				orderDayStartMinutesFromMidnight: args.orderDayStartMinutesFromMidnight,
+			}),
+			...(args.orderNumberResetFrequency !== undefined && {
+				orderNumberResetFrequency: args.orderNumberResetFrequency,
 			}),
 			...(args.organizationId !== undefined && { organizationId: args.organizationId }),
 			...stampUpdated(userId),
@@ -537,5 +559,34 @@ export const getDeletedForAdmin = query({
 
 		const list = await collectSoftDeletedForOwnerOrAdmin(ctx, userId);
 		return [list, null];
+	},
+});
+
+/**
+ * Internal helper for export actions: returns the minimal restaurant fields
+ * the action needs (slug for filename, timezone for bucketing, currency for
+ * column labels, createdAt for the year picker), with the same owner /
+ * manager / admin access check the export actions require.
+ */
+export const getRestaurantForExport = internalQuery({
+	args: {
+		actingUserId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async (ctx, args) => {
+		const [restaurant, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
+		if (aerr) throw new Error("Unauthorized");
+		return {
+			id: restaurant._id as string,
+			slug: restaurant.slug,
+			name: restaurant.name,
+			timezone: restaurant.timezone,
+			currency: restaurant.currency,
+			createdAt: restaurant.createdAt,
+		};
 	},
 });

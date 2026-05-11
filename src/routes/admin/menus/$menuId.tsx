@@ -1,3 +1,4 @@
+import { ExportMenuButton, useCanExport } from "@/features/exports";
 import { MenuEditor, MenuEditorSkeleton } from "@/features/menus";
 import { useRestaurant } from "@/features/restaurants";
 import { MenusKeys } from "@/global/i18n";
@@ -19,6 +20,7 @@ function MenuEditorPage() {
 	const { menuId } = Route.useParams();
 	const navigate = useNavigate();
 	const { restaurant, isLoading } = useRestaurant();
+	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
 	const {
 		data: menu,
 		isLoading: menuLoading,
@@ -38,16 +40,19 @@ function MenuEditorPage() {
 
 	return (
 		<div className="p-6 flex flex-col h-full">
-			<div className="mb-6">
-				<Link
-					to="/admin/menus"
-					search={{ view: "list" }}
-					className="flex items-center gap-1 text-sm mb-3 hover:underline text-primary"
-				>
-					<ArrowLeft size={16} /> {t(MenusKeys.EDITOR_BACK_TO_LIST)}
-				</Link>
-				<h1 className="text-2xl font-semibold text-foreground">{t(MenusKeys.EDITOR_HEADER_TITLE)}</h1>
-				<p className="mt-2 text-sm text-muted-foreground">{t(MenusKeys.EDITOR_HEADER_DESCRIPTION)}</p>
+			<div className="mb-6 flex items-start justify-between gap-4">
+				<div>
+					<Link
+						to="/admin/menus"
+						search={{ view: "list" }}
+						className="flex items-center gap-1 text-sm mb-3 hover:underline text-primary"
+					>
+						<ArrowLeft size={16} /> {t(MenusKeys.EDITOR_BACK_TO_LIST)}
+					</Link>
+					<h1 className="text-2xl font-semibold text-foreground">{t(MenusKeys.EDITOR_HEADER_TITLE)}</h1>
+					<p className="mt-2 text-sm text-muted-foreground">{t(MenusKeys.EDITOR_HEADER_DESCRIPTION)}</p>
+				</div>
+				{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
 			</div>
 			<div className="flex-1 overflow-y-auto">
 				{showSkeleton && <MenuEditorSkeleton />}

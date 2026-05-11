@@ -7,6 +7,8 @@ import {
 	Clock,
 	Coins,
 	DollarSign,
+	Flag,
+	LayoutDashboard,
 	LineChart,
 	ListOrdered,
 	Mail,
@@ -18,6 +20,12 @@ import {
 import { SidebarItem } from "./SidebarLink";
 
 export const sidebarItems: SidebarItem[] = [
+	{
+		type: "link",
+		translationKey: SidebarKeys.DASHBOARD,
+		icon: <LayoutDashboard size={18} className="shrink-0" />,
+		to: "/dashboard",
+	},
 	{
 		type: "link",
 		translationKey: SidebarKeys.RESTAURANTS,
@@ -101,6 +109,11 @@ export const sidebarItems: SidebarItem[] = [
 				translationKey: SidebarKeys.ADMIN_ORGANIZATIONS,
 				icon: <Building2 size={18} className="shrink-0" />,
 				to: "/admin/organizations",
+			},
+			{
+				translationKey: SidebarKeys.ADMIN_FEATURE_FLAGS,
+				icon: <Flag size={18} className="shrink-0" />,
+				to: "/admin/feature-flags",
 			},
 		],
 	},

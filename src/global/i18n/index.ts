@@ -3,6 +3,8 @@ export { default as i18n } from "./config";
 export { AdminStaffKeys, type AdminStaffKey } from "./keys/adminStaff";
 export { CommonKeys, type CommonKey } from "./keys/common";
 export { CustomerKeys, type CustomerKey } from "./keys/customer";
+export { DashboardKeys, type DashboardKey } from "./keys/dashboard";
+export { ExportsKeys, type ExportsKey } from "./keys/exports";
 export { Languages, type Language } from "./keys/languages";
 export { MenusKeys, type MenusKey } from "./keys/menus";
 export { OptionsKeys, type OptionsKey } from "./keys/options";

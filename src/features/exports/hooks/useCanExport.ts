@@ -1,0 +1,57 @@
+/**
+ * Returns whether the current user can export data for a given restaurant.
+ *
+ * The export Convex actions require owner / manager / admin access (the same
+ * tier `requireRestaurantManagerOrAbove` enforces). This hook mirrors that
+ * check on the client so we can hide the button when it would be rejected.
+ *
+ * Authorization paths (any one of these qualifies):
+ *   - platform admin (`userRoles.roles` contains `admin`)
+ *   - org owner whose `userRoles.organizationId` matches the restaurant's org
+ *   - active restaurant member with the manager role
+ */
+import { useCurrentUserRoles } from "@/features/users/hooks";
+import { unwrapResult } from "@/global/utils";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "convex/_generated/api";
+import type { Doc, Id } from "convex/_generated/dataModel";
+import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "convex/constants";
+import { useConvexAuth } from "convex/react";
+import { useMemo } from "react";
+
+export function useCanExport(
+	restaurantId: Id<"restaurants"> | undefined,
+	organizationId: Id<"organizations"> | undefined
+): { canExport: boolean; isLoading: boolean } {
+	const { isAuthenticated } = useConvexAuth();
+	const { roles, organizationId: userOrgId, isLoading: rolesLoading } =
+		useCurrentUserRoles();
+	const { data: myMemberships, isLoading: membershipsLoading } = useQuery({
+		...convexQuery(api.restaurantMembers.listByUser, {}),
+		enabled: isAuthenticated,
+		select: unwrapResult<Doc<"restaurantMembers">[]>,
+	});
+
+	const isAdmin = roles.includes(USER_ROLES.ADMIN);
+	const isOrgOwner =
+		roles.includes(USER_ROLES.OWNER) &&
+		userOrgId != null &&
+		organizationId != null &&
+		userOrgId === String(organizationId);
+
+	const isManager = useMemo(() => {
+		if (!myMemberships || !restaurantId) return false;
+		return myMemberships.some(
+			(m) =>
+				m.isActive &&
+				m.restaurantId === restaurantId &&
+				m.role === RESTAURANT_MEMBER_ROLE.MANAGER
+		);
+	}, [myMemberships, restaurantId]);
+
+	return {
+		canExport: Boolean(restaurantId && (isAdmin || isOrgOwner || isManager)),
+		isLoading: rolesLoading || (isAuthenticated && membershipsLoading),
+	};
+}

@@ -7,6 +7,7 @@ import { sidebarItems } from "../constants";
 const STAFF_ROLE_SET = new Set<string>(STAFF_ROLES);
 
 const STAFF_SIDEBAR_KEYS = new Set<string>([
+	SidebarKeys.DASHBOARD,
 	SidebarKeys.RESTAURANTS,
 	SidebarKeys.MENUS,
 	SidebarKeys.OPTIONS,

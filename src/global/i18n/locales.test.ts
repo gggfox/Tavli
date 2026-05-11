@@ -3,6 +3,8 @@ import {
 	AdminStaffKeys,
 	CommonKeys,
 	CustomerKeys,
+	DashboardKeys,
+	ExportsKeys,
 	Languages,
 	MenusKeys,
 	OptionsKeys,
@@ -99,6 +101,8 @@ describe("Key enums resolve in every locale", () => {
 		["RestaurantsKeys", RestaurantsKeys as Record<string, string>],
 		["WelcomeKeys", WelcomeKeys as Record<string, string>],
 		["OrderingKeys", OrderingKeys as Record<string, string>],
+		["DashboardKeys", DashboardKeys as Record<string, string>],
+		["ExportsKeys", ExportsKeys as Record<string, string>],
 	])("%s -- all values resolve in en.json and es.json", (name, keys) => {
 		expectAllKeysResolve(name, keys);
 	});

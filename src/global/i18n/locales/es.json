@@ -9,6 +9,7 @@
 		},
 		"nav": {
 			"home": "Panel de Control",
+			"dashboard": "Tablero",
 			"restaurants": "Restaurantes",
 			"restaurant": "Restaurante",
 			"tables": "Mesas",
@@ -26,7 +27,8 @@
 			"performance": "Rendimiento",
 			"admin": "Administración",
 			"adminUsers": "Usuarios",
-			"adminOrganizations": "Organizaciones"
+			"adminOrganizations": "Organizaciones",
+			"adminFeatureFlags": "Feature flags"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -547,6 +549,12 @@
 			"timezoneMissingHint": "Define una zona horaria IANA válida para que los números diarios usen tu día hábil local. Hasta entonces se usa UTC.",
 			"orderDayStartLabel": "Inicio del día de pedidos",
 			"orderDayStartHint": "Los pedidos se numeran por día hábil a partir de esta hora local (no a medianoche). Ej.: 04:00 agrupa ventas nocturnas con el día calendario anterior.",
+			"orderNumberResetLabel": "Reinicio de número de orden (admin)",
+			"orderNumberResetHint": "Con qué frecuencia se reinicia a 1 el contador de órdenes del restaurante. Alineado al calendario en la zona horaria del restaurante, usando la hora de inicio del día de pedidos definida arriba.",
+			"orderNumberResetOptionDaily": "Diario",
+			"orderNumberResetOptionWeekly": "Semanal",
+			"orderNumberResetOptionBiweekly": "Quincenal",
+			"orderNumberResetOptionMonthly": "Mensual",
 			"orgLabel": "Organización",
 			"orgPlaceholder": "Selecciona una organización",
 			"statusLabel": "Estado",
@@ -922,5 +930,165 @@
 			"usingDefaults": "Usando valores predeterminados. Guarda para mantener tus propios valores.",
 			"rangeFallback": "Gana el primer rango que coincida. Si ningún rango coincide, se usa el tiempo de mesa predeterminado."
 		}
+	},
+	"dashboard": {
+		"page": {
+			"title": "Tablero",
+			"description": "Métricas en vivo de tu restaurante. Arma el tablero que necesites.",
+			"noRestaurantTitle": "Elige un restaurante",
+			"noRestaurantDescription": "Selecciona o crea un restaurante para ver su tablero.",
+			"portfolioLabel": "Todos los restaurantes"
+		},
+		"tabs": {
+			"new": "Nueva vista",
+			"rename": "Renombrar",
+			"duplicate": "Duplicar",
+			"delete": "Eliminar",
+			"overflow": "Más vistas",
+			"defaultName": "Vista {{number}}",
+			"deleteConfirm": "¿Eliminar esta vista? No se puede deshacer.",
+			"emptyTitle": "Sin tableros aún",
+			"emptyDescription": "Crea tu primera vista para empezar a seguir las métricas que importan.",
+			"emptyAction": "Crear una vista"
+		},
+		"edit": {
+			"enter": "Editar tablero",
+			"save": "Guardar",
+			"discard": "Descartar",
+			"addWidget": "Agregar widget",
+			"unsavedChanges": "Tienes cambios sin guardar",
+			"saved": "Tablero guardado.",
+			"saveFailed": "No se pudo guardar el tablero. Intenta de nuevo.",
+			"removeWidget": "Quitar widget",
+			"dragHandle": "Arrastra para mover"
+		},
+		"globalRange": {
+			"label": "Rango de fechas",
+			"today": "Hoy",
+			"week": "Esta semana",
+			"month": "Este mes",
+			"quarter": "Este trimestre",
+			"year": "Este año",
+			"custom": "Personalizado",
+			"compareToPrev": "Comparar",
+			"compareToPrevLabel": "Comparar con periodo anterior"
+		},
+		"widget": {
+			"overrideBadge": "Rango propio",
+			"overrideRemove": "Usar rango global",
+			"loading": "Cargando…",
+			"errorTitle": "No se pudo cargar el widget.",
+			"errorDescription": "Intenta de nuevo o elige otro rango.",
+			"errorRangeTooLarge": "El rango es demasiado grande para este widget. Elige uno más corto.",
+			"errorAccessDenied": "No tienes permiso para ver esta métrica.",
+			"unavailableTitle": "Widget no disponible",
+			"unavailableDescription": "Este tipo de widget ya no está disponible.",
+			"empty": "Sin datos en este rango.",
+			"deltaUp": "+{{value}}",
+			"deltaDown": "{{value}}",
+			"deltaNeutral": "0",
+			"deltaVsPrev": "vs anterior"
+		},
+		"picker": {
+			"title": "Agregar widget",
+			"description": "Elige una métrica para esta vista.",
+			"lockedBadge": "Bloqueado",
+			"lockedTooltip": "Necesitas rol de gerente para ver esta métrica.",
+			"portfolioBadge": "Portafolio",
+			"notPortfolioCapable": "No disponible en vista de portafolio.",
+			"close": "Cerrar"
+		},
+		"templates": {
+			"title": "Plantillas",
+			"description": "Tableros prearmados publicados para este restaurante.",
+			"browse": "Explorar plantillas",
+			"publish": "Guardar como plantilla",
+			"publishNameLabel": "Nombre de la plantilla",
+			"publishDescriptionLabel": "Descripción corta (opcional)",
+			"publishSave": "Publicar",
+			"useThis": "Usar este tablero",
+			"delete": "Eliminar plantilla",
+			"deleteConfirm": "¿Eliminar esta plantilla? Las copias existentes no se ven afectadas.",
+			"emptyTitle": "Sin plantillas aún",
+			"emptyDescription": "Los gerentes pueden publicar tableros que el equipo puede clonar.",
+			"publishedBy": "por {{user}}"
+		},
+		"widgets": {
+			"numberWithDelta": {
+				"label": "Número con cambio",
+				"description": "Un número grande con comparación al periodo anterior.",
+				"metricLabel": "Métrica",
+				"metric": {
+					"reservationsCount": "Reservas",
+					"reservationsConfirmed": "Reservas confirmadas",
+					"ordersCount": "Órdenes pagadas",
+					"paymentsRevenueTotal": "Ingresos",
+					"covers": "Comensales"
+				}
+			},
+			"topMenuItems": {
+				"label": "Productos más vendidos",
+				"description": "Productos con mayor cantidad vendida en el rango.",
+				"limitLabel": "Cuántos productos",
+				"quantity": "{{count}} vendidos"
+			},
+			"revenueOverTime": {
+				"label": "Ingresos en el tiempo",
+				"description": "Pagos exitosos agrupados por día.",
+				"axis": "Ingresos"
+			},
+			"ordersByHour": {
+				"label": "Órdenes por hora",
+				"description": "Promedio de órdenes pagadas por hora del día.",
+				"axis": "Promedio / día"
+			},
+			"reservationsByStatus": {
+				"label": "Reservas por estado",
+				"description": "Conteo de reservas que comienzan en el rango, agrupadas por estado."
+			},
+			"tipsTotal": {
+				"label": "Total de propinas",
+				"description": "Suma de propinas en el rango con un sparkline diario."
+			},
+			"tableOccupancy": {
+				"label": "Ocupación de mesas",
+				"description": "Promedio de mesas ocupadas a lo largo del día."
+			},
+			"busyTimesHeatmap": {
+				"label": "Mapa de horas pico",
+				"description": "Volumen de órdenes por día de la semana y hora."
+			}
+		},
+		"day": {
+			"sun": "Dom",
+			"mon": "Lun",
+			"tue": "Mar",
+			"wed": "Mié",
+			"thu": "Jue",
+			"fri": "Vie",
+			"sat": "Sáb"
+		}
+	},
+	"exports": {
+		"button": "Exportar",
+		"button.aria": "Exportar a Excel",
+		"dialog": {
+			"title": {
+				"orders": "Exportar órdenes",
+				"payments": "Exportar pagos",
+				"reservations": "Exportar reservaciones"
+			},
+			"description": "Elige un año. La exportación tendrá una hoja por mes, más una hoja de resumen.",
+			"yearLabel": "Año",
+			"cancel": "Cancelar",
+			"confirm": "Exportar"
+		},
+		"status": {
+			"preparing": "Preparando tu archivo de Excel...",
+			"success": "Exportación lista. La descarga debería iniciarse automáticamente.",
+			"error": "No se pudo exportar. Inténtalo de nuevo.",
+			"tooLarge": "Esta exportación es demasiado grande para descargarse en un solo archivo. Contacta a soporte."
+		},
+		"noYears": "Aún no hay datos para exportar."
 	}
 }

@@ -1,3 +1,4 @@
+import { ExportYearDialog, useCanExport } from "@/features/exports";
 import {
 	PaymentsDashboard,
 	PaymentsDashboardSkeleton,
@@ -15,9 +16,16 @@ export const Route = createFileRoute("/admin/payments")({
 
 function PaymentsPage() {
 	const { restaurant, isLoading } = useRestaurant();
+	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
 
 	return (
-		<AdminPageLayout>
+		<AdminPageLayout
+			actions={
+				restaurant && canExport ? (
+					<ExportYearDialog restaurantId={restaurant._id} kind="payments" />
+				) : undefined
+			}
+		>
 			<PaymentsContent restaurantId={restaurant?._id} isLoading={isLoading} />
 		</AdminPageLayout>
 	);

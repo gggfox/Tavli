@@ -1,11 +1,16 @@
+import { useCurrentUserRoles } from "@/features/users/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
 import { sanitizeSlug } from "@/global/utils/slug";
 import { useForm } from "@tanstack/react-form";
+import { USER_ROLES } from "convex/constants";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const DEFAULT_ORDER_DAY_START_MINUTES = 240;
+const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency = "monthly";
+
+type OrderNumberResetFrequency = "daily" | "weekly" | "biweekly" | "monthly";
 
 function minutesToTimeInput(totalMinutes: number): string {
 	const m = Math.min(1439, Math.max(0, totalMinutes));
@@ -32,6 +37,7 @@ interface RestaurantSettingsFormProps {
 		currency: string;
 		timezone?: string;
 		orderDayStartMinutesFromMidnight: number;
+		orderNumberResetFrequency?: OrderNumberResetFrequency;
 		organizationId: Id<"organizations">;
 	}) => Promise<unknown>;
 	onToggleActive?: (restaurantId: Id<"restaurants">) => Promise<unknown>;
@@ -46,6 +52,11 @@ export function RestaurantSettingsForm({
 	isSaving,
 }: Readonly<RestaurantSettingsFormProps>) {
 	const { t } = useTranslation();
+	const { roles } = useCurrentUserRoles();
+	const isAdmin = roles.includes(USER_ROLES.ADMIN);
+	const initialResetFrequency: OrderNumberResetFrequency =
+		(restaurant?.orderNumberResetFrequency as OrderNumberResetFrequency | undefined) ??
+		DEFAULT_ORDER_NUMBER_RESET_FREQUENCY;
 	const form = useForm({
 		defaultValues: {
 			name: restaurant?.name ?? "",
@@ -56,6 +67,7 @@ export function RestaurantSettingsForm({
 			orderDayStartTime: minutesToTimeInput(
 				restaurant?.orderDayStartMinutesFromMidnight ?? DEFAULT_ORDER_DAY_START_MINUTES
 			),
+			orderNumberResetFrequency: initialResetFrequency,
 			organizationId: (restaurant?.organizationId as string) ?? "",
 		},
 		onSubmit: async ({ value }) => {
@@ -66,6 +78,11 @@ export function RestaurantSettingsForm({
 				currency: value.currency,
 				timezone: value.timezone || undefined,
 				orderDayStartMinutesFromMidnight: timeInputToMinutes(value.orderDayStartTime),
+				// Only forward the field when the current user can actually change it,
+				// so a non-admin save never tries to flip the (admin-gated) value.
+				...(isAdmin && {
+					orderNumberResetFrequency: value.orderNumberResetFrequency,
+				}),
 				organizationId: value.organizationId as Id<"organizations">,
 			});
 		},
@@ -297,6 +314,46 @@ export function RestaurantSettingsForm({
 					</div>
 				)}
 			/>
+
+			{isAdmin && (
+				<form.Field
+					name="orderNumberResetFrequency"
+					children={(field) => (
+						<div>
+							<label
+								htmlFor="restaurant-order-number-reset"
+								className="block text-sm font-medium mb-1 text-foreground"
+							>
+								{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_LABEL)}
+							</label>
+							<select
+								id="restaurant-order-number-reset"
+								value={field.state.value}
+								onChange={(e) =>
+									field.handleChange(e.target.value as OrderNumberResetFrequency)
+								}
+								className="w-full max-w-48 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							>
+								<option value="daily">
+									{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_OPTION_DAILY)}
+								</option>
+								<option value="weekly">
+									{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_OPTION_WEEKLY)}
+								</option>
+								<option value="biweekly">
+									{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_OPTION_BIWEEKLY)}
+								</option>
+								<option value="monthly">
+									{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_OPTION_MONTHLY)}
+								</option>
+							</select>
+							<p className="mt-1 text-xs text-faint-foreground max-w-lg">
+								{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_HINT)}
+							</p>
+						</div>
+					)}
+				/>
+			)}
 
 			{organizations && organizations.length > 0 && (
 				<form.Field

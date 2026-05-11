@@ -18,7 +18,7 @@
  * - `sweepNoShows`             : internalMutation called by the cron.
  */
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
 	ConflictErrorObject,
@@ -32,6 +32,7 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import {
 	getCurrentUserId,
+	requireRestaurantManagerOrAbove,
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
 import {
@@ -675,5 +676,79 @@ export const sweepNoShows = internalMutation({
 		}
 
 		return { flipped };
+	},
+});
+
+/**
+ * Internal export query: returns denormalized reservation rows whose
+ * `startsAt` falls in the given window. The caller (an action) is responsible
+ * for translating timestamps into the restaurant's local month index.
+ */
+export const internalListReservationsForExportYear = internalQuery({
+	args: {
+		actingUserId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		fromMs: v.number(),
+		toMs: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
+		if (aerr) throw new Error("Unauthorized");
+
+		const reservations = await ctx.db
+			.query(TABLE.RESERVATIONS)
+			.withIndex("by_restaurant_time", (q) =>
+				q.eq("restaurantId", args.restaurantId).gte("startsAt", args.fromMs).lte("startsAt", args.toMs)
+			)
+			.collect();
+
+		const tableNumberCache = new Map<Id<"tables">, number>();
+
+		const denormRows = await Promise.all(
+			reservations.map(async (r) => {
+				const tableNumbers: number[] = [];
+				for (const tableId of r.tableIds) {
+					let n: number | null = null;
+					if (tableNumberCache.has(tableId)) {
+						n = tableNumberCache.get(tableId) ?? null;
+					} else {
+						const table = await ctx.db.get(tableId);
+						if (table) {
+							n = table.tableNumber;
+							tableNumberCache.set(tableId, table.tableNumber);
+						}
+					}
+					if (n !== null) tableNumbers.push(n);
+				}
+				tableNumbers.sort((a, b) => a - b);
+				const tablesText = tableNumbers.join(", ");
+
+				return {
+					id: r._id as string,
+					startsAt: r.startsAt,
+					endsAt: r.endsAt,
+					partySize: r.partySize,
+					status: r.status,
+					source: r.source,
+					guestName: r.contact.name,
+					guestPhone: r.contact.phone,
+					guestEmail: r.contact.email ?? "",
+					tablesText,
+					notes: r.notes ?? "",
+					confirmedAt: r.confirmedAt ?? null,
+					seatedAt: r.seatedAt ?? null,
+					completedAt: r.completedAt ?? null,
+					cancelledAt: r.cancelledAt ?? null,
+					cancelReason: r.cancelReason ?? "",
+					createdAt: r.createdAt,
+				};
+			})
+		);
+
+		return denormRows;
 	},
 });
