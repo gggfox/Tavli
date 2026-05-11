@@ -25,7 +25,6 @@ import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizat
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminMyScheduleRouteImport } from './routes/admin/my-schedule'
 import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-flags'
-import { Route as AdminAttendanceRouteImport } from './routes/admin/attendance'
 import { Route as AdminReservationsIndexRouteImport } from './routes/admin/reservations/index'
 import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
 import { Route as RSlugReserveRouteImport } from './routes/r/$slug/reserve'
@@ -125,11 +124,6 @@ const AdminMyScheduleRoute = AdminMyScheduleRouteImport.update({
 const AdminFeatureFlagsRoute = AdminFeatureFlagsRouteImport.update({
   id: '/feature-flags',
   path: '/feature-flags',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
-  id: '/attendance',
-  path: '/attendance',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminReservationsIndexRoute = AdminReservationsIndexRouteImport.update({
@@ -237,7 +231,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
-  '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
@@ -276,7 +269,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
-  '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
@@ -316,7 +308,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
-  '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
@@ -357,7 +348,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
-    | '/admin/attendance'
     | '/admin/feature-flags'
     | '/admin/my-schedule'
     | '/admin/orders'
@@ -396,7 +386,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
-    | '/admin/attendance'
     | '/admin/feature-flags'
     | '/admin/my-schedule'
     | '/admin/orders'
@@ -435,7 +424,6 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
-    | '/admin/attendance'
     | '/admin/feature-flags'
     | '/admin/my-schedule'
     | '/admin/orders'
@@ -600,13 +588,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFeatureFlagsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/attendance': {
-      id: '/admin/attendance'
-      path: '/attendance'
-      fullPath: '/admin/attendance'
-      preLoaderRoute: typeof AdminAttendanceRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/reservations/': {
       id: '/admin/reservations/'
       path: '/reservations'
@@ -751,7 +732,6 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
-  AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminFeatureFlagsRoute: typeof AdminFeatureFlagsRoute
   AdminMyScheduleRoute: typeof AdminMyScheduleRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
@@ -769,7 +749,6 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminAttendanceRoute: AdminAttendanceRoute,
   AdminFeatureFlagsRoute: AdminFeatureFlagsRoute,
   AdminMyScheduleRoute: AdminMyScheduleRoute,
   AdminOrdersRoute: AdminOrdersRoute,

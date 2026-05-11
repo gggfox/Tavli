@@ -102,6 +102,11 @@ export const RestaurantsKeys = {
 	TABLES_UPDATE_FAILED: "restaurants.tables.updateFailed",
 	TABLES_TOGGLE_FAILED: "restaurants.tables.toggleFailed",
 	TABLES_REMOVE_FAILED: "restaurants.tables.removeFailed",
+	TABLES_ADD_IN_SECTION: "restaurants.tables.addInSection",
+	TABLES_DROP_HERE: "restaurants.tables.dropHere",
+	TABLES_SHOW_INACTIVE: "restaurants.tables.showInactive",
+	TABLES_HIDE_INACTIVE: "restaurants.tables.hideInactive",
+	TABLES_DRAG_HANDLE: "restaurants.tables.dragHandle",
 
 	SECTIONS_HEADING: "restaurants.sections.heading",
 	SECTIONS_HINT: "restaurants.sections.hint",
@@ -120,6 +125,8 @@ export const RestaurantsKeys = {
 	SECTIONS_UPDATE_FAILED: "restaurants.sections.updateFailed",
 	SECTIONS_REMOVE_FAILED: "restaurants.sections.removeFailed",
 	SECTIONS_ASSIGN_FAILED: "restaurants.sections.assignFailed",
+	SECTIONS_REORDER_FAILED: "restaurants.sections.reorderFailed",
+	SECTIONS_DRAG_HANDLE: "restaurants.sections.dragHandle",
 
 	STRIPE_HEADING: "restaurants.stripe.heading",
 	STRIPE_DESCRIPTION: "restaurants.stripe.description",

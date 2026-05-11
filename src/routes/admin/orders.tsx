@@ -1,4 +1,4 @@
-import { ExportYearDialog, useCanExport } from "@/features/exports";
+import { ExportButton, useCanExport } from "@/features/exports";
 import { OrderDashboard, OrderDashboardSkeleton } from "@/features/kitchen";
 import { useRestaurant } from "@/features/restaurants";
 import { OrdersKeys } from "@/global/i18n/keys/orders";
@@ -27,7 +27,7 @@ function OrdersPage() {
 					</p>
 				</div>
 				{restaurant && canExport ? (
-					<ExportYearDialog restaurantId={restaurant._id} kind="orders" />
+					<ExportButton restaurantId={restaurant._id} kind="orders" />
 				) : null}
 			</div>
 			<div className="flex-1 overflow-y-auto">

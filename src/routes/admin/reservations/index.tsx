@@ -1,5 +1,5 @@
 import { DialogHeader, Drawer } from "@/global/components";
-import { ExportYearDialog, useCanExport } from "@/features/exports";
+import { ExportButton, useCanExport } from "@/features/exports";
 import {
 	ReservationSettingsPanel,
 	ReservationsDashboard,
@@ -69,7 +69,7 @@ function ReservationsPage() {
 				</div>
 				<div className="flex items-center gap-2">
 					{restaurant && canExport ? (
-						<ExportYearDialog restaurantId={restaurant._id} kind="reservations" />
+						<ExportButton restaurantId={restaurant._id} kind="reservations" />
 					) : null}
 					<button
 						type="button"

@@ -1,7 +1,7 @@
+import { MemberAttendanceDrawer } from "@/features/attendance";
 import { useRestaurant } from "@/features/restaurants";
 import {
 	PublishWeekButton,
-	ScheduleListView,
 	ScheduleWeekGrid,
 	ShiftCellChip,
 	ShiftDrawer,
@@ -9,21 +9,22 @@ import {
 	startOfDayMs,
 	endOfWeekMs,
 	useAssignableMembers,
+	type AssignableMember,
 	type ScheduledShiftView,
 	type ShiftDrawerInitial,
 } from "@/features/schedule";
-import { AdminPageLayout, EmptyState, LoadingState, SegmentedControl } from "@/global/components";
-import { useIsNarrowViewport } from "@/global/hooks";
+import { AdminPageLayout, EmptyState, LoadingState } from "@/global/components";
 import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
-import type { Id } from "convex/_generated/dataModel";
+import type { Doc, Id } from "convex/_generated/dataModel";
 import { SHIFT_STATUS } from "convex/constants";
+import { useConvexAuth } from "convex/react";
 import { Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/admin/schedule")({
@@ -36,14 +37,10 @@ function AdminSchedulePage() {
 	const { t, i18n } = useTranslation();
 	const { restaurant, isLoading } = useRestaurant();
 	const queryClient = useQueryClient();
-	const isNarrow = useIsNarrowViewport();
+	const { isAuthenticated } = useConvexAuth();
 
 	const timezone = restaurant?.timezone ?? DEFAULT_TIMEZONE;
 	const [anchorMs, setAnchorMs] = useState(() => Date.now());
-	const [view, setView] = useState<"grid" | "list">("grid");
-	useEffect(() => {
-		if (isNarrow) setView("list");
-	}, [isNarrow]);
 
 	const mondayYmd = useMemo(
 		() => getMondayYmdOfWeek(anchorMs, timezone),
@@ -59,6 +56,18 @@ function AdminSchedulePage() {
 	);
 
 	const { members } = useAssignableMembers(restaurant?._id);
+
+	const { data: myMemberships } = useQuery({
+		...convexQuery(api.restaurantMembers.listByUser, {}),
+		enabled: isAuthenticated,
+		select: unwrapResult<Doc<"restaurantMembers">[]>,
+	});
+
+	const myMemberId = useMemo<Id<"restaurantMembers"> | null>(() => {
+		if (!restaurant?._id || !myMemberships) return null;
+		const m = myMemberships.find((row) => row.restaurantId === restaurant._id && row.isActive);
+		return m?._id ?? null;
+	}, [myMemberships, restaurant?._id]);
 
 	const shiftsQueryArgs = restaurant?._id
 		? { restaurantId: restaurant._id, weekStartMs }
@@ -77,6 +86,14 @@ function AdminSchedulePage() {
 
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [drawerInitial, setDrawerInitial] = useState<ShiftDrawerInitial | null>(null);
+
+	const [attendanceMemberId, setAttendanceMemberId] =
+		useState<Id<"restaurantMembers"> | null>(null);
+
+	const attendanceMember = useMemo<AssignableMember | null>(() => {
+		if (!attendanceMemberId) return null;
+		return members.find((m) => m.memberId === attendanceMemberId) ?? null;
+	}, [members, attendanceMemberId]);
 
 	const openCreate = (memberId?: Id<"restaurantMembers">, ymd?: string) => {
 		setDrawerInitial({ mode: "create", memberId, ymd });
@@ -184,54 +201,31 @@ function AdminSchedulePage() {
 						{t(AdminStaffKeys.SCHEDULE_NEXT_WEEK)}
 					</button>
 				</div>
-
-				<SegmentedControl<"grid" | "list">
-					value={view}
-					onChange={setView}
-					options={[
-						{ value: "grid", label: t(AdminStaffKeys.SCHEDULE_VIEW_GRID) },
-						{ value: "list", label: t(AdminStaffKeys.SCHEDULE_VIEW_LIST) },
-					]}
-					ariaLabel={t(AdminStaffKeys.SCHEDULE_VIEW_GRID)}
-				/>
 			</div>
 
-			{view === "grid" ? (
-				<ScheduleWeekGrid
-					members={members}
-					shifts={shifts}
-					mondayYmd={mondayYmd}
-					timezone={timezone}
-					localeTag={i18n.language}
-					onCreateShift={(memberId, ymd) =>
-						openCreate(memberId as Id<"restaurantMembers">, ymd)
-					}
-					onEditShift={openEdit}
-				>
-					{({ shifts: cellShifts }) =>
-						cellShifts.map((s) => (
-							<ShiftCellChip
-								key={s._id}
-								shift={s}
-								timezone={timezone}
-								onClick={() => openEdit(s)}
-							/>
-						))
-					}
-				</ScheduleWeekGrid>
-			) : (
-				<ScheduleListView
-					members={members}
-					shifts={shifts}
-					mondayYmd={mondayYmd}
-					timezone={timezone}
-					localeTag={i18n.language}
-					onCreateShift={(memberId, ymd) =>
-						openCreate(memberId as Id<"restaurantMembers">, ymd)
-					}
-					onEditShift={openEdit}
-				/>
-			)}
+			<ScheduleWeekGrid
+				members={members}
+				shifts={shifts}
+				mondayYmd={mondayYmd}
+				timezone={timezone}
+				localeTag={i18n.language}
+				onCreateShift={(memberId, ymd) =>
+					openCreate(memberId as Id<"restaurantMembers">, ymd)
+				}
+				onEditShift={openEdit}
+				onOpenMemberDrawer={(memberId) => setAttendanceMemberId(memberId)}
+			>
+				{({ shifts: cellShifts }) =>
+					cellShifts.map((s) => (
+						<ShiftCellChip
+							key={s._id}
+							shift={s}
+							timezone={timezone}
+							onClick={() => openEdit(s)}
+						/>
+					))
+				}
+			</ScheduleWeekGrid>
 
 			{drawerInitial ? (
 				<ShiftDrawer
@@ -242,6 +236,23 @@ function AdminSchedulePage() {
 					restaurantTimezone={timezone}
 					members={members}
 					initial={drawerInitial}
+				/>
+			) : null}
+
+			{attendanceMember ? (
+				<MemberAttendanceDrawer
+					isOpen={attendanceMemberId !== null}
+					onClose={() => setAttendanceMemberId(null)}
+					restaurantId={restaurant._id}
+					memberId={attendanceMember.memberId}
+					memberLabel={
+						attendanceMember.email?.trim() ? attendanceMember.email : attendanceMember.userId
+					}
+					isSelf={myMemberId !== null && myMemberId === attendanceMember.memberId}
+					canViewAsManager
+					weekStartMs={weekStartMs}
+					weekEndMs={weekEndMs}
+					localeTag={i18n.language}
 				/>
 			) : null}
 		</AdminPageLayout>

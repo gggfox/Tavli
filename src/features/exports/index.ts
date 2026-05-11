@@ -1,5 +1,5 @@
-export { ExportYearDialog } from "./components/ExportYearDialog";
-export type { ExportYearDialogKind } from "./components/ExportYearDialog";
+export { ExportButton } from "./components/ExportButton";
+export type { ExportButtonKind } from "./components/ExportButton";
 export { ExportMenuButton } from "./components/ExportMenuButton";
 export { useCanExport } from "./hooks/useCanExport";
 export { useExportYears } from "./hooks/useExportYears";

@@ -1,7 +1,6 @@
 export { ShiftDrawer } from "./components/ShiftDrawer";
 export { ShiftCellChip } from "./components/ShiftCellChip";
 export { ScheduleWeekGrid } from "./components/ScheduleWeekGrid";
-export { ScheduleListView } from "./components/ScheduleListView";
 export { PublishWeekButton } from "./components/PublishWeekButton";
 export { useAssignableMembers } from "./hooks/useAssignableMembers";
 export {

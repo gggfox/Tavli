@@ -22,7 +22,6 @@
 			"teamInvites": "Invites",
 			"schedule": "Schedule",
 			"mySchedule": "My schedule",
-			"attendance": "Attendance",
 			"tips": "Tips",
 			"performance": "Performance",
 			"admin": "Admin",
@@ -215,19 +214,16 @@
 			"rangeLabel": "Range"
 		},
 		"attendance": {
-			"descriptionNoRestaurant": "Clock events and absence requests.",
-			"description": "Review team clock punches and absences. Submit your own time-off requests in the section below.",
-			"descriptionEmployee": "Request time off and track the status of your requests.",
-			"noRestaurant": "No restaurant available.",
+			"drawerTitle": "Attendance",
+			"drawerSubtitleSelf": "You",
 			"rangeLabel": "Range",
-			"range24h": "24h",
+			"rangeWeek": "This week",
 			"range7d": "7 days",
 			"range30d": "30 days",
 			"clockEvents": "Clock events",
 			"noEvents": "No events in range.",
 			"absences": "Absences",
 			"noAbsences": "No absence records.",
-			"colMember": "Member",
 			"colType": "Type",
 			"colTime": "Time",
 			"colDate": "Date",
@@ -235,7 +231,6 @@
 			"myAbsences": "My absence requests",
 			"myAbsencesEmpty": "You have no absence requests yet.",
 			"requestOpen": "Request time off",
-			"requestModalTitle": "Request time off",
 			"requestDrawerSwipeHandle": "Drag down to close",
 			"requestDateLabel": "Date",
 			"requestTypeLabel": "Type",
@@ -250,7 +245,8 @@
 			"typeOther": "Other",
 			"statusPending": "Pending",
 			"statusApproved": "Approved",
-			"statusDenied": "Denied"
+			"statusDenied": "Denied",
+			"memberRowOpenAria": "Open attendance for {{member}}"
 		},
 		"tips": {
 			"descriptionNoRestaurant": "Daily tip pool and distribution.",
@@ -603,7 +599,12 @@
 			"createFailed": "Failed to create table",
 			"updateFailed": "Failed to update table",
 			"toggleFailed": "Failed to toggle table status",
-			"removeFailed": "Failed to remove table"
+			"removeFailed": "Failed to remove table",
+			"addInSection": "Add table",
+			"dropHere": "Drop a table here or click + Add table",
+			"showInactive": "Show inactive ({{count}})",
+			"hideInactive": "Hide inactive",
+			"dragHandle": "Move to another section"
 		},
 		"sections": {
 			"heading": "Floor sections",
@@ -623,7 +624,9 @@
 			"createFailed": "Failed to create section",
 			"updateFailed": "Failed to update section",
 			"removeFailed": "Failed to remove section",
-			"assignFailed": "Failed to move table to section"
+			"assignFailed": "Failed to move table to section",
+			"reorderFailed": "Failed to reorder sections",
+			"dragHandle": "Reorder section"
 		},
 		"stripe": {
 			"heading": "Payment Setup",
@@ -1099,17 +1102,6 @@
 	"exports": {
 		"button": "Export",
 		"button.aria": "Export to Excel",
-		"dialog": {
-			"title": {
-				"orders": "Export orders",
-				"payments": "Export payments",
-				"reservations": "Export reservations"
-			},
-			"description": "Choose a year. The export will contain one sheet per month, plus a summary sheet.",
-			"yearLabel": "Year",
-			"cancel": "Cancel",
-			"confirm": "Export"
-		},
 		"status": {
 			"preparing": "Preparing your Excel file...",
 			"success": "Export ready. The download should start automatically.",

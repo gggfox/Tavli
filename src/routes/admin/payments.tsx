@@ -1,4 +1,4 @@
-import { ExportYearDialog, useCanExport } from "@/features/exports";
+import { ExportButton, useCanExport } from "@/features/exports";
 import {
 	PaymentsDashboard,
 	PaymentsDashboardSkeleton,
@@ -22,7 +22,7 @@ function PaymentsPage() {
 		<AdminPageLayout
 			actions={
 				restaurant && canExport ? (
-					<ExportYearDialog restaurantId={restaurant._id} kind="payments" />
+					<ExportButton restaurantId={restaurant._id} kind="payments" />
 				) : undefined
 			}
 		>

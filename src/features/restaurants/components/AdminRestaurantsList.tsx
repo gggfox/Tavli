@@ -452,26 +452,28 @@ export function AdminRestaurantsList() {
 					isOpen
 					onClose={closeModal}
 					ariaLabel={t(RestaurantsKeys.MODAL_TABLES_ARIA)}
-					size="xl"
+					size="4xl"
 				>
-					<div
-						className="p-6 rounded-xl bg-background border border-border"
-						
-					>
-						<div className="flex items-center justify-between mb-6">
+					<div className="rounded-xl bg-background border border-border">
+						<div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-background border-b border-border rounded-t-xl">
 							<div>
-								<h2 className="text-xl font-semibold text-foreground" >
+								<h2 className="text-xl font-semibold text-foreground">
 									{t(RestaurantsKeys.MODAL_TABLES_HEADING)}
 								</h2>
-								<p className="text-sm mt-1 text-muted-foreground" >
+								<p className="text-sm mt-1 text-muted-foreground">
 									{modal.restaurant.name}
 								</p>
 							</div>
-							<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-hover text-faint-foreground">
-								<X size={20}  />
+							<button
+								onClick={closeModal}
+								className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+							>
+								<X size={20} />
 							</button>
 						</div>
-						<TablesManager restaurantId={modal.restaurant._id} />
+						<div className="px-6 py-4">
+							<TablesManager restaurantId={modal.restaurant._id} />
+						</div>
 					</div>
 				</Modal>
 			)}

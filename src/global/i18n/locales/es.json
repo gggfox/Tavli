@@ -22,7 +22,6 @@
 			"teamInvites": "Invitaciones",
 			"schedule": "Horarios",
 			"mySchedule": "Mi horario",
-			"attendance": "Asistencia",
 			"tips": "Propinas",
 			"performance": "Rendimiento",
 			"admin": "Administración",
@@ -215,19 +214,16 @@
 			"rangeLabel": "Rango"
 		},
 		"attendance": {
-			"descriptionNoRestaurant": "Fichajes y solicitudes de ausencia.",
-			"description": "Revisa los fichajes y ausencias del equipo. Envía tus propias solicitudes de días libres en la sección inferior.",
-			"descriptionEmployee": "Solicita días libres y consulta el estado de tus solicitudes.",
-			"noRestaurant": "No hay restaurante disponible.",
+			"drawerTitle": "Asistencia",
+			"drawerSubtitleSelf": "Tú",
 			"rangeLabel": "Rango",
-			"range24h": "24 h",
+			"rangeWeek": "Esta semana",
 			"range7d": "7 días",
 			"range30d": "30 días",
 			"clockEvents": "Fichajes",
 			"noEvents": "No hay eventos en el rango.",
 			"absences": "Ausencias",
 			"noAbsences": "No hay registros de ausencia.",
-			"colMember": "Miembro",
 			"colType": "Tipo",
 			"colTime": "Hora",
 			"colDate": "Fecha",
@@ -235,7 +231,6 @@
 			"myAbsences": "Mis solicitudes de ausencia",
 			"myAbsencesEmpty": "Aún no tienes solicitudes de ausencia.",
 			"requestOpen": "Solicitar día libre",
-			"requestModalTitle": "Solicitar día libre",
 			"requestDrawerSwipeHandle": "Arrastra hacia abajo para cerrar",
 			"requestDateLabel": "Fecha",
 			"requestTypeLabel": "Tipo",
@@ -250,7 +245,8 @@
 			"typeOther": "Otro",
 			"statusPending": "Pendiente",
 			"statusApproved": "Aprobada",
-			"statusDenied": "Rechazada"
+			"statusDenied": "Rechazada",
+			"memberRowOpenAria": "Abrir asistencia de {{member}}"
 		},
 		"tips": {
 			"descriptionNoRestaurant": "Bolsa de propinas diaria y reparto.",
@@ -603,7 +599,12 @@
 			"createFailed": "Error al crear la mesa",
 			"updateFailed": "Error al actualizar la mesa",
 			"toggleFailed": "Error al cambiar el estado de la mesa",
-			"removeFailed": "Error al eliminar la mesa"
+			"removeFailed": "Error al eliminar la mesa",
+			"addInSection": "Agregar mesa",
+			"dropHere": "Suelta una mesa aquí o haz clic en + Agregar mesa",
+			"showInactive": "Mostrar inactivas ({{count}})",
+			"hideInactive": "Ocultar inactivas",
+			"dragHandle": "Mover a otra sección"
 		},
 		"sections": {
 			"heading": "Secciones del salón",
@@ -623,7 +624,9 @@
 			"createFailed": "Error al crear la sección",
 			"updateFailed": "Error al actualizar la sección",
 			"removeFailed": "Error al eliminar la sección",
-			"assignFailed": "Error al mover la mesa a la sección"
+			"assignFailed": "Error al mover la mesa a la sección",
+			"reorderFailed": "Error al reordenar las secciones",
+			"dragHandle": "Reordenar sección"
 		},
 		"stripe": {
 			"heading": "Configuración de pagos",
@@ -1099,17 +1102,6 @@
 	"exports": {
 		"button": "Exportar",
 		"button.aria": "Exportar a Excel",
-		"dialog": {
-			"title": {
-				"orders": "Exportar órdenes",
-				"payments": "Exportar pagos",
-				"reservations": "Exportar reservaciones"
-			},
-			"description": "Elige un año. La exportación tendrá una hoja por mes, más una hoja de resumen.",
-			"yearLabel": "Año",
-			"cancel": "Cancelar",
-			"confirm": "Exportar"
-		},
 		"status": {
 			"preparing": "Preparando tu archivo de Excel...",
 			"success": "Exportación lista. La descarga debería iniciarse automáticamente.",
