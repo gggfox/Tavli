@@ -21,7 +21,6 @@ import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
-import { Route as AdminMyScheduleRouteImport } from './routes/admin/my-schedule'
 import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-flags'
 import { Route as AdminReservationsIndexRouteImport } from './routes/admin/reservations/index'
 import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
@@ -102,11 +101,6 @@ const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
 const AdminOrdersRoute = AdminOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminMyScheduleRoute = AdminMyScheduleRouteImport.update({
-  id: '/my-schedule',
-  path: '/my-schedule',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminFeatureFlagsRoute = AdminFeatureFlagsRouteImport.update({
@@ -220,7 +214,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
-  '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -256,7 +249,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
-  '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -293,7 +285,6 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
-  '/admin/my-schedule': typeof AdminMyScheduleRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
@@ -331,7 +322,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/admin/feature-flags'
-    | '/admin/my-schedule'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
@@ -367,7 +357,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/admin/feature-flags'
-    | '/admin/my-schedule'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
@@ -403,7 +392,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/admin/feature-flags'
-    | '/admin/my-schedule'
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
@@ -534,13 +522,6 @@ declare module '@tanstack/react-router' {
       path: '/orders'
       fullPath: '/admin/orders'
       preLoaderRoute: typeof AdminOrdersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/my-schedule': {
-      id: '/admin/my-schedule'
-      path: '/my-schedule'
-      fullPath: '/admin/my-schedule'
-      preLoaderRoute: typeof AdminMyScheduleRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/feature-flags': {
@@ -695,7 +676,6 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminFeatureFlagsRoute: typeof AdminFeatureFlagsRoute
-  AdminMyScheduleRoute: typeof AdminMyScheduleRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
@@ -710,7 +690,6 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminFeatureFlagsRoute: AdminFeatureFlagsRoute,
-  AdminMyScheduleRoute: AdminMyScheduleRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,

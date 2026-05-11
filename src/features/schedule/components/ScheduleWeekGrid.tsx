@@ -5,8 +5,8 @@
  * `ShiftCellChip`s. Empty cells are clickable and open the `ShiftDrawer`
  * pre-filled with `(memberId, ymd)`. The sticky left-column member row header
  * is also clickable when `onOpenMemberDrawer` is supplied — used by both
- * `/admin/schedule` (managers click any row) and `/admin/my-schedule`
- * (employees click their own single row) to open the attendance drawer.
+ * `/admin/schedule` — managers click any row, employees click their own
+ * single row to open the attendance drawer.
  *
  * The component is purely presentational — it doesn't fetch data or own any
  * mutation; the parent route shapes shifts + members and passes callbacks.
@@ -32,8 +32,8 @@ interface ScheduleWeekGridProps {
 	/**
 	 * Optional click handler for empty day cells. When provided, empty cells
 	 * render a dashed "+" button that opens the ShiftDrawer in create mode.
-	 * Omit for read-only views like `/admin/my-schedule` where employees cannot
-	 * create shifts on themselves.
+	 * Omit for read-only views (employees viewing their own schedule) where
+	 * shift creation is not allowed.
 	 */
 	readonly onCreateShift?: (memberId: string, ymd: string) => void;
 	readonly onEditShift?: (shift: ScheduledShiftView) => void;

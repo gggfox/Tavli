@@ -205,7 +205,8 @@ export const listForRestaurantWeek = query({
 
 /**
  * The caller's own upcoming PUBLISHED shifts at this restaurant. Used by
- * `/admin/my-schedule`. Drafts (SCHEDULED) and cancellations are intentionally
+ * `/admin/schedule` when the viewer is not manager-or-above, so they only see
+ * their own row. Drafts (SCHEDULED) and cancellations are intentionally
  * filtered out — employees only see committed shifts.
  */
 export const listMyShifts = query({

@@ -70,11 +70,6 @@ export const sidebarItems: SidebarItem[] = [
 				icon: <CalendarRange size={18} className="shrink-0" />,
 				to: "/admin/schedule",
 			},
-			{
-				translationKey: SidebarKeys.MY_SCHEDULE,
-				icon: <CalendarRange size={18} className="shrink-0" />,
-				to: "/admin/my-schedule",
-			},
 		],
 	},
 	{

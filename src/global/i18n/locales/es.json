@@ -21,7 +21,6 @@
 			"team": "Miembros",
 			"teamInvites": "Equipo",
 			"schedule": "Horarios",
-			"mySchedule": "Mi horario",
 			"tips": "Propinas",
 			"performance": "Rendimiento",
 			"admin": "Administración",
@@ -130,6 +129,9 @@
 		"schedule": {
 			"descriptionNoRestaurant": "Turnos semanales para tu equipo.",
 			"description": "Mueve la semana, asigna turnos y publica para que tu equipo los vea.",
+			"descriptionEmployee": "Tus turnos publicados en este restaurante. Los borradores no aparecerán hasta que tu gerente publique la semana.",
+			"employeeEmptyTitle": "Sin turnos próximos",
+			"employeeEmptyDescription": "Cuando tu gerente publique la semana, tus turnos aparecerán aquí.",
 			"noRestaurant": "No hay restaurante disponible.",
 			"prevWeek": "← Semana anterior",
 			"nextWeek": "Semana siguiente →",
@@ -217,20 +219,6 @@
 			"daySat": "Sáb",
 			"daySun": "Dom",
 			"teamRowAssign": "Asignar turno…"
-		},
-		"mySchedule": {
-			"descriptionNoRestaurant": "Tus próximos turnos.",
-			"description": "Tus turnos publicados en este restaurante. Los borradores no aparecerán hasta que tu gerente publique la semana.",
-			"noRestaurant": "No hay restaurante disponible.",
-			"emptyTitle": "Sin turnos próximos",
-			"emptyDescription": "Cuando tu gerente publique la semana, tus turnos aparecerán aquí.",
-			"colDate": "Fecha",
-			"colTime": "Horario",
-			"colRole": "Rol",
-			"colNotes": "Notas",
-			"next7Days": "Próximos 7 días",
-			"next30Days": "Próximos 30 días",
-			"rangeLabel": "Rango"
 		},
 		"attendance": {
 			"drawerTitle": "Asistencia",

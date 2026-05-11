@@ -21,7 +21,6 @@
 			"team": "Members",
 			"teamInvites": "Team",
 			"schedule": "Schedule",
-			"mySchedule": "My schedule",
 			"tips": "Tips",
 			"performance": "Performance",
 			"admin": "Admin",
@@ -130,6 +129,9 @@
 		"schedule": {
 			"descriptionNoRestaurant": "Weekly shifts for your team.",
 			"description": "Drag the week around, assign shifts, and publish the week so employees can see them.",
+			"descriptionEmployee": "Your published shifts at this restaurant. Draft shifts won't appear until your manager publishes the week.",
+			"employeeEmptyTitle": "No upcoming shifts",
+			"employeeEmptyDescription": "Once your manager publishes the week, your shifts will show up here.",
 			"noRestaurant": "No restaurant available.",
 			"prevWeek": "← Prev week",
 			"nextWeek": "Next week →",
@@ -217,20 +219,6 @@
 			"daySat": "Sat",
 			"daySun": "Sun",
 			"teamRowAssign": "Assign shift…"
-		},
-		"mySchedule": {
-			"descriptionNoRestaurant": "Your upcoming shifts.",
-			"description": "Your published shifts at this restaurant. Draft shifts won't appear until your manager publishes the week.",
-			"noRestaurant": "No restaurant available.",
-			"emptyTitle": "No upcoming shifts",
-			"emptyDescription": "Once your manager publishes the week, your shifts will show up here.",
-			"colDate": "Date",
-			"colTime": "Time",
-			"colRole": "Role",
-			"colNotes": "Notes",
-			"next7Days": "Next 7 days",
-			"next30Days": "Next 30 days",
-			"rangeLabel": "Range"
 		},
 		"attendance": {
 			"drawerTitle": "Attendance",

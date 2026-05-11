@@ -1,6 +1,6 @@
 /**
- * Per-member attendance drawer opened from the Schedule grid (manager view)
- * and from /admin/my-schedule (employee view of own row).
+ * Per-member attendance drawer opened from the Schedule grid (manager view
+ * can click any row; employee view can click their own single row).
  *
  * Sections rendered are scoped to the viewer's relationship with the target
  * member:
