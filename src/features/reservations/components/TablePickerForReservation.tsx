@@ -33,8 +33,11 @@ interface TablePickerForReservationProps {
 
 export function TablePickerForReservation(props: Readonly<TablePickerForReservationProps>) {
 	const { t } = useTranslation();
+	// `getActiveByRestaurant` excludes soft-deleted tables, inactive tables, and
+	// tables in hidden/soft-deleted sections — exactly what reservation picking
+	// needs. The floor editor uses `getByRestaurant` for the broader view.
 	const { data: rawTables } = useQuery(
-		convexQuery(api.tables.getByRestaurant, { restaurantId: props.restaurantId })
+		convexQuery(api.tables.getActiveByRestaurant, { restaurantId: props.restaurantId })
 	);
 	const tables = (rawTables ?? []) as Doc<"tables">[];
 
@@ -85,9 +88,7 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 		}
 	};
 
-	const sorted = [...tables]
-		.filter((t) => t.isActive)
-		.sort((a, b) => a.tableNumber - b.tableNumber);
+	const sorted = [...tables].sort((a, b) => a.tableNumber - b.tableNumber);
 
 	const totalSelectedCapacity = props.value
 		.map((id) => tables.find((t) => t._id === id)?.capacity ?? 0)

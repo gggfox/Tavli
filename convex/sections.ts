@@ -24,6 +24,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+import { getSoftDeletePurgeDelayMs } from "./featureFlags";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -67,8 +68,9 @@ export async function ensureDefaultSection(
 		.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 		.collect();
 
-	if (existing.length > 0) {
-		return [...existing].sort((a, b) => a.displayOrder - b.displayOrder)[0]._id;
+	const live = existing.filter((s) => s.deletedAt === undefined);
+	if (live.length > 0) {
+		return [...live].sort((a, b) => a.displayOrder - b.displayOrder)[0]._id;
 	}
 
 	const now = Date.now();
@@ -112,7 +114,8 @@ export const create = mutation({
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
 
-		const maxOrder = siblings.reduce((max, s) => Math.max(max, s.displayOrder), -1);
+		const liveSiblings = siblings.filter((s) => s.deletedAt === undefined);
+		const maxOrder = liveSiblings.reduce((max, s) => Math.max(max, s.displayOrder), -1);
 		const displayOrder = args.displayOrder ?? maxOrder + 1;
 
 		const now = Date.now();
@@ -173,6 +176,21 @@ export const update = mutation({
 	},
 });
 
+/**
+ * Soft-delete a section and cascade soft-delete its live tables.
+ *
+ * Tables that were live in the section at delete time get stamped with
+ * `softDeleteParentSectionId = <this section>` so `restore` can pair them back.
+ * Tables that were already independently soft-deleted are left alone.
+ *
+ * The "future shift assignments" guard from the old hard-delete is preserved:
+ * if any `shiftSectionAssignments` row for this section ends in the future,
+ * the operation is rejected and the user is asked to cancel coverage first.
+ * Restoring the section then keeps that scheduled coverage intact.
+ *
+ * The hard-purge cron (`softDeletePurge.purgeExpiredSoftDeletes`) cleans up
+ * after the configurable retention window elapses.
+ */
 export const remove = mutation({
 	args: { sectionId: v.id(TABLE.SECTIONS) },
 	handler: async function (
@@ -188,33 +206,8 @@ export const remove = mutation({
 		const [, permErr] = await requireOwnerOrManager(ctx, userId, section.restaurantId);
 		if (permErr) return [null, permErr];
 
-		if (section.isSystem === true) {
-			return [
-				null,
-				new UserInputValidationError({
-					fields: [
-						{ field: "sectionId", message: "Default section cannot be deleted" },
-					],
-				}).toObject(),
-			];
-		}
-
-		const tablesInSection = await ctx.db
-			.query(TABLE.TABLES)
-			.withIndex("by_section", (q) => q.eq("sectionId", args.sectionId))
-			.collect();
-		if (tablesInSection.length > 0) {
-			return [
-				null,
-				new UserInputValidationError({
-					fields: [
-						{
-							field: "sectionId",
-							message: `Move ${tablesInSection.length} table(s) to another section first`,
-						},
-					],
-				}).toObject(),
-			];
+		if (section.deletedAt !== undefined) {
+			return [null, null];
 		}
 
 		const now = Date.now();
@@ -237,8 +230,83 @@ export const remove = mutation({
 			];
 		}
 
-		await ctx.db.delete(args.sectionId);
+		const purgeDelayMs = await getSoftDeletePurgeDelayMs(ctx);
+		const hardDeleteAfterAt = now + purgeDelayMs;
+
+		await ctx.db.patch(args.sectionId, {
+			deletedAt: now,
+			deletedBy: userId,
+			hardDeleteAfterAt,
+			...stampUpdated(userId),
+		});
+
+		const tablesInSection = await ctx.db
+			.query(TABLE.TABLES)
+			.withIndex("by_section", (q) => q.eq("sectionId", args.sectionId))
+			.collect();
+		for (const table of tablesInSection) {
+			if (table.deletedAt !== undefined) continue;
+			await ctx.db.patch(table._id, {
+				deletedAt: now,
+				deletedBy: userId,
+				hardDeleteAfterAt,
+				softDeleteParentSectionId: args.sectionId,
+			});
+		}
+
 		return [null, null];
+	},
+});
+
+/**
+ * Restore a soft-deleted section. Tables that were soft-deleted as part of
+ * the cascade (their `softDeleteParentSectionId` points at this section) are
+ * restored back to live state too. Tables soft-deleted independently before
+ * the section was deleted stay in the trash and must be restored on their own.
+ */
+export const restore = mutation({
+	args: { sectionId: v.id(TABLE.SECTIONS) },
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<"sections">, AuthErrors | NotFoundErrorObject> {
+		const [userId, authErr] = await getCurrentUserId(ctx);
+		if (authErr) return [null, authErr];
+
+		const section = await ctx.db.get(args.sectionId);
+		if (!section) return [null, new NotFoundError("Section not found").toObject()];
+
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, section.restaurantId);
+		if (permErr) return [null, permErr];
+
+		if (section.deletedAt === undefined) {
+			return [args.sectionId, null];
+		}
+
+		await ctx.db.patch(args.sectionId, {
+			deletedAt: undefined,
+			deletedBy: undefined,
+			hardDeleteAfterAt: undefined,
+			...stampUpdated(userId),
+		});
+
+		const cascadedTables = await ctx.db
+			.query(TABLE.TABLES)
+			.withIndex("by_soft_delete_parent", (q) =>
+				q.eq("softDeleteParentSectionId", args.sectionId)
+			)
+			.collect();
+		for (const table of cascadedTables) {
+			if (table.deletedAt === undefined) continue;
+			await ctx.db.patch(table._id, {
+				deletedAt: undefined,
+				deletedBy: undefined,
+				hardDeleteAfterAt: undefined,
+				softDeleteParentSectionId: undefined,
+			});
+		}
+
+		return [args.sectionId, null];
 	},
 });
 
@@ -274,6 +342,28 @@ export const assignTable = mutation({
 			];
 		}
 
+		if (section.deletedAt !== undefined) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{ field: "sectionId", message: "Cannot assign a table to a deleted section" },
+					],
+				}).toObject(),
+			];
+		}
+
+		if (section.isActive === false) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{ field: "sectionId", message: "Cannot assign a table to a hidden section" },
+					],
+				}).toObject(),
+			];
+		}
+
 		const [, permErr] = await requireOwnerOrManager(ctx, userId, table.restaurantId);
 		if (permErr) return [null, permErr];
 
@@ -282,6 +372,16 @@ export const assignTable = mutation({
 	},
 });
 
+/**
+ * Returns the live (non-soft-deleted) sections for a restaurant, ordered by
+ * `displayOrder`. Soft-deleted rows are excluded; callers that want to surface
+ * the "recently deleted" trash should use `getDeletedForRestaurant` instead.
+ *
+ * Hidden sections (`isActive: false`) are included here so the floor editor
+ * can show them as collapsed strips; surfaces that should not list hidden
+ * sections (reservation table picker, new shift assignment dropdowns) must
+ * filter by `isActive` on their end.
+ */
 export const getByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args): Promise<Doc<"sections">[]> => {
@@ -289,7 +389,27 @@ export const getByRestaurant = query({
 			.query(TABLE.SECTIONS)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
-		return sections.sort((a, b) => a.displayOrder - b.displayOrder);
+		return sections
+			.filter((s) => s.deletedAt === undefined)
+			.sort((a, b) => a.displayOrder - b.displayOrder);
+	},
+});
+
+/**
+ * Returns soft-deleted sections for a restaurant, ordered by most recently
+ * deleted first. Used by the "Show recently deleted" toggle in the floor
+ * editor.
+ */
+export const getDeletedForRestaurant = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args): Promise<Doc<"sections">[]> => {
+		const sections = await ctx.db
+			.query(TABLE.SECTIONS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+		return sections
+			.filter((s) => s.deletedAt !== undefined)
+			.sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0));
 	},
 });
 

@@ -9,6 +9,7 @@ import {
 	startOfDayMs,
 	endOfWeekMs,
 	useAssignableMembers,
+	type AbsenceDateMap,
 	type AssignableMember,
 	type ScheduledShiftView,
 	type ShiftDrawerInitial,
@@ -24,12 +25,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
+	ABSENCE_REQUEST_STATUS,
 	RESTAURANT_MEMBER_ROLE,
 	SHIFT_STATUS,
 	USER_ROLES,
 } from "convex/constants";
 import { useConvexAuth } from "convex/react";
-import { CalendarRange, Users } from "lucide-react";
+import { CalendarRange, Search, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -170,6 +172,72 @@ interface ManagerScheduleViewProps {
 	readonly myMemberId: Id<"restaurantMembers"> | null;
 }
 
+interface AbsenceMapsResult {
+	readonly pendingDatesByMember: AbsenceDateMap;
+	readonly approvedDatesByMember: AbsenceDateMap;
+	readonly pendingCountByMember: ReadonlyMap<Id<"restaurantMembers">, number>;
+}
+
+/**
+ * Bucket absences into per-member date maps so the grid can do O(1) chip
+ * coloring + O(1) row-asterisk lookups. Pending counts span all dates so a
+ * stale request from any week still surfaces the asterisk on the row header
+ * regardless of which week the manager is currently viewing.
+ */
+function buildAbsenceMaps(
+	absences: ReadonlyArray<Doc<"absences">>
+): AbsenceMapsResult {
+	const pending = new Map<
+		Id<"restaurantMembers">,
+		Map<string, Doc<"absences">>
+	>();
+	const approved = new Map<
+		Id<"restaurantMembers">,
+		Map<string, Doc<"absences">>
+	>();
+	const pendingCount = new Map<Id<"restaurantMembers">, number>();
+	for (const a of absences) {
+		if (a.status === ABSENCE_REQUEST_STATUS.PENDING) {
+			let perMember = pending.get(a.memberId);
+			if (!perMember) {
+				perMember = new Map();
+				pending.set(a.memberId, perMember);
+			}
+			perMember.set(a.date, a);
+			pendingCount.set(a.memberId, (pendingCount.get(a.memberId) ?? 0) + 1);
+		} else if (a.status === ABSENCE_REQUEST_STATUS.APPROVED) {
+			let perMember = approved.get(a.memberId);
+			if (!perMember) {
+				perMember = new Map();
+				approved.set(a.memberId, perMember);
+			}
+			perMember.set(a.date, a);
+		}
+	}
+	return {
+		pendingDatesByMember: pending,
+		approvedDatesByMember: approved,
+		pendingCountByMember: pendingCount,
+	};
+}
+
+/**
+ * Match the same label expression rendered in the row header
+ * (`email` if non-empty, otherwise `userId`) so what the manager sees in the
+ * grid is exactly what the filter searches against.
+ */
+function filterMembersByLabel(
+	members: readonly AssignableMember[],
+	query: string
+): readonly AssignableMember[] {
+	const q = query.trim().toLowerCase();
+	if (!q) return members;
+	return members.filter((m) => {
+		const label = (m.email?.trim() ? m.email : m.userId) ?? "";
+		return label.toLowerCase().includes(q);
+	});
+}
+
 function ManagerScheduleView({
 	restaurant,
 	timezone,
@@ -191,7 +259,18 @@ function ManagerScheduleView({
 		select: unwrapResult<ScheduledShiftView[]>,
 	});
 
+	const absencesQuery = useQuery({
+		...convexQuery(api.attendance.listAbsencesForRestaurant, {
+			restaurantId: restaurant._id,
+		}),
+		select: unwrapResult<Doc<"absences">[]>,
+	});
+
 	const shifts = shiftsQuery.data ?? [];
+	const absences = absencesQuery.data ?? [];
+
+	const { pendingDatesByMember, approvedDatesByMember, pendingCountByMember } =
+		useMemo(() => buildAbsenceMaps(absences), [absences]);
 
 	const draftCount = useMemo(
 		() => shifts.filter((s) => s.status === SHIFT_STATUS.SCHEDULED).length,
@@ -203,6 +282,12 @@ function ManagerScheduleView({
 
 	const [attendanceMemberId, setAttendanceMemberId] =
 		useState<Id<"restaurantMembers"> | null>(null);
+
+	const [memberFilter, setMemberFilter] = useState("");
+	const filteredMembers = useMemo(
+		() => filterMembersByLabel(members, memberFilter),
+		[members, memberFilter]
+	);
 
 	const attendanceMember = useMemo<AssignableMember | null>(() => {
 		if (!attendanceMemberId) return null;
@@ -295,31 +380,60 @@ function ManagerScheduleView({
 						{t(AdminStaffKeys.SCHEDULE_NEXT_WEEK)}
 					</button>
 				</div>
+				<label className="relative flex items-center w-full max-w-xs">
+					<Search
+						size={14}
+						aria-hidden="true"
+						className="absolute left-2 text-faint-foreground pointer-events-none"
+					/>
+					<input
+						type="search"
+						value={memberFilter}
+						onChange={(e) => setMemberFilter(e.target.value)}
+						placeholder={t(AdminStaffKeys.SCHEDULE_FILTER_MEMBER_PLACEHOLDER)}
+						aria-label={t(AdminStaffKeys.SCHEDULE_FILTER_MEMBER_PLACEHOLDER)}
+						className="w-full text-xs rounded border border-border bg-background pl-7 pr-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
+					/>
+				</label>
 			</div>
 
-			<ScheduleWeekGrid
-				members={members}
-				shifts={shifts}
-				mondayYmd={mondayYmd}
-				timezone={timezone}
-				localeTag={i18n.language}
-				onCreateShift={(memberId, ymd) =>
-					openCreate(memberId as Id<"restaurantMembers">, ymd)
-				}
-				onEditShift={openEdit}
-				onOpenMemberDrawer={(memberId) => setAttendanceMemberId(memberId)}
-			>
-				{({ shifts: cellShifts }) =>
-					cellShifts.map((s) => (
-						<ShiftCellChip
-							key={s._id}
-							shift={s}
-							timezone={timezone}
-							onClick={() => openEdit(s)}
-						/>
-					))
-				}
-			</ScheduleWeekGrid>
+			{filteredMembers.length === 0 ? (
+				<p className="text-sm text-faint-foreground py-6 text-center">
+					{t(AdminStaffKeys.SCHEDULE_FILTER_NO_MATCHES)}
+				</p>
+			) : (
+				<ScheduleWeekGrid
+					members={filteredMembers}
+					shifts={shifts}
+					mondayYmd={mondayYmd}
+					timezone={timezone}
+					localeTag={i18n.language}
+					pendingDatesByMember={pendingDatesByMember}
+					approvedDatesByMember={approvedDatesByMember}
+					pendingCountByMember={pendingCountByMember}
+					onCreateShift={(memberId, ymd) =>
+						openCreate(memberId as Id<"restaurantMembers">, ymd)
+					}
+					onEditShift={openEdit}
+					onOpenMemberDrawer={(memberId) => setAttendanceMemberId(memberId)}
+				>
+					{({ shifts: cellShifts, member, absenceState }) =>
+						cellShifts.map((s) => (
+							<ShiftCellChip
+								key={s._id}
+								shift={s}
+								timezone={timezone}
+								absenceState={absenceState}
+								onClick={() =>
+									absenceState === "pending"
+										? setAttendanceMemberId(member.memberId)
+										: openEdit(s)
+								}
+							/>
+						))
+					}
+				</ScheduleWeekGrid>
+			)}
 
 			{drawerInitial ? (
 				<ShiftDrawer

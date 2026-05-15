@@ -218,7 +218,12 @@
 			"dayFri": "Vie",
 			"daySat": "Sáb",
 			"daySun": "Dom",
-			"teamRowAssign": "Asignar turno…"
+			"teamRowAssign": "Asignar turno…",
+			"filterMemberPlaceholder": "Filtrar miembros",
+			"filterNoMatches": "Ningún miembro coincide.",
+			"gridPendingAsteriskAria": "{{count}} solicitud(es) de día libre pendiente(s)",
+			"chipPendingSuffix": ", solicitud de día libre pendiente",
+			"chipApprovedSuffix": ", día libre aprobado"
 		},
 		"attendance": {
 			"drawerTitle": "Asistencia",
@@ -253,7 +258,19 @@
 			"statusPending": "Pendiente",
 			"statusApproved": "Aprobada",
 			"statusDenied": "Rechazada",
-			"memberRowOpenAria": "Abrir asistencia de {{member}}"
+			"memberRowOpenAria": "Abrir asistencia de {{member}}",
+			"bannerPendingTitle_one": "1 solicitud pendiente",
+			"bannerPendingTitle_other": "{{count}} solicitudes pendientes",
+			"bannerApprove": "Aprobar",
+			"bannerDeny": "Rechazar",
+			"bannerApproveAll": "Aprobar todo",
+			"bannerDenyAll": "Rechazar todo",
+			"bannerConfirmApproveN_one": "Confirmar aprobar 1",
+			"bannerConfirmApproveN_other": "Confirmar aprobar {{count}}",
+			"bannerConfirmDenyN_one": "Confirmar rechazar 1",
+			"bannerConfirmDenyN_other": "Confirmar rechazar {{count}}",
+			"bannerConfirmCancel": "Cancelar",
+			"bannerReasonLabel": "Motivo"
 		},
 		"tips": {
 			"descriptionNoRestaurant": "Bolsa de propinas diaria y reparto.",
@@ -611,7 +628,13 @@
 			"showInactive": "Mostrar inactivas ({{count}})",
 			"hideInactive": "Ocultar inactivas",
 			"dragHandle": "Mover a otra sección",
-			"expandedClose": "Cerrar vista de mesas"
+			"expandedClose": "Cerrar vista de mesas",
+			"restore": "Restaurar",
+			"restoreFailed": "No se pudo restaurar la mesa",
+			"purgesIn": "Se eliminará en {{time}}",
+			"showRecentlyDeleted": "Mostrar eliminadas recientemente",
+			"hideRecentlyDeleted": "Ocultar eliminadas recientemente",
+			"trashEmpty": "No hay secciones ni mesas eliminadas recientemente."
 		},
 		"sections": {
 			"heading": "Secciones del salón",
@@ -631,7 +654,19 @@
 			"removeFailed": "Error al eliminar la sección",
 			"assignFailed": "Error al mover la mesa a la sección",
 			"reorderFailed": "Error al reordenar las secciones",
-			"dragHandle": "Reordenar sección"
+			"dragHandle": "Reordenar sección",
+			"hideTitle": "Ocultar sección",
+			"showTitle": "Mostrar sección",
+			"hiddenBadge": "Oculta",
+			"confirmDeleteHeading": "¿Eliminar sección?",
+			"confirmDeleteBodyEmpty": "Esta sección no tiene mesas. Podrás restaurarla dentro de la ventana de retención de borrado.",
+			"confirmDeleteBody_one": "Se eliminará la sección y 1 mesa. Podrás restaurarlas dentro de la ventana de retención de borrado.",
+			"confirmDeleteBody_other": "Se eliminará la sección y {{count}} mesas. Podrás restaurarlas dentro de la ventana de retención de borrado.",
+			"confirmDeleteConfirm": "Eliminar",
+			"confirmDeleteCancel": "Cancelar",
+			"restore": "Restaurar",
+			"restoreFailed": "No se pudo restaurar la sección",
+			"purgesIn": "Se eliminará en {{time}}"
 		},
 		"stripe": {
 			"heading": "Configuración de pagos",

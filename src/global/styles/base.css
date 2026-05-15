@@ -96,3 +96,26 @@ input[type="number"].number-input::-webkit-inner-spin-button {
 	-webkit-appearance: none;
 	margin: 0;
 }
+
+/* Tremor v3 + Tailwind v4: re-tone chart SVG elements in dark mode so
+   axis labels, ticks, gridlines and the "previous period" gray series
+   are legible on the dark surface. Targets recharts' public classes. */
+.dark .recharts-cartesian-axis-tick text,
+.dark .recharts-text,
+.dark .recharts-label,
+.dark .recharts-legend-item-text {
+	fill: var(--text-secondary);
+	color: var(--text-secondary);
+}
+
+.dark .recharts-cartesian-axis-line,
+.dark .recharts-cartesian-axis-tick line,
+.dark .recharts-cartesian-grid line {
+	stroke: var(--border-strong);
+}
+
+.dark .recharts-default-tooltip {
+	background-color: var(--bg-elevated) !important;
+	border-color: var(--border-default) !important;
+	color: var(--text-primary) !important;
+}

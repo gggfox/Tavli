@@ -82,7 +82,7 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 			data={chartData}
 			index="date"
 			categories={categories}
-			colors={["blue", "gray"]}
+			colors={["blue", "slate"]}
 			valueFormatter={(v) =>
 				new Intl.NumberFormat(i18n.language, {
 					style: "currency",

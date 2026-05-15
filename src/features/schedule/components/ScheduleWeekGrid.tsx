@@ -8,11 +8,18 @@
  * `/admin/schedule` — managers click any row, employees click their own
  * single row to open the attendance drawer.
  *
+ * Pending day-off requests surface in two places when the parent passes the
+ * absence maps: a yellow asterisk before the row label (member-level signal,
+ * counts pending across all dates) and a `pending` `absenceState` flag on
+ * cells whose ymd matches a pending absence (day-level signal that the
+ * `renderCell` callback forwards to `ShiftCellChip`). Approved absences feed
+ * the same callback with `approved` so the chip renders muted + struck.
+ *
  * The component is purely presentational — it doesn't fetch data or own any
  * mutation; the parent route shapes shifts + members and passes callbacks.
  */
 import { AdminStaffKeys } from "@/global/i18n";
-import type { Id } from "convex/_generated/dataModel";
+import type { Doc, Id } from "convex/_generated/dataModel";
 import { Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,7 +28,13 @@ import {
 	utcMsToYmdInTimezone,
 } from "../timezone";
 import { dayLabel } from "../roles";
+import type { ChipAbsenceState } from "./ShiftCellChip";
 import type { AssignableMember, ScheduledShiftView } from "../types";
+
+export type AbsenceDateMap = ReadonlyMap<
+	Id<"restaurantMembers">,
+	ReadonlyMap<string, Doc<"absences">>
+>;
 
 interface ScheduleWeekGridProps {
 	readonly members: readonly AssignableMember[];
@@ -43,10 +56,25 @@ interface ScheduleWeekGridProps {
 	 * opens an attendance drawer scoped to that member.
 	 */
 	readonly onOpenMemberDrawer?: (memberId: Id<"restaurantMembers">) => void;
+	/**
+	 * `(memberId → ymd → absence)` for absences in `pending` status. When the
+	 * lookup hits, the cell's `absenceState` becomes `"pending"` and the
+	 * `renderCell` callback is expected to forward that to `ShiftCellChip`.
+	 */
+	readonly pendingDatesByMember?: AbsenceDateMap;
+	/** Same as `pendingDatesByMember` but for `approved` status. */
+	readonly approvedDatesByMember?: AbsenceDateMap;
+	/**
+	 * Total number of pending absences per member across all dates. Drives the
+	 * yellow asterisk on the row header. Pass an empty map (or omit) to hide
+	 * the asterisk for every row.
+	 */
+	readonly pendingCountByMember?: ReadonlyMap<Id<"restaurantMembers">, number>;
 	readonly children: (args: {
 		readonly day: { ymd: string; index: number };
 		readonly member: AssignableMember;
 		readonly shifts: ScheduledShiftView[];
+		readonly absenceState?: ChipAbsenceState;
 	}) => React.ReactNode;
 }
 
@@ -64,6 +92,9 @@ export function ScheduleWeekGrid({
 	onCreateShift,
 	onEditShift: _onEditShift,
 	onOpenMemberDrawer,
+	pendingDatesByMember,
+	approvedDatesByMember,
+	pendingCountByMember,
 	children,
 }: Readonly<ScheduleWeekGridProps>) {
 	const { t } = useTranslation();
@@ -138,6 +169,9 @@ export function ScheduleWeekGrid({
 						onCreateShift={onCreateShift}
 						onOpenMemberDrawer={onOpenMemberDrawer}
 						renderCell={children}
+						pendingDatesForMember={pendingDatesByMember?.get(m.memberId)}
+						approvedDatesForMember={approvedDatesByMember?.get(m.memberId)}
+						pendingCount={pendingCountByMember?.get(m.memberId) ?? 0}
 					/>
 				))}
 			</div>
@@ -152,6 +186,9 @@ interface MemberRowProps {
 	readonly onCreateShift?: (memberId: string, ymd: string) => void;
 	readonly onOpenMemberDrawer?: (memberId: Id<"restaurantMembers">) => void;
 	readonly renderCell: ScheduleWeekGridProps["children"];
+	readonly pendingDatesForMember?: ReadonlyMap<string, Doc<"absences">>;
+	readonly approvedDatesForMember?: ReadonlyMap<string, Doc<"absences">>;
+	readonly pendingCount: number;
 }
 
 function MemberRow({
@@ -161,11 +198,25 @@ function MemberRow({
 	onCreateShift,
 	onOpenMemberDrawer,
 	renderCell,
+	pendingDatesForMember,
+	approvedDatesForMember,
+	pendingCount,
 }: Readonly<MemberRowProps>) {
 	const { t } = useTranslation();
 	const label = member.email?.trim() ? member.email : member.userId;
 	const labelMono = !member.email?.trim();
 	const labelClasses = `text-xs font-medium truncate ${labelMono ? "font-mono" : ""}`;
+	const asterisk =
+		pendingCount > 0 ? (
+			<span
+				aria-label={t(AdminStaffKeys.SCHEDULE_GRID_PENDING_ASTERISK_ARIA, {
+					count: pendingCount,
+				})}
+				className="text-yellow-600 dark:text-yellow-400 mr-1 select-none"
+			>
+				*
+			</span>
+		) : null;
 
 	return (
 		<>
@@ -173,6 +224,7 @@ function MemberRow({
 				role="rowheader"
 				className="sticky left-0 z-10 bg-background border-b border-border px-3 py-2 flex items-center min-w-0"
 			>
+				{asterisk}
 				{onOpenMemberDrawer ? (
 					<button
 						type="button"
@@ -188,6 +240,11 @@ function MemberRow({
 			</div>
 			{days.map((d) => {
 				const cellShifts = shiftsByMemberAndDay.get(`${member.memberId}|${d.ymd}`) ?? [];
+				const absenceState = absenceStateForDay(
+					d.ymd,
+					pendingDatesForMember,
+					approvedDatesForMember
+				);
 				return (
 					<div
 						key={`${member.memberId}-${d.ymd}`}
@@ -201,12 +258,23 @@ function MemberRow({
 							cellShifts={cellShifts}
 							onCreateShift={onCreateShift}
 							renderCell={renderCell}
+							absenceState={absenceState}
 						/>
 					</div>
 				);
 			})}
 		</>
 	);
+}
+
+function absenceStateForDay(
+	ymd: string,
+	pendingDatesForMember: ReadonlyMap<string, Doc<"absences">> | undefined,
+	approvedDatesForMember: ReadonlyMap<string, Doc<"absences">> | undefined
+): ChipAbsenceState | undefined {
+	if (pendingDatesForMember?.has(ymd)) return "pending";
+	if (approvedDatesForMember?.has(ymd)) return "approved";
+	return undefined;
 }
 
 interface DayCellContentProps {
@@ -216,6 +284,7 @@ interface DayCellContentProps {
 	readonly cellShifts: ScheduledShiftView[];
 	readonly onCreateShift?: (memberId: string, ymd: string) => void;
 	readonly renderCell: ScheduleWeekGridProps["children"];
+	readonly absenceState?: ChipAbsenceState;
 }
 
 function DayCellContent({
@@ -225,13 +294,14 @@ function DayCellContent({
 	cellShifts,
 	onCreateShift,
 	renderCell,
+	absenceState,
 }: Readonly<DayCellContentProps>) {
 	const { t } = useTranslation();
 
 	if (cellShifts.length > 0) {
 		return (
 			<div className="flex flex-col gap-1">
-				{renderCell({ day, member, shifts: cellShifts })}
+				{renderCell({ day, member, shifts: cellShifts, absenceState })}
 			</div>
 		);
 	}

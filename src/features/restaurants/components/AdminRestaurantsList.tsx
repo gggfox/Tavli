@@ -53,7 +53,20 @@ type ModalState =
 	| { kind: "edit"; restaurant: Doc<"restaurants"> }
 	| { kind: "confirmDelete"; restaurant: Doc<"restaurants"> };
 
-export function AdminRestaurantsList() {
+interface AdminRestaurantsListProps {
+	/**
+	 * The restaurant currently being managed (table editor expanded). When
+	 * set, only that one restaurant's card is rendered. Lifted to the route
+	 * so the route can drop the page header / action row from the layout.
+	 */
+	manageId?: Id<"restaurants"> | null;
+	onManageChange?: (next: Id<"restaurants"> | null) => void;
+}
+
+export function AdminRestaurantsList({
+	manageId,
+	onManageChange,
+}: Readonly<AdminRestaurantsListProps> = {}) {
 	const { t } = useTranslation();
 	const { isAuthenticated } = useConvexAuth();
 	const { setSelectedRestaurantId } = useRestaurant();
@@ -86,9 +99,20 @@ export function AdminRestaurantsList() {
 
 	const [showTrash, setShowTrash] = useState(false);
 	const [modal, setModal] = useState<ModalState>({ kind: "closed" });
-	const [expandedTablesId, setExpandedTablesId] = useState<Id<"restaurants"> | null>(
+	// `manageId` (the expanded "manage tables" view) is lifted to the route
+	// so it can swap the page layout. The list mirrors it here when no
+	// external controller wires up `onManageChange` (defensive fallback).
+	const [internalExpandedId, setInternalExpandedId] = useState<Id<"restaurants"> | null>(
 		null
 	);
+	const expandedTablesId = manageId !== undefined ? manageId : internalExpandedId;
+	const setExpandedTablesId = (next: Id<"restaurants"> | null) => {
+		if (onManageChange) {
+			onManageChange(next);
+		} else {
+			setInternalExpandedId(next);
+		}
+	};
 	const [error, setError] = useState<string | null>(null);
 
 	const { data: deletedRestaurants = [], isLoading: deletedLoading } = useQuery({
@@ -110,7 +134,7 @@ export function AdminRestaurantsList() {
 			)}
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 
-			{canManage && (
+			{canManage && expandedTablesId === null && (
 				<div className="flex flex-wrap justify-end gap-2">
 					<button
 						type="button"

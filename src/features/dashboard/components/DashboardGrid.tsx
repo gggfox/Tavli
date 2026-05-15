@@ -89,15 +89,14 @@ export function DashboardGrid({
 	);
 
 	return (
-		<div ref={containerRef} className="flex-1 min-h-0 w-full">
+		<div ref={containerRef} className="flex-1 min-h-0 w-full flex flex-col">
 			{config.widgets.length === 0 ? (
-				<div className="h-full flex items-center justify-center">
-					<EmptyState
-						icon={LayoutGrid}
-						title={t(DashboardKeys.WIDGET_EMPTY)}
-						description={t(DashboardKeys.EDIT_ADD_WIDGET)}
-					/>
-				</div>
+				<EmptyState
+					icon={LayoutGrid}
+					title={t(DashboardKeys.WIDGET_EMPTY)}
+					description={t(DashboardKeys.EDIT_ADD_WIDGET)}
+					fill
+				/>
 			) : (
 				width > 0 && (
 					<GridLayout

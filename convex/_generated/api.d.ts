@@ -63,6 +63,7 @@ import type * as sections from "../sections.js";
 import type * as sessions from "../sessions.js";
 import type * as shiftTemplates from "../shiftTemplates.js";
 import type * as shifts from "../shifts.js";
+import type * as softDeletePurge from "../softDeletePurge.js";
 import type * as stripe from "../stripe.js";
 import type * as stripeHelpers from "../stripeHelpers.js";
 import type * as tableLocks from "../tableLocks.js";
@@ -132,6 +133,7 @@ declare const fullApi: ApiFromModules<{
   sessions: typeof sessions;
   shiftTemplates: typeof shiftTemplates;
   shifts: typeof shifts;
+  softDeletePurge: typeof softDeletePurge;
   stripe: typeof stripe;
   stripeHelpers: typeof stripeHelpers;
   tableLocks: typeof tableLocks;

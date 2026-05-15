@@ -1,4 +1,4 @@
-import { InlineError, TextInput } from "@/global/components";
+import { InlineError, Modal, TextInput } from "@/global/components";
 import { RestaurantsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
@@ -28,10 +28,13 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	Check,
+	Eye,
+	EyeOff,
 	GripVertical,
 	MoreVertical,
 	Pencil,
 	Plus,
+	RotateCcw,
 	ToggleLeft,
 	ToggleRight,
 	Trash2,
@@ -73,6 +76,16 @@ function gridColumnsForCount(count: number): 1 | 2 | 3 {
 	return 3;
 }
 
+function formatRemaining(ms: number): string {
+	if (ms <= 0) return "0m";
+	const totalMinutes = Math.floor(ms / 60_000);
+	if (totalMinutes < 60) return `${totalMinutes}m`;
+	const hours = Math.floor(totalMinutes / 60);
+	if (hours < 48) return `${hours}h`;
+	const days = Math.floor(hours / 24);
+	return `${days}d`;
+}
+
 export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const { t } = useTranslation();
 	const { data: tables } = useQuery(
@@ -82,20 +95,35 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		convexQuery(api.sections.getByRestaurant, { restaurantId })
 	);
 
+	const [showTrash, setShowTrash] = useState(false);
+	const { data: deletedTables = [] } = useQuery({
+		...convexQuery(api.tables.getDeletedForRestaurant, { restaurantId }),
+		enabled: showTrash,
+	});
+	const { data: deletedSections = [] } = useQuery({
+		...convexQuery(api.sections.getDeletedForRestaurant, { restaurantId }),
+		enabled: showTrash,
+	});
+
 	const createTable = useMutation({ mutationFn: useConvexMutation(api.tables.create) });
 	const updateTable = useMutation({ mutationFn: useConvexMutation(api.tables.update) });
 	const toggleActive = useMutation({ mutationFn: useConvexMutation(api.tables.toggleActive) });
 	const removeTable = useMutation({ mutationFn: useConvexMutation(api.tables.remove) });
+	const restoreTable = useMutation({ mutationFn: useConvexMutation(api.tables.restore) });
 
 	const createSection = useMutation({ mutationFn: useConvexMutation(api.sections.create) });
 	const updateSection = useMutation({ mutationFn: useConvexMutation(api.sections.update) });
 	const removeSection = useMutation({ mutationFn: useConvexMutation(api.sections.remove) });
+	const restoreSection = useMutation({ mutationFn: useConvexMutation(api.sections.restore) });
 	const assignTableSection = useMutation({
 		mutationFn: useConvexMutation(api.sections.assignTable),
 	});
 
 	const [editingId, setEditingId] = useState<Id<"tables"> | null>(null);
 	const [editingSectionId, setEditingSectionId] = useState<Id<"sections"> | null>(null);
+	const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<
+		Id<"sections"> | null
+	>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [showInactive, setShowInactive] = useState(false);
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -145,7 +173,6 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 			const s = byId.get(id);
 			if (s) ordered.push(s);
 		}
-		// Append any sections not yet in the override (e.g. just-created).
 		for (const s of sectionsList) {
 			if (!sectionOrderOverride.includes(s._id)) ordered.push(s);
 		}
@@ -159,30 +186,6 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		},
 		[t]
 	);
-
-	const editForm = useForm({
-		defaultValues: { editNumber: "", editLabel: "", editCapacity: "" },
-		onSubmit: async ({ value }) => {
-			if (!editingId) return;
-			clearError();
-			const num = Number.parseInt(value.editNumber, 10);
-			if (Number.isNaN(num)) return;
-			const cap = Number.parseInt(value.editCapacity, 10);
-			try {
-				unwrapResult(
-					await updateTable.mutateAsync({
-						tableId: editingId,
-						tableNumber: num,
-						label: value.editLabel || undefined,
-						capacity: Number.isNaN(cap) ? undefined : cap,
-					})
-				);
-				cancelEdit();
-			} catch (err) {
-				setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_UPDATE_FAILED));
-			}
-		},
-	});
 
 	const newSectionForm = useForm({
 		defaultValues: { name: "" },
@@ -202,93 +205,12 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		},
 	});
 
-	const renameSectionForm = useForm({
-		defaultValues: { name: "" },
-		onSubmit: async ({ value }) => {
-			if (!editingSectionId) return;
-			clearError();
-			try {
-				unwrapResult(
-					await updateSection.mutateAsync({
-						sectionId: editingSectionId,
-						name: value.name,
-					})
-				);
-				setEditingSectionId(null);
-				renameSectionForm.reset();
-			} catch (err) {
-				setError(err instanceof Error ? err.message : t(RestaurantsKeys.SECTIONS_UPDATE_FAILED));
-			}
-		},
-	});
-
-	const newTableForm = useForm({
-		defaultValues: {
-			tableNumber: "",
-			label: "",
-			capacity: "",
-			sectionId: "",
-		},
-		onSubmit: async ({ value }) => {
-			clearError();
-			const num = Number.parseInt(value.tableNumber, 10);
-			if (Number.isNaN(num) || num < 1) return;
-			const cap = Number.parseInt(value.capacity, 10);
-			const sectionId =
-				value.sectionId.length > 0
-					? (value.sectionId as Id<"sections">)
-					: undefined;
-			try {
-				unwrapResult(
-					await createTable.mutateAsync({
-						restaurantId,
-						tableNumber: num,
-						label: value.label || undefined,
-						capacity: Number.isNaN(cap) ? DEFAULT_CAPACITY : cap,
-						sectionId,
-					})
-				);
-				newTableForm.reset();
-			} catch (err) {
-				setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_CREATE_FAILED));
-			}
-		},
-	});
-
-	const startEdit = (
-		tableId: Id<"tables">,
-		tableNumber: number,
-		label?: string,
-		capacity?: number
-	) => {
-		clearError();
-		setEditingId(tableId);
-		setOpenKebab(null);
-		editForm.reset({
-			editNumber: String(tableNumber),
-			editLabel: label ?? "",
-			editCapacity: capacity !== undefined ? String(capacity) : "",
-		});
-		editForm.setFieldValue("editNumber", String(tableNumber));
-		editForm.setFieldValue("editLabel", label ?? "");
-		editForm.setFieldValue("editCapacity", capacity !== undefined ? String(capacity) : "");
-	};
-
 	const cancelEdit = () => {
 		setEditingId(null);
-		editForm.reset();
-	};
-
-	const startSectionEdit = (section: Doc<"sections">) => {
-		clearError();
-		setEditingSectionId(section._id);
-		renameSectionForm.reset({ name: section.name ?? "" });
-		renameSectionForm.setFieldValue("name", section.name ?? "");
 	};
 
 	const cancelSectionEdit = () => {
 		setEditingSectionId(null);
-		renameSectionForm.reset();
 	};
 
 	const handleToggleActive = async (tableId: Id<"tables">) => {
@@ -309,12 +231,81 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		}
 	};
 
-	const handleRemoveSection = async (sectionId: Id<"sections">) => {
+	const handleRestoreTable = async (tableId: Id<"tables">) => {
 		clearError();
+		try {
+			unwrapResult(await restoreTable.mutateAsync({ tableId }));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_RESTORE_FAILED));
+		}
+	};
+
+	const handleConfirmDeleteSection = async () => {
+		if (!confirmDeleteSectionId) return;
+		clearError();
+		const sectionId = confirmDeleteSectionId;
+		setConfirmDeleteSectionId(null);
 		try {
 			unwrapResult(await removeSection.mutateAsync({ sectionId }));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : t(RestaurantsKeys.SECTIONS_REMOVE_FAILED));
+		}
+	};
+
+	const handleRestoreSection = async (sectionId: Id<"sections">) => {
+		clearError();
+		try {
+			unwrapResult(await restoreSection.mutateAsync({ sectionId }));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.SECTIONS_RESTORE_FAILED));
+		}
+	};
+
+	const handleSectionHiddenToggle = async (section: Doc<"sections">) => {
+		clearError();
+		try {
+			unwrapResult(
+				await updateSection.mutateAsync({
+					sectionId: section._id,
+					isActive: section.isActive === false,
+				})
+			);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.SECTIONS_UPDATE_FAILED));
+		}
+	};
+
+	const handleSectionRename = async (sectionId: Id<"sections">, nextName: string) => {
+		clearError();
+		try {
+			unwrapResult(
+				await updateSection.mutateAsync({
+					sectionId,
+					name: nextName,
+				})
+			);
+			setEditingSectionId(null);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.SECTIONS_UPDATE_FAILED));
+		}
+	};
+
+	const handleTableEdit = async (
+		tableId: Id<"tables">,
+		next: { tableNumber: number; capacity: number | undefined }
+	) => {
+		clearError();
+		try {
+			unwrapResult(
+				await updateTable.mutateAsync({
+					tableId,
+					tableNumber: next.tableNumber,
+					capacity: next.capacity,
+				})
+			);
+			cancelEdit();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_UPDATE_FAILED));
 		}
 	};
 
@@ -395,6 +386,33 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		[tables]
 	);
 
+	const confirmDeleteSection = useMemo(
+		() =>
+			confirmDeleteSectionId
+				? sectionsList.find((s) => s._id === confirmDeleteSectionId)
+				: undefined,
+		[confirmDeleteSectionId, sectionsList]
+	);
+	const confirmDeleteTablesCount = useMemo(
+		() =>
+			confirmDeleteSectionId
+				? (tablesBySection.byId.get(confirmDeleteSectionId) ?? []).length
+				: 0,
+		[confirmDeleteSectionId, tablesBySection]
+	);
+
+	const confirmDeleteBody = useMemo(() => {
+		if (confirmDeleteTablesCount === 0) {
+			return t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_BODY_EMPTY);
+		}
+		if (confirmDeleteTablesCount === 1) {
+			return t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_BODY_ONE);
+		}
+		return t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_BODY_OTHER, {
+			count: confirmDeleteTablesCount,
+		});
+	}, [confirmDeleteTablesCount, t]);
+
 	const sensors = useSensors(
 		useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
 		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -449,77 +467,21 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		}
 	};
 
-	const renderTableEditableRow = (table: Doc<"tables">) => (
-		<div
-			className="flex flex-wrap items-center gap-2 flex-1 mr-3"
-			key={`${table._id}-edit`}
-		>
-			<editForm.Field
-				name="editNumber"
-				children={(field) => (
-					<TextInput
-						type="number"
-						value={field.state.value}
-						onChange={(e) => field.handleChange(e.target.value)}
-						onBlur={field.handleBlur}
-						min={1}
-						className="w-20"
-					/>
-				)}
-			/>
-			<editForm.Field
-				name="editLabel"
-				children={(field) => (
-					<TextInput
-						type="text"
-						value={field.state.value}
-						onChange={(e) => field.handleChange(e.target.value)}
-						onBlur={field.handleBlur}
-						placeholder={t(RestaurantsKeys.TABLES_LABEL_LABEL)}
-						className="w-32"
-					/>
-				)}
-			/>
-			<editForm.Field
-				name="editCapacity"
-				children={(field) => (
-					<TextInput
-						type="number"
-						value={field.state.value}
-						onChange={(e) => field.handleChange(e.target.value)}
-						onBlur={field.handleBlur}
-						placeholder={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
-						min={1}
-						className="w-20"
-					/>
-				)}
-			/>
-			<button
-				onClick={() => editForm.handleSubmit()}
-				className="p-1.5 rounded-md hover:bg-hover text-success"
-				title={t(RestaurantsKeys.TABLES_SAVE)}
-			>
-				<Check size={16} />
-			</button>
-			<button
-				onClick={cancelEdit}
-				className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
-				title={t(RestaurantsKeys.TABLES_CANCEL)}
-			>
-				<X size={16} />
-			</button>
-		</div>
-	);
-
 	const renderTableRow = (table: Doc<"tables">) => {
 		if (editingId === table._id) {
 			return (
-				<div
+				<TableEditRow
 					key={table._id}
-					className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
-				>
-					{renderTableEditableRow(table)}
-				</div>
+					table={table}
+					onSubmit={(next) => handleTableEdit(table._id, next)}
+					onCancel={cancelEdit}
+					labels={{
+						numberLabel: t(RestaurantsKeys.TABLES_NUMBER_LABEL),
+						seatsLabel: t(RestaurantsKeys.TABLES_SEATS_LABEL),
+						save: t(RestaurantsKeys.TABLES_SAVE),
+						cancel: t(RestaurantsKeys.TABLES_CANCEL),
+					}}
+				/>
 			);
 		}
 		return (
@@ -530,7 +492,11 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				sectionsList={sectionsList}
 				sectionLabel={sectionLabel}
 				onAssignSection={handleMoveTableToSection}
-				onStartEdit={() => startEdit(table._id, table.tableNumber, table.label, table.capacity)}
+				onStartEdit={() => {
+					clearError();
+					setEditingId(table._id);
+					setOpenKebab(null);
+				}}
 				onToggleActive={() => handleToggleActive(table._id)}
 				onRemove={() => handleRemoveTable(table._id)}
 				isKebabOpen={openKebab === table._id}
@@ -585,22 +551,6 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		return null;
 	}, [activeDragId, tables, orderedSections, tablesBySection, sectionLabel, t]);
 
-	const renameInput = (
-		<renameSectionForm.Field
-			name="name"
-			children={(field) => (
-				<TextInput
-					type="text"
-					value={field.state.value}
-					onChange={(e) => field.handleChange(e.target.value)}
-					onBlur={field.handleBlur}
-					placeholder={t(RestaurantsKeys.SECTIONS_RENAME_PLACEHOLDER)}
-					className="w-full"
-				/>
-			)}
-		/>
-	);
-
 	return (
 		<DndContext
 			sensors={sensors}
@@ -651,99 +601,23 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 							{t(RestaurantsKeys.SECTIONS_ADD)}
 						</button>
 					</form>
-					<form
-						onSubmit={(e) => {
-							e.preventDefault();
-							e.stopPropagation();
-							newTableForm.handleSubmit();
+					<NewTableForm
+						restaurantId={restaurantId}
+						nextTableNumber={nextTableNumber}
+						sections={orderedSections}
+						sectionLabel={sectionLabel}
+						onCreate={async (input) => {
+							clearError();
+							try {
+								unwrapResult(await createTable.mutateAsync(input));
+							} catch (err) {
+								setError(
+									err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_CREATE_FAILED)
+								);
+								throw err;
+							}
 						}}
-						className="flex gap-2 items-end flex-wrap"
-					>
-						<newTableForm.Field
-							name="tableNumber"
-							children={(field) => (
-								<TextInput
-									type="number"
-									label={t(RestaurantsKeys.TABLES_NUMBER_LABEL)}
-									value={field.state.value}
-									onChange={(e) => field.handleChange(e.target.value)}
-									onBlur={field.handleBlur}
-									min={1}
-									required
-									placeholder={String(nextTableNumber)}
-									className="w-24"
-								/>
-							)}
-						/>
-						<newTableForm.Field
-							name="label"
-							children={(field) => (
-								<TextInput
-									type="text"
-									label={t(RestaurantsKeys.TABLES_LABEL_LABEL)}
-									value={field.state.value}
-									onChange={(e) => field.handleChange(e.target.value)}
-									onBlur={field.handleBlur}
-									placeholder={t(RestaurantsKeys.TABLES_LABEL_PLACEHOLDER)}
-									className="w-40"
-								/>
-							)}
-						/>
-						<newTableForm.Field
-							name="capacity"
-							children={(field) => (
-								<TextInput
-									type="number"
-									label={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
-									value={field.state.value}
-									onChange={(e) => field.handleChange(e.target.value)}
-									onBlur={field.handleBlur}
-									min={1}
-									placeholder={String(DEFAULT_CAPACITY)}
-									className="w-24"
-								/>
-							)}
-						/>
-						<newTableForm.Field
-							name="sectionId"
-							children={(field) => (
-								<div>
-									<label
-										htmlFor="new-table-section"
-										className="block text-xs font-medium mb-1 text-muted-foreground"
-									>
-										{t(RestaurantsKeys.TABLES_SECTION_LABEL)}
-									</label>
-									<select
-										id="new-table-section"
-										value={field.state.value}
-										onChange={(e) => field.handleChange(e.target.value)}
-										onBlur={field.handleBlur}
-										className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-									>
-										{orderedSections.length === 0 ? (
-											<option value="">
-												{t(RestaurantsKeys.SECTIONS_AUTO_CREATE_PLACEHOLDER)}
-											</option>
-										) : (
-											orderedSections.map((s, idx) => (
-												<option key={s._id} value={s._id}>
-													{sectionLabel(s, idx)}
-												</option>
-											))
-										)}
-									</select>
-								</div>
-							)}
-						/>
-						<button
-							type="submit"
-							className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-						>
-							<Plus size={16} />
-							{t(RestaurantsKeys.TABLES_ADD)}
-						</button>
-					</form>
+					/>
 				</div>
 
 				<div className={gridClass}>
@@ -754,35 +628,47 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 						{orderedSections.map((section, idx) => {
 							const tablesInSection = tablesBySection.byId.get(section._id) ?? [];
 							const filtered = tablesInSection.filter((tt) => showInactive || tt.isActive);
+							const fallbackLabel = sectionLabel(section, idx);
 							return (
 								<SectionCard
 									key={section._id}
 									section={section}
 									isEditing={editingSectionId === section._id}
-									renameInput={renameInput}
+									initialRenameValue={
+										section.name && section.name.length > 0
+											? section.name
+											: fallbackLabel
+									}
 									tables={filtered}
 									isDraggingTable={isDraggingTable}
-									sectionLabel={sectionLabel(section, idx)}
+									sectionLabel={fallbackLabel}
 									translations={{
 										tableCount: t(RestaurantsKeys.SECTIONS_TABLE_COUNT_SHORT, {
 											count: tablesInSection.length,
 										}),
 										dropHere: t(RestaurantsKeys.TABLES_DROP_HERE),
 										renameTitle: t(RestaurantsKeys.SECTIONS_RENAME_TITLE),
-										deleteTitle:
-											tablesInSection.length > 0
-												? t(RestaurantsKeys.SECTIONS_NON_EMPTY_DELETE_TOOLTIP)
-												: t(RestaurantsKeys.SECTIONS_DELETE_TITLE),
+										deleteTitle: t(RestaurantsKeys.SECTIONS_DELETE_TITLE),
 										save: t(RestaurantsKeys.TABLES_SAVE),
 										cancel: t(RestaurantsKeys.TABLES_CANCEL),
 										dragHandle: t(RestaurantsKeys.SECTIONS_DRAG_HANDLE),
+										renamePlaceholder: t(RestaurantsKeys.SECTIONS_RENAME_PLACEHOLDER),
+										hideTitle: t(RestaurantsKeys.SECTIONS_HIDE_TITLE),
+										showTitle: t(RestaurantsKeys.SECTIONS_SHOW_TITLE),
+										hiddenBadge: t(RestaurantsKeys.SECTIONS_HIDDEN_BADGE),
 									}}
-									onStartRename={() => startSectionEdit(section)}
+									onStartRename={() => {
+										clearError();
+										setEditingSectionId(section._id);
+									}}
 									onCancelRename={cancelSectionEdit}
-									onSubmitRename={() => renameSectionForm.handleSubmit()}
-									onRemove={() => handleRemoveSection(section._id)}
+									onSubmitRename={(name) => handleSectionRename(section._id, name)}
+									onRemove={() => {
+										clearError();
+										setConfirmDeleteSectionId(section._id);
+									}}
+									onToggleHidden={() => handleSectionHiddenToggle(section)}
 									renderTableRow={renderTableRow}
-									deleteDisabled={tablesInSection.length > 0}
 								/>
 							);
 						})}
@@ -808,6 +694,16 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					</p>
 				)}
 
+				<TrashPanel
+					show={showTrash}
+					onToggle={() => setShowTrash((v) => !v)}
+					deletedSections={deletedSections}
+					deletedTables={deletedTables}
+					onRestoreSection={handleRestoreSection}
+					onRestoreTable={handleRestoreTable}
+					sectionLabel={sectionLabel}
+				/>
+
 				{inactiveCount > 0 && (
 					<div className="sticky bottom-0 z-10 -mx-6 px-6 py-3 bg-background border-t border-border flex justify-end">
 						<button
@@ -822,15 +718,256 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					</div>
 				)}
 			</div>
+
+			<Modal
+				isOpen={confirmDeleteSection !== undefined}
+				onClose={() => setConfirmDeleteSectionId(null)}
+				ariaLabel={t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_HEADING)}
+				size="md"
+			>
+				{confirmDeleteSection && (
+					<div className="p-6 rounded-xl bg-background border border-border">
+						<div className="flex items-center justify-between mb-4">
+							<h2 className="text-lg font-semibold text-foreground">
+								{t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_HEADING)}
+							</h2>
+							<button
+								type="button"
+								onClick={() => setConfirmDeleteSectionId(null)}
+								className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+							>
+								<X size={20} />
+							</button>
+						</div>
+						<p className="text-sm text-muted-foreground mb-2">
+							{confirmDeleteSection.name ??
+								t(RestaurantsKeys.SECTIONS_UNNAMED, {
+									number:
+										orderedSections.findIndex(
+											(s) => s._id === confirmDeleteSection._id
+										) + 1,
+								})}
+						</p>
+						<p className="text-sm text-foreground mb-6">{confirmDeleteBody}</p>
+						<div className="flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => setConfirmDeleteSectionId(null)}
+								className="px-4 py-2 rounded-lg text-sm font-medium border border-border hover:bg-hover"
+							>
+								{t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_CANCEL)}
+							</button>
+							<button
+								type="button"
+								onClick={handleConfirmDeleteSection}
+								className="px-4 py-2 rounded-lg text-sm font-medium bg-destructive text-destructive-foreground hover:opacity-90"
+							>
+								{t(RestaurantsKeys.SECTIONS_CONFIRM_DELETE_CONFIRM)}
+							</button>
+						</div>
+					</div>
+				)}
+			</Modal>
+
 			<DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
 		</DndContext>
+	);
+}
+
+interface NewTableFormProps {
+	restaurantId: Id<"restaurants">;
+	nextTableNumber: number;
+	sections: readonly Doc<"sections">[];
+	sectionLabel: (s: Doc<"sections">, idx: number) => string;
+	onCreate: (input: {
+		restaurantId: Id<"restaurants">;
+		tableNumber: number;
+		capacity: number;
+		sectionId?: Id<"sections">;
+	}) => Promise<void>;
+}
+
+/**
+ * "Add table" form. The table number defaults to the next available integer
+ * (max(tableNumber) + 1) and stays in sync as new tables are added, so a
+ * single click on the Add button just works without any user typing.
+ */
+function NewTableForm({
+	restaurantId,
+	nextTableNumber,
+	sections,
+	sectionLabel,
+	onCreate,
+}: Readonly<NewTableFormProps>) {
+	const { t } = useTranslation();
+	const [tableNumberRaw, setTableNumberRaw] = useState<string>(String(nextTableNumber));
+	const [capacityRaw, setCapacityRaw] = useState<string>("");
+	const [sectionId, setSectionId] = useState<string>("");
+	// Track whether the user has typed into the number field. While untouched,
+	// keep it in sync with `nextTableNumber` so adding tables in a row stays
+	// frictionless.
+	const userTouchedNumberRef = useRef(false);
+
+	useEffect(() => {
+		if (!userTouchedNumberRef.current) {
+			setTableNumberRaw(String(nextTableNumber));
+		}
+	}, [nextTableNumber]);
+
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const num = Number.parseInt(tableNumberRaw, 10);
+		if (Number.isNaN(num) || num < 1) return;
+		const cap = Number.parseInt(capacityRaw, 10);
+		try {
+			await onCreate({
+				restaurantId,
+				tableNumber: num,
+				capacity: Number.isNaN(cap) ? DEFAULT_CAPACITY : cap,
+				sectionId: sectionId.length > 0 ? (sectionId as Id<"sections">) : undefined,
+			});
+			setCapacityRaw("");
+			setSectionId("");
+			userTouchedNumberRef.current = false;
+		} catch {
+			// onCreate already surfaced the error in the parent.
+		}
+	};
+
+	return (
+		<form onSubmit={handleSubmit} className="flex gap-2 items-end flex-wrap">
+			<TextInput
+				type="number"
+				label={t(RestaurantsKeys.TABLES_NUMBER_LABEL)}
+				value={tableNumberRaw}
+				onChange={(e) => {
+					userTouchedNumberRef.current = true;
+					setTableNumberRaw(e.target.value);
+				}}
+				min={1}
+				className="w-24"
+			/>
+			<TextInput
+				type="number"
+				label={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
+				value={capacityRaw}
+				onChange={(e) => setCapacityRaw(e.target.value)}
+				min={1}
+				placeholder={String(DEFAULT_CAPACITY)}
+				className="w-24"
+			/>
+			<div>
+				<label
+					htmlFor="new-table-section"
+					className="block text-xs font-medium mb-1 text-muted-foreground"
+				>
+					{t(RestaurantsKeys.TABLES_SECTION_LABEL)}
+				</label>
+				<select
+					id="new-table-section"
+					value={sectionId}
+					onChange={(e) => setSectionId(e.target.value)}
+					className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+				>
+					{sections.length === 0 ? (
+						<option value="">{t(RestaurantsKeys.SECTIONS_AUTO_CREATE_PLACEHOLDER)}</option>
+					) : (
+						sections.map((s, idx) => (
+							<option key={s._id} value={s._id}>
+								{sectionLabel(s, idx)}
+							</option>
+						))
+					)}
+				</select>
+			</div>
+			<button
+				type="submit"
+				className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+			>
+				<Plus size={16} />
+				{t(RestaurantsKeys.TABLES_ADD)}
+			</button>
+		</form>
+	);
+}
+
+interface TableEditRowProps {
+	table: Doc<"tables">;
+	onSubmit: (next: { tableNumber: number; capacity: number | undefined }) => void;
+	onCancel: () => void;
+	labels: {
+		numberLabel: string;
+		seatsLabel: string;
+		save: string;
+		cancel: string;
+	};
+}
+
+/**
+ * Inline editor for a single table row. Mounted only while editing this
+ * table; the parent uses the table id as the key so each invocation starts
+ * from fresh local state pre-filled with the row's current values.
+ */
+function TableEditRow({ table, onSubmit, onCancel, labels }: Readonly<TableEditRowProps>) {
+	const [numberRaw, setNumberRaw] = useState<string>(String(table.tableNumber));
+	const [capacityRaw, setCapacityRaw] = useState<string>(
+		table.capacity !== undefined ? String(table.capacity) : ""
+	);
+
+	const submit = () => {
+		const num = Number.parseInt(numberRaw, 10);
+		if (Number.isNaN(num)) return;
+		const cap = Number.parseInt(capacityRaw, 10);
+		onSubmit({
+			tableNumber: num,
+			capacity: Number.isNaN(cap) ? undefined : cap,
+		});
+	};
+
+	return (
+		<div className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border">
+			<div className="flex flex-wrap items-center gap-2 flex-1 mr-3">
+				<TextInput
+					type="number"
+					value={numberRaw}
+					onChange={(e) => setNumberRaw(e.target.value)}
+					min={1}
+					className="w-20"
+					aria-label={labels.numberLabel}
+				/>
+				<TextInput
+					type="number"
+					value={capacityRaw}
+					onChange={(e) => setCapacityRaw(e.target.value)}
+					placeholder={labels.seatsLabel}
+					min={1}
+					className="w-20"
+					aria-label={labels.seatsLabel}
+				/>
+				<button
+					onClick={submit}
+					className="p-1.5 rounded-md hover:bg-hover text-success"
+					title={labels.save}
+				>
+					<Check size={16} />
+				</button>
+				<button
+					onClick={onCancel}
+					className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+					title={labels.cancel}
+				>
+					<X size={16} />
+				</button>
+			</div>
+		</div>
 	);
 }
 
 interface SectionCardProps {
 	section: Doc<"sections">;
 	isEditing: boolean;
-	renameInput: ReactNode;
+	initialRenameValue: string;
 	tables: Doc<"tables">[];
 	isDraggingTable: boolean;
 	sectionLabel: string;
@@ -842,20 +979,24 @@ interface SectionCardProps {
 		save: string;
 		cancel: string;
 		dragHandle: string;
+		renamePlaceholder: string;
+		hideTitle: string;
+		showTitle: string;
+		hiddenBadge: string;
 	};
 	onStartRename: () => void;
 	onCancelRename: () => void;
-	onSubmitRename: () => void;
+	onSubmitRename: (name: string) => void;
 	onRemove: () => void;
+	onToggleHidden: () => void;
 	renderTableRow: (table: Doc<"tables">) => ReactElement;
-	deleteDisabled: boolean;
 }
 
 function SectionCard(props: Readonly<SectionCardProps>) {
 	const {
 		section,
 		isEditing,
-		renameInput,
+		initialRenameValue,
 		tables,
 		isDraggingTable,
 		sectionLabel,
@@ -864,8 +1005,8 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 		onCancelRename,
 		onSubmitRename,
 		onRemove,
+		onToggleHidden,
 		renderTableRow,
-		deleteDisabled,
 	} = props;
 
 	const sortableId = `${SECTION_DRAG_PREFIX}:${section._id}`;
@@ -884,12 +1025,57 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 	const outlineClass = isOverForTable
 		? "border-2 border-dashed border-primary"
 		: "border-2 border-dashed border-border";
+	const isHidden = section.isActive === false;
+
+	if (isHidden) {
+		return (
+			<div
+				ref={sortable.setNodeRef}
+				style={style}
+				className={`rounded-xl ${outlineClass} bg-background/40 p-3 flex items-center gap-2 min-w-0 opacity-75`}
+			>
+				<button
+					type="button"
+					className="p-1 rounded text-faint-foreground hover:text-foreground hover:bg-hover cursor-grab active:cursor-grabbing touch-none shrink-0"
+					title={translations.dragHandle}
+					aria-label={translations.dragHandle}
+					{...sortable.attributes}
+					{...sortable.listeners}
+				>
+					<GripVertical size={16} />
+				</button>
+				<h4
+					className="text-sm font-medium text-faint-foreground truncate min-w-0"
+					title={sectionLabel}
+				>
+					{sectionLabel}
+				</h4>
+				<span className="text-xs text-faint-foreground shrink-0">
+					{translations.tableCount}
+				</span>
+				<span className="text-xs px-1.5 py-0.5 rounded-md bg-muted text-faint-foreground shrink-0">
+					{translations.hiddenBadge}
+				</span>
+				<div className="ml-auto flex items-center gap-1 shrink-0">
+					<button
+						type="button"
+						onClick={onToggleHidden}
+						className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+						title={translations.showTitle}
+						aria-label={translations.showTitle}
+					>
+						<EyeOff size={14} />
+					</button>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div
 			ref={sortable.setNodeRef}
 			style={style}
-			className={`rounded-xl ${outlineClass} bg-background/50 p-3 space-y-3`}
+			className={`rounded-xl ${outlineClass} bg-background/50 p-3 flex flex-col gap-3`}
 		>
 			<div className="flex items-center gap-2 min-w-0">
 				<button
@@ -903,23 +1089,15 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 					<GripVertical size={16} />
 				</button>
 				{isEditing ? (
-					<div className="flex items-center gap-2 flex-1 min-w-0">
-						{renameInput}
-						<button
-							onClick={onSubmitRename}
-							className="p-1.5 rounded-md hover:bg-hover text-success shrink-0"
-							title={translations.save}
-						>
-							<Check size={16} />
-						</button>
-						<button
-							onClick={onCancelRename}
-							className="p-1.5 rounded-md hover:bg-hover text-faint-foreground shrink-0"
-							title={translations.cancel}
-						>
-							<X size={16} />
-						</button>
-					</div>
+					<SectionRenameInline
+						key={`rename-${section._id}`}
+						initialValue={initialRenameValue}
+						placeholder={translations.renamePlaceholder}
+						saveLabel={translations.save}
+						cancelLabel={translations.cancel}
+						onSubmit={onSubmitRename}
+						onCancel={onCancelRename}
+					/>
 				) : (
 					<>
 						<h4
@@ -933,6 +1111,14 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 						</span>
 						<div className="ml-auto flex items-center gap-1 shrink-0">
 							<button
+								onClick={onToggleHidden}
+								className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+								title={translations.hideTitle}
+								aria-label={translations.hideTitle}
+							>
+								<Eye size={14} />
+							</button>
+							<button
 								onClick={onStartRename}
 								className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
 								title={translations.renameTitle}
@@ -941,9 +1127,8 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 							</button>
 							<button
 								onClick={onRemove}
-								className="p-1.5 rounded-md hover:bg-hover text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
+								className="p-1.5 rounded-md hover:bg-hover text-destructive"
 								title={translations.deleteTitle}
-								disabled={deleteDisabled}
 							>
 								<Trash2 size={14} />
 							</button>
@@ -954,12 +1139,12 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 
 			<div
 				ref={dropTarget.setNodeRef}
-				className="space-y-2 min-h-12"
+				className="flex-1 flex flex-col gap-2"
 				aria-label={section.name ?? sectionLabel}
 			>
 				{tables.length === 0 ? (
 					<div
-						className={`px-4 py-6 rounded-lg text-center text-xs border border-dashed ${
+						className={`flex-1 flex items-center justify-center rounded-lg text-center text-xs border border-dashed ${
 							isOverForTable
 								? "border-primary text-primary"
 								: "border-border/60 text-faint-foreground"
@@ -971,6 +1156,215 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 					tables.map((table) => renderTableRow(table))
 				)}
 			</div>
+		</div>
+	);
+}
+
+interface SectionRenameInlineProps {
+	initialValue: string;
+	placeholder: string;
+	saveLabel: string;
+	cancelLabel: string;
+	onSubmit: (name: string) => void;
+	onCancel: () => void;
+}
+
+/**
+ * Inline section rename input. Owns its own local state, mounted only while
+ * editing (parent passes a key tied to the section id), so each session starts
+ * pre-filled with the section's displayed label.
+ */
+function SectionRenameInline({
+	initialValue,
+	placeholder,
+	saveLabel,
+	cancelLabel,
+	onSubmit,
+	onCancel,
+}: Readonly<SectionRenameInlineProps>) {
+	const [value, setValue] = useState(initialValue);
+	return (
+		<div className="flex items-center gap-2 flex-1 min-w-0">
+			<TextInput
+				type="text"
+				value={value}
+				onChange={(e) => setValue(e.target.value)}
+				placeholder={placeholder}
+				className="w-full"
+				autoFocus
+				onKeyDown={(e) => {
+					if (e.key === "Enter") {
+						e.preventDefault();
+						onSubmit(value);
+					} else if (e.key === "Escape") {
+						e.preventDefault();
+						onCancel();
+					}
+				}}
+			/>
+			<button
+				onClick={() => onSubmit(value)}
+				className="p-1.5 rounded-md hover:bg-hover text-success shrink-0"
+				title={saveLabel}
+				type="button"
+			>
+				<Check size={16} />
+			</button>
+			<button
+				onClick={onCancel}
+				className="p-1.5 rounded-md hover:bg-hover text-faint-foreground shrink-0"
+				title={cancelLabel}
+				type="button"
+			>
+				<X size={16} />
+			</button>
+		</div>
+	);
+}
+
+interface TrashPanelProps {
+	show: boolean;
+	onToggle: () => void;
+	deletedSections: Doc<"sections">[];
+	deletedTables: Doc<"tables">[];
+	onRestoreSection: (id: Id<"sections">) => void;
+	onRestoreTable: (id: Id<"tables">) => void;
+	sectionLabel: (s: Doc<"sections">, idx: number) => string;
+}
+
+function TrashPanel({
+	show,
+	onToggle,
+	deletedSections,
+	deletedTables,
+	onRestoreSection,
+	onRestoreTable,
+	sectionLabel,
+}: Readonly<TrashPanelProps>) {
+	const { t } = useTranslation();
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (!show) return;
+		const interval = setInterval(() => setNow(Date.now()), 60_000);
+		return () => clearInterval(interval);
+	}, [show]);
+
+	const hasDeleted = deletedSections.length > 0 || deletedTables.length > 0;
+	// Tables soft-deleted as part of a section cascade are grouped under the
+	// parent section row instead of getting their own row; only standalone
+	// table deletes appear here.
+	const independentlyDeletedTables = useMemo(
+		() => deletedTables.filter((tb) => tb.softDeleteParentSectionId === undefined),
+		[deletedTables]
+	);
+
+	return (
+		<div className="space-y-3">
+			<div className="flex justify-end">
+				<button
+					type="button"
+					onClick={onToggle}
+					className="text-xs px-3 py-1.5 rounded-md border border-border hover:bg-hover text-faint-foreground"
+				>
+					{show
+						? t(RestaurantsKeys.TABLES_HIDE_RECENTLY_DELETED)
+						: t(RestaurantsKeys.TABLES_SHOW_RECENTLY_DELETED)}
+				</button>
+			</div>
+			{show && (
+				<div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
+					{!hasDeleted ? (
+						<p className="text-xs text-faint-foreground">
+							{t(RestaurantsKeys.TABLES_TRASH_EMPTY)}
+						</p>
+					) : (
+						<>
+							{deletedSections.map((section, idx) => {
+								const childTables = deletedTables.filter(
+									(tb) => tb.softDeleteParentSectionId === section._id
+								);
+								return (
+									<TrashRow
+										key={section._id}
+										title={sectionLabel(section, idx)}
+										subtitle={t(RestaurantsKeys.SECTIONS_TABLE_COUNT_SHORT, {
+											count: childTables.length,
+										})}
+										purgesInLabel={
+											section.hardDeleteAfterAt
+												? t(RestaurantsKeys.SECTIONS_PURGES_IN, {
+														time: formatRemaining(section.hardDeleteAfterAt - now),
+												  })
+												: ""
+										}
+										restoreLabel={t(RestaurantsKeys.SECTIONS_RESTORE)}
+										onRestore={() => onRestoreSection(section._id)}
+									/>
+								);
+							})}
+							{independentlyDeletedTables.map((table) => (
+								<TrashRow
+									key={table._id}
+									title={t(RestaurantsKeys.TABLES_TABLE_LABEL, {
+										number: table.tableNumber,
+									})}
+									subtitle={
+										table.capacity !== undefined
+											? t(RestaurantsKeys.TABLES_SEATS_FORMAT, { count: table.capacity })
+											: ""
+									}
+									purgesInLabel={
+										table.hardDeleteAfterAt
+											? t(RestaurantsKeys.TABLES_PURGES_IN, {
+													time: formatRemaining(table.hardDeleteAfterAt - now),
+											  })
+											: ""
+									}
+									restoreLabel={t(RestaurantsKeys.TABLES_RESTORE)}
+									onRestore={() => onRestoreTable(table._id)}
+								/>
+							))}
+						</>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+interface TrashRowProps {
+	title: string;
+	subtitle: string;
+	purgesInLabel: string;
+	restoreLabel: string;
+	onRestore: () => void;
+}
+
+function TrashRow({
+	title,
+	subtitle,
+	purgesInLabel,
+	restoreLabel,
+	onRestore,
+}: Readonly<TrashRowProps>) {
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
+			<div className="min-w-0 space-y-0.5">
+				<div className="font-medium text-foreground line-through">{title}</div>
+				<div className="text-xs text-faint-foreground">
+					{subtitle && <span>{subtitle}</span>}
+					{subtitle && purgesInLabel && <span> · </span>}
+					{purgesInLabel && <span>{purgesInLabel}</span>}
+				</div>
+			</div>
+			<button
+				type="button"
+				onClick={onRestore}
+				className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-hover"
+			>
+				<RotateCcw size={14} />
+				{restoreLabel}
+			</button>
 		</div>
 	);
 }
@@ -1014,7 +1408,6 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 		labels,
 	} = props;
 	const draggable = useDraggable({ id: `${TABLE_DRAG_PREFIX}:${table._id}` });
-	// Hide the source row while dragging — the DragOverlay clone takes over.
 	const style = {
 		opacity: draggable.isDragging ? 0 : 1,
 	};

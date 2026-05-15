@@ -4,14 +4,19 @@
  *
  * Sections rendered are scoped to the viewer's relationship with the target
  * member:
- *   - `canViewAsManager` → Clock events + Absences for that member (read-only
- *     in this cut; `decideAbsence` / `correctClockEvent` remain backend-only).
+ *   - `canViewAsManager` → A `PendingApprovalBanner` (only when there is at
+ *     least one pending absence for this member) with per-row + bulk
+ *     Approve/Deny buttons backed by `api.attendance.decideAbsence`, then the
+ *     read-only Clock events + Absences history tables. `correctClockEvent`
+ *     remains backend-only.
  *   - `isSelf` → My absences + "Request time off" form, backed by the
  *     existing `requestAbsence` mutation.
  *
  * Manager-on-own-row sees both groups stacked. Time window defaults to the
  * currently-viewed grid week and can be expanded to a rolling 7/30-day window
- * via the in-drawer range selector.
+ * via the in-drawer range selector. The banner ignores the range selector —
+ * pending requests are always actionable regardless of which window the
+ * manager is browsing in the history tables.
  */
 import {
 	AppDatePicker,
@@ -166,13 +171,22 @@ export function MemberAttendanceDrawer({
 			/>
 			<div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-6">
 				{canViewAsManager ? (
-					<ManagerSections
-						rangeMode={rangeMode}
-						onRangeChange={setRangeMode}
-						memberEvents={memberEvents}
-						memberAbsences={memberAbsences}
-						localeTag={localeTag}
-					/>
+					<>
+						<PendingApprovalBanner
+							absences={memberAbsences}
+							onDecided={() => {
+								refetchAllAbsences();
+								if (isSelf) refetchMyAbsences();
+							}}
+						/>
+						<ManagerSections
+							rangeMode={rangeMode}
+							onRangeChange={setRangeMode}
+							memberEvents={memberEvents}
+							memberAbsences={memberAbsences}
+							localeTag={localeTag}
+						/>
+					</>
 				) : null}
 
 				{isSelf ? (
@@ -466,5 +480,244 @@ function RequestTimeOffForm({
 				</button>
 			</div>
 		</div>
+	);
+}
+
+interface PendingApprovalBannerProps {
+	readonly absences: Doc<"absences">[];
+	readonly onDecided: () => void;
+}
+
+type PendingDecision =
+	| typeof ABSENCE_REQUEST_STATUS.APPROVED
+	| typeof ABSENCE_REQUEST_STATUS.DENIED;
+
+/**
+ * Surfaces every pending absence for the target member with per-row
+ * Approve/Deny + bulk shortcuts. Bulk actions require an inline confirmation
+ * morph to mitigate accidental mass-deny; per-row actions fire immediately
+ * since their blast radius is one decision.
+ *
+ * Hidden entirely when there are no pending absences so the rest of the
+ * drawer's history view is the dominant UI.
+ */
+function PendingApprovalBanner({
+	absences,
+	onDecided,
+}: Readonly<PendingApprovalBannerProps>) {
+	const { t } = useTranslation();
+	const pending = useMemo(
+		() =>
+			absences
+				.filter((a) => a.status === ABSENCE_REQUEST_STATUS.PENDING)
+				.slice()
+				.sort((a, b) => (a.date < b.date ? -1 : 1)),
+		[absences]
+	);
+
+	const [confirming, setConfirming] = useState<PendingDecision | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const decideAbsence = useMutation({
+		mutationFn: useConvexMutation(api.attendance.decideAbsence),
+	});
+
+	useEffect(() => {
+		if (pending.length === 0) {
+			setConfirming(null);
+			setError(null);
+		}
+	}, [pending.length]);
+
+	const runDecision = async (
+		ids: ReadonlyArray<Id<"absences">>,
+		status: PendingDecision
+	) => {
+		if (ids.length === 0) return;
+		setBusy(true);
+		setError(null);
+		try {
+			await Promise.all(
+				ids.map((absenceId) =>
+					decideAbsence
+						.mutateAsync({ absenceId, status })
+						.then((res) => unwrapResult(res))
+				)
+			);
+			setConfirming(null);
+			onDecided();
+		} catch (e) {
+			setError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	if (pending.length === 0) return null;
+
+	return (
+		<section
+			aria-label={t(AdminStaffKeys.ATTENDANCE_BANNER_PENDING_TITLE, {
+				count: pending.length,
+			})}
+			className="rounded-md border border-yellow-500/60 bg-yellow-400/10 p-3 space-y-3"
+		>
+			<div className="flex flex-wrap items-center justify-between gap-2">
+				<h3 className="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
+					{t(AdminStaffKeys.ATTENDANCE_BANNER_PENDING_TITLE, {
+						count: pending.length,
+					})}
+				</h3>
+				<BulkDecisionControls
+					confirming={confirming}
+					busy={busy}
+					pendingCount={pending.length}
+					onArm={(decision) => setConfirming(decision)}
+					onCancel={() => setConfirming(null)}
+					onConfirm={(decision) =>
+						void runDecision(
+							pending.map((p) => p._id),
+							decision
+						)
+					}
+				/>
+			</div>
+			<ul className="space-y-2">
+				{pending.map((row) => (
+					<PendingRow
+						key={row._id}
+						row={row}
+						busy={busy}
+						onApprove={() =>
+							void runDecision([row._id], ABSENCE_REQUEST_STATUS.APPROVED)
+						}
+						onDeny={() =>
+							void runDecision([row._id], ABSENCE_REQUEST_STATUS.DENIED)
+						}
+					/>
+				))}
+			</ul>
+			{error ? <p className="text-xs text-destructive">{error}</p> : null}
+		</section>
+	);
+}
+
+interface BulkDecisionControlsProps {
+	readonly confirming: PendingDecision | null;
+	readonly busy: boolean;
+	readonly pendingCount: number;
+	readonly onArm: (decision: PendingDecision) => void;
+	readonly onCancel: () => void;
+	readonly onConfirm: (decision: PendingDecision) => void;
+}
+
+function BulkDecisionControls({
+	confirming,
+	busy,
+	pendingCount,
+	onArm,
+	onCancel,
+	onConfirm,
+}: Readonly<BulkDecisionControlsProps>) {
+	const { t } = useTranslation();
+
+	if (confirming !== null) {
+		const labelKey =
+			confirming === ABSENCE_REQUEST_STATUS.APPROVED
+				? AdminStaffKeys.ATTENDANCE_BANNER_CONFIRM_APPROVE_N
+				: AdminStaffKeys.ATTENDANCE_BANNER_CONFIRM_DENY_N;
+		const tone =
+			confirming === ABSENCE_REQUEST_STATUS.APPROVED
+				? "border-emerald-500 bg-emerald-500 text-white hover:opacity-90"
+				: "border-destructive bg-destructive text-white hover:opacity-90";
+		return (
+			<div className="flex items-center gap-2">
+				<button
+					type="button"
+					disabled={busy}
+					onClick={() => onConfirm(confirming)}
+					className={`text-xs font-medium px-3 py-1.5 rounded-md border ${tone} disabled:opacity-50`}
+				>
+					{t(labelKey, { count: pendingCount })}
+				</button>
+				<button
+					type="button"
+					disabled={busy}
+					onClick={onCancel}
+					aria-label={t(AdminStaffKeys.ATTENDANCE_BANNER_CONFIRM_CANCEL)}
+					className="text-xs font-medium px-2 py-1.5 rounded-md border border-border hover:bg-(--bg-hover) disabled:opacity-50"
+				>
+					{t(AdminStaffKeys.ATTENDANCE_BANNER_CONFIRM_CANCEL)}
+				</button>
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex items-center gap-2">
+			<button
+				type="button"
+				disabled={busy}
+				onClick={() => onArm(ABSENCE_REQUEST_STATUS.APPROVED)}
+				className="text-xs font-medium px-3 py-1.5 rounded-md border border-emerald-500/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+			>
+				{t(AdminStaffKeys.ATTENDANCE_BANNER_APPROVE_ALL)}
+			</button>
+			<button
+				type="button"
+				disabled={busy}
+				onClick={() => onArm(ABSENCE_REQUEST_STATUS.DENIED)}
+				className="text-xs font-medium px-3 py-1.5 rounded-md border border-destructive/60 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+			>
+				{t(AdminStaffKeys.ATTENDANCE_BANNER_DENY_ALL)}
+			</button>
+		</div>
+	);
+}
+
+interface PendingRowProps {
+	readonly row: Doc<"absences">;
+	readonly busy: boolean;
+	readonly onApprove: () => void;
+	readonly onDeny: () => void;
+}
+
+function PendingRow({ row, busy, onApprove, onDeny }: Readonly<PendingRowProps>) {
+	const { t } = useTranslation();
+	return (
+		<li className="flex flex-wrap items-center justify-between gap-2 rounded border border-yellow-500/30 bg-background/60 px-3 py-2">
+			<div className="min-w-0 flex-1">
+				<div className="text-sm font-medium text-foreground">
+					{row.date} · {absenceTypeLabel(row.type, t)}
+				</div>
+				{row.reason ? (
+					<div className="text-xs text-faint-foreground mt-0.5">
+						<span className="font-medium">
+							{t(AdminStaffKeys.ATTENDANCE_BANNER_REASON_LABEL)}:{" "}
+						</span>
+						{row.reason}
+					</div>
+				) : null}
+			</div>
+			<div className="flex items-center gap-2 shrink-0">
+				<button
+					type="button"
+					disabled={busy}
+					onClick={onApprove}
+					className="text-xs font-medium px-3 py-1.5 rounded-md border border-emerald-500/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+				>
+					{t(AdminStaffKeys.ATTENDANCE_BANNER_APPROVE)}
+				</button>
+				<button
+					type="button"
+					disabled={busy}
+					onClick={onDeny}
+					className="text-xs font-medium px-3 py-1.5 rounded-md border border-destructive/60 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+				>
+					{t(AdminStaffKeys.ATTENDANCE_BANNER_DENY)}
+				</button>
+			</div>
+		</li>
 	);
 }

@@ -56,56 +56,73 @@ export function createTeamDirectoryColumns(args: {
 	} = args;
 
 	return [
-		columnHelper.display({
-			id: "identity",
-			header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_IDENTITY),
-			cell: ({ row }) => {
-				const r = row.original;
-				if (r.rowType === "invite") {
-					return <span className="text-sm text-foreground">{r.email}</span>;
-				}
-				const label = r.email?.trim() ? r.email : r.userId;
-				const mono = !r.email?.trim();
-				return (
-					<span
-						className={`text-sm text-foreground ${mono ? "font-mono text-xs" : ""}`}
-					>
-						{label}
-					</span>
-				);
+		columnHelper.accessor(
+			(row) => {
+				if (row.rowType === "invite") return row.email;
+				return row.email?.trim() ? row.email : row.userId;
 			},
-		}),
-		columnHelper.display({
+			{
+				id: "identity",
+				header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_IDENTITY),
+				cell: ({ row }) => {
+					const r = row.original;
+					if (r.rowType === "invite") {
+						return <span className="text-sm text-foreground">{r.email}</span>;
+					}
+					const label = r.email?.trim() ? r.email : r.userId;
+					const mono = !r.email?.trim();
+					return (
+						<span
+							className={`text-sm text-foreground ${mono ? "font-mono text-xs" : ""}`}
+						>
+							{label}
+						</span>
+					);
+				},
+			}
+		),
+		columnHelper.accessor((row) => staffRoleLabel(row.role), {
 			id: "role",
 			header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_ROLE),
 			cell: ({ row }) => (
 				<span className="text-sm text-muted-foreground">{staffRoleLabel(row.original.role)}</span>
 			),
 		}),
-		columnHelper.display({
-			id: "status",
-			header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_STATUS),
-			cell: ({ row }) => {
-				const r = row.original;
-				if (r.rowType === "invite") {
+		columnHelper.accessor(
+			(row) => {
+				if (row.rowType === "invite") return t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE);
+				if (row.rowType === "restaurantOwner" || row.rowType === "orgOwner") {
+					return t(AdminStaffKeys.TEAM_STATUS_ACTIVE);
+				}
+				return row.isActive
+					? t(AdminStaffKeys.TEAM_STATUS_ACTIVE)
+					: t(AdminStaffKeys.TEAM_MEMBER_INACTIVE);
+			},
+			{
+				id: "status",
+				header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_STATUS),
+				cell: ({ row }) => {
+					const r = row.original;
+					if (r.rowType === "invite") {
+						return (
+							<span className="text-sm text-muted-foreground">
+								{t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE)}
+							</span>
+						);
+					}
+					if (r.rowType === "restaurantOwner" || r.rowType === "orgOwner") {
+						return (
+							<span className="text-sm text-muted-foreground">{t(AdminStaffKeys.TEAM_STATUS_ACTIVE)}</span>
+						);
+					}
 					return (
 						<span className="text-sm text-muted-foreground">
-							{t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE)}
+							{r.isActive ? t(AdminStaffKeys.TEAM_STATUS_ACTIVE) : t(AdminStaffKeys.TEAM_MEMBER_INACTIVE)}
 						</span>
 					);
-				}
-				if (r.rowType === "restaurantOwner" || r.rowType === "orgOwner") {
-					return (
-						<span className="text-sm text-muted-foreground">{t(AdminStaffKeys.TEAM_STATUS_ACTIVE)}</span>
-					);
-				}
-				return (
-					<span className="text-sm text-muted-foreground">
-						{r.isActive ? t(AdminStaffKeys.TEAM_STATUS_ACTIVE) : t(AdminStaffKeys.TEAM_MEMBER_INACTIVE)}
-					</span>
-				);
-			},
-		}),
+				},
+			}
+		),
 		columnHelper.display({
 			id: "actions",
 			header: () => "",

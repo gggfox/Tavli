@@ -4,7 +4,7 @@
  */
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -37,7 +37,15 @@ type DeleteFeatureFlagErrors =
  * When adding a flag, also add a matching entry to FEATURE_FLAG_METADATA so the
  * admin UI has a description to render.
  */
-export const FEATURE_FLAGS = {} as const;
+export const FEATURE_FLAGS = {
+	/**
+	 * Numeric retention window (in days) for soft-deleted sections and tables.
+	 * When `enabled === true`, the cron purge sweep treats `numericValue` as the
+	 * delay between soft-delete time and hard-purge. Otherwise we fall back to
+	 * `DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS`.
+	 */
+	SOFT_DELETE_PURGE_DELAY_DAYS: "softDeletePurgeDelayDays",
+} as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
 
@@ -45,8 +53,38 @@ export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
  * Human-readable metadata for each registered flag.
  * The admin UI reads descriptions from here so code stays the source of truth.
  */
-export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string }> =
-	{} as Record<FeatureFlagKey, { description: string }>;
+export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string }> = {
+	[FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS]: {
+		description:
+			"Retention window (in days) before soft-deleted sections and tables are permanently hard-deleted by the cron sweep. Set numericValue on the flag and enable it to override; otherwise the system default applies.",
+	},
+};
+
+/**
+ * Default retention window for soft-deleted sections/tables when the
+ * `softDeletePurgeDelayDays` flag is unset or disabled.
+ */
+export const DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS = 2;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Resolve the configured soft-delete retention window in milliseconds.
+ * Reads the `softDeletePurgeDelayDays` feature flag, falling back to the
+ * default when unset, disabled, or non-positive.
+ */
+export async function getSoftDeletePurgeDelayMs(
+	ctx: QueryCtx | MutationCtx
+): Promise<number> {
+	const flag = await ctx.db
+		.query("featureFlags")
+		.withIndex("by_key", (q) => q.eq("key", FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS))
+		.first();
+	const configured =
+		flag?.enabled === true && typeof flag.numericValue === "number" && flag.numericValue > 0
+			? flag.numericValue
+			: DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS;
+	return configured * MS_PER_DAY;
+}
 
 const REGISTERED_FLAG_KEYS = new Set<string>(Object.values(FEATURE_FLAGS));
 
@@ -122,6 +160,7 @@ export const setFeatureFlag = mutation({
 	args: {
 		key: v.string(),
 		enabled: v.boolean(),
+		numericValue: v.optional(v.number()),
 		description: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
@@ -148,6 +187,7 @@ export const setFeatureFlag = mutation({
 		if (existing) {
 			await ctx.db.patch(existing._id, {
 				enabled: args.enabled,
+				numericValue: args.numericValue ?? existing.numericValue,
 				description: args.description ?? existing.description,
 				updatedAt: now,
 				updatedBy: userId,
@@ -158,6 +198,7 @@ export const setFeatureFlag = mutation({
 		return await ctx.db.insert("featureFlags", {
 			key: args.key,
 			enabled: args.enabled,
+			numericValue: args.numericValue,
 			description: args.description,
 			createdAt: now,
 			updatedAt: now,

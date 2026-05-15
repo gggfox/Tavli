@@ -32,8 +32,10 @@ interface TableLocksManagerProps {
 
 export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerProps>) {
 	const { t, i18n } = useTranslation();
+	// Use the active-table query so soft-deleted and hidden-section tables
+	// don't appear in the lock picker.
 	const { data: rawTables } = useQuery(
-		convexQuery(api.tables.getByRestaurant, { restaurantId })
+		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
 	);
 	const tables = (rawTables ?? []) as Doc<"tables">[];
 

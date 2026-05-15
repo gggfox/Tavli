@@ -126,6 +126,9 @@ export default defineSchema({
 	[TABLE.FEATURE_FLAGS]: defineTable({
 		key: v.string(),
 		enabled: v.boolean(),
+		// Optional numeric tuning value for flags that represent a numeric knob
+		// rather than a boolean toggle (e.g. soft-delete retention window).
+		numericValue: v.optional(v.number()),
 		description: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -276,10 +279,22 @@ export default defineSchema({
 		sectionId: v.optional(v.id(TABLE.SECTIONS)),
 		isActive: v.boolean(),
 		createdAt: v.number(),
+		// Soft-delete fields: present when the row is in the "recently deleted"
+		// window. A cron sweep hard-purges rows whose `hardDeleteAfterAt` has
+		// elapsed (see `softDeletePurge.ts`).
+		deletedAt: v.optional(v.number()),
+		deletedBy: v.optional(v.string()),
+		hardDeleteAfterAt: v.optional(v.number()),
+		// When this table was soft-deleted as part of a section cascade, this
+		// points at the parent section so restoring the section can pair the
+		// children back. Standalone table deletes leave this undefined.
+		softDeleteParentSectionId: v.optional(v.id(TABLE.SECTIONS)),
 	})
 		.index("by_restaurant_number", ["restaurantId", "tableNumber"])
 		.index("by_restaurant", ["restaurantId"])
-		.index("by_section", ["sectionId"]),
+		.index("by_section", ["sectionId"])
+		.index("by_hard_delete_after", ["hardDeleteAfterAt"])
+		.index("by_soft_delete_parent", ["softDeleteParentSectionId"]),
 
 	// Floor sections (zones) tables belong to. A waiter is assigned to a
 	// section for the duration of (a sub-window of) a shift via
@@ -295,7 +310,15 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
-	}).index("by_restaurant", ["restaurantId"]),
+		// Soft-delete fields: present when the row is in the "recently deleted"
+		// window. A cron sweep hard-purges rows whose `hardDeleteAfterAt` has
+		// elapsed (see `softDeletePurge.ts`).
+		deletedAt: v.optional(v.number()),
+		deletedBy: v.optional(v.string()),
+		hardDeleteAfterAt: v.optional(v.number()),
+	})
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_hard_delete_after", ["hardDeleteAfterAt"]),
 
 	[TABLE.SESSIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),

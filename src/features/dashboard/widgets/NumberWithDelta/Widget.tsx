@@ -89,16 +89,16 @@ export function NumberWithDeltaWidget({
 	}
 
 	return (
-		<div className="h-full flex flex-col justify-between gap-2">
+		<div className="h-full flex flex-col">
 			<span className="text-xs uppercase tracking-wide text-faint-foreground">
 				{t(METRIC_LABEL_KEY[options.metric])}
 			</span>
-			<div className="flex items-end gap-3">
+			<div className="flex-1 flex flex-col items-center justify-center gap-2">
 				<span className="text-3xl font-semibold text-foreground tabular-nums">
 					{formatted}
 				</span>
+				{deltaNode}
 			</div>
-			{deltaNode}
 		</div>
 	);
 }

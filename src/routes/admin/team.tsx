@@ -13,7 +13,6 @@ import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import type { Row } from "@tanstack/react-table";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
@@ -241,32 +240,6 @@ function AdminTeamPage() {
 		[t, staffRoleLabelCb, handleRevokeInvite, revokePendingId, handleOpenAssignShift, assignableMemberIdSet]
 	);
 
-	const globalFilterFn = useMemo(
-		() => (row: Row<TeamDirectoryRow>, _columnId: string, filterValue: unknown) => {
-			if (!filterValue) return true;
-			const q = String(filterValue).toLowerCase();
-			const data = row.original;
-			const identity =
-				data.rowType === "invite"
-					? data.email
-					: (data.email?.trim() ? data.email : data.userId);
-			const roleLabel = staffRoleLabelCb(data.role).toLowerCase();
-			const statusLabel =
-				data.rowType === "invite"
-					? t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE).toLowerCase()
-					: data.isActive
-						? t(AdminStaffKeys.TEAM_STATUS_ACTIVE).toLowerCase()
-						: t(AdminStaffKeys.TEAM_MEMBER_INACTIVE).toLowerCase();
-			return (
-				identity.toLowerCase().includes(q) ||
-				data.role.toLowerCase().includes(q) ||
-				roleLabel.includes(q) ||
-				statusLabel.includes(q)
-			);
-		},
-		[t, staffRoleLabelCb]
-	);
-
 	const tableState = useAdminTable<TeamDirectoryRow>({
 		queryOptions: convexQuery(
 			api.restaurantMembers.listTeamDirectory,
@@ -279,7 +252,6 @@ function AdminTeamPage() {
 			if (row.rowType === "member") return `member:${row._id}`;
 			return `${row.rowType}:${row.userId}`;
 		},
-		globalFilterFn,
 	});
 
 	const onInvite = async () => {

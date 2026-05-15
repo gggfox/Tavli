@@ -218,7 +218,12 @@
 			"dayFri": "Fri",
 			"daySat": "Sat",
 			"daySun": "Sun",
-			"teamRowAssign": "Assign shift…"
+			"teamRowAssign": "Assign shift…",
+			"filterMemberPlaceholder": "Filter members",
+			"filterNoMatches": "No members match.",
+			"gridPendingAsteriskAria": "{{count}} pending day-off request(s)",
+			"chipPendingSuffix": ", pending day-off request",
+			"chipApprovedSuffix": ", approved day off"
 		},
 		"attendance": {
 			"drawerTitle": "Attendance",
@@ -253,7 +258,19 @@
 			"statusPending": "Pending",
 			"statusApproved": "Approved",
 			"statusDenied": "Denied",
-			"memberRowOpenAria": "Open attendance for {{member}}"
+			"memberRowOpenAria": "Open attendance for {{member}}",
+			"bannerPendingTitle_one": "1 pending request",
+			"bannerPendingTitle_other": "{{count}} pending requests",
+			"bannerApprove": "Approve",
+			"bannerDeny": "Deny",
+			"bannerApproveAll": "Approve all",
+			"bannerDenyAll": "Deny all",
+			"bannerConfirmApproveN_one": "Confirm approve 1",
+			"bannerConfirmApproveN_other": "Confirm approve {{count}}",
+			"bannerConfirmDenyN_one": "Confirm deny 1",
+			"bannerConfirmDenyN_other": "Confirm deny {{count}}",
+			"bannerConfirmCancel": "Cancel",
+			"bannerReasonLabel": "Reason"
 		},
 		"tips": {
 			"descriptionNoRestaurant": "Daily tip pool and distribution.",
@@ -611,7 +628,13 @@
 			"showInactive": "Show inactive ({{count}})",
 			"hideInactive": "Hide inactive",
 			"dragHandle": "Move to another section",
-			"expandedClose": "Close tables view"
+			"expandedClose": "Close tables view",
+			"restore": "Restore",
+			"restoreFailed": "Failed to restore table",
+			"purgesIn": "Purges in {{time}}",
+			"showRecentlyDeleted": "Show recently deleted",
+			"hideRecentlyDeleted": "Hide recently deleted",
+			"trashEmpty": "No recently deleted sections or tables."
 		},
 		"sections": {
 			"heading": "Floor sections",
@@ -631,7 +654,19 @@
 			"removeFailed": "Failed to remove section",
 			"assignFailed": "Failed to move table to section",
 			"reorderFailed": "Failed to reorder sections",
-			"dragHandle": "Reorder section"
+			"dragHandle": "Reorder section",
+			"hideTitle": "Hide section",
+			"showTitle": "Show section",
+			"hiddenBadge": "Hidden",
+			"confirmDeleteHeading": "Delete section?",
+			"confirmDeleteBodyEmpty": "This section has no tables. You can restore it within the soft-delete retention window.",
+			"confirmDeleteBody_one": "This will delete the section and 1 table. You can restore them within the soft-delete retention window.",
+			"confirmDeleteBody_other": "This will delete the section and {{count}} tables. You can restore them within the soft-delete retention window.",
+			"confirmDeleteConfirm": "Delete",
+			"confirmDeleteCancel": "Cancel",
+			"restore": "Restore",
+			"restoreFailed": "Failed to restore section",
+			"purgesIn": "Purges in {{time}}"
 		},
 		"stripe": {
 			"heading": "Payment Setup",

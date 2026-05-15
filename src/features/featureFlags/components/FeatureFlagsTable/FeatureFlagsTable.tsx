@@ -12,6 +12,7 @@ type FeatureFlagDoc = {
 	_creationTime: number;
 	key: string;
 	enabled: boolean;
+	numericValue?: number;
 	description?: string;
 	createdAt: number;
 	updatedAt: number;
@@ -22,6 +23,7 @@ type FlagRow = {
 	key: string;
 	description: string;
 	enabled: boolean;
+	numericValue: number | undefined;
 	updatedAt: number | undefined;
 	creationTime: number | undefined;
 	updatedBy: string | undefined;
@@ -94,6 +96,7 @@ export function FeatureFlagsTable() {
 			key,
 			description: metadata?.description ?? "",
 			enabled: dbRow?.enabled ?? false,
+			numericValue: dbRow?.numericValue,
 			updatedAt: dbRow?.updatedAt,
 			creationTime: dbRow?._creationTime,
 			updatedBy: dbRow?.updatedBy,
@@ -106,6 +109,22 @@ export function FeatureFlagsTable() {
 			await setFeatureFlag.mutateAsync({
 				key: row.key,
 				enabled: !row.enabled,
+			});
+		} finally {
+			setPendingKey(null);
+		}
+	};
+
+	const handleNumericChange = async (row: FlagRow, raw: string) => {
+		const trimmed = raw.trim();
+		const parsed = trimmed === "" ? undefined : Number(trimmed);
+		if (parsed !== undefined && (Number.isNaN(parsed) || parsed < 0)) return;
+		setPendingKey(row.key);
+		try {
+			await setFeatureFlag.mutateAsync({
+				key: row.key,
+				enabled: row.enabled,
+				numericValue: parsed,
 			});
 		} finally {
 			setPendingKey(null);
@@ -128,6 +147,9 @@ export function FeatureFlagsTable() {
 						</th>
 						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
 							Updated by
+						</th>
+						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
+							Numeric value
 						</th>
 						<th className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
 							Status
@@ -161,6 +183,25 @@ export function FeatureFlagsTable() {
 									) : (
 										<span className="text-faint-foreground">—</span>
 									)}
+								</td>
+								<td className="px-4 py-3 align-top">
+									<input
+										type="number"
+										min={0}
+										step={1}
+										defaultValue={row.numericValue ?? ""}
+										disabled={isPending}
+										onBlur={(e) => {
+											const raw = e.target.value;
+											const next =
+												raw.trim() === "" ? undefined : Number(raw);
+											if (next === row.numericValue) return;
+											void handleNumericChange(row, raw);
+										}}
+										className="w-24 px-2 py-1 rounded-md border border-border bg-background text-sm text-foreground"
+										aria-label={`Numeric value for ${row.key}`}
+										placeholder="—"
+									/>
 								</td>
 								<td className="px-4 py-3 align-top text-right">
 									<button

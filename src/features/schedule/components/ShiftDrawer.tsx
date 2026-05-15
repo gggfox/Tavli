@@ -811,7 +811,7 @@ function SectionsCoveredPanel({
 
 	const [error, setError] = useState<string | null>(null);
 
-	const sections: readonly Doc<"sections">[] = sectionsQuery.data ?? [];
+	const sectionsAll: readonly Doc<"sections">[] = sectionsQuery.data ?? [];
 	const assignmentsResult = assignmentsQuery.data;
 	const assignments: readonly Doc<"shiftSectionAssignments">[] = useMemo(() => {
 		if (!assignmentsResult) return [];
@@ -824,6 +824,17 @@ function SectionsCoveredPanel({
 		for (const a of assignments) m.set(a.sectionId, a);
 		return m;
 	}, [assignments]);
+
+	// Hide inactive sections from the assignable list, but keep ones that
+	// already have an assignment for this shift so the user can unassign them
+	// without first having to re-show the section.
+	const sections = useMemo(
+		() =>
+			sectionsAll.filter(
+				(s) => s.isActive !== false || assignmentBySection.has(s._id)
+			),
+		[sectionsAll, assignmentBySection]
+	);
 
 	const sectionLabel = (section: Doc<"sections">, fallbackIndex: number): string => {
 		if (section.isSystem === true && (section.name === undefined || section.name === "Default")) {

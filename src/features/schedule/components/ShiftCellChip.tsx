@@ -3,6 +3,12 @@
  *
  * Visual encoding:
  *   - Background + foreground driven by `shift.shiftRole` via `shiftRoleChipStyle`.
+ *   - `absenceState="pending"` overrides the role palette with a yellow alert
+ *     palette so a manager can spot at a glance that this shift overlaps a
+ *     pending day-off request that needs a decision.
+ *   - `absenceState="approved"` mutes the chip and strikes through the time
+ *     range so the manager knows the assignment now sits on a confirmed
+ *     off-day and likely needs reassignment.
  *   - Dashed-border + reduced opacity for SCHEDULED (drafts not yet published).
  *   - Repeating-arrow ↻ glyph for shifts materialized from a `shiftTemplates` row.
  */
@@ -14,11 +20,43 @@ import { utcMsToHmInTimezone } from "../timezone";
 import { shiftRoleChipStyle, shiftRoleLabel } from "../roles";
 import type { ScheduledShiftView } from "../types";
 
+export type ChipAbsenceState = "pending" | "approved";
+
 interface ShiftCellChipProps {
 	readonly shift: ScheduledShiftView;
 	readonly timezone: string;
 	readonly onClick?: () => void;
 	readonly compact?: boolean;
+	readonly absenceState?: ChipAbsenceState;
+}
+
+const PENDING_PALETTE = {
+	bg: "bg-yellow-400/25",
+	fg: "text-yellow-900 dark:text-yellow-100",
+	border: "border-yellow-500/70",
+} as const;
+
+const APPROVED_PALETTE = {
+	bg: "bg-muted/60",
+	fg: "text-faint-foreground",
+	border: "border-border",
+} as const;
+
+function paletteFor(
+	absenceState: ChipAbsenceState | undefined,
+	rolePalette: ReturnType<typeof shiftRoleChipStyle>
+) {
+	if (absenceState === "pending") return PENDING_PALETTE;
+	if (absenceState === "approved") return APPROVED_PALETTE;
+	return rolePalette;
+}
+
+function absenceSuffixKey(
+	absenceState: ChipAbsenceState | undefined
+): string | null {
+	if (absenceState === "pending") return AdminStaffKeys.SCHEDULE_CHIP_PENDING_SUFFIX;
+	if (absenceState === "approved") return AdminStaffKeys.SCHEDULE_CHIP_APPROVED_SUFFIX;
+	return null;
 }
 
 export function ShiftCellChip({
@@ -26,16 +64,20 @@ export function ShiftCellChip({
 	timezone,
 	onClick,
 	compact = false,
+	absenceState,
 }: Readonly<ShiftCellChipProps>) {
 	const { t } = useTranslation();
-	const palette = shiftRoleChipStyle(shift.shiftRole);
+	const palette = paletteFor(absenceState, shiftRoleChipStyle(shift.shiftRole));
 	const isDraft = shift.status === SHIFT_STATUS.SCHEDULED;
 	const startHm = utcMsToHmInTimezone(shift.startsAt, timezone);
 	const endHm = utcMsToHmInTimezone(shift.endsAt, timezone);
 	const role = shift.shiftRole ? shiftRoleLabel(shift.shiftRole, t) : null;
 
 	const roleSuffix = role ? ` · ${role}` : "";
-	const ariaLabel = `${startHm}–${endHm}${roleSuffix}`;
+	const suffixKey = absenceSuffixKey(absenceState);
+	const absenceSuffix = suffixKey ? t(suffixKey) : "";
+	const ariaLabel = `${startHm}–${endHm}${roleSuffix}${absenceSuffix}`;
+	const timeStruck = absenceState === "approved";
 
 	return (
 		<button
@@ -52,7 +94,7 @@ export function ShiftCellChip({
 			].join(" ")}
 		>
 			<div className="flex items-center justify-between gap-1 text-[11px] font-medium leading-tight">
-				<span className="font-mono">
+				<span className={`font-mono ${timeStruck ? "line-through" : ""}`}>
 					{startHm}
 					<span className="opacity-60">–</span>
 					{endHm}

@@ -283,7 +283,7 @@ describe("sections.create / remove", () => {
 		expect(removeErr).toBeNull();
 	});
 
-	it("blocks deletion of a section that still owns tables", async () => {
+	it("soft-deletes a section and cascade soft-deletes its tables", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, tableId, managerUserId } = await seed(t);
 		const manager = t.withIdentity({ subject: managerUserId });
@@ -297,11 +297,55 @@ describe("sections.create / remove", () => {
 			sectionId: sectionId!,
 		});
 
-		const [removed, err] = await manager.mutation(api.sections.remove, {
+		const [, err] = await manager.mutation(api.sections.remove, {
 			sectionId: sectionId!,
 		});
-		expect(removed).toBeNull();
-		expect(err?.name).toBe("VALIDATION_ERROR");
+		expect(err).toBeNull();
+
+		const sectionRow = await t.run(async (ctx) => ctx.db.get(sectionId!));
+		expect(sectionRow?.deletedAt).toBeTruthy();
+		expect(sectionRow?.hardDeleteAfterAt).toBeTruthy();
+		expect(sectionRow?.deletedBy).toBe(managerUserId);
+
+		const tableRow = await t.run(async (ctx) => ctx.db.get(tableId));
+		expect(tableRow?.deletedAt).toBeTruthy();
+		expect(tableRow?.softDeleteParentSectionId).toBe(sectionId);
+
+		// The live query hides the soft-deleted rows.
+		const live = await t.query(api.sections.getByRestaurant, { restaurantId });
+		expect(live.find((s) => s._id === sectionId)).toBeUndefined();
+
+		const trash = await t.query(api.sections.getDeletedForRestaurant, { restaurantId });
+		expect(trash.find((s) => s._id === sectionId)).toBeDefined();
+	});
+
+	it("restoring a soft-deleted section also restores cascade-deleted tables", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [sectionId] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Patio",
+		});
+		await manager.mutation(api.sections.assignTable, {
+			tableId,
+			sectionId: sectionId!,
+		});
+		await manager.mutation(api.sections.remove, { sectionId: sectionId! });
+
+		const [restoredId, err] = await manager.mutation(api.sections.restore, {
+			sectionId: sectionId!,
+		});
+		expect(err).toBeNull();
+		expect(restoredId).toBe(sectionId);
+
+		const sectionRow = await t.run(async (ctx) => ctx.db.get(sectionId!));
+		expect(sectionRow?.deletedAt).toBeUndefined();
+
+		const tableRow = await t.run(async (ctx) => ctx.db.get(tableId));
+		expect(tableRow?.deletedAt).toBeUndefined();
+		expect(tableRow?.softDeleteParentSectionId).toBeUndefined();
 	});
 
 	it("blocks deletion of a section with future shiftSectionAssignments", async () => {
@@ -376,14 +420,14 @@ describe("sections.create / remove", () => {
 		expect(remaining).toHaveLength(0);
 	});
 
-	it("still rejects deletion of legacy isSystem rows (defensive guard)", async () => {
+	it("allows soft-deletion of legacy isSystem rows", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, ownerUserId } = await seed(t);
 		const owner = t.withIdentity({ subject: ownerUserId });
 
-		// Simulate a row created before the deprecation: nothing in the app
-		// writes `isSystem: true` anymore, but until `removeSystemFlag` runs
-		// against an existing database, legacy rows can still appear.
+		// Simulate a row created before the `isSystem` deprecation. The new
+		// soft-delete path no longer blocks on this flag — the user asked
+		// for the "Default section cannot be deleted" guard to go away.
 		const legacyId = await t.run(async (ctx) => {
 			const now = Date.now();
 			return await ctx.db.insert("sections", {
@@ -396,12 +440,14 @@ describe("sections.create / remove", () => {
 			});
 		});
 
-		const [removed, err] = await owner.mutation(api.sections.remove, {
+		const [, err] = await owner.mutation(api.sections.remove, {
 			sectionId: legacyId,
 		});
-		expect(removed).toBeNull();
-		expect(err?.name).toBe("VALIDATION_ERROR");
+		expect(err).toBeNull();
+		const row = await t.run(async (ctx) => ctx.db.get(legacyId));
+		expect(row?.deletedAt).toBeTruthy();
 	});
+
 });
 
 describe("sections.removeSystemFlag", () => {
