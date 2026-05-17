@@ -40,6 +40,7 @@ export function CategorySection({
 		toggleAvailability: toggleAvail,
 		bulkRemoveItems,
 		bulkSetAvailability,
+		bulkSetPrepStation,
 		generateUploadUrl,
 	} = useMenuItems(category._id, restaurantId);
 
@@ -124,6 +125,13 @@ export function CategorySection({
 		setSelectedIds(new Set());
 	};
 
+	const handleBulkSetPrepStation = async (prepStation: "kitchen" | "bar") => {
+		const itemIds = [...selectedIds];
+		if (itemIds.length === 0) return;
+		unwrapResult(await bulkSetPrepStation({ restaurantId, itemIds, prepStation }));
+		setSelectedIds(new Set());
+	};
+
 	const headerContent = isTranslating ? (
 		<div className="flex items-center gap-2 flex-1 min-w-0">
 			<span className="text-sm shrink-0 text-faint-foreground" >
@@ -205,6 +213,20 @@ export function CategorySection({
 									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
 								>
 									{t(MenusKeys.CATEGORY_BULK_SHOW)}
+								</button>
+								<button
+									type="button"
+									onClick={() => void handleBulkSetPrepStation("kitchen")}
+									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
+								>
+									{t(MenusKeys.CATEGORY_BULK_MARK_KITCHEN)}
+								</button>
+								<button
+									type="button"
+									onClick={() => void handleBulkSetPrepStation("bar")}
+									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
+								>
+									{t(MenusKeys.CATEGORY_BULK_MARK_BAR)}
 								</button>
 								<button
 									type="button"

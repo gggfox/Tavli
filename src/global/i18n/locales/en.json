@@ -327,9 +327,17 @@
 			"served": "Served",
 			"cancelled": "Cancelled"
 		},
+		"station": {
+			"kitchen": "Kitchen",
+			"bar": "Bar",
+			"readyBadge": "{{station}}: ready",
+			"pendingBadge": "{{station}}: in progress"
+		},
 		"actions": {
 			"accept": "Accept Order",
 			"markReady": "Mark Ready",
+			"markKitchenReady": "Mark Kitchen Ready",
+			"markBarReady": "Mark Bar Ready",
 			"markServed": "Mark Served",
 			"cancel": "Cancel",
 			"cancelAndRefund": "Cancel & Refund",
@@ -354,6 +362,7 @@
 		},
 		"aria": {
 			"filter": "Filter orders by status",
+			"stationFilter": "Filter orders by prep station",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders"
 		}
@@ -759,7 +768,9 @@
 			"deselectAll": "Deselect all",
 			"bulkHide": "Hide selected",
 			"bulkShow": "Show selected",
-			"bulkDelete": "Delete selected"
+			"bulkDelete": "Delete selected",
+			"bulkMarkKitchen": "Set to Kitchen",
+			"bulkMarkBar": "Set to Bar"
 		},
 		"item": {
 			"editTitle": "Edit item",
@@ -767,7 +778,10 @@
 			"optionsTitle": "Link option groups",
 			"markUnavailable": "Mark unavailable",
 			"markAvailable": "Mark available",
-			"removeTitle": "Remove item"
+			"removeTitle": "Remove item",
+			"prepStationLabel": "Prep station",
+			"prepStationKitchen": "Kitchen",
+			"prepStationBar": "Bar"
 		},
 		"translation": {
 			"namePlaceholder": "{{name}} translation...",

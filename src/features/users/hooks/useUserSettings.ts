@@ -11,11 +11,17 @@
  * mutation surface — the wrapper layer no longer dresses up errors as
  * `{success, error}` results.
  */
-import { OrderDashboardStatusFilter, Theme, UserSettings } from "@/features";
+import {
+	OrderDashboardPrepStationFilter,
+	OrderDashboardStatusFilter,
+	Theme,
+	UserSettings,
+} from "@/features";
 import {
 	setSidebarGroupExpanded as setSidebarGroupExpandedService,
 	transformUserSettings,
 	updateLanguage as updateLanguageService,
+	updateOrderDashboardPrepStationFilters as updateOrderDashboardPrepStationFiltersService,
 	updateOrderDashboardStatusFilters as updateOrderDashboardStatusFiltersService,
 	updateSidebarExpanded as updateSidebarExpandedService,
 	updateTheme as updateThemeService,
@@ -46,6 +52,12 @@ export type UseUserSettingsReturn = {
 	 */
 	orderDashboardStatusFilters: OrderDashboardStatusFilter[] | null;
 	/**
+	 * Persisted OrderDashboard prep-station filter selection. `null` means
+	 * the user has never set it -- callers should fall back to "no filter
+	 * applied" (= show all stations). See ADR 005.
+	 */
+	orderDashboardPrepStationFilters: OrderDashboardPrepStationFilter[] | null;
+	/**
 	 * Sidebar accordion group keys the user has open. Empty when no
 	 * preference has been saved yet.
 	 */
@@ -55,6 +67,9 @@ export type UseUserSettingsReturn = {
 	updateLanguage: (language: Language) => Promise<UserSettingsId>;
 	updateOrderDashboardStatusFilters: (
 		statuses: OrderDashboardStatusFilter[]
+	) => Promise<UserSettingsId>;
+	updateOrderDashboardPrepStationFilters: (
+		prepStations: OrderDashboardPrepStationFilter[]
 	) => Promise<UserSettingsId>;
 	setSidebarGroupExpanded: (key: string, expanded: boolean) => Promise<UserSettingsId>;
 };
@@ -131,6 +146,13 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[settings]
 	);
 
+	// Persisted OrderDashboard prep-station filters. Null when never set so
+	// the dashboard can fall back to "all stations".
+	const orderDashboardPrepStationFilters = useMemo<OrderDashboardPrepStationFilter[] | null>(
+		() => settings?.orderDashboardPrepStationFilters ?? null,
+		[settings]
+	);
+
 	// Persisted sidebar accordion groups the user has open. Defaults to an
 	// empty list so a brand-new user starts with all groups collapsed.
 	const expandedSidebarGroups = useMemo<string[]>(
@@ -203,6 +225,12 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
+	const updateOrderDashboardPrepStationFilters = useCallback(
+		(prepStations: OrderDashboardPrepStationFilter[]) =>
+			updateOrderDashboardPrepStationFiltersService(client, prepStations),
+		[client]
+	);
+
 	const setSidebarGroupExpanded = useCallback(
 		(key: string, expanded: boolean) =>
 			setSidebarGroupExpandedService(client, key, expanded),
@@ -257,11 +285,13 @@ export function useUserSettings(): UseUserSettingsReturn {
 		sidebarExpanded,
 		language,
 		orderDashboardStatusFilters,
+		orderDashboardPrepStationFilters,
 		expandedSidebarGroups,
 		updateTheme,
 		updateSidebarExpanded,
 		updateLanguage,
 		updateOrderDashboardStatusFilters,
+		updateOrderDashboardPrepStationFilters,
 		setSidebarGroupExpanded,
 	};
 }

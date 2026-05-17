@@ -55,6 +55,16 @@
 	--accent-info-light: rgba(35, 131, 226, 0.1);
 	--accent-neutral-light: rgba(120, 119, 116, 0.12);
 
+	/* Prep-station tones — used by the OrderDashboard station filter and
+	 * the per-item visual highlight. Intentionally distinct from the
+	 * status tones above (info / warning / success / danger) so that the
+	 * two filter rows on the dashboard read as orthogonal concerns. See
+	 * ADR 005. */
+	--station-kitchen: #c2410c;
+	--station-kitchen-light: rgba(194, 65, 12, 0.12);
+	--station-bar: #6d28d9;
+	--station-bar-light: rgba(109, 40, 217, 0.12);
+
 	/* Interactive Elements */
 	--btn-primary-bg: #2383e2;
 	--btn-primary-hover: #0b6bcb;
@@ -111,6 +121,12 @@
 	--accent-info: #4b9fe8;
 	--accent-info-light: rgba(75, 159, 232, 0.15);
 	--accent-neutral-light: rgba(155, 154, 151, 0.14);
+
+	/* Prep-station tones (dark theme) — see :root for rationale. */
+	--station-kitchen: #fb923c;
+	--station-kitchen-light: rgba(251, 146, 60, 0.18);
+	--station-bar: #a78bfa;
+	--station-bar-light: rgba(167, 139, 250, 0.18);
 
 	--btn-primary-bg: #2383e2;
 	--btn-primary-hover: #4b9fe8;

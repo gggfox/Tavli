@@ -11,6 +11,8 @@ import { ItemOptionsIcon } from "./ItemOptionsIcon";
 
 type ExpandedPanel = "edit" | "image" | "options" | null;
 
+type PrepStation = "kitchen" | "bar";
+
 interface MenuItemRowProps {
 	item: Doc<"menuItems"> & { imageUrl?: string | null };
 	onUpdate: (args: {
@@ -18,6 +20,7 @@ interface MenuItemRowProps {
 		name?: string;
 		description?: string;
 		basePrice?: number;
+		prepStation?: PrepStation;
 	}) => Promise<unknown>;
 	onRemove: (args: { itemId: Id<"menuItems"> }) => void;
 	onToggleAvailability: (args: { itemId: Id<"menuItems"> }) => void;
@@ -153,6 +156,7 @@ export function MenuItemRow({
 					currentName={item.name}
 					currentDescription={item.description ?? ""}
 					currentPrice={item.basePrice}
+					currentPrepStation={item.prepStation ?? "kitchen"}
 					onSave={onUpdate}
 					onClose={() => setExpandedPanel(null)}
 				/>

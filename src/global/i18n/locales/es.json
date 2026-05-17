@@ -327,9 +327,17 @@
 			"served": "Entregado",
 			"cancelled": "Cancelado"
 		},
+		"station": {
+			"kitchen": "Cocina",
+			"bar": "Barra",
+			"readyBadge": "{{station}}: listo",
+			"pendingBadge": "{{station}}: en proceso"
+		},
 		"actions": {
 			"accept": "Aceptar pedido",
 			"markReady": "Marcar listo",
+			"markKitchenReady": "Cocina lista",
+			"markBarReady": "Barra lista",
 			"markServed": "Marcar entregado",
 			"cancel": "Cancelar",
 			"cancelAndRefund": "Cancelar y reembolsar",
@@ -354,6 +362,7 @@
 		},
 		"aria": {
 			"filter": "Filtrar pedidos por estado",
+			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos"
 		}
@@ -759,7 +768,9 @@
 			"deselectAll": "Quitar selección",
 			"bulkHide": "Ocultar seleccionados",
 			"bulkShow": "Mostrar seleccionados",
-			"bulkDelete": "Eliminar seleccionados"
+			"bulkDelete": "Eliminar seleccionados",
+			"bulkMarkKitchen": "Asignar a cocina",
+			"bulkMarkBar": "Asignar a barra"
 		},
 		"item": {
 			"editTitle": "Editar producto",
@@ -767,7 +778,10 @@
 			"optionsTitle": "Vincular grupos de opciones",
 			"markUnavailable": "Marcar no disponible",
 			"markAvailable": "Marcar disponible",
-			"removeTitle": "Eliminar producto"
+			"removeTitle": "Eliminar producto",
+			"prepStationLabel": "Estación de preparación",
+			"prepStationKitchen": "Cocina",
+			"prepStationBar": "Barra"
 		},
 		"translation": {
 			"namePlaceholder": "Traducción de {{name}}...",

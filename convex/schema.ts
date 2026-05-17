@@ -10,6 +10,7 @@ import {
 	ORDER_PAYMENT_STATE,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
+	PREP_STATION,
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
 	RESTAURANT_MEMBER_ROLE,
@@ -54,6 +55,13 @@ export default defineSchema({
 					v.literal("cancelled")
 				)
 			)
+		),
+		// Subset of prep stations the OrderDashboard should display.
+		// Empty array means "show all stations" (no filter applied) — matches
+		// the existing pattern of `orderDashboardStatusFilters`. Persisted per
+		// user; manual; default = all stations (no auth coupling).
+		orderDashboardPrepStationFilters: v.optional(
+			v.array(v.union(v.literal("kitchen"), v.literal("bar")))
 		),
 		// Sidebar accordion groups the user has open. Identified by the group's
 		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
@@ -221,6 +229,14 @@ export default defineSchema({
 		availableDays: v.optional(v.array(v.number())),
 		displayOrder: v.number(),
 		tags: v.optional(v.array(v.string())),
+		// Where this item is prepared. Drives the orders-dashboard station filter
+		// and the per-station "ready" workflow. Optional during the rollout —
+		// `migrations/backfillPrepStation.ts` populates pre-existing rows with
+		// DEFAULT_PREP_STATION; new rows always set it via createMenuItem.
+		// Treat unset values as DEFAULT_PREP_STATION at read time.
+		prepStation: v.optional(
+			v.union(v.literal(PREP_STATION.KITCHEN), v.literal(PREP_STATION.BAR))
+		),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
@@ -362,6 +378,15 @@ export default defineSchema({
 		stripePaymentIntentId: v.optional(v.string()),
 		submittedAt: v.optional(v.number()),
 		paidAt: v.optional(v.number()),
+		/**
+		 * Per-station "ready" timestamps. Set by `markStationReady` when the
+		 * staff at that station confirm their portion of the order is done.
+		 * When *every* applicable station (= distinct prepStations across the
+		 * order's items) has a non-null timestamp, the order's overall
+		 * `status` is also flipped to "ready".
+		 */
+		kitchenReadyAt: v.optional(v.number()),
+		barReadyAt: v.optional(v.number()),
 		/** Monotonic per restaurant per business day; assigned in confirmPayment only. */
 		dailyOrderNumber: v.optional(v.number()),
 		/** YYYY-MM-DD business-day label at assignment time. */

@@ -148,6 +148,28 @@ export const SELECTION_TYPE = {
 
 export type SelectionType = (typeof SELECTION_TYPE)[keyof typeof SELECTION_TYPE];
 
+/**
+ * Where a menu item is physically prepared. Drives the orders-tab station
+ * filter and the per-station "ready" workflow on each order. Aligned with
+ * SHIFT_ROLE.KITCHEN / SHIFT_ROLE.BARTENDER vocabulary.
+ *
+ * NOTE: a station is intentionally NOT the same as a content axis like
+ * "food vs beverage" — a non-alcoholic latte may be prepared at the
+ * KITCHEN, and an affogato dessert at the BAR. See ADR 005.
+ */
+export const PREP_STATION = {
+	KITCHEN: "kitchen",
+	BAR: "bar",
+} as const;
+
+export type PrepStation = (typeof PREP_STATION)[keyof typeof PREP_STATION];
+
+/** All known prep stations, useful for iteration and default filter sets. */
+export const ALL_PREP_STATIONS = [PREP_STATION.KITCHEN, PREP_STATION.BAR] as const;
+
+/** Default prepStation backfilled onto pre-existing menuItems rows. */
+export const DEFAULT_PREP_STATION: PrepStation = PREP_STATION.KITCHEN;
+
 export const RESERVATION_STATUS = {
 	PENDING: "pending",
 	CONFIRMED: "confirmed",

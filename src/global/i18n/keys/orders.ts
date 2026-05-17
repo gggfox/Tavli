@@ -16,8 +16,15 @@ export const OrdersKeys = {
 	STATUS_SERVED: "orders.status.served",
 	STATUS_CANCELLED: "orders.status.cancelled",
 
+	STATION_KITCHEN: "orders.station.kitchen",
+	STATION_BAR: "orders.station.bar",
+	STATION_READY_BADGE: "orders.station.readyBadge",
+	STATION_PENDING_BADGE: "orders.station.pendingBadge",
+
 	ACTION_ACCEPT: "orders.actions.accept",
 	ACTION_MARK_READY: "orders.actions.markReady",
+	ACTION_MARK_KITCHEN_READY: "orders.actions.markKitchenReady",
+	ACTION_MARK_BAR_READY: "orders.actions.markBarReady",
 	ACTION_MARK_SERVED: "orders.actions.markServed",
 	ACTION_CANCEL: "orders.actions.cancel",
 	ACTION_CANCEL_AND_REFUND: "orders.actions.cancelAndRefund",
@@ -37,6 +44,7 @@ export const OrdersKeys = {
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
 
 	ARIA_FILTER: "orders.aria.filter",
+	ARIA_STATION_FILTER: "orders.aria.stationFilter",
 	ARIA_FULL_ORDER: "orders.aria.fullOrder",
 	ARIA_LOADING: "orders.aria.loading",
 } as const;

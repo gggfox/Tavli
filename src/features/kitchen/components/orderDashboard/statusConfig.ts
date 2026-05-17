@@ -15,6 +15,13 @@ export type DashboardSelectedOption = Doc<"orderItems">["selectedOptions"][numbe
 export type DashboardOrderItem = Omit<Doc<"orderItems">, "selectedOptions"> & {
 	readonly menuItemTranslations?: LiveNameDescriptionTranslations;
 	readonly selectedOptions: ReadonlyArray<DashboardSelectedOption>;
+	/**
+	 * Resolved prep station for this item. Computed by the orders query
+	 * via live lookup of `menuItems.prepStation` (no snapshot on the
+	 * orderItems row — see ADR 005). Falls back to "kitchen" when the
+	 * source menu item has been soft-deleted.
+	 */
+	readonly prepStation: "kitchen" | "bar";
 };
 
 export type DashboardOrder = Doc<"orders"> & {

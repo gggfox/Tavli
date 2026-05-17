@@ -47,6 +47,7 @@ export function useMenuItems(
 	const toggleAvailability = useConvexMutate(api.menuItems.toggleAvailability);
 	const bulkRemoveItems = useConvexMutate(api.menuItems.bulkRemove);
 	const bulkSetAvailability = useConvexMutate(api.menuItems.bulkSetAvailability);
+	const bulkSetPrepStation = useConvexMutate(api.menuItems.bulkSetPrepStation);
 	// `generateUploadUrl` is intentionally NOT wrapped in React Query: callers
 	// invoke it imperatively as part of an upload pipeline (request URL ->
 	// upload file -> persist storageId), not as a top-level mutation whose
@@ -69,6 +70,7 @@ export function useMenuItems(
 		toggleAvailability: toggleAvailability.mutateAsync,
 		bulkRemoveItems: bulkRemoveItems.mutateAsync,
 		bulkSetAvailability: bulkSetAvailability.mutateAsync,
+		bulkSetPrepStation: bulkSetPrepStation.mutateAsync,
 		generateUploadUrl,
 	};
 }

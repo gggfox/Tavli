@@ -1,7 +1,14 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { NotFoundError } from "./_shared/errors";
-import { ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
+import {
+	DEFAULT_PREP_STATION,
+	ORDER_PAYMENT_STATE,
+	PAYMENT_STATUS,
+	PREP_STATION,
+	type PrepStation,
+	TABLE,
+} from "./constants";
 
 export type NormalizedSelectedOption = {
 	optionGroupId: Id<"optionGroups">;
@@ -35,6 +42,46 @@ export const DASHBOARD_STATUS_VALIDATOR = v.union(
 	v.literal("served"),
 	v.literal("cancelled")
 );
+
+/**
+ * Validator for the `prepStation` literal used in mutation/query args.
+ * Matches `PREP_STATION` constant; keep them in sync.
+ */
+export const PREP_STATION_VALIDATOR = v.union(
+	v.literal(PREP_STATION.KITCHEN),
+	v.literal(PREP_STATION.BAR)
+);
+
+/**
+ * Resolve the prepStation for a menu item, falling back to the default for
+ * pre-backfill rows that still have `prepStation === undefined`. Centralizes
+ * the read-side fallback so call sites do not have to repeat it.
+ */
+export function resolvePrepStation(
+	menuItem: { prepStation?: PrepStation } | null | undefined
+): PrepStation {
+	return menuItem?.prepStation ?? DEFAULT_PREP_STATION;
+}
+
+/**
+ * Compute the set of prep stations that are "applicable" to an order — i.e.
+ * the distinct stations across all of its order items. Used by
+ * `markStationReady` to decide when to flip `Order.status` to "ready"
+ * (when every applicable station has a non-null `*ReadyAt`).
+ *
+ * Items whose menuItem can no longer be loaded (soft-deleted) fall back to
+ * the default station so they never silently block the order from completing.
+ */
+export function getApplicableStations(
+	orderItems: ReadonlyArray<{ menuItemId: Id<"menuItems"> }>,
+	menuItemStationMap: ReadonlyMap<Id<"menuItems"> | string, PrepStation>
+): Set<PrepStation> {
+	const stations = new Set<PrepStation>();
+	for (const item of orderItems) {
+		stations.add(menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION);
+	}
+	return stations;
+}
 
 export async function recalculateTotal(
 	ctx: { db: { query: any; patch: any; get: any } },

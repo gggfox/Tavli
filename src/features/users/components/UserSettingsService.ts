@@ -43,6 +43,13 @@ export type OrderDashboardStatusFilter =
 	| "cancelled";
 
 /**
+ * Prep stations the OrderDashboard is allowed to filter by. Mirrors the
+ * validator in convex/userSettings.ts and the PREP_STATION constant in
+ * convex/constants.ts.
+ */
+export type OrderDashboardPrepStationFilter = "kitchen" | "bar";
+
+/**
  * Transform raw Convex user settings to domain UserSettings.
  * Currently an identity function, but provides a hook for
  * future domain transformations if needed.
@@ -61,6 +68,7 @@ export class UserSettingsError {
 			| "updateSidebarExpanded"
 			| "updateLanguage"
 			| "updateOrderDashboardStatusFilters"
+			| "updateOrderDashboardPrepStationFilters"
 			| "setSidebarGroupExpanded",
 		readonly cause: unknown
 	) {}
@@ -133,6 +141,24 @@ export async function updateOrderDashboardStatusFilters(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardStatusFilters", error);
+	}
+}
+
+/**
+ * Update the OrderDashboard prep-station filters for the authenticated user.
+ * Empty array = no station filter (= show all stations). See ADR 005.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardPrepStationFilters(
+	client: ConvexReactClient,
+	prepStations: OrderDashboardPrepStationFilter[]
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardPrepStationFilters, {
+			prepStations,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardPrepStationFilters", error);
 	}
 }
 

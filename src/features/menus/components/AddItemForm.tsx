@@ -1,3 +1,4 @@
+import { SegmentedControl } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
 import { parseDollarsToCents } from "@/global/utils/money";
 import { useForm } from "@tanstack/react-form";
@@ -6,6 +7,8 @@ import { ClipboardPaste, ImagePlus, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getImageFromClipboard, uploadImage } from "../utils/imageUtils";
+
+type PrepStation = "kitchen" | "bar";
 
 interface AddItemFormProps {
 	categoryId: Id<"menuCategories">;
@@ -18,6 +21,7 @@ interface AddItemFormProps {
 		description?: string;
 		basePrice: number;
 		imageStorageId?: Id<"_storage">;
+		prepStation?: PrepStation;
 	}) => Promise<unknown>;
 	onCancel: () => void;
 }
@@ -32,6 +36,7 @@ export function AddItemForm({
 	const { t } = useTranslation();
 	const [selectedImage, setSelectedImage] = useState<File | null>(null);
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
+	const [prepStation, setPrepStation] = useState<PrepStation>("kitchen");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const clearSelectedImage = () => {
@@ -77,9 +82,11 @@ export function AddItemForm({
 				description: value.description || undefined,
 				basePrice: price,
 				imageStorageId,
+				prepStation,
 			});
 
 			form.reset();
+			setPrepStation("kitchen");
 			clearSelectedImage();
 			onCancel();
 		},
@@ -143,6 +150,21 @@ export function AddItemForm({
 					/>
 				)}
 			/>
+			<div className="flex items-center gap-3">
+				<span className="text-xs text-muted-foreground" >
+					{t(MenusKeys.ITEM_PREP_STATION_LABEL)}
+				</span>
+				<SegmentedControl<PrepStation>
+					ariaLabel={t(MenusKeys.ITEM_PREP_STATION_LABEL)}
+					size="sm"
+					options={[
+						{ value: "kitchen", label: t(MenusKeys.ITEM_PREP_STATION_KITCHEN) },
+						{ value: "bar", label: t(MenusKeys.ITEM_PREP_STATION_BAR) },
+					]}
+					value={prepStation}
+					onChange={setPrepStation}
+				/>
+			</div>
 			<div className="flex items-center gap-3">
 				<label
 					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-hover border border-border text-muted-foreground"

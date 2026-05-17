@@ -44,6 +44,8 @@ export const MenusKeys = {
 	CATEGORY_BULK_HIDE: "menus.category.bulkHide",
 	CATEGORY_BULK_SHOW: "menus.category.bulkShow",
 	CATEGORY_BULK_DELETE: "menus.category.bulkDelete",
+	CATEGORY_BULK_MARK_KITCHEN: "menus.category.bulkMarkKitchen",
+	CATEGORY_BULK_MARK_BAR: "menus.category.bulkMarkBar",
 
 	ITEM_EDIT_TITLE: "menus.item.editTitle",
 	ITEM_IMAGE_TITLE: "menus.item.imageTitle",
@@ -51,6 +53,9 @@ export const MenusKeys = {
 	ITEM_MARK_UNAVAILABLE: "menus.item.markUnavailable",
 	ITEM_MARK_AVAILABLE: "menus.item.markAvailable",
 	ITEM_REMOVE_TITLE: "menus.item.removeTitle",
+	ITEM_PREP_STATION_LABEL: "menus.item.prepStationLabel",
+	ITEM_PREP_STATION_KITCHEN: "menus.item.prepStationKitchen",
+	ITEM_PREP_STATION_BAR: "menus.item.prepStationBar",
 
 	TRANSLATION_NAME_PLACEHOLDER: "menus.translation.namePlaceholder",
 	TRANSLATION_DESC_PLACEHOLDER: "menus.translation.descPlaceholder",

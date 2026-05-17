@@ -1,4 +1,7 @@
-import type { OrderDashboardStatusFilter } from "@/features";
+import type {
+	OrderDashboardPrepStationFilter,
+	OrderDashboardStatusFilter,
+} from "@/features";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import {
 	DashboardShell,
@@ -10,12 +13,13 @@ import { useOptimisticUserSetting } from "@/global/hooks";
 import { OrdersKeys } from "@/global/i18n";
 import type { Id } from "convex/_generated/dataModel";
 import { ChefHat } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOrders } from "../../hooks/useOrders";
 import { OrderCard } from "./OrderCard";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 import { OrderDetailModal } from "./OrderDetailModal";
+import { ALL_PREP_STATIONS, STATION_CONFIG } from "./stationConfig";
 import {
 	ALL_STATUSES,
 	DEFAULT_STATUS_FILTERS,
@@ -25,13 +29,25 @@ import {
 	type DashboardOrder,
 } from "./statusConfig";
 
+/**
+ * Default prep-station filter set: empty = "no station filter applied"
+ * (= show all stations). Mirrors the `null`/`[]` semantics of the
+ * persisted user setting. See ADR 005.
+ */
+const DEFAULT_PREP_STATION_FILTERS: OrderDashboardPrepStationFilter[] = [];
+
 interface OrderDashboardProps {
 	restaurantId: Id<"restaurants">;
 }
 
 export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) {
 	const { t } = useTranslation();
-	const { orderDashboardStatusFilters, updateOrderDashboardStatusFilters } = useUserSettings();
+	const {
+		orderDashboardStatusFilters,
+		updateOrderDashboardStatusFilters,
+		orderDashboardPrepStationFilters,
+		updateOrderDashboardPrepStationFilters,
+	} = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
 	const [now, setNow] = useState(() => Date.now());
@@ -44,7 +60,25 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		fallback: DEFAULT_STATUS_FILTERS,
 	});
 
-	const { orders, isLoading, error, updateStatus } = useOrders(restaurantId, activeFilters);
+	const [activeStationFilters, setActiveStationFilters] = useOptimisticUserSetting<
+		OrderDashboardPrepStationFilter[]
+	>({
+		serverValue: orderDashboardPrepStationFilters,
+		persist: updateOrderDashboardPrepStationFilters,
+		fallback: DEFAULT_PREP_STATION_FILTERS,
+	});
+
+	// Pass `undefined` (not `[]`) when no station filter is active so the
+	// query treats it as "no filter" and short-circuits the per-order
+	// presence check on the server side.
+	const queryStations =
+		activeStationFilters.length > 0 ? activeStationFilters : undefined;
+
+	const { orders, isLoading, error, updateStatus, markStationReady } = useOrders(
+		restaurantId,
+		activeFilters,
+		queryStations
+	);
 
 	useEffect(() => {
 		const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -52,6 +86,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	}, []);
 
 	const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
+	const activeStationFilterSet = useMemo<
+		ReadonlySet<OrderDashboardPrepStationFilter>
+	>(() => new Set(activeStationFilters), [activeStationFilters]);
 
 	const statusFilterOptions = useMemo<
 		ReadonlyArray<StatusFilterOption<OrderDashboardStatusFilter>>
@@ -72,13 +109,27 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		setActiveFilters(next);
 	};
 
+	const handleToggleStationFilter = (station: OrderDashboardPrepStationFilter) => {
+		const next = activeStationFilters.includes(station)
+			? activeStationFilters.filter((s) => s !== station)
+			: [...activeStationFilters, station];
+		setActiveStationFilters(next);
+	};
+
 	const filterPills = (
-		<StatusFilterChips
-			options={statusFilterOptions}
-			selected={activeFilterSet}
-			onToggle={handleToggleFilter}
-			ariaLabel={t(OrdersKeys.ARIA_FILTER)}
-		/>
+		<div className="flex flex-col gap-2">
+			<StatusFilterChips
+				options={statusFilterOptions}
+				selected={activeFilterSet}
+				onToggle={handleToggleFilter}
+				ariaLabel={t(OrdersKeys.ARIA_FILTER)}
+			/>
+			<StationFilterChips
+				selected={activeStationFilterSet}
+				onToggle={handleToggleStationFilter}
+				ariaLabel={t(OrdersKeys.ARIA_STATION_FILTER)}
+			/>
+		</div>
 	);
 
 	const typedOrders = orders as ReadonlyArray<DashboardOrder>;
@@ -118,10 +169,12 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 							order={order}
 							now={now}
 							cancelConfirm={cancelConfirm}
+							activeStationFilters={activeStationFilterSet}
 							onSelectFullOrder={setFullOrder}
 							onRequestCancel={setCancelConfirm}
 							onDismissCancel={() => setCancelConfirm(null)}
 							onUpdateStatus={updateStatus}
+							onMarkStationReady={markStationReady}
 						/>
 					))}
 				</div>
@@ -133,5 +186,47 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				onClose={() => setFullOrder(null)}
 			/>
 		</DashboardShell>
+	);
+}
+
+interface StationFilterChipsProps {
+	readonly selected: ReadonlySet<OrderDashboardPrepStationFilter>;
+	readonly onToggle: (station: OrderDashboardPrepStationFilter) => void;
+	readonly ariaLabel: string;
+}
+
+/**
+ * Prep-station equivalent of `StatusFilterChips`. Renders a small
+ * fieldset of toggle pills using the station-specific palette in
+ * `STATION_CONFIG` so the row is visually distinct from the status row
+ * above it.
+ */
+function StationFilterChips({ selected, onToggle, ariaLabel }: StationFilterChipsProps) {
+	const { t } = useTranslation();
+	return (
+		<fieldset className="flex flex-wrap gap-2 m-0 p-0 border-0">
+			<legend className="sr-only">{ariaLabel}</legend>
+			{ALL_PREP_STATIONS.map((station) => {
+				const config = STATION_CONFIG[station];
+				const Icon = config.icon;
+				const isActive = selected.has(station);
+				const style: CSSProperties = isActive
+					? { backgroundColor: config.visual.solidBg, color: config.visual.solidFg }
+					: { backgroundColor: config.visual.tintedBg, color: config.visual.fg };
+				return (
+					<button
+						key={station}
+						type="button"
+						aria-pressed={isActive}
+						onClick={() => onToggle(station)}
+						className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+						style={style}
+					>
+						<Icon size={12} />
+						{t(config.labelKey)}
+					</button>
+				);
+			})}
+		</fieldset>
 	);
 }

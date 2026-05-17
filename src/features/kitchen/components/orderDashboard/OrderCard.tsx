@@ -4,8 +4,10 @@ import { OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
 import { CheckCircle2, ChefHat, Clock, CreditCard, UtensilsCrossed, XCircle } from "lucide-react";
+import { type CSSProperties, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
+import { STATION_CONFIG, type DashboardPrepStation } from "./stationConfig";
 import {
 	formatOrderDate,
 	formatOrderTime,
@@ -20,6 +22,14 @@ interface OrderCardProps {
 	order: DashboardOrder;
 	now: number;
 	cancelConfirm: string | null;
+	/**
+	 * Currently-active station filters on the dashboard. When non-empty,
+	 * the card swaps the generic "Mark Ready" button for a station-scoped
+	 * one ("Mark Bar Ready" / "Mark Kitchen Ready") that calls the
+	 * `markStationReady` mutation. When the set has more than one station
+	 * selected we fall back to the whole-order action.
+	 */
+	activeStationFilters: ReadonlySet<DashboardPrepStation>;
 	onSelectFullOrder: (order: DashboardOrder) => void;
 	onRequestCancel: (orderId: string) => void;
 	onDismissCancel: () => void;
@@ -27,16 +37,22 @@ interface OrderCardProps {
 		orderId: DashboardOrder["_id"];
 		newStatus: NextOrderStatus;
 	}) => void;
+	onMarkStationReady: (args: {
+		orderId: DashboardOrder["_id"];
+		station: DashboardPrepStation;
+	}) => void;
 }
 
 export function OrderCard({
 	order,
 	now,
 	cancelConfirm,
+	activeStationFilters,
 	onSelectFullOrder,
 	onRequestCancel,
 	onDismissCancel,
 	onUpdateStatus,
+	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
 	const { t, i18n } = useTranslation();
 	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilter];
@@ -50,6 +66,34 @@ export function OrderCard({
 		hiddenCount > 0
 			? `${t(OrdersKeys.CARD_MORE_ITEMS, { count: hiddenCount })} · ${t(OrdersKeys.ACTION_VIEW_FULL_ORDER)}`
 			: t(OrdersKeys.ACTION_VIEW_FULL_ORDER);
+
+	// Distinct prep stations represented in this order. Drives the
+	// per-station progress chips in the header — we only render a chip
+	// for stations that actually have items here.
+	const orderStations = useMemo<DashboardPrepStation[]>(() => {
+		const set = new Set<DashboardPrepStation>();
+		for (const item of order.items) set.add(item.prepStation);
+		return ["kitchen", "bar"].filter((s): s is DashboardPrepStation => set.has(s as DashboardPrepStation));
+	}, [order.items]);
+
+	const stationStamps: Record<DashboardPrepStation, number | undefined> = {
+		kitchen: order.kitchenReadyAt,
+		bar: order.barReadyAt,
+	};
+
+	// When exactly one station is selected AND the order has work for
+	// that station that has not yet been stamped, replace the generic
+	// "Mark Ready" with the station-scoped action. Two-station selection
+	// is treated as "no narrowing" and falls back to the whole-order
+	// action so the dashboard does not silently choose for the user.
+	const stationActionTarget: DashboardPrepStation | null = useMemo(() => {
+		if (activeStationFilters.size !== 1) return null;
+		const [only] = [...activeStationFilters];
+		if (!only) return null;
+		if (!orderStations.includes(only)) return null;
+		if (stationStamps[only] !== undefined) return null;
+		return only;
+	}, [activeStationFilters, orderStations, stationStamps]);
 
 	return (
 		<Surface tone="secondary" rounded="xl" className="overflow-hidden flex flex-col aspect-video">
@@ -96,6 +140,38 @@ export function OrderCard({
 					</span>
 				</div>
 
+				{orderStations.length > 0 && (
+					<div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+						{orderStations.map((station) => {
+							const stationConfig = STATION_CONFIG[station];
+							const isReady = stationStamps[station] !== undefined;
+							const Icon = stationConfig.icon;
+							const chipStyle: CSSProperties = isReady
+								? {
+										backgroundColor: stationConfig.visual.solidBg,
+										color: stationConfig.visual.solidFg,
+									}
+								: {
+										backgroundColor: stationConfig.visual.tintedBg,
+										color: stationConfig.visual.fg,
+									};
+							const labelKey = isReady
+								? OrdersKeys.STATION_READY_BADGE
+								: OrdersKeys.STATION_PENDING_BADGE;
+							return (
+								<span
+									key={station}
+									className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+									style={chipStyle}
+								>
+									<Icon size={10} />
+									{t(labelKey, { station: t(stationConfig.labelKey) })}
+								</span>
+							);
+						})}
+					</div>
+				)}
+
 				<div className="flex items-center justify-between gap-2 mt-1">
 					<span
 						className="text-[11px] font-mono truncate text-faint-foreground"
@@ -124,7 +200,11 @@ export function OrderCard({
 
 			<div className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto">
 				{visibleItems.map((item) => (
-					<OrderItemRow key={item._id} item={item} />
+					<OrderItemRow
+						key={item._id}
+						item={item}
+						activeStationFilters={activeStationFilters}
+					/>
 				))}
 			</div>
 
@@ -181,20 +261,13 @@ export function OrderCard({
 					hasNextAction && (
 						<div className="flex gap-2">
 							{config.next && config.nextLabelKey && (
-								<button
-									onClick={() =>
-										onUpdateStatus({
-											orderId: order._id,
-											newStatus: config.next as NextOrderStatus,
-										})
-									}
-									className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-								>
-									{config.next === "preparing" && <ChefHat size={14} />}
-									{config.next === "ready" && <CheckCircle2 size={14} />}
-									{config.next === "served" && <UtensilsCrossed size={14} />}
-									{t(config.nextLabelKey)}
-								</button>
+								<NextActionButton
+									order={order}
+									config={config}
+									stationActionTarget={stationActionTarget}
+									onUpdateStatus={onUpdateStatus}
+									onMarkStationReady={onMarkStationReady}
+								/>
 							)}
 							<button
 								onClick={() => onRequestCancel(order._id)}
@@ -209,5 +282,77 @@ export function OrderCard({
 				)}
 			</div>
 		</Surface>
+	);
+}
+
+interface NextActionButtonProps {
+	readonly order: DashboardOrder;
+	readonly config: (typeof STATUS_CONFIG)[OrderDashboardStatusFilter];
+	readonly stationActionTarget: DashboardPrepStation | null;
+	readonly onUpdateStatus: (args: {
+		orderId: DashboardOrder["_id"];
+		newStatus: NextOrderStatus;
+	}) => void;
+	readonly onMarkStationReady: (args: {
+		orderId: DashboardOrder["_id"];
+		station: DashboardPrepStation;
+	}) => void;
+}
+
+/**
+ * The primary "advance this order" button. When the dashboard is
+ * filtered to a single station and the order's next transition is
+ * "ready", this button switches to the station-scoped variant
+ * (markStationReady), which only stamps that station's `*ReadyAt` and
+ * defers flipping `Order.status` until every applicable station is
+ * stamped. In every other case it behaves exactly like the original
+ * whole-order action.
+ */
+function NextActionButton({
+	order,
+	config,
+	stationActionTarget,
+	onUpdateStatus,
+	onMarkStationReady,
+}: Readonly<NextActionButtonProps>) {
+	const { t } = useTranslation();
+	const stationOnlyAdvance = stationActionTarget !== null && config.next === "ready";
+
+	if (stationOnlyAdvance) {
+		const stationConfig = STATION_CONFIG[stationActionTarget];
+		const Icon = stationConfig.icon;
+		return (
+			<button
+				onClick={() =>
+					onMarkStationReady({ orderId: order._id, station: stationActionTarget })
+				}
+				className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
+				style={{
+					backgroundColor: stationConfig.visual.solidBg,
+					color: stationConfig.visual.solidFg,
+				}}
+			>
+				<Icon size={14} />
+				{t(stationConfig.readyActionKey)}
+			</button>
+		);
+	}
+
+	if (!config.next || !config.nextLabelKey) return null;
+	return (
+		<button
+			onClick={() =>
+				onUpdateStatus({
+					orderId: order._id,
+					newStatus: config.next as NextOrderStatus,
+				})
+			}
+			className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+		>
+			{config.next === "preparing" && <ChefHat size={14} />}
+			{config.next === "ready" && <CheckCircle2 size={14} />}
+			{config.next === "served" && <UtensilsCrossed size={14} />}
+			{t(config.nextLabelKey)}
+		</button>
 	);
 }

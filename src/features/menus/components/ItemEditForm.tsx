@@ -1,19 +1,25 @@
+import { SegmentedControl } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
 import { formatCents, parseDollarsToCents } from "@/global/utils/money";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+type PrepStation = "kitchen" | "bar";
 
 interface ItemEditFormProps {
 	itemId: Id<"menuItems">;
 	currentName: string;
 	currentDescription: string;
 	currentPrice: number;
+	currentPrepStation: PrepStation;
 	onSave: (args: {
 		itemId: Id<"menuItems">;
 		name?: string;
 		description?: string;
 		basePrice?: number;
+		prepStation?: PrepStation;
 	}) => Promise<unknown>;
 	onClose: () => void;
 }
@@ -23,10 +29,12 @@ export function ItemEditForm({
 	currentName,
 	currentDescription,
 	currentPrice,
+	currentPrepStation,
 	onSave,
 	onClose,
 }: Readonly<ItemEditFormProps>) {
 	const { t } = useTranslation();
+	const [prepStation, setPrepStation] = useState<PrepStation>(currentPrepStation);
 	const form = useForm({
 		defaultValues: {
 			name: currentName,
@@ -41,6 +49,7 @@ export function ItemEditForm({
 				name: value.name.trim(),
 				description: value.description || undefined,
 				basePrice: parsedPrice,
+				...(prepStation !== currentPrepStation && { prepStation }),
 			});
 			onClose();
 		},
@@ -107,6 +116,21 @@ export function ItemEditForm({
 					/>
 				)}
 			/>
+			<div className="flex items-center gap-3">
+				<span className="text-xs text-muted-foreground">
+					{t(MenusKeys.ITEM_PREP_STATION_LABEL)}
+				</span>
+				<SegmentedControl<PrepStation>
+					ariaLabel={t(MenusKeys.ITEM_PREP_STATION_LABEL)}
+					size="sm"
+					options={[
+						{ value: "kitchen", label: t(MenusKeys.ITEM_PREP_STATION_KITCHEN) },
+						{ value: "bar", label: t(MenusKeys.ITEM_PREP_STATION_BAR) },
+					]}
+					value={prepStation}
+					onChange={setPrepStation}
+				/>
+			</div>
 			<div className="flex gap-2">
 				<form.Subscribe
 					selector={(state) => state.isSubmitting}

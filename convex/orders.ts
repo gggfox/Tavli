@@ -17,8 +17,11 @@ import {
 import {
 	AUDIT_SYSTEM_USER_ID,
 	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
+	DEFAULT_PREP_STATION,
 	ORDER_PAYMENT_STATE,
 	PAYMENT_STATUS,
+	PREP_STATION,
+	type PrepStation,
 	TABLE,
 } from "./constants";
 import { allocateNextOrderNumber } from "./orderDayCounters";
@@ -26,10 +29,13 @@ import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDa
 import { resolveAttributedMemberId } from "./_util/attribution";
 import {
 	DASHBOARD_STATUS_VALIDATOR,
+	getApplicableStations,
 	invalidateActivePayment,
 	loadOrderItemTranslations,
 	normalizeSelectedOptions,
+	PREP_STATION_VALIDATOR,
 	recalculateTotal,
+	resolvePrepStation,
 	selectedOptionValidator,
 	VALID_TRANSITIONS,
 } from "./orderHelpers";
@@ -489,6 +495,13 @@ export const getActiveOrdersByRestaurant = query({
 		// When omitted, defaults to the active set (submitted/preparing/ready)
 		// so existing callers keep behaving as before.
 		statuses: v.optional(v.array(DASHBOARD_STATUS_VALIDATOR)),
+		// When omitted or empty, no station filter is applied (= "show all
+		// stations"). When provided, only orders containing at least one
+		// item whose `menuItem.prepStation` matches one of the listed
+		// stations are returned (presence filter — the full card still
+		// renders, the UI applies the visual highlight on matching items).
+		// Reads `menuItems.prepStation` live (no snapshot on `orderItems`).
+		prepStations: v.optional(v.array(PREP_STATION_VALIDATOR)),
 	},
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -524,20 +537,151 @@ export const getActiveOrdersByRestaurant = query({
 		const { menuItemTranslations, optionTranslations, optionGroupTranslations } =
 			await loadOrderItemTranslations(ctx, allItems);
 
-		const enrichedOrders = ordersWithItems.map((order) => ({
-			...order,
-			items: order.items.map((item) => ({
-				...item,
-				menuItemTranslations: menuItemTranslations.get(item.menuItemId),
-				selectedOptions: item.selectedOptions.map((selected) => ({
-					...selected,
-					optionTranslations: optionTranslations.get(selected.optionId),
-					optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
+		// Live lookup for prepStation — orderItems intentionally do NOT
+		// snapshot the station, so a manager re-tagging a menuItem
+		// re-routes already-active tickets. Documented in ADR 005 and the
+		// CONTEXT.md flagged ambiguity.
+		const menuItemIds = Array.from(new Set(allItems.map((i) => i.menuItemId)));
+		const menuItemDocs = await Promise.all(menuItemIds.map((id) => ctx.db.get(id)));
+		const menuItemStationMap = new Map<string, PrepStation>();
+		for (const doc of menuItemDocs) {
+			if (doc) menuItemStationMap.set(doc._id, resolvePrepStation(doc));
+		}
+
+		const stationFilter =
+			args.prepStations && args.prepStations.length > 0
+				? new Set(args.prepStations)
+				: null;
+
+		const enrichedOrders = ordersWithItems
+			.map((order) => ({
+				...order,
+				items: order.items.map((item) => ({
+					...item,
+					prepStation:
+						menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION,
+					menuItemTranslations: menuItemTranslations.get(item.menuItemId),
+					selectedOptions: item.selectedOptions.map((selected) => ({
+						...selected,
+						optionTranslations: optionTranslations.get(selected.optionId),
+						optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
+					})),
 				})),
-			})),
-		}));
+			}))
+			.filter((order) => {
+				if (!stationFilter) return true;
+				return order.items.some((it) => stationFilter.has(it.prepStation));
+			});
 
 		return [enrichedOrders, null];
+	},
+});
+
+/**
+ * Mark this order's portion at a given station as ready. Independently
+ * stamps `kitchenReadyAt` or `barReadyAt`. When *every* station that
+ * actually has items in this order has been stamped, also advance the
+ * order's overall `status` to "ready" via the normal transition path so
+ * downstream consumers (UI, reports, exports) keep a single source of
+ * truth on whole-order completion.
+ *
+ * Station autonomy without per-item state: see ADR 005.
+ */
+export const markStationReady = mutation({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		station: PREP_STATION_VALIDATOR,
+	},
+	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const order = await ctx.db.get(args.orderId);
+		if (!order) return [null, new NotFoundError("Order not found").toObject()];
+
+		const [, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
+		if (restaurantError) return [null, restaurantError];
+
+		// A station can only mark itself ready while the order is in flight
+		// (submitted / preparing). Once "ready"/"served"/"cancelled", the
+		// per-station stamp is no longer meaningful.
+		if (order.status !== "submitted" && order.status !== "preparing") {
+			throw new UserInputValidationError({
+				fields: [
+					{
+						field: "station",
+						message: `Cannot mark ${args.station} ready while order is ${order.status}`,
+					},
+				],
+			});
+		}
+
+		const items = await ctx.db
+			.query(TABLE.ORDER_ITEMS)
+			.withIndex("by_order", (q) => q.eq("orderId", order._id))
+			.collect();
+
+		const menuItemIds = Array.from(new Set(items.map((i) => i.menuItemId)));
+		const menuItemDocs = await Promise.all(menuItemIds.map((id) => ctx.db.get(id)));
+		const menuItemStationMap = new Map<string, PrepStation>();
+		for (const doc of menuItemDocs) {
+			if (doc) menuItemStationMap.set(doc._id, resolvePrepStation(doc));
+		}
+		const applicable = getApplicableStations(items, menuItemStationMap);
+
+		// The bartender pressing "Mark bar ready" on a kitchen-only order
+		// would be a UI bug; reject defensively so we surface it instead of
+		// silently no-oping.
+		if (!applicable.has(args.station)) {
+			throw new UserInputValidationError({
+				fields: [
+					{
+						field: "station",
+						message: `Order has no items prepared at the ${args.station}`,
+					},
+				],
+			});
+		}
+
+		const now = Date.now();
+		const stationStamp =
+			args.station === PREP_STATION.KITCHEN ? { kitchenReadyAt: now } : { barReadyAt: now };
+
+		// Compute next stamps so we can decide whether to flip the overall
+		// status in the same patch. Pre-existing stamps survive (we never
+		// overwrite a prior `*ReadyAt`).
+		const nextKitchenReadyAt =
+			args.station === PREP_STATION.KITCHEN
+				? (order.kitchenReadyAt ?? now)
+				: order.kitchenReadyAt;
+		const nextBarReadyAt =
+			args.station === PREP_STATION.BAR
+				? (order.barReadyAt ?? now)
+				: order.barReadyAt;
+
+		const everyStationDone = Array.from(applicable).every((station) =>
+			station === PREP_STATION.KITCHEN
+				? nextKitchenReadyAt !== undefined
+				: nextBarReadyAt !== undefined
+		);
+
+		// `order.status` is narrowed to "submitted" | "preparing" by the
+		// guard above, so flipping to "ready" is always a forward step
+		// here when every applicable station has been stamped.
+		const statusPatch = everyStationDone ? { status: "ready" as const } : {};
+
+		await ctx.db.patch(args.orderId, {
+			...stationStamp,
+			...statusPatch,
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		return [args.orderId, null];
 	},
 });
 

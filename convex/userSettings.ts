@@ -17,13 +17,21 @@ const orderDashboardStatusValidator = v.union(
 	v.literal("cancelled")
 );
 
+/** Prep stations the dashboard can filter by — see ADR 005. */
+const orderDashboardPrepStationValidator = v.union(
+	v.literal("kitchen"),
+	v.literal("bar")
+);
+
 type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "cancelled";
+type OrderDashboardPrepStation = "kitchen" | "bar";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
 	sidebarExpanded?: boolean;
 	language?: "en" | "es";
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
+	orderDashboardPrepStationFilters?: OrderDashboardPrepStation[];
 	expandedSidebarGroups?: string[];
 };
 
@@ -106,6 +114,9 @@ async function upsertUserSettings({
 		language: updates.language ?? defaults.language,
 		...(updates.orderDashboardStatusFilters !== undefined && {
 			orderDashboardStatusFilters: updates.orderDashboardStatusFilters,
+		}),
+		...(updates.orderDashboardPrepStationFilters !== undefined && {
+			orderDashboardPrepStationFilters: updates.orderDashboardPrepStationFilters,
 		}),
 		...(updates.expandedSidebarGroups !== undefined && {
 			expandedSidebarGroups: updates.expandedSidebarGroups,
@@ -231,6 +242,33 @@ export const updateOrderDashboardStatusFilters = mutation({
 			ctx,
 			userId,
 			updates: { orderDashboardStatusFilters: deduped },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update the OrderDashboard prep-station filters for the authenticated user.
+ * Creates settings if they don't exist.
+ *
+ * An empty array means "no station filter applied" (= show all stations) —
+ * matches the existing pattern of `updateOrderDashboardStatusFilters`.
+ * The mutation dedupes the input so the persisted value stays minimal.
+ */
+export const updateOrderDashboardPrepStationFilters = mutation({
+	args: {
+		prepStations: v.array(orderDashboardPrepStationValidator),
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		const deduped = Array.from(new Set(args.prepStations)) as OrderDashboardPrepStation[];
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardPrepStationFilters: deduped },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
 		});
 	},

@@ -9,7 +9,8 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent, stampUpdated } from "./_util/audit";
 import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
-import { TABLE } from "./constants";
+import { DEFAULT_PREP_STATION, TABLE } from "./constants";
+import { PREP_STATION_VALIDATOR } from "./orderHelpers";
 
 type AuthErrors =
 	| NotAuthenticatedErrorObject
@@ -41,6 +42,10 @@ export const create = mutation({
 		imageStorageId: v.optional(v.id("_storage")),
 		tags: v.optional(v.array(v.string())),
 		availableDays: v.optional(v.array(v.number())),
+		// Optional in args because callers (forms, scripts) may want to fall
+		// back to DEFAULT_PREP_STATION; always written to the DB so new rows
+		// never need backfilling.
+		prepStation: v.optional(PREP_STATION_VALIDATOR),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -65,6 +70,7 @@ export const create = mutation({
 			availableDays: args.availableDays,
 			displayOrder: existing.length,
 			tags: args.tags,
+			prepStation: args.prepStation ?? DEFAULT_PREP_STATION,
 			createdAt: now,
 			updatedAt: now,
 			updatedBy: userId,
@@ -74,7 +80,7 @@ export const create = mutation({
 			aggregateType: TABLE.MENU_ITEMS,
 			aggregateId: id,
 			eventType: "menuItems.created",
-			payload: { name: args.name },
+			payload: { name: args.name, prepStation: args.prepStation ?? DEFAULT_PREP_STATION },
 			userId,
 		});
 
@@ -92,6 +98,7 @@ export const update = mutation({
 		tags: v.optional(v.array(v.string())),
 		displayOrder: v.optional(v.number()),
 		availableDays: v.optional(v.array(v.number())),
+		prepStation: v.optional(PREP_STATION_VALIDATOR),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -115,6 +122,7 @@ export const update = mutation({
 			...(args.tags !== undefined && { tags: args.tags }),
 			...(args.displayOrder !== undefined && { displayOrder: args.displayOrder }),
 			...(args.availableDays !== undefined && { availableDays: args.availableDays }),
+			...(args.prepStation !== undefined && { prepStation: args.prepStation }),
 			...stampUpdated(userId),
 		});
 
@@ -288,6 +296,49 @@ export const bulkSetAvailability = mutation({
 				aggregateId: itemId,
 				eventType: "menuItems.updated",
 				payload: { isAvailable: args.isAvailable },
+				userId,
+			});
+			updated++;
+		}
+
+		return [updated, null];
+	},
+});
+
+/**
+ * Bulk-assign a prep station to multiple menu items in one go. Used by
+ * the per-category bulk action in `CategorySection` so a manager can flip
+ * an entire bar category from the default Kitchen to Bar without editing
+ * each item. Mirrors `bulkSetAvailability`.
+ */
+export const bulkSetPrepStation = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		itemIds: v.array(v.id(TABLE.MENU_ITEMS)),
+		prepStation: PREP_STATION_VALIDATOR,
+	},
+	handler: async function (ctx, args): AsyncReturn<number, AuthErrors> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [null, error2];
+
+		const unique = [...new Set(args.itemIds)];
+		let updated = 0;
+		for (const itemId of unique) {
+			const item = await ctx.db.get(itemId);
+			if (!item || item.restaurantId !== args.restaurantId) continue;
+
+			await ctx.db.patch(itemId, {
+				prepStation: args.prepStation,
+				...stampUpdated(userId),
+			});
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.MENU_ITEMS,
+				aggregateId: itemId,
+				eventType: "menuItems.updated",
+				payload: { prepStation: args.prepStation },
 				userId,
 			});
 			updated++;

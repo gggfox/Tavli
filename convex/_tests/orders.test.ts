@@ -132,6 +132,60 @@ async function seedMenuItem(t: ReturnType<typeof convexTest>, restaurantId: Id<"
 	return menuItemId!;
 }
 
+/**
+ * Seed an additional menu item with an explicit prep station, alongside
+ * the default `seedMenuItem` (which leaves prepStation undefined and so
+ * resolves to "kitchen"). Used by the prep-station / markStationReady
+ * tests.
+ */
+async function seedMenuItemWithStation(
+	t: ReturnType<typeof convexTest>,
+	restaurantId: Id<"restaurants">,
+	args: { name: string; prepStation: "kitchen" | "bar"; basePrice?: number }
+) {
+	let menuItemId: Id<"menuItems">;
+
+	await t.run(async (ctx) => {
+		const allMenus = await ctx.db.query("menus").collect();
+		const forRestaurant = allMenus.filter((m) => m.restaurantId === restaurantId);
+		const sortedMenus = [...forRestaurant].sort((a, b) => a.displayOrder - b.displayOrder);
+		const menuId =
+			sortedMenus[0]?._id ??
+			(await insertMenuForRestaurant(ctx, {
+				restaurantId,
+				name: "main",
+				userId: "owner1",
+			}));
+
+		const allCategories = await ctx.db.query("menuCategories").collect();
+		const existing = allCategories.find((c) => c.menuId === menuId);
+		const categoryId =
+			existing?._id ??
+			(await ctx.db.insert("menuCategories", {
+				menuId,
+				restaurantId,
+				name: "All",
+				displayOrder: 0,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			}));
+
+		menuItemId = await ctx.db.insert("menuItems", {
+			categoryId,
+			restaurantId,
+			name: args.name,
+			basePrice: args.basePrice ?? 600,
+			isAvailable: true,
+			displayOrder: 0,
+			prepStation: args.prepStation,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
+
+	return menuItemId!;
+}
+
 async function seedOptionGroupAndOption(
 	t: ReturnType<typeof convexTest>,
 	restaurantId: Id<"restaurants">
@@ -875,6 +929,498 @@ describe("orders", () => {
 			if (error === null || Array.isArray(error)) throw new Error("Expected error object");
 			expect(error.name).toBe("NOT_AUTHORIZED");
 		});
+
+		it("filters orders by prepStation (presence-based, live lookup)", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const kitchenItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Steak",
+				prepStation: "kitchen",
+			});
+			const barItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Margarita",
+				prepStation: "bar",
+			});
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			let kitchenOnlyId: Id<"orders">;
+			let barOnlyId: Id<"orders">;
+			let mixedId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+
+				kitchenOnlyId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 800,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: kitchenOnlyId,
+					menuItemId: kitchenItemId,
+					menuItemName: "Steak",
+					quantity: 1,
+					unitPrice: 800,
+					selectedOptions: [],
+					lineTotal: 800,
+					createdAt: Date.now(),
+				});
+
+				barOnlyId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 600,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: barOnlyId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+
+				mixedId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 1400,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: mixedId,
+					menuItemId: kitchenItemId,
+					menuItemName: "Steak",
+					quantity: 1,
+					unitPrice: 800,
+					selectedOptions: [],
+					lineTotal: 800,
+					createdAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId: mixedId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+			});
+
+			// No filter → all three orders.
+			const [allOrders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+			if (!Array.isArray(allOrders)) throw new Error("Expected array");
+			expect(new Set(allOrders.map((o) => o._id))).toEqual(
+				new Set([kitchenOnlyId!, barOnlyId!, mixedId!])
+			);
+
+			// Bar filter → bar-only and mixed (mixed has at least one bar item).
+			const [barOrders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				prepStations: ["bar"],
+			});
+			if (!Array.isArray(barOrders)) throw new Error("Expected array");
+			expect(new Set(barOrders.map((o) => o._id))).toEqual(new Set([barOnlyId!, mixedId!]));
+
+			// Kitchen filter → kitchen-only and mixed.
+			const [kitchenOrders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				prepStations: ["kitchen"],
+			});
+			if (!Array.isArray(kitchenOrders)) throw new Error("Expected array");
+			expect(new Set(kitchenOrders.map((o) => o._id))).toEqual(
+				new Set([kitchenOnlyId!, mixedId!])
+			);
+
+			// Items in the response carry the resolved prepStation for the UI.
+			const mixedOrder = allOrders.find((o) => o._id === mixedId!);
+			if (!mixedOrder) throw new Error("Mixed order missing");
+			const stations = new Set(mixedOrder.items.map((it) => it.prepStation));
+			expect(stations).toEqual(new Set(["kitchen", "bar"]));
+		});
+
+		it("falls back to kitchen for items whose menuItem has been deleted", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const barItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Margarita",
+				prepStation: "bar",
+			});
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+				orderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 600,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+
+				// Delete the source menu item so the live lookup misses.
+				await ctx.db.delete(barItemId);
+			});
+
+			const [orders] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			const targetOrder = orders.find((o) => o._id === orderId!);
+			expect(targetOrder?.items[0].prepStation).toBe("kitchen");
+		});
+	});
+
+	describe("markStationReady", () => {
+		async function seedAuthorizedRestaurantOwner(
+			t: ReturnType<typeof convexTest>,
+			organizationId: Id<"organizations">
+		) {
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+		}
+
+		it("stamps barReadyAt without flipping order status when kitchen items still pending", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const kitchenItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Steak",
+				prepStation: "kitchen",
+			});
+			const barItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Margarita",
+				prepStation: "bar",
+			});
+			await seedAuthorizedRestaurantOwner(t, organizationId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+				orderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 1400,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: kitchenItemId,
+					menuItemName: "Steak",
+					quantity: 1,
+					unitPrice: 800,
+					selectedOptions: [],
+					lineTotal: 800,
+					createdAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+			});
+
+			const [, error] = await authed.mutation(api.orders.markStationReady, {
+				orderId: orderId!,
+				station: "bar",
+			});
+			expect(error).toBeNull();
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId!));
+			expect(order?.barReadyAt).toBeTypeOf("number");
+			expect(order?.kitchenReadyAt).toBeUndefined();
+			// Status stays in flight because the kitchen has not stamped yet.
+			expect(order?.status).toBe("submitted");
+		});
+
+		it("flips order status to ready once every applicable station is stamped", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const kitchenItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Steak",
+				prepStation: "kitchen",
+			});
+			const barItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Margarita",
+				prepStation: "bar",
+			});
+			await seedAuthorizedRestaurantOwner(t, organizationId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+				orderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "preparing",
+					totalAmount: 1400,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: kitchenItemId,
+					menuItemName: "Steak",
+					quantity: 1,
+					unitPrice: 800,
+					selectedOptions: [],
+					lineTotal: 800,
+					createdAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+			});
+
+			await authed.mutation(api.orders.markStationReady, {
+				orderId: orderId!,
+				station: "bar",
+			});
+			await authed.mutation(api.orders.markStationReady, {
+				orderId: orderId!,
+				station: "kitchen",
+			});
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId!));
+			expect(order?.barReadyAt).toBeTypeOf("number");
+			expect(order?.kitchenReadyAt).toBeTypeOf("number");
+			expect(order?.status).toBe("ready");
+		});
+
+		it("flips status to ready immediately for a single-station order", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const barItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Margarita",
+				prepStation: "bar",
+			});
+			await seedAuthorizedRestaurantOwner(t, organizationId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+				orderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 600,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+			});
+
+			await authed.mutation(api.orders.markStationReady, {
+				orderId: orderId!,
+				station: "bar",
+			});
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId!));
+			expect(order?.barReadyAt).toBeTypeOf("number");
+			expect(order?.status).toBe("ready");
+		});
+
+		it("rejects when the order has no items at the requested station", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const kitchenItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Steak",
+				prepStation: "kitchen",
+			});
+			await seedAuthorizedRestaurantOwner(t, organizationId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+				orderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "submitted",
+					totalAmount: 800,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: kitchenItemId,
+					menuItemName: "Steak",
+					quantity: 1,
+					unitPrice: 800,
+					selectedOptions: [],
+					lineTotal: 800,
+					createdAt: Date.now(),
+				});
+			});
+
+			await expect(
+				authed.mutation(api.orders.markStationReady, {
+					orderId: orderId!,
+					station: "bar",
+				})
+			).rejects.toThrow(/no items prepared at the bar/);
+		});
+
+		it("rejects when the order is already ready or beyond", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const barItemId = await seedMenuItemWithStation(t, restaurantId, {
+				name: "Margarita",
+				prepStation: "bar",
+			});
+			await seedAuthorizedRestaurantOwner(t, organizationId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			let orderId: Id<"orders">;
+			await t.run(async (ctx) => {
+				const session = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					status: "active",
+					startedAt: Date.now(),
+				});
+				orderId = await ctx.db.insert("orders", {
+					sessionId: session,
+					restaurantId,
+					tableId,
+					status: "ready",
+					totalAmount: 600,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId: barItemId,
+					menuItemName: "Margarita",
+					quantity: 1,
+					unitPrice: 600,
+					selectedOptions: [],
+					lineTotal: 600,
+					createdAt: Date.now(),
+				});
+			});
+
+			await expect(
+				authed.mutation(api.orders.markStationReady, {
+					orderId: orderId!,
+					station: "bar",
+				})
+			).rejects.toThrow(/Cannot mark bar ready while order is ready/);
+		});
 	});
 
 	describe("confirmPayment daily order numbers", () => {
@@ -1402,6 +1948,96 @@ describe("orders", () => {
 			const authed = t.withIdentity({ subject: "nobody" });
 
 			const result = await authed.mutation(api.migrations.backfillDailyOrderNumber.run, {});
+			expect(result.ok).toBe(false);
+		});
+	});
+
+	describe("backfillPrepStation migration", () => {
+		it("sets prepStation = 'kitchen' for rows missing it, leaves tagged rows alone, and is idempotent", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId } = await seedRestaurantAndSession(t);
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "admin1",
+					roles: ["admin"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+			const authed = t.withIdentity({ subject: "admin1" });
+
+			// Three legacy items with no prepStation, plus one already-tagged
+			// "bar" item whose value must survive the backfill.
+			const legacyIds: Id<"menuItems">[] = [];
+			let preTaggedBarId: Id<"menuItems">;
+			await t.run(async (ctx) => {
+				const allMenus = await ctx.db.query("menus").collect();
+				const menuId = allMenus.find((m) => m.restaurantId === restaurantId)!._id;
+				const categoryId = await ctx.db.insert("menuCategories", {
+					menuId,
+					restaurantId,
+					name: "All",
+					displayOrder: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+
+				for (let i = 0; i < 3; i++) {
+					const id = await ctx.db.insert("menuItems", {
+						categoryId,
+						restaurantId,
+						name: `Legacy ${i}`,
+						basePrice: 500,
+						isAvailable: true,
+						displayOrder: i,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					});
+					legacyIds.push(id);
+				}
+
+				preTaggedBarId = await ctx.db.insert("menuItems", {
+					categoryId,
+					restaurantId,
+					name: "Margarita",
+					basePrice: 600,
+					isAvailable: true,
+					displayOrder: 99,
+					prepStation: "bar",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const first = await authed.mutation(api.migrations.backfillPrepStation.run, {});
+			expect(first.ok).toBe(true);
+			if (!first.ok) throw new Error("expected ok");
+			expect(first.patched).toBe(3);
+
+			await t.run(async (ctx) => {
+				for (const id of legacyIds) {
+					const item = await ctx.db.get(id);
+					expect(item?.prepStation).toBe("kitchen");
+				}
+				const bar = await ctx.db.get(preTaggedBarId!);
+				expect(bar?.prepStation).toBe("bar");
+			});
+
+			// Re-running is a no-op.
+			const second = await authed.mutation(api.migrations.backfillPrepStation.run, {});
+			expect(second.ok).toBe(true);
+			if (!second.ok) throw new Error("expected ok");
+			expect(second.patched).toBe(0);
+		});
+
+		it("rejects non-admin callers", async () => {
+			const t = convexTest(schema, modules);
+			await seedRestaurantAndSession(t);
+			const authed = t.withIdentity({ subject: "nobody" });
+
+			const result = await authed.mutation(api.migrations.backfillPrepStation.run, {});
 			expect(result.ok).toBe(false);
 		});
 	});
