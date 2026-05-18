@@ -14,6 +14,8 @@ import {
 	type ScheduledShiftView,
 	type ShiftDrawerInitial,
 } from "@/features/schedule";
+import { ClearSchedulesModal } from "@/features/schedule/components/ClearSchedulesModal";
+import { SegmentedControl } from "@/global/components/SegmentedControl/SegmentedControl";
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { AdminPageLayout, EmptyState, LoadingState } from "@/global/components";
 import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
@@ -283,11 +285,37 @@ function ManagerScheduleView({
 	const [attendanceMemberId, setAttendanceMemberId] =
 		useState<Id<"restaurantMembers"> | null>(null);
 
+	const [clearModalOpen, setClearModalOpen] = useState(false);
+
 	const [memberFilter, setMemberFilter] = useState("");
-	const filteredMembers = useMemo(
-		() => filterMembersByLabel(members, memberFilter),
-		[members, memberFilter]
+	const [shiftPresenceFilter, setShiftPresenceFilter] = useState<
+		"all" | "withShifts" | "noShifts"
+	>("all");
+
+	const memberIdsWithShifts = useMemo(() => {
+		const ids = new Set<string>();
+		for (const s of shifts) ids.add(s.memberId);
+		return ids;
+	}, [shifts]);
+
+	const shiftPresenceOptions = useMemo(
+		() => [
+			{ value: "all" as const, label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_ALL) },
+			{ value: "withShifts" as const, label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_WITH_SHIFTS) },
+			{ value: "noShifts" as const, label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_NO_SHIFTS) },
+		],
+		[t]
 	);
+
+	const filteredMembers = useMemo(() => {
+		let result = filterMembersByLabel(members, memberFilter);
+		if (shiftPresenceFilter === "withShifts") {
+			result = result.filter((m) => memberIdsWithShifts.has(m.memberId));
+		} else if (shiftPresenceFilter === "noShifts") {
+			result = result.filter((m) => !memberIdsWithShifts.has(m.memberId));
+		}
+		return result;
+	}, [members, memberFilter, shiftPresenceFilter, memberIdsWithShifts]);
 
 	const attendanceMember = useMemo<AssignableMember | null>(() => {
 		if (!attendanceMemberId) return null;
@@ -347,6 +375,14 @@ function ManagerScheduleView({
 			>
 				{t(AdminStaffKeys.SCHEDULE_ASSIGN_SHIFT)}
 			</button>
+			<button
+				type="button"
+				onClick={() => setClearModalOpen(true)}
+				disabled={members.length === 0}
+				className="text-xs font-medium px-3 py-1.5 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+			>
+				{t(AdminStaffKeys.SCHEDULE_CLEAR_SCHEDULES)}
+			</button>
 			<PublishWeekButton
 				restaurantId={restaurant._id}
 				weekStartMs={weekStartMs}
@@ -380,21 +416,30 @@ function ManagerScheduleView({
 						{t(AdminStaffKeys.SCHEDULE_NEXT_WEEK)}
 					</button>
 				</div>
-				<label className="relative flex items-center w-full max-w-xs">
-					<Search
-						size={14}
-						aria-hidden="true"
-						className="absolute left-2 text-faint-foreground pointer-events-none"
+				<div className="flex items-center gap-2 w-full sm:w-auto">
+					<SegmentedControl
+						options={shiftPresenceOptions}
+						value={shiftPresenceFilter}
+						onChange={setShiftPresenceFilter}
+						ariaLabel={t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_ARIA)}
+						size="sm"
 					/>
-					<input
-						type="search"
-						value={memberFilter}
-						onChange={(e) => setMemberFilter(e.target.value)}
-						placeholder={t(AdminStaffKeys.SCHEDULE_FILTER_MEMBER_PLACEHOLDER)}
-						aria-label={t(AdminStaffKeys.SCHEDULE_FILTER_MEMBER_PLACEHOLDER)}
-						className="w-full text-xs rounded border border-border bg-background pl-7 pr-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
-					/>
-				</label>
+					<label className="relative flex items-center flex-1 sm:w-52 sm:flex-initial">
+						<Search
+							size={14}
+							aria-hidden="true"
+							className="absolute left-2 text-faint-foreground pointer-events-none"
+						/>
+						<input
+							type="search"
+							value={memberFilter}
+							onChange={(e) => setMemberFilter(e.target.value)}
+							placeholder={t(AdminStaffKeys.SCHEDULE_FILTER_MEMBER_PLACEHOLDER)}
+							aria-label={t(AdminStaffKeys.SCHEDULE_FILTER_MEMBER_PLACEHOLDER)}
+							className="w-full text-xs rounded border border-border bg-background pl-7 pr-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/40"
+						/>
+					</label>
+				</div>
 			</div>
 
 			{filteredMembers.length === 0 ? (
@@ -453,9 +498,7 @@ function ManagerScheduleView({
 					onClose={() => setAttendanceMemberId(null)}
 					restaurantId={restaurant._id}
 					memberId={attendanceMember.memberId}
-					memberLabel={
-						attendanceMember.email?.trim() ? attendanceMember.email : attendanceMember.userId
-					}
+					memberLabel={attendanceMember.displayName || "—"}
 					isSelf={myMemberId !== null && myMemberId === attendanceMember.memberId}
 					canViewAsManager
 					weekStartMs={weekStartMs}
@@ -463,6 +506,15 @@ function ManagerScheduleView({
 					localeTag={i18n.language}
 				/>
 			) : null}
+
+			<ClearSchedulesModal
+				isOpen={clearModalOpen}
+				onClose={() => setClearModalOpen(false)}
+				onCleared={refetch}
+				restaurantId={restaurant._id}
+				weekStartMs={weekStartMs}
+				members={members}
+			/>
 		</AdminPageLayout>
 	);
 }
@@ -495,12 +547,15 @@ function EmployeeScheduleView({
 
 	const singleRowMembers = useMemo<AssignableMember[]>(() => {
 		if (!myMembership) return [];
+		const dn = ownEmail?.trim() ? ownEmail : (myMembership.userId ?? "—");
 		return [
 			{
 				memberId: myMembership._id,
 				userId: myMembership.userId,
 				role: myMembership.role,
 				email: ownEmail,
+				displayName: dn,
+				photoUrl: null,
 			},
 		];
 	}, [myMembership, ownEmail]);
@@ -516,10 +571,13 @@ function EmployeeScheduleView({
 
 	const adaptedShifts = useMemo<ScheduledShiftView[]>(() => {
 		if (!myShifts || !myMembership) return [];
+		const dn = ownEmail?.trim() ? ownEmail : (myMembership.userId ?? "—");
 		const member = {
 			userId: myMembership.userId,
 			role: myMembership.role,
 			email: ownEmail,
+			displayName: dn,
+			photoUrl: null as string | null,
 		};
 		return myShifts.map((s) => ({
 			_id: s._id,
@@ -551,7 +609,8 @@ function EmployeeScheduleView({
 		);
 	}
 
-	const ownLabel = ownEmail?.trim() ? ownEmail : myMembership.userId;
+	const ownLabel = ownEmail?.trim() ? ownEmail : (myMembership.userId ?? "—");
+	// ownLabel is still used for the attendance drawer memberLabel prop
 
 	return (
 		<AdminPageLayout

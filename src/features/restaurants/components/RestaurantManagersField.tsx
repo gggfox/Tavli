@@ -22,7 +22,7 @@ function mergeDirectoryWithManagers(
 		labelByUser.set(d.userId, d.email && d.email.length > 0 ? d.email : d.userId);
 	}
 	for (const m of members) {
-		if (m.isActive && m.role === RESTAURANT_MEMBER_ROLE.MANAGER && !labelByUser.has(m.userId)) {
+		if (m.isActive && m.role === RESTAURANT_MEMBER_ROLE.MANAGER && m.userId && !labelByUser.has(m.userId)) {
 			labelByUser.set(m.userId, m.userId);
 		}
 	}

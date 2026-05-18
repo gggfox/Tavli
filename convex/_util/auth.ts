@@ -8,9 +8,11 @@
  *
  * Admins have implicit access to all role-specific functionalities.
  */
+import { compareSync, hashSync } from "bcryptjs";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader, DatabaseWriter } from "../_generated/server";
 import {
+	PIN_LOCKOUT,
 	RESTAURANT_MEMBER_ROLE,
 	TABLE,
 	USER_ROLES,
@@ -430,4 +432,106 @@ export async function getCurrentUserId(
 		return [null, new NotAuthenticatedError().toObject()];
 	}
 	return [identity.subject, null];
+}
+
+// ---------------------------------------------------------------------------
+// Shared employee session + PIN verification (ADR 006)
+// ---------------------------------------------------------------------------
+
+/**
+ * Succeeds when the Clerk subject matches the restaurant's shared
+ * employee session identity. Returns the restaurant doc.
+ */
+export async function requireSharedEmployeeSession(
+	ctx: RoleDbContext & AuthenticationContext,
+	restaurantId: Id<"restaurants">
+): AsyncReturn<Doc<"restaurants">, NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject> {
+	const identity = await ctx.auth.getUserIdentity();
+	if (!identity) {
+		return [null, new NotAuthenticatedError().toObject()];
+	}
+
+	const restaurant = await ctx.db.get(restaurantId);
+	if (!restaurant || restaurant.deletedAt != null) {
+		return [null, new NotFoundError("Restaurant not found").toObject()];
+	}
+
+	if (
+		!restaurant.sharedEmployeeClerkSubject ||
+		identity.subject !== restaurant.sharedEmployeeClerkSubject
+	) {
+		return [null, new NotAuthorizedError("ERROR_SHARED_SESSION_REQUIRED").toObject()];
+	}
+
+	return [restaurant, null];
+}
+
+/**
+ * Verifies the provided PIN against an employee account's hash.
+ * On failure, increments `failedPinAttempts` and sets `lockedUntil`.
+ * On success, clears the failure counters.
+ *
+ * Must be called within a mutation context (needs write access).
+ */
+export async function verifyEmployeePin(
+	ctx: { db: DatabaseWriter },
+	employeeAccountId: Id<"employeeAccounts">,
+	pin: string
+): AsyncReturn<Doc<"employeeAccounts">, NotAuthorizedErrorObject | NotFoundErrorObject> {
+	const account = await ctx.db.get(employeeAccountId);
+	if (!account || account.removedAt != null) {
+		return [null, new NotFoundError("Employee account not found").toObject()];
+	}
+
+	const now = Date.now();
+
+	if (account.lockedUntil && now < account.lockedUntil) {
+		return [null, new NotAuthorizedError("ERROR_PIN_LOCKED").toObject()];
+	}
+
+	if (account.lockedUntil && now >= account.lockedUntil) {
+		await ctx.db.patch(employeeAccountId, {
+			failedPinAttempts: 0,
+			lockedUntil: undefined,
+		});
+	}
+
+	const valid = compareSync(pin, account.pinHash);
+
+	if (!valid) {
+		const attempts = (account.lockedUntil && now >= account.lockedUntil ? 0 : account.failedPinAttempts) + 1;
+		const patch: Record<string, unknown> = { failedPinAttempts: attempts };
+		if (attempts >= PIN_LOCKOUT.MAX_ATTEMPTS) {
+			patch.lockedUntil = now + PIN_LOCKOUT.WINDOW_MS;
+		}
+		await ctx.db.patch(employeeAccountId, patch);
+		return [null, new NotAuthorizedError("ERROR_INVALID_PIN").toObject()];
+	}
+
+	if (account.failedPinAttempts > 0) {
+		await ctx.db.patch(employeeAccountId, {
+			failedPinAttempts: 0,
+			lockedUntil: undefined,
+		});
+	}
+
+	return [account, null];
+}
+
+/**
+ * Generates a random numeric PIN of `PIN_LOCKOUT.PIN_LENGTH` digits.
+ */
+export function generatePin(): string {
+	const digits: string[] = [];
+	for (let i = 0; i < PIN_LOCKOUT.PIN_LENGTH; i++) {
+		digits.push(String(Math.floor(Math.random() * 10)));
+	}
+	return digits.join("");
+}
+
+/**
+ * Hash a PIN using bcryptjs (sync, safe in Convex runtime for short strings).
+ */
+export function hashPin(pin: string): string {
+	return hashSync(pin, 10);
 }

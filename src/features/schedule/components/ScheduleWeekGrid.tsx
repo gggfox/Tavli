@@ -203,9 +203,9 @@ function MemberRow({
 	pendingCount,
 }: Readonly<MemberRowProps>) {
 	const { t } = useTranslation();
-	const label = member.email?.trim() ? member.email : member.userId;
-	const labelMono = !member.email?.trim();
-	const labelClasses = `text-xs font-medium truncate ${labelMono ? "font-mono" : ""}`;
+	const label = member.displayName || "—";
+	const initials = (member.displayName.charAt(0) || "?").toUpperCase();
+	const labelClasses = "text-xs font-medium truncate";
 	const asterisk =
 		pendingCount > 0 ? (
 			<span
@@ -225,6 +225,13 @@ function MemberRow({
 				className="sticky left-0 z-10 bg-background border-b border-border px-3 py-2 flex items-center min-w-0"
 			>
 				{asterisk}
+				{member.photoUrl ? (
+					<img src={member.photoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0 mr-1.5" />
+				) : (
+					<span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[9px] font-medium text-muted-foreground shrink-0 mr-1.5">
+						{initials}
+					</span>
+				)}
 				{onOpenMemberDrawer ? (
 					<button
 						type="button"

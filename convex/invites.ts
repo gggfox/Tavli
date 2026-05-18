@@ -170,6 +170,9 @@ export const createInvitation = mutation({
 		),
 		restaurantIds: v.array(v.id(TABLE.RESTAURANTS)),
 		expiresInMs: v.optional(v.number()),
+		firstName: v.optional(v.string()),
+		paternalLastname: v.optional(v.string()),
+		maternalLastname: v.optional(v.string()),
 	},
 	handler: async function (
 		ctx,
@@ -211,6 +214,9 @@ export const createInvitation = mutation({
 			invitedBy: actorId,
 			status: INVITATION_STATUS.PENDING,
 			expiresAt: now + ttl,
+			...(args.firstName && { firstName: args.firstName.trim() }),
+			...(args.paternalLastname && { paternalLastname: args.paternalLastname.trim() }),
+			...(args.maternalLastname && { maternalLastname: args.maternalLastname.trim() }),
 			createdAt: now,
 			updatedAt: now,
 			updatedBy: actorId,
@@ -301,6 +307,12 @@ export const acceptInvitation = mutation({
 
 		const now = Date.now();
 
+			const inviteNameFields = {
+			...(invitation.firstName && { firstName: invitation.firstName }),
+			...(invitation.paternalLastname && { paternalLastname: invitation.paternalLastname }),
+			...(invitation.maternalLastname && { maternalLastname: invitation.maternalLastname }),
+		};
+
 		if (invitation.role === USER_ROLES.OWNER) {
 			const existing = await fetchUserRoleRecord(ctx, userId);
 			const roles = new Set(existing?.roles ?? []);
@@ -310,6 +322,7 @@ export const acceptInvitation = mutation({
 					roles: [...roles],
 					organizationId: invitation.organizationId,
 					email: normalizeEmail(email),
+					...inviteNameFields,
 					updatedAt: now,
 					updatedBy: userId,
 				});
@@ -319,6 +332,7 @@ export const acceptInvitation = mutation({
 					email: normalizeEmail(email),
 					roles: [...roles],
 					organizationId: invitation.organizationId,
+					...inviteNameFields,
 					createdAt: now,
 					updatedAt: now,
 					updatedBy: userId,
@@ -373,6 +387,7 @@ export const acceptInvitation = mutation({
 					roles: [...roles],
 					organizationId: invitation.organizationId,
 					email: normalizeEmail(email),
+					...inviteNameFields,
 					updatedAt: now,
 					updatedBy: userId,
 				});
@@ -382,6 +397,7 @@ export const acceptInvitation = mutation({
 					email: normalizeEmail(email),
 					roles: [...roles],
 					organizationId: invitation.organizationId,
+					...inviteNameFields,
 					createdAt: now,
 					updatedAt: now,
 					updatedBy: userId,

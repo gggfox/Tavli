@@ -155,10 +155,11 @@ export const listForRestaurantWeek = query({
 		for (const m of memberDocs) {
 			if (!m) continue;
 			memberById.set(m._id, m);
-			userIdsForEmail.add(m.userId);
+			if (m.userId) userIdsForEmail.add(m.userId);
 		}
 
 		const emailByUserId = new Map<string, string>();
+		const userAvatarByUserId = new Map<string, { photoStorageId?: string; clerkImageUrl?: string }>();
 		await Promise.all(
 			Array.from(userIdsForEmail).map(async (uid) => {
 				const rows = await ctx.db
@@ -169,35 +170,86 @@ export const listForRestaurantWeek = query({
 					if (r.email && !emailByUserId.has(uid)) {
 						emailByUserId.set(uid, r.email);
 					}
+					if (!userAvatarByUserId.has(uid)) {
+						userAvatarByUserId.set(uid, {
+							photoStorageId: r.photoStorageId as string | undefined,
+							clerkImageUrl: r.clerkImageUrl,
+						});
+					}
 				}
 			})
 		);
 
-		const hydrated = inWindow
-			.slice()
-			.sort((a, b) => a.startsAt - b.startsAt)
-			.map((s) => {
-				const m = memberById.get(s.memberId);
-				return {
-					_id: s._id,
-					memberId: s.memberId,
-					restaurantId: s.restaurantId,
-					startsAt: s.startsAt,
-					endsAt: s.endsAt,
-					shiftRole: s.shiftRole,
-					status: s.status,
-					notes: s.notes,
-					templateId: s.templateId,
-					publishedAt: s.publishedAt,
-					member: m
-						? {
-								userId: m.userId,
-								role: m.role,
-								email: emailByUserId.get(m.userId) ?? null,
+		const employeeAccountIds = new Set<string>();
+		for (const m of memberDocs) {
+			if (m?.employeeAccountId) employeeAccountIds.add(m.employeeAccountId);
+		}
+		const employeeAccountById = new Map<string, { firstName: string; paternalLastname: string; maternalLastname: string; photoStorageId?: string }>();
+		await Promise.all(
+			Array.from(employeeAccountIds).map(async (eaId) => {
+				const ea = await ctx.db.get(eaId as Id<"employeeAccounts">);
+				if (ea) {
+					employeeAccountById.set(eaId, {
+						firstName: ea.firstName,
+						paternalLastname: ea.paternalLastname,
+						maternalLastname: ea.maternalLastname,
+						photoStorageId: ea.photoStorageId as string | undefined,
+					});
+				}
+			})
+		);
+
+		const hydrated = await Promise.all(
+			inWindow
+				.slice()
+				.sort((a, b) => a.startsAt - b.startsAt)
+				.map(async (s) => {
+					const m = memberById.get(s.memberId);
+					let displayName = "";
+					let photoUrl: string | null = null;
+
+					if (m?.employeeAccountId) {
+						const ea = employeeAccountById.get(m.employeeAccountId);
+						if (ea) {
+							displayName = [ea.firstName, ea.paternalLastname, ea.maternalLastname].filter(Boolean).join(" ");
+							if (ea.photoStorageId) {
+								photoUrl = await ctx.storage.getUrl(ea.photoStorageId as Id<"_storage">) ?? null;
 							}
-						: null,
-				};
-			});
+						}
+					} else if (m?.userId) {
+						const email = emailByUserId.get(m.userId);
+						displayName = email ?? m.userId;
+						const avatar = userAvatarByUserId.get(m.userId);
+						if (avatar?.photoStorageId) {
+							photoUrl = await ctx.storage.getUrl(avatar.photoStorageId as Id<"_storage">) ?? null;
+						} else if (avatar?.clerkImageUrl) {
+							photoUrl = avatar.clerkImageUrl;
+						}
+					}
+
+					return {
+						_id: s._id,
+						memberId: s.memberId,
+						restaurantId: s.restaurantId,
+						startsAt: s.startsAt,
+						endsAt: s.endsAt,
+						shiftRole: s.shiftRole,
+						status: s.status,
+						notes: s.notes,
+						templateId: s.templateId,
+						publishedAt: s.publishedAt,
+						member: m
+							? {
+									userId: m.userId ?? undefined,
+									role: m.role,
+									email: m.userId ? (emailByUserId.get(m.userId) ?? null) : null,
+									displayName,
+									photoUrl,
+								}
+							: null,
+					};
+				})
+		);
 
 		return [hydrated, null];
 	},
@@ -725,6 +777,197 @@ export const listSectionAssignmentsForShift = query({
 			.withIndex("by_shift", (q) => q.eq("shiftId", args.shiftId))
 			.collect();
 		return [rows, null];
+	},
+});
+
+// ============================================================================
+// Bulk clear: preview + execute
+// ============================================================================
+
+const BULK_CLEAR_SCOPE = v.union(
+	v.literal("thisWeek"),
+	v.literal("futureWeeks"),
+	v.literal("all")
+);
+
+function scopeToRange(
+	scope: "thisWeek" | "futureWeeks" | "all",
+	weekStartMs: number
+): { fromMs: number; toMs: number | null } {
+	const weekEndMs = weekStartMs + ONE_WEEK_MS;
+	switch (scope) {
+		case "thisWeek":
+			return { fromMs: weekStartMs, toMs: weekEndMs };
+		case "futureWeeks":
+			return { fromMs: weekEndMs, toMs: null };
+		case "all":
+			return { fromMs: weekStartMs, toMs: null };
+	}
+}
+
+function isShiftInScope(
+	shift: Doc<"shifts">,
+	fromMs: number,
+	toMs: number | null
+): boolean {
+	if (shift.status === SHIFT_STATUS.CANCELLED) return false;
+	if (shift.startsAt < fromMs) return false;
+	if (toMs != null && shift.startsAt >= toMs) return false;
+	return true;
+}
+
+async function countMemberShiftsInScope(
+	ctx: { db: QueryCtx["db"] },
+	memberId: Id<"restaurantMembers">,
+	fromMs: number,
+	toMs: number | null
+): Promise<number> {
+	const shifts = await ctx.db
+		.query(TABLE.SHIFTS)
+		.withIndex("by_member_time", (q) => q.eq("memberId", memberId))
+		.collect();
+	return shifts.filter((s) => isShiftInScope(s, fromMs, toMs)).length;
+}
+
+async function countActiveTemplates(
+	ctx: { db: QueryCtx["db"] },
+	memberId: Id<"restaurantMembers">
+): Promise<number> {
+	const templates = await ctx.db
+		.query(TABLE.SHIFT_TEMPLATES)
+		.withIndex("by_member", (q) => q.eq("memberId", memberId))
+		.collect();
+	return templates.filter((t) => t.isActive).length;
+}
+
+export const previewBulkClear = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		memberIds: v.array(v.id(TABLE.RESTAURANT_MEMBERS)),
+		scope: BULK_CLEAR_SCOPE,
+		weekStartMs: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const [userId, err] = await getCurrentUserId(ctx);
+		if (err) return [null, err];
+		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (aerr) return [null, aerr];
+
+		const { fromMs, toMs } = scopeToRange(args.scope, args.weekStartMs);
+		const shiftCounts = await Promise.all(
+			args.memberIds.map((id) => countMemberShiftsInScope(ctx, id, fromMs, toMs))
+		);
+		const templateCounts = await Promise.all(
+			args.memberIds.map((id) => countActiveTemplates(ctx, id))
+		);
+		const shiftCount = shiftCounts.reduce((a, b) => a + b, 0);
+		const templateCount = templateCounts.reduce((a, b) => a + b, 0);
+
+		return [{ shiftCount, templateCount }, null];
+	},
+});
+
+async function cancelShiftsInScope(
+	ctx: MutationCtx,
+	memberId: Id<"restaurantMembers">,
+	fromMs: number,
+	toMs: number | null,
+	actorId: string
+): Promise<number> {
+	const shifts = await ctx.db
+		.query(TABLE.SHIFTS)
+		.withIndex("by_member_time", (q) => q.eq("memberId", memberId))
+		.collect();
+	let count = 0;
+	for (const s of shifts) {
+		if (!isShiftInScope(s, fromMs, toMs)) continue;
+		await ctx.db.patch(s._id, {
+			status: SHIFT_STATUS.CANCELLED,
+			templateId: undefined,
+			...stampUpdated(actorId),
+		});
+		count++;
+	}
+	return count;
+}
+
+async function deactivateMemberTemplates(
+	ctx: MutationCtx,
+	memberId: Id<"restaurantMembers">,
+	actorId: string
+): Promise<number> {
+	const templates = await ctx.db
+		.query(TABLE.SHIFT_TEMPLATES)
+		.withIndex("by_member", (q) => q.eq("memberId", memberId))
+		.collect();
+	let count = 0;
+	for (const tmpl of templates) {
+		if (!tmpl.isActive) continue;
+		await ctx.db.patch(tmpl._id, {
+			isActive: false,
+			...stampUpdated(actorId),
+		});
+		count++;
+	}
+	return count;
+}
+
+export const bulkClearMemberSchedules = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		memberIds: v.array(v.id(TABLE.RESTAURANT_MEMBERS)),
+		scope: BULK_CLEAR_SCOPE,
+		weekStartMs: v.number(),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<
+		{ cancelledShiftCount: number; deactivatedTemplateCount: number },
+		AuthE | NotFoundErrorObject
+	> {
+		const [userId, err] = await getCurrentUserId(ctx);
+		if (err) return [null, err];
+		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (aerr) return [null, aerr];
+
+		for (const memberId of args.memberIds) {
+			const member = await loadActiveMember(ctx, memberId, args.restaurantId);
+			if (!member) {
+				return [null, new NotFoundError(`Member ${memberId} not found`).toObject()];
+			}
+			const [, permErr] = await requireShiftTargetAuthority(ctx, userId, {
+				restaurantId: args.restaurantId,
+				targetMember: member,
+			});
+			if (permErr) return [null, permErr];
+		}
+
+		const { fromMs, toMs } = scopeToRange(args.scope, args.weekStartMs);
+		let cancelledShiftCount = 0;
+		let deactivatedTemplateCount = 0;
+
+		for (const memberId of args.memberIds) {
+			cancelledShiftCount += await cancelShiftsInScope(ctx, memberId, fromMs, toMs, userId);
+			deactivatedTemplateCount += await deactivateMemberTemplates(ctx, memberId, userId);
+		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SHIFTS,
+			aggregateId: args.restaurantId,
+			eventType: "shifts.bulk_cleared",
+			payload: {
+				restaurantId: args.restaurantId,
+				memberIds: args.memberIds,
+				scope: args.scope,
+				weekStartMs: args.weekStartMs,
+				cancelledShiftCount,
+				deactivatedTemplateCount,
+			},
+			userId,
+		});
+
+		return [{ cancelledShiftCount, deactivatedTemplateCount }, null];
 	},
 });
 

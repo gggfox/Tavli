@@ -1,3 +1,4 @@
+export { ClearSchedulesModal } from "./components/ClearSchedulesModal";
 export { ShiftDrawer } from "./components/ShiftDrawer";
 export { ShiftCellChip } from "./components/ShiftCellChip";
 export type { ChipAbsenceState } from "./components/ShiftCellChip";

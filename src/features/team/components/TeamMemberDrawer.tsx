@@ -1,13 +1,11 @@
 /**
  * `TeamMemberDrawer` — informational side panel opened by clicking a row in
- * the team directory table. Shows a Rendimiento section (paid orders,
- * attributed revenue, hours worked) and a Propinas section (tip-pool share
- * total + per-day breakdown) for the selected member, both driven by a
- * shared Today / This week / This month range toggle.
+ * the team directory table. Shows identity info, management actions (for
+ * employee accounts: reset PIN, upload photo, remove), a Rendimiento section,
+ * and a Propinas section, all driven by a shared range toggle.
  *
- * Owner rows (`restaurantOwner`/`orgOwner`) render the drawer with
- * owner-specific empty states; pending invite rows are filtered out by the
- * parent and never open the drawer.
+ * Owner rows render with owner-specific empty states; pending invite rows
+ * are filtered out by the parent and never open the drawer.
  */
 import type { TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
 import { DialogHeader, Drawer } from "@/global/components";
@@ -15,13 +13,15 @@ import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
 import { getMondayYmdOfWeek, startOfDayMs, utcMsToYmdInTimezone } from "@/features/schedule/timezone";
 import { unwrapResult } from "@/global/utils";
-import { convexQuery } from "@convex-dev/react-query";
-import { useQuery } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { TIP_POOL_STATUS } from "convex/constants";
+import { uploadImage } from "@/features/menus/utils/imageUtils";
 import type { TFunction } from "i18next";
-import { useMemo, useState } from "react";
+import { Camera } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type TeamMemberDrawerRow = Exclude<TeamDirectoryRow, { rowType: "invite" }>;
@@ -61,9 +61,12 @@ function rowMemberId(row: TeamMemberDrawerRow): Id<"restaurantMembers"> | null {
 }
 
 function rowDisplayLabel(row: TeamMemberDrawerRow): string {
+	const parts = [row.firstName, row.paternalLastname, row.maternalLastname].filter(Boolean);
+	if (parts.length > 0) return parts.join(" ");
 	const trimmed = row.email?.trim();
 	if (trimmed) return trimmed;
-	return row.userId;
+	if ("userId" in row && row.userId) return row.userId;
+	return "";
 }
 
 function isOwnerRowType(row: TeamMemberDrawerRow): boolean {
@@ -105,13 +108,30 @@ export function TeamMemberDrawer({
 
 	const memberId = row ? rowMemberId(row) : null;
 	const isOwner = row ? isOwnerRowType(row) : false;
+	const isEmployeeAccount = row?.rowType === "member" && row.kind === "employeeAccount";
+
+	const resetPinMutation = useMutation({ mutationFn: useConvexMutation(api.employeeAccounts.resetEmployeePin) });
+	const removeMemberMutation = useMutation({ mutationFn: useConvexMutation(api.restaurantMembers.removeMember) });
+	const updateEmployeeAccountMutation = useConvexMutation(api.employeeAccounts.updateEmployeeAccount);
+	const generateEaUploadUrlMutation = useConvexMutation(api.employeeAccounts.getEmployeePhotoUploadUrl);
+	const generateUserUploadUrlMutation = useConvexMutation(api.userSettings.generateUserPhotoUploadUrl);
+	const setUserPhotoMutation = useConvexMutation(api.userSettings.setUserPhoto);
+	const [resetPinResult, setResetPinResult] = useState<string | null>(null);
+	const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+	const photoInputRef = useRef<HTMLInputElement>(null);
+	const isClerkBacked = row != null && (
+		(row.rowType === "member" && row.kind === "user") ||
+		row.rowType === "restaurantOwner" ||
+		row.rowType === "orgOwner"
+	);
+	const canEditPhoto = row != null && (
+		(isEmployeeAccount && row.rowType === "member" && row.removedAt == null) ||
+		isClerkBacked
+	);
 
 	const bounds = useMemo<RangeBounds | null>(() => {
 		if (!row) return null;
 		return computeRangeBounds(Date.now(), restaurantTimezone, range);
-		// We intentionally pin to Date.now() at render time so the displayed
-		// window snaps to the current moment when the user changes range or
-		// reopens the drawer, instead of ticking once per second.
 	}, [row, restaurantTimezone, range]);
 
 	const perfArgs =
@@ -119,9 +139,10 @@ export function TeamMemberDrawer({
 			? { restaurantId, fromMs: bounds.fromMs, toMs: bounds.toMs }
 			: "skip";
 
+	type PerfData = { rows: Array<{ memberId: string; paidOrders: number; attributedRevenue: number; hoursWorked: number }> };
 	const { data: perf } = useQuery({
 		...convexQuery(api.performance.getRestaurantPerformance, perfArgs),
-		select: unwrapResult,
+		select: unwrapResult<PerfData>,
 	});
 
 	const tipsArgs =
@@ -136,7 +157,7 @@ export function TeamMemberDrawer({
 
 	const { data: tips } = useQuery({
 		...convexQuery(api.tips.getTipSharesForMemberRange, tipsArgs),
-		select: unwrapResult,
+		select: unwrapResult<{ totalCents: number; perDay: Array<PerDayShare> }>,
 	});
 
 	const memberPerfRow = useMemo(() => {
@@ -147,10 +168,52 @@ export function TeamMemberDrawer({
 	const headerTitle = row ? rowDisplayLabel(row) : "";
 	const headerSubtitle = row ? computeSubtitle(row, t, staffRoleLabel) : "";
 
+	const handleResetPin = async () => {
+		const eaId = row?.rowType === "member" ? row.employeeAccountId : null;
+		if (!isEmployeeAccount || !eaId) return;
+		if (!confirm(t(AdminStaffKeys.TEAM_DRAWER_RESET_PIN_CONFIRM))) return;
+		const result = unwrapResult<{ pin: string }>(await resetPinMutation.mutateAsync({ employeeAccountId: eaId }));
+		setResetPinResult(result.pin);
+	};
+
+	const handleRemove = async () => {
+		if (!memberId) return;
+		if (!confirm(t(AdminStaffKeys.TEAM_DRAWER_REMOVE_CONFIRM))) return;
+		unwrapResult(await removeMemberMutation.mutateAsync({ memberId }));
+		onClose();
+	};
+
+	const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file || !row) return;
+		setIsUploadingPhoto(true);
+		try {
+			if (row.rowType === "member" && row.kind === "employeeAccount" && row.employeeAccountId) {
+				const generateUploadUrl = () => generateEaUploadUrlMutation({});
+				const storageId = await uploadImage(generateUploadUrl, file);
+				unwrapResult(await updateEmployeeAccountMutation({ employeeAccountId: row.employeeAccountId, photoStorageId: storageId }));
+			} else {
+				const uid = "userId" in row ? row.userId : null;
+				if (!uid) return;
+				const generateUploadUrl = async () => [await generateUserUploadUrlMutation({}), null] as [string, null];
+				const storageId = await uploadImage(generateUploadUrl, file);
+				await setUserPhotoMutation({ photoStorageId: storageId, targetUserId: uid });
+			}
+		} finally {
+			setIsUploadingPhoto(false);
+			if (photoInputRef.current) photoInputRef.current.value = "";
+		}
+	};
+
+	const handleCloseDrawer = () => {
+		setResetPinResult(null);
+		onClose();
+	};
+
 	return (
 		<Drawer
 			isOpen={isOpen}
-			onClose={onClose}
+			onClose={handleCloseDrawer}
 			ariaLabel={headerTitle || t(AdminStaffKeys.TEAM_DRAWER_PERFORMANCE_TITLE)}
 			side={isNarrow ? "bottom" : "right"}
 			size={isNarrow ? "92dvh" : "min(520px, 90vw)"}
@@ -158,9 +221,105 @@ export function TeamMemberDrawer({
 			swipeHandleAriaLabel={t(AdminStaffKeys.TEAM_DRAWER_SWIPE_HANDLE)}
 			panelClassName="bg-background border border-border overflow-hidden"
 		>
-			<DialogHeader title={headerTitle} subtitle={headerSubtitle} onClose={onClose} />
+			<DialogHeader title={headerTitle} subtitle={headerSubtitle} onClose={handleCloseDrawer} />
 
 			<div className="flex-1 min-h-0 overflow-y-auto">
+				{/* Avatar + identity info */}
+				{row && (
+					<div className="px-5 pt-4 flex items-start gap-3">
+						<div className="relative shrink-0">
+							{row.photoUrl ? (
+								<img src={row.photoUrl} alt="" className="w-12 h-12 rounded-full object-cover" />
+							) : (
+								<span className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-lg font-medium text-muted-foreground">
+									{(row.firstName?.charAt(0) ?? "") + (row.paternalLastname?.charAt(0) ?? "")}
+								</span>
+							)}
+							{canEditPhoto && (
+								<>
+									<input
+										ref={photoInputRef}
+										type="file"
+										accept="image/*"
+										className="hidden"
+										onChange={(e) => void handlePhotoChange(e)}
+									/>
+									<button
+										type="button"
+										onClick={() => photoInputRef.current?.click()}
+										disabled={isUploadingPhoto}
+										className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 disabled:opacity-50"
+										aria-label={t(AdminStaffKeys.TEAM_DRAWER_CHANGE_PHOTO)}
+									>
+										<Camera className="w-3 h-3" />
+									</button>
+								</>
+							)}
+						</div>
+						<div className="min-w-0 flex-1 space-y-1">
+							{row.email && (
+								<div className="text-xs text-muted-foreground">
+									<span className="font-medium">{t(AdminStaffKeys.TEAM_DRAWER_EMAIL_LABEL)}:</span>{" "}
+									{row.email}
+								</div>
+							)}
+							{row.addedByEmail && (
+								<div className="text-xs text-muted-foreground">
+									<span className="font-medium">{t(AdminStaffKeys.TEAM_DRAWER_ADDED_BY_LABEL)}:</span>{" "}
+									{row.addedByEmail}
+								</div>
+							)}
+						</div>
+					</div>
+				)}
+
+				{/* Management actions for employee accounts */}
+				{isEmployeeAccount && row?.rowType === "member" && row.removedAt == null && (
+					<div className="px-5 pt-3 flex flex-wrap gap-2">
+						<button
+							type="button"
+							onClick={() => void handleResetPin()}
+							disabled={resetPinMutation.isPending}
+							className="text-xs font-medium px-2.5 py-1 rounded border border-border text-foreground hover:bg-muted disabled:opacity-50"
+						>
+							{t(AdminStaffKeys.TEAM_DRAWER_RESET_PIN)}
+						</button>
+						<button
+							type="button"
+							onClick={() => void handleRemove()}
+							disabled={removeMemberMutation.isPending}
+							className="text-xs font-medium px-2.5 py-1 rounded border border-destructive text-destructive hover:bg-destructive/10 disabled:opacity-50"
+						>
+							{t(AdminStaffKeys.TEAM_DRAWER_REMOVE)}
+						</button>
+					</div>
+				)}
+
+				{/* Reset PIN result */}
+				{resetPinResult && (
+					<div className="mx-5 mt-3 p-3 rounded-lg bg-muted border border-border space-y-2">
+						<p className="text-xs font-semibold text-foreground">{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_TITLE)}</p>
+						<p className="text-2xl font-mono font-bold tracking-[0.3em] text-foreground text-center">
+							{resetPinResult}
+						</p>
+						<p className="text-xs text-destructive text-center">{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_WARNING)}</p>
+					</div>
+				)}
+
+				{/* Non-removed member actions for Clerk-backed */}
+				{!isEmployeeAccount && row?.rowType === "member" && row.removedAt == null && (
+					<div className="px-5 pt-3 flex flex-wrap gap-2">
+						<button
+							type="button"
+							onClick={() => void handleRemove()}
+							disabled={removeMemberMutation.isPending}
+							className="text-xs font-medium px-2.5 py-1 rounded border border-destructive text-destructive hover:bg-destructive/10 disabled:opacity-50"
+						>
+							{t(AdminStaffKeys.TEAM_DRAWER_REMOVE)}
+						</button>
+					</div>
+				)}
+
 				<div className="px-5 pt-4">
 					<RangeToggle value={range} onChange={setRange} />
 				</div>

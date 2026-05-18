@@ -7,32 +7,73 @@ import type { TFunction } from "i18next";
 export type TeamDirectoryRow =
 	| {
 			rowType: "member";
+			kind: "user" | "employeeAccount";
 			_id: Id<"restaurantMembers">;
-			userId: string;
+			employeeAccountId: Id<"employeeAccounts"> | null;
+			userId: string | null;
 			role: string;
 			isActive: boolean;
 			email: string | null;
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
+			removedAt: number | null;
 	  }
 	| {
 			rowType: "restaurantOwner";
+			kind: "user";
 			userId: string;
 			role: string;
 			isActive: true;
 			email: string | null;
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
+			removedAt: null;
 	  }
 	| {
 			rowType: "orgOwner";
+			kind: "user";
 			userId: string;
 			role: string;
 			isActive: true;
 			email: string | null;
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
+			removedAt: null;
 	  }
 	| {
 			rowType: "invite";
+			kind: "user";
 			_id: Id<"invitations">;
 			email: string;
 			role: string;
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
 	  };
+
+function displayName(row: { firstName: string | null; paternalLastname: string | null; maternalLastname: string | null; email?: string | null }): string {
+	const parts = [row.firstName, row.paternalLastname, row.maternalLastname].filter(Boolean);
+	if (parts.length > 0) return parts.join(" ");
+	if ("email" in row && row.email) return row.email;
+	return "";
+}
+
+function initials(row: { firstName: string | null; paternalLastname: string | null }): string {
+	const f = row.firstName?.charAt(0) ?? "";
+	const p = row.paternalLastname?.charAt(0) ?? "";
+	return (f + p).toUpperCase() || "?";
+}
 
 const columnHelper = createColumnHelper<TeamDirectoryRow>();
 
@@ -41,9 +82,7 @@ export function createTeamDirectoryColumns(args: {
 	staffRoleLabel: (role: string) => string;
 	onRevokeInvite: (invitationId: Id<"invitations">) => void;
 	revokePendingId: Id<"invitations"> | null;
-	/** When provided, member rows the actor can target render an "Asignar turno…" action. */
 	onAssignShift?: (memberId: Id<"restaurantMembers">) => void;
-	/** Member ids the current actor can schedule shifts for; used to gate the row action. */
 	assignableMemberIds?: ReadonlySet<string>;
 }) {
 	const {
@@ -57,26 +96,33 @@ export function createTeamDirectoryColumns(args: {
 
 	return [
 		columnHelper.accessor(
-			(row) => {
-				if (row.rowType === "invite") return row.email;
-				return row.email?.trim() ? row.email : row.userId;
-			},
+			(row) => displayName(row),
 			{
-				id: "identity",
-				header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_IDENTITY),
+				id: "name",
+				header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_NAME),
 				cell: ({ row }) => {
 					const r = row.original;
-					if (r.rowType === "invite") {
-						return <span className="text-sm text-foreground">{r.email}</span>;
-					}
-					const label = r.email?.trim() ? r.email : r.userId;
-					const mono = !r.email?.trim();
+					const name = displayName(r);
+					const photo = r.photoUrl;
+					const removed = "removedAt" in r && r.removedAt != null;
+
 					return (
-						<span
-							className={`text-sm text-foreground ${mono ? "font-mono text-xs" : ""}`}
-						>
-							{label}
-						</span>
+						<div className={`flex items-center gap-2.5 ${removed ? "opacity-50" : ""}`}>
+							{photo ? (
+								<img
+									src={photo}
+									alt=""
+									className="w-7 h-7 rounded-full object-cover shrink-0"
+								/>
+							) : (
+								<span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium text-muted-foreground shrink-0">
+									{initials(r)}
+								</span>
+							)}
+							<span className="text-sm text-foreground truncate">
+								{name || (r.rowType === "invite" ? r.email : ("userId" in r && r.userId ? r.userId : "—"))}
+							</span>
+						</div>
 					);
 				},
 			}
@@ -91,6 +137,7 @@ export function createTeamDirectoryColumns(args: {
 		columnHelper.accessor(
 			(row) => {
 				if (row.rowType === "invite") return t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE);
+				if ("removedAt" in row && row.removedAt != null) return t(AdminStaffKeys.TEAM_STATUS_REMOVED);
 				if (row.rowType === "restaurantOwner" || row.rowType === "orgOwner") {
 					return t(AdminStaffKeys.TEAM_STATUS_ACTIVE);
 				}
@@ -107,6 +154,13 @@ export function createTeamDirectoryColumns(args: {
 						return (
 							<span className="text-sm text-muted-foreground">
 								{t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE)}
+							</span>
+						);
+					}
+					if ("removedAt" in r && r.removedAt != null) {
+						return (
+							<span className="text-sm text-destructive">
+								{t(AdminStaffKeys.TEAM_STATUS_REMOVED)}
 							</span>
 						);
 					}
@@ -147,12 +201,10 @@ export function createTeamDirectoryColumns(args: {
 				if (
 					r.rowType === "member" &&
 					r.isActive &&
+					r.removedAt == null &&
 					onAssignShift &&
 					assignableMemberIds?.has(String(r._id))
 				) {
-					// Owners only render via the synthetic owner row (no `_id`), so
-					// `member` rowType already excludes the org/restaurant owners we
-					// can't schedule.
 					if (
 						r.role === RESTAURANT_MEMBER_ROLE.MANAGER ||
 						r.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE

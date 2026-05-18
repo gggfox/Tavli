@@ -795,11 +795,18 @@ export const internalListOrdersForExportYear = internalQuery({
 					} else {
 						const member = await ctx.db.get(order.attributedMemberId);
 						if (member) {
-							const userRole = await ctx.db
-								.query(TABLE.USER_ROLES)
-								.withIndex("by_user", (q) => q.eq("userId", member.userId))
-								.first();
-							serverDisplay = userRole?.email ?? member.userId;
+							const memberUserId = member.userId;
+							if (memberUserId) {
+								const userRole = await ctx.db
+									.query(TABLE.USER_ROLES)
+									.withIndex("by_user", (q) => q.eq("userId", memberUserId))
+									.first();
+								serverDisplay = userRole?.email ?? memberUserId;
+							} else {
+								serverDisplay = member.employeeAccountId
+									? String(member.employeeAccountId)
+									: "—";
+							}
 						}
 						memberEmailCache.set(order.attributedMemberId, serverDisplay);
 					}

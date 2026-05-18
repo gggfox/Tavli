@@ -39,16 +39,19 @@ interface UseAssignableMembersResult {
 interface DirectoryMemberRow {
 	rowType: "member";
 	_id: Id<"restaurantMembers">;
-	userId: string;
+	userId: string | null;
 	role: RestaurantMemberRole;
 	isActive: boolean;
 	email: string | null;
+	displayName: string;
+	photoUrl: string | null;
+	removedAt: number | null;
 }
 
 type DirectoryRow =
 	| DirectoryMemberRow
-	| { rowType: "restaurantOwner" | "orgOwner"; userId: string; role: string; isActive: boolean; email: string | null }
-	| { rowType: "invite"; _id: Id<"invitations">; email: string; role: string };
+	| { rowType: "restaurantOwner" | "orgOwner"; userId: string; role: string; isActive: boolean; email: string | null; displayName: string; photoUrl: string | null }
+	| { rowType: "invite"; _id: Id<"invitations">; email: string; role: string; displayName: string };
 
 export function useAssignableMembers(restaurantId: Id<"restaurants"> | undefined): UseAssignableMembersResult {
 	const { isAuthenticated } = useConvexAuth();
@@ -113,19 +116,20 @@ export function useAssignableMembers(restaurantId: Id<"restaurants"> | undefined
 		for (const row of directoryRows) {
 			if (row.rowType !== "member") continue;
 			if (!row.isActive) continue;
+			if (row.removedAt != null) continue;
 			if (!canTargetManagers && row.role === RESTAURANT_MEMBER_ROLE.MANAGER) continue;
 			out.push({
 				memberId: row._id,
-				userId: row.userId,
+				userId: row.userId ?? undefined,
 				role: row.role,
 				email: row.email,
+				displayName: row.displayName,
+				photoUrl: row.photoUrl,
 			});
 		}
-		out.sort((a, b) => {
-			const left = a.email?.trim() ? a.email : a.userId;
-			const right = b.email?.trim() ? b.email : b.userId;
-			return left.localeCompare(right, undefined, { sensitivity: "base" });
-		});
+		out.sort((a, b) =>
+			a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" })
+		);
 		return out;
 	}, [directoryRows, canAssignAny, canTargetManagers]);
 

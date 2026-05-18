@@ -3,6 +3,8 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { getCurrentUserId } from "./_util/auth";
+import { TABLE } from "./constants";
+import { stampUpdated } from "./_util/audit";
 
 /**
  * Order statuses the dashboard is allowed to filter by.
@@ -310,6 +312,63 @@ export const setSidebarGroupExpanded = mutation({
 			userId,
 			updates: { expandedSidebarGroups: Array.from(next) },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+// ============================================================================
+// Avatar sync + upload (ADR 006 — Clerk avatar + custom photo)
+// ============================================================================
+
+export const syncClerkAvatar = mutation({
+	args: { clerkImageUrl: v.string() },
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) throw error;
+
+		const row = await ctx.db
+			.query(TABLE.USER_ROLES)
+			.withIndex("by_user", (q) => q.eq("userId", userId))
+			.first();
+		if (!row) return;
+		if (row.clerkImageUrl === args.clerkImageUrl) return;
+
+		await ctx.db.patch(row._id, {
+			clerkImageUrl: args.clerkImageUrl,
+			...stampUpdated(userId),
+		});
+	},
+});
+
+export const generateUserPhotoUploadUrl = mutation({
+	args: {},
+	handler: async (ctx) => {
+		const [, error] = await getCurrentUserId(ctx);
+		if (error) throw error;
+		return await ctx.storage.generateUploadUrl();
+	},
+});
+
+export const setUserPhoto = mutation({
+	args: {
+		photoStorageId: v.id("_storage"),
+		targetUserId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const [actorId, error] = await getCurrentUserId(ctx);
+		if (error) throw error;
+
+		const targetId = args.targetUserId ?? actorId;
+
+		const row = await ctx.db
+			.query(TABLE.USER_ROLES)
+			.withIndex("by_user", (q) => q.eq("userId", targetId))
+			.first();
+		if (!row) return;
+
+		await ctx.db.patch(row._id, {
+			photoStorageId: args.photoStorageId,
+			...stampUpdated(actorId),
 		});
 	},
 });

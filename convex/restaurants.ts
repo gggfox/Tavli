@@ -568,6 +568,43 @@ export const getDeletedForAdmin = query({
  * column labels, createdAt for the year picker), with the same owner /
  * manager / admin access check the export actions require.
  */
+/**
+ * Bind a shared Clerk subject to a restaurant for the employee session.
+ * Owner/admin only. The Clerk user is created externally; this mutation
+ * stores the binding. See ADR 006.
+ */
+export const setSharedEmployeeSubject = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		clerkSubject: v.string(),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, permErr] = await requireRestaurantOwnerOrAdmin(ctx, userId, args.restaurantId);
+		if (permErr) return [null, permErr];
+
+		await ctx.db.patch(args.restaurantId, {
+			sharedEmployeeClerkSubject: args.clerkSubject,
+			...stampUpdated(userId),
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESTAURANTS,
+			aggregateId: String(args.restaurantId),
+			eventType: "restaurants.sharedEmployeeSubjectSet",
+			payload: { clerkSubject: args.clerkSubject },
+			userId,
+		});
+
+		return [null, null];
+	},
+});
+
 export const getRestaurantForExport = internalQuery({
 	args: {
 		actingUserId: v.string(),

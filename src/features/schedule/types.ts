@@ -12,9 +12,11 @@ import type { RestaurantMemberRole } from "convex/constants";
 
 export interface AssignableMember {
 	readonly memberId: Id<"restaurantMembers">;
-	readonly userId: string;
+	readonly userId: string | undefined;
 	readonly role: RestaurantMemberRole;
 	readonly email: string | null;
+	readonly displayName: string;
+	readonly photoUrl: string | null;
 }
 
 export interface ScheduledShiftView {
@@ -29,9 +31,11 @@ export interface ScheduledShiftView {
 	readonly templateId?: Id<"shiftTemplates">;
 	readonly publishedAt?: number;
 	readonly member: {
-		readonly userId: string;
+		readonly userId: string | undefined;
 		readonly role: RestaurantMemberRole;
 		readonly email: string | null;
+		readonly displayName: string;
+		readonly photoUrl: string | null;
 	} | null;
 }
 

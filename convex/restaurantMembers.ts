@@ -79,18 +79,18 @@ function isOrgOwnerForRestaurantFromRows(
 	);
 }
 
-function mergeUserRoleRowsIntoMap(
-	into: Map<string, { email: string | null; rows: Doc<"userRoles">[] }>,
-	rows: Doc<"userRoles">[]
-) {
-	for (const r of rows) {
-		const cur = into.get(r.userId) ?? { email: null as string | null, rows: [] as Doc<"userRoles">[] };
-		cur.rows.push(r);
-		if (r.email && !cur.email) {
-			cur.email = r.email;
-		}
-		into.set(r.userId, cur);
-	}
+function computeDisplayName(row: {
+	firstName: string | null;
+	paternalLastname: string | null;
+	maternalLastname: string | null;
+	email?: string | null;
+	userId?: string | null;
+}): string {
+	const parts = [row.firstName, row.paternalLastname, row.maternalLastname].filter(Boolean);
+	if (parts.length > 0) return parts.join(" ");
+	if (row.email) return row.email;
+	if (row.userId) return row.userId;
+	return "";
 }
 
 /** Hide member rows for platform identities that are only admin/customer (no staff roles, not doc owner, not org owner). */
@@ -200,7 +200,10 @@ export const listOrganizationUsersForRestaurant = query({
 });
 
 export const listTeamDirectory = query({
-	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		includeRemoved: v.optional(v.boolean()),
+	},
 	handler: async (ctx, args) => {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
@@ -220,22 +223,62 @@ export const listTeamDirectory = query({
 			)
 			.collect();
 
-		const roleRowsByUser = new Map<string, { email: string | null; rows: Doc<"userRoles">[] }>();
-		mergeUserRoleRowsIntoMap(roleRowsByUser, orgUserRoles);
+		type UserRolePack = {
+			email: string | null;
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoStorageId: string | null;
+			clerkImageUrl: string | null;
+			rows: Doc<"userRoles">[];
+		};
+		const roleRowsByUser = new Map<string, UserRolePack>();
+
+		const mergeRoleRow = (pack: UserRolePack, r: Doc<"userRoles">) => {
+			pack.rows.push(r);
+			if (r.email && !pack.email) pack.email = r.email;
+			if (r.firstName && !pack.firstName) pack.firstName = r.firstName;
+			if (r.paternalLastname && !pack.paternalLastname) pack.paternalLastname = r.paternalLastname;
+			if (r.maternalLastname && !pack.maternalLastname) pack.maternalLastname = r.maternalLastname;
+			if (r.photoStorageId && !pack.photoStorageId) pack.photoStorageId = r.photoStorageId as string;
+			if (r.clerkImageUrl && !pack.clerkImageUrl) pack.clerkImageUrl = r.clerkImageUrl;
+		};
+
+		for (const r of orgUserRoles) {
+			const cur = roleRowsByUser.get(r.userId) ?? { email: null, firstName: null, paternalLastname: null, maternalLastname: null, photoStorageId: null, clerkImageUrl: null, rows: [] };
+			mergeRoleRow(cur, r);
+			roleRowsByUser.set(r.userId, cur);
+		}
 
 		const ensureUserRoleRows = async (uid: string) => {
 			if (!roleRowsByUser.has(uid)) {
 				const rows = await fetchUserRoleRecordsByUserId(ctx, uid);
-				mergeUserRoleRowsIntoMap(roleRowsByUser, rows);
+				const cur: UserRolePack = { email: null, firstName: null, paternalLastname: null, maternalLastname: null, photoStorageId: null, clerkImageUrl: null, rows: [] };
+				for (const r of rows) mergeRoleRow(cur, r);
+				roleRowsByUser.set(uid, cur);
 			}
 		};
 
+		const resolveUserPhotoUrl = async (pack: UserRolePack | undefined): Promise<string | null> => {
+			if (!pack) return null;
+			if (pack.photoStorageId) {
+				return await ctx.storage.getUrl(pack.photoStorageId as Id<"_storage">) ?? null;
+			}
+			return pack.clerkImageUrl ?? null;
+		};
+
 		for (const m of members) {
-			await ensureUserRoleRows(m.userId);
+			if (m.userId) await ensureUserRoleRows(m.userId);
 		}
 		if (restaurant.ownerId) {
 			await ensureUserRoleRows(restaurant.ownerId);
 		}
+
+		const resolveAddedByEmail = async (addedBy: string | undefined): Promise<string | null> => {
+			if (!addedBy) return null;
+			await ensureUserRoleRows(addedBy);
+			return roleRowsByUser.get(addedBy)?.email ?? null;
+		};
 
 		const invitations = await ctx.db
 			.query(TABLE.INVITATIONS)
@@ -246,9 +289,16 @@ export const listTeamDirectory = query({
 
 		const inviteRows: Array<{
 			rowType: "invite";
+			kind: "user";
 			_id: (typeof pending)[number]["_id"];
 			email: string;
 			role: (typeof pending)[number]["role"];
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
+			displayName: string;
 		}> = [];
 
 		for (const inv of pending) {
@@ -260,54 +310,125 @@ export const listTeamDirectory = query({
 			const [, manageErr] = await assertCanManageInvitation(ctx, userId, inv);
 			if (manageErr) continue;
 
+			const inviterEmail = await resolveAddedByEmail(inv.invitedBy);
+
+			const invRow = {
+				firstName: inv.firstName ?? null,
+				paternalLastname: inv.paternalLastname ?? null,
+				maternalLastname: inv.maternalLastname ?? null,
+				email: inv.email,
+			};
 			inviteRows.push({
 				rowType: "invite",
+				kind: "user",
 				_id: inv._id,
 				email: inv.email,
 				role: inv.role,
+				firstName: invRow.firstName,
+				paternalLastname: invRow.paternalLastname,
+				maternalLastname: invRow.maternalLastname,
+				photoUrl: null,
+				addedByEmail: inviterEmail,
+				displayName: computeDisplayName(invRow),
 			});
 		}
 
-		const memberRows: Array<{
+		type MemberRow = {
 			rowType: "member";
+			kind: "user" | "employeeAccount";
 			_id: Id<"restaurantMembers">;
-			userId: string;
+			employeeAccountId: Id<"employeeAccounts"> | null;
+			userId: string | null;
 			role: Doc<"restaurantMembers">["role"];
 			isActive: boolean;
 			email: string | null;
-		}> = [];
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
+			removedAt: number | null;
+			displayName: string;
+		};
 
+		const memberRows: MemberRow[] = [];
 		const listedMemberUserIds = new Set<string>();
 
 		for (const m of members) {
-			const pack = roleRowsByUser.get(m.userId);
-			memberRows.push({
-				rowType: "member",
-				_id: m._id,
-				userId: m.userId,
-				role: m.role,
-				isActive: m.isActive,
-				email: pack?.email ?? null,
-			});
-			listedMemberUserIds.add(m.userId);
+			if (!args.includeRemoved && m.removedAt != null) continue;
+
+			const addedByEmail = await resolveAddedByEmail(m.addedBy);
+
+			if (m.employeeAccountId) {
+				const account = await ctx.db.get(m.employeeAccountId);
+				if (!account) continue;
+				if (!args.includeRemoved && account.removedAt != null) continue;
+
+				let photoUrl: string | null = null;
+				if (account.photoStorageId) {
+					photoUrl = await ctx.storage.getUrl(account.photoStorageId);
+				}
+
+				const eaNames = { firstName: account.firstName, paternalLastname: account.paternalLastname, maternalLastname: account.maternalLastname };
+				memberRows.push({
+					rowType: "member",
+					kind: "employeeAccount",
+					_id: m._id,
+					employeeAccountId: m.employeeAccountId,
+					userId: null,
+					role: m.role,
+					isActive: m.isActive,
+					email: null,
+					firstName: account.firstName,
+					paternalLastname: account.paternalLastname,
+					maternalLastname: account.maternalLastname,
+					photoUrl,
+					addedByEmail,
+					removedAt: m.removedAt ?? null,
+					displayName: computeDisplayName(eaNames),
+				});
+			} else if (m.userId) {
+				const pack = roleRowsByUser.get(m.userId);
+				const userNames = { firstName: pack?.firstName ?? null, paternalLastname: pack?.paternalLastname ?? null, maternalLastname: pack?.maternalLastname ?? null, email: pack?.email ?? null, userId: m.userId };
+				const userPhotoUrl = await resolveUserPhotoUrl(pack);
+				memberRows.push({
+					rowType: "member",
+					kind: "user",
+					_id: m._id,
+					employeeAccountId: null,
+					userId: m.userId,
+					role: m.role,
+					isActive: m.isActive,
+					email: pack?.email ?? null,
+					firstName: pack?.firstName ?? null,
+					paternalLastname: pack?.paternalLastname ?? null,
+					maternalLastname: pack?.maternalLastname ?? null,
+					photoUrl: userPhotoUrl,
+					addedByEmail,
+					removedAt: m.removedAt ?? null,
+					displayName: computeDisplayName(userNames),
+				});
+				listedMemberUserIds.add(m.userId);
+			}
 		}
 
-		const syntheticRows: Array<
-			| {
-					rowType: "restaurantOwner";
-					userId: string;
-					role: typeof USER_ROLES.OWNER;
-					isActive: true;
-					email: string | null;
-			  }
-			| {
-					rowType: "orgOwner";
-					userId: string;
-					role: typeof USER_ROLES.OWNER;
-					isActive: true;
-					email: string | null;
-			  }
-		> = [];
+		type SyntheticRow = {
+			rowType: "restaurantOwner" | "orgOwner";
+			kind: "user";
+			userId: string;
+			role: typeof USER_ROLES.OWNER;
+			isActive: true;
+			email: string | null;
+			firstName: string | null;
+			paternalLastname: string | null;
+			maternalLastname: string | null;
+			photoUrl: string | null;
+			addedByEmail: string | null;
+			removedAt: null;
+			displayName: string;
+		};
+
+		const syntheticRows: SyntheticRow[] = [];
 
 		const ownerId = restaurant.ownerId;
 		if (ownerId && !listedMemberUserIds.has(ownerId)) {
@@ -320,12 +441,22 @@ export const listTeamDirectory = query({
 					roleRowsForUser,
 				})
 			) {
+				const ownerNames = { firstName: pack?.firstName ?? null, paternalLastname: pack?.paternalLastname ?? null, maternalLastname: pack?.maternalLastname ?? null, email: pack?.email ?? null, userId: ownerId };
+				const ownerPhotoUrl = await resolveUserPhotoUrl(pack);
 				syntheticRows.push({
 					rowType: "restaurantOwner",
+					kind: "user",
 					userId: ownerId,
 					role: USER_ROLES.OWNER,
 					isActive: true,
 					email: pack?.email ?? null,
+					firstName: pack?.firstName ?? null,
+					paternalLastname: pack?.paternalLastname ?? null,
+					maternalLastname: pack?.maternalLastname ?? null,
+					photoUrl: ownerPhotoUrl,
+					addedByEmail: null,
+					removedAt: null,
+					displayName: computeDisplayName(ownerNames),
 				});
 				listedMemberUserIds.add(ownerId);
 			}
@@ -347,26 +478,29 @@ export const listTeamDirectory = query({
 			) {
 				continue;
 			}
+			const orgOwnerNames = { firstName: pack?.firstName ?? null, paternalLastname: pack?.paternalLastname ?? null, maternalLastname: pack?.maternalLastname ?? null, email: pack?.email ?? null, userId: r.userId };
+			const orgOwnerPhotoUrl = await resolveUserPhotoUrl(pack);
 			syntheticRows.push({
 				rowType: "orgOwner",
+				kind: "user",
 				userId: r.userId,
 				role: USER_ROLES.OWNER,
 				isActive: true,
 				email: pack?.email ?? null,
+				firstName: pack?.firstName ?? null,
+				paternalLastname: pack?.paternalLastname ?? null,
+				maternalLastname: pack?.maternalLastname ?? null,
+				photoUrl: orgOwnerPhotoUrl,
+				addedByEmail: null,
+				removedAt: null,
+				displayName: computeDisplayName(orgOwnerNames),
 			});
 			listedMemberUserIds.add(r.userId);
 		}
 
 		const directorySortKey = (
-			row:
-				| (typeof memberRows)[number]
-				| (typeof syntheticRows)[number]
-				| (typeof inviteRows)[number]
-		) => {
-			if (row.rowType === "invite") return row.email;
-			const email = "email" in row ? row.email : null;
-			return email ?? row.userId;
-		};
+			row: MemberRow | SyntheticRow | (typeof inviteRows)[number]
+		) => row.displayName || "";
 
 		const combined = [...memberRows, ...syntheticRows, ...inviteRows].sort((a, b) =>
 			directorySortKey(a).localeCompare(directorySortKey(b), undefined, { sensitivity: "base" })
@@ -541,13 +675,30 @@ export const removeMember = mutation({
 		});
 		if (permErr) return [null, permErr];
 
-		await ctx.db.patch(args.memberId, { isActive: false, ...stampUpdated(actorId) });
+		const now = Date.now();
+		await ctx.db.patch(args.memberId, {
+			isActive: false,
+			removedAt: now,
+			removedBy: actorId,
+			...stampUpdated(actorId),
+		});
+
+		if (row.employeeAccountId) {
+			const account = await ctx.db.get(row.employeeAccountId);
+			if (account && account.removedAt == null) {
+				await ctx.db.patch(row.employeeAccountId, {
+					removedAt: now,
+					removedBy: actorId,
+					...stampUpdated(actorId),
+				});
+			}
+		}
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.RESTAURANT_MEMBERS,
 			aggregateId: args.memberId,
-			eventType: "restaurantMembers.deactivated",
-			payload: {},
+			eventType: "restaurantMembers.removed",
+			payload: { employeeAccountId: row.employeeAccountId ?? null },
 			userId: actorId,
 		});
 

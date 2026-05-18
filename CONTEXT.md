@@ -64,12 +64,49 @@ applicable station has been stamped, the `Order`'s overall `status`
 flips to `ready`.
 _Avoid_: bump, complete.
 
+### Employee management
+
+**User**:
+A Clerk-authenticated principal (subject string). Owners, admins, and
+managers are Users. `EmployeeAccounts` are **not** Users — they have no
+Clerk identity.
+_Avoid_: account (overloaded — use User for Clerk identities,
+EmployeeAccount for managed profiles).
+
+**Employee account**:
+A manager-managed staff profile bound to one `Restaurant`, with
+structured name (`firstName`, `paternalLastname`, `maternalLastname`),
+optional photo, and a hashed `PersonalPIN`. Has **no Clerk identity**.
+A shadow `RestaurantMember` row (with `role: employee`) is created
+alongside it so that attendance, tips, and audit references always
+point at a `RestaurantMember`. See ADR 006.
+_Avoid_: staff record, employee profile, worker.
+
+**Personal PIN**:
+A short numeric code stored hashed on an `EmployeeAccount`. Set by a
+manager at creation, shown to the manager **once**, never retrievable
+after that. Used by the employee to (1) read their own tips, attendance,
+and schedule, (2) self clock-in/out from the `SharedEmployeeSession`.
+Recovery = manager generates a new PIN, shown once. See ADR 006.
+_Avoid_: password (implies full auth).
+
+**Shared employee session**:
+A per-restaurant Clerk identity bound via
+`restaurants.sharedEmployeeClerkSubject`. Read-only by default; PIN
+step-up unlocks the employee's own reads and self clock-in/out for that
+single action. See ADR 006.
+_Avoid_: kiosk login, device account.
+
 ### Staffing
 
 **Restaurant member**:
-A `User`'s membership in a single `Restaurant`, with the per-restaurant
-role `manager` or `employee`. Org-level roles (`owner`, `admin`) live
-on `userRoles` instead.
+A `Restaurant` membership, with per-restaurant role `manager` or
+`employee`. Backed by **either** a `User` (`userId` set) **or** an
+`EmployeeAccount` (`employeeAccountId` set) — never both, never
+neither (XOR invariant, enforced at application layer). Attendance,
+tips, and audit references always point at the `RestaurantMember` row,
+regardless of which kind backs it. Org-level roles (`owner`, `admin`)
+live on `userRoles` instead. See ADR 006.
 
 **Shift**:
 A scheduled work block for a `RestaurantMember`, carrying a
@@ -119,6 +156,10 @@ assigned to sections for the duration of (a sub-window of) a `Shift`.
 
 ## Flagged ambiguities
 
+- "account" is overloaded. A **User** is a Clerk-authenticated principal;
+  an **EmployeeAccount** is a managed profile with no Clerk identity.
+  Code should never use a bare "account" — qualify with the specific
+  term.
 - "Beverage category" and "meal category" came up during the prep-station
   design discussion. Resolved: we do **not** model the food/beverage axis.
   The orthogonal concept is **PrepStation**, which lives on **MenuItem**.

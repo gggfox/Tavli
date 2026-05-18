@@ -93,7 +93,7 @@ const PRESETS: ReadonlyArray<{
 ];
 
 function memberLabel(m: AssignableMember): string {
-	return m.email?.trim() ? m.email : m.userId;
+	return m.displayName || "—";
 }
 
 export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {

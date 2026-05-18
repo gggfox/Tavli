@@ -29,6 +29,7 @@ import {
 import { i18n } from "@/global";
 import type { Language } from "@/global/i18n";
 import { Languages } from "@/global/i18n";
+import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -111,6 +112,18 @@ export { UserSettingsError } from "../components/UserSettingsService";
 export function useUserSettings(): UseUserSettingsReturn {
 	const client = useConvex();
 	const { isAuthenticated } = useConvexAuth();
+	const { user: clerkUser } = useUser();
+
+	const clerkImageSynced = useRef(false);
+	useEffect(() => {
+		if (!isAuthenticated || !clerkUser?.imageUrl || clerkImageSynced.current) return;
+		clerkImageSynced.current = true;
+		client
+			.mutation(api.userSettings.syncClerkAvatar, { clerkImageUrl: clerkUser.imageUrl })
+			.catch(() => {
+				clerkImageSynced.current = false;
+			});
+	}, [isAuthenticated, clerkUser?.imageUrl, client]);
 
 	// Use convexQuery for real-time subscriptions
 	// This maintains Convex's sync engine for live updates

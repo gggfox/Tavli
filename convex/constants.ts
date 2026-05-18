@@ -38,6 +38,7 @@ export const TABLE = {
 	TIP_ENTRIES: "tipEntries",
 	DASHBOARD_LAYOUTS: "dashboardLayouts",
 	DASHBOARD_TEMPLATES: "dashboardTemplates",
+	EMPLOYEE_ACCOUNTS: "employeeAccounts",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -352,6 +353,13 @@ export const TIP_ENTRY_SOURCE = {
 } as const;
 
 export type TipEntrySource = (typeof TIP_ENTRY_SOURCE)[keyof typeof TIP_ENTRY_SOURCE];
+
+/** PIN lockout parameters for employee accounts. See ADR 006. */
+export const PIN_LOCKOUT = {
+	MAX_ATTEMPTS: 5,
+	WINDOW_MS: 10 * 60 * 1000,
+	PIN_LENGTH: 6,
+} as const;
 
 /** System actor for migrations and webhooks when no Clerk user applies. */
 export const AUDIT_SYSTEM_USER_ID = "system";

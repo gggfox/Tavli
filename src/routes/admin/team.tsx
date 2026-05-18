@@ -19,7 +19,7 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "convex/constants";
 import { useConvexAuth } from "convex/react";
 import { useAuth } from "@clerk/tanstack-react-start";
-import { Search, Users } from "lucide-react";
+import { Search, Users, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -72,12 +72,22 @@ function AdminTeamPage() {
 
 	const createInvitation = useMutation({ mutationFn: useConvexMutation(api.invites.createInvitation) });
 	const revokeInvitation = useMutation({ mutationFn: useConvexMutation(api.invites.revokeInvitation) });
+	const createEmployeeAccount = useMutation({ mutationFn: useConvexMutation(api.employeeAccounts.createEmployeeAccount) });
 
 	const [email, setEmail] = useState("");
 	const [role, setRole] = useState<InviteRole>(RESTAURANT_MEMBER_ROLE.EMPLOYEE);
 	const [selectedRestaurantIds, setSelectedRestaurantIds] = useState<Id<"restaurants">[]>([]);
 	const [inviteModalOpen, setInviteModalOpen] = useState(false);
 	const [revokePendingId, setRevokePendingId] = useState<Id<"invitations"> | null>(null);
+	const [showRemoved, setShowRemoved] = useState(false);
+
+	// Add employee modal state
+	const [addEmployeeOpen, setAddEmployeeOpen] = useState(false);
+	const [empFirstName, setEmpFirstName] = useState("");
+	const [empPaternalLastname, setEmpPaternalLastname] = useState("");
+	const [empMaternalLastname, setEmpMaternalLastname] = useState("");
+	const [generatedPin, setGeneratedPin] = useState<string | null>(null);
+	const [pinCopied, setPinCopied] = useState(false);
 
 	const { members: assignableMembers } = useAssignableMembers(restaurant?._id);
 	const assignableMemberIdSet = useMemo(
@@ -97,7 +107,6 @@ function AdminTeamPage() {
 	);
 
 	const handleRowClick = useCallback((row: TeamDirectoryRow) => {
-		// Pending invites have no associated user yet; clicking should be a no-op.
 		if (row.rowType === "invite") return;
 		setMemberDrawerRow(row);
 	}, []);
@@ -160,6 +169,8 @@ function AdminTeamPage() {
 
 	const isRestaurantManagerOnly =
 		!isAdmin && !isOrgOwner && !isOrgManager && managedRestaurantIds.length > 0;
+
+	const canAddEmployee = isAdmin || isOrgOwner || isOrgManager || isRestaurantManagerOnly;
 
 	const allowedInviteRoles = useMemo(() => {
 		if (isAdmin) return [...INVITE_ROLE_ORDER];
@@ -243,7 +254,7 @@ function AdminTeamPage() {
 	const tableState = useAdminTable<TeamDirectoryRow>({
 		queryOptions: convexQuery(
 			api.restaurantMembers.listTeamDirectory,
-			restaurant?._id ? { restaurantId: restaurant._id } : "skip"
+			restaurant?._id ? { restaurantId: restaurant._id, includeRemoved: showRemoved } : "skip"
 		),
 		columns,
 		enabled: Boolean(isAuthenticated && restaurant?._id),
@@ -276,16 +287,58 @@ function AdminTeamPage() {
 		setInviteModalOpen(false);
 	};
 
-	const headerActions =
-		allowedInviteRoles.length > 0 ? (
-			<button
-				type="button"
-				onClick={() => setInviteModalOpen(true)}
-				className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
-			>
-				{t(AdminStaffKeys.TEAM_SEND_INVITATION)}
-			</button>
-		) : null;
+	const onCreateEmployee = async () => {
+		if (!restaurant?._id) return;
+		const result = unwrapResult<{ employeeAccountId: string; memberId: string; pin: string }>(
+			await createEmployeeAccount.mutateAsync({
+				restaurantId: restaurant._id,
+				firstName: empFirstName.trim(),
+				paternalLastname: empPaternalLastname.trim(),
+				maternalLastname: empMaternalLastname.trim(),
+			})
+		);
+		setGeneratedPin(result.pin);
+	};
+
+	const closeAddEmployee = () => {
+		setAddEmployeeOpen(false);
+		setEmpFirstName("");
+		setEmpPaternalLastname("");
+		setEmpMaternalLastname("");
+		setGeneratedPin(null);
+		setPinCopied(false);
+	};
+
+	const copyPin = async () => {
+		if (!generatedPin) return;
+		await navigator.clipboard.writeText(generatedPin);
+		setPinCopied(true);
+		setTimeout(() => setPinCopied(false), 2000);
+	};
+
+	const headerActions = (
+		<div className="flex items-center gap-2">
+			{canAddEmployee && (
+				<button
+					type="button"
+					onClick={() => setAddEmployeeOpen(true)}
+					className="text-sm font-medium px-3 py-1.5 rounded-md bg-muted text-foreground hover:bg-muted/80 flex items-center gap-1.5"
+				>
+					<UserPlus className="w-3.5 h-3.5" />
+					{t(AdminStaffKeys.TEAM_ADD_EMPLOYEE)}
+				</button>
+			)}
+			{allowedInviteRoles.length > 0 && (
+				<button
+					type="button"
+					onClick={() => setInviteModalOpen(true)}
+					className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+				>
+					{t(AdminStaffKeys.TEAM_SEND_INVITATION)}
+				</button>
+			)}
+		</div>
+	);
 
 	if (isLoading || rolesLoading) return <LoadingState />;
 
@@ -307,6 +360,18 @@ function AdminTeamPage() {
 			actions={headerActions}
 		>
 			<section className="flex flex-col h-full min-h-0 gap-6">
+				<div className="flex items-center gap-3">
+					<label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+						<input
+							type="checkbox"
+							checked={showRemoved}
+							onChange={(e) => setShowRemoved(e.target.checked)}
+							className="rounded border-border"
+						/>
+						{t(AdminStaffKeys.TEAM_SHOW_REMOVED)}
+					</label>
+				</div>
+
 				<AdminTable
 					tableState={tableState}
 					entityName={t(AdminStaffKeys.TEAM_DIRECTORY_ENTITY_NAME)}
@@ -331,6 +396,7 @@ function AdminTeamPage() {
 					onClose={handleCloseMemberDrawer}
 				/>
 
+				{/* Invite drawer */}
 				<Drawer
 					isOpen={inviteModalOpen}
 					onClose={closeInviteModal}
@@ -411,6 +477,98 @@ function AdminTeamPage() {
 							{createInvitation.isPending ? t(AdminStaffKeys.TEAM_SENDING) : t(AdminStaffKeys.TEAM_SEND_INVITE)}
 						</button>
 					</div>
+				</Drawer>
+
+				{/* Add employee drawer */}
+				<Drawer
+					isOpen={addEmployeeOpen}
+					onClose={closeAddEmployee}
+					ariaLabel={t(AdminStaffKeys.TEAM_ADD_EMPLOYEE_MODAL_TITLE)}
+					side={isNarrow ? "bottom" : "right"}
+					size={isNarrow ? "92dvh" : "min(520px, 90vw)"}
+					swipeToClose={isNarrow}
+					swipeHandleAriaLabel={t(AdminStaffKeys.SCHEDULE_DRAWER_SWIPE_HANDLE)}
+					panelClassName="bg-background border border-border overflow-hidden"
+				>
+					<DialogHeader title={t(AdminStaffKeys.TEAM_ADD_EMPLOYEE_MODAL_TITLE)} onClose={closeAddEmployee} />
+					<div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
+						{generatedPin ? (
+							<div className="space-y-4">
+								<h3 className="text-sm font-semibold text-foreground">{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_TITLE)}</h3>
+								<div className="flex items-center justify-center">
+									<span className="text-3xl font-mono font-bold tracking-[0.3em] text-foreground bg-muted px-6 py-3 rounded-lg">
+										{generatedPin}
+									</span>
+								</div>
+								<p className="text-xs text-destructive text-center font-medium">
+									{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_WARNING)}
+								</p>
+								<div className="flex items-center justify-center gap-3">
+									<button
+										type="button"
+										onClick={() => void copyPin()}
+										className="text-sm font-medium px-4 py-1.5 rounded-md bg-muted text-foreground hover:bg-muted/80"
+									>
+										{pinCopied ? t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_COPIED) : t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_COPY)}
+									</button>
+									<button
+										type="button"
+										onClick={closeAddEmployee}
+										className="text-sm font-medium px-4 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+									>
+										{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_DONE)}
+									</button>
+								</div>
+							</div>
+						) : (
+							<>
+								<label className="block text-xs text-faint-foreground">
+									{t(AdminStaffKeys.TEAM_EMPLOYEE_FIRST_NAME)}
+									<input
+										className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+										value={empFirstName}
+										onChange={(e) => setEmpFirstName(e.target.value)}
+										autoFocus
+									/>
+								</label>
+								<label className="block text-xs text-faint-foreground">
+									{t(AdminStaffKeys.TEAM_EMPLOYEE_PATERNAL_LASTNAME)}
+									<input
+										className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+										value={empPaternalLastname}
+										onChange={(e) => setEmpPaternalLastname(e.target.value)}
+									/>
+								</label>
+								<label className="block text-xs text-faint-foreground">
+									{t(AdminStaffKeys.TEAM_EMPLOYEE_MATERNAL_LASTNAME)}
+									<input
+										className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+										value={empMaternalLastname}
+										onChange={(e) => setEmpMaternalLastname(e.target.value)}
+									/>
+								</label>
+							</>
+						)}
+					</div>
+					{!generatedPin && (
+						<div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border">
+							<button
+								type="button"
+								onClick={() => void onCreateEmployee()}
+								disabled={
+									createEmployeeAccount.isPending ||
+									!empFirstName.trim() ||
+									!empPaternalLastname.trim() ||
+									!empMaternalLastname.trim()
+								}
+								className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+							>
+								{createEmployeeAccount.isPending
+									? t(AdminStaffKeys.TEAM_EMPLOYEE_CREATING)
+									: t(AdminStaffKeys.TEAM_EMPLOYEE_CREATE)}
+							</button>
+						</div>
+					)}
 				</Drawer>
 
 				{shiftDrawerInitial && restaurant ? (

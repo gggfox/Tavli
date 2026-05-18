@@ -22,6 +22,12 @@ import {
 	USER_ROLES,
 } from "./constants";
 
+const structuredName = {
+	firstName: v.optional(v.string()),
+	paternalLastname: v.optional(v.string()),
+	maternalLastname: v.optional(v.string()),
+};
+
 const nameDescTranslations = v.optional(
 	v.record(
 		v.string(),
@@ -76,6 +82,9 @@ export default defineSchema({
 	[TABLE.USER_ROLES]: defineTable({
 		userId: v.string(),
 		email: v.optional(v.string()),
+		...structuredName,
+		clerkImageUrl: v.optional(v.string()),
+		photoStorageId: v.optional(v.id("_storage")),
 		roles: v.array(
 			v.union(
 				v.literal("admin"),
@@ -96,8 +105,11 @@ export default defineSchema({
 	// ============================================================================
 	// Restaurant membership (per-location manager / employee)
 	// ============================================================================
+	// XOR invariant: exactly one of `userId` (Clerk-backed) or
+	// `employeeAccountId` (managed, no Clerk identity) is set. See ADR 006.
 	[TABLE.RESTAURANT_MEMBERS]: defineTable({
-		userId: v.string(),
+		userId: v.optional(v.string()),
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 		role: v.union(
@@ -106,6 +118,8 @@ export default defineSchema({
 		),
 		isActive: v.boolean(),
 		addedBy: v.optional(v.string()),
+		removedAt: v.optional(v.number()),
+		removedBy: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
@@ -113,7 +127,8 @@ export default defineSchema({
 		.index("by_user", ["userId"])
 		.index("by_restaurant", ["restaurantId"])
 		.index("by_restaurant_user", ["restaurantId", "userId"])
-		.index("by_organization", ["organizationId"]),
+		.index("by_organization", ["organizationId"])
+		.index("by_employee_account", ["employeeAccountId"]),
 
 	// ============================================================================
 	// Organizations
@@ -173,6 +188,8 @@ export default defineSchema({
 		stripeAccountId: v.optional(v.string()),
 		stripeOnboardingComplete: v.optional(v.boolean()),
 		isActive: v.boolean(),
+		/** Clerk subject of the per-restaurant shared employee session. See ADR 006. */
+		sharedEmployeeClerkSubject: v.optional(v.string()),
 		/** Set when soft-deleted; absent means active. */
 		deletedAt: v.optional(v.number()),
 		deletedBy: v.optional(v.string()),
@@ -188,7 +205,8 @@ export default defineSchema({
 		.index("by_owner", ["ownerId"])
 		.index("by_organization", ["organizationId"])
 		.index("by_stripe_account", ["stripeAccountId"])
-		.index("by_hard_delete_after", ["hardDeleteAfterAt"]),
+		.index("by_hard_delete_after", ["hardDeleteAfterAt"])
+		.index("by_shared_employee_subject", ["sharedEmployeeClerkSubject"]),
 
 	[TABLE.MENUS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -596,6 +614,7 @@ export default defineSchema({
 	[TABLE.INVITATIONS]: defineTable({
 		token: v.string(),
 		email: v.string(),
+		...structuredName,
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 		role: v.union(
 			v.literal(USER_ROLES.OWNER),
@@ -912,6 +931,30 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_restaurant", ["restaurantId"]),
+
+	// ============================================================================
+	// Employee Accounts (managed profiles, no Clerk identity — ADR 006)
+	// ============================================================================
+	[TABLE.EMPLOYEE_ACCOUNTS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		organizationId: v.id(TABLE.ORGANIZATIONS),
+		firstName: v.string(),
+		paternalLastname: v.string(),
+		maternalLastname: v.string(),
+		photoStorageId: v.optional(v.id("_storage")),
+		pinHash: v.string(),
+		pinSetAt: v.number(),
+		pinResetCount: v.number(),
+		failedPinAttempts: v.number(),
+		lockedUntil: v.optional(v.number()),
+		removedAt: v.optional(v.number()),
+		removedBy: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedBy: v.optional(v.string()),
+	})
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_organization", ["organizationId"]),
 
 	// ============================================================================
 	// Unified Event Store
