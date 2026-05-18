@@ -869,6 +869,33 @@
 		"lang": {
 			"defaultLabel": "Idioma predeterminado (usado para los nombres principales de los productos)",
 			"additionalLabel": "Idiomas adicionales para traducciones"
+		},
+		"import": {
+			"button": "Importar desde documento",
+			"modalTitle": "Importar Menú desde Documento",
+			"modalAria": "Diálogo de importación de menú desde documento",
+			"dropzoneLabel": "Arrastra un archivo aquí o haz clic para buscar",
+			"dropzoneHint": "Soporta archivos PDF, DOCX, TXT y CSV",
+			"targetLabel": "Agregar ítems a",
+			"targetNew": "Crear nuevo menú",
+			"newMenuPlaceholder": "Nombre del nuevo menú",
+			"extracting": "Extrayendo ítems del menú…",
+			"uploading": "Subiendo documento…",
+			"previewTitle": "Vista previa de ítems extraídos",
+			"previewCategory": "Categoría",
+			"previewItem": "Ítem",
+			"previewPrice": "Precio",
+			"previewDescription": "Descripción",
+			"confirm": "Confirmar importación",
+			"cancel": "Cancelar",
+			"inserting": "Importando ítems…",
+			"success": "Se importaron {{itemsCreated}} ítems en {{categoriesCreated}} categorías nuevas y {{categoriesMerged}} existentes",
+			"error": "Error en importación: {{message}}",
+			"emptyCta": {
+				"title": "Importa tu menú desde un documento",
+				"description": "Sube un PDF, documento de Word o archivo de texto y extraeremos tus categorías e ítems automáticamente."
+			},
+			"serviceUnavailable": "La importación de menú no está disponible temporalmente. Intenta de nuevo más tarde."
 		}
 	},
 	"options": {

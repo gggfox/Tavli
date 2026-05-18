@@ -41,6 +41,8 @@ import type * as featureFlags from "../featureFlags.js";
 import type * as http from "../http.js";
 import type * as inviteActions from "../inviteActions.js";
 import type * as invites from "../invites.js";
+import type * as menuImport from "../menuImport.js";
+import type * as menuImportMutation from "../menuImportMutation.js";
 import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
 import type * as migrations_backfillDailyOrderNumber from "../migrations/backfillDailyOrderNumber.js";
@@ -114,6 +116,8 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   inviteActions: typeof inviteActions;
   invites: typeof invites;
+  menuImport: typeof menuImport;
+  menuImportMutation: typeof menuImportMutation;
   menuItems: typeof menuItems;
   menus: typeof menus;
   "migrations/backfillDailyOrderNumber": typeof migrations_backfillDailyOrderNumber;

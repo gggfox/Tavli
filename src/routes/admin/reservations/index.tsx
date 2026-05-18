@@ -89,7 +89,7 @@ function ReservationsPage() {
 					</button>
 				</div>
 			</div>
-			<div className="flex-1 overflow-y-auto">
+			<div className="flex-1 min-h-0 overflow-y-auto">
 				<ReservationsContent hasRestaurant={Boolean(restaurant?._id)} isLoading={isLoading} />
 			</div>
 
@@ -104,7 +104,7 @@ function ReservationsPage() {
 					onClose={() => setIsSettingsOpen(false)}
 					closeAriaLabel={t(ReservationsKeys.ARIA_DETAIL_DRAWER_CLOSE)}
 				/>
-				<div className="flex-1 overflow-y-auto px-6 py-4">
+				<div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
 					{restaurant ? (
 						<ReservationSettingsPanel restaurantId={restaurant._id} />
 					) : (
@@ -126,7 +126,7 @@ function ReservationsPage() {
 					onClose={() => setIsLocksOpen(false)}
 					closeAriaLabel={t(ReservationsKeys.ARIA_DETAIL_DRAWER_CLOSE)}
 				/>
-				<div className="flex-1 overflow-y-auto px-6 py-4">
+				<div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
 					{restaurant ? (
 						<TableLocksManager restaurantId={restaurant._id} />
 					) : (

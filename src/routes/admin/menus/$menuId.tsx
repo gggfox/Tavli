@@ -54,7 +54,7 @@ function MenuEditorPage() {
 				</div>
 				{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
 			</div>
-			<div className="flex-1 overflow-y-auto">
+			<div className="flex-1 min-h-0 overflow-y-auto">
 				{showSkeleton && <MenuEditorSkeleton />}
 				{!showSkeleton && restaurant && (
 					<MenuEditor menuId={menuId as Id<"menus">} restaurantId={restaurant._id} />

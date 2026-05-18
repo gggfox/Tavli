@@ -869,6 +869,33 @@
 		"lang": {
 			"defaultLabel": "Default language (used for main item names)",
 			"additionalLabel": "Additional languages for translations"
+		},
+		"import": {
+			"button": "Import from document",
+			"modalTitle": "Import Menu from Document",
+			"modalAria": "Import menu from document dialog",
+			"dropzoneLabel": "Drop a file here or click to browse",
+			"dropzoneHint": "Supports PDF, DOCX, TXT, and CSV files",
+			"targetLabel": "Add items to",
+			"targetNew": "Create new menu",
+			"newMenuPlaceholder": "New menu name",
+			"extracting": "Extracting menu items…",
+			"uploading": "Uploading document…",
+			"previewTitle": "Preview extracted items",
+			"previewCategory": "Category",
+			"previewItem": "Item",
+			"previewPrice": "Price",
+			"previewDescription": "Description",
+			"confirm": "Confirm import",
+			"cancel": "Cancel",
+			"inserting": "Importing items…",
+			"success": "Imported {{itemsCreated}} items across {{categoriesCreated}} new and {{categoriesMerged}} existing categories",
+			"error": "Import failed: {{message}}",
+			"emptyCta": {
+				"title": "Import your menu from a document",
+				"description": "Upload a PDF, Word document, or text file and we'll extract your categories and items automatically."
+			},
+			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later."
 		}
 	},
 	"options": {

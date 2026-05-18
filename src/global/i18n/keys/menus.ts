@@ -87,6 +87,30 @@ export const MenusKeys = {
 
 	LANG_DEFAULT_LABEL: "menus.lang.defaultLabel",
 	LANG_ADDITIONAL_LABEL: "menus.lang.additionalLabel",
+
+	IMPORT_BUTTON: "menus.import.button",
+	IMPORT_MODAL_TITLE: "menus.import.modalTitle",
+	IMPORT_MODAL_ARIA: "menus.import.modalAria",
+	IMPORT_DROPZONE_LABEL: "menus.import.dropzoneLabel",
+	IMPORT_DROPZONE_HINT: "menus.import.dropzoneHint",
+	IMPORT_TARGET_LABEL: "menus.import.targetLabel",
+	IMPORT_TARGET_NEW: "menus.import.targetNew",
+	IMPORT_NEW_MENU_PLACEHOLDER: "menus.import.newMenuPlaceholder",
+	IMPORT_EXTRACTING: "menus.import.extracting",
+	IMPORT_UPLOADING: "menus.import.uploading",
+	IMPORT_PREVIEW_TITLE: "menus.import.previewTitle",
+	IMPORT_PREVIEW_CATEGORY: "menus.import.previewCategory",
+	IMPORT_PREVIEW_ITEM: "menus.import.previewItem",
+	IMPORT_PREVIEW_PRICE: "menus.import.previewPrice",
+	IMPORT_PREVIEW_DESCRIPTION: "menus.import.previewDescription",
+	IMPORT_CONFIRM: "menus.import.confirm",
+	IMPORT_CANCEL: "menus.import.cancel",
+	IMPORT_INSERTING: "menus.import.inserting",
+	IMPORT_SUCCESS: "menus.import.success",
+	IMPORT_ERROR: "menus.import.error",
+	IMPORT_EMPTY_CTA_TITLE: "menus.import.emptyCta.title",
+	IMPORT_EMPTY_CTA_DESCRIPTION: "menus.import.emptyCta.description",
+	IMPORT_SERVICE_UNAVAILABLE: "menus.import.serviceUnavailable",
 } as const;
 
 export type MenusKey = (typeof MenusKeys)[keyof typeof MenusKeys];
