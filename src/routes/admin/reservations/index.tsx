@@ -27,7 +27,7 @@ function validateReservationsSearch(search: Record<string, unknown>) {
 			: undefined;
 	const dayRaw = typeof search.day === "string" ? search.day : undefined;
 	const day = dayRaw && isValidYmd(dayRaw) ? dayRaw : undefined;
-	const view = search.view === "cards" || search.view === "table" ? search.view : undefined;
+	const view = search.view === "cards" || search.view === "table" || search.view === "timeline" ? search.view : undefined;
 	let status: string | undefined;
 	if (typeof search.status === "string" && search.status.trim()) {
 		const parts = search.status.split(",").map((s) => s.trim()).filter(Boolean);

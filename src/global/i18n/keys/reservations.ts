@@ -36,6 +36,7 @@ export const ReservationsKeys = {
 
 	VIEW_MODE_CARDS: "reservations.viewMode.cards",
 	VIEW_MODE_TABLE: "reservations.viewMode.table",
+	VIEW_MODE_TIMELINE: "reservations.viewMode.timeline",
 
 	SOURCE_UI: "reservations.sources.ui",
 	SOURCE_WHATSAPP: "reservations.sources.whatsapp",
@@ -123,6 +124,21 @@ export const ReservationsKeys = {
 	LOCKS_EMPTY: "reservations.locks.empty",
 
 	TABLE_LABEL_PREFIX: "reservations.tableLabelPrefix",
+
+	TIMELINE_CREATE_TITLE: "reservations.timeline.createDrawerTitle",
+	TIMELINE_UNASSIGNED_ROW: "reservations.timeline.unassignedRow",
+	TIMELINE_SECTION_TOGGLE_ARIA: "reservations.timeline.sectionToggleAria",
+	TIMELINE_BLOCK_ARIA: "reservations.timeline.blockAria",
+	TIMELINE_LOCK_BLOCK_ARIA: "reservations.timeline.lockBlockAria",
+	TIMELINE_EMPTY_SLOT_ARIA: "reservations.timeline.emptySlotAria",
+	TIMELINE_MULTI_TABLE_LABEL: "reservations.timeline.multiTableLabel",
+	TIMELINE_EMPTY_TITLE: "reservations.timeline.emptyTitle",
+	TIMELINE_EMPTY_DESCRIPTION: "reservations.timeline.emptyDescription",
+
+	TIMELINE_DAY_NAV_PREV: "reservations.timeline.dayNavPrev",
+	TIMELINE_DAY_NAV_NEXT: "reservations.timeline.dayNavNext",
+	TIMELINE_DAY_NAV_TODAY: "reservations.timeline.dayNavToday",
+	TIMELINE_DAY_NAV_PICK_DATE_ARIA: "reservations.timeline.dayNavPickDateAria",
 } as const;
 
 export type ReservationsKey = (typeof ReservationsKeys)[keyof typeof ReservationsKeys];

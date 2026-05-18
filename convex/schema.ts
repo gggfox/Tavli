@@ -183,6 +183,10 @@ export default defineSchema({
 				v.literal("monthly")
 			)
 		),
+		/** HH:MM when the restaurant opens for service. Bounds the reservation timeline. */
+		openTime: v.optional(v.string()),
+		/** HH:MM when the restaurant closes. Bounds the reservation timeline. */
+		closeTime: v.optional(v.string()),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),

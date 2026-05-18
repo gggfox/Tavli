@@ -13,6 +13,12 @@
 import { ReservationDetailDrawer } from "@/features/reservations/components/ReservationDetailDrawer";
 import { ReservationsDashboardSkeleton } from "@/features/reservations/components/ReservationsDashboardSkeleton";
 import { ReservationsTable } from "@/features/reservations/components/ReservationsTable";
+import {
+	ReservationTimeline,
+	type TimelineCreateIntent,
+} from "@/features/reservations/components/ReservationTimeline";
+import { TimelineDayNavigator } from "@/features/reservations/components/TimelineDayNavigator";
+import { TimelineCreateDrawer } from "@/features/reservations/components/TimelineCreateDrawer";
 import { useReservations } from "@/features/reservations/hooks/useReservations";
 import {
 	type ReservationDashboardRangeValue,
@@ -31,6 +37,7 @@ import {
 	RANGE_LABEL_KEYS,
 	type ReservationRange,
 } from "@/features/reservations/utils";
+import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import { useRestaurant } from "@/features/restaurants";
 import {
 	DashboardShell,
@@ -52,13 +59,13 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { CalendarClock, Clock, LayoutList, Table as TableIcon, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type ReservationGetValue = UnwrappedValue<FunctionReturnType<typeof api.reservations.get>>;
 
 export function ReservationsDashboard() {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const { restaurants, isMultiRestaurant } = useRestaurant();
 	const restaurantIds = useMemo(() => restaurants.map((r) => r._id), [restaurants]);
 
@@ -72,13 +79,23 @@ export function ReservationsDashboard() {
 		customDay,
 		rangeSegmentValue,
 		setRange,
+		setCustomDay,
 		statusFilter,
 		toggleStatus,
 		viewMode,
-		setViewMode,
+		setViewMode: setViewModeRaw,
 	} = useReservationsDashboardPrefs();
 
+	const setViewMode = useCallback(
+		(mode: typeof viewMode) => {
+			if (mode === "timeline") setCustomDay(todayLocalYmd());
+			setViewModeRaw(mode);
+		},
+		[setViewModeRaw, setCustomDay],
+	);
+
 	const [openId, setOpenId] = useState<Id<"reservations"> | null>(null);
+	const [createIntent, setCreateIntent] = useState<TimelineCreateIntent | null>(null);
 	const search = useSearch({ strict: false }) as ReservationsDashboardSearch & {
 		focus?: string;
 	};
@@ -153,6 +170,11 @@ export function ReservationsDashboard() {
 				label: t(ReservationsKeys.VIEW_MODE_TABLE),
 				icon: TableIcon,
 			},
+			{
+				value: "timeline" as const,
+				label: t(ReservationsKeys.VIEW_MODE_TIMELINE),
+				icon: Clock,
+			},
 		],
 		[t]
 	);
@@ -166,6 +188,8 @@ export function ReservationsDashboard() {
 			})),
 		[t]
 	);
+
+	const timelineDay = customDay ?? todayLocalYmd();
 
 	const header = (
 		<div className="flex flex-wrap items-center gap-3">
@@ -183,12 +207,20 @@ export function ReservationsDashboard() {
 					ariaLabel={t(ReservationsKeys.ARIA_FILTER_VIEW_MODE)}
 					iconOnly
 				/>
-				<SegmentedControl<ReservationDashboardRangeValue>
-					options={rangeOptions}
-					value={rangeSegmentValue}
-					onChange={(v) => setRange(v as ReservationRange)}
-					ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
-				/>
+				{viewMode === "timeline" ? (
+					<TimelineDayNavigator
+						selectedDay={timelineDay}
+						onDayChange={setCustomDay}
+						locale={i18n.language}
+					/>
+				) : (
+					<SegmentedControl<ReservationDashboardRangeValue>
+						options={rangeOptions}
+						value={rangeSegmentValue}
+						onChange={(v) => setRange(v as ReservationRange)}
+						ariaLabel={t(ReservationsKeys.ARIA_FILTER_RANGE)}
+					/>
+				)}
 			</div>
 		</div>
 	);
@@ -202,7 +234,16 @@ export function ReservationsDashboard() {
 			header={header}
 			gap="6"
 		>
-			{enriched.length === 0 ? (
+			{viewMode === "timeline" ? (
+				<ReservationTimeline
+					restaurantIds={restaurantIds}
+					range={range}
+					customDay={customDay}
+					selectedDay={timelineDay}
+					onOpenReservation={setOpenId}
+					onCreateReservation={setCreateIntent}
+				/>
+			) : enriched.length === 0 ? (
 				<EmptyState
 					icon={CalendarClock}
 					title={t(ReservationsKeys.EMPTY_TITLE)}
@@ -244,6 +285,16 @@ export function ReservationsDashboard() {
 					onMarkCompleted={async (reservationId) => {
 						await markCompleted({ reservationId });
 					}}
+				/>
+			)}
+
+			{createIntent && restaurantIds[0] && (
+				<TimelineCreateDrawer
+					restaurantId={restaurantIds[0]}
+					tableId={createIntent.tableId}
+					tableLabel={createIntent.tableLabel}
+					startsAt={createIntent.startsAt}
+					onClose={() => setCreateIntent(null)}
 				/>
 			)}
 		</DashboardShell>

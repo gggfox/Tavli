@@ -208,6 +208,8 @@ export const update = mutation({
 		description: v.optional(v.string()),
 		currency: v.optional(v.string()),
 		timezone: v.optional(v.string()),
+		openTime: v.optional(v.string()),
+		closeTime: v.optional(v.string()),
 		defaultLanguage: v.optional(v.string()),
 		supportedLanguages: v.optional(v.array(v.string())),
 		orderDayStartMinutesFromMidnight: v.optional(v.number()),
@@ -298,6 +300,8 @@ export const update = mutation({
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
 			...(args.timezone !== undefined && { timezone: args.timezone }),
+			...(args.openTime !== undefined && { openTime: args.openTime }),
+			...(args.closeTime !== undefined && { closeTime: args.closeTime }),
 			...(args.defaultLanguage !== undefined && { defaultLanguage: args.defaultLanguage }),
 			...(args.supportedLanguages !== undefined && { supportedLanguages: args.supportedLanguages }),
 			...(args.orderDayStartMinutesFromMidnight !== undefined && {

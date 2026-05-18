@@ -122,6 +122,28 @@ two prep stations (`kitchen`, `bar`) deliberately reuse the
 A floor zone (e.g. patio, main room) `Tables` belong to. `Servers` are
 assigned to sections for the duration of (a sub-window of) a `Shift`.
 
+### Reservations & timeline
+
+**Timeline**:
+A day-oriented visualization of reservations and table locks, with table
+rows (grouped by section) on the vertical axis and hourly time slots on
+the horizontal axis. Used by staff to see all reservations for each table
+during a service day.
+_Avoid_: calendar view, floor view, planner.
+
+**Day navigator**:
+The arrows-and-calendar control shown in **Timeline** mode for selecting
+which service day to display. Distinct from the range selector used in
+card/table views.
+_Avoid_: date picker (that is the popover widget inside it), range
+selector.
+
+**Operating hours**:
+The `openTime` / `closeTime` pair on a `Restaurant` (HH:MM strings).
+Defines the visible time range rendered on the **Timeline**. Falls back
+to `10:00`–`23:00` when unset.
+_Avoid_: business hours, service window.
+
 ## Relationships
 
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,

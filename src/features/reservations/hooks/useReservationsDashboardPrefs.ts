@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 const STORAGE_KEY = "tavli.reservations.dashboard.preferences";
 const STORAGE_VERSION = 1 as const;
 
-export type ReservationsViewMode = "cards" | "table";
+export type ReservationsViewMode = "cards" | "table" | "timeline";
 
 export type ReservationDashboardRangeValue = ReservationRange | "custom";
 
@@ -53,7 +53,7 @@ function parseDay(raw: unknown): string | undefined {
 }
 
 function parseView(raw: unknown): ReservationsViewMode | undefined {
-	if (raw === "cards" || raw === "table") return raw;
+	if (raw === "cards" || raw === "table" || raw === "timeline") return raw;
 	return undefined;
 }
 
@@ -80,7 +80,7 @@ function readStoredPrefs(): StoredPrefs | null {
 		const parsed = JSON.parse(raw) as Partial<StoredPrefs>;
 		if (parsed.version !== STORAGE_VERSION) return null;
 		if (!parsed.range || !VALID_RANGES.has(parsed.range)) return null;
-		const view = parsed.view === "table" ? "table" : "cards";
+		const view = parsed.view === "table" || parsed.view === "timeline" ? parsed.view : "cards";
 		const status = Array.isArray(parsed.status)
 			? parsed.status.filter((s): s is ReservationStatus => VALID_STATUSES.has(s as ReservationStatus))
 			: [];

@@ -30,6 +30,8 @@ type RestaurantAdminContextValue = {
 		description?: string;
 		currency?: string;
 		timezone?: string;
+		openTime?: string;
+		closeTime?: string;
 		defaultLanguage?: string;
 		supportedLanguages?: string[];
 		orderDayStartMinutesFromMidnight?: number;
@@ -139,6 +141,8 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 			description?: string;
 			currency?: string;
 			timezone?: string;
+			openTime?: string;
+			closeTime?: string;
 			defaultLanguage?: string;
 			supportedLanguages?: string[];
 			orderDayStartMinutesFromMidnight?: number;

@@ -36,6 +36,8 @@ interface RestaurantSettingsFormProps {
 		description?: string;
 		currency: string;
 		timezone?: string;
+		openTime?: string;
+		closeTime?: string;
 		orderDayStartMinutesFromMidnight: number;
 		orderNumberResetFrequency?: OrderNumberResetFrequency;
 		organizationId: Id<"organizations">;
@@ -64,6 +66,8 @@ export function RestaurantSettingsForm({
 			description: restaurant?.description ?? "",
 			currency: restaurant?.currency ?? "MXN",
 			timezone: restaurant?.timezone ?? "",
+			openTime: restaurant?.openTime ?? "10:00",
+			closeTime: restaurant?.closeTime ?? "23:00",
 			orderDayStartTime: minutesToTimeInput(
 				restaurant?.orderDayStartMinutesFromMidnight ?? DEFAULT_ORDER_DAY_START_MINUTES
 			),
@@ -77,9 +81,9 @@ export function RestaurantSettingsForm({
 				description: value.description || undefined,
 				currency: value.currency,
 				timezone: value.timezone || undefined,
+				openTime: value.openTime || undefined,
+				closeTime: value.closeTime || undefined,
 				orderDayStartMinutesFromMidnight: timeInputToMinutes(value.orderDayStartTime),
-				// Only forward the field when the current user can actually change it,
-				// so a non-admin save never tries to flip the (admin-gated) value.
 				...(isAdmin && {
 					orderNumberResetFrequency: value.orderNumberResetFrequency,
 				}),
@@ -288,6 +292,52 @@ export function RestaurantSettingsForm({
 					)}
 				/>
 			</div>
+
+			<div className="grid grid-cols-2 gap-4">
+				<form.Field
+					name="openTime"
+					children={(field) => (
+						<div>
+							<label
+								htmlFor="restaurant-open-time"
+								className="block text-sm font-medium mb-1 text-foreground"
+							>
+								{t(RestaurantsKeys.FORM_OPEN_TIME_LABEL)}
+							</label>
+							<input
+								id="restaurant-open-time"
+								type="time"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							/>
+						</div>
+					)}
+				/>
+				<form.Field
+					name="closeTime"
+					children={(field) => (
+						<div>
+							<label
+								htmlFor="restaurant-close-time"
+								className="block text-sm font-medium mb-1 text-foreground"
+							>
+								{t(RestaurantsKeys.FORM_CLOSE_TIME_LABEL)}
+							</label>
+							<input
+								id="restaurant-close-time"
+								type="time"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							/>
+						</div>
+					)}
+				/>
+			</div>
+			<p className="text-xs text-faint-foreground -mt-4">
+				{t(RestaurantsKeys.FORM_OPERATING_HOURS_HINT)}
+			</p>
 
 			<form.Field
 				name="orderDayStartTime"

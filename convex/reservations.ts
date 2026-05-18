@@ -244,6 +244,37 @@ export const create = mutation({
 	},
 });
 
+/**
+ * Staff-only create. Requires restaurant staff access and records the
+ * reservation source as "staff" so it is distinguishable from customer-
+ * initiated bookings.
+ */
+export const createAsStaff = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		partySize: v.number(),
+		startsAt: v.number(),
+		contact: contactValidator,
+		notes: v.optional(v.string()),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, StaffAuthErrors | CreateErrors> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+
+		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
+		if (accessError) return [null, accessError];
+
+		return await createReservationCore(ctx, {
+			...args,
+			source: RESERVATION_SOURCE.STAFF,
+			userId,
+		});
+	},
+});
+
 // ============================================================================
 // Confirm: staff assigns tableIds
 // ============================================================================

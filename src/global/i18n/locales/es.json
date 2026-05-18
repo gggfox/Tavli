@@ -630,6 +630,9 @@
 			"timezoneLabel": "Zona horaria",
 			"timezonePlaceholder": "America/Mexico_City",
 			"timezoneMissingHint": "Define una zona horaria IANA válida para que los números diarios usen tu día hábil local. Hasta entonces se usa UTC.",
+			"openTimeLabel": "Hora de apertura",
+			"closeTimeLabel": "Hora de cierre",
+			"operatingHoursHint": "El horario de operación define el rango visible en la línea de tiempo de reservaciones.",
 			"orderDayStartLabel": "Inicio del día de pedidos",
 			"orderDayStartHint": "Los pedidos se numeran por día hábil a partir de esta hora local (no a medianoche). Ej.: 04:00 agrupa ventas nocturnas con el día calendario anterior.",
 			"orderNumberResetLabel": "Reinicio de número de orden (admin)",
@@ -922,7 +925,8 @@
 		},
 		"viewMode": {
 			"cards": "Lista de tarjetas",
-			"table": "Tabla"
+			"table": "Tabla",
+			"timeline": "Línea de tiempo"
 		},
 		"sources": {
 			"ui": "Sitio web",
@@ -1023,7 +1027,22 @@
 			"tableFormat": "Mesa {{number}}",
 			"empty": "Sin bloqueos. Agrega uno arriba para sacar una mesa de servicio durante un periodo."
 		},
-		"tableLabelPrefix": "Mesa"
+		"tableLabelPrefix": "Mesa",
+		"timeline": {
+			"createDrawerTitle": "Nueva reservación — {{tableLabel}}",
+			"unassignedRow": "Sin asignar",
+			"sectionToggleAria": "Alternar sección {{section}}",
+			"blockAria": "{{guest}} a las {{time}}",
+			"lockBlockAria": "Mesa bloqueada: {{reason}}",
+			"emptySlotAria": "Clic para crear reservación",
+			"multiTableLabel": "{{count}} mesas",
+			"emptyTitle": "No hay mesas configuradas",
+			"emptyDescription": "Agrega mesas en la configuración del restaurante para usar la vista de línea de tiempo.",
+			"dayNavPrev": "Día anterior",
+			"dayNavNext": "Día siguiente",
+			"dayNavToday": "Hoy",
+			"dayNavPickDateAria": "Elegir una fecha"
+		}
 	},
 	"reservationSettings": {
 		"fieldDescriptions": {

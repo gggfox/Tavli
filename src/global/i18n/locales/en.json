@@ -630,6 +630,9 @@
 			"timezoneLabel": "Timezone",
 			"timezonePlaceholder": "America/New_York",
 			"timezoneMissingHint": "Set a valid IANA timezone so daily order numbers use your local business day. Until then, UTC is used.",
+			"openTimeLabel": "Opening time",
+			"closeTimeLabel": "Closing time",
+			"operatingHoursHint": "Operating hours define the visible range on the reservation timeline.",
 			"orderDayStartLabel": "Start of order day",
 			"orderDayStartHint": "Orders are numbered per business day starting at this local time (not midnight). Example: 04:00 groups late-night sales with the previous calendar day.",
 			"orderNumberResetLabel": "Order number reset frequency (admin)",
@@ -922,7 +925,8 @@
 		},
 		"viewMode": {
 			"cards": "Card list",
-			"table": "Table"
+			"table": "Table",
+			"timeline": "Timeline"
 		},
 		"sources": {
 			"ui": "Website",
@@ -1023,7 +1027,22 @@
 			"tableFormat": "Table {{number}}",
 			"empty": "No locks. Add one above to take a table out of service for a window."
 		},
-		"tableLabelPrefix": "Table"
+		"tableLabelPrefix": "Table",
+		"timeline": {
+			"createDrawerTitle": "New reservation — {{tableLabel}}",
+			"unassignedRow": "Unassigned",
+			"sectionToggleAria": "Toggle {{section}} section",
+			"blockAria": "{{guest}} at {{time}}",
+			"lockBlockAria": "Table locked: {{reason}}",
+			"emptySlotAria": "Click to create reservation",
+			"multiTableLabel": "{{count}} tables",
+			"emptyTitle": "No tables configured",
+			"emptyDescription": "Add tables in the restaurant settings to use the timeline view.",
+			"dayNavPrev": "Previous day",
+			"dayNavNext": "Next day",
+			"dayNavToday": "Today",
+			"dayNavPickDateAria": "Pick a date"
+		}
 	},
 	"reservationSettings": {
 		"fieldDescriptions": {
