@@ -6,9 +6,6 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
 const config = defineConfig({
-  ssr: {
-    external: ["react", "react-dom", "react-dom/server"],
-  },
   // fsevents on macOS intermittently fails to deliver change notifications to
   // chokidar inside this dev stack (concurrently → vite under TanStack Start +
   // Nitro), so HMR silently dies even though the server is up. Polling is
