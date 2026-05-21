@@ -21,11 +21,13 @@ ARG VITE_STRIPE_PUBLISHABLE_KEY
 ENV VITE_CONVEX_URL=$VITE_CONVEX_URL
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_STRIPE_PUBLISHABLE_KEY=$VITE_STRIPE_PUBLISHABLE_KEY
+ENV NODE_ENV=production
 
 RUN pnpm build
 
 # --- runtime: minimal image with only the Nitro server output ---
 FROM base AS runtime
+ENV NODE_ENV=production
 COPY --from=build /app/.output ./.output
 
 EXPOSE 3000
