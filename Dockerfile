@@ -22,20 +22,13 @@ ENV VITE_CONVEX_URL=$VITE_CONVEX_URL
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_STRIPE_PUBLISHABLE_KEY=$VITE_STRIPE_PUBLISHABLE_KEY
 ENV NODE_ENV=production
-ENV NODE_OPTIONS=--max-old-space-size=4096
 
 RUN pnpm build
 
-# --- prod-deps: production-only node_modules for externalized packages ---
-FROM base AS prod-deps
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts
-
-# --- runtime: Nitro server output + production deps ---
+# --- runtime: minimal image with only the Nitro server output ---
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /app/.output ./.output
-COPY --from=prod-deps /app/node_modules ./node_modules
 
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]
