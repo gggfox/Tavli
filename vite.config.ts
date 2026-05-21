@@ -37,7 +37,15 @@ const config = defineConfig({
         routeFileIgnorePattern: String.raw`\.(test|spec)\.`,
       },
     }),
-    nitro(),
+    nitro({
+      // Rollup 4.53.3's native parser on Linux fails on React's long
+      // hydration error strings. Externalizing React from Nitro's bundling
+      // step avoids parsing those files entirely -- the server loads them
+      // from node_modules at runtime via require().
+      rollupConfig: {
+        external: [/^react(\/.*)?$/, /^react-dom(\/.*)?$/],
+      },
+    }),
     viteReact({
       babel: {
         plugins: [["babel-plugin-react-compiler", {}]],

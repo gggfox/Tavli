@@ -26,10 +26,16 @@ ENV NODE_OPTIONS=--max-old-space-size=4096
 
 RUN pnpm build
 
-# --- runtime: minimal image with only the Nitro server output ---
+# --- prod-deps: production-only node_modules for externalized packages ---
+FROM base AS prod-deps
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+
+# --- runtime: Nitro server output + production deps for externalized React ---
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /app/.output ./.output
+COPY --from=prod-deps /app/node_modules ./node_modules
 
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]
