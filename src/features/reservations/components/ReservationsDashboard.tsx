@@ -66,12 +66,10 @@ type ReservationGetValue = UnwrappedValue<FunctionReturnType<typeof api.reservat
 
 export function ReservationsDashboard() {
 	const { t, i18n } = useTranslation();
-	const { restaurants, isMultiRestaurant } = useRestaurant();
-	const restaurantIds = useMemo(() => restaurants.map((r) => r._id), [restaurants]);
-
-	const restaurantNameById = useMemo(
-		() => Object.fromEntries(restaurants.map((r) => [r._id, r.name] as const)),
-		[restaurants]
+	const { restaurant } = useRestaurant();
+	const restaurantIds = useMemo(
+		() => (restaurant ? [restaurant._id] : []),
+		[restaurant]
 	);
 
 	const {
@@ -113,14 +111,7 @@ export function ReservationsDashboard() {
 			statusesForQuery
 		);
 
-	const enriched = useMemo(
-		() =>
-			reservations.map((r) => ({
-				...r,
-				restaurantName: restaurantNameById[r.restaurantId],
-			})),
-		[reservations, restaurantNameById]
-	);
+	const enriched = reservations;
 
 	const focusId = useMemo(
 		() => openId ?? (search.focus as Id<"reservations"> | undefined) ?? null,
@@ -253,7 +244,7 @@ export function ReservationsDashboard() {
 			) : viewMode === "table" ? (
 				<ReservationsTable
 					data={enriched}
-					isMultiRestaurant={isMultiRestaurant}
+					isMultiRestaurant={false}
 					onOpen={setOpenId}
 				/>
 			) : (
@@ -262,7 +253,6 @@ export function ReservationsDashboard() {
 						<ReservationRow
 							key={r._id}
 							reservation={r}
-							restaurantLabel={isMultiRestaurant ? r.restaurantName : undefined}
 							onClick={() => setOpenId(r._id)}
 						/>
 					))}
@@ -288,9 +278,9 @@ export function ReservationsDashboard() {
 				/>
 			)}
 
-			{createIntent && restaurantIds[0] && (
+			{createIntent && restaurant && (
 				<TimelineCreateDrawer
-					restaurantId={restaurantIds[0]}
+					restaurantId={restaurant._id}
 					tableId={createIntent.tableId}
 					tableLabel={createIntent.tableLabel}
 					startsAt={createIntent.startsAt}

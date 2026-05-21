@@ -143,7 +143,6 @@ export function useTimelineData(
 		const unassigned: ReservationDoc[] = [];
 
 		for (const r of reservations) {
-			if (r.status === "cancelled" || r.status === "no_show") continue;
 			if (r.tableIds.length === 0) {
 				unassigned.push(r);
 			} else {

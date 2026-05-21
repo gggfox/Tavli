@@ -483,6 +483,7 @@ function TimelineBlock({ reservation, style, locale, onClick }: TimelineBlockPro
 	const startTime = formatTimeOnly(reservation.startsAt, locale);
 	const endTime = formatTimeOnly(reservation.endsAt, locale);
 	const sourceIcon = getSourceIcon(reservation.source);
+	const isDimmed = reservation.status === "cancelled" || reservation.status === "no_show";
 
 	const multiTableLabel =
 		reservation.tableIds.length > 1
@@ -497,16 +498,16 @@ function TimelineBlock({ reservation, style, locale, onClick }: TimelineBlockPro
 				guest: reservation.contact.name,
 				time: `${startTime}–${endTime}`,
 			})}
-			className="absolute top-1 bottom-1 rounded px-1.5 py-0.5 flex items-center gap-1 overflow-hidden cursor-pointer border text-left transition-opacity hover:opacity-90 z-10"
+			className={`absolute top-1 bottom-1 rounded px-1.5 py-0.5 flex items-center gap-1 overflow-hidden cursor-pointer border text-left transition-opacity hover:opacity-90 z-10${isDimmed ? " opacity-40" : ""}`}
 			style={{
 				left: style.left,
 				width: style.width,
 				backgroundColor: palette.tintedBg,
-				borderColor: palette.fg,
+				borderColor: isDimmed ? "var(--border)" : palette.fg,
 				color: palette.fg,
 			}}
 		>
-			<span className="truncate text-[10px] font-medium leading-tight">
+			<span className={`truncate text-[10px] font-medium leading-tight${isDimmed ? " line-through" : ""}`}>
 				{reservation.contact.name}
 			</span>
 			<span className="shrink-0 flex items-center gap-0.5 text-[9px] opacity-80">
