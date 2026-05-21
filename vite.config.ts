@@ -6,6 +6,12 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
 const config = defineConfig({
+  ssr: {
+    // Externalize React from the SSR bundle so Nitro's Rollup pass doesn't
+    // need to re-parse a 2.6MB chunk. Nitro's node-server preset traces
+    // these into .output/server/node_modules/ automatically.
+    external: ["react", "react-dom", "react-dom/server"],
+  },
   // fsevents on macOS intermittently fails to deliver change notifications to
   // chokidar inside this dev stack (concurrently → vite under TanStack Start +
   // Nitro), so HMR silently dies even though the server is up. Polling is
