@@ -5,5 +5,4 @@ routeTree.gen.ts
 pnpm-lock.yaml
 *.config.js
 *.config.ts
-
-
+.cursor

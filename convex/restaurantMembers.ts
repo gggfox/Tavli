@@ -50,9 +50,7 @@ function unionRolesFromRows(rows: Doc<"userRoles">[]): Set<string> {
 
 function hasStaffRoleInUnion(union: Set<string>): boolean {
 	return (
-		union.has(USER_ROLES.OWNER) ||
-		union.has(USER_ROLES.MANAGER) ||
-		union.has(USER_ROLES.EMPLOYEE)
+		union.has(USER_ROLES.OWNER) || union.has(USER_ROLES.MANAGER) || union.has(USER_ROLES.EMPLOYEE)
 	);
 }
 
@@ -185,9 +183,7 @@ export const listOrganizationUsersForRestaurant = query({
 
 		const userRoleRows = await ctx.db
 			.query(TABLE.USER_ROLES)
-			.withIndex("by_organizationId", (q) =>
-				q.eq("organizationId", restaurant.organizationId)
-			)
+			.withIndex("by_organizationId", (q) => q.eq("organizationId", restaurant.organizationId))
 			.collect();
 
 		const items = userRoleRows.map((r) => ({
@@ -208,7 +204,11 @@ export const listTeamDirectory = query({
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
-		const [restaurant, accessErr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		const [restaurant, accessErr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			args.restaurantId
+		);
 		if (accessErr) return [null, accessErr];
 
 		const members = await ctx.db
@@ -218,9 +218,7 @@ export const listTeamDirectory = query({
 
 		const orgUserRoles = await ctx.db
 			.query(TABLE.USER_ROLES)
-			.withIndex("by_organizationId", (q) =>
-				q.eq("organizationId", restaurant.organizationId)
-			)
+			.withIndex("by_organizationId", (q) => q.eq("organizationId", restaurant.organizationId))
 			.collect();
 
 		type UserRolePack = {
@@ -240,12 +238,21 @@ export const listTeamDirectory = query({
 			if (r.firstName && !pack.firstName) pack.firstName = r.firstName;
 			if (r.paternalLastname && !pack.paternalLastname) pack.paternalLastname = r.paternalLastname;
 			if (r.maternalLastname && !pack.maternalLastname) pack.maternalLastname = r.maternalLastname;
-			if (r.photoStorageId && !pack.photoStorageId) pack.photoStorageId = r.photoStorageId as string;
+			if (r.photoStorageId && !pack.photoStorageId)
+				pack.photoStorageId = r.photoStorageId as string;
 			if (r.clerkImageUrl && !pack.clerkImageUrl) pack.clerkImageUrl = r.clerkImageUrl;
 		};
 
 		for (const r of orgUserRoles) {
-			const cur = roleRowsByUser.get(r.userId) ?? { email: null, firstName: null, paternalLastname: null, maternalLastname: null, photoStorageId: null, clerkImageUrl: null, rows: [] };
+			const cur = roleRowsByUser.get(r.userId) ?? {
+				email: null,
+				firstName: null,
+				paternalLastname: null,
+				maternalLastname: null,
+				photoStorageId: null,
+				clerkImageUrl: null,
+				rows: [],
+			};
 			mergeRoleRow(cur, r);
 			roleRowsByUser.set(r.userId, cur);
 		}
@@ -253,7 +260,15 @@ export const listTeamDirectory = query({
 		const ensureUserRoleRows = async (uid: string) => {
 			if (!roleRowsByUser.has(uid)) {
 				const rows = await fetchUserRoleRecordsByUserId(ctx, uid);
-				const cur: UserRolePack = { email: null, firstName: null, paternalLastname: null, maternalLastname: null, photoStorageId: null, clerkImageUrl: null, rows: [] };
+				const cur: UserRolePack = {
+					email: null,
+					firstName: null,
+					paternalLastname: null,
+					maternalLastname: null,
+					photoStorageId: null,
+					clerkImageUrl: null,
+					rows: [],
+				};
 				for (const r of rows) mergeRoleRow(cur, r);
 				roleRowsByUser.set(uid, cur);
 			}
@@ -262,7 +277,7 @@ export const listTeamDirectory = query({
 		const resolveUserPhotoUrl = async (pack: UserRolePack | undefined): Promise<string | null> => {
 			if (!pack) return null;
 			if (pack.photoStorageId) {
-				return await ctx.storage.getUrl(pack.photoStorageId as Id<"_storage">) ?? null;
+				return (await ctx.storage.getUrl(pack.photoStorageId as Id<"_storage">)) ?? null;
 			}
 			return pack.clerkImageUrl ?? null;
 		};
@@ -369,7 +384,11 @@ export const listTeamDirectory = query({
 					photoUrl = await ctx.storage.getUrl(account.photoStorageId);
 				}
 
-				const eaNames = { firstName: account.firstName, paternalLastname: account.paternalLastname, maternalLastname: account.maternalLastname };
+				const eaNames = {
+					firstName: account.firstName,
+					paternalLastname: account.paternalLastname,
+					maternalLastname: account.maternalLastname,
+				};
 				memberRows.push({
 					rowType: "member",
 					kind: "employeeAccount",
@@ -389,7 +408,13 @@ export const listTeamDirectory = query({
 				});
 			} else if (m.userId) {
 				const pack = roleRowsByUser.get(m.userId);
-				const userNames = { firstName: pack?.firstName ?? null, paternalLastname: pack?.paternalLastname ?? null, maternalLastname: pack?.maternalLastname ?? null, email: pack?.email ?? null, userId: m.userId };
+				const userNames = {
+					firstName: pack?.firstName ?? null,
+					paternalLastname: pack?.paternalLastname ?? null,
+					maternalLastname: pack?.maternalLastname ?? null,
+					email: pack?.email ?? null,
+					userId: m.userId,
+				};
 				const userPhotoUrl = await resolveUserPhotoUrl(pack);
 				memberRows.push({
 					rowType: "member",
@@ -441,7 +466,13 @@ export const listTeamDirectory = query({
 					roleRowsForUser,
 				})
 			) {
-				const ownerNames = { firstName: pack?.firstName ?? null, paternalLastname: pack?.paternalLastname ?? null, maternalLastname: pack?.maternalLastname ?? null, email: pack?.email ?? null, userId: ownerId };
+				const ownerNames = {
+					firstName: pack?.firstName ?? null,
+					paternalLastname: pack?.paternalLastname ?? null,
+					maternalLastname: pack?.maternalLastname ?? null,
+					email: pack?.email ?? null,
+					userId: ownerId,
+				};
 				const ownerPhotoUrl = await resolveUserPhotoUrl(pack);
 				syntheticRows.push({
 					rowType: "restaurantOwner",
@@ -478,7 +509,13 @@ export const listTeamDirectory = query({
 			) {
 				continue;
 			}
-			const orgOwnerNames = { firstName: pack?.firstName ?? null, paternalLastname: pack?.paternalLastname ?? null, maternalLastname: pack?.maternalLastname ?? null, email: pack?.email ?? null, userId: r.userId };
+			const orgOwnerNames = {
+				firstName: pack?.firstName ?? null,
+				paternalLastname: pack?.paternalLastname ?? null,
+				maternalLastname: pack?.maternalLastname ?? null,
+				email: pack?.email ?? null,
+				userId: r.userId,
+			};
 			const orgOwnerPhotoUrl = await resolveUserPhotoUrl(pack);
 			syntheticRows.push({
 				rowType: "orgOwner",
@@ -498,9 +535,8 @@ export const listTeamDirectory = query({
 			listedMemberUserIds.add(r.userId);
 		}
 
-		const directorySortKey = (
-			row: MemberRow | SyntheticRow | (typeof inviteRows)[number]
-		) => row.displayName || "";
+		const directorySortKey = (row: MemberRow | SyntheticRow | (typeof inviteRows)[number]) =>
+			row.displayName || "";
 
 		const combined = [...memberRows, ...syntheticRows, ...inviteRows].sort((a, b) =>
 			directorySortKey(a).localeCompare(directorySortKey(b), undefined, { sensitivity: "base" })
@@ -542,7 +578,10 @@ export const addMember = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<Id<"restaurantMembers">, AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject> {
+	): AsyncReturn<
+		Id<"restaurantMembers">,
+		AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject
+	> {
 		const [actorId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 
@@ -730,9 +769,7 @@ export const runBackfillRestaurantMembers = mutation({
 			const hasEmployee = ur.roles.includes(USER_ROLES.EMPLOYEE);
 			if (!hasManager && !hasEmployee) continue;
 
-			const role = hasManager
-				? RESTAURANT_MEMBER_ROLE.MANAGER
-				: RESTAURANT_MEMBER_ROLE.EMPLOYEE;
+			const role = hasManager ? RESTAURANT_MEMBER_ROLE.MANAGER : RESTAURANT_MEMBER_ROLE.EMPLOYEE;
 
 			const restaurants = await ctx.db
 				.query(TABLE.RESTAURANTS)

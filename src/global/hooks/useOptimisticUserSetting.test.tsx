@@ -35,23 +35,13 @@ function Harness({
 
 describe("useOptimisticUserSetting", () => {
 	it("returns the fallback when the server value is null", () => {
-		render(
-			<Harness
-				serverValue={null}
-				persist={() => Promise.resolve()}
-				fallback={["a", "b"]}
-			/>
-		);
+		render(<Harness serverValue={null} persist={() => Promise.resolve()} fallback={["a", "b"]} />);
 		expect(screen.getByTestId("value")).toHaveTextContent("a,b");
 	});
 
 	it("returns the server value once it arrives", () => {
 		const { rerender } = render(
-			<Harness
-				serverValue={null}
-				persist={() => Promise.resolve()}
-				fallback={["fallback"]}
-			/>
+			<Harness serverValue={null} persist={() => Promise.resolve()} fallback={["fallback"]} />
 		);
 		expect(screen.getByTestId("value")).toHaveTextContent("fallback");
 
@@ -68,12 +58,7 @@ describe("useOptimisticUserSetting", () => {
 	it("reflects user updates immediately and calls persist", () => {
 		const persist = vi.fn().mockResolvedValue(undefined);
 		render(
-			<Harness
-				serverValue={["server"]}
-				persist={persist}
-				fallback={[]}
-				nextValue={["next"]}
-			/>
+			<Harness serverValue={["server"]} persist={persist} fallback={[]} nextValue={["next"]} />
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: "update" }));

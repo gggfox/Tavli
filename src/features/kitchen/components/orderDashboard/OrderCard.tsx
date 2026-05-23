@@ -33,10 +33,7 @@ interface OrderCardProps {
 	onSelectFullOrder: (order: DashboardOrder) => void;
 	onRequestCancel: (orderId: string) => void;
 	onDismissCancel: () => void;
-	onUpdateStatus: (args: {
-		orderId: DashboardOrder["_id"];
-		newStatus: NextOrderStatus;
-	}) => void;
+	onUpdateStatus: (args: { orderId: DashboardOrder["_id"]; newStatus: NextOrderStatus }) => void;
 	onMarkStationReady: (args: {
 		orderId: DashboardOrder["_id"];
 		station: DashboardPrepStation;
@@ -73,19 +70,16 @@ export function OrderCard({
 	const orderStations = useMemo<DashboardPrepStation[]>(() => {
 		const set = new Set<DashboardPrepStation>();
 		for (const item of order.items) set.add(item.prepStation);
-		return ["kitchen", "bar"].filter((s): s is DashboardPrepStation => set.has(s as DashboardPrepStation));
+		return ["kitchen", "bar"].filter((s): s is DashboardPrepStation =>
+			set.has(s as DashboardPrepStation)
+		);
 	}, [order.items]);
 
-	const stationStamps: Record<DashboardPrepStation, number | undefined> = {
-		kitchen: order.kitchenReadyAt,
-		bar: order.barReadyAt,
-	};
+	const stationStamps = useMemo<Record<DashboardPrepStation, number | undefined>>(
+		() => ({ kitchen: order.kitchenReadyAt, bar: order.barReadyAt }),
+		[order.kitchenReadyAt, order.barReadyAt]
+	);
 
-	// When exactly one station is selected AND the order has work for
-	// that station that has not yet been stamped, replace the generic
-	// "Mark Ready" with the station-scoped action. Two-station selection
-	// is treated as "no narrowing" and falls back to the whole-order
-	// action so the dashboard does not silently choose for the user.
 	const stationActionTarget: DashboardPrepStation | null = useMemo(() => {
 		if (activeStationFilters.size !== 1) return null;
 		const [only] = [...activeStationFilters];
@@ -97,10 +91,7 @@ export function OrderCard({
 
 	return (
 		<Surface tone="secondary" rounded="xl" className="overflow-hidden flex flex-col aspect-video">
-			<div
-				className="px-4 py-3 shrink-0 border-b border-border"
-				
-			>
+			<div className="px-4 py-3 shrink-0 border-b border-border">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
 						<StatusBadge
@@ -108,10 +99,7 @@ export function OrderCard({
 							textColor={getStatusToneStyle(config.tone).solidFg}
 							label={t(config.labelKey)}
 						/>
-						<span
-							className="text-sm font-medium truncate text-foreground"
-							
-						>
+						<span className="text-sm font-medium truncate text-foreground">
 							{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
 						</span>
 						{order.dailyOrderNumber != null && (
@@ -125,17 +113,14 @@ export function OrderCard({
 						{order.paidAt && (
 							<span
 								className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-success"
-								style={{color: "white"}}
+								style={{ color: "white" }}
 							>
 								<CreditCard size={10} />
 								{t(OrdersKeys.CARD_PAID)}
 							</span>
 						)}
 					</div>
-					<span
-						className="text-sm font-semibold shrink-0 text-foreground"
-						
-					>
+					<span className="text-sm font-semibold shrink-0 text-foreground">
 						${formatCents(order.totalAmount)}
 					</span>
 				</div>
@@ -173,10 +158,7 @@ export function OrderCard({
 				)}
 
 				<div className="flex items-center justify-between gap-2 mt-1">
-					<span
-						className="text-[11px] font-mono truncate text-faint-foreground"
-						title={order._id}
-					>
+					<span className="text-[11px] font-mono truncate text-faint-foreground" title={order._id}>
 						{order.dailyOrderNumber != null
 							? `${t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })} · ${order._id.slice(-6)}`
 							: `#${order._id.slice(-6)}`}
@@ -188,10 +170,7 @@ export function OrderCard({
 							<Clock size={11} />
 							{t(age.key, age.vars)}
 						</span>
-						<span
-							className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1 whitespace-nowrap text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-10 bg-card text-foreground border border-border"
-							
-						>
+						<span className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1 whitespace-nowrap text-[10px] px-2 py-1 rounded shadow-lg pointer-events-none z-10 bg-card text-foreground border border-border">
 							{absoluteTimestamp}
 						</span>
 					</span>
@@ -200,11 +179,7 @@ export function OrderCard({
 
 			<div className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto">
 				{visibleItems.map((item) => (
-					<OrderItemRow
-						key={item._id}
-						item={item}
-						activeStationFilters={activeStationFilters}
-					/>
+					<OrderItemRow key={item._id} item={item} activeStationFilters={activeStationFilters} />
 				))}
 			</div>
 
@@ -213,7 +188,6 @@ export function OrderCard({
 					type="button"
 					onClick={() => onSelectFullOrder(order)}
 					className="w-full text-right text-[11px] font-medium transition-opacity hover:opacity-70 text-faint-foreground"
-					
 				>
 					{moreItemsLabel}
 				</button>
@@ -221,13 +195,12 @@ export function OrderCard({
 				{isCancelling ? (
 					<div
 						className="p-3 rounded-lg space-y-2"
-						style={{backgroundColor: "rgba(220, 38, 38, 0.05)",
-				border: "1px solid rgba(220, 38, 38, 0.2)"}}
+						style={{
+							backgroundColor: "rgba(220, 38, 38, 0.05)",
+							border: "1px solid rgba(220, 38, 38, 0.2)",
+						}}
 					>
-						<p
-							className="text-xs font-medium text-destructive"
-							
-						>
+						<p className="text-xs font-medium text-destructive">
 							{order.stripePaymentIntentId
 								? t(OrdersKeys.CANCEL_PAID_PROMPT)
 								: t(OrdersKeys.CANCEL_PROMPT)}
@@ -242,7 +215,7 @@ export function OrderCard({
 									onDismissCancel();
 								}}
 								className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-destructive"
-								style={{color: "white"}}
+								style={{ color: "white" }}
 							>
 								{order.stripePaymentIntentId
 									? t(OrdersKeys.ACTION_CANCEL_AND_REFUND)
@@ -251,7 +224,6 @@ export function OrderCard({
 							<button
 								onClick={onDismissCancel}
 								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground"
-								
 							>
 								{t(OrdersKeys.ACTION_KEEP_ORDER)}
 							</button>
@@ -272,7 +244,6 @@ export function OrderCard({
 							<button
 								onClick={() => onRequestCancel(order._id)}
 								className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
-								
 							>
 								<XCircle size={14} />
 								{t(OrdersKeys.ACTION_CANCEL)}
@@ -323,9 +294,7 @@ function NextActionButton({
 		const Icon = stationConfig.icon;
 		return (
 			<button
-				onClick={() =>
-					onMarkStationReady({ orderId: order._id, station: stationActionTarget })
-				}
+				onClick={() => onMarkStationReady({ orderId: order._id, station: stationActionTarget })}
 				className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
 				style={{
 					backgroundColor: stationConfig.visual.solidBg,

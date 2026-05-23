@@ -93,6 +93,7 @@ export function OrganizationFormDialog({
 			setFormError(null);
 			setFieldErrors({});
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- form.reset identity is stable; only re-run on open/organization change
 	}, [isOpen, organization]);
 
 	return (
@@ -102,18 +103,14 @@ export function OrganizationFormDialog({
 			ariaLabel={isEditing ? "Edit Organization" : "Create Organization"}
 			size="md"
 		>
-			<div
-				className="rounded-xl p-6 bg-background border border-border"
-				
-			>
+			<div className="rounded-xl p-6 bg-background border border-border">
 				<div className="flex items-center justify-between mb-6">
-					<h2 className="text-lg font-semibold text-foreground" >
+					<h2 className="text-lg font-semibold text-foreground">
 						{isEditing ? "Edit Organization" : "Create Organization"}
 					</h2>
 					<button
 						onClick={onClose}
 						className="p-1 rounded-md transition-colors hover:opacity-80 text-faint-foreground"
-						
 					>
 						<X size={18} />
 					</button>
@@ -163,7 +160,6 @@ export function OrganizationFormDialog({
 								<label
 									htmlFor="org-description"
 									className="block text-xs font-medium mb-1 text-muted-foreground"
-									
 								>
 									Description (optional)
 								</label>
@@ -175,24 +171,18 @@ export function OrganizationFormDialog({
 									onBlur={field.handleBlur}
 									rows={3}
 									className="w-full px-3 py-2 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-(--btn-primary-bg) focus:border-transparent resize-none bg-muted border border-border text-foreground"
-									
 								/>
 							</div>
 						)}
 					/>
 
-					{formError && (
-						<p className="text-xs text-destructive" >
-							{formError}
-						</p>
-					)}
+					{formError && <p className="text-xs text-destructive">{formError}</p>}
 
 					<div className="flex justify-end gap-3 pt-2">
 						<button
 							type="button"
 							onClick={onClose}
 							className="px-4 py-2 rounded-lg text-sm transition-colors bg-muted text-foreground border border-border"
-							
 						>
 							Cancel
 						</button>
@@ -200,7 +190,6 @@ export function OrganizationFormDialog({
 							type="submit"
 							disabled={isSubmitting}
 							className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 bg-primary text-primary-foreground"
-							
 						>
 							{isSubmitting && "Saving..."}
 							{!isSubmitting && isEditing && "Save Changes"}

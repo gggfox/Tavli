@@ -41,6 +41,7 @@ describe("TABLE constants", () => {
 			"tipEntries",
 			"dashboardLayouts",
 			"dashboardTemplates",
+			"employeeAccounts",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});

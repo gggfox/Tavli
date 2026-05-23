@@ -113,9 +113,7 @@ export function CheckoutPage({
 		if (orderData.paymentState === "failed") {
 			setLoading(false);
 			setClientSecret(null);
-			setError(
-				orderData.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_PAYMENT_FAILED)
-			);
+			setError(orderData.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_PAYMENT_FAILED));
 			return;
 		}
 		if (
@@ -133,12 +131,13 @@ export function CheckoutPage({
 		orderData?.status,
 		orderData?.totalAmount,
 		initPayment,
+		t,
 	]);
 
 	if (!orderData) {
 		return (
 			<div className="flex items-center justify-center h-full p-8">
-				<Loader2 size={24} className="animate-spin text-faint-foreground"  />
+				<Loader2 size={24} className="animate-spin text-faint-foreground" />
 			</div>
 		);
 	}
@@ -157,37 +156,25 @@ export function CheckoutPage({
 						className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
 						aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
 					>
-						<ArrowLeft size={20}  />
+						<ArrowLeft size={20} />
 					</button>
-					<h2 className="text-lg font-bold text-foreground" >
-						{t(OrderingKeys.CHECKOUT_HEADING)}
-					</h2>
+					<h2 className="text-lg font-bold text-foreground">{t(OrderingKeys.CHECKOUT_HEADING)}</h2>
 				</div>
 
 				{/* Order Summary */}
-				<div
-					className="rounded-xl p-4 space-y-3 bg-muted border border-border"
-					
-				>
-					<h3 className="text-sm font-semibold text-foreground" >
+				<div className="rounded-xl p-4 space-y-3 bg-muted border border-border">
+					<h3 className="text-sm font-semibold text-foreground">
 						{t(OrderingKeys.CHECKOUT_ORDER_SUMMARY)}
 					</h3>
 					{orderData.items.map((item) => (
-						<div
-							key={item._id}
-							className="flex justify-between text-sm text-muted-foreground"
-							
-						>
+						<div key={item._id} className="flex justify-between text-sm text-muted-foreground">
 							<span>
 								{item.quantity}x {item.menuItemName}
 							</span>
 							<span>${formatCents(item.lineTotal)}</span>
 						</div>
 					))}
-					<div
-						className="flex justify-between pt-3 text-sm font-semibold border-t border-border text-foreground"
-						
-					>
+					<div className="flex justify-between pt-3 text-sm font-semibold border-t border-border text-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
 						<span>${formatCents(orderData.totalAmount)}</span>
 					</div>
@@ -196,7 +183,7 @@ export function CheckoutPage({
 				{error && (
 					<div
 						className="px-4 py-3 rounded-lg text-sm text-destructive"
-						style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
+						style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
 					>
 						{error}
 					</div>
@@ -210,10 +197,7 @@ export function CheckoutPage({
 					onRetry={initPayment}
 				/>
 
-				<div
-					className="flex items-center justify-center gap-2 text-xs text-faint-foreground"
-					
-				>
+				<div className="flex items-center justify-center gap-2 text-xs text-faint-foreground">
 					<ShieldCheck size={14} />
 					<span>{t(OrderingKeys.CHECKOUT_SECURED_BY_STRIPE)}</span>
 				</div>
@@ -251,7 +235,7 @@ function PaymentSection({
 	if (loading) {
 		return (
 			<div className="flex items-center justify-center py-8">
-				<Loader2 size={24} className="animate-spin text-faint-foreground"  />
+				<Loader2 size={24} className="animate-spin text-faint-foreground" />
 			</div>
 		);
 	}
@@ -267,9 +251,7 @@ function PaymentSection({
 
 	return (
 		<div className="text-center py-8">
-			<p className="text-sm text-faint-foreground" >
-				{t(OrderingKeys.CHECKOUT_UNABLE_INIT)}
-			</p>
+			<p className="text-sm text-faint-foreground">{t(OrderingKeys.CHECKOUT_UNABLE_INIT)}</p>
 			<button
 				onClick={onRetry}
 				className="mt-3 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
@@ -306,9 +288,7 @@ function PaymentForm({
 	useEffect(() => {
 		if (orderData?.paymentState === "failed") {
 			setProcessing(false);
-			setError(
-				orderData.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR)
-			);
+			setError(orderData.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR));
 		}
 	}, [orderData?.activePayment?.failureMessage, orderData?.paymentState, t]);
 
@@ -350,7 +330,7 @@ function PaymentForm({
 			{error && (
 				<div
 					className="px-4 py-3 rounded-lg text-sm text-destructive"
-					style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
+					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
 				>
 					{error}
 				</div>

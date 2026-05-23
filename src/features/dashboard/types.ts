@@ -10,13 +10,7 @@ import type { Id } from "convex/_generated/dataModel";
 
 export type DashboardScopeKind = "restaurant" | "portfolio";
 
-export type DashboardRangeKind =
-	| "today"
-	| "week"
-	| "month"
-	| "quarter"
-	| "year"
-	| "custom";
+export type DashboardRangeKind = "today" | "week" | "month" | "quarter" | "year" | "custom";
 
 export type DashboardCustomRange = { from: number; to: number };
 

@@ -15,11 +15,7 @@ import {
 	UserInputValidationErrorObject,
 } from "../_shared/errors";
 import { ORDER_STATUS, TABLE } from "../constants";
-import {
-	buildWindow,
-	loadOrdersInRange,
-	resolveRestaurantIds,
-} from "./_shared";
+import { buildWindow, loadOrdersInRange, resolveRestaurantIds } from "./_shared";
 
 const TOP_MENU_ITEMS_MAX_RANGE_DAYS = 92;
 
@@ -42,21 +38,14 @@ export const compute = query({
 		range: v.object({ from: v.number(), to: v.number() }),
 		limit: v.number(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<TopMenuItemRow[], Errors> {
+	handler: async function (ctx, args): AsyncReturn<TopMenuItemRow[], Errors> {
 		const [restaurantIds, accessErr] = await resolveRestaurantIds(ctx, {
 			scopeKind: "restaurant",
 			restaurantId: args.restaurantId,
 		});
 		if (accessErr) return [null, accessErr];
 
-		const [windowResult, rangeErr] = buildWindow(
-			args.range,
-			false,
-			TOP_MENU_ITEMS_MAX_RANGE_DAYS
-		);
+		const [windowResult, rangeErr] = buildWindow(args.range, false, TOP_MENU_ITEMS_MAX_RANGE_DAYS);
 		if (rangeErr) return [null, rangeErr];
 
 		const orders = await loadOrdersInRange(ctx, restaurantIds, windowResult.current);

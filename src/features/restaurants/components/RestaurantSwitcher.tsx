@@ -6,8 +6,14 @@ import { useRestaurant } from "../RestaurantAdminScope";
 
 export function RestaurantSwitcher() {
 	const { t } = useTranslation();
-	const { restaurant, restaurants, selectedRestaurantId, setSelectedRestaurantId, isMultiRestaurant, isLoading } =
-		useRestaurant();
+	const {
+		restaurant,
+		restaurants,
+		selectedRestaurantId,
+		setSelectedRestaurantId,
+		isMultiRestaurant,
+		isLoading,
+	} = useRestaurant();
 
 	if (!isMultiRestaurant || isLoading) return null;
 

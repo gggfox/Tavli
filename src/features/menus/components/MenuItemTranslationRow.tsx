@@ -29,7 +29,9 @@ export function MenuItemTranslationRow({
 	return (
 		<div
 			className="px-3 py-2.5 rounded-lg space-y-2 bg-background"
-			style={{border: isMissing ? "1px solid var(--accent-warning)" : "1px solid var(--border-default)"}}
+			style={{
+				border: isMissing ? "1px solid var(--accent-warning)" : "1px solid var(--border-default)",
+			}}
 		>
 			<div className="flex items-center gap-2.5">
 				{item.imageUrl ? (
@@ -39,16 +41,11 @@ export function MenuItemTranslationRow({
 						className="w-8 h-8 rounded object-cover flex-shrink-0 opacity-60"
 					/>
 				) : (
-					<div
-						className="w-8 h-8 rounded flex-shrink-0 bg-muted"
-						
-					/>
+					<div className="w-8 h-8 rounded flex-shrink-0 bg-muted" />
 				)}
 				<div className="flex-1 min-w-0 space-y-1.5">
 					<div className="flex items-center gap-2">
-						<span className="text-xs shrink-0 text-faint-foreground" >
-							{item.name} &rarr;
-						</span>
+						<span className="text-xs shrink-0 text-faint-foreground">{item.name} &rarr;</span>
 						<InlineEditInput
 							value={translatedName}
 							placeholder={t(MenusKeys.TRANSLATION_NAME_PLACEHOLDER, { name: item.name })}
@@ -60,17 +57,11 @@ export function MenuItemTranslationRow({
 								})
 							}
 						/>
-						{isMissing && (
-							<AlertTriangle
-								size={14}
-								className="shrink-0 text-warning"
-								
-							/>
-						)}
+						{isMissing && <AlertTriangle size={14} className="shrink-0 text-warning" />}
 					</div>
 					{(item.description || translatedDesc) && (
 						<div className="flex items-center gap-2">
-							<span className="text-xs shrink-0 text-faint-foreground" >
+							<span className="text-xs shrink-0 text-faint-foreground">
 								{t(MenusKeys.TRANSLATION_DESC_LABEL)} &rarr;
 							</span>
 							<InlineEditInput
@@ -87,7 +78,7 @@ export function MenuItemTranslationRow({
 						</div>
 					)}
 				</div>
-				<span className="text-xs shrink-0 text-faint-foreground" >
+				<span className="text-xs shrink-0 text-faint-foreground">
 					${formatCents(item.basePrice)}
 				</span>
 			</div>

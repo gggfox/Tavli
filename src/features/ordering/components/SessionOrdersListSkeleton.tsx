@@ -25,7 +25,7 @@ export function SessionOrdersListSkeleton({ onBackToMenu }: SessionOrdersListSke
 							className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
 							aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
 						>
-							<ArrowLeft size={20}  />
+							<ArrowLeft size={20} />
 						</button>
 					) : (
 						<Skeleton rounded="lg" className="h-9 w-9" />
@@ -39,7 +39,7 @@ export function SessionOrdersListSkeleton({ onBackToMenu }: SessionOrdersListSke
 							<Skeleton rounded="full" className="w-10 h-10 shrink-0" />
 							<div className="flex-1 space-y-2">
 								<div className="flex items-center justify-between gap-2">
-									<Skeleton className="h-4" style={{width: `${50 + (i % 3) * 12}%`}} />
+									<Skeleton className="h-4" style={{ width: `${50 + (i % 3) * 12}%` }} />
 									<Skeleton className="h-4 w-16" />
 								</div>
 								<div className="flex items-center justify-between gap-2">

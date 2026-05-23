@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-| ------- | ------- |
-| **Status** | {Proposed \| Accepted \| Deprecated \| Superseded} |
-| **Date** | YYYY-MM-DD |
-| **Author(s)** | {Name(s)} |
-| **Supersedes** | {ADR-XXX (if applicable)} |
-| **Superseded by** | {ADR-XXX (if applicable)} |
+| Field             | Value                                              |
+| ----------------- | -------------------------------------------------- |
+| **Status**        | {Proposed \| Accepted \| Deprecated \| Superseded} |
+| **Date**          | YYYY-MM-DD                                         |
+| **Author(s)**     | {Name(s)}                                          |
+| **Supersedes**    | {ADR-XXX (if applicable)}                          |
+| **Superseded by** | {ADR-XXX (if applicable)}                          |
 
 ## Context
 

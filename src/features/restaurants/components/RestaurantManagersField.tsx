@@ -15,14 +15,19 @@ type DirectoryEntry = { userId: string; email: string | null };
 
 function mergeDirectoryWithManagers(
 	directory: DirectoryEntry[],
-	members: Doc<"restaurantMembers">[],
+	members: Doc<"restaurantMembers">[]
 ): Array<{ userId: string; label: string }> {
 	const labelByUser = new Map<string, string>();
 	for (const d of directory) {
 		labelByUser.set(d.userId, d.email && d.email.length > 0 ? d.email : d.userId);
 	}
 	for (const m of members) {
-		if (m.isActive && m.role === RESTAURANT_MEMBER_ROLE.MANAGER && m.userId && !labelByUser.has(m.userId)) {
+		if (
+			m.isActive &&
+			m.role === RESTAURANT_MEMBER_ROLE.MANAGER &&
+			m.userId &&
+			!labelByUser.has(m.userId)
+		) {
 			labelByUser.set(m.userId, m.userId);
 		}
 	}
@@ -61,12 +66,12 @@ export function RestaurantManagersField({
 		select: unwrapResult<DirectoryEntry[]>,
 	});
 
-	const members = membersQuery.data ?? [];
-	const directory = directoryQuery.data ?? [];
+	const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
+	const directory = useMemo(() => directoryQuery.data ?? [], [directoryQuery.data]);
 
 	const options = useMemo(
 		() => mergeDirectoryWithManagers(directory, members),
-		[directory, members],
+		[directory, members]
 	);
 
 	const selectedManagerUserIds = useMemo(
@@ -74,13 +79,13 @@ export function RestaurantManagersField({
 			members
 				.filter((m) => m.isActive && m.role === RESTAURANT_MEMBER_ROLE.MANAGER)
 				.map((m) => m.userId),
-		[members],
+		[members]
 	);
 	const selectedSet = useMemo(() => new Set(selectedManagerUserIds), [selectedManagerUserIds]);
 
 	const summaryText = useMemo(
 		() => t(RestaurantsKeys.MANAGERS_SUMMARY, { count: selectedManagerUserIds.length }),
-		[selectedManagerUserIds.length, t],
+		[selectedManagerUserIds.length, t]
 	);
 
 	const addMemberMutation = useMutation({
@@ -102,14 +107,14 @@ export function RestaurantManagersField({
 							restaurantId,
 							userId,
 							role: RESTAURANT_MEMBER_ROLE.MANAGER,
-						}),
+						})
 					);
 				} else if (member && member.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
 					unwrapResult(
 						await updateRoleMutation.mutateAsync({
 							memberId: member._id,
 							role: RESTAURANT_MEMBER_ROLE.MANAGER,
-						}),
+						})
 					);
 				}
 			} else if (member?.isActive && member?.role === RESTAURANT_MEMBER_ROLE.MANAGER) {
@@ -117,7 +122,7 @@ export function RestaurantManagersField({
 					await updateRoleMutation.mutateAsync({
 						memberId: member._id,
 						role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
-					}),
+					})
 				);
 			}
 		} catch (e) {
@@ -148,8 +153,12 @@ export function RestaurantManagersField({
 	return (
 		<div className="relative space-y-2 max-w-lg">
 			<div>
-				<p className="text-sm font-medium text-foreground">{t(RestaurantsKeys.MANAGERS_SECTION_TITLE)}</p>
-				<p className="text-xs text-muted-foreground mt-0.5">{t(RestaurantsKeys.MANAGERS_SECTION_HINT)}</p>
+				<p className="text-sm font-medium text-foreground">
+					{t(RestaurantsKeys.MANAGERS_SECTION_TITLE)}
+				</p>
+				<p className="text-xs text-muted-foreground mt-0.5">
+					{t(RestaurantsKeys.MANAGERS_SECTION_HINT)}
+				</p>
 			</div>
 			<button
 				ref={triggerRef}
@@ -162,8 +171,12 @@ export function RestaurantManagersField({
 				onClick={() => setOpen((o) => !o)}
 				className="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-muted px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted/80 disabled:cursor-not-allowed disabled:opacity-50"
 			>
-				<span className={hasSelection ? "truncate" : "truncate text-faint-foreground"}>{triggerLabel}</span>
-				<ChevronDown className={`size-4 shrink-0 opacity-60 transition-transform ${open ? "rotate-180" : ""}`} />
+				<span className={hasSelection ? "truncate" : "truncate text-faint-foreground"}>
+					{triggerLabel}
+				</span>
+				<ChevronDown
+					className={`size-4 shrink-0 opacity-60 transition-transform ${open ? "rotate-180" : ""}`}
+				/>
 			</button>
 			{open ? (
 				<div

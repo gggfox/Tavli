@@ -15,11 +15,7 @@ export function LoadingState({
 		return (
 			<div className={`space-y-3 ${className}`}>
 				{Array.from({ length: skeletonRows }, (_, i) => (
-					<div
-						key={`skeleton-row-${i}`}
-						className="h-12 rounded-lg animate-pulse bg-hover"
-						
-					/>
+					<div key={`skeleton-row-${i}`} className="h-12 rounded-lg animate-pulse bg-hover" />
 				))}
 			</div>
 		);
@@ -31,17 +27,13 @@ export function LoadingState({
 				<div className="text-center">
 					<div
 						className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-3 border border-accent"
-						style={{borderTopColor: "transparent"}}
+						style={{ borderTopColor: "transparent" }}
 					/>
-					<p className="text-muted-foreground" >{message}</p>
+					<p className="text-muted-foreground">{message}</p>
 				</div>
 			</div>
 		);
 	}
 
-	return (
-		<p className={`${`text-sm ${className}`} text-faint-foreground`} >
-			{message}
-		</p>
-	);
+	return <p className={`${`text-sm ${className}`} text-faint-foreground`}>{message}</p>;
 }

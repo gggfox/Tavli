@@ -99,9 +99,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 			<div className="p-6">
 				{/* Header */}
 				<div className="flex items-center justify-between mb-6">
-					<h2 className="text-xl font-semibold text-foreground" >
-						{t(SidebarKeys.SETTINGS)}
-					</h2>
+					<h2 className="text-xl font-semibold text-foreground">{t(SidebarKeys.SETTINGS)}</h2>
 					<button
 						onClick={onClose}
 						className="p-1.5 rounded-md hover-icon transition-colors"
@@ -114,7 +112,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 				{/* Roles Section */}
 				{isAuthenticated && (
 					<div className="mb-6">
-						<h3 className="text-sm font-medium mb-3 text-muted-foreground" >
+						<h3 className="text-sm font-medium mb-3 text-muted-foreground">
 							{t(SidebarKeys.ROLES)}
 						</h3>
 						<div className="flex flex-wrap gap-2">
@@ -123,15 +121,12 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 									<span
 										key={role}
 										className="px-3 py-1 rounded-full text-xs font-medium bg-active text-foreground"
-										
 									>
 										{t(`roles.${role}`, role)}
 									</span>
 								))
 							) : (
-								<span className="text-sm text-faint-foreground" >
-									{t(SidebarKeys.NO_ROLES)}
-								</span>
+								<span className="text-sm text-faint-foreground">{t(SidebarKeys.NO_ROLES)}</span>
 							)}
 						</div>
 					</div>
@@ -139,7 +134,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 
 				{/* Language Section */}
 				<div className="mb-6">
-					<h3 className="text-sm font-medium mb-3 text-muted-foreground" >
+					<h3 className="text-sm font-medium mb-3 text-muted-foreground">
 						{t(SidebarKeys.SELECT_LANGUAGE)}
 					</h3>
 					<div className="flex gap-2 text-muted-foreground">
@@ -148,7 +143,6 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 							className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm transition-all ${
 								currentLanguage === Languages.EN ? "bg-active" : "hover-secondary"
 							}`}
-							
 						>
 							<span>{t(SidebarKeys.ENGLISH)}</span>
 						</button>
@@ -157,7 +151,6 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 							className={`${`flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm transition-all ${
 								currentLanguage === Languages.ES ? "bg-active" : "hover-secondary"
 							}`} text-muted-foreground`}
-						 
 						>
 							<span>{t(SidebarKeys.SPANISH)}</span>
 						</button>
@@ -166,13 +159,10 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 
 				{/* Theme Section */}
 				<div className={isAuthenticated ? "mb-6" : ""}>
-					<h3 className="text-sm font-medium mb-3 text-muted-foreground" >
-						{t(SidebarKeys.THEME)}
-					</h3>
+					<h3 className="text-sm font-medium mb-3 text-muted-foreground">{t(SidebarKeys.THEME)}</h3>
 					<button
 						onClick={handleToggleTheme}
 						className="w-full flex items-center gap-3 rounded-lg hover-secondary px-4 py-2.5 text-sm transition-all text-muted-foreground"
-						
 					>
 						<ThemeIcon size={18} className="shrink-0" />
 						<span>{themeLabel}</span>
@@ -182,12 +172,10 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 				{/* Dev Tools Section (dev environment only) */}
 				{showDevTools && (
 					<div className="mb-6">
-						<h3 className="text-sm font-medium mb-3 text-muted-foreground" >
+						<h3 className="text-sm font-medium mb-3 text-muted-foreground">
 							{t(SidebarKeys.DEV_TOOLS)}
 						</h3>
-						<p className="text-xs mb-2 text-faint-foreground" >
-							{t(SidebarKeys.SWITCH_ROLES)}
-						</p>
+						<p className="text-xs mb-2 text-faint-foreground">{t(SidebarKeys.SWITCH_ROLES)}</p>
 						<div className="flex flex-wrap gap-2">
 							{ALL_ROLES.map((role) => {
 								const isActive = displayRoles.includes(role);
@@ -200,7 +188,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 												? "bg-active border-accent"
 												: "border-border hover:border-[var(--border-hover)]"
 										}`}
-										style={{color: isActive ? "var(--text-primary)" : "var(--text-muted)"}}
+										style={{ color: isActive ? "var(--text-primary)" : "var(--text-muted)" }}
 									>
 										{role}
 									</button>
@@ -216,7 +204,6 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 						<button
 							onClick={handleSignOut}
 							className="w-full flex items-center gap-3 rounded-lg hover-secondary px-4 py-2.5 text-sm transition-all text-muted-foreground"
-							
 							aria-label={t(SidebarKeys.SIGN_OUT)}
 						>
 							<LogOut size={18} className="shrink-0" />

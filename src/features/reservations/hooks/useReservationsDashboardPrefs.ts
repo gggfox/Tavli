@@ -5,10 +5,7 @@
  */
 import type { ReservationStatus } from "@/features/reservations/statusConfig";
 import { RESERVATION_STATUS_CONFIG } from "@/features/reservations/statusConfig";
-import {
-	ORDERED_RANGES,
-	type ReservationRange,
-} from "@/features/reservations/utils";
+import { ORDERED_RANGES, type ReservationRange } from "@/features/reservations/utils";
 import { isValidYmd } from "@/global/utils/calendarMonth";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -59,7 +56,10 @@ function parseView(raw: unknown): ReservationsViewMode | undefined {
 
 function parseStatusParam(raw: unknown): ReservationStatus[] | undefined {
 	if (typeof raw !== "string" || !raw.trim()) return undefined;
-	const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+	const parts = raw
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
 	const out: ReservationStatus[] = [];
 	for (const p of parts) {
 		if (VALID_STATUSES.has(p as ReservationStatus)) out.push(p as ReservationStatus);
@@ -82,10 +82,11 @@ function readStoredPrefs(): StoredPrefs | null {
 		if (!parsed.range || !VALID_RANGES.has(parsed.range)) return null;
 		const view = parsed.view === "table" || parsed.view === "timeline" ? parsed.view : "cards";
 		const status = Array.isArray(parsed.status)
-			? parsed.status.filter((s): s is ReservationStatus => VALID_STATUSES.has(s as ReservationStatus))
+			? parsed.status.filter((s): s is ReservationStatus =>
+					VALID_STATUSES.has(s as ReservationStatus)
+				)
 			: [];
-		const day =
-			typeof parsed.day === "string" && isValidYmd(parsed.day) ? parsed.day : undefined;
+		const day = typeof parsed.day === "string" && isValidYmd(parsed.day) ? parsed.day : undefined;
 		return {
 			version: STORAGE_VERSION,
 			range: parsed.range as ReservationRange,
@@ -131,8 +132,7 @@ export function useReservationsDashboardPrefs() {
 		navigate({
 			// @ts-expect-error -- search merge preserves parent keys (e.g. orderId) while hydrating prefs
 			search: (prev) => {
-				const needsRange =
-					prev.range === undefined && stored.range !== undefined;
+				const needsRange = prev.range === undefined && stored.range !== undefined;
 				const needsStatus = prev.status === undefined && stored.status.length > 0;
 				const needsView = prev.view === undefined && stored.view !== undefined;
 				const needsDay = prev.day === undefined && stored.day !== undefined;
@@ -146,9 +146,7 @@ export function useReservationsDashboardPrefs() {
 					...(needsRange ? { range: stored.range } : {}),
 					...(needsStatus
 						? {
-								status: [...stored.status]
-									.sort((a, b) => a.localeCompare(b))
-									.join(","),
+								status: [...stored.status].sort((a, b) => a.localeCompare(b)).join(","),
 							}
 						: {}),
 					...(needsView ? { view: stored.view } : {}),

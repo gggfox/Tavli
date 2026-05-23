@@ -53,11 +53,7 @@ export function buildWindow(
 	compareToPrev: boolean,
 	maxRangeDays: number
 ): SyncReturn<DashboardWindowResult, UserInputValidationErrorObject> {
-	if (
-		!Number.isFinite(range.from) ||
-		!Number.isFinite(range.to) ||
-		range.to <= range.from
-	) {
+	if (!Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to <= range.from) {
 		return [
 			null,
 			new UserInputValidationError({
@@ -110,10 +106,7 @@ export async function resolveRestaurantIds(
 
 	if (args.scopeKind === "restaurant") {
 		if (!args.restaurantId) {
-			return [
-				null,
-				new NotAuthorizedError("ERROR_DASHBOARD_RESTAURANT_REQUIRED").toObject(),
-			];
+			return [null, new NotAuthorizedError("ERROR_DASHBOARD_RESTAURANT_REQUIRED").toObject()];
 		}
 		const accessFn = args.requireManagerOrAbove
 			? requireRestaurantManagerOrAbove
@@ -222,10 +215,7 @@ export async function loadReservationsInRange(
 		const rows = await ctx.db
 			.query(TABLE.RESERVATIONS)
 			.withIndex("by_restaurant_time", (q) =>
-				q
-					.eq("restaurantId", restaurantId)
-					.gte("startsAt", range.from)
-					.lt("startsAt", range.to)
+				q.eq("restaurantId", restaurantId).gte("startsAt", range.from).lt("startsAt", range.to)
 			)
 			.collect();
 		out.push(...rows);

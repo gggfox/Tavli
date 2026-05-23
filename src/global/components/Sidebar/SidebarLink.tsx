@@ -45,7 +45,6 @@ export function SidebarLink({ isExpanded, icon, translationKey, to, search }: Si
 			className={`${navLinkClass(false, isExpanded)} text-muted-foreground`}
 			activeProps={{ className: navLinkClass(true, isExpanded) }}
 			title={isExpanded ? undefined : t(translationKey)}
-		 
 		>
 			{icon}
 			{isExpanded && <span className="text-sm truncate">{t(translationKey)}</span>}

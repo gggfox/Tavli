@@ -52,14 +52,10 @@ export function OrderItemRow({ item, activeStationFilters }: Readonly<OrderItemR
 		>
 			<span className="font-medium">{item.quantity}x</span> {itemName}
 			{item.selectedOptions.length > 0 && (
-				<span className="text-xs ml-1 text-faint-foreground">
-					({optionsLabel})
-				</span>
+				<span className="text-xs ml-1 text-faint-foreground">({optionsLabel})</span>
 			)}
 			{item.specialInstructions && (
-				<p className="text-xs italic text-warning">
-					{item.specialInstructions}
-				</p>
+				<p className="text-xs italic text-warning">{item.specialInstructions}</p>
 			)}
 		</div>
 	);

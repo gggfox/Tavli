@@ -66,17 +66,10 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 		isMultiRestaurant,
 		isLoading: restaurantsLoading,
 	} = useRestaurant();
-	const {
-		scope,
-		activeLayoutId,
-		editMode,
-		setScope,
-		setActiveLayoutId,
-		setEditMode,
-	} = useDashboardPrefs();
+	const { scope, activeLayoutId, editMode, setScope, setActiveLayoutId, setEditMode } =
+		useDashboardPrefs();
 
-	const restaurantId =
-		scope === "restaurant" ? restaurant?._id ?? null : null;
+	const restaurantId = scope === "restaurant" ? (restaurant?._id ?? null) : null;
 
 	const {
 		layouts,
@@ -89,10 +82,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 	} = useDashboardLayouts({
 		scopeKind: scope,
 		restaurantId,
-		enabled:
-			scope === "portfolio"
-				? restaurants.length > 0
-				: Boolean(restaurantId),
+		enabled: scope === "portfolio" ? restaurants.length > 0 : Boolean(restaurantId),
 	});
 
 	const activeLayout = useMemo(() => {
@@ -109,9 +99,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 		}
 	}, [activeLayout, activeLayoutId, setActiveLayoutId]);
 
-	const [draftConfig, setDraftConfig] = useState<DashboardLayoutConfig | null>(
-		null
-	);
+	const [draftConfig, setDraftConfig] = useState<DashboardLayoutConfig | null>(null);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [templatesOpen, setTemplatesOpen] = useState(false);
 	const [publishOpen, setPublishOpen] = useState(false);
@@ -145,9 +133,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 
 	const canPublishTemplate = useMemo(() => {
 		if (scope !== "restaurant") return false;
-		return userRoles.some(
-			(r) => r === "admin" || r === "owner" || r === "manager"
-		);
+		return userRoles.some((r) => r === "admin" || r === "owner" || r === "manager");
 	}, [scope, userRoles]);
 
 	const publishTemplateMutation = useMutation({

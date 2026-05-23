@@ -67,10 +67,7 @@ type ReservationGetValue = UnwrappedValue<FunctionReturnType<typeof api.reservat
 export function ReservationsDashboard() {
 	const { t, i18n } = useTranslation();
 	const { restaurant } = useRestaurant();
-	const restaurantIds = useMemo(
-		() => (restaurant ? [restaurant._id] : []),
-		[restaurant]
-	);
+	const restaurantIds = useMemo(() => (restaurant ? [restaurant._id] : []), [restaurant]);
 
 	const {
 		range,
@@ -89,7 +86,7 @@ export function ReservationsDashboard() {
 			if (mode === "timeline") setCustomDay(todayLocalYmd());
 			setViewModeRaw(mode);
 		},
-		[setViewModeRaw, setCustomDay],
+		[setViewModeRaw, setCustomDay]
 	);
 
 	const [openId, setOpenId] = useState<Id<"reservations"> | null>(null);
@@ -242,19 +239,11 @@ export function ReservationsDashboard() {
 					fill
 				/>
 			) : viewMode === "table" ? (
-				<ReservationsTable
-					data={enriched}
-					isMultiRestaurant={false}
-					onOpen={setOpenId}
-				/>
+				<ReservationsTable data={enriched} isMultiRestaurant={false} onOpen={setOpenId} />
 			) : (
 				<div className="space-y-2">
 					{enriched.map((r) => (
-						<ReservationRow
-							key={r._id}
-							reservation={r}
-							onClick={() => setOpenId(r._id)}
-						/>
+						<ReservationRow key={r._id} reservation={r} onClick={() => setOpenId(r._id)} />
 					))}
 				</div>
 			)}

@@ -96,7 +96,7 @@ export function ClearSchedulesModal({
 		select: unwrapResult<{ shiftCount: number; templateCount: number }>,
 	});
 
-	const preview = canPreview ? previewQuery.data ?? null : null;
+	const preview = canPreview ? (previewQuery.data ?? null) : null;
 	const previewLoading = canPreview && previewQuery.isLoading;
 	const hasImpact = preview != null && (preview.shiftCount > 0 || preview.templateCount > 0);
 
@@ -131,10 +131,7 @@ export function ClearSchedulesModal({
 			size="md"
 		>
 			<div className="bg-background rounded-xl border border-border overflow-hidden">
-				<DialogHeader
-					title={t(AdminStaffKeys.SCHEDULE_CLEAR_MODAL_TITLE)}
-					onClose={onClose}
-				/>
+				<DialogHeader title={t(AdminStaffKeys.SCHEDULE_CLEAR_MODAL_TITLE)} onClose={onClose} />
 				<div className="p-5 space-y-4 max-h-[70dvh] overflow-y-auto">
 					<MemberCheckboxList
 						members={members}
@@ -241,11 +238,7 @@ function MemberCheckboxList({
 function MemberAvatar({ member }: { readonly member: AssignableMember }) {
 	if (member.photoUrl) {
 		return (
-			<img
-				src={member.photoUrl}
-				alt=""
-				className="w-5 h-5 rounded-full object-cover shrink-0"
-			/>
+			<img src={member.photoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
 		);
 	}
 	return (

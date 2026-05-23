@@ -13,10 +13,7 @@ export const Route = createFileRoute("/dashboard")({
 
 function DashboardRoute() {
 	const { roles, isLoading, isAuthenticated } = useCurrentUserRoles();
-	const isStaff = useMemo(
-		() => roles.some((role) => STAFF_ROLE_SET.has(role)),
-		[roles]
-	);
+	const isStaff = useMemo(() => roles.some((role) => STAFF_ROLE_SET.has(role)), [roles]);
 
 	if (isLoading) return <LoadingState />;
 

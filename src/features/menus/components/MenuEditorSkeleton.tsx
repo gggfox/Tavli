@@ -24,14 +24,11 @@ export function MenuEditorSkeleton() {
 				{(catIndex) => (
 					<Skeleton.Card rounded="xl" className="p-4 space-y-3">
 						<div className="flex items-center justify-between">
-							<Skeleton className="h-5" style={{width: `${100 + (catIndex % 3) * 30}px`}} />
+							<Skeleton className="h-5" style={{ width: `${100 + (catIndex % 3) * 30}px` }} />
 							<Skeleton rounded="md" className="h-7 w-7" />
 						</div>
 						<div className="space-y-2">
-							<Skeleton.Repeat
-								count={ITEMS_PER_CATEGORY}
-								keyPrefix={`menu-cat-${catIndex}-item`}
-							>
+							<Skeleton.Repeat count={ITEMS_PER_CATEGORY} keyPrefix={`menu-cat-${catIndex}-item`}>
 								{(itemIndex) => (
 									<Skeleton.Card
 										tone="primary"
@@ -42,7 +39,7 @@ export function MenuEditorSkeleton() {
 										<div className="flex-1 space-y-2">
 											<Skeleton
 												className="h-4"
-												style={{width: `${50 + (itemIndex % 3) * 12}%`}}
+												style={{ width: `${50 + (itemIndex % 3) * 12}%` }}
 											/>
 											<Skeleton className="h-3 w-16" />
 										</div>

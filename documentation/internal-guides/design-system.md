@@ -48,13 +48,13 @@ The design follows a **Notion-inspired, minimal dark theme** with these principl
 
 ### Text Colors
 
-| Token | Usage |
-| ------- | ------- |
-| `text-white` | Primary text, headings, active items |
-| `text-gray-300` | Secondary text (sidebar default) |
-| `text-gray-400` | Tertiary text, inactive navigation |
-| `text-gray-500` | Muted text, labels, descriptions |
-| `text-gray-600` | Very muted (placeholder-like) |
+| Token           | Usage                                |
+| --------------- | ------------------------------------ |
+| `text-white`    | Primary text, headings, active items |
+| `text-gray-300` | Secondary text (sidebar default)     |
+| `text-gray-400` | Tertiary text, inactive navigation   |
+| `text-gray-500` | Muted text, labels, descriptions     |
+| `text-gray-600` | Very muted (placeholder-like)        |
 
 ### Accent Colors
 
@@ -81,7 +81,13 @@ bg-gradient-to-br from-amber-500 to-orange-600
 
 ```css
 /* Body text */
-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+font-family:
+	"Inter",
+	-apple-system,
+	BlinkMacSystemFont,
+	"Segoe UI",
+	"Roboto",
+	sans-serif;
 
 /* Code/monospace */
 font-family: "JetBrains Mono", source-code-pro, Menlo, Monaco, Consolas, monospace;
@@ -89,14 +95,14 @@ font-family: "JetBrains Mono", source-code-pro, Menlo, Monaco, Consolas, monospa
 
 ### Font Sizes
 
-| Class | Usage |
-| ------- | ------- |
-| `text-xs` | Labels, badges, meta text |
-| `text-sm` | Navigation items, form labels, body text |
-| `text-base` | Default body text |
-| `text-lg` | Subheadings, emphasized text |
-| `text-xl` | Section headings |
-| `text-4xl md:text-5xl` | Hero headings |
+| Class                  | Usage                                    |
+| ---------------------- | ---------------------------------------- |
+| `text-xs`              | Labels, badges, meta text                |
+| `text-sm`              | Navigation items, form labels, body text |
+| `text-base`            | Default body text                        |
+| `text-lg`              | Subheadings, emphasized text             |
+| `text-xl`              | Section headings                         |
+| `text-4xl md:text-5xl` | Hero headings                            |
 
 ### Font Weights
 
@@ -129,16 +135,16 @@ font-family: "JetBrains Mono", source-code-pro, Menlo, Monaco, Consolas, monospa
 
 ```tsx
 // Navigation items
-className="px-3 py-2"
+className = "px-3 py-2";
 
 // Section padding
-className="p-2"  // Sidebar sections
-className="px-6 py-4"  // Content areas
+className = "p-2"; // Sidebar sections
+className = "px-6 py-4"; // Content areas
 
 // Gaps
-className="gap-2"  // Tight (buttons, small groups)
-className="gap-3"  // Normal (nav items, list items)
-className="gap-4"  // Spacious (cards, sections)
+className = "gap-2"; // Tight (buttons, small groups)
+className = "gap-3"; // Normal (nav items, list items)
+className = "gap-4"; // Spacious (cards, sections)
 ```
 
 ### Border Radius
@@ -158,18 +164,16 @@ className="gap-4"  // Spacious (cards, sections)
 
 ```tsx
 const navLinkClass = (isActive: boolean) =>
-  `flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
-    isActive
-      ? 'bg-white/10 text-white'
-      : 'text-gray-400 hover:text-white hover:bg-white/5'
-  }`
+	`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
+		isActive ? "bg-white/10 text-white" : "text-gray-400 hover:text-white hover:bg-white/5"
+	}`;
 ```
 
 ### Icon Button
 
 ```tsx
 <button className="p-1.5 rounded-md hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
-  <Icon size={18} />
+	<Icon size={18} />
 </button>
 ```
 
@@ -177,7 +181,7 @@ const navLinkClass = (isActive: boolean) =>
 
 ```tsx
 <button className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-colors">
-  Label
+	Label
 </button>
 ```
 
@@ -185,7 +189,7 @@ const navLinkClass = (isActive: boolean) =>
 
 ```tsx
 <button className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-white">
-  Label
+	Label
 </button>
 ```
 
@@ -198,17 +202,15 @@ const navLinkClass = (isActive: boolean) =>
 ### Card
 
 ```tsx
-<div className="p-4 bg-white/5 rounded-xl border border-white/5">
-  {/* content */}
-</div>
+<div className="p-4 bg-white/5 rounded-xl border border-white/5">{/* content */}</div>
 ```
 
 ### Badge/Pill
 
 ```tsx
 <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-500 text-sm">
-  <Icon size={14} />
-  <span>Label</span>
+	<Icon size={14} />
+	<span>Label</span>
 </div>
 ```
 
@@ -216,10 +218,10 @@ const navLinkClass = (isActive: boolean) =>
 
 ```tsx
 <div className="group px-3 py-2.5 rounded-lg flex items-center justify-between hover:bg-white/5 transition-all">
-  <span>Content</span>
-  <button className="opacity-0 group-hover:opacity-100 transition-all">
-    <Icon size={16} />
-  </button>
+	<span>Content</span>
+	<button className="opacity-0 group-hover:opacity-100 transition-all">
+		<Icon size={16} />
+	</button>
 </div>
 ```
 
@@ -244,9 +246,7 @@ const navLinkClass = (isActive: boolean) =>
 ### Section Label
 
 ```tsx
-<p className="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">
-  Section Name
-</p>
+<p className="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">Section Name</p>
 ```
 
 ---
@@ -284,20 +284,20 @@ className={`transition-all duration-300 ease-in-out ${isExpanded ? 'w-60' : 'w-1
 
 ```tsx
 // Parent
-className="group"
+className = "group";
 
 // Child to reveal
-className="opacity-0 group-hover:opacity-100 transition-all"
+className = "opacity-0 group-hover:opacity-100 transition-all";
 ```
 
 ### Progress Bar
 
 ```tsx
 <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-  <div
-    className="h-full bg-emerald-500 transition-all duration-300"
-    style={{ width: `${percent}%` }}
-  />
+	<div
+		className="h-full bg-emerald-500 transition-all duration-300"
+		style={{ width: `${percent}%` }}
+	/>
 </div>
 ```
 
@@ -310,34 +310,34 @@ className="opacity-0 group-hover:opacity-100 transition-all"
 We use **Lucide React** for all icons.
 
 ```tsx
-import { Home, Settings, ChevronRight } from 'lucide-react'
+import { Home, Settings, ChevronRight } from "lucide-react";
 ```
 
 ### Sizes
 
-| Size | Usage |
-| ------ | ------- |
+| Size | Usage                                   |
+| ---- | --------------------------------------- |
 | `14` | Inline icons, chevrons in compact areas |
-| `16` | Small buttons, list item actions |
-| `18` | Navigation items, standard buttons |
-| `20` | Larger buttons, prominent actions |
-| `24` | Feature icons, empty states |
-| `48` | Hero illustrations, large empty states |
+| `16` | Small buttons, list item actions        |
+| `18` | Navigation items, standard buttons      |
+| `20` | Larger buttons, prominent actions       |
+| `24` | Feature icons, empty states             |
+| `48` | Hero illustrations, large empty states  |
 
 ### Common Icons
 
-| Icon | Usage |
-| ------ | ------- |
-| `Home` | Home/dashboard navigation |
-| `ChevronRight`, `ChevronDown` | Expandable sections |
-| `PanelLeftClose`, `PanelLeftOpen` | Sidebar toggle |
-| `LogIn`, `LogOut` | Authentication |
-| `UserPlus` | Sign up |
-| `Circle`, `CheckCircle2` | Task states |
-| `Trash2` | Delete action |
-| `Plus` | Add/create action |
-| `Zap` | Features, highlights |
-| `Shield` | Security features |
+| Icon                              | Usage                     |
+| --------------------------------- | ------------------------- |
+| `Home`                            | Home/dashboard navigation |
+| `ChevronRight`, `ChevronDown`     | Expandable sections       |
+| `PanelLeftClose`, `PanelLeftOpen` | Sidebar toggle            |
+| `LogIn`, `LogOut`                 | Authentication            |
+| `UserPlus`                        | Sign up                   |
+| `Circle`, `CheckCircle2`          | Task states               |
+| `Trash2`                          | Delete action             |
+| `Plus`                            | Add/create action         |
+| `Zap`                             | Features, highlights      |
+| `Shield`                          | Security features         |
 
 ### Icon Button Pattern
 
@@ -371,14 +371,14 @@ className={isExpanded ? '' : 'justify-center'}
 For components using browser APIs or auth state, wait for client hydration:
 
 ```tsx
-const [isMounted, setIsMounted] = useState(false)
+const [isMounted, setIsMounted] = useState(false);
 
 useEffect(() => {
-  setIsMounted(true)
-}, [])
+	setIsMounted(true);
+}, []);
 
 if (!isMounted) {
-  return <LoadingSkeleton />
+	return <LoadingSkeleton />;
 }
 ```
 
@@ -388,25 +388,25 @@ For UI state that should persist (like sidebar expanded state):
 
 ```tsx
 useEffect(() => {
-  const saved = localStorage.getItem('key')
-  if (saved !== null) {
-    setState(saved === 'true')
-  }
-}, [])
+	const saved = localStorage.getItem("key");
+	if (saved !== null) {
+		setState(saved === "true");
+	}
+}, []);
 
 const toggle = () => {
-  const newState = !state
-  setState(newState)
-  localStorage.setItem('key', String(newState))
-}
+	const newState = !state;
+	setState(newState);
+	localStorage.setItem("key", String(newState));
+};
 ```
 
 ### Empty States
 
 ```tsx
 <div className="text-center py-12">
-  <Icon size={48} className="mx-auto text-gray-600 mb-4" />
-  <p className="text-gray-500">Empty state message</p>
+	<Icon size={48} className="mx-auto text-gray-600 mb-4" />
+	<p className="text-gray-500">Empty state message</p>
 </div>
 ```
 
@@ -441,7 +441,7 @@ Always add aria-labels for icon-only buttons:
 
 ```tsx
 <button aria-label="Delete task">
-  <Trash2 size={16} />
+	<Trash2 size={16} />
 </button>
 ```
 
@@ -450,7 +450,7 @@ Always add aria-labels for icon-only buttons:
 Interactive elements should be focusable and have hover states that also apply to focus:
 
 ```tsx
-className="hover:bg-white/5 focus:bg-white/5"
+className = "hover:bg-white/5 focus:bg-white/5";
 ```
 
 ### Screen Reader Text

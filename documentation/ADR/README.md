@@ -27,11 +27,11 @@ Proposed → Accepted → [Deprecated | Superseded]
 
 ## ADR Index
 
-| ADR | Title | Status | Date |
-|-----|-------|--------|------|
+| ADR                                   | Title                                                   | Status     | Date       |
+| ------------------------------------- | ------------------------------------------------------- | ---------- | ---------- |
 | [001](./001-effect-ts-integration.md) | Effect.ts Integration Between TanStack Start and Convex | Deprecated | 2025-12-14 |
-| [002](./002-workos-authentication.md) | WorkOS as Authentication Provider | Accepted | 2025-12-21 |
-| [003](./003-convex-backend.md) | Convex as Backend-as-a-Service | Accepted | 2025-12-21 |
+| [002](./002-workos-authentication.md) | WorkOS as Authentication Provider                       | Accepted   | 2025-12-21 |
+| [003](./003-convex-backend.md)        | Convex as Backend-as-a-Service                          | Accepted   | 2025-12-21 |
 
 ## Conventions
 

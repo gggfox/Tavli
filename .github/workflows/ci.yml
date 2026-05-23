@@ -65,6 +65,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Patch react-dom for Nitro build
+        run: |
+          for dir in node_modules/.pnpm/react-dom@*/node_modules/react-dom/cjs; do
+            cp "$dir/react-dom-client.production.js" \
+               "$dir/react-dom-client.development.js" 2>/dev/null || true
+          done
+
       - run: pnpm build
 
   unit-and-component-tests:
@@ -119,6 +126,13 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Patch react-dom for Nitro build
+        run: |
+          for dir in node_modules/.pnpm/react-dom@*/node_modules/react-dom/cjs; do
+            cp "$dir/react-dom-client.production.js" \
+               "$dir/react-dom-client.development.js" 2>/dev/null || true
+          done
 
       - name: Resolve Playwright version
         id: pw

@@ -44,12 +44,7 @@ import type Stripe from "stripe";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
-import {
-	ORDER_PAYMENT_STATE,
-	PAYMENT_REFUND_STATUS,
-	PAYMENT_STATUS,
-	TABLE,
-} from "./constants";
+import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
 import { fromErrorObject, NotAuthenticatedError } from "./_shared/errors";
 import {
 	getStripeClient,
@@ -458,10 +453,7 @@ export const createRefund = internalAction({
 	args: {
 		paymentId: v.id(TABLE.PAYMENTS),
 	},
-	handler: async (
-		ctx,
-		args
-	): Promise<{ refundId: string; status: string | null }> => {
+	handler: async (ctx, args): Promise<{ refundId: string; status: string | null }> => {
 		const payment: Doc<"payments"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getPaymentInternal,
 			{

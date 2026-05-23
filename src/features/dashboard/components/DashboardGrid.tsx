@@ -6,22 +6,14 @@
  * The container measures its own width via a ResizeObserver so the grid scales
  * with the dashboard column.
  */
-import {
-	GridLayout,
-	type Layout,
-	type LayoutItem,
-} from "react-grid-layout";
+import { GridLayout, type Layout, type LayoutItem } from "react-grid-layout";
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { DashboardKeys } from "@/global/i18n";
 import { EmptyState } from "@/global/components";
 import { LayoutGrid } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { resolveRange } from "../utils/range";
-import {
-	getWidgetDescriptor,
-	safeParseOptions,
-	type WidgetRenderContext,
-} from "../widgets";
+import { getWidgetDescriptor, safeParseOptions, type WidgetRenderContext } from "../widgets";
 import { WidgetShell } from "./WidgetShell";
 import type {
 	DashboardLayoutConfig,
@@ -164,10 +156,7 @@ function renderWidgetItem({
 	const descriptor = getWidgetDescriptor(widget.widgetType);
 	if (!descriptor) {
 		return (
-			<div
-				key={widget.instanceId}
-				data-grid={layoutItemFromWidget(widget, editing)}
-			>
+			<div key={widget.instanceId} data-grid={layoutItemFromWidget(widget, editing)}>
 				<UnavailableWidget />
 			</div>
 		);
@@ -195,10 +184,7 @@ function renderWidgetItem({
 	const Body = descriptor.Component;
 
 	return (
-		<div
-			key={widget.instanceId}
-			data-grid={layoutItemFromWidget(widget, editing)}
-		>
+		<div key={widget.instanceId} data-grid={layoutItemFromWidget(widget, editing)}>
 			<WidgetShell
 				descriptor={descriptor}
 				hasOverride={Boolean(widget.dateRangeOverride)}
@@ -211,10 +197,7 @@ function renderWidgetItem({
 	);
 }
 
-function layoutItemFromWidget(
-	widget: DashboardWidgetInstance,
-	editing: boolean
-): LayoutItem {
+function layoutItemFromWidget(widget: DashboardWidgetInstance, editing: boolean): LayoutItem {
 	return {
 		i: widget.instanceId,
 		x: widget.gridPosition.x,

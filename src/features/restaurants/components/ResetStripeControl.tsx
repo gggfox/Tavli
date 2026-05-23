@@ -30,7 +30,6 @@ export function ResetStripeControl({
 				onClick={onRequestReset}
 				disabled={resetLoading}
 				className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50 border border-border text-destructive"
-				
 				data-testid="stripe-reset-button"
 			>
 				<Trash2 size={12} />
@@ -42,16 +41,14 @@ export function ResetStripeControl({
 	return (
 		<div
 			className="flex flex-col gap-2 w-full p-3 rounded-lg"
-			style={{backgroundColor: "rgba(220, 38, 38, 0.08)",
-				border: "1px solid rgba(220, 38, 38, 0.3)"}}
+			style={{
+				backgroundColor: "rgba(220, 38, 38, 0.08)",
+				border: "1px solid rgba(220, 38, 38, 0.3)",
+			}}
 			data-testid="stripe-reset-confirm"
 		>
-			<div className="flex items-start gap-2 text-xs text-foreground" >
-				<AlertTriangle
-					size={14}
-					className="mt-0.5 shrink-0 text-destructive"
-					
-				/>
+			<div className="flex items-start gap-2 text-xs text-foreground">
+				<AlertTriangle size={14} className="mt-0.5 shrink-0 text-destructive" />
 				<span>{t(RestaurantsKeys.STRIPE_RESET_WARNING)}</span>
 			</div>
 			<div className="flex items-center gap-2">
@@ -60,7 +57,7 @@ export function ResetStripeControl({
 					onClick={onConfirmReset}
 					disabled={resetLoading}
 					className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 bg-destructive"
-					style={{color: "#fff"}}
+					style={{ color: "#fff" }}
 					data-testid="stripe-reset-confirm-button"
 				>
 					{resetLoading ? (
@@ -80,7 +77,6 @@ export function ResetStripeControl({
 					onClick={onCancelReset}
 					disabled={resetLoading}
 					className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) disabled:opacity-50 text-muted-foreground border border-border"
-					
 				>
 					{t(RestaurantsKeys.STRIPE_RESET_CANCEL)}
 				</button>

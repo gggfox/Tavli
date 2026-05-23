@@ -220,23 +220,20 @@ http.route({
 			);
 		}
 		const idempotencyKey = request.headers.get("idempotency-key") ?? undefined;
-		const [reservationId, error] = await ctx.runMutation(
-			internal.reservations.internalCreate,
-			{
-				restaurantId: body.restaurantId as Id<typeof TABLE.RESTAURANTS>,
-				partySize: body.partySize,
-				startsAt: body.startsAt,
-				contact: {
-					name: body.contact.name,
-					phone: body.contact.phone,
-					email: body.contact.email,
-				},
-				source: RESERVATION_SOURCE.WHATSAPP,
-				userId: body.userId,
-				notes: body.notes,
-				idempotencyKey,
-			}
-		);
+		const [reservationId, error] = await ctx.runMutation(internal.reservations.internalCreate, {
+			restaurantId: body.restaurantId as Id<typeof TABLE.RESTAURANTS>,
+			partySize: body.partySize,
+			startsAt: body.startsAt,
+			contact: {
+				name: body.contact.name,
+				phone: body.contact.phone,
+				email: body.contact.email,
+			},
+			source: RESERVATION_SOURCE.WHATSAPP,
+			userId: body.userId,
+			notes: body.notes,
+			idempotencyKey,
+		});
 		if (error) {
 			return jsonResponse({ error }, error.name === "NOT_FOUND" ? 404 : 409);
 		}

@@ -18,9 +18,7 @@ export const RESERVATIONS_BY_STATUS_TYPE = "reservationsByStatus";
 const optionsSchema = z.object({});
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.reservationsByStatus.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.reservationsByStatus.compute>>;
 
 const STATUS_LABEL_KEY: Record<string, string> = {
 	pending: ReservationsKeys.STATUS_PENDING,
@@ -74,18 +72,17 @@ function ReservationsByStatusWidget({ context }: WidgetProps<Options>) {
 	);
 }
 
-export const reservationsByStatusDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: RESERVATIONS_BY_STATUS_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_RESERVATIONS_BY_STATUS_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_RESERVATIONS_BY_STATUS_DESCRIPTION,
-		icon: PieChart,
-		requiredRole: "employee",
-		portfolioCapable: false,
-		supportsComparison: false,
-		maxRangeDays: 366,
-		defaultGrid: { w: 4, h: 4, minW: 3, minH: 3 },
-		optionsSchema,
-		defaultOptions: {},
-		Component: ReservationsByStatusWidget,
-	});
+export const reservationsByStatusDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: RESERVATIONS_BY_STATUS_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_RESERVATIONS_BY_STATUS_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_RESERVATIONS_BY_STATUS_DESCRIPTION,
+	icon: PieChart,
+	requiredRole: "employee",
+	portfolioCapable: false,
+	supportsComparison: false,
+	maxRangeDays: 366,
+	defaultGrid: { w: 4, h: 4, minW: 3, minH: 3 },
+	optionsSchema,
+	defaultOptions: {},
+	Component: ReservationsByStatusWidget,
+});

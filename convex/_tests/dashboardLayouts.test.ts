@@ -212,13 +212,10 @@ describe("dashboardLayouts.update / get / remove", () => {
 		});
 		expect(removeErr?.name).toBe("NOT_AUTHORIZED");
 
-		const [updatedId, ownErr] = await owner.mutation(
-			api.dashboardLayouts.update,
-			{
-				layoutId,
-				name: "Renamed",
-			}
-		);
+		const [updatedId, ownErr] = await owner.mutation(api.dashboardLayouts.update, {
+			layoutId,
+			name: "Renamed",
+		});
 		expect(ownErr).toBeNull();
 		expect(updatedId).toBe(layoutId);
 	});
@@ -280,12 +277,9 @@ describe("dashboardLayouts.duplicate / reorder", () => {
 		});
 		if (!originalId) throw new Error("original creation failed");
 
-		const [duplicatedId, dupErr] = await user.mutation(
-			api.dashboardLayouts.duplicate,
-			{
-				layoutId: originalId,
-			}
-		);
+		const [duplicatedId, dupErr] = await user.mutation(api.dashboardLayouts.duplicate, {
+			layoutId: originalId,
+		});
 		expect(dupErr).toBeNull();
 		expect(duplicatedId).toBeTruthy();
 		expect(duplicatedId).not.toBe(originalId);

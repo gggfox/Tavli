@@ -37,7 +37,7 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 	const { data: rawTables } = useQuery(
 		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
 	);
-	const tables = (rawTables ?? []) as Doc<"tables">[];
+	const tables = useMemo(() => (rawTables ?? []) as Doc<"tables">[], [rawTables]);
 
 	const { data: locks } = useQuery({
 		...convexQuery(api.tableLocks.listForRestaurant, { restaurantId }),
@@ -101,22 +101,16 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 		<div className="space-y-4">
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 
-			<div
-				className="rounded-lg p-4 space-y-3 bg-muted border border-border"
-				
-			>
+			<div className="rounded-lg p-4 space-y-3 bg-muted border border-border">
 				<h3 className="text-sm font-medium">{t(ReservationsKeys.LOCKS_NEW_LOCK)}</h3>
 				<div className="flex flex-wrap gap-2 items-end">
 					<label htmlFor="lock-table" className="flex flex-col gap-1 text-xs text-muted-foreground">
-						<span >
-							{t(ReservationsKeys.LOCKS_TABLE_LABEL)}
-						</span>
+						<span>{t(ReservationsKeys.LOCKS_TABLE_LABEL)}</span>
 						<select
 							id="lock-table"
 							value={tableId}
 							onChange={(e) => setTableId(e.target.value as Id<"tables">)}
 							className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-							
 						>
 							<option value="">{t(ReservationsKeys.LOCKS_TABLE_PLACEHOLDER)}</option>
 							{tables
@@ -129,9 +123,7 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 						</select>
 					</label>
 					<label htmlFor="lock-start" className="flex flex-col gap-1 text-xs text-muted-foreground">
-						<span >
-							{t(ReservationsKeys.LOCKS_STARTS_AT)}
-						</span>
+						<span>{t(ReservationsKeys.LOCKS_STARTS_AT)}</span>
 						<input
 							id="lock-start"
 							type="datetime-local"
@@ -142,9 +134,7 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 						/>
 					</label>
 					<label htmlFor="lock-end" className="flex flex-col gap-1 text-xs text-muted-foreground">
-						<span >
-							{t(ReservationsKeys.LOCKS_ENDS_AT)}
-						</span>
+						<span>{t(ReservationsKeys.LOCKS_ENDS_AT)}</span>
 						<input
 							id="lock-end"
 							type="datetime-local"
@@ -154,10 +144,11 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 							style={formInputStyle}
 						/>
 					</label>
-					<label htmlFor="lock-reason" className="flex flex-col gap-1 text-xs text-muted-foreground">
-						<span >
-							{t(ReservationsKeys.LOCKS_REASON)}
-						</span>
+					<label
+						htmlFor="lock-reason"
+						className="flex flex-col gap-1 text-xs text-muted-foreground"
+					>
+						<span>{t(ReservationsKeys.LOCKS_REASON)}</span>
 						<input
 							id="lock-reason"
 							type="text"
@@ -165,7 +156,6 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 							onChange={(e) => setReason(e.target.value)}
 							placeholder={t(ReservationsKeys.LOCKS_REASON_PLACEHOLDER)}
 							className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-							
 						/>
 					</label>
 					<button
@@ -183,19 +173,16 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 					<div
 						key={lock._id}
 						className="flex items-center justify-between gap-4 rounded-lg px-4 py-3 text-sm bg-muted border border-border"
-						
 					>
 						<div className="flex items-center gap-3 min-w-0 text-faint-foreground">
-							<Lock size={14}  />
-							<span className="text-foreground" >{tableLabelFor(lock.tableId)}</span>
-							<span className="text-xs text-faint-foreground" >
+							<Lock size={14} />
+							<span className="text-foreground">{tableLabelFor(lock.tableId)}</span>
+							<span className="text-xs text-faint-foreground">
 								{formatReservationTime(lock.startsAt, i18n.language)} →{" "}
 								{formatReservationTime(lock.endsAt, i18n.language)}
 							</span>
 							{lock.reason && (
-								<span className="text-xs text-muted-foreground" >
-									· {lock.reason}
-								</span>
+								<span className="text-xs text-muted-foreground">· {lock.reason}</span>
 							)}
 						</div>
 						<button
@@ -204,14 +191,12 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 							className="p-2 rounded-md text-destructive"
 							aria-label={t(ReservationsKeys.ARIA_REMOVE_LOCK)}
 						>
-							<Trash2 size={14}  />
+							<Trash2 size={14} />
 						</button>
 					</div>
 				))}
 				{(locks ?? []).length === 0 && (
-					<p className="text-sm text-faint-foreground" >
-						{t(ReservationsKeys.LOCKS_EMPTY)}
-					</p>
+					<p className="text-sm text-faint-foreground">{t(ReservationsKeys.LOCKS_EMPTY)}</p>
 				)}
 			</div>
 		</div>

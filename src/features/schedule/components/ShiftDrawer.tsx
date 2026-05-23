@@ -14,12 +14,7 @@
  *   current actor can target. The convex layer re-checks via
  *   `requireShiftTargetAuthority`, but pre-filtering avoids a UI dead-end.
  */
-import {
-	AppDatePicker,
-	DialogHeader,
-	Drawer,
-	FieldLabel,
-} from "@/global/components";
+import { AppDatePicker, DialogHeader, Drawer, FieldLabel } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
 import { todayLocalYmd } from "@/global/utils/calendarMonth";
@@ -38,11 +33,7 @@ import {
 	utcMsToYmdInTimezone,
 	ymdHmToUtcMs,
 } from "../timezone";
-import {
-	dayLabel,
-	SHIFT_ROLE_OPTIONS,
-	shiftRoleLabel,
-} from "../roles";
+import { dayLabel, SHIFT_ROLE_OPTIONS, shiftRoleLabel } from "../roles";
 import type { AssignableMember, ShiftDrawerInitial } from "../types";
 
 interface ShiftDrawerProps {
@@ -141,8 +132,7 @@ export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {
 
 	const initialRecurring = useMemo<RecurringState>(
 		() => ({
-			memberId:
-				initial.mode === "create" && initial.memberId ? initial.memberId : "",
+			memberId: initial.mode === "create" && initial.memberId ? initial.memberId : "",
 			selectedDays: new Set<number>(),
 			startMin: DEFAULT_START_MIN,
 			durationMin: DEFAULT_DURATION_MIN,
@@ -280,16 +270,13 @@ export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {
 	};
 
 	const showRecurringTab = !isEdit && !hideRecurringTab;
-	const isPublishedEdit =
-		editingShift?.status === SHIFT_STATUS.PUBLISHED;
+	const isPublishedEdit = editingShift?.status === SHIFT_STATUS.PUBLISHED;
 	const isLinkedTemplateEdit = editingShift?.templateId != null;
 	const title = isEdit
 		? t(AdminStaffKeys.SCHEDULE_DRAWER_TITLE_EDIT)
 		: t(AdminStaffKeys.SCHEDULE_DRAWER_TITLE_CREATE);
 
-	const submitDisabled =
-		isPending ||
-		(tab === "oneoff" ? !oneoff.memberId : !recurring.memberId);
+	const submitDisabled = isPending || (tab === "oneoff" ? !oneoff.memberId : !recurring.memberId);
 
 	return (
 		<Drawer
@@ -476,7 +463,10 @@ function OneOffTab({ state, setState, members, isEdit, idPrefix, localeTag }: On
 				localeTag={localeTag}
 			/>
 			<div>
-				<FieldLabel htmlFor={`${idPrefix}-presets`} label={t(AdminStaffKeys.SCHEDULE_DRAWER_PRESETS_LABEL)} />
+				<FieldLabel
+					htmlFor={`${idPrefix}-presets`}
+					label={t(AdminStaffKeys.SCHEDULE_DRAWER_PRESETS_LABEL)}
+				/>
 				<div id={`${idPrefix}-presets`} className="flex flex-wrap gap-1.5">
 					{PRESETS.map((p) => {
 						const active = state.startMin === p.startMin && state.endMin === p.endMin;
@@ -484,9 +474,7 @@ function OneOffTab({ state, setState, members, isEdit, idPrefix, localeTag }: On
 							<button
 								key={p.id}
 								type="button"
-								onClick={() =>
-									setState({ ...state, startMin: p.startMin, endMin: p.endMin })
-								}
+								onClick={() => setState({ ...state, startMin: p.startMin, endMin: p.endMin })}
 								className={`text-xs px-2 py-1 rounded-md border ${
 									active
 										? "border-primary bg-primary/10 text-primary"
@@ -795,9 +783,7 @@ function SectionsCoveredPanel({
 	shiftEndsAt,
 }: SectionsCoveredPanelProps) {
 	const { t } = useTranslation();
-	const sectionsQuery = useQuery(
-		convexQuery(api.sections.getByRestaurant, { restaurantId })
-	);
+	const sectionsQuery = useQuery(convexQuery(api.sections.getByRestaurant, { restaurantId }));
 	const assignmentsQuery = useQuery(
 		convexQuery(api.shifts.listSectionAssignmentsForShift, { shiftId })
 	);
@@ -811,7 +797,10 @@ function SectionsCoveredPanel({
 
 	const [error, setError] = useState<string | null>(null);
 
-	const sectionsAll: readonly Doc<"sections">[] = sectionsQuery.data ?? [];
+	const sectionsAll = useMemo<readonly Doc<"sections">[]>(
+		() => sectionsQuery.data ?? [],
+		[sectionsQuery.data]
+	);
 	const assignmentsResult = assignmentsQuery.data;
 	const assignments: readonly Doc<"shiftSectionAssignments">[] = useMemo(() => {
 		if (!assignmentsResult) return [];
@@ -825,14 +814,8 @@ function SectionsCoveredPanel({
 		return m;
 	}, [assignments]);
 
-	// Hide inactive sections from the assignable list, but keep ones that
-	// already have an assignment for this shift so the user can unassign them
-	// without first having to re-show the section.
 	const sections = useMemo(
-		() =>
-			sectionsAll.filter(
-				(s) => s.isActive !== false || assignmentBySection.has(s._id)
-			),
+		() => sectionsAll.filter((s) => s.isActive !== false || assignmentBySection.has(s._id)),
 		[sectionsAll, assignmentBySection]
 	);
 
@@ -859,9 +842,7 @@ function SectionsCoveredPanel({
 			} else {
 				const existing = assignmentBySection.get(sectionId);
 				if (!existing) return;
-				unwrapResult(
-					await removeSectionAssignment.mutateAsync({ assignmentId: existing._id })
-				);
+				unwrapResult(await removeSectionAssignment.mutateAsync({ assignmentId: existing._id }));
 			}
 		} catch (e) {
 			setError(extractSectionsError(e, t));
@@ -907,7 +888,10 @@ function SectionsCoveredPanel({
 	);
 }
 
-function extractSectionsError(e: unknown, t: (k: string, params?: Record<string, unknown>) => string): string {
+function extractSectionsError(
+	e: unknown,
+	t: (k: string, params?: Record<string, unknown>) => string
+): string {
 	if (typeof e === "object" && e != null) {
 		const message = (e as { message?: unknown }).message;
 		if (typeof message === "string") {
@@ -925,10 +909,7 @@ function extractError(e: unknown, t: (k: string) => string): string {
 	if (typeof e === "object" && e != null) {
 		const message = (e as { message?: unknown }).message;
 		if (typeof message === "string") {
-			if (
-				message.toLowerCase().includes("overlap") ||
-				message.toLowerCase().includes("traslapa")
-			) {
+			if (message.toLowerCase().includes("overlap") || message.toLowerCase().includes("traslapa")) {
 				return t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_OVERLAP);
 			}
 			if (message.toLowerCase().includes("startsat")) {

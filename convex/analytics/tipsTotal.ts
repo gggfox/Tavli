@@ -13,9 +13,7 @@ import {
 	UserInputValidationErrorObject,
 } from "../_shared/errors";
 import { TABLE } from "../constants";
-import {
-	utcMsToYmdInTimezone,
-} from "../_util/timezone";
+import { utcMsToYmdInTimezone } from "../_util/timezone";
 import { buildWindow, resolveRestaurantIds } from "./_shared";
 
 const TIPS_TOTAL_MAX_RANGE_DAYS = 366;
@@ -40,10 +38,7 @@ export const compute = query({
 		range: v.object({ from: v.number(), to: v.number() }),
 		compareToPrev: v.boolean(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<TipsTotalResult, Errors> {
+	handler: async function (ctx, args): AsyncReturn<TipsTotalResult, Errors> {
 		const [, accessErr] = await resolveRestaurantIds(ctx, {
 			scopeKind: "restaurant",
 			restaurantId: args.restaurantId,

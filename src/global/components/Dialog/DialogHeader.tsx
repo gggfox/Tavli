@@ -37,23 +37,16 @@ export function DialogHeader({
 		.join(" ");
 
 	return (
-		<div
-			className={`${classes} border-b border-border`}
-		 
-		>
+		<div className={`${classes} border-b border-border`}>
 			<div className="flex flex-col gap-1 min-w-0">
 				{typeof title === "string" ? (
-					<h2 className="text-lg font-semibold text-foreground" >
-						{title}
-					</h2>
+					<h2 className="text-lg font-semibold text-foreground">{title}</h2>
 				) : (
 					title
 				)}
 				{subtitle &&
 					(typeof subtitle === "string" ? (
-						<p className="text-xs text-muted-foreground" >
-							{subtitle}
-						</p>
+						<p className="text-xs text-muted-foreground">{subtitle}</p>
 					) : (
 						subtitle
 					))}
@@ -63,7 +56,6 @@ export function DialogHeader({
 				type="button"
 				onClick={onClose}
 				className="p-1 rounded-md transition-colors hover:opacity-80 shrink-0 text-faint-foreground"
-				
 				aria-label={closeAriaLabel}
 			>
 				<X size={18} />

@@ -78,7 +78,11 @@ export function AdminRestaurantsList({
 		[userRoles]
 	);
 
-	const { data: restaurants = [], isLoading, error: queryError } = useQuery({
+	const {
+		data: restaurants = [],
+		isLoading,
+		error: queryError,
+	} = useQuery({
 		...convexQuery(api.restaurants.getAll, {}),
 		enabled: isAuthenticated,
 		select: unwrapResult<RestaurantsValue>,
@@ -102,9 +106,7 @@ export function AdminRestaurantsList({
 	// `manageId` (the expanded "manage tables" view) is lifted to the route
 	// so it can swap the page layout. The list mirrors it here when no
 	// external controller wires up `onManageChange` (defensive fallback).
-	const [internalExpandedId, setInternalExpandedId] = useState<Id<"restaurants"> | null>(
-		null
-	);
+	const [internalExpandedId, setInternalExpandedId] = useState<Id<"restaurants"> | null>(null);
 	const expandedTablesId = manageId !== undefined ? manageId : internalExpandedId;
 	const setExpandedTablesId = (next: Id<"restaurants"> | null) => {
 		if (onManageChange) {
@@ -302,9 +304,7 @@ export function AdminRestaurantsList({
 												);
 											} catch (err) {
 												setError(
-													err instanceof Error
-														? err.message
-														: t(RestaurantsKeys.LIST_TOGGLE_FAILED)
+													err instanceof Error ? err.message : t(RestaurantsKeys.LIST_TOGGLE_FAILED)
 												);
 											}
 										}}
@@ -338,16 +338,16 @@ export function AdminRestaurantsList({
 				ariaLabel={t(RestaurantsKeys.MODAL_CREATE_ARIA)}
 				size="md"
 			>
-				<div
-					className="p-6 rounded-xl bg-background border border-border"
-					
-				>
+				<div className="p-6 rounded-xl bg-background border border-border">
 					<div className="flex items-center justify-between mb-6">
-						<h2 className="text-xl font-semibold text-foreground" >
+						<h2 className="text-xl font-semibold text-foreground">
 							{t(RestaurantsKeys.MODAL_CREATE_HEADING)}
 						</h2>
-						<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-hover text-faint-foreground">
-							<X size={20}  />
+						<button
+							onClick={closeModal}
+							className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+						>
+							<X size={20} />
 						</button>
 					</div>
 					<CreateRestaurantForm
@@ -362,22 +362,17 @@ export function AdminRestaurantsList({
 
 			{/* Edit Modal */}
 			{modal.kind === "edit" && (
-				<Modal
-					isOpen
-					onClose={closeModal}
-					ariaLabel={t(RestaurantsKeys.MODAL_EDIT_ARIA)}
-					size="lg"
-				>
-					<div
-						className="p-6 rounded-xl bg-background border border-border"
-						
-					>
+				<Modal isOpen onClose={closeModal} ariaLabel={t(RestaurantsKeys.MODAL_EDIT_ARIA)} size="lg">
+					<div className="p-6 rounded-xl bg-background border border-border">
 						<div className="flex items-center justify-between mb-6">
-							<h2 className="text-xl font-semibold text-foreground" >
+							<h2 className="text-xl font-semibold text-foreground">
 								{t(RestaurantsKeys.MODAL_EDIT_HEADING)}
 							</h2>
-							<button onClick={closeModal} className="p-1.5 rounded-md hover:bg-hover text-faint-foreground">
-								<X size={20}  />
+							<button
+								onClick={closeModal}
+								className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+							>
+								<X size={20} />
 							</button>
 						</div>
 						<RestaurantSettingsForm
@@ -477,7 +472,6 @@ export function AdminRestaurantsList({
 					</div>
 				</Modal>
 			)}
-
 		</div>
 	);
 }
@@ -502,13 +496,9 @@ function ExpandedTablesRow({ restaurant, onClose }: Readonly<ExpandedTablesRowPr
 					<ChevronLeft size={16} />
 				</button>
 				<div className="flex items-center gap-3 min-w-0 flex-1">
-					<h2 className="text-xl font-semibold text-foreground truncate">
-						{restaurant.name}
-					</h2>
+					<h2 className="text-xl font-semibold text-foreground truncate">{restaurant.name}</h2>
 					<StatusBadge
-						bgColor={
-							restaurant.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"
-						}
+						bgColor={restaurant.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
 						textColor={restaurant.isActive ? "white" : "var(--text-muted)"}
 						label={
 							restaurant.isActive
@@ -560,7 +550,7 @@ function CreateRestaurantForm({
 						organizationId: value.organizationId as Id<"organizations">,
 					})
 				);
-				onCreated(id);
+				onCreated(id!);
 			} catch (err) {
 				onError(err instanceof Error ? err.message : t(RestaurantsKeys.FORM_CREATE_FAILED));
 			}
@@ -611,7 +601,6 @@ function CreateRestaurantForm({
 						<label
 							htmlFor="admin-rest-currency"
 							className="block text-xs font-medium mb-1 text-muted-foreground"
-							
 						>
 							{t(RestaurantsKeys.FORM_CURRENCY_LABEL)}
 						</label>
@@ -620,7 +609,6 @@ function CreateRestaurantForm({
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							
 						>
 							<option value="USD">USD ($)</option>
 							<option value="EUR">EUR</option>
@@ -637,7 +625,6 @@ function CreateRestaurantForm({
 						<label
 							htmlFor="admin-rest-org"
 							className="block text-xs font-medium mb-1 text-muted-foreground"
-							
 						>
 							{t(RestaurantsKeys.FORM_ORG_LABEL)}
 						</label>
@@ -647,7 +634,6 @@ function CreateRestaurantForm({
 							onChange={(e) => field.handleChange(e.target.value)}
 							required
 							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							
 						>
 							<option value="" disabled>
 								{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}

@@ -3,7 +3,15 @@ import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useState,
+	type ReactNode,
+} from "react";
 import { LOCAL_STORAGE_KEY_ADMIN_SELECTED_RESTAURANT_ID } from "./constants";
 import { resolveSelectedRestaurantId } from "./restaurantAdminSelection";
 
@@ -21,7 +29,7 @@ type RestaurantAdminContextValue = {
 		organizationId: Id<"organizations">;
 		description?: string;
 		timezone?: string;
-	}) => Promise<Id<"restaurants">>;
+	}) => Promise<Id<"restaurants"> | null>;
 	update: (args: {
 		restaurantId: Id<"restaurants">;
 		organizationId: Id<"organizations">;
@@ -36,8 +44,8 @@ type RestaurantAdminContextValue = {
 		supportedLanguages?: string[];
 		orderDayStartMinutesFromMidnight?: number;
 		orderNumberResetFrequency?: "daily" | "weekly" | "biweekly" | "monthly";
-	}) => Promise<Id<"restaurants">>;
-	toggleActive: (restaurantId: Id<"restaurants">) => Promise<boolean>;
+	}) => Promise<Id<"restaurants"> | null>;
+	toggleActive: (restaurantId: Id<"restaurants">) => Promise<boolean | null>;
 };
 
 const RestaurantAdminContext = createContext<RestaurantAdminContextValue | null>(null);
@@ -45,7 +53,9 @@ const RestaurantAdminContext = createContext<RestaurantAdminContextValue | null>
 function readStoredRestaurantId(): Id<"restaurants"> | null {
 	if (globalThis.window === undefined) return null;
 	try {
-		const raw = globalThis.window.localStorage.getItem(LOCAL_STORAGE_KEY_ADMIN_SELECTED_RESTAURANT_ID);
+		const raw = globalThis.window.localStorage.getItem(
+			LOCAL_STORAGE_KEY_ADMIN_SELECTED_RESTAURANT_ID
+		);
 		return raw ? (raw as Id<"restaurants">) : null;
 	} catch {
 		return null;
@@ -76,7 +86,9 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 		select: unwrapResult<Doc<"restaurants">[]>,
 	});
 
-	const [selectedId, setSelectedId] = useState<Id<"restaurants"> | null>(() => readStoredRestaurantId());
+	const [selectedId, setSelectedId] = useState<Id<"restaurants"> | null>(() =>
+		readStoredRestaurantId()
+	);
 
 	useEffect(() => {
 		if (restaurants.length === 0) {
@@ -182,7 +194,9 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 		]
 	);
 
-	return <RestaurantAdminContext.Provider value={value}>{children}</RestaurantAdminContext.Provider>;
+	return (
+		<RestaurantAdminContext.Provider value={value}>{children}</RestaurantAdminContext.Provider>
+	);
 }
 
 export function useRestaurant(): RestaurantAdminContextValue {

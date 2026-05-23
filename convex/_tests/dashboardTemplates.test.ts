@@ -118,24 +118,18 @@ describe("dashboardTemplates.cloneToLayout", () => {
 		});
 
 		const manager = t.withIdentity({ subject: "manager1" });
-		const [templateId] = await manager.mutation(
-			api.dashboardTemplates.publish,
-			{
-				restaurantId,
-				name: "Owner view",
-				config: baseConfig,
-			}
-		);
+		const [templateId] = await manager.mutation(api.dashboardTemplates.publish, {
+			restaurantId,
+			name: "Owner view",
+			config: baseConfig,
+		});
 		if (!templateId) throw new Error("template publish failed");
 
 		const employee = t.withIdentity({ subject: "emp1" });
-		const [layoutId, err] = await employee.mutation(
-			api.dashboardTemplates.cloneToLayout,
-			{
-				templateId,
-				name: "My copy",
-			}
-		);
+		const [layoutId, err] = await employee.mutation(api.dashboardTemplates.cloneToLayout, {
+			templateId,
+			name: "My copy",
+		});
 		expect(err).toBeNull();
 		expect(layoutId).toBeTruthy();
 
@@ -159,23 +153,17 @@ describe("dashboardTemplates.cloneToLayout", () => {
 		});
 
 		const manager = t.withIdentity({ subject: "manager1" });
-		const [templateId] = await manager.mutation(
-			api.dashboardTemplates.publish,
-			{
-				restaurantId,
-				name: "Owner view",
-				config: baseConfig,
-			}
-		);
+		const [templateId] = await manager.mutation(api.dashboardTemplates.publish, {
+			restaurantId,
+			name: "Owner view",
+			config: baseConfig,
+		});
 		if (!templateId) throw new Error("template publish failed");
 
 		const stranger = t.withIdentity({ subject: "stranger" });
-		const [, err] = await stranger.mutation(
-			api.dashboardTemplates.cloneToLayout,
-			{
-				templateId,
-			}
-		);
+		const [, err] = await stranger.mutation(api.dashboardTemplates.cloneToLayout, {
+			templateId,
+		});
 		expect(err?.name).toBe("NOT_AUTHORIZED");
 	});
 });

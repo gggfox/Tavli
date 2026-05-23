@@ -2,11 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import {
-	RESTAURANT_MEMBER_ROLE,
-	SHIFT_STATUS,
-	USER_ROLES,
-} from "../constants";
+import { RESTAURANT_MEMBER_ROLE, SHIFT_STATUS, USER_ROLES } from "../constants";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
@@ -395,10 +391,9 @@ describe("sections.create / remove", () => {
 		// Backfill creates a regular fallback section and assigns the seeded
 		// table to it. Detach the table, then delete the section — should
 		// succeed because no `isSystem` guard applies.
-		const [{ defaultSectionId }] = (await owner.mutation(
-			api.sections.backfillDefault,
-			{ restaurantId }
-		)) as [
+		const [{ defaultSectionId }] = (await owner.mutation(api.sections.backfillDefault, {
+			restaurantId,
+		})) as [
 			{
 				defaultSectionId: Id<"sections">;
 				tablesPatched: number;
@@ -447,7 +442,6 @@ describe("sections.create / remove", () => {
 		const row = await t.run(async (ctx) => ctx.db.get(legacyId));
 		expect(row?.deletedAt).toBeTruthy();
 	});
-
 });
 
 describe("sections.removeSystemFlag", () => {
@@ -509,9 +503,7 @@ describe("sections.removeSystemFlag", () => {
 		expect(err2).toBeNull();
 		expect(second?.patched).toBe(0);
 
-		const rows = await t.run(async (ctx) =>
-			Promise.all(legacyIds.map((id) => ctx.db.get(id)))
-		);
+		const rows = await t.run(async (ctx) => Promise.all(legacyIds.map((id) => ctx.db.get(id))));
 		for (const row of rows) {
 			expect(row?.isSystem).toBeUndefined();
 		}
@@ -531,13 +523,7 @@ describe("sections.removeSystemFlag", () => {
 describe("shifts.upsertSectionAssignment", () => {
 	it("rejects an overlapping assignment for the same section", async () => {
 		const t = convexTest(schema, modules);
-		const {
-			restaurantId,
-			managerMember,
-			otherMember,
-			managerUserId,
-			ownerUserId,
-		} = await seed(t);
+		const { restaurantId, managerMember, otherMember, managerUserId, ownerUserId } = await seed(t);
 
 		const owner = t.withIdentity({ subject: ownerUserId });
 		const [sectionId] = await owner.mutation(api.sections.create, {
@@ -573,40 +559,28 @@ describe("shifts.upsertSectionAssignment", () => {
 		});
 
 		const manager = t.withIdentity({ subject: managerUserId });
-		const [firstId, firstErr] = await manager.mutation(
-			api.shifts.upsertSectionAssignment,
-			{
-				shiftId: firstShiftId,
-				sectionId: sectionId!,
-				startsAt: baseStart,
-				endsAt: baseEnd,
-			}
-		);
+		const [firstId, firstErr] = await manager.mutation(api.shifts.upsertSectionAssignment, {
+			shiftId: firstShiftId,
+			sectionId: sectionId!,
+			startsAt: baseStart,
+			endsAt: baseEnd,
+		});
 		expect(firstErr).toBeNull();
 		expect(firstId).toBeTruthy();
 
-		const [secondId, secondErr] = await manager.mutation(
-			api.shifts.upsertSectionAssignment,
-			{
-				shiftId: secondShiftId,
-				sectionId: sectionId!,
-				startsAt: baseStart,
-				endsAt: baseEnd,
-			}
-		);
+		const [secondId, secondErr] = await manager.mutation(api.shifts.upsertSectionAssignment, {
+			shiftId: secondShiftId,
+			sectionId: sectionId!,
+			startsAt: baseStart,
+			endsAt: baseEnd,
+		});
 		expect(secondId).toBeNull();
 		expect(secondErr?.name).toBe("VALIDATION_ERROR");
 	});
 
 	it("allows back-to-back assignments without overlap (handoff)", async () => {
 		const t = convexTest(schema, modules);
-		const {
-			restaurantId,
-			managerMember,
-			otherMember,
-			managerUserId,
-			ownerUserId,
-		} = await seed(t);
+		const { restaurantId, managerMember, otherMember, managerUserId, ownerUserId } = await seed(t);
 
 		const owner = t.withIdentity({ subject: ownerUserId });
 		const [sectionId] = await owner.mutation(api.sections.create, {
@@ -716,13 +690,7 @@ describe("confirmPayment attribution", () => {
 
 	it("falls back to session.serverMemberId when no section assignment is active", async () => {
 		const t = convexTest(schema, modules);
-		const {
-			restaurantId,
-			tableId,
-			sessionId,
-			menuItemId,
-			otherMember,
-		} = await seed(t);
+		const { restaurantId, tableId, sessionId, menuItemId, otherMember } = await seed(t);
 
 		await t.run(async (ctx) => {
 			await ctx.db.patch(sessionId, { serverMemberId: otherMember });

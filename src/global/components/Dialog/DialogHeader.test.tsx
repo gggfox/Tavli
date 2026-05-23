@@ -27,18 +27,13 @@ describe("DialogHeader", () => {
 	});
 
 	it("renders extra content alongside the close button", () => {
-		render(
-			<DialogHeader title="t" onClose={() => {}} extra={<span>EXTRA</span>} />
-		);
+		render(<DialogHeader title="t" onClose={() => {}} extra={<span>EXTRA</span>} />);
 		expect(screen.getByText("EXTRA")).toBeInTheDocument();
 	});
 
 	it("renders ReactNode title without wrapping it in <h2>", () => {
 		render(
-			<DialogHeader
-				title={<span data-testid="custom-title">Custom</span>}
-				onClose={() => {}}
-			/>
+			<DialogHeader title={<span data-testid="custom-title">Custom</span>} onClose={() => {}} />
 		);
 		expect(screen.getByTestId("custom-title")).toBeInTheDocument();
 		expect(screen.queryByRole("heading")).not.toBeInTheDocument();

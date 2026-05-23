@@ -1,7 +1,4 @@
-import type {
-	OrderDashboardPrepStationFilter,
-	OrderDashboardStatusFilter,
-} from "@/features";
+import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilter } from "@/features";
 import { useConvexMutate } from "@/global/hooks";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
@@ -19,7 +16,11 @@ export function useOrders(
 	statuses?: OrderDashboardStatusFilter[],
 	prepStations?: OrderDashboardPrepStationFilter[]
 ) {
-	const { data: orders = [], isLoading, error } = useQuery({
+	const {
+		data: orders = [],
+		isLoading,
+		error,
+	} = useQuery({
 		...convexQuery(
 			api.orders.getActiveOrdersByRestaurant,
 			restaurantId ? { restaurantId, statuses, prepStations } : "skip"

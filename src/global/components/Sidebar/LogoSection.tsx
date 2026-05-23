@@ -13,13 +13,9 @@ export function LogoSection() {
 			className={`${`flex items-center h-12 px-3 transition-all duration-300 ease-in-out ${
 				isExpanded ? "" : "justify-center"
 			}`} border-b border-border`}
-		 
 		>
 			{isExpanded && (
-				<span
-					className="font-semibold text-sm tracking-tight text-foreground"
-					
-				>
+				<span className="font-semibold text-sm tracking-tight text-foreground">
 					{t(SidebarKeys.BRAND_NAME)}
 				</span>
 			)}

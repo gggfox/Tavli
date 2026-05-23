@@ -35,18 +35,11 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { stampUpdated } from "./_util/audit";
-import {
-	getCurrentUserId,
-	requireAdminRole,
-	requireOwnerOrManager,
-} from "./_util/auth";
+import { getCurrentUserId, requireAdminRole, requireOwnerOrManager } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
-type SectionMutationErrors =
-	| AuthErrors
-	| NotFoundErrorObject
-	| UserInputValidationErrorObject;
+type SectionMutationErrors = AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
 /**
  * Return the id of *some* section for the restaurant — preferring the
@@ -90,10 +83,7 @@ export const create = mutation({
 		name: v.optional(v.string()),
 		displayOrder: v.optional(v.number()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"sections">, SectionMutationErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"sections">, SectionMutationErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 		const [, permErr] = await requireOwnerOrManager(ctx, userId, args.restaurantId);
@@ -140,10 +130,7 @@ export const update = mutation({
 		displayOrder: v.optional(v.number()),
 		isActive: v.optional(v.boolean()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"sections">, SectionMutationErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"sections">, SectionMutationErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -193,10 +180,7 @@ export const update = mutation({
  */
 export const remove = mutation({
 	args: { sectionId: v.id(TABLE.SECTIONS) },
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, SectionMutationErrors> {
+	handler: async function (ctx, args): AsyncReturn<null, SectionMutationErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -292,9 +276,7 @@ export const restore = mutation({
 
 		const cascadedTables = await ctx.db
 			.query(TABLE.TABLES)
-			.withIndex("by_soft_delete_parent", (q) =>
-				q.eq("softDeleteParentSectionId", args.sectionId)
-			)
+			.withIndex("by_soft_delete_parent", (q) => q.eq("softDeleteParentSectionId", args.sectionId))
 			.collect();
 		for (const table of cascadedTables) {
 			if (table.deletedAt === undefined) continue;
@@ -315,10 +297,7 @@ export const assignTable = mutation({
 		tableId: v.id(TABLE.TABLES),
 		sectionId: v.id(TABLE.SECTIONS),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"tables">, SectionMutationErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"tables">, SectionMutationErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -346,9 +325,7 @@ export const assignTable = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [
-						{ field: "sectionId", message: "Cannot assign a table to a deleted section" },
-					],
+					fields: [{ field: "sectionId", message: "Cannot assign a table to a deleted section" }],
 				}).toObject(),
 			];
 		}
@@ -357,9 +334,7 @@ export const assignTable = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [
-						{ field: "sectionId", message: "Cannot assign a table to a hidden section" },
-					],
+					fields: [{ field: "sectionId", message: "Cannot assign a table to a hidden section" }],
 				}).toObject(),
 			];
 		}
@@ -508,10 +483,7 @@ export const backfillDefault = mutation({
 				.withIndex("by_shift", (q) => q.eq("shiftId", w.shiftId))
 				.collect();
 			const dup = existing.find(
-				(e) =>
-					e.sectionId === w.sectionId &&
-					e.startsAt === w.startsAt &&
-					e.endsAt === w.endsAt
+				(e) => e.sectionId === w.sectionId && e.startsAt === w.startsAt && e.endsAt === w.endsAt
 			);
 			if (dup) continue;
 
@@ -529,10 +501,7 @@ export const backfillDefault = mutation({
 			assignmentsConverted++;
 		}
 
-		return [
-			{ defaultSectionId, tablesPatched, assignmentsConverted },
-			null,
-		];
+		return [{ defaultSectionId, tablesPatched, assignmentsConverted }, null];
 	},
 });
 
@@ -548,10 +517,7 @@ export const backfillDefault = mutation({
  */
 export const removeSystemFlag = mutation({
 	args: {},
-	handler: async function (
-		ctx,
-		_args
-	): AsyncReturn<{ patched: number }, AuthErrors> {
+	handler: async function (ctx, _args): AsyncReturn<{ patched: number }, AuthErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 		const [, permErr] = await requireAdminRole(ctx, userId);

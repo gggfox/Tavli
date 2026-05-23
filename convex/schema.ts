@@ -176,12 +176,7 @@ export default defineSchema({
 		 * Missing → DEFAULT_ORDER_NUMBER_RESET_FREQUENCY (monthly).
 		 */
 		orderNumberResetFrequency: v.optional(
-			v.union(
-				v.literal("daily"),
-				v.literal("weekly"),
-				v.literal("biweekly"),
-				v.literal("monthly")
-			)
+			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
 		/** HH:MM when the restaurant opens for service. Bounds the reservation timeline. */
 		openTime: v.optional(v.string()),
@@ -256,9 +251,7 @@ export default defineSchema({
 		// `migrations/backfillPrepStation.ts` populates pre-existing rows with
 		// DEFAULT_PREP_STATION; new rows always set it via createMenuItem.
 		// Treat unset values as DEFAULT_PREP_STATION at read time.
-		prepStation: v.optional(
-			v.union(v.literal(PREP_STATION.KITCHEN), v.literal(PREP_STATION.BAR))
-		),
+		prepStation: v.optional(v.union(v.literal(PREP_STATION.KITCHEN), v.literal(PREP_STATION.BAR))),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
@@ -846,8 +839,7 @@ export default defineSchema({
 		updatedBy: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
-	})
-		.index("by_restaurant_date", ["restaurantId", "businessDate"]),
+	}).index("by_restaurant_date", ["restaurantId", "businessDate"]),
 
 	[TABLE.TIP_POOL_SHARES]: defineTable({
 		poolId: v.id(TABLE.TIP_POOLS),

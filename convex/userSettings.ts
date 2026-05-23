@@ -20,10 +20,7 @@ const orderDashboardStatusValidator = v.union(
 );
 
 /** Prep stations the dashboard can filter by — see ADR 005. */
-const orderDashboardPrepStationValidator = v.union(
-	v.literal("kitchen"),
-	v.literal("bar")
-);
+const orderDashboardPrepStationValidator = v.union(v.literal("kitchen"), v.literal("bar"));
 
 type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "cancelled";
 type OrderDashboardPrepStation = "kitchen" | "bar";

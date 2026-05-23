@@ -263,9 +263,9 @@ describe("getRestaurantExportYears", () => {
 	it("rejects an unauthenticated request", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId } = await seedRestaurant(t, { ownerId: "owner1" });
-		await expect(
-			t.query(api.exports.getRestaurantExportYears, { restaurantId })
-		).rejects.toThrow(/Unauthorized/i);
+		await expect(t.query(api.exports.getRestaurantExportYears, { restaurantId })).rejects.toThrow(
+			/Unauthorized/i
+		);
 	});
 
 	it("rejects a non-owner non-admin user", async () => {
@@ -375,7 +375,9 @@ describe("exportOrdersXlsx", () => {
 		// blank + note row. Just check the year total appears.
 		const summarySheet = wb.Sheets["Summary"];
 		const summaryRows = XLSX.utils.sheet_to_json<string[]>(summarySheet, { header: 1 });
-		const totalRow = summaryRows.find((r) => typeof r[0] === "string" && r[0].includes("2026 total"));
+		const totalRow = summaryRows.find(
+			(r) => typeof r[0] === "string" && r[0].includes("2026 total")
+		);
 		expect(totalRow).toBeDefined();
 		expect(totalRow?.[1]).toBe(2); // 2 paid orders
 		expect(totalRow?.[2]).toBe("75.00"); // 2500c + 5000c = $75.00
@@ -447,12 +449,6 @@ describe("exportMenuXlsx", () => {
 
 		expect(result.filename).toMatch(/menu.*\.xlsx$/);
 		const wb = XLSX.read(Buffer.from(result.base64, "base64"), { type: "buffer" });
-		expect(wb.SheetNames).toEqual([
-			"Menus",
-			"Categories",
-			"Items",
-			"OptionGroups",
-			"Options",
-		]);
+		expect(wb.SheetNames).toEqual(["Menus", "Categories", "Items", "OptionGroups", "Options"]);
 	});
 });

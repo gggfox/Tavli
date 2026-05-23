@@ -51,9 +51,7 @@ function paletteFor(
 	return rolePalette;
 }
 
-function absenceSuffixKey(
-	absenceState: ChipAbsenceState | undefined
-): string | null {
+function absenceSuffixKey(absenceState: ChipAbsenceState | undefined): string | null {
 	if (absenceState === "pending") return AdminStaffKeys.SCHEDULE_CHIP_PENDING_SUFFIX;
 	if (absenceState === "approved") return AdminStaffKeys.SCHEDULE_CHIP_APPROVED_SUFFIX;
 	return null;

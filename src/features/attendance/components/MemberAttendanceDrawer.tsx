@@ -18,11 +18,7 @@
  * pending requests are always actionable regardless of which window the
  * manager is browsing in the history tables.
  */
-import {
-	AppDatePicker,
-	DialogHeader,
-	Drawer,
-} from "@/global/components";
+import { AppDatePicker, DialogHeader, Drawer } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
 import { todayLocalYmd } from "@/global/utils/calendarMonth";
@@ -31,11 +27,7 @@ import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import {
-	ABSENCE_REQUEST_STATUS,
-	ABSENCE_TYPE,
-	type AbsenceType,
-} from "convex/constants";
+import { ABSENCE_REQUEST_STATUS, ABSENCE_TYPE, type AbsenceType } from "convex/constants";
 import type { TFunction } from "i18next";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -74,7 +66,8 @@ function absenceTypeLabel(type: string, t: TFunction): string {
 
 function absenceStatusLabel(status: string, t: TFunction): string {
 	if (status === ABSENCE_REQUEST_STATUS.PENDING) return t(AdminStaffKeys.ATTENDANCE_STATUS_PENDING);
-	if (status === ABSENCE_REQUEST_STATUS.APPROVED) return t(AdminStaffKeys.ATTENDANCE_STATUS_APPROVED);
+	if (status === ABSENCE_REQUEST_STATUS.APPROVED)
+		return t(AdminStaffKeys.ATTENDANCE_STATUS_APPROVED);
 	if (status === ABSENCE_REQUEST_STATUS.DENIED) return t(AdminStaffKeys.ATTENDANCE_STATUS_DENIED);
 	return status;
 }
@@ -149,9 +142,7 @@ export function MemberAttendanceDrawer({
 			.sort((a, b) => (a.date < b.date ? 1 : -1));
 	}, [allAbsences, memberId]);
 
-	const subtitle = isSelf
-		? t(AdminStaffKeys.ATTENDANCE_DRAWER_SUBTITLE_SELF)
-		: memberLabel;
+	const subtitle = isSelf ? t(AdminStaffKeys.ATTENDANCE_DRAWER_SUBTITLE_SELF) : memberLabel;
 
 	return (
 		<Drawer
@@ -250,13 +241,9 @@ function ManagerSections({
 			</div>
 
 			<section className="space-y-2">
-				<h3 className="text-sm font-semibold">
-					{t(AdminStaffKeys.ATTENDANCE_CLOCK_EVENTS)}
-				</h3>
+				<h3 className="text-sm font-semibold">{t(AdminStaffKeys.ATTENDANCE_CLOCK_EVENTS)}</h3>
 				{memberEvents.length === 0 ? (
-					<p className="text-sm text-faint-foreground">
-						{t(AdminStaffKeys.ATTENDANCE_NO_EVENTS)}
-					</p>
+					<p className="text-sm text-faint-foreground">{t(AdminStaffKeys.ATTENDANCE_NO_EVENTS)}</p>
 				) : (
 					<div className="overflow-x-auto rounded border border-border">
 						<table className="w-full text-sm">
@@ -350,9 +337,7 @@ function SelfSection({
 	return (
 		<section className="space-y-2">
 			<div className="flex flex-wrap items-center justify-between gap-3">
-				<h3 className="text-sm font-semibold">
-					{t(AdminStaffKeys.ATTENDANCE_MY_ABSENCES)}
-				</h3>
+				<h3 className="text-sm font-semibold">{t(AdminStaffKeys.ATTENDANCE_MY_ABSENCES)}</h3>
 				<button
 					type="button"
 					onClick={() => setRequestOpen(true)}
@@ -392,9 +377,7 @@ function RequestTimeOffForm({
 }: Readonly<RequestTimeOffFormProps>) {
 	const { t, i18n } = useTranslation();
 	const [formDate, setFormDate] = useState(() => todayLocalYmd());
-	const [formType, setFormType] = useState<SelfServiceAbsenceType>(
-		SELF_SERVICE_ABSENCE_TYPES[0]
-	);
+	const [formType, setFormType] = useState<SelfServiceAbsenceType>(SELF_SERVICE_ABSENCE_TYPES[0]);
 	const [formReason, setFormReason] = useState("");
 	const [formError, setFormError] = useState<string | null>(null);
 
@@ -501,10 +484,7 @@ type PendingDecision =
  * Hidden entirely when there are no pending absences so the rest of the
  * drawer's history view is the dominant UI.
  */
-function PendingApprovalBanner({
-	absences,
-	onDecided,
-}: Readonly<PendingApprovalBannerProps>) {
+function PendingApprovalBanner({ absences, onDecided }: Readonly<PendingApprovalBannerProps>) {
 	const { t } = useTranslation();
 	const pending = useMemo(
 		() =>
@@ -530,19 +510,14 @@ function PendingApprovalBanner({
 		}
 	}, [pending.length]);
 
-	const runDecision = async (
-		ids: ReadonlyArray<Id<"absences">>,
-		status: PendingDecision
-	) => {
+	const runDecision = async (ids: ReadonlyArray<Id<"absences">>, status: PendingDecision) => {
 		if (ids.length === 0) return;
 		setBusy(true);
 		setError(null);
 		try {
 			await Promise.all(
 				ids.map((absenceId) =>
-					decideAbsence
-						.mutateAsync({ absenceId, status })
-						.then((res) => unwrapResult(res))
+					decideAbsence.mutateAsync({ absenceId, status }).then((res) => unwrapResult(res))
 				)
 			);
 			setConfirming(null);
@@ -589,12 +564,8 @@ function PendingApprovalBanner({
 						key={row._id}
 						row={row}
 						busy={busy}
-						onApprove={() =>
-							void runDecision([row._id], ABSENCE_REQUEST_STATUS.APPROVED)
-						}
-						onDeny={() =>
-							void runDecision([row._id], ABSENCE_REQUEST_STATUS.DENIED)
-						}
+						onApprove={() => void runDecision([row._id], ABSENCE_REQUEST_STATUS.APPROVED)}
+						onDeny={() => void runDecision([row._id], ABSENCE_REQUEST_STATUS.DENIED)}
 					/>
 				))}
 			</ul>

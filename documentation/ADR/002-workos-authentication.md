@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-|-------|-------|
-| **Status** | Accepted |
-| **Date** | 2025-12-21 |
-| **Author(s)** | Gerardo Galan |
-| **Supersedes** | N/A |
-| **Superseded by** | N/A |
+| Field             | Value         |
+| ----------------- | ------------- |
+| **Status**        | Accepted      |
+| **Date**          | 2025-12-21    |
+| **Author(s)**     | Gerardo Galan |
+| **Supersedes**    | N/A           |
+| **Superseded by** | N/A           |
 
 ## Context
 
@@ -150,7 +150,6 @@ See also: [TDR-0001: Missing Backend Authentication](../tech-debt/0001-missing-b
 
 ## Change Log
 
-| Date | Author | Description |
-|------|--------|-------------|
+| Date       | Author        | Description     |
+| ---------- | ------------- | --------------- |
 | 2025-12-21 | Gerardo Galan | Initial version |
-

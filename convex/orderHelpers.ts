@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import type { DatabaseReader, DatabaseWriter } from "./_generated/server";
 import { NotFoundError } from "./_shared/errors";
 import {
 	DEFAULT_PREP_STATION,
@@ -83,22 +84,19 @@ export function getApplicableStations(
 	return stations;
 }
 
-export async function recalculateTotal(
-	ctx: { db: { query: any; patch: any; get: any } },
-	orderId: string
-) {
+export async function recalculateTotal(ctx: { db: DatabaseWriter }, orderId: Id<"orders">) {
 	const items = await ctx.db
 		.query(TABLE.ORDER_ITEMS)
-		.withIndex("by_order", (q: any) => q.eq("orderId", orderId))
+		.withIndex("by_order", (q) => q.eq("orderId", orderId))
 		.collect();
 
-	const total = items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+	const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
 
 	await ctx.db.patch(orderId, { totalAmount: total, updatedAt: Date.now() });
 }
 
 export async function normalizeSelectedOptions(
-	ctx: { db: { get: any } },
+	ctx: { db: DatabaseReader },
 	restaurantId: Id<"restaurants">,
 	selectedOptions: Array<{
 		optionGroupId: Id<"optionGroups">;
@@ -149,7 +147,7 @@ export async function normalizeSelectedOptions(
  * per-item / per-option output.
  */
 export async function loadOrderItemTranslations(
-	ctx: { db: { get: (id: Id<"menuItems"> | Id<"options"> | Id<"optionGroups">) => Promise<any> } },
+	ctx: { db: DatabaseReader },
 	allItems: Array<{
 		menuItemId: Id<"menuItems">;
 		selectedOptions: Array<{
@@ -172,7 +170,10 @@ export async function loadOrderItemTranslations(
 		Promise.all(optionGroupIds.map((id) => ctx.db.get(id))),
 	]);
 
-	const menuItemTranslations = new Map<string, Record<string, { name?: string; description?: string }> | undefined>();
+	const menuItemTranslations = new Map<
+		string,
+		Record<string, { name?: string; description?: string }> | undefined
+	>();
 	for (const doc of menuItemDocs) {
 		if (doc) menuItemTranslations.set(doc._id, doc.translations);
 	}
@@ -191,10 +192,10 @@ export async function loadOrderItemTranslations(
 }
 
 export async function invalidateActivePayment(
-	ctx: { db: { get: any; patch: any } },
+	ctx: { db: DatabaseWriter },
 	order: {
-		_id: string;
-		activePaymentId?: string;
+		_id: Id<"orders">;
+		activePaymentId?: Id<"payments">;
 		paymentState?: string;
 		status: string;
 	}

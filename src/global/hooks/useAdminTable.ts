@@ -49,8 +49,7 @@ export function useAdminTable<TData>({
 	// reactive. See https://github.com/TanStack/table/issues/5567.
 	"use no memo";
 
-	const isControlled =
-		controlledGlobalFilter !== undefined && onGlobalFilterChange !== undefined;
+	const isControlled = controlledGlobalFilter !== undefined && onGlobalFilterChange !== undefined;
 
 	const { isLoading: isAuthLoading, isAuthenticated } = useConvexAuth();
 	const [sorting, setSorting] = useState<SortingState>([]);

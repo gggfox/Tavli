@@ -45,9 +45,7 @@ export function useDialogPhase({
 				current === "open" || current === "preparing" ? current : "preparing"
 			);
 		} else {
-			setPhase((current) =>
-				current === "closed" || current === "closing" ? current : "closing"
-			);
+			setPhase((current) => (current === "closed" || current === "closing" ? current : "closing"));
 		}
 	}, [isOpen]);
 

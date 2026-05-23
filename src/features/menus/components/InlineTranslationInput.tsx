@@ -39,7 +39,6 @@ export function InlineTranslationInput({
 					onClick={(e) => e.stopPropagation()}
 					placeholder={placeholder}
 					className="flex-1 min-w-0 px-2 py-1 rounded text-sm bg-muted border border-border text-foreground"
-					
 				/>
 			)}
 		/>

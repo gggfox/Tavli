@@ -61,13 +61,7 @@ function SkeletonCard({
 	style,
 }: SkeletonCardProps) {
 	return (
-		<Surface
-			tone={tone}
-			rounded={rounded}
-			bordered={bordered}
-			className={className}
-			style={style}
-		>
+		<Surface tone={tone} rounded={rounded} bordered={bordered} className={className} style={style}>
 			{children}
 		</Surface>
 	);

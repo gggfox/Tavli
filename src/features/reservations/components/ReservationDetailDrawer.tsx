@@ -120,19 +120,11 @@ export function ReservationDetailDrawer({
 							textColor={palette.solidFg}
 							label={statusLabel}
 						/>
-						<h2
-							className="text-lg font-semibold text-foreground"
-							
-						>
-							{reservation.contact.name}
-						</h2>
+						<h2 className="text-lg font-semibold text-foreground">{reservation.contact.name}</h2>
 					</div>
 				}
 				subtitle={
-					<span
-						className="text-xs font-mono break-all text-faint-foreground"
-						
-					>
+					<span className="text-xs font-mono break-all text-faint-foreground">
 						#{reservation._id}
 					</span>
 				}
@@ -140,36 +132,31 @@ export function ReservationDetailDrawer({
 				closeAriaLabel={t(ReservationsKeys.ARIA_DETAIL_DRAWER_CLOSE)}
 			/>
 
-			<div
-				className="px-6 py-4 space-y-3 text-sm flex-1 overflow-y-auto text-foreground"
-				
-			>
+			<div className="px-6 py-4 space-y-3 text-sm flex-1 overflow-y-auto text-foreground">
 				<div className="flex items-center gap-2 text-faint-foreground">
-					<Clock size={14}  />
+					<Clock size={14} />
 					<span>{formatReservationTime(reservation.startsAt, i18n.language)}</span>
-					<span className="text-faint-foreground" >
+					<span className="text-faint-foreground">
 						→ {formatReservationTime(reservation.endsAt, i18n.language)}
 					</span>
 				</div>
 				<div className="flex items-center gap-2 text-faint-foreground">
-					<Users size={14}  />
-					<span>
-						{t(ReservationsKeys.DRAWER_PARTY_OF, { count: reservation.partySize })}
-					</span>
+					<Users size={14} />
+					<span>{t(ReservationsKeys.DRAWER_PARTY_OF, { count: reservation.partySize })}</span>
 				</div>
 				<div className="flex items-center gap-2 text-faint-foreground">
-					<Phone size={14}  />
+					<Phone size={14} />
 					<span>{reservation.contact.phone}</span>
 				</div>
 				{reservation.contact.email && (
 					<div className="flex items-center gap-2 text-faint-foreground">
-						<Mail size={14}  />
+						<Mail size={14} />
 						<span>{reservation.contact.email}</span>
 					</div>
 				)}
 				<div className="flex items-center gap-2 text-faint-foreground">
-					<UserRound size={14}  />
-					<span className="text-muted-foreground" >
+					<UserRound size={14} />
+					<span className="text-muted-foreground">
 						{t(ReservationsKeys.DRAWER_VIA, { source: reservation.source })}
 					</span>
 				</div>
@@ -179,13 +166,12 @@ export function ReservationDetailDrawer({
 						bordered={false}
 						rounded="md"
 						className="p-3 text-xs text-muted-foreground"
-						
 					>
 						{reservation.notes}
 					</Surface>
 				)}
 				{reservation.tableIds.length > 0 && (
-					<div className="text-xs text-muted-foreground" >
+					<div className="text-xs text-muted-foreground">
 						{t(ReservationsKeys.DRAWER_ASSIGNED_TABLES, {
 							count: reservation.tableIds.length,
 						})}
@@ -193,11 +179,8 @@ export function ReservationDetailDrawer({
 				)}
 
 				{reservation.status === "pending" && (
-					<div
-						className="pt-4 mt-2 space-y-3 border-t border-border"
-						
-					>
-						<p className="text-sm font-medium text-foreground" >
+					<div className="pt-4 mt-2 space-y-3 border-t border-border">
+						<p className="text-sm font-medium text-foreground">
 							{t(ReservationsKeys.DRAWER_ASSIGN_TABLES_PROMPT)}
 						</p>
 						<TablePickerForReservation
@@ -213,15 +196,8 @@ export function ReservationDetailDrawer({
 				)}
 
 				{showCancel && (
-					<div
-						className="pt-4 mt-2 space-y-2 border-t border-border"
-						
-					>
-						<label
-							htmlFor="cancel-reason"
-							className="text-xs text-muted-foreground"
-							
-						>
+					<div className="pt-4 mt-2 space-y-2 border-t border-border">
+						<label htmlFor="cancel-reason" className="text-xs text-muted-foreground">
 							{t(ReservationsKeys.DRAWER_CANCEL_REASON_LABEL)}
 						</label>
 						<input
@@ -230,29 +206,21 @@ export function ReservationDetailDrawer({
 							value={cancelReason}
 							onChange={(e) => setCancelReason(e.target.value)}
 							className="w-full rounded-md px-3 py-2 text-sm bg-muted border border-border text-foreground"
-							
 						/>
 					</div>
 				)}
 			</div>
 
-			{error && (
-				<div className="px-6 py-2 text-sm text-destructive" >
-					{error}
-				</div>
-			)}
+			{error && <div className="px-6 py-2 text-sm text-destructive">{error}</div>}
 
-			<div
-				className="px-6 py-4 flex flex-wrap gap-2 justify-end shrink-0 border-t border-border"
-				
-			>
+			<div className="px-6 py-4 flex flex-wrap gap-2 justify-end shrink-0 border-t border-border">
 				{reservation.status === "pending" && (
 					<button
 						type="button"
 						disabled={busy || pickedTables.length === 0}
 						onClick={() => wrap(() => onConfirm(reservation._id, pickedTables))}
 						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-						style={{opacity: pickedTables.length === 0 ? 0.6 : 1}}
+						style={{ opacity: pickedTables.length === 0 ? 0.6 : 1 }}
 					>
 						<CheckCircle2 size={14} />
 						{t(ReservationsKeys.ACTION_CONFIRM)}
@@ -286,11 +254,9 @@ export function ReservationDetailDrawer({
 							<button
 								type="button"
 								disabled={busy}
-								onClick={() =>
-									wrap(() => onCancel(reservation._id, cancelReason || undefined))
-								}
+								onClick={() => wrap(() => onCancel(reservation._id, cancelReason || undefined))}
 								className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-destructive"
-								style={{color: "white"}}
+								style={{ color: "white" }}
 							>
 								<XCircle size={14} />
 								{t(ReservationsKeys.ACTION_CONFIRM_CANCEL)}
@@ -299,7 +265,6 @@ export function ReservationDetailDrawer({
 								type="button"
 								onClick={() => setShowCancel(false)}
 								className="px-4 py-2 rounded-lg text-sm border border-border text-muted-foreground"
-								
 							>
 								{t(ReservationsKeys.ACTION_BACK)}
 							</button>
@@ -309,7 +274,6 @@ export function ReservationDetailDrawer({
 							type="button"
 							onClick={() => setShowCancel(true)}
 							className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm border border-border text-destructive"
-							
 						>
 							<XCircle size={14} />
 							{t(ReservationsKeys.ACTION_CANCEL)}

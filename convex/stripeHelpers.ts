@@ -1,11 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import {
-	ORDER_PAYMENT_STATE,
-	PAYMENT_REFUND_STATUS,
-	PAYMENT_STATUS,
-	TABLE,
-} from "./constants";
+import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
 
 const paymentStatusValidator = v.union(
 	v.literal(PAYMENT_STATUS.PENDING),
@@ -85,7 +80,9 @@ export const getPaymentByPaymentIntentIdInternal = internalQuery({
 	handler: async (ctx, args) => {
 		return await ctx.db
 			.query(TABLE.PAYMENTS)
-			.withIndex("by_payment_intent", (q) => q.eq("stripePaymentIntentId", args.stripePaymentIntentId))
+			.withIndex("by_payment_intent", (q) =>
+				q.eq("stripePaymentIntentId", args.stripePaymentIntentId)
+			)
 			.first();
 	},
 });
@@ -115,14 +112,16 @@ export const getLatestPaymentByOrderInternal = internalQuery({
 			.withIndex("by_order", (q) => q.eq("orderId", args.orderId))
 			.collect();
 
-		return payments
-			.sort((a, b) => {
-				if (a.attemptNumber !== b.attemptNumber) {
-					return b.attemptNumber - a.attemptNumber;
-				}
-				return b.createdAt - a.createdAt;
-			})
-			.at(0) ?? null;
+		return (
+			payments
+				.sort((a, b) => {
+					if (a.attemptNumber !== b.attemptNumber) {
+						return b.attemptNumber - a.attemptNumber;
+					}
+					return b.createdAt - a.createdAt;
+				})
+				.at(0) ?? null
+		);
 	},
 });
 

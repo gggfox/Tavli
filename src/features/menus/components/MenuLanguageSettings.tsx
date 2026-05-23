@@ -17,16 +17,9 @@ export function MenuLanguageSettings({
 }: Readonly<MenuLanguageSettingsProps>) {
 	const { t } = useTranslation();
 	return (
-		<div
-			className="space-y-3 p-4 rounded-lg bg-muted border border-border"
-			
-		>
+		<div className="space-y-3 p-4 rounded-lg bg-muted border border-border">
 			<div>
-				<label
-					htmlFor="menu-default-language"
-					className="block text-xs mb-1 text-faint-foreground"
-					
-				>
+				<label htmlFor="menu-default-language" className="block text-xs mb-1 text-faint-foreground">
 					{t(MenusKeys.LANG_DEFAULT_LABEL)}
 				</label>
 				<select
@@ -34,7 +27,6 @@ export function MenuLanguageSettings({
 					value={defaultLanguage}
 					onChange={(e) => onDefaultChange(e.target.value)}
 					className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-border text-foreground"
-					
 				>
 					{ALL_LANGUAGES.map((lang) => (
 						<option key={lang} value={lang}>
@@ -44,7 +36,7 @@ export function MenuLanguageSettings({
 				</select>
 			</div>
 			<div>
-				<span className="block text-xs mb-1.5 text-faint-foreground" >
+				<span className="block text-xs mb-1.5 text-faint-foreground">
 					{t(MenusKeys.LANG_ADDITIONAL_LABEL)}
 				</span>
 				<div className="flex flex-wrap gap-2">
@@ -54,10 +46,12 @@ export function MenuLanguageSettings({
 							type="button"
 							onClick={() => onToggleLanguage(lang)}
 							className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-border"
-							style={{backgroundColor: supportedLanguages.includes(lang)
+							style={{
+								backgroundColor: supportedLanguages.includes(lang)
 									? "var(--accent-primary)"
 									: "var(--bg-tertiary)",
-				color: supportedLanguages.includes(lang) ? "white" : "var(--text-secondary)"}}
+								color: supportedLanguages.includes(lang) ? "white" : "var(--text-secondary)",
+							}}
 						>
 							{LANGUAGE_LABELS[lang] ?? lang}
 						</button>

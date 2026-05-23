@@ -56,8 +56,8 @@ Once you've completed the WorkOS setup above, choose your framework below to con
 
 See the following sections for the WorkOS SDK that you're using:
 
-* [React](#react) - Use this as a starting point if your SDK is not listed
-* [Next.js](#nextjs)
+- [React](#react) - Use this as a starting point if your SDK is not listed
+- [Next.js](#nextjs)
 
 ### React[​](#react "Direct link to React")
 
@@ -67,7 +67,7 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
 
 1. Set up CORS in the WorkOS Dashboard
 
-   In your WorkOS Dashboard, go to [*Authentication* > *Sessions*](https://dashboard.workos.com/environment/authentication/sessions) > *Cross-Origin Resource Sharing (CORS)* and click on **Manage**. Add your local development domain (e.g., `http://localhost:5173` for Vite) to the list. You'll also need to add your production domain when you deploy. This enables your application to authenticate users through WorkOS AuthKit.
+   In your WorkOS Dashboard, go to [_Authentication_ > _Sessions_](https://dashboard.workos.com/environment/authentication/sessions) > _Cross-Origin Resource Sharing (CORS)_ and click on **Manage**. Add your local development domain (e.g., `http://localhost:5173` for Vite) to the list. You'll also need to add your production domain when you deploy. This enables your application to authenticate users through WorkOS AuthKit.
 
    ![Setting up CORS](/screenshots/workos-cors-setup.png)
 
@@ -97,21 +97,21 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    const clientId = process.env.WORKOS_CLIENT_ID;
 
    const authConfig = {
-     providers: [
-       {
-         type: 'customJwt',
-         issuer: `https://api.workos.com/`,
-         algorithm: 'RS256',
-     jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-     applicationID: clientId,
-       },
-       {
-         type: 'customJwt',
-         issuer: `https://api.workos.com/user_management/${clientId}`,
-         algorithm: 'RS256',
-         jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-       },
-     ],
+   	providers: [
+   		{
+   			type: "customJwt",
+   			issuer: `https://api.workos.com/`,
+   			algorithm: "RS256",
+   			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+   			applicationID: clientId,
+   		},
+   		{
+   			type: "customJwt",
+   			issuer: `https://api.workos.com/user_management/${clientId}`,
+   			algorithm: "RS256",
+   			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+   		},
+   	],
    };
 
    export default authConfig;
@@ -121,7 +121,7 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
 
    Run `npx convex dev` to automatically sync your configuration to your backend.
 
-   You'll see an error and a link to click to fill in the WORKOS\_CLIENT\_ID environment variable in your Convex deployment. Follow the link, paste in the WorkOS client ID, save, and you should see the `npx convex dev` command show "Convex functions ready."
+   You'll see an error and a link to click to fill in the WORKOS_CLIENT_ID environment variable in your Convex deployment. Follow the link, paste in the WorkOS client ID, save, and you should see the `npx convex dev` command show "Convex functions ready."
 
    ```bash
    npx convex dev
@@ -185,39 +185,43 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    TS
 
    ```js
-   import { Authenticated, Unauthenticated, useQuery } from 'convex/react';
-   import { api } from '../convex/_generated/api';
-   import { useAuth } from '@workos-inc/authkit-react';
+   import { Authenticated, Unauthenticated, useQuery } from "convex/react";
+   import { api } from "../convex/_generated/api";
+   import { useAuth } from "@workos-inc/authkit-react";
 
    export default function App() {
-     const { user, signIn, signOut } = useAuth();
+   	const { user, signIn, signOut } = useAuth();
 
-     return (
-       <div className="p-4"> <div className="flex justify-between items-center mb-4">
-           <h1>Convex + AuthKit</h1>
-           <button onClick={() => (user ? signOut() : void signIn())}>{user ? 'Sign out' : 'Sign in'}</button>
-         </div>
-         <Authenticated>
-           <Content />
-         </Authenticated>
-         <Unauthenticated>
-           <p>Please sign in to view data</p>
-         </Unauthenticated>
-       </div>
-     );
+   	return (
+   		<div className="p-4">
+   			{" "}
+   			<div className="flex justify-between items-center mb-4">
+   				<h1>Convex + AuthKit</h1>
+   				<button onClick={() => (user ? signOut() : void signIn())}>
+   					{user ? "Sign out" : "Sign in"}
+   				</button>
+   			</div>
+   			<Authenticated>
+   				<Content />
+   			</Authenticated>
+   			<Unauthenticated>
+   				<p>Please sign in to view data</p>
+   			</Unauthenticated>
+   		</div>
+   	);
    }
 
    function Content() {
-     const data = useQuery(api.myFunctions.listNumbers, { count: 10 });
+   	const data = useQuery(api.myFunctions.listNumbers, { count: 10 });
 
-     if (!data) return <p>Loading...</p>;
+   	if (!data) return <p>Loading...</p>;
 
-     return (
-       <div>
-         <p>Welcome {data.viewer}!</p>
-         <p>Numbers: {data.numbers?.join(', ') || 'None'}</p>
-       </div>
-     );
+   	return (
+   		<div>
+   			<p>Welcome {data.viewer}!</p>
+   			<p>Numbers: {data.numbers?.join(", ") || "None"}</p>
+   		</div>
+   	);
    }
    ```
 
@@ -238,20 +242,20 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    import { query } from "./_generated/server";
 
    export const listNumbers = query({
-     args: {
-       count: v.number(),
-     },
-     handler: async (ctx, args) => {
-       const numbers = await ctx.db
-         .query("numbers")
-         // Ordered by _creationTime, return most recent
-         .order("desc")
-         .take(args.count);
-       return {
-         viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
-         numbers: numbers.reverse().map((number) => number.value),
-       };
-     },
+   	args: {
+   		count: v.number(),
+   	},
+   	handler: async (ctx, args) => {
+   		const numbers = await ctx.db
+   			.query("numbers")
+   			// Ordered by _creationTime, return most recent
+   			.order("desc")
+   			.take(args.count);
+   		return {
+   			viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
+   			numbers: numbers.reverse().map((number) => number.value),
+   		};
+   	},
    });
    ```
 
@@ -294,21 +298,21 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    const clientId = process.env.WORKOS_CLIENT_ID;
 
    const authConfig = {
-     providers: [
-       {
-         type: 'customJwt',
-         issuer: `https://api.workos.com/`,
-         algorithm: 'RS256',
-         applicationID: clientId,
-         jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-       },
-       {
-         type: 'customJwt',
-         issuer: `https://api.workos.com/user_management/${clientId}`,
-         algorithm: 'RS256',
-         jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-       },
-     ],
+   	providers: [
+   		{
+   			type: "customJwt",
+   			issuer: `https://api.workos.com/`,
+   			algorithm: "RS256",
+   			applicationID: clientId,
+   			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+   		},
+   		{
+   			type: "customJwt",
+   			issuer: `https://api.workos.com/user_management/${clientId}`,
+   			algorithm: "RS256",
+   			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+   		},
+   	],
    };
 
    export default authConfig;
@@ -318,7 +322,7 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
 
    Run `npx convex dev` to automatically sync your configuration to your backend.
 
-   You'll see an error and a link to click to fill in the WORKOS\_CLIENT\_ID environment variable in your Convex deployment. Follow the link, paste in the WorkOS client ID, save, and you should see the `npx convex dev` command show "Convex functions ready."
+   You'll see an error and a link to click to fill in the WORKOS_CLIENT_ID environment variable in your Convex deployment. Follow the link, paste in the WorkOS client ID, save, and you should see the `npx convex dev` command show "Convex functions ready."
 
    ```bash
    npx convex dev
@@ -341,22 +345,22 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    In your `middleware.ts` file, export the `authkitMiddleware()` helper:
 
    ```js
-   import { authkitMiddleware } from '@workos-inc/authkit-nextjs';
+   import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 
    export default authkitMiddleware({
-     middlewareAuth: {
-       enabled: true,
-       unauthenticatedPaths: ['/', '/sign-in', '/sign-up'],
-     },
+   	middlewareAuth: {
+   		enabled: true,
+   		unauthenticatedPaths: ["/", "/sign-in", "/sign-up"],
+   	},
    });
 
    export const config = {
-     matcher: [
-       // Skip Next.js internals and all static files, unless found in search params
-       '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-       // Always run for API routes
-       '/(api|trpc)(.*)',
-     ],
+   	matcher: [
+   		// Skip Next.js internals and all static files, unless found in search params
+   		"/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+   		// Always run for API routes
+   		"/(api|trpc)(.*)",
+   	],
    };
    ```
 
@@ -373,7 +377,7 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    TS
 
    ```js
-   import { handleAuth } from '@workos-inc/authkit-nextjs';
+   import { handleAuth } from "@workos-inc/authkit-nextjs";
 
    export const GET = handleAuth();
    ```
@@ -385,12 +389,12 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    TS
 
    ```js
-   import { redirect } from 'next/navigation';
-   import { getSignInUrl } from '@workos-inc/authkit-nextjs';
+   import { redirect } from "next/navigation";
+   import { getSignInUrl } from "@workos-inc/authkit-nextjs";
 
    export async function GET() {
-     const authorizationUrl = await getSignInUrl();
-     return redirect(authorizationUrl);
+   	const authorizationUrl = await getSignInUrl();
+   	return redirect(authorizationUrl);
    }
    ```
 
@@ -403,12 +407,12 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    TS
 
    ```js
-   import { redirect } from 'next/navigation';
-   import { getSignUpUrl } from '@workos-inc/authkit-nextjs';
+   import { redirect } from "next/navigation";
+   import { getSignUpUrl } from "@workos-inc/authkit-nextjs";
 
    export async function GET() {
-     const authorizationUrl = await getSignUpUrl();
-     return redirect(authorizationUrl);
+   	const authorizationUrl = await getSignUpUrl();
+   	return redirect(authorizationUrl);
    }
    ```
 
@@ -419,11 +423,10 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
    **Create the Provider Component**
 
    This single component handles:
-
-   * WorkOS authentication setup
-   * Convex client initialization
-   * Token management between WorkOS and Convex
-   * Loading states and error handling
+   - WorkOS authentication setup
+   - Convex client initialization
+   - Token management between WorkOS and Convex
+   - Loading states and error handling
 
    Create `components/ConvexClientProvider.tsx`:
 
@@ -545,48 +548,48 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
     import Link from "next/link";
 
     export default function Home() {
-      const { user, signOut } = useAuth();
+    	const { user, signOut } = useAuth();
 
-      return (
-        <div className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h1>Convex + AuthKit</h1>
-            <div className="flex gap-2">
-              {user ? (
-                <button onClick={() => signOut()}>Sign out</button>
-              ) : (
-                <>
-                  <Link href="/sign-in">
-                    <button>Sign in</button>
-                  </Link>
-                  <Link href="/sign-up">
-                    <button>Sign up</button>
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-          <Authenticated>
-            <Content />
-          </Authenticated>
-          <Unauthenticated>
-            <p>Please sign in to view data</p>
-          </Unauthenticated>
-        </div>
-      );
+    	return (
+    		<div className="p-4">
+    			<div className="flex justify-between items-center mb-4">
+    				<h1>Convex + AuthKit</h1>
+    				<div className="flex gap-2">
+    					{user ? (
+    						<button onClick={() => signOut()}>Sign out</button>
+    					) : (
+    						<>
+    							<Link href="/sign-in">
+    								<button>Sign in</button>
+    							</Link>
+    							<Link href="/sign-up">
+    								<button>Sign up</button>
+    							</Link>
+    						</>
+    					)}
+    				</div>
+    			</div>
+    			<Authenticated>
+    				<Content />
+    			</Authenticated>
+    			<Unauthenticated>
+    				<p>Please sign in to view data</p>
+    			</Unauthenticated>
+    		</div>
+    	);
     }
 
     function Content() {
-      const data = useQuery(api.myFunctions.listNumbers, { count: 10 });
+    	const data = useQuery(api.myFunctions.listNumbers, { count: 10 });
 
-      if (!data) return <p>Loading...</p>;
+    	if (!data) return <p>Loading...</p>;
 
-      return (
-        <div>
-          <p>Welcome {data.viewer}!</p>
-          <p>Numbers: {data.numbers?.join(', ') || 'None'}</p>
-        </div>
-      );
+    	return (
+    		<div>
+    			<p>Welcome {data.viewer}!</p>
+    			<p>Numbers: {data.numbers?.join(", ") || "None"}</p>
+    		</div>
+    	);
     }
     ```
 
@@ -607,20 +610,20 @@ This guide assumes you have [AuthKit set up](#configuring-an-existing-workos-acc
     import { query } from "./_generated/server";
 
     export const listNumbers = query({
-      args: {
-        count: v.number(),
-      },
-      handler: async (ctx, args) => {
-        const numbers = await ctx.db
-          .query("numbers")
-          // Ordered by _creationTime, return most recent
-          .order("desc")
-          .take(args.count);
-        return {
-          viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
-          numbers: numbers.reverse().map((number) => number.value),
-        };
-      },
+    	args: {
+    		count: v.number(),
+    	},
+    	handler: async (ctx, args) => {
+    		const numbers = await ctx.db
+    			.query("numbers")
+    			// Ordered by _creationTime, return most recent
+    			.order("desc")
+    			.take(args.count);
+    		return {
+    			viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
+    			numbers: numbers.reverse().map((number) => number.value),
+    		};
+    	},
     });
     ```
 
@@ -644,9 +647,9 @@ TS
 
 ```js
 export default function Badge() {
-  const { user } = useAuth();
+	const { user } = useAuth();
 
-  return <span>Logged in as {user.firstName}</span>;
+	return <span>Logged in as {user.firstName}</span>;
 }
 ```
 
@@ -676,21 +679,21 @@ TS
 const clientId = process.env.WORKOS_CLIENT_ID;
 
 export default {
-  providers: [
-    {
-      type: "customJwt",
-      issuer: `https://api.workos.com/`,
-      algorithm: "RS256",
-      applicationID: clientId,
-      jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-    },
-    {
-      type: "customJwt",
-      issuer: `https://api.workos.com/user_management/${clientId}`,
-      algorithm: "RS256",
-      jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-    },
-  ],
+	providers: [
+		{
+			type: "customJwt",
+			issuer: `https://api.workos.com/`,
+			algorithm: "RS256",
+			applicationID: clientId,
+			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+		},
+		{
+			type: "customJwt",
+			issuer: `https://api.workos.com/user_management/${clientId}`,
+			algorithm: "RS256",
+			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+		},
+	],
 };
 ```
 
@@ -716,7 +719,7 @@ WorkOS API Key for development follows the format `sk_test_...`. WorkOS Client I
 
 .env.local
 
-``` bash
+```bash
 WORKOS_CLIENT_ID="client_01XXXXXXXXXXXXXXXXXXXXXXXX"
 WORKOS_API_KEY="sk_test_..."
 WORKOS_COOKIE_PASSWORD="your_secure_password_here_must_be_at_least_32_characters_long"

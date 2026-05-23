@@ -57,18 +57,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 				<div className="min-h-[400px] flex items-center justify-center p-8">
 					<div
 						className="max-w-md w-full backdrop-blur-sm rounded-xl p-8 text-center bg-card border border-border"
-						style={{boxShadow: "var(--shadow-lg)"}}
+						style={{ boxShadow: "var(--shadow-lg)" }}
 					>
-						<div
-							className="w-16 h-16 mx-auto mb-6 rounded-full flex items-center justify-center bg-destructive-subtle"
-							
-						>
+						<div className="w-16 h-16 mx-auto mb-6 rounded-full flex items-center justify-center bg-destructive-subtle">
 							<svg
 								className="w-8 h-8 text-destructive"
 								fill="none"
 								viewBox="0 0 24 24"
 								stroke="currentColor"
-								
 								aria-hidden="true"
 							>
 								<path
@@ -80,11 +76,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 							</svg>
 						</div>
 
-						<h2 className="text-xl font-semibold mb-2 text-foreground" >
+						<h2 className="text-xl font-semibold mb-2 text-foreground">
 							{isAuthError ? "Session Expired" : "Something went wrong"}
 						</h2>
 
-						<p className="mb-6 text-muted-foreground" >
+						<p className="mb-6 text-muted-foreground">
 							{isAuthError
 								? "Your session has expired. Please sign in again to continue."
 								: this.state.error?.message || "An unexpected error occurred. Please try again."}

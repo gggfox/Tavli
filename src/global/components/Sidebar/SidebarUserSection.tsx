@@ -29,7 +29,7 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 	const openSettings = () => setIsSettingsOpen(true);
 
 	return (
-		<div className="p-2 border-t border-border" >
+		<div className="p-2 border-t border-border">
 			<button
 				type="button"
 				onClick={openSettings}
@@ -58,9 +58,7 @@ export function SidebarUserSection({ isExpanded }: Readonly<SidebarUserSectionPr
 						<span className="block text-sm font-medium truncate text-foreground">
 							{user.firstName} {user.lastName}
 						</span>
-						<span className="block text-xs truncate text-faint-foreground">
-							{email}
-						</span>
+						<span className="block text-xs truncate text-faint-foreground">{email}</span>
 					</span>
 				)}
 				{isExpanded && (

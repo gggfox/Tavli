@@ -63,9 +63,8 @@ export function ItemEditForm({
 				form.handleSubmit();
 			}}
 			className="px-3 py-3 rounded-b-lg space-y-2 bg-muted border-l border-border border-r border-border border-b border-border"
-			
 		>
-			<span className="text-xs font-medium text-faint-foreground" >
+			<span className="text-xs font-medium text-faint-foreground">
 				{t(MenusKeys.FORM_EDIT_HEADER)}
 			</span>
 			<div className="flex gap-2">
@@ -80,7 +79,6 @@ export function ItemEditForm({
 							placeholder={t(MenusKeys.FORM_ITEM_NAME_PLACEHOLDER)}
 							required
 							className="flex-1 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
-							
 						/>
 					)}
 				/>
@@ -97,7 +95,6 @@ export function ItemEditForm({
 							step="0.01"
 							min="0"
 							className="w-24 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
-							
 						/>
 					)}
 				/>
@@ -112,7 +109,6 @@ export function ItemEditForm({
 						onBlur={field.handleBlur}
 						placeholder={t(MenusKeys.FORM_ITEM_DESCRIPTION_PLACEHOLDER)}
 						className="w-full px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
-						
 					/>
 				)}
 			/>

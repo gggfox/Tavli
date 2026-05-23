@@ -39,7 +39,6 @@ export function OrganizationsTable() {
 					<button
 						onClick={() => setModal({ kind: "create" })}
 						className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-primary text-primary-foreground"
-						
 					>
 						<Plus size={16} />
 						New Organization
@@ -50,7 +49,6 @@ export function OrganizationsTable() {
 						<button
 							onClick={() => setModal({ kind: "edit", organization: org })}
 							className="p-1.5 rounded-md transition-colors hover:opacity-80 text-muted-foreground"
-							
 							title="Edit"
 						>
 							<Pencil size={15} />
@@ -58,7 +56,6 @@ export function OrganizationsTable() {
 						<button
 							onClick={() => setModal({ kind: "delete", organization: org })}
 							className="p-1.5 rounded-md transition-colors hover:opacity-80 text-destructive"
-							
 							title="Delete"
 						>
 							<Trash2 size={15} />

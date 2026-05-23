@@ -43,8 +43,7 @@ export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 export type ButtonSize = "sm" | "md" | "lg";
 export type ButtonState = "idle" | "loading" | "success" | "error";
 
-export interface ButtonProps
-	extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> {
+export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> {
 	readonly variant?: ButtonVariant;
 	readonly size?: ButtonSize;
 	/**
@@ -69,9 +68,7 @@ export interface ButtonProps
 	 * Synchronous handlers (or those returning `undefined`) keep the
 	 * button in its current state.
 	 */
-	readonly onClick?: (
-		event: MouseEvent<HTMLButtonElement>
-	) => void | Promise<unknown>;
+	readonly onClick?: (event: MouseEvent<HTMLButtonElement>) => void | Promise<unknown>;
 }
 
 const DEFAULT_SUCCESS_MS = 1500;

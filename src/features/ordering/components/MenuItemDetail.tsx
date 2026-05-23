@@ -78,90 +78,80 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 	return (
 		<div className="flex flex-col h-full">
 			<div className="flex-1 overflow-y-auto p-4 space-y-6">
-				<button
-					onClick={onBack}
-					className="flex items-center gap-1 text-sm text-primary"
-					
-				>
+				<button onClick={onBack} className="flex items-center gap-1 text-sm text-primary">
 					<ArrowLeft size={16} /> {t(OrderingKeys.BACK_TO_MENU)}
 				</button>
 
 				<div>
-					<h2 className="text-xl font-bold text-foreground" >
-						{menuItem.name}
-					</h2>
+					<h2 className="text-xl font-bold text-foreground">{menuItem.name}</h2>
 					{menuItem.description && (
-						<p className="text-sm mt-1 text-muted-foreground" >
-							{menuItem.description}
-						</p>
+						<p className="text-sm mt-1 text-muted-foreground">{menuItem.description}</p>
 					)}
-					<p className="text-lg font-semibold mt-2 text-foreground" >
+					<p className="text-lg font-semibold mt-2 text-foreground">
 						${formatCents(menuItem.basePrice)}
 					</p>
 				</div>
 
 				{/* Option groups */}
-				{(optionGroups ?? []).map((group: any) => {
-					const groupSelections = selectedOptions.get(group._id) ?? [];
-					return (
-						<div key={group._id}>
-							<div className="flex items-center gap-2 mb-2">
-								<h3 className="text-sm font-semibold text-foreground" >
-									{group.name}
-								</h3>
-								{group.isRequired && (
-									<StatusBadge
-										bgColor="var(--accent-warning-light)"
-										textColor="var(--accent-warning)"
-										label={t(OrderingKeys.ITEM_REQUIRED)}
-									/>
-								)}
+				{(optionGroups ?? [])
+					.filter((g): g is NonNullable<typeof g> => g != null)
+					.map((group) => {
+						const groupSelections = selectedOptions.get(group._id) ?? [];
+						return (
+							<div key={group._id}>
+								<div className="flex items-center gap-2 mb-2">
+									<h3 className="text-sm font-semibold text-foreground">{group.name}</h3>
+									{group.isRequired && (
+										<StatusBadge
+											bgColor="var(--accent-warning-light)"
+											textColor="var(--accent-warning)"
+											label={t(OrderingKeys.ITEM_REQUIRED)}
+										/>
+									)}
+								</div>
+								<div className="space-y-1">
+									{(group.options ?? [])
+										.filter((o) => o.isAvailable)
+										.map((opt) => {
+											const isSelected = groupSelections.some((s) => s.optionId === opt._id);
+											return (
+												<button
+													key={opt._id}
+													onClick={() =>
+														handleOptionToggle(
+															group._id,
+															group.name,
+															opt._id,
+															opt.name,
+															opt.priceModifier,
+															group.selectionType
+														)
+													}
+													className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors text-foreground"
+													style={{
+														backgroundColor: isSelected
+															? "var(--bg-active)"
+															: "var(--bg-secondary)",
+														border: `1px solid ${isSelected ? "var(--btn-primary-bg)" : "var(--border-default)"}`,
+													}}
+												>
+													<span>{opt.name}</span>
+													{opt.priceModifier > 0 && (
+														<span className="text-faint-foreground">
+															+${formatCents(opt.priceModifier)}
+														</span>
+													)}
+												</button>
+											);
+										})}
+								</div>
 							</div>
-							<div className="space-y-1">
-								{(group.options ?? [])
-									.filter((o: any) => o.isAvailable)
-									.map((opt: any) => {
-										const isSelected = groupSelections.some((s) => s.optionId === opt._id);
-										return (
-											<button
-												key={opt._id}
-												onClick={() =>
-													handleOptionToggle(
-														group._id,
-														group.name,
-														opt._id,
-														opt.name,
-														opt.priceModifier,
-														group.selectionType
-													)
-												}
-												className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors text-foreground"
-												style={{backgroundColor: isSelected
-														? "var(--bg-active)"
-														: "var(--bg-secondary)",
-				border: `1px solid ${isSelected ? "var(--btn-primary-bg)" : "var(--border-default)"}`}}
-											>
-												<span>{opt.name}</span>
-												{opt.priceModifier > 0 && (
-													<span className="text-faint-foreground" >
-														+${formatCents(opt.priceModifier)}
-													</span>
-												)}
-											</button>
-										);
-									})}
-							</div>
-						</div>
-					);
-				})}
+						);
+					})}
 
 				{/* Special instructions */}
 				<div>
-					<label
-						htmlFor="special-instructions"
-						className="text-sm font-medium text-foreground"
-						
-					>
+					<label htmlFor="special-instructions" className="text-sm font-medium text-foreground">
 						{t(OrderingKeys.ITEM_SPECIAL_INSTRUCTIONS_LABEL)}
 					</label>
 					<textarea
@@ -171,34 +161,23 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 						placeholder={t(OrderingKeys.ITEM_SPECIAL_INSTRUCTIONS_PLACEHOLDER)}
 						rows={2}
 						className="w-full mt-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-						
 					/>
 				</div>
 			</div>
 
 			{/* Bottom bar */}
-			<div
-				className="px-4 pb-4 pt-2 space-y-3 border-t border-border"
-				
-			>
+			<div className="px-4 pb-4 pt-2 space-y-3 border-t border-border">
 				<div className="flex items-center justify-center gap-4">
 					<button
 						onClick={() => setQuantity(Math.max(1, quantity - 1))}
 						className="p-2 rounded-full bg-muted border border-border"
-						
 					>
 						<Minus size={16} />
 					</button>
-					<span
-						className="text-lg font-medium w-8 text-center text-foreground"
-						
-					>
-						{quantity}
-					</span>
+					<span className="text-lg font-medium w-8 text-center text-foreground">{quantity}</span>
 					<button
 						onClick={() => setQuantity(quantity + 1)}
 						className="p-2 rounded-full bg-muted border border-border"
-						
 					>
 						<Plus size={16} />
 					</button>

@@ -18,9 +18,7 @@ export const TIPS_TOTAL_TYPE = "tipsTotal";
 const optionsSchema = z.object({});
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.tipsTotal.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.tipsTotal.compute>>;
 
 function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	const { t, i18n } = useTranslation();
@@ -88,9 +86,7 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	return (
 		<div className="h-full flex flex-col justify-between gap-2">
 			<div className="flex items-end gap-3">
-				<span className="text-3xl font-semibold text-foreground tabular-nums">
-					{formatted}
-				</span>
+				<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
 			</div>
 			{sparkData.length > 0 && (
 				<SparkAreaChart
@@ -106,18 +102,17 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	);
 }
 
-export const tipsTotalDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: TIPS_TOTAL_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_TIPS_TOTAL_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_TIPS_TOTAL_DESCRIPTION,
-		icon: Coins,
-		requiredRole: "manager",
-		portfolioCapable: false,
-		supportsComparison: true,
-		maxRangeDays: 366,
-		defaultGrid: { w: 3, h: 4, minW: 2, minH: 3 },
-		optionsSchema,
-		defaultOptions: {},
-		Component: TipsTotalWidget,
-	});
+export const tipsTotalDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: TIPS_TOTAL_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_TIPS_TOTAL_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_TIPS_TOTAL_DESCRIPTION,
+	icon: Coins,
+	requiredRole: "manager",
+	portfolioCapable: false,
+	supportsComparison: true,
+	maxRangeDays: 366,
+	defaultGrid: { w: 3, h: 4, minW: 2, minH: 3 },
+	optionsSchema,
+	defaultOptions: {},
+	Component: TipsTotalWidget,
+});

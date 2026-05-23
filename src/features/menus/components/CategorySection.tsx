@@ -69,7 +69,7 @@ export function CategorySection({
 	);
 
 	useEffect(() => {
-		const valid = new Set(rowItems.map((i) => i._id));
+		const valid = new Set(itemIdsFingerprint.split(",").filter(Boolean));
 		setSelectedIds((prev) => {
 			let changed = false;
 			const next = new Set<Id<"menuItems">>();
@@ -134,9 +134,7 @@ export function CategorySection({
 
 	const headerContent = isTranslating ? (
 		<div className="flex items-center gap-2 flex-1 min-w-0">
-			<span className="text-sm shrink-0 text-faint-foreground" >
-				{category.name} &rarr;
-			</span>
+			<span className="text-sm shrink-0 text-faint-foreground">{category.name} &rarr;</span>
 			<InlineEditInput
 				value={category.translations?.[selectedLang]?.name ?? ""}
 				placeholder={t(MenusKeys.CATEGORY_TRANSLATION_PLACEHOLDER, { name: category.name })}
@@ -149,15 +147,13 @@ export function CategorySection({
 				}
 			/>
 			{!category.translations?.[selectedLang]?.name && (
-				<AlertTriangle size={14} className="text-warning"  />
+				<AlertTriangle size={14} className="text-warning" />
 			)}
 		</div>
 	) : (
 		<>
-			<span className="text-sm font-medium text-foreground" >
-				{category.name}
-			</span>
-			<span className="text-xs text-faint-foreground" >
+			<span className="text-sm font-medium text-foreground">{category.name}</span>
+			<span className="text-xs text-faint-foreground">
 				{t(MenusKeys.CATEGORY_ITEMS_COUNT, { count: sorted.length })}
 			</span>
 		</>
@@ -178,7 +174,7 @@ export function CategorySection({
 						className="p-1 rounded hover:bg-(--bg-hover) text-destructive"
 						title={t(MenusKeys.CATEGORY_DELETE_TITLE)}
 					>
-						<Trash2 size={14}  />
+						<Trash2 size={14} />
 					</button>
 				) : undefined
 			}
@@ -194,9 +190,7 @@ export function CategorySection({
 								onChange={handleToggleSelectAll}
 								className="h-4 w-4 rounded border-border accent-[var(--btn-primary-bg)]"
 							/>
-							{allSelected
-								? t(MenusKeys.CATEGORY_DESELECT_ALL)
-								: t(MenusKeys.CATEGORY_SELECT_ALL)}
+							{allSelected ? t(MenusKeys.CATEGORY_DESELECT_ALL) : t(MenusKeys.CATEGORY_SELECT_ALL)}
 						</label>
 						{selectedIds.size > 0 ? (
 							<>
@@ -280,7 +274,6 @@ export function CategorySection({
 					<button
 						onClick={() => setShowAddForm(true)}
 						className="flex items-center gap-1 text-sm py-2 hover:underline text-primary"
-						
 					>
 						<Plus size={14} /> {t(MenusKeys.CATEGORY_ADD_ITEM)}
 					</button>

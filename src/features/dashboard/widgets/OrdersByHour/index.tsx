@@ -18,9 +18,7 @@ export const ORDERS_BY_HOUR_TYPE = "ordersByHour";
 const optionsSchema = z.object({});
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.ordersByHour.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.ordersByHour.compute>>;
 
 function OrdersByHourWidget({ context }: WidgetProps<Options>) {
 	const { t } = useTranslation();
@@ -41,17 +39,14 @@ function OrdersByHourWidget({ context }: WidgetProps<Options>) {
 		() =>
 			(query.data ?? []).map((row) => ({
 				hour: `${row.hour.toString().padStart(2, "0")}h`,
-				[t(DashboardKeys.WIDGET_ORDERS_BY_HOUR_AXIS)]: Number(
-					row.averagePerDay.toFixed(2)
-				),
+				[t(DashboardKeys.WIDGET_ORDERS_BY_HOUR_AXIS)]: Number(row.averagePerDay.toFixed(2)),
 			})),
 		[query.data, t]
 	);
 
 	if (query.isPending && !query.data) return <WidgetLoading />;
 	if (query.error) return <WidgetError error={query.error as Error} />;
-	if (!query.data || query.data.every((row) => row.total === 0))
-		return <WidgetEmpty />;
+	if (!query.data || query.data.every((row) => row.total === 0)) return <WidgetEmpty />;
 
 	return (
 		<BarChart
@@ -67,18 +62,17 @@ function OrdersByHourWidget({ context }: WidgetProps<Options>) {
 	);
 }
 
-export const ordersByHourDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: ORDERS_BY_HOUR_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_ORDERS_BY_HOUR_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_ORDERS_BY_HOUR_DESCRIPTION,
-		icon: Clock,
-		requiredRole: "employee",
-		portfolioCapable: false,
-		supportsComparison: false,
-		maxRangeDays: 92,
-		defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
-		optionsSchema,
-		defaultOptions: {},
-		Component: OrdersByHourWidget,
-	});
+export const ordersByHourDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: ORDERS_BY_HOUR_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_ORDERS_BY_HOUR_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_ORDERS_BY_HOUR_DESCRIPTION,
+	icon: Clock,
+	requiredRole: "employee",
+	portfolioCapable: false,
+	supportsComparison: false,
+	maxRangeDays: 92,
+	defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
+	optionsSchema,
+	defaultOptions: {},
+	Component: OrdersByHourWidget,
+});

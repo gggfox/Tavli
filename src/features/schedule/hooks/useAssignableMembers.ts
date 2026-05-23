@@ -21,11 +21,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import {
-	RESTAURANT_MEMBER_ROLE,
-	type RestaurantMemberRole,
-	USER_ROLES,
-} from "convex/constants";
+import { RESTAURANT_MEMBER_ROLE, type RestaurantMemberRole, USER_ROLES } from "convex/constants";
 import { useConvexAuth } from "convex/react";
 import { useMemo } from "react";
 import type { AssignableMember } from "../types";
@@ -50,10 +46,20 @@ interface DirectoryMemberRow {
 
 type DirectoryRow =
 	| DirectoryMemberRow
-	| { rowType: "restaurantOwner" | "orgOwner"; userId: string; role: string; isActive: boolean; email: string | null; displayName: string; photoUrl: string | null }
+	| {
+			rowType: "restaurantOwner" | "orgOwner";
+			userId: string;
+			role: string;
+			isActive: boolean;
+			email: string | null;
+			displayName: string;
+			photoUrl: string | null;
+	  }
 	| { rowType: "invite"; _id: Id<"invitations">; email: string; role: string; displayName: string };
 
-export function useAssignableMembers(restaurantId: Id<"restaurants"> | undefined): UseAssignableMembersResult {
+export function useAssignableMembers(
+	restaurantId: Id<"restaurants"> | undefined
+): UseAssignableMembersResult {
 	const { isAuthenticated } = useConvexAuth();
 	const { userId } = useAuth();
 	const { roles, organizationId: userOrgId } = useCurrentUserRoles();
@@ -94,9 +100,7 @@ export function useAssignableMembers(restaurantId: Id<"restaurants"> | undefined
 		if (!restaurantId || !myMemberships) return false;
 		return myMemberships.some(
 			(m) =>
-				m.isActive &&
-				m.restaurantId === restaurantId &&
-				m.role === RESTAURANT_MEMBER_ROLE.MANAGER
+				m.isActive && m.restaurantId === restaurantId && m.role === RESTAURANT_MEMBER_ROLE.MANAGER
 		);
 	}, [myMemberships, restaurantId]);
 
@@ -105,8 +109,7 @@ export function useAssignableMembers(restaurantId: Id<"restaurants"> | undefined
 		return restaurant.ownerId === userId;
 	}, [restaurant, userId]);
 
-	const canAssignAny =
-		isAdmin || isOrgOwner || isRestaurantDocumentOwner || isRestaurantManager;
+	const canAssignAny = isAdmin || isOrgOwner || isRestaurantDocumentOwner || isRestaurantManager;
 
 	const canTargetManagers = isAdmin || isOrgOwner || isRestaurantDocumentOwner;
 

@@ -28,8 +28,9 @@ export function MenuImportDialog({
 	);
 	const [newMenuName, setNewMenuName] = useState("");
 
-	const { step, extraction, error, result, uploadAndExtract, confirmImport, reset } =
-		useMenuImport({ restaurantId });
+	const { step, extraction, error, result, uploadAndExtract, confirmImport, reset } = useMenuImport(
+		{ restaurantId }
+	);
 
 	const handleClose = useCallback(() => {
 		reset();
@@ -77,7 +78,12 @@ export function MenuImportDialog({
 	const totalItems = extraction?.categories.reduce((sum, cat) => sum + cat.items.length, 0) ?? 0;
 
 	return (
-		<Modal isOpen={isOpen} onClose={handleClose} ariaLabel={t(MenusKeys.IMPORT_MODAL_ARIA)} size="3xl">
+		<Modal
+			isOpen={isOpen}
+			onClose={handleClose}
+			ariaLabel={t(MenusKeys.IMPORT_MODAL_ARIA)}
+			size="3xl"
+		>
 			<div className="p-6 bg-surface rounded-xl space-y-6">
 				<h2 className="text-lg font-semibold text-foreground">{t(MenusKeys.IMPORT_MODAL_TITLE)}</h2>
 
@@ -91,9 +97,7 @@ export function MenuImportDialog({
 							<select
 								className="w-full px-3 py-2 rounded-md border border-border bg-input text-foreground text-sm"
 								value={targetMenuId}
-								onChange={(e) =>
-									setTargetMenuId(e.target.value as Id<"menus"> | "__new__")
-								}
+								onChange={(e) => setTargetMenuId(e.target.value as Id<"menus"> | "__new__")}
 							>
 								{menus.map((menu) => (
 									<option key={menu._id} value={menu._id}>
@@ -138,9 +142,7 @@ export function MenuImportDialog({
 						</button>
 
 						{error && (
-							<p className="text-sm text-error">
-								{t(MenusKeys.IMPORT_ERROR, { message: error })}
-							</p>
+							<p className="text-sm text-error">{t(MenusKeys.IMPORT_ERROR, { message: error })}</p>
 						)}
 					</>
 				)}
@@ -185,10 +187,7 @@ export function MenuImportDialog({
 								<tbody>
 									{extraction.categories.map((cat, ci) =>
 										cat.items.map((item, ii) => (
-											<tr
-												key={`${ci}-${ii}`}
-												className="border-t border-border hover:bg-hover"
-											>
+											<tr key={`${ci}-${ii}`} className="border-t border-border hover:bg-hover">
 												<td className="px-3 py-2 text-muted-foreground">
 													{ii === 0 ? cat.name : ""}
 												</td>

@@ -14,13 +14,13 @@ The `getAuthenticatedUser` helper in `convex/tasks.ts` throws an `Error("Not aut
 
 ## Current Implementation Status
 
-| Step | Description | Status | Notes |
-| ------ | ------------- | -------- | ------- |
-| 1 | Add ErrorBoundary component | ✅ **Done** | `src/components/ErrorBoundary/` |
-| 2 | Wrap app in ErrorBoundary | ✅ **Done** | Added to `__root.tsx` |
-| 3 | Add error state to useTasks | ✅ **Done** | Using Effect's Exit for typed errors |
-| 4 | Display errors inline in components | ✅ **Done** | `ErrorAlert` component in `AuthenticatedTasks` |
-| 5 | Auth guard for task routes | ✅ **Done** | Implemented in `TasksSection.tsx` |
+| Step | Description                         | Status      | Notes                                          |
+| ---- | ----------------------------------- | ----------- | ---------------------------------------------- |
+| 1    | Add ErrorBoundary component         | ✅ **Done** | `src/components/ErrorBoundary/`                |
+| 2    | Wrap app in ErrorBoundary           | ✅ **Done** | Added to `__root.tsx`                          |
+| 3    | Add error state to useTasks         | ✅ **Done** | Using Effect's Exit for typed errors           |
+| 4    | Display errors inline in components | ✅ **Done** | `ErrorAlert` component in `AuthenticatedTasks` |
+| 5    | Auth guard for task routes          | ✅ **Done** | Implemented in `TasksSection.tsx`              |
 
 ### What's Already Implemented
 
@@ -28,21 +28,21 @@ The `getAuthenticatedUser` helper in `convex/tasks.ts` throws an `Error("Not aut
 
 ```tsx
 function AuthAwareTasksSection() {
-  const { isLoading, isAuthenticated } = useConvexAuth()
-  
-  if (isLoading) {
-    return <TasksLoadingFallback />
-  }
-  
-  if (!isAuthenticated) {
-    return <WelcomeSection />
-  }
-  
-  return (
-    <Suspense fallback={<TasksLoadingFallback />}>
-      <AuthenticatedTasks />
-    </Suspense>
-  )
+	const { isLoading, isAuthenticated } = useConvexAuth();
+
+	if (isLoading) {
+		return <TasksLoadingFallback />;
+	}
+
+	if (!isAuthenticated) {
+		return <WelcomeSection />;
+	}
+
+	return (
+		<Suspense fallback={<TasksLoadingFallback />}>
+			<AuthenticatedTasks />
+		</Suspense>
+	);
 }
 ```
 
@@ -58,13 +58,13 @@ The following risks have been mitigated by the implemented error handling:
 
 ## Affected Files
 
-| File | Issue |
-| ------ | ------- |
-| `convex/tasks.ts` | Throws errors that propagate unhandled |
-| `src/lib/effect/hooks/useTasks.ts` | `runPromise()` returns rejected promises, no error handling |
-| `src/lib/effect/services/TasksService.ts` | `TasksError` defined but never caught |
-| `src/routes/__root.tsx` | No Error Boundary for query failures |
-| `src/components/Tasks/*` | No `.catch()` on mutation calls |
+| File                                      | Issue                                                       |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `convex/tasks.ts`                         | Throws errors that propagate unhandled                      |
+| `src/lib/effect/hooks/useTasks.ts`        | `runPromise()` returns rejected promises, no error handling |
+| `src/lib/effect/services/TasksService.ts` | `TasksError` defined but never caught                       |
+| `src/routes/__root.tsx`                   | No Error Boundary for query failures                        |
+| `src/components/Tasks/*`                  | No `.catch()` on mutation calls                             |
 
 ## Error Flow
 
@@ -120,11 +120,11 @@ convex/tasks.ts: throw new Error("Not authenticated")
 
 ### Where Effect-TS Helps vs. Pure React
 
-| Step | Effect-TS Useful? | Reasoning |
-| ------ | ------------------- | ----------- |
-| **1 & 2: Error Boundary** | ❌ No | React-specific lifecycle pattern (`componentDidCatch`). Effect can't intercept React render errors. |
-| **3: Error State in useTasks** | ✅ **Yes** | `TasksError` already has tagged unions—use Effect's error channel properly instead of `runPromise` throwing. |
-| **4: Inline Error Display** | ⚠️ Partial | Effect provides typed errors, but displaying them is pure React. |
+| Step                           | Effect-TS Useful? | Reasoning                                                                                                    |
+| ------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| **1 & 2: Error Boundary**      | ❌ No             | React-specific lifecycle pattern (`componentDidCatch`). Effect can't intercept React render errors.          |
+| **3: Error State in useTasks** | ✅ **Yes**        | `TasksError` already has tagged unions—use Effect's error channel properly instead of `runPromise` throwing. |
+| **4: Inline Error Display**    | ⚠️ Partial        | Effect provides typed errors, but displaying them is pure React.                                             |
 
 ### Current Problem
 
@@ -141,11 +141,11 @@ The well-typed `TasksError` gets converted to a rejected Promise, losing type in
 ```tsx
 // src/lib/effect/services/TasksService.ts
 export class TasksError {
-  readonly _tag = "TasksError";
-  constructor(
-    readonly operation: "create" | "delete" | "toggle",
-    readonly cause: unknown
-  ) {}
+	readonly _tag = "TasksError";
+	constructor(
+		readonly operation: "create" | "delete" | "toggle",
+		readonly cause: unknown
+	) {}
 }
 ```
 
@@ -154,7 +154,7 @@ export class TasksError {
 The codebase already has proper Effect error types:
 
 - `ConvexQueryError` - wraps Convex query failures
-- `ConvexMutationError` - wraps Convex mutation failures  
+- `ConvexMutationError` - wraps Convex mutation failures
 - `TasksError` - domain-level error with operation tag
 
 These are mapped correctly in the service layer but lost at the React boundary.
@@ -167,39 +167,39 @@ Combine React Error Boundary with Effect-based error handling for mutations.
 
 ```tsx
 // src/components/ErrorBoundary.tsx
-import { Component, type ReactNode } from 'react';
+import { Component, type ReactNode } from "react";
 
 interface Props {
-  children: ReactNode;
-  fallback?: ReactNode;
+	children: ReactNode;
+	fallback?: ReactNode;
 }
 
 interface State {
-  hasError: boolean;
-  error?: Error;
+	hasError: boolean;
+	error?: Error;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false };
+	state: State = { hasError: false };
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
+	static getDerivedStateFromError(error: Error): State {
+		return { hasError: true, error };
+	}
 
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback ?? (
-        <div className="error-container">
-          <h2>Something went wrong</h2>
-          <p>{this.state.error?.message}</p>
-          <button onClick={() => window.location.href = '/api/auth/signin'}>
-            Sign In
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+	render() {
+		if (this.state.hasError) {
+			return (
+				this.props.fallback ?? (
+					<div className="error-container">
+						<h2>Something went wrong</h2>
+						<p>{this.state.error?.message}</p>
+						<button onClick={() => (window.location.href = "/api/auth/signin")}>Sign In</button>
+					</div>
+				)
+			);
+		}
+		return this.props.children;
+	}
 }
 ```
 
@@ -207,17 +207,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
 ```tsx
 // src/routes/__root.tsx
-import { ErrorBoundary } from '../components/ErrorBoundary';
+import { ErrorBoundary } from "../components/ErrorBoundary";
 
 function RootComponent() {
-  return (
-    <RootDocument>
-      <Header />
-      <ErrorBoundary>
-        <Outlet />
-      </ErrorBoundary>
-    </RootDocument>
-  );
+	return (
+		<RootDocument>
+			<Header />
+			<ErrorBoundary>
+				<Outlet />
+			</ErrorBoundary>
+		</RootDocument>
+	);
 }
 ```
 
@@ -245,91 +245,91 @@ Then update `useTasks` to use Exit for typed error handling:
 
 ```tsx
 // src/lib/effect/hooks/useTasks.ts
-import { useState, useCallback } from 'react';
-import { Effect, Exit, Cause, Option } from 'effect';
-import { TasksService, TasksError } from '../services/TasksService';
+import { useState, useCallback } from "react";
+import { Effect, Exit, Cause, Option } from "effect";
+import { TasksService, TasksError } from "../services/TasksService";
 
 export function useTasks() {
-  const { runPromiseExit } = useEffectRuntime();
-  const [error, setError] = useState<{ message: string; operation?: string } | null>(null);
+	const { runPromiseExit } = useEffectRuntime();
+	const [error, setError] = useState<{ message: string; operation?: string } | null>(null);
 
-  const clearError = useCallback(() => setError(null), []);
+	const clearError = useCallback(() => setError(null), []);
 
-  // Helper to extract user-friendly error message from TasksError
-  const handleTasksError = useCallback((exit: Exit.Exit<unknown, TasksError>) => {
-    if (Exit.isFailure(exit)) {
-      const failureOption = Cause.failureOption(exit.cause);
-      if (Option.isSome(failureOption)) {
-        const tasksError = failureOption.value;
-        setError({
-          message: `Failed to ${tasksError.operation} task`,
-          operation: tasksError.operation,
-        });
-      } else {
-        setError({ message: 'An unexpected error occurred' });
-      }
-    }
-  }, []);
+	// Helper to extract user-friendly error message from TasksError
+	const handleTasksError = useCallback((exit: Exit.Exit<unknown, TasksError>) => {
+		if (Exit.isFailure(exit)) {
+			const failureOption = Cause.failureOption(exit.cause);
+			if (Option.isSome(failureOption)) {
+				const tasksError = failureOption.value;
+				setError({
+					message: `Failed to ${tasksError.operation} task`,
+					operation: tasksError.operation,
+				});
+			} else {
+				setError({ message: "An unexpected error occurred" });
+			}
+		}
+	}, []);
 
-  const addTask = useCallback(
-    async (text: string) => {
-      setError(null);
-      const exit = await runPromiseExit(
-        Effect.gen(function* () {
-          const service = yield* TasksService;
-          return yield* service.addTask(text);
-        })
-      );
+	const addTask = useCallback(
+		async (text: string) => {
+			setError(null);
+			const exit = await runPromiseExit(
+				Effect.gen(function* () {
+					const service = yield* TasksService;
+					return yield* service.addTask(text);
+				})
+			);
 
-      if (Exit.isFailure(exit)) {
-        handleTasksError(exit);
-        return undefined;
-      }
+			if (Exit.isFailure(exit)) {
+				handleTasksError(exit);
+				return undefined;
+			}
 
-      return exit.value;
-    },
-    [runPromiseExit, handleTasksError]
-  );
+			return exit.value;
+		},
+		[runPromiseExit, handleTasksError]
+	);
 
-  const deleteTask = useCallback(
-    async (id: Id<"tasks">) => {
-      setError(null);
-      const exit = await runPromiseExit(
-        Effect.gen(function* () {
-          const service = yield* TasksService;
-          return yield* service.deleteTask(id);
-        })
-      );
+	const deleteTask = useCallback(
+		async (id: Id<"tasks">) => {
+			setError(null);
+			const exit = await runPromiseExit(
+				Effect.gen(function* () {
+					const service = yield* TasksService;
+					return yield* service.deleteTask(id);
+				})
+			);
 
-      if (Exit.isFailure(exit)) {
-        handleTasksError(exit);
-      }
-    },
-    [runPromiseExit, handleTasksError]
-  );
+			if (Exit.isFailure(exit)) {
+				handleTasksError(exit);
+			}
+		},
+		[runPromiseExit, handleTasksError]
+	);
 
-  const toggleTask = useCallback(
-    async (id: Id<"tasks">) => {
-      setError(null);
-      const exit = await runPromiseExit(
-        Effect.gen(function* () {
-          const service = yield* TasksService;
-          return yield* service.toggleTask(id);
-        })
-      );
+	const toggleTask = useCallback(
+		async (id: Id<"tasks">) => {
+			setError(null);
+			const exit = await runPromiseExit(
+				Effect.gen(function* () {
+					const service = yield* TasksService;
+					return yield* service.toggleTask(id);
+				})
+			);
 
-      if (Exit.isFailure(exit)) {
-        handleTasksError(exit);
-      }
-    },
-    [runPromiseExit, handleTasksError]
-  );
+			if (Exit.isFailure(exit)) {
+				handleTasksError(exit);
+			}
+		},
+		[runPromiseExit, handleTasksError]
+	);
 
-  return {
-    // ... existing returns
-    error,      // Current error state with operation context
-    clearError, // Reset error state
-  };
+	return {
+		// ... existing returns
+		error, // Current error state with operation context
+		clearError, // Reset error state
+	};
 }
 ```
 
@@ -338,35 +338,37 @@ export function useTasks() {
 ```tsx
 // src/components/Tasks/TaskForm.tsx
 function TaskForm() {
-  const { addTask, error, clearError } = useTasks();
-  const [text, setText] = useState('');
+	const { addTask, error, clearError } = useTasks();
+	const [text, setText] = useState("");
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    const result = await addTask(text);
-    if (result !== undefined) {
-      setText('');
-    }
-  };
+	const handleSubmit = async (e: FormEvent) => {
+		e.preventDefault();
+		const result = await addTask(text);
+		if (result !== undefined) {
+			setText("");
+		}
+	};
 
-  return (
-    <form onSubmit={handleSubmit}>
-      <input 
-        value={text} 
-        onChange={(e) => setText(e.target.value)}
-        aria-invalid={!!error}
-        aria-describedby={error ? 'task-error' : undefined}
-      />
-      <button type="submit">Add Task</button>
-      
-      {error && (
-        <div id="task-error" role="alert" className="error-message">
-          {error.message}
-          <button type="button" onClick={clearError}>Dismiss</button>
-        </div>
-      )}
-    </form>
-  );
+	return (
+		<form onSubmit={handleSubmit}>
+			<input
+				value={text}
+				onChange={(e) => setText(e.target.value)}
+				aria-invalid={!!error}
+				aria-describedby={error ? "task-error" : undefined}
+			/>
+			<button type="submit">Add Task</button>
+
+			{error && (
+				<div id="task-error" role="alert" className="error-message">
+					{error.message}
+					<button type="button" onClick={clearError}>
+						Dismiss
+					</button>
+				</div>
+			)}
+		</form>
+	);
 }
 ```
 

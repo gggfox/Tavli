@@ -12,11 +12,7 @@ export function CartSkeleton({ onBack }: CartSkeletonProps = {}) {
 		<div className="flex flex-col h-full" aria-label="Loading cart" aria-busy="true">
 			<div className="flex-1 overflow-y-auto p-4 space-y-4">
 				{onBack ? (
-					<button
-						onClick={onBack}
-						className="flex items-center gap-1 text-sm text-primary"
-						
-					>
+					<button onClick={onBack} className="flex items-center gap-1 text-sm text-primary">
 						<ArrowLeft size={16} /> Back to menu
 					</button>
 				) : (
@@ -30,10 +26,9 @@ export function CartSkeleton({ onBack }: CartSkeletonProps = {}) {
 						<div
 							key={`cart-item-${i}`}
 							className="flex items-start justify-between px-4 py-3 rounded-xl bg-muted"
-							
 						>
 							<div className="flex-1 space-y-2">
-								<Skeleton className="h-4" style={{width: `${50 + (i % 3) * 12}%`}} />
+								<Skeleton className="h-4" style={{ width: `${50 + (i % 3) * 12}%` }} />
 								<Skeleton className="h-3 w-32" />
 							</div>
 							<div className="flex items-center gap-2">
@@ -45,10 +40,7 @@ export function CartSkeleton({ onBack }: CartSkeletonProps = {}) {
 				</div>
 			</div>
 
-			<div
-				className="px-4 pb-4 pt-3 space-y-3 border-t border-border"
-				
-			>
+			<div className="px-4 pb-4 pt-3 space-y-3 border-t border-border">
 				<div className="flex items-center justify-between">
 					<Skeleton className="h-5 w-16" />
 					<Skeleton className="h-5 w-20" />

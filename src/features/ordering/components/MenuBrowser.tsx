@@ -9,6 +9,7 @@ import { Check, UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
+import type { MenuItemWithImage } from "./ItemDetailSheet";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export type { SelectedOption } from "../types";
@@ -53,7 +54,7 @@ export function MenuBrowser({
 	const [showPayFlow, setShowPayFlow] = useState(false);
 	const [comment, setComment] = useState("");
 	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(null);
-	const [detailItem, setDetailItem] = useState<Doc<"menuItems"> | null>(null);
+	const [detailItem, setDetailItem] = useState<MenuItemWithImage | null>(null);
 
 	const { data: tables } = useQuery(
 		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
@@ -61,7 +62,7 @@ export function MenuBrowser({
 
 	const currentMenuId = selectedMenuId ?? activeMenus[0]?._id;
 
-	const handleOpenDetail = useCallback((item: Doc<"menuItems">) => {
+	const handleOpenDetail = useCallback((item: MenuItemWithImage) => {
 		setDetailItem(item);
 	}, []);
 
@@ -133,9 +134,11 @@ export function MenuBrowser({
 							className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-colors ${
 								currentMenuId === menu._id ? "font-medium" : ""
 							}`}
-							style={{backgroundColor:
+							style={{
+								backgroundColor:
 									currentMenuId === menu._id ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-				color: currentMenuId === menu._id ? "white" : "var(--text-secondary)"}}
+								color: currentMenuId === menu._id ? "white" : "var(--text-secondary)",
+							}}
 						>
 							{getTranslatedField(menu, lang)}
 						</button>
@@ -158,35 +161,29 @@ export function MenuBrowser({
 			{paymentsEnabled === false && itemCount > 0 && (
 				<div
 					className="shrink-0 px-4 py-3 text-center text-sm border-t border-border text-warning"
-					style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
+					style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
 				>
 					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
 			)}
 			{itemCount === 0 && (
-				<div
-					className="shrink-0 px-4 py-4 text-center border-t border-border bg-background text-faint-foreground"
-					
-				>
+				<div className="shrink-0 px-4 py-4 text-center border-t border-border bg-background text-faint-foreground">
 					<p className="text-sm">{t(OrderingKeys.MENU_TAP_TO_START)}</p>
 				</div>
 			)}
 			{itemCount > 0 && (
-				<div
-					className="shrink-0 px-4 pb-4 pt-3 space-y-3 border-t border-border bg-background"
-					
-				>
+				<div className="shrink-0 px-4 pb-4 pt-3 space-y-3 border-t border-border bg-background">
 					{showPayFlow ? (
 						<>
 							<div className="flex items-center justify-between">
-								<h3 className="text-sm font-semibold text-foreground" >
+								<h3 className="text-sm font-semibold text-foreground">
 									{t(OrderingKeys.MENU_REVIEW_ORDER)}
 								</h3>
 								<button
 									onClick={() => setShowPayFlow(false)}
 									className="p-1 rounded hover:bg-(--bg-hover) text-faint-foreground"
 								>
-									<X size={16}  />
+									<X size={16} />
 								</button>
 							</div>
 
@@ -194,10 +191,8 @@ export function MenuBrowser({
 								<label
 									htmlFor="table-select"
 									className="block text-xs font-semibold mb-1 text-muted-foreground"
-									
 								>
-									{t(OrderingKeys.MENU_TABLE_NUMBER)}{" "}
-									<span style={{color: "#dc2626"}}>*</span>
+									{t(OrderingKeys.MENU_TABLE_NUMBER)} <span style={{ color: "#dc2626" }}>*</span>
 								</label>
 								<select
 									id="table-select"
@@ -206,7 +201,9 @@ export function MenuBrowser({
 										setSelectedTableId(e.target.value ? (e.target.value as Id<"tables">) : null)
 									}
 									className="w-full px-3 py-2 rounded-lg text-sm bg-muted text-foreground"
-									style={{border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`}}
+									style={{
+										border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`,
+									}}
 								>
 									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
 									{(tables ?? [])
@@ -219,7 +216,7 @@ export function MenuBrowser({
 										))}
 								</select>
 								{!selectedTableId && (
-									<p className="text-[11px] mt-1" style={{color: "#dc2626"}}>
+									<p className="text-[11px] mt-1" style={{ color: "#dc2626" }}>
 										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
 								)}
@@ -231,12 +228,8 @@ export function MenuBrowser({
 								placeholder={t(OrderingKeys.MENU_NOTES_PLACEHOLDER)}
 								rows={2}
 								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								
 							/>
-							<div
-								className="flex justify-between text-base font-semibold text-foreground"
-								
-							>
+							<div className="flex justify-between text-base font-semibold text-foreground">
 								<span>{t(OrderingKeys.MENU_TOTAL_LABEL)}</span>
 								<span>${formatCents(orderTotal)}</span>
 							</div>
@@ -252,10 +245,7 @@ export function MenuBrowser({
 						</>
 					) : (
 						<>
-							<div
-								className="flex justify-between text-base font-semibold text-foreground"
-								
-							>
+							<div className="flex justify-between text-base font-semibold text-foreground">
 								<span>{t(OrderingKeys.MENU_TOTAL_WITH_COUNT, { count: itemCount })}</span>
 								<span>${formatCents(orderTotal)}</span>
 							</div>
@@ -299,7 +289,7 @@ function MenuCategories({
 	menuId: Id<"menus">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
-	onOpenDetail: (item: Doc<"menuItems">) => void;
+	onOpenDetail: (item: MenuItemWithImage) => void;
 }>) {
 	const { data: categories } = useQuery(convexQuery(api.menus.getCategoriesByMenu, { menuId }));
 	const sorted = [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
@@ -328,7 +318,7 @@ function CategoryItems({
 	category: Doc<"menuCategories">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
-	onOpenDetail: (item: Doc<"menuItems">) => void;
+	onOpenDetail: (item: MenuItemWithImage) => void;
 }>) {
 	const { data: items } = useQuery(
 		convexQuery(api.menuItems.getByCategory, { categoryId: category._id })
@@ -351,7 +341,7 @@ function CategoryItems({
 
 	return (
 		<div>
-			<h3 className="text-lg font-semibold mb-3 text-foreground" >
+			<h3 className="text-lg font-semibold mb-3 text-foreground">
 				{getTranslatedField(category, lang)}
 			</h3>
 			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -364,22 +354,18 @@ function CategoryItems({
 							key={item._id}
 							onClick={() => onOpenDetail(item)}
 							className="relative w-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
-							style={{backgroundColor: isSelected ? "var(--bg-active)" : "var(--bg-secondary)",
-				border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent"}}
+							style={{
+								backgroundColor: isSelected ? "var(--bg-active)" : "var(--bg-secondary)",
+								border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
+							}}
 						>
 							{isSelected && (
-								<span
-									className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary"
-									
-								>
+								<span className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary">
 									<Check size={14} className="text-white" />
 								</span>
 							)}
 							{isSelected && selection && selection.quantity > 1 && (
-								<span
-									className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white bg-primary"
-									
-								>
+								<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white bg-primary">
 									{selection.quantity}
 								</span>
 							)}
@@ -390,26 +376,20 @@ function CategoryItems({
 									className="w-full h-36 sm:h-40 object-cover"
 								/>
 							) : (
-								<div
-									className="w-full h-36 sm:h-40 flex items-center justify-center bg-background"
-									
-								>
-									<UtensilsCrossed size={48} className="text-faint-foreground"  />
+								<div className="w-full h-36 sm:h-40 flex items-center justify-center bg-background">
+									<UtensilsCrossed size={48} className="text-faint-foreground" />
 								</div>
 							)}
 							<div className="px-3 py-2.5 mt-auto">
-								<div className="text-sm font-medium text-foreground" >
+								<div className="text-sm font-medium text-foreground">
 									{getTranslatedField(item, lang)}
 								</div>
 								{description && (
-									<div
-										className="text-xs mt-0.5 line-clamp-2 text-faint-foreground"
-										
-									>
+									<div className="text-xs mt-0.5 line-clamp-2 text-faint-foreground">
 										{description}
 									</div>
 								)}
-								<div className="text-sm font-bold mt-1 text-foreground" >
+								<div className="text-sm font-bold mt-1 text-foreground">
 									${formatCents(item.basePrice)}
 								</div>
 							</div>

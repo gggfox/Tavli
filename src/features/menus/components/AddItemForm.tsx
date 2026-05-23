@@ -13,7 +13,7 @@ type PrepStation = "kitchen" | "bar";
 interface AddItemFormProps {
 	categoryId: Id<"menuCategories">;
 	restaurantId: Id<"restaurants">;
-	generateUploadUrl: () => Promise<[string, null] | [null, any]>;
+	generateUploadUrl: () => Promise<[string, null] | [null, unknown]>;
 	onCreateItem: (args: {
 		categoryId: Id<"menuCategories">;
 		restaurantId: Id<"restaurants">;
@@ -114,7 +114,6 @@ export function AddItemForm({
 							placeholder={t(MenusKeys.FORM_ITEM_NAME_PLACEHOLDER)}
 							required
 							className="flex-1 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
-							
 						/>
 					)}
 				/>
@@ -131,7 +130,6 @@ export function AddItemForm({
 							step="0.01"
 							min="0"
 							className="w-24 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
-							
 						/>
 					)}
 				/>
@@ -146,12 +144,11 @@ export function AddItemForm({
 						onBlur={field.handleBlur}
 						placeholder={t(MenusKeys.FORM_ITEM_DESCRIPTION_PLACEHOLDER)}
 						className="w-full px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
-						
 					/>
 				)}
 			/>
 			<div className="flex items-center gap-3">
-				<span className="text-xs text-muted-foreground" >
+				<span className="text-xs text-muted-foreground">
 					{t(MenusKeys.ITEM_PREP_STATION_LABEL)}
 				</span>
 				<SegmentedControl<PrepStation>
@@ -166,10 +163,7 @@ export function AddItemForm({
 				/>
 			</div>
 			<div className="flex items-center gap-3">
-				<label
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-hover border border-border text-muted-foreground"
-					
-				>
+				<label className="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-hover border border-border text-muted-foreground">
 					<ImagePlus size={14} />
 					{selectedImage ? t(MenusKeys.FORM_CHANGE_IMAGE) : t(MenusKeys.FORM_ADD_IMAGE)}
 					<input
@@ -181,7 +175,7 @@ export function AddItemForm({
 					/>
 				</label>
 				{!imagePreview && (
-					<span className="flex items-center gap-1 text-xs text-faint-foreground" >
+					<span className="flex items-center gap-1 text-xs text-faint-foreground">
 						<ClipboardPaste size={12} /> {t(MenusKeys.FORM_PASTE_HINT)}
 					</span>
 				)}
@@ -192,7 +186,7 @@ export function AddItemForm({
 							type="button"
 							onClick={clearSelectedImage}
 							className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center bg-destructive"
-							style={{color: "white"}}
+							style={{ color: "white" }}
 						>
 							<X size={10} />
 						</button>

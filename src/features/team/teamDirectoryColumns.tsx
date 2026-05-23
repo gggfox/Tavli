@@ -62,7 +62,12 @@ export type TeamDirectoryRow =
 			addedByEmail: string | null;
 	  };
 
-function displayName(row: { firstName: string | null; paternalLastname: string | null; maternalLastname: string | null; email?: string | null }): string {
+function displayName(row: {
+	firstName: string | null;
+	paternalLastname: string | null;
+	maternalLastname: string | null;
+	email?: string | null;
+}): string {
 	const parts = [row.firstName, row.paternalLastname, row.maternalLastname].filter(Boolean);
 	if (parts.length > 0) return parts.join(" ");
 	if ("email" in row && row.email) return row.email;
@@ -85,48 +90,36 @@ export function createTeamDirectoryColumns(args: {
 	onAssignShift?: (memberId: Id<"restaurantMembers">) => void;
 	assignableMemberIds?: ReadonlySet<string>;
 }) {
-	const {
-		t,
-		staffRoleLabel,
-		onRevokeInvite,
-		revokePendingId,
-		onAssignShift,
-		assignableMemberIds,
-	} = args;
+	const { t, staffRoleLabel, onRevokeInvite, revokePendingId, onAssignShift, assignableMemberIds } =
+		args;
 
 	return [
-		columnHelper.accessor(
-			(row) => displayName(row),
-			{
-				id: "name",
-				header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_NAME),
-				cell: ({ row }) => {
-					const r = row.original;
-					const name = displayName(r);
-					const photo = r.photoUrl;
-					const removed = "removedAt" in r && r.removedAt != null;
+		columnHelper.accessor((row) => displayName(row), {
+			id: "name",
+			header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_NAME),
+			cell: ({ row }) => {
+				const r = row.original;
+				const name = displayName(r);
+				const photo = r.photoUrl;
+				const removed = "removedAt" in r && r.removedAt != null;
 
-					return (
-						<div className={`flex items-center gap-2.5 ${removed ? "opacity-50" : ""}`}>
-							{photo ? (
-								<img
-									src={photo}
-									alt=""
-									className="w-7 h-7 rounded-full object-cover shrink-0"
-								/>
-							) : (
-								<span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium text-muted-foreground shrink-0">
-									{initials(r)}
-								</span>
-							)}
-							<span className="text-sm text-foreground truncate">
-								{name || (r.rowType === "invite" ? r.email : ("userId" in r && r.userId ? r.userId : "—"))}
+				return (
+					<div className={`flex items-center gap-2.5 ${removed ? "opacity-50" : ""}`}>
+						{photo ? (
+							<img src={photo} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+						) : (
+							<span className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium text-muted-foreground shrink-0">
+								{initials(r)}
 							</span>
-						</div>
-					);
-				},
-			}
-		),
+						)}
+						<span className="text-sm text-foreground truncate">
+							{name ||
+								(r.rowType === "invite" ? r.email : "userId" in r && r.userId ? r.userId : "—")}
+						</span>
+					</div>
+				);
+			},
+		}),
 		columnHelper.accessor((row) => staffRoleLabel(row.role), {
 			id: "role",
 			header: () => t(AdminStaffKeys.TEAM_DIRECTORY_COL_ROLE),
@@ -137,7 +130,8 @@ export function createTeamDirectoryColumns(args: {
 		columnHelper.accessor(
 			(row) => {
 				if (row.rowType === "invite") return t(AdminStaffKeys.TEAM_STATUS_PENDING_INVITE);
-				if ("removedAt" in row && row.removedAt != null) return t(AdminStaffKeys.TEAM_STATUS_REMOVED);
+				if ("removedAt" in row && row.removedAt != null)
+					return t(AdminStaffKeys.TEAM_STATUS_REMOVED);
 				if (row.rowType === "restaurantOwner" || row.rowType === "orgOwner") {
 					return t(AdminStaffKeys.TEAM_STATUS_ACTIVE);
 				}
@@ -166,12 +160,16 @@ export function createTeamDirectoryColumns(args: {
 					}
 					if (r.rowType === "restaurantOwner" || r.rowType === "orgOwner") {
 						return (
-							<span className="text-sm text-muted-foreground">{t(AdminStaffKeys.TEAM_STATUS_ACTIVE)}</span>
+							<span className="text-sm text-muted-foreground">
+								{t(AdminStaffKeys.TEAM_STATUS_ACTIVE)}
+							</span>
 						);
 					}
 					return (
 						<span className="text-sm text-muted-foreground">
-							{r.isActive ? t(AdminStaffKeys.TEAM_STATUS_ACTIVE) : t(AdminStaffKeys.TEAM_MEMBER_INACTIVE)}
+							{r.isActive
+								? t(AdminStaffKeys.TEAM_STATUS_ACTIVE)
+								: t(AdminStaffKeys.TEAM_MEMBER_INACTIVE)}
 						</span>
 					);
 				},

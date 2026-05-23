@@ -526,7 +526,9 @@ describe("restaurantMembers listTeamDirectory", () => {
 		});
 		expect(qErr).toBeNull();
 		if (!Array.isArray(rows)) throw new Error("expected directory rows");
-		const ownerInvite = rows.filter((r) => r.rowType === "invite" && r.email === "owner-inv@example.com");
+		const ownerInvite = rows.filter(
+			(r) => r.rowType === "invite" && r.email === "owner-inv@example.com"
+		);
 		expect(ownerInvite?.length).toBe(0);
 	});
 

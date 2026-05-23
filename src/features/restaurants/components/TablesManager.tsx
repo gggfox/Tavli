@@ -88,12 +88,8 @@ function formatRemaining(ms: number): string {
 
 export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const { t } = useTranslation();
-	const { data: tables } = useQuery(
-		convexQuery(api.tables.getByRestaurant, { restaurantId })
-	);
-	const { data: sections } = useQuery(
-		convexQuery(api.sections.getByRestaurant, { restaurantId })
-	);
+	const { data: tables } = useQuery(convexQuery(api.tables.getByRestaurant, { restaurantId }));
+	const { data: sections } = useQuery(convexQuery(api.sections.getByRestaurant, { restaurantId }));
 
 	const [showTrash, setShowTrash] = useState(false);
 	const { data: deletedTables = [] } = useQuery({
@@ -121,9 +117,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 
 	const [editingId, setEditingId] = useState<Id<"tables"> | null>(null);
 	const [editingSectionId, setEditingSectionId] = useState<Id<"sections"> | null>(null);
-	const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<
-		Id<"sections"> | null
-	>(null);
+	const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<Id<"sections"> | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [showInactive, setShowInactive] = useState(false);
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -133,9 +127,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const [tableSectionOverrides, setTableSectionOverrides] = useState<
 		Map<Id<"tables">, Id<"sections">>
 	>(() => new Map());
-	const [sectionOrderOverride, setSectionOrderOverride] = useState<
-		Id<"sections">[] | null
-	>(null);
+	const [sectionOrderOverride, setSectionOrderOverride] = useState<Id<"sections">[] | null>(null);
 
 	const clearError = () => setError(null);
 	const closeKebab = useCallback(() => setOpenKebab(null), []);
@@ -309,10 +301,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		}
 	};
 
-	const handleMoveTableToSection = async (
-		tableId: Id<"tables">,
-		nextSectionId: Id<"sections">
-	) => {
+	const handleMoveTableToSection = async (tableId: Id<"tables">, nextSectionId: Id<"sections">) => {
 		clearError();
 		setTableSectionOverrides((prev) => {
 			const next = new Map(prev);
@@ -320,9 +309,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 			return next;
 		});
 		try {
-			unwrapResult(
-				await assignTableSection.mutateAsync({ tableId, sectionId: nextSectionId })
-			);
+			unwrapResult(await assignTableSection.mutateAsync({ tableId, sectionId: nextSectionId }));
 		} catch (err) {
 			setTableSectionOverrides((prev) => {
 				const next = new Map(prev);
@@ -339,9 +326,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		try {
 			await Promise.all(
 				orderedIds.map((sectionId, index) =>
-					updateSection.mutateAsync({ sectionId, displayOrder: index }).then((r) =>
-						unwrapResult(r)
-					)
+					updateSection.mutateAsync({ sectionId, displayOrder: index }).then((r) => unwrapResult(r))
 				)
 			);
 		} catch (err) {
@@ -376,10 +361,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tables, tableSectionOverrides]);
 
-	const inactiveCount = useMemo(
-		() => (tables ?? []).filter((tt) => !tt.isActive).length,
-		[tables]
-	);
+	const inactiveCount = useMemo(() => (tables ?? []).filter((tt) => !tt.isActive).length, [tables]);
 
 	const nextTableNumber = useMemo(
 		() => (tables ?? []).reduce((max, tt) => Math.max(max, tt.tableNumber), 0) + 1,
@@ -395,9 +377,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	);
 	const confirmDeleteTablesCount = useMemo(
 		() =>
-			confirmDeleteSectionId
-				? (tablesBySection.byId.get(confirmDeleteSectionId) ?? []).length
-				: 0,
+			confirmDeleteSectionId ? (tablesBySection.byId.get(confirmDeleteSectionId) ?? []).length : 0,
 		[confirmDeleteSectionId, tablesBySection]
 	);
 
@@ -635,9 +615,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 									section={section}
 									isEditing={editingSectionId === section._id}
 									initialRenameValue={
-										section.name && section.name.length > 0
-											? section.name
-											: fallbackLabel
+										section.name && section.name.length > 0 ? section.name : fallbackLabel
 									}
 									tables={filtered}
 									isDraggingTable={isDraggingTable}
@@ -742,10 +720,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 						<p className="text-sm text-muted-foreground mb-2">
 							{confirmDeleteSection.name ??
 								t(RestaurantsKeys.SECTIONS_UNNAMED, {
-									number:
-										orderedSections.findIndex(
-											(s) => s._id === confirmDeleteSection._id
-										) + 1,
+									number: orderedSections.findIndex((s) => s._id === confirmDeleteSection._id) + 1,
 								})}
 						</p>
 						<p className="text-sm text-foreground mb-6">{confirmDeleteBody}</p>
@@ -1050,9 +1025,7 @@ function SectionCard(props: Readonly<SectionCardProps>) {
 				>
 					{sectionLabel}
 				</h4>
-				<span className="text-xs text-faint-foreground shrink-0">
-					{translations.tableCount}
-				</span>
+				<span className="text-xs text-faint-foreground shrink-0">{translations.tableCount}</span>
 				<span className="text-xs px-1.5 py-0.5 rounded-md bg-muted text-faint-foreground shrink-0">
 					{translations.hiddenBadge}
 				</span>
@@ -1274,9 +1247,7 @@ function TrashPanel({
 			{show && (
 				<div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
 					{!hasDeleted ? (
-						<p className="text-xs text-faint-foreground">
-							{t(RestaurantsKeys.TABLES_TRASH_EMPTY)}
-						</p>
+						<p className="text-xs text-faint-foreground">{t(RestaurantsKeys.TABLES_TRASH_EMPTY)}</p>
 					) : (
 						<>
 							{deletedSections.map((section, idx) => {
@@ -1294,7 +1265,7 @@ function TrashPanel({
 											section.hardDeleteAfterAt
 												? t(RestaurantsKeys.SECTIONS_PURGES_IN, {
 														time: formatRemaining(section.hardDeleteAfterAt - now),
-												  })
+													})
 												: ""
 										}
 										restoreLabel={t(RestaurantsKeys.SECTIONS_RESTORE)}
@@ -1317,7 +1288,7 @@ function TrashPanel({
 										table.hardDeleteAfterAt
 											? t(RestaurantsKeys.TABLES_PURGES_IN, {
 													time: formatRemaining(table.hardDeleteAfterAt - now),
-											  })
+												})
 											: ""
 									}
 									restoreLabel={t(RestaurantsKeys.TABLES_RESTORE)}
@@ -1429,9 +1400,7 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 				>
 					<GripVertical size={16} />
 				</button>
-				<span
-					className={`text-sm font-medium text-foreground ${inactive ? "line-through" : ""}`}
-				>
+				<span className={`text-sm font-medium text-foreground ${inactive ? "line-through" : ""}`}>
 					{labels.table}
 				</span>
 				{table.label && (
@@ -1442,9 +1411,7 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 			<div className="flex items-center gap-2">
 				<select
 					value={table.sectionId ?? ""}
-					onChange={(e) =>
-						onAssignSection(table._id, e.target.value as Id<"sections">)
-					}
+					onChange={(e) => onAssignSection(table._id, e.target.value as Id<"sections">)}
 					className="md:hidden px-2 py-1 rounded-md bg-background border border-border text-xs text-foreground"
 					aria-label={labels.moveTableAria}
 					title={labels.moveTableAria}
@@ -1567,9 +1534,7 @@ function TableDragGhost({ table, t }: Readonly<TableDragGhostProps>) {
 			<span className="text-sm font-medium text-foreground">
 				{t(RestaurantsKeys.TABLES_TABLE_LABEL, { number: table.tableNumber })}
 			</span>
-			{table.label && (
-				<span className="text-xs text-faint-foreground truncate">{table.label}</span>
-			)}
+			{table.label && <span className="text-xs text-faint-foreground truncate">{table.label}</span>}
 		</div>
 	);
 }

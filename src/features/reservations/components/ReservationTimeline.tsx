@@ -9,14 +9,7 @@ import type { ReservationRange } from "@/features/reservations/utils";
 import { getStatusToneStyle, type StatusTone } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import {
-	ChevronDown,
-	ChevronRight,
-	Globe,
-	MessageCircle,
-	UserPlus,
-	Users,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, MessageCircle, UserPlus, Users } from "lucide-react";
 import { todayLocalYmd, ymdToLocalDate } from "@/global/utils/calendarMonth";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -140,22 +133,22 @@ export function ReservationTimeline({
 					const sectionKey = sg.section._id as string;
 					const isCollapsed = collapsedSections.has(sectionKey);
 					return (
-					<SectionGroup
-						key={sectionKey}
-						section={sg.section}
-						tables={sg.tables}
-						isCollapsed={isCollapsed}
-						onToggle={() => toggleSection(sectionKey)}
-						reservationsByTable={reservationsByTable}
-						locksByTable={locksByTable}
-						hours={hours}
-						hourCount={hourCount}
-						openHour={openHour}
-						locale={i18n.language}
-						selectedDay={selectedDay}
-						onOpenReservation={onOpenReservation}
-						onCreateReservation={onCreateReservation}
-					/>
+						<SectionGroup
+							key={sectionKey}
+							section={sg.section}
+							tables={sg.tables}
+							isCollapsed={isCollapsed}
+							onToggle={() => toggleSection(sectionKey)}
+							reservationsByTable={reservationsByTable}
+							locksByTable={locksByTable}
+							hours={hours}
+							hourCount={hourCount}
+							openHour={openHour}
+							locale={i18n.language}
+							selectedDay={selectedDay}
+							onOpenReservation={onOpenReservation}
+							onCreateReservation={onCreateReservation}
+						/>
 					);
 				})}
 			</div>
@@ -263,9 +256,7 @@ function SectionGroup({
 			>
 				{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
 				{sectionName}
-				<span className="text-faint-foreground font-normal ml-1">
-					({tables.length})
-				</span>
+				<span className="text-faint-foreground font-normal ml-1">({tables.length})</span>
 			</button>
 
 			{/* Table rows */}
@@ -328,9 +319,7 @@ function TableRow({
 			>
 				{tableLabel}
 				{table.capacity != null && (
-					<span className="ml-1.5 text-faint-foreground">
-						({table.capacity})
-					</span>
+					<span className="ml-1.5 text-faint-foreground">({table.capacity})</span>
 				)}
 			</div>
 			<div
@@ -422,28 +411,26 @@ function TimelineRowContent({
 			))}
 
 			{/* Empty slot click handler (disabled for past days) */}
-			{tableId && tableLabel && onCreateReservation && selectedDay && selectedDay >= todayLocalYmd() && (
-				<EmptySlotClickArea
-					containerRef={containerRef}
-					openHour={openHour}
-					totalMinutes={totalMinutes}
-					tableId={tableId}
-					tableLabel={tableLabel}
-					selectedDay={selectedDay}
-					onCreateReservation={onCreateReservation}
-				/>
-			)}
+			{tableId &&
+				tableLabel &&
+				onCreateReservation &&
+				selectedDay &&
+				selectedDay >= todayLocalYmd() && (
+					<EmptySlotClickArea
+						containerRef={containerRef}
+						openHour={openHour}
+						totalMinutes={totalMinutes}
+						tableId={tableId}
+						tableLabel={tableLabel}
+						selectedDay={selectedDay}
+						onCreateReservation={onCreateReservation}
+					/>
+				)}
 
 			{/* Lock blocks */}
 			{locks.map((lock) => {
 				const pos = getPosition(lock.startsAt, lock.endsAt);
-				return (
-					<TimelineLockBlock
-						key={lock._id}
-						lock={lock}
-						style={pos}
-					/>
-				);
+				return <TimelineLockBlock key={lock._id} lock={lock} style={pos} />;
 			})}
 
 			{/* Reservation blocks */}
@@ -486,9 +473,7 @@ function TimelineBlock({ reservation, style, locale, onClick }: TimelineBlockPro
 	const isDimmed = reservation.status === "cancelled" || reservation.status === "no_show";
 
 	const multiTableLabel =
-		reservation.tableIds.length > 1
-			? `T${reservation.tableIds.length}`
-			: null;
+		reservation.tableIds.length > 1 ? `T${reservation.tableIds.length}` : null;
 
 	return (
 		<button
@@ -507,16 +492,16 @@ function TimelineBlock({ reservation, style, locale, onClick }: TimelineBlockPro
 				color: palette.fg,
 			}}
 		>
-			<span className={`truncate text-[10px] font-medium leading-tight${isDimmed ? " line-through" : ""}`}>
+			<span
+				className={`truncate text-[10px] font-medium leading-tight${isDimmed ? " line-through" : ""}`}
+			>
 				{reservation.contact.name}
 			</span>
 			<span className="shrink-0 flex items-center gap-0.5 text-[9px] opacity-80">
 				<Users size={9} />
 				{reservation.partySize}
 			</span>
-			{sourceIcon && (
-				<span className="shrink-0 opacity-60">{sourceIcon}</span>
-			)}
+			{sourceIcon && <span className="shrink-0 opacity-60">{sourceIcon}</span>}
 			{multiTableLabel && (
 				<span className="shrink-0 text-[8px] font-medium opacity-70 bg-black/10 dark:bg-white/10 rounded px-0.5">
 					{multiTableLabel}

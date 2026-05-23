@@ -16,14 +16,9 @@ type NumberWithDeltaResult = UnwrappedValue<
 	FunctionReturnType<typeof api.analytics.numberWithDelta.compute>
 >;
 
-const MONEY_METRICS = new Set<NumberWithDeltaOptions["metric"]>([
-	"payments.revenueTotal",
-]);
+const MONEY_METRICS = new Set<NumberWithDeltaOptions["metric"]>(["payments.revenueTotal"]);
 
-export function NumberWithDeltaWidget({
-	options,
-	context,
-}: WidgetProps<NumberWithDeltaOptions>) {
+export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWithDeltaOptions>) {
 	const { t, i18n } = useTranslation();
 	const queryArgs =
 		context.scopeKind === "restaurant" && context.restaurantId
@@ -81,8 +76,9 @@ export function NumberWithDeltaWidget({
 		deltaNode = (
 			<div className="text-xs text-faint-foreground">
 				{deltaAbs > 0 ? "+" : ""}
-				{isMoney ? formatMoney(deltaAbs, i18n.language) : formatNumber(deltaAbs, i18n.language)}
-				{" "}
+				{isMoney
+					? formatMoney(deltaAbs, i18n.language)
+					: formatNumber(deltaAbs, i18n.language)}{" "}
 				{t(DashboardKeys.WIDGET_DELTA_VS_PREV)}
 			</div>
 		);
@@ -94,9 +90,7 @@ export function NumberWithDeltaWidget({
 				{t(METRIC_LABEL_KEY[options.metric])}
 			</span>
 			<div className="flex-1 flex flex-col items-center justify-center gap-2">
-				<span className="text-3xl font-semibold text-foreground tabular-nums">
-					{formatted}
-				</span>
+				<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
 				{deltaNode}
 			</div>
 		</div>

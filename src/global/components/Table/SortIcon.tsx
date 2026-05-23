@@ -9,11 +9,11 @@ export function SortIcon({
 
 	const sorted = column.getIsSorted();
 	if (sorted === false) {
-		return <ChevronsUpDown size={14} className="text-faint-foreground"  />;
+		return <ChevronsUpDown size={14} className="text-faint-foreground" />;
 	}
 	return sorted === "asc" ? (
-		<ChevronUp size={14} className="text-foreground"  />
+		<ChevronUp size={14} className="text-foreground" />
 	) : (
-		<ChevronDown size={14} className="text-foreground"  />
+		<ChevronDown size={14} className="text-foreground" />
 	);
 }

@@ -83,9 +83,7 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 			/>
 
 			{isTranslationMode && (
-				<p className="text-xs text-faint-foreground" >
-					{t(OptionsKeys.TRANSLATING_HINT)}
-				</p>
+				<p className="text-xs text-faint-foreground">{t(OptionsKeys.TRANSLATING_HINT)}</p>
 			)}
 
 			{!isTranslationMode &&
@@ -104,7 +102,6 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 							createGroupForm.handleSubmit();
 						}}
 						className="space-y-3 p-4 rounded-lg bg-muted border border-border"
-						
 					>
 						<createGroupForm.Field
 							name="name"
@@ -117,15 +114,11 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 									placeholder={t(OptionsKeys.GROUP_NAME_PLACEHOLDER)}
 									required
 									className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-border text-foreground"
-									
 								/>
 							)}
 						/>
 						<div className="flex gap-4 items-center">
-							<label
-								className="flex items-center gap-2 text-sm text-muted-foreground"
-								
-							>
+							<label className="flex items-center gap-2 text-sm text-muted-foreground">
 								<createGroupForm.Field
 									name="selType"
 									children={(field) => (
@@ -133,7 +126,6 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 											value={field.state.value}
 											onChange={(e) => field.handleChange(e.target.value as "single" | "multi")}
 											className="px-2 py-1 rounded text-sm bg-background border border-border text-foreground"
-											
 										>
 											<option value="single">{t(OptionsKeys.SELECTION_SINGLE)}</option>
 											<option value="multi">{t(OptionsKeys.SELECTION_MULTI)}</option>
@@ -141,10 +133,7 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 									)}
 								/>
 							</label>
-							<label
-								className="flex items-center gap-2 text-sm text-muted-foreground"
-								
-							>
+							<label className="flex items-center gap-2 text-sm text-muted-foreground">
 								<createGroupForm.Field
 									name="isRequired"
 									children={(field) => (
@@ -181,9 +170,7 @@ export function OptionGroupManager({ restaurantId }: Readonly<OptionGroupManager
 					key={group._id}
 					group={group}
 					restaurantId={restaurantId}
-					onDelete={() =>
-						void deleteGroup({ groupId: group._id }).then((r) => unwrapResult(r))
-					}
+					onDelete={() => void deleteGroup({ groupId: group._id }).then((r) => unwrapResult(r))}
 					onUpdateGroup={async (args) => {
 						unwrapResult(await updateGroup(args));
 					}}
@@ -256,9 +243,7 @@ function GroupCard({
 
 	const headerContent = isTranslating ? (
 		<>
-			<span className="text-sm shrink-0 text-faint-foreground" >
-				{group.name} &rarr;
-			</span>
+			<span className="text-sm shrink-0 text-faint-foreground">{group.name} &rarr;</span>
 			<InlineEditInput
 				value={group.translations?.[selectedLang]?.name ?? ""}
 				placeholder={t(OptionsKeys.GROUP_TRANSLATION_PLACEHOLDER, { name: group.name })}
@@ -273,7 +258,7 @@ function GroupCard({
 				}
 			/>
 			{!group.translations?.[selectedLang]?.name && (
-				<AlertTriangle size={14} className="shrink-0 text-warning"  />
+				<AlertTriangle size={14} className="shrink-0 text-warning" />
 			)}
 		</>
 	) : (
@@ -286,10 +271,7 @@ function GroupCard({
 				}}
 				className="text-sm font-medium"
 			/>
-			<span
-				className="text-xs px-2 py-0.5 rounded-full shrink-0 bg-background text-faint-foreground"
-				
-			>
+			<span className="text-xs px-2 py-0.5 rounded-full shrink-0 bg-background text-faint-foreground">
 				{group.selectionType === "single" ? t(OptionsKeys.TYPE_SINGLE) : t(OptionsKeys.TYPE_MULTI)}{" "}
 				{group.isRequired ? t(OptionsKeys.TYPE_REQUIRED) : t(OptionsKeys.TYPE_OPTIONAL)}
 			</span>
@@ -310,7 +292,7 @@ function GroupCard({
 						}}
 						className="p-1 rounded hover:bg-hover text-destructive"
 					>
-						<Trash2 size={14}  />
+						<Trash2 size={14} />
 					</button>
 				) : undefined
 			}
@@ -322,11 +304,11 @@ function GroupCard({
 						<div
 							key={opt._id}
 							className="flex items-center gap-3 px-3 py-2 rounded bg-background"
-							style={{border: !translated ? "1px solid var(--accent-warning)" : "1px solid transparent"}}
+							style={{
+								border: !translated ? "1px solid var(--accent-warning)" : "1px solid transparent",
+							}}
 						>
-							<span className="text-xs shrink-0 text-faint-foreground" >
-								{opt.name} &rarr;
-							</span>
+							<span className="text-xs shrink-0 text-faint-foreground">{opt.name} &rarr;</span>
 							<InlineEditInput
 								value={translated}
 								placeholder={t(OptionsKeys.OPTION_TRANSLATION_PLACEHOLDER, { name: opt.name })}
@@ -341,26 +323,16 @@ function GroupCard({
 								}
 							/>
 							{opt.priceModifier > 0 && (
-								<span className="text-xs shrink-0 text-success" >
+								<span className="text-xs shrink-0 text-success">
 									+${formatCents(opt.priceModifier)}
 								</span>
 							)}
-							{!translated && (
-								<AlertTriangle
-									size={14}
-									className="shrink-0 text-warning"
-									
-								/>
-							)}
+							{!translated && <AlertTriangle size={14} className="shrink-0 text-warning" />}
 						</div>
 					);
 				}
 				return (
-					<div
-						key={opt._id}
-						className="flex items-center gap-3 px-3 py-2 rounded bg-background"
-						
-					>
+					<div key={opt._id} className="flex items-center gap-3 px-3 py-2 rounded bg-background">
 						<InlineEditInput
 							value={opt.name}
 							placeholder={t(OptionsKeys.OPTION_NAME_PLACEHOLDER)}
@@ -386,7 +358,7 @@ function GroupCard({
 							onClick={() => void onDeleteOption({ optionId: opt._id })}
 							className="p-1 rounded hover:bg-hover shrink-0 text-destructive"
 						>
-							<Trash2 size={14}  />
+							<Trash2 size={14} />
 						</button>
 					</div>
 				);
@@ -411,7 +383,6 @@ function GroupCard({
 								placeholder={t(OptionsKeys.OPTION_NAME_PLACEHOLDER)}
 								required
 								className="flex-1 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
-								
 							/>
 						)}
 					/>
@@ -427,7 +398,6 @@ function GroupCard({
 								step="0.01"
 								min="0"
 								className="w-20 px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
-								
 							/>
 						)}
 					/>

@@ -34,10 +34,7 @@ function InviteAcceptPage() {
 
 	const row = preview.data;
 	const expired = row ? row.expiresAt < Date.now() : false;
-	const invalid =
-		!row ||
-		row.status !== INVITATION_STATUS.PENDING ||
-		expired;
+	const invalid = !row || row.status !== INVITATION_STATUS.PENDING || expired;
 
 	let inviteActions: ReactNode = null;
 	if (isSignedIn) {

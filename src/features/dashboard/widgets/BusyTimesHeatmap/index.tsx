@@ -17,9 +17,7 @@ export const BUSY_TIMES_HEATMAP_TYPE = "busyTimesHeatmap";
 const optionsSchema = z.object({});
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.busyTimesHeatmap.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.busyTimesHeatmap.compute>>;
 
 const DAY_LABEL_KEYS = [
 	DashboardKeys.DAY_SUN,
@@ -68,10 +66,7 @@ function BusyTimesHeatmapWidget({ context }: WidgetProps<Options>) {
 					<tr>
 						<th className="text-left text-faint-foreground font-normal" />
 						{Array.from({ length: 24 }).map((_, h) => (
-							<th
-								key={h}
-								className="text-center text-faint-foreground font-normal w-5"
-							>
+							<th key={h} className="text-center text-faint-foreground font-normal w-5">
 								{h % 3 === 0 ? h : ""}
 							</th>
 						))}
@@ -109,18 +104,17 @@ function BusyTimesHeatmapWidget({ context }: WidgetProps<Options>) {
 	);
 }
 
-export const busyTimesHeatmapDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: BUSY_TIMES_HEATMAP_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_BUSY_TIMES_HEATMAP_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_BUSY_TIMES_HEATMAP_DESCRIPTION,
-		icon: Flame,
-		requiredRole: "employee",
-		portfolioCapable: false,
-		supportsComparison: false,
-		maxRangeDays: 92,
-		defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
-		optionsSchema,
-		defaultOptions: {},
-		Component: BusyTimesHeatmapWidget,
-	});
+export const busyTimesHeatmapDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: BUSY_TIMES_HEATMAP_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_BUSY_TIMES_HEATMAP_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_BUSY_TIMES_HEATMAP_DESCRIPTION,
+	icon: Flame,
+	requiredRole: "employee",
+	portfolioCapable: false,
+	supportsComparison: false,
+	maxRangeDays: 92,
+	defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
+	optionsSchema,
+	defaultOptions: {},
+	Component: BusyTimesHeatmapWidget,
+});

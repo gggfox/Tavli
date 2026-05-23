@@ -11,13 +11,7 @@
 import { ReservationsKeys } from "@/global/i18n";
 import { isValidYmd, ymdToLocalDate } from "@/global/utils/calendarMonth";
 
-export type ReservationRange =
-	| "today"
-	| "week"
-	| "month"
-	| "quarter"
-	| "year"
-	| "all";
+export type ReservationRange = "today" | "week" | "month" | "quarter" | "year" | "all";
 
 export interface RangeBounds {
 	fromMs: number;

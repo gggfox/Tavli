@@ -142,7 +142,13 @@ export const getAvailability = query({
 			reason: "ERROR_NO_TABLES_AVAILABLE" as const,
 			turnMinutes,
 			endsAt,
-			suggestedTimes: await findSuggestedTimes(ctx, args.restaurantId, args.partySize, args.startsAt, turnMinutes),
+			suggestedTimes: await findSuggestedTimes(
+				ctx,
+				args.restaurantId,
+				args.partySize,
+				args.startsAt,
+				turnMinutes
+			),
 		};
 	},
 });
@@ -210,10 +216,7 @@ export const internalCreate = internalMutation({
 		notes: v.optional(v.string()),
 		idempotencyKey: v.optional(v.string()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, CreateErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, CreateErrors> {
 		return await createReservationCore(ctx, args);
 	},
 });
@@ -231,10 +234,7 @@ export const create = mutation({
 		notes: v.optional(v.string()),
 		idempotencyKey: v.optional(v.string()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, CreateErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, CreateErrors> {
 		const identity = await ctx.auth.getUserIdentity();
 		return await createReservationCore(ctx, {
 			...args,
@@ -400,10 +400,7 @@ export const cancel = mutation({
 // Mark seated / completed
 // ============================================================================
 
-type MarkSeatedErrors =
-	| StaffAuthErrors
-	| NotFoundErrorObject
-	| UserInputValidationErrorObject;
+type MarkSeatedErrors = StaffAuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
 export const markSeated = mutation({
 	args: {
@@ -417,7 +414,10 @@ export const markSeated = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<{ reservationId: Id<typeof TABLE.RESERVATIONS>; sessionId: Id<typeof TABLE.SESSIONS> }, MarkSeatedErrors> {
+	): AsyncReturn<
+		{ reservationId: Id<typeof TABLE.RESERVATIONS>; sessionId: Id<typeof TABLE.SESSIONS> },
+		MarkSeatedErrors
+	> {
 		const [userId, authError] = await getCurrentUserId(ctx);
 		if (authError) return [null, authError];
 		const reservation = await ctx.db.get(args.reservationId);
@@ -553,7 +553,10 @@ export const listForRange = query({
 		const rows = await ctx.db
 			.query(TABLE.RESERVATIONS)
 			.withIndex("by_restaurant_time", (q) =>
-				q.eq("restaurantId", args.restaurantId).gte("startsAt", args.fromMs).lt("startsAt", args.toMs)
+				q
+					.eq("restaurantId", args.restaurantId)
+					.gte("startsAt", args.fromMs)
+					.lt("startsAt", args.toMs)
 			)
 			.order("asc")
 			.collect();
@@ -596,7 +599,10 @@ export const listForRangeMulti = query({
 				ctx.db
 					.query(TABLE.RESERVATIONS)
 					.withIndex("by_restaurant_time", (q) =>
-						q.eq("restaurantId", restaurantId).gte("startsAt", args.fromMs).lt("startsAt", args.toMs)
+						q
+							.eq("restaurantId", restaurantId)
+							.gte("startsAt", args.fromMs)
+							.lt("startsAt", args.toMs)
 					)
 					.order("asc")
 					.collect()
@@ -691,10 +697,7 @@ export const sweepNoShows = internalMutation({
 				.collect();
 
 			for (const r of candidates) {
-				if (
-					r.status !== RESERVATION_STATUS.PENDING &&
-					r.status !== RESERVATION_STATUS.CONFIRMED
-				) {
+				if (r.status !== RESERVATION_STATUS.PENDING && r.status !== RESERVATION_STATUS.CONFIRMED) {
 					continue;
 				}
 				if (!ACTIVE_RESERVATION_STATUSES.includes(r.status)) continue;
@@ -733,7 +736,10 @@ export const internalListReservationsForExportYear = internalQuery({
 		const reservations = await ctx.db
 			.query(TABLE.RESERVATIONS)
 			.withIndex("by_restaurant_time", (q) =>
-				q.eq("restaurantId", args.restaurantId).gte("startsAt", args.fromMs).lte("startsAt", args.toMs)
+				q
+					.eq("restaurantId", args.restaurantId)
+					.gte("startsAt", args.fromMs)
+					.lte("startsAt", args.toMs)
 			)
 			.collect();
 

@@ -166,7 +166,11 @@ describe("restaurants", () => {
 		it("includes all restaurants in an org for org-level owner", async () => {
 			const t = convexTest(schema, modules);
 			const orgId = await seedOrganization(t);
-			await seedUserRole(t, { userId: "orgOwner", roles: [USER_ROLES.OWNER], organizationId: orgId });
+			await seedUserRole(t, {
+				userId: "orgOwner",
+				roles: [USER_ROLES.OWNER],
+				organizationId: orgId,
+			});
 			await t.run(async (ctx) => {
 				const now = Date.now();
 				await ctx.db.insert("restaurants", {
@@ -226,7 +230,11 @@ describe("restaurants", () => {
 					updatedAt: now,
 				});
 			});
-			await seedUserRole(t, { userId: "emp1", roles: [USER_ROLES.EMPLOYEE], organizationId: orgId });
+			await seedUserRole(t, {
+				userId: "emp1",
+				roles: [USER_ROLES.EMPLOYEE],
+				organizationId: orgId,
+			});
 			await t.run(async (ctx) => {
 				const now = Date.now();
 				await ctx.db.insert("restaurantMembers", {
@@ -404,7 +412,11 @@ describe("restaurants", () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "owner-del" });
 			const orgId = await seedOrganization(t);
-			await seedUserRole(t, { userId: "owner-del", roles: [USER_ROLES.OWNER], organizationId: orgId });
+			await seedUserRole(t, {
+				userId: "owner-del",
+				roles: [USER_ROLES.OWNER],
+				organizationId: orgId,
+			});
 
 			const [rid] = await authed.mutation(api.restaurants.create, {
 				name: "Del Me",
@@ -482,7 +494,11 @@ describe("restaurants", () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "purge-owner" });
 			const orgId = await seedOrganization(t);
-			await seedUserRole(t, { userId: "purge-owner", roles: [USER_ROLES.OWNER], organizationId: orgId });
+			await seedUserRole(t, {
+				userId: "purge-owner",
+				roles: [USER_ROLES.OWNER],
+				organizationId: orgId,
+			});
 
 			const [rid] = await authed.mutation(api.restaurants.create, {
 				name: "Purge Me",

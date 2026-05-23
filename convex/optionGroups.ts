@@ -11,10 +11,7 @@ import { appendAuditEvent, stampUpdated } from "./_util/audit";
 import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
 import { TABLE } from "./constants";
 
-type AuthErrors =
-	| NotAuthenticatedErrorObject
-	| NotAuthorizedErrorObject
-	| NotFoundErrorObject;
+type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
 
 // ============================================================================
 // Option Group CRUD

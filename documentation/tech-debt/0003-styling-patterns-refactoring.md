@@ -14,18 +14,18 @@ The codebase has accumulated several patterns that, while functional, create mai
 
 ## Affected Files
 
-| File | Issue | Occurrences |
-| ---- | ----- | ----------- |
-| `src/components/Tasks/TaskItem.tsx` | Inline styles, hover handlers | 5 styles, 2 handlers |
-| `src/components/Tasks/TaskForm.tsx` | Inline styles, hover handlers | 2 styles, 2 handlers |
-| `src/components/Sidebar/Sidebar.tsx` | Inline styles, hover handlers | 20 styles, 6 handlers |
-| `src/components/Sidebar/SidebarUserSection.tsx` | Duplicated avatar rendering, hover handlers | 9 styles, 2 handlers |
-| `src/components/Sidebar/SidebarAuthSection.tsx` | Hover handlers | 8 handlers |
-| `src/components/WelcomeSection.tsx` | Inline styles, hover handlers | 18 styles, 4 handlers |
-| `src/components/ErrorBoundary/ErrorBoundary.tsx` | Inline styles, hover handlers | 8 styles, 6 handlers |
-| `src/components/Tasks/ErrorAlert.tsx` | Hover handlers | 2 handlers |
-| `src/lib/effect/utils/extractError.ts` | `TaskOperation` type | 1 |
-| `src/lib/effect/stores/TasksDebugStore.ts` | `TaskOperationType` type (duplicate) | 1 |
+| File                                             | Issue                                       | Occurrences           |
+| ------------------------------------------------ | ------------------------------------------- | --------------------- |
+| `src/components/Tasks/TaskItem.tsx`              | Inline styles, hover handlers               | 5 styles, 2 handlers  |
+| `src/components/Tasks/TaskForm.tsx`              | Inline styles, hover handlers               | 2 styles, 2 handlers  |
+| `src/components/Sidebar/Sidebar.tsx`             | Inline styles, hover handlers               | 20 styles, 6 handlers |
+| `src/components/Sidebar/SidebarUserSection.tsx`  | Duplicated avatar rendering, hover handlers | 9 styles, 2 handlers  |
+| `src/components/Sidebar/SidebarAuthSection.tsx`  | Hover handlers                              | 8 handlers            |
+| `src/components/WelcomeSection.tsx`              | Inline styles, hover handlers               | 18 styles, 4 handlers |
+| `src/components/ErrorBoundary/ErrorBoundary.tsx` | Inline styles, hover handlers               | 8 styles, 6 handlers  |
+| `src/components/Tasks/ErrorAlert.tsx`            | Hover handlers                              | 2 handlers            |
+| `src/lib/effect/utils/extractError.ts`           | `TaskOperation` type                        | 1                     |
+| `src/lib/effect/stores/TasksDebugStore.ts`       | `TaskOperationType` type (duplicate)        | 1                     |
 
 ## Issue Details
 
@@ -50,9 +50,9 @@ onMouseLeave={(e) => {
 ```tsx
 // Already in Sidebar.tsx - could be shared
 const handleIconHoverEnter = (e: MouseEvent<HTMLButtonElement>) => {
-  e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-  e.currentTarget.style.color = 'var(--text-primary)'
-}
+	e.currentTarget.style.backgroundColor = "var(--bg-hover)";
+	e.currentTarget.style.color = "var(--text-primary)";
+};
 ```
 
 ### 2. Excessive Inline Styles (Medium Priority)
@@ -80,26 +80,26 @@ Both `TaskForm.tsx` and `AuthenticatedTasks.tsx` implement similar Exit error ex
 ```tsx
 // TaskForm.tsx (lines 83-110)
 function getErrorMessage<E>(exit: Exit.Exit<unknown, E>): string {
-  if (Exit.isSuccess(exit)) return ""
-  const failureOption = Cause.failureOption(exit.cause)
-  if (Option.isSome(failureOption)) {
-    const error = failureOption.value
-    if (error && typeof error === "object" && "operation" in error && "cause" in error) {
-      // ... extract message
-    }
-  }
-  // ... handle defects
+	if (Exit.isSuccess(exit)) return "";
+	const failureOption = Cause.failureOption(exit.cause);
+	if (Option.isSome(failureOption)) {
+		const error = failureOption.value;
+		if (error && typeof error === "object" && "operation" in error && "cause" in error) {
+			// ... extract message
+		}
+	}
+	// ... handle defects
 }
 
 // AuthenticatedTasks.tsx (lines 37-57)
 const handleExitError = useCallback(<A,>(exit: Exit.Exit<A, TasksError>): boolean => {
-  if (Exit.isSuccess(exit)) return true
-  const failureOption = Cause.failureOption(exit.cause)
-  if (Option.isSome(failureOption)) {
-    // ... similar logic
-  }
-  // ...
-}, [])
+	if (Exit.isSuccess(exit)) return true;
+	const failureOption = Cause.failureOption(exit.cause);
+	if (Option.isSome(failureOption)) {
+		// ... similar logic
+	}
+	// ...
+}, []);
 ```
 
 ### 4. Duplicated Type Definitions (Low Priority)
@@ -109,7 +109,7 @@ const handleExitError = useCallback(<A,>(exit: Exit.Exit<A, TasksError>): boolea
 export type TaskOperation = "create" | "delete" | "toggle";
 
 // src/lib/effect/stores/TasksDebugStore.ts
-export type TaskOperationType = "create" | "delete" | "toggle"
+export type TaskOperationType = "create" | "delete" | "toggle";
 ```
 
 ### 5. Duplicated Avatar Rendering (Low Priority)
@@ -213,15 +213,15 @@ Create a small internal component library with styled primitives.
 ```tsx
 // src/components/ui/Button.tsx
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost'
-  size?: 'sm' | 'md' | 'lg'
+	variant?: "primary" | "secondary" | "ghost";
+	size?: "sm" | "md" | "lg";
 }
 
 // src/components/ui/Avatar.tsx
 interface AvatarProps {
-  src?: string
-  fallback: string
-  size?: 'sm' | 'md' | 'lg'
+	src?: string;
+	fallback: string;
+	size?: "sm" | "md" | "lg";
 }
 ```
 
@@ -248,7 +248,7 @@ export type TaskOperation = "create" | "delete" | "toggle";
 
 // src/lib/effect/stores/TasksDebugStore.ts
 import type { TaskOperation } from "../utils/extractError";
-export type { TaskOperation as TaskOperationType };  // Backward compat
+export type { TaskOperation as TaskOperationType }; // Backward compat
 ```
 
 **Step 2: Extract Exit error helper** - Create shared `extractExitError()` function
@@ -256,10 +256,10 @@ export type { TaskOperation as TaskOperationType };  // Backward compat
 ```tsx
 // src/lib/effect/utils/exitHelpers.ts
 export function extractExitError<E>(
-  exit: Exit.Exit<unknown, E>
+	exit: Exit.Exit<unknown, E>
 ): { message: string; operation?: string } | null {
-  if (Exit.isSuccess(exit)) return null;
-  // ... consolidated logic
+	if (Exit.isSuccess(exit)) return null;
+	// ... consolidated logic
 }
 ```
 
@@ -270,14 +270,16 @@ Convert inline hover handlers to CSS classes where possible:
 ```css
 /* src/styles.css - add utility classes */
 .hover-icon {
-  color: var(--text-tertiary);
-  background-color: transparent;
-  transition: background-color 0.15s, color 0.15s;
+	color: var(--text-tertiary);
+	background-color: transparent;
+	transition:
+		background-color 0.15s,
+		color 0.15s;
 }
 
 .hover-icon:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-hover);
+	color: var(--text-primary);
+	background-color: var(--bg-hover);
 }
 ```
 
@@ -289,12 +291,12 @@ Convert inline hover handlers to CSS classes where possible:
 
 ## Success Criteria
 
-| Metric | Current | Target |
-| ------ | ------- | ------ |
-| Inline hover handlers | 32 | < 5 |
-| Duplicated Exit handling | 2 files | 1 shared utility |
-| Duplicated types | 2 | 1 canonical location |
-| Avatar implementations | 2 | 1 shared component |
+| Metric                   | Current | Target               |
+| ------------------------ | ------- | -------------------- |
+| Inline hover handlers    | 32      | < 5                  |
+| Duplicated Exit handling | 2 files | 1 shared utility     |
+| Duplicated types         | 2       | 1 canonical location |
+| Avatar implementations   | 2       | 1 shared component   |
 
 ## Owner
 
@@ -370,9 +372,9 @@ Created `src/components/ui/` with shared components:
 
 ### Final Metrics
 
-| Metric | Before | After |
-| ------ | ------ | ----- |
-| Inline hover handlers | 32 | 0 |
-| Duplicated Exit handling | 2 files | 1 shared utility |
-| Duplicated types | 2 | 1 canonical location |
-| Avatar implementations | 2 | 1 shared component |
+| Metric                   | Before  | After                |
+| ------------------------ | ------- | -------------------- |
+| Inline hover handlers    | 32      | 0                    |
+| Duplicated Exit handling | 2 files | 1 shared utility     |
+| Duplicated types         | 2       | 1 canonical location |
+| Avatar implementations   | 2       | 1 shared component   |

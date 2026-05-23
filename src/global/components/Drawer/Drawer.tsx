@@ -5,7 +5,15 @@ import {
 	useDialogPhase,
 	useMediaQuery,
 } from "@/global/hooks";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type CSSProperties,
+	type PointerEvent,
+} from "react";
 import "./Drawer.css";
 import type { DrawerProps, DrawerSide } from "@/global/components/Drawer/types";
 
@@ -135,8 +143,7 @@ export function Drawer({
 			const elapsed = Math.max(1, performance.now() - startTRef.current);
 			const velocity = delta / elapsed;
 			const threshold = prefersReducedMotion ? SWIPE_DISMISS_PX_REDUCED : SWIPE_DISMISS_PX;
-			const dismiss =
-				delta >= threshold || (delta >= 56 && velocity >= SWIPE_VELOCITY_THRESHOLD);
+			const dismiss = delta >= threshold || (delta >= 56 && velocity >= SWIPE_VELOCITY_THRESHOLD);
 
 			if (dismiss) {
 				onClose();

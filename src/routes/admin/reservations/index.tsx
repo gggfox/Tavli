@@ -17,7 +17,9 @@ import { Lock, Settings } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-const STATUS_SET = new Set(RESERVATION_STATUS_CONFIG.map((s) => s.value)) as ReadonlySet<ReservationStatus>;
+const STATUS_SET = new Set(
+	RESERVATION_STATUS_CONFIG.map((s) => s.value)
+) as ReadonlySet<ReservationStatus>;
 
 function validateReservationsSearch(search: Record<string, unknown>) {
 	const focus = typeof search.focus === "string" ? search.focus : undefined;
@@ -27,13 +29,17 @@ function validateReservationsSearch(search: Record<string, unknown>) {
 			: undefined;
 	const dayRaw = typeof search.day === "string" ? search.day : undefined;
 	const day = dayRaw && isValidYmd(dayRaw) ? dayRaw : undefined;
-	const view = search.view === "cards" || search.view === "table" || search.view === "timeline" ? search.view : undefined;
+	const view =
+		search.view === "cards" || search.view === "table" || search.view === "timeline"
+			? search.view
+			: undefined;
 	let status: string | undefined;
 	if (typeof search.status === "string" && search.status.trim()) {
-		const parts = search.status.split(",").map((s) => s.trim()).filter(Boolean);
-		const ok = parts.filter((p): p is ReservationStatus =>
-			STATUS_SET.has(p as ReservationStatus)
-		);
+		const parts = search.status
+			.split(",")
+			.map((s) => s.trim())
+			.filter(Boolean);
+		const ok = parts.filter((p): p is ReservationStatus => STATUS_SET.has(p as ReservationStatus));
 		status = ok.length ? [...new Set(ok)].sort((a, b) => a.localeCompare(b)).join(",") : undefined;
 	}
 	return { focus, range, day, view, status };
@@ -60,10 +66,10 @@ function ReservationsPage() {
 		<div className="p-6 flex flex-col h-full">
 			<div className="mb-6 flex items-start justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-semibold text-foreground" >
+					<h1 className="text-2xl font-semibold text-foreground">
 						{t(ReservationsKeys.PAGE_TITLE)}
 					</h1>
-					<p className="mt-2 text-sm text-muted-foreground" >
+					<p className="mt-2 text-sm text-muted-foreground">
 						{t(ReservationsKeys.PAGE_DESCRIPTION)}
 					</p>
 				</div>
@@ -108,9 +114,7 @@ function ReservationsPage() {
 					{restaurant ? (
 						<ReservationSettingsPanel restaurantId={restaurant._id} />
 					) : (
-						<p className="text-sm text-faint-foreground" >
-							Please set up your restaurant first.
-						</p>
+						<p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>
 					)}
 				</div>
 			</Drawer>
@@ -130,9 +134,7 @@ function ReservationsPage() {
 					{restaurant ? (
 						<TableLocksManager restaurantId={restaurant._id} />
 					) : (
-						<p className="text-sm text-faint-foreground" >
-							Please set up your restaurant first.
-						</p>
+						<p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>
 					)}
 				</div>
 			</Drawer>
@@ -146,11 +148,7 @@ function ReservationsContent({
 }: Readonly<{ hasRestaurant: boolean; isLoading: boolean }>) {
 	if (isLoading) return <ReservationsDashboardSkeleton />;
 	if (!hasRestaurant) {
-		return (
-			<p className="text-sm text-faint-foreground" >
-				Please set up your restaurant first.
-			</p>
-		);
+		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
 	}
 	return <ReservationsDashboard />;
 }

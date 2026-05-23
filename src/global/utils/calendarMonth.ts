@@ -69,8 +69,7 @@ export function buildMonthGrid(
 	weekStartsOnJsDay: number
 ): readonly MonthGridCell[] {
 	const firstOfMonth = new Date(visibleYear, visibleMonthIndex, 1, 0, 0, 0, 0);
-	const lead =
-		(firstOfMonth.getDay() - weekStartsOnJsDay + 7) % 7;
+	const lead = (firstOfMonth.getDay() - weekStartsOnJsDay + 7) % 7;
 
 	const cells: MonthGridCell[] = [];
 	const cursor = new Date(visibleYear, visibleMonthIndex, 1 - lead, 0, 0, 0, 0);
@@ -90,7 +89,11 @@ export function buildMonthGrid(
 	return cells;
 }
 
-export function addMonths(year: number, monthIndex: number, delta: number): { year: number; monthIndex: number } {
+export function addMonths(
+	year: number,
+	monthIndex: number,
+	delta: number
+): { year: number; monthIndex: number } {
 	const d = new Date(year, monthIndex + delta, 1);
 	return { year: d.getFullYear(), monthIndex: d.getMonth() };
 }

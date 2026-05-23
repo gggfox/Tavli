@@ -40,10 +40,7 @@ export function DashboardLayoutTabs({
 	useEffect(() => {
 		if (!overflowOpen) return;
 		const onClickAway = (event: MouseEvent) => {
-			if (
-				overflowRef.current &&
-				!overflowRef.current.contains(event.target as Node)
-			) {
+			if (overflowRef.current && !overflowRef.current.contains(event.target as Node)) {
 				setOverflowOpen(false);
 			}
 		};
@@ -107,10 +104,7 @@ export function DashboardLayoutTabs({
 						<MoreHorizontal size={14} />
 					</button>
 					{overflowOpen && (
-						<Surface
-							tone="elevated"
-							className="absolute right-0 top-full mt-1 z-10 min-w-40 py-1"
-						>
+						<Surface tone="elevated" className="absolute right-0 top-full mt-1 z-10 min-w-40 py-1">
 							{overflow.map((layout) => (
 								<button
 									key={layout._id}

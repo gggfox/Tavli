@@ -67,10 +67,12 @@ describe("Locale files", () => {
 
 	it("no locale has empty string values", () => {
 		for (const key of enKeys) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const value = key.split(".").reduce((o: any, k) => o?.[k], en);
 			expect(value, `en.json key "${key}" is empty`).not.toBe("");
 		}
 		for (const key of esKeys) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const value = key.split(".").reduce((o: any, k) => o?.[k], es);
 			expect(value, `es.json key "${key}" is empty`).not.toBe("");
 		}

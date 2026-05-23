@@ -13,11 +13,7 @@ export function MenuItemDetailSkeleton({ onBack }: MenuItemDetailSkeletonProps =
 		<div className="flex flex-col h-full" aria-label="Loading menu item" aria-busy="true">
 			<div className="flex-1 overflow-y-auto p-4 space-y-6">
 				{onBack ? (
-					<button
-						onClick={onBack}
-						className="flex items-center gap-1 text-sm text-primary"
-						
-					>
+					<button onClick={onBack} className="flex items-center gap-1 text-sm text-primary">
 						<ArrowLeft size={16} /> Back to menu
 					</button>
 				) : (
@@ -38,12 +34,8 @@ export function MenuItemDetailSkeleton({ onBack }: MenuItemDetailSkeletonProps =
 							<div
 								key={`option-group-${groupIndex}-opt-${optIndex}`}
 								className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-muted border border-border"
-								
 							>
-								<Skeleton
-									className="h-4"
-									style={{width: `${40 + (optIndex % 3) * 12}%`}}
-								/>
+								<Skeleton className="h-4" style={{ width: `${40 + (optIndex % 3) * 12}%` }} />
 								<Skeleton className="h-4 w-12" />
 							</div>
 						))}
@@ -51,10 +43,7 @@ export function MenuItemDetailSkeleton({ onBack }: MenuItemDetailSkeletonProps =
 				))}
 			</div>
 
-			<div
-				className="px-4 pb-4 pt-2 space-y-3 border-t border-border"
-				
-			>
+			<div className="px-4 pb-4 pt-2 space-y-3 border-t border-border">
 				<div className="flex items-center justify-center gap-4">
 					<Skeleton rounded="full" className="h-9 w-9" />
 					<Skeleton className="h-5 w-6" />

@@ -21,6 +21,6 @@ test.describe("Home page", () => {
 		await page.goto("/");
 		await expect(page.getByText("Menu Builder")).toBeVisible();
 		await expect(page.getByText("Table Ordering")).toBeVisible();
-		await expect(page.getByText("Secure Auth")).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Secure Auth" })).toBeVisible();
 	});
 });

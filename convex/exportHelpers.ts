@@ -115,10 +115,7 @@ export function monthIndexInTz(
  * Returns the 0-based month index for a `YYYY-MM-DD` business-day key,
  * or null if the key is malformed or not in `year`.
  */
-export function monthIndexFromYmd(
-	ymd: string | undefined | null,
-	year: number
-): number | null {
+export function monthIndexFromYmd(ymd: string | undefined | null, year: number): number | null {
 	if (!ymd) return null;
 	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
 	if (!m) return null;

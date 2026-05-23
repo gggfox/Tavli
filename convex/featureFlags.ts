@@ -72,9 +72,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * Reads the `softDeletePurgeDelayDays` feature flag, falling back to the
  * default when unset, disabled, or non-positive.
  */
-export async function getSoftDeletePurgeDelayMs(
-	ctx: QueryCtx | MutationCtx
-): Promise<number> {
+export async function getSoftDeletePurgeDelayMs(ctx: QueryCtx | MutationCtx): Promise<number> {
 	const flag = await ctx.db
 		.query("featureFlags")
 		.withIndex("by_key", (q) => q.eq("key", FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS))

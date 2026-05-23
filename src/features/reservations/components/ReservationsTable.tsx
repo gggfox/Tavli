@@ -1,12 +1,7 @@
 /**
  * Sortable, searchable table view for the reservations dashboard.
  */
-import {
-	getStatusToneStyle,
-	StatusBadge,
-	SortIcon,
-	toneByValue,
-} from "@/global/components";
+import { getStatusToneStyle, StatusBadge, SortIcon, toneByValue } from "@/global/components";
 import { SearchInput } from "@/global/components/SearchInput";
 import { Pagination } from "@/global/components/Table/Pagination";
 import { ReservationsKeys } from "@/global/i18n";
@@ -51,9 +46,7 @@ export function ReservationsTable({
 	onOpen,
 }: Readonly<ReservationsTableProps>) {
 	const { t, i18n } = useTranslation();
-	const [sorting, setSorting] = useState<SortingState>([
-		{ id: "startsAt", desc: false },
-	]);
+	const [sorting, setSorting] = useState<SortingState>([{ id: "startsAt", desc: false }]);
 	const [globalFilter, setGlobalFilter] = useState("");
 
 	const columns = useMemo<ColumnDef<ReservationTableRow>[]>(() => {
@@ -72,10 +65,8 @@ export function ReservationsTable({
 					</button>
 				),
 				sortingFn: (rowA, rowB) => {
-					const a =
-						STATUS_SORT_INDEX[rowA.original.status as ReservationStatus] ?? 0;
-					const b =
-						STATUS_SORT_INDEX[rowB.original.status as ReservationStatus] ?? 0;
+					const a = STATUS_SORT_INDEX[rowA.original.status as ReservationStatus] ?? 0;
+					const b = STATUS_SORT_INDEX[rowB.original.status as ReservationStatus] ?? 0;
 					return a - b;
 				},
 				cell: ({ row }) => {
@@ -169,12 +160,10 @@ export function ReservationsTable({
 				header: () => <span>{t(ReservationsKeys.COLUMN_SOURCE)}</span>,
 				cell: ({ row }) => {
 					const src = row.original.source;
-					let key = ReservationsKeys.SOURCE_UI;
+					let key: string = ReservationsKeys.SOURCE_UI;
 					if (src === "whatsapp") key = ReservationsKeys.SOURCE_WHATSAPP;
 					else if (src === "staff") key = ReservationsKeys.SOURCE_STAFF;
-					return (
-						<span className="text-sm text-muted-foreground capitalize">{t(key)}</span>
-					);
+					return <span className="text-sm text-muted-foreground capitalize">{t(key)}</span>;
 				},
 			},
 			{
@@ -203,7 +192,10 @@ export function ReservationsTable({
 					}
 					const short = notes.length > 48 ? `${notes.slice(0, 45)}…` : notes;
 					return (
-						<span className="text-sm text-muted-foreground truncate max-w-[14rem] block" title={notes}>
+						<span
+							className="text-sm text-muted-foreground truncate max-w-[14rem] block"
+							title={notes}
+						>
 							{short}
 						</span>
 					);
@@ -273,8 +265,7 @@ export function ReservationsTable({
 					onChange={setGlobalFilter}
 				/>
 				<div className="text-sm text-muted-foreground">
-					{filteredCount}{" "}
-					{filteredCount === 1 ? "reservation" : "reservations"}
+					{filteredCount} {filteredCount === 1 ? "reservation" : "reservations"}
 				</div>
 			</div>
 

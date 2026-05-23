@@ -40,9 +40,7 @@ export function StatusFilterChips<T extends string>({
 }: StatusFilterChipsProps<T>) {
 	return (
 		<fieldset
-			className={["flex flex-wrap gap-2 m-0 p-0 border-0", className]
-				.filter(Boolean)
-				.join(" ")}
+			className={["flex flex-wrap gap-2 m-0 p-0 border-0", className].filter(Boolean).join(" ")}
 		>
 			<legend className="sr-only">{ariaLabel}</legend>
 			{options.map((option) => {

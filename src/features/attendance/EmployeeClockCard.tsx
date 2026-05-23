@@ -33,7 +33,8 @@ export function EmployeeClockCard({ isExpanded }: Readonly<EmployeeClockCardProp
 		),
 	});
 
-	const events = eventsTuple && !eventsTuple[1] ? eventsTuple[0] : undefined;
+	const rawEvents = eventsTuple && !eventsTuple[1] ? eventsTuple[0] : undefined;
+	const events = Array.isArray(rawEvents) ? rawEvents : undefined;
 	const clockedIn = deriveClockedIn(events);
 	const hasError = eventsTuple?.[1] != null;
 

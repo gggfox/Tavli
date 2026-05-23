@@ -223,9 +223,7 @@ function AdminTableRow<TData>({
 					{flexRender(cell.column.columnDef.cell, cell.getContext())}
 				</td>
 			))}
-			{renderRowActions && (
-				<td className="px-4 py-3">{renderRowActions(row.original)}</td>
-			)}
+			{renderRowActions && <td className="px-4 py-3">{renderRowActions(row.original)}</td>}
 		</tr>
 	);
 }

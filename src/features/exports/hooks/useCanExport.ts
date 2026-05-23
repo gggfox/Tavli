@@ -25,8 +25,7 @@ export function useCanExport(
 	organizationId: Id<"organizations"> | undefined
 ): { canExport: boolean; isLoading: boolean } {
 	const { isAuthenticated } = useConvexAuth();
-	const { roles, organizationId: userOrgId, isLoading: rolesLoading } =
-		useCurrentUserRoles();
+	const { roles, organizationId: userOrgId, isLoading: rolesLoading } = useCurrentUserRoles();
 	const { data: myMemberships, isLoading: membershipsLoading } = useQuery({
 		...convexQuery(api.restaurantMembers.listByUser, {}),
 		enabled: isAuthenticated,
@@ -44,9 +43,7 @@ export function useCanExport(
 		if (!myMemberships || !restaurantId) return false;
 		return myMemberships.some(
 			(m) =>
-				m.isActive &&
-				m.restaurantId === restaurantId &&
-				m.role === RESTAURANT_MEMBER_ROLE.MANAGER
+				m.isActive && m.restaurantId === restaurantId && m.role === RESTAURANT_MEMBER_ROLE.MANAGER
 		);
 	}, [myMemberships, restaurantId]);
 

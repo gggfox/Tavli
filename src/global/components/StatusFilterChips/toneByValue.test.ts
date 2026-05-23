@@ -18,10 +18,7 @@ describe("toneByValue", () => {
 	});
 
 	it("returns undefined when the value is not in the chip set", () => {
-		// @ts-expect-error - intentionally passing a value outside the union to
-		// exercise the runtime path; callers may receive arbitrary strings from
-		// the API layer.
-		expect(toneByValue(CHIPS, "unknown")).toBeUndefined();
+		expect(toneByValue(CHIPS, "unknown" as Status)).toBeUndefined();
 	});
 
 	it("returns undefined when chips is empty", () => {

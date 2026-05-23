@@ -31,8 +31,6 @@ export const RESERVATION_STATUS_CONFIG: ReadonlyArray<ReservationStatusConfig> =
 
 export const RESERVATION_FALLBACK_TONE: StatusTone = "neutral";
 
-export function getReservationStatusConfig(
-	status: string
-): ReservationStatusConfig | undefined {
+export function getReservationStatusConfig(status: string): ReservationStatusConfig | undefined {
 	return RESERVATION_STATUS_CONFIG.find((s) => s.value === status);
 }

@@ -54,13 +54,7 @@ export function FeatureFlagsTable() {
 	}
 
 	if (isLoading) {
-		return (
-			<EmptyState
-				icon={Flag}
-				title="Loading feature flags…"
-				variant="card"
-			/>
-		);
+		return <EmptyState icon={Flag} title="Loading feature flags…" variant="card" />;
 	}
 
 	if (isError) {
@@ -87,7 +81,10 @@ export function FeatureFlagsTable() {
 		rowsByKey.set(row.key, row);
 	}
 
-	const metadataByKey = FEATURE_FLAG_METADATA as Record<string, { description: string } | undefined>;
+	const metadataByKey = FEATURE_FLAG_METADATA as Record<
+		string,
+		{ description: string } | undefined
+	>;
 
 	const rows: FlagRow[] = registeredKeys.map((key) => {
 		const dbRow = rowsByKey.get(key);
@@ -193,8 +190,7 @@ export function FeatureFlagsTable() {
 										disabled={isPending}
 										onBlur={(e) => {
 											const raw = e.target.value;
-											const next =
-												raw.trim() === "" ? undefined : Number(raw);
+											const next = raw.trim() === "" ? undefined : Number(raw);
 											if (next === row.numericValue) return;
 											void handleNumericChange(row, raw);
 										}}

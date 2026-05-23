@@ -133,10 +133,7 @@ export const finalizeTipPool = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		businessDate: v.string(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, AuthE | UserInputValidationErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthE | UserInputValidationErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
@@ -173,10 +170,7 @@ export const finalizeTipPool = mutation({
 		for (const a of dayAttendance) {
 			if (!a.actualStart || !a.actualEnd) continue;
 			const hrs = (a.actualEnd - a.actualStart) / 3_600_000;
-			hoursByMember.set(
-				a.memberId,
-				(hoursByMember.get(a.memberId) ?? 0) + hrs
-			);
+			hoursByMember.set(a.memberId, (hoursByMember.get(a.memberId) ?? 0) + hrs);
 		}
 
 		const totalHours = [...hoursByMember.values()].reduce((s, h) => s + h, 0);
@@ -332,7 +326,11 @@ export const internalListTipEntriesForExport = internalQuery({
 		toBusinessDate: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, args.actingUserId, args.restaurantId);
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
 		if (aerr) throw new Error("Unauthorized");
 
 		const rows = await ctx.db

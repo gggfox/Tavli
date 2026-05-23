@@ -18,10 +18,7 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import { stampUpdated } from "./_util/audit";
 import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
-import {
-	EffectiveReservationSettings,
-	loadEffectiveSettings,
-} from "./_util/reservationSettings";
+import { EffectiveReservationSettings, loadEffectiveSettings } from "./_util/reservationSettings";
 import { mutation, query } from "./_generated/server";
 import { TABLE } from "./constants";
 
@@ -50,10 +47,7 @@ export const get = query({
 	},
 });
 
-type UpdateErrors =
-	| StaffAuthErrors
-	| NotFoundErrorObject
-	| UserInputValidationErrorObject;
+type UpdateErrors = StaffAuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
 /**
  * Upsert settings for a restaurant. Creates the row on first save.
@@ -115,8 +109,7 @@ export const update = mutation({
 		const id = await ctx.db.insert(TABLE.RESERVATION_SETTINGS, {
 			restaurantId: args.restaurantId,
 			defaultTurnMinutes: args.defaultTurnMinutes ?? defaults.defaultTurnMinutes,
-			turnMinutesByCapacity:
-				args.turnMinutesByCapacity ?? defaults.turnMinutesByCapacity,
+			turnMinutesByCapacity: args.turnMinutesByCapacity ?? defaults.turnMinutesByCapacity,
 			minAdvanceMinutes: args.minAdvanceMinutes ?? defaults.minAdvanceMinutes,
 			maxAdvanceDays: args.maxAdvanceDays ?? defaults.maxAdvanceDays,
 			noShowGraceMinutes: args.noShowGraceMinutes ?? defaults.noShowGraceMinutes,
@@ -134,7 +127,11 @@ type FieldError = { field: string; message: string };
 
 type SettingsArgs = {
 	defaultTurnMinutes?: number;
-	turnMinutesByCapacity?: Array<{ minPartySize: number; maxPartySize: number; turnMinutes: number }>;
+	turnMinutesByCapacity?: Array<{
+		minPartySize: number;
+		maxPartySize: number;
+		turnMinutes: number;
+	}>;
 	minAdvanceMinutes?: number;
 	maxAdvanceDays?: number;
 	noShowGraceMinutes?: number;

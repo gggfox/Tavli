@@ -57,9 +57,7 @@ export function InlineEditInput({
 	if (prefix) {
 		return (
 			<div className={`flex items-center gap-1 ${className ?? ""}`}>
-				<span className="text-xs shrink-0 text-faint-foreground" >
-					{prefix}
-				</span>
+				<span className="text-xs shrink-0 text-faint-foreground">{prefix}</span>
 				{input}
 			</div>
 		);

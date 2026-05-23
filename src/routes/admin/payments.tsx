@@ -37,11 +37,7 @@ function PaymentsContent({
 }: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
 	if (isLoading) return <PaymentsDashboardSkeleton />;
 	if (!restaurantId) {
-		return (
-			<p className="text-sm text-faint-foreground" >
-				Please set up your restaurant first.
-			</p>
-		);
+		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
 	}
 	return <PaymentsDashboard restaurantId={restaurantId} />;
 }

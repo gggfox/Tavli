@@ -31,12 +31,7 @@ import {
 	requiredCapacityCovered,
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
-import {
-	RESERVATION_SOURCE,
-	RESERVATION_STATUS,
-	ReservationStatus,
-	TABLE,
-} from "./constants";
+import { RESERVATION_SOURCE, RESERVATION_STATUS, ReservationStatus, TABLE } from "./constants";
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 
@@ -139,9 +134,7 @@ export async function findSuggestedTimes(
 	return suggestions;
 }
 
-export function validateCreateInputs(
-	args: CreateCoreArgs
-): UserInputValidationErrorObject | null {
+export function validateCreateInputs(args: CreateCoreArgs): UserInputValidationErrorObject | null {
 	if (args.partySize < 1) {
 		return new UserInputValidationError({
 			fields: [{ field: "partySize", message: "Must be at least 1" }],

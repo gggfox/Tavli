@@ -138,7 +138,9 @@ describe("attendance", () => {
 			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
 		});
 		const authed = t.withIdentity({ subject: "emp-only" });
-		const [rows, err] = await authed.query(api.attendance.listAbsencesForRestaurant, { restaurantId });
+		const [rows, err] = await authed.query(api.attendance.listAbsencesForRestaurant, {
+			restaurantId,
+		});
 		expect(rows).toBeNull();
 		expect(err && "name" in err && err.name).toBe("NOT_AUTHORIZED");
 	});
@@ -168,9 +170,13 @@ describe("attendance", () => {
 		});
 
 		const authedMgr = t.withIdentity({ subject: "mgr" });
-		const [all, err] = await authedMgr.query(api.attendance.listAbsencesForRestaurant, { restaurantId });
+		const [all, err] = await authedMgr.query(api.attendance.listAbsencesForRestaurant, {
+			restaurantId,
+		});
 		expect(err).toBeNull();
 		const allRows = all as Doc<"absences">[] | null;
-		expect(allRows?.some((a) => a.date === "2026-07-15" && a.type === ABSENCE_TYPE.SICK)).toBe(true);
+		expect(allRows?.some((a) => a.date === "2026-07-15" && a.type === ABSENCE_TYPE.SICK)).toBe(
+			true
+		);
 	});
 });

@@ -17,12 +17,8 @@ export function OrderDashboardSkeleton() {
 				<div
 					key={`order-skeleton-${cardIndex}`}
 					className="rounded-xl overflow-hidden flex flex-col aspect-video border border-border bg-muted"
-					
 				>
-					<div
-						className="px-4 py-3 flex items-start justify-between gap-2 border-b border-border"
-						
-					>
+					<div className="px-4 py-3 flex items-start justify-between gap-2 border-b border-border">
 						<div className="flex items-center gap-2 min-w-0 flex-1">
 							<Skeleton rounded="full" className="h-5 w-16" />
 							<Skeleton className="h-4 w-20" />
@@ -38,7 +34,7 @@ export function OrderDashboardSkeleton() {
 							<Skeleton
 								key={`order-skeleton-${cardIndex}-row-${rowIndex}`}
 								className="h-4"
-								style={{width: `${60 + ((cardIndex + rowIndex) % 4) * 10}%`}}
+								style={{ width: `${60 + ((cardIndex + rowIndex) % 4) * 10}%` }}
 							/>
 						))}
 					</div>

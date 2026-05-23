@@ -39,10 +39,7 @@ describe("StatusFilterChips", () => {
 			/>
 		);
 
-		expect(screen.getByRole("button", { name: "Pending" })).toHaveAttribute(
-			"aria-pressed",
-			"true"
-		);
+		expect(screen.getByRole("button", { name: "Pending" })).toHaveAttribute("aria-pressed", "true");
 		expect(screen.getByRole("button", { name: "Confirmed" })).toHaveAttribute(
 			"aria-pressed",
 			"true"
@@ -96,10 +93,7 @@ describe("StatusFilterChips", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Pending" }));
 		fireEvent.click(screen.getByRole("button", { name: "Cancelled" }));
 
-		expect(screen.getByRole("button", { name: "Pending" })).toHaveAttribute(
-			"aria-pressed",
-			"true"
-		);
+		expect(screen.getByRole("button", { name: "Pending" })).toHaveAttribute("aria-pressed", "true");
 		expect(screen.getByRole("button", { name: "Cancelled" })).toHaveAttribute(
 			"aria-pressed",
 			"true"

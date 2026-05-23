@@ -48,11 +48,7 @@ export function PublishTemplateDialog({
 	};
 
 	return (
-		<Modal
-			isOpen={open}
-			onClose={onClose}
-			ariaLabel={t(DashboardKeys.TEMPLATES_PUBLISH)}
-		>
+		<Modal isOpen={open} onClose={onClose} ariaLabel={t(DashboardKeys.TEMPLATES_PUBLISH)}>
 			<div className="p-4 space-y-3">
 				<h2 className="text-sm font-semibold text-foreground">
 					{t(DashboardKeys.TEMPLATES_PUBLISH)}

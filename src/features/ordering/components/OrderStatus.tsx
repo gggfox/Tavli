@@ -28,7 +28,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	if (!orderData) {
 		return (
 			<div className="p-4 flex items-center justify-center h-full text-faint-foreground">
-				<p >{t(OrderingKeys.ORDER_STATUS_LOADING)}</p>
+				<p>{t(OrderingKeys.ORDER_STATUS_LOADING)}</p>
 			</div>
 		);
 	}
@@ -38,15 +38,15 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	return (
 		<div className="flex flex-col h-full p-4 space-y-8">
 			<div className="text-center">
-				<h2 className="text-xl font-bold text-foreground" >
+				<h2 className="text-xl font-bold text-foreground">
 					{t(OrderingKeys.ORDER_STATUS_HEADING)}
 				</h2>
 				{orderData.dailyOrderNumber != null && (
-					<p className="text-base font-semibold tabular-nums mt-1 text-foreground" >
+					<p className="text-base font-semibold tabular-nums mt-1 text-foreground">
 						{t(OrderingKeys.ORDER_STATUS_DAY_NUMBER, { n: orderData.dailyOrderNumber })}
 					</p>
 				)}
-				<p className="text-sm mt-1 text-faint-foreground" >
+				<p className="text-sm mt-1 text-faint-foreground">
 					{t(OrderingKeys.ORDER_STATUS_SUMMARY, {
 						total: formatCents(orderData.totalAmount),
 						count: orderData.items.length,
@@ -56,7 +56,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 
 			{orderData.status === "cancelled" ? (
 				<div className="text-center py-8">
-					<p className="text-lg font-semibold text-destructive" >
+					<p className="text-lg font-semibold text-destructive">
 						{t(OrderingKeys.ORDER_STATUS_CANCELLED)}
 					</p>
 				</div>
@@ -70,16 +70,18 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 							<div key={step.key} className="flex items-center gap-4">
 								<div
 									className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-									style={{backgroundColor: isComplete ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-				border: isCurrent
+									style={{
+										backgroundColor: isComplete ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
+										border: isCurrent
 											? "2px solid var(--btn-primary-bg)"
-											: "1px solid var(--border-default)"}}
+											: "1px solid var(--border-default)",
+									}}
 								>
-									<Icon size={18} style={{color: isComplete ? "white" : "var(--text-muted)"}} />
+									<Icon size={18} style={{ color: isComplete ? "white" : "var(--text-muted)" }} />
 								</div>
 								<span
 									className={`text-sm ${isCurrent ? "font-semibold" : ""}`}
-									style={{color: isComplete ? "var(--text-primary)" : "var(--text-muted)"}}
+									style={{ color: isComplete ? "var(--text-primary)" : "var(--text-muted)" }}
 								>
 									{t(step.labelKey)}
 								</span>
@@ -90,15 +92,11 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 			)}
 
 			<div className="space-y-2">
-				<h3 className="text-sm font-semibold text-foreground" >
+				<h3 className="text-sm font-semibold text-foreground">
 					{t(OrderingKeys.ORDER_STATUS_ITEMS)}
 				</h3>
 				{orderData.items.map((item) => (
-					<div
-						key={item._id}
-						className="flex justify-between text-sm text-muted-foreground"
-						
-					>
+					<div key={item._id} className="flex justify-between text-sm text-muted-foreground">
 						<span>
 							{item.quantity}x {item.menuItemName}
 						</span>
@@ -110,7 +108,6 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 			<button
 				onClick={onBackToMenu}
 				className="w-full py-3 rounded-xl text-sm font-medium border border-border text-foreground"
-				
 			>
 				{t(OrderingKeys.ORDER_STATUS_ORDER_MORE)}
 			</button>

@@ -142,10 +142,7 @@ export function useSidebarGroups(): UseSidebarGroupsReturn {
 		}
 	}, [isAuthenticated, settings, settingsGroups]);
 
-	const isOpen = useCallback(
-		(key: string) => expandedGroups.has(key),
-		[expandedGroups]
-	);
+	const isOpen = useCallback((key: string) => expandedGroups.has(key), [expandedGroups]);
 
 	const setGroupExpanded = useCallback(
 		(key: string, expanded: boolean) => {

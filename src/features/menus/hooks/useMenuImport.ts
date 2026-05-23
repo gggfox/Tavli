@@ -40,9 +40,7 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 				setError(null);
 				setStep("uploading");
 
-				const uploadUrl = unwrapResult(
-					await generateUploadUrl({ restaurantId })
-				) as string;
+				const uploadUrl = unwrapResult(await generateUploadUrl({ restaurantId })) as string;
 				const response = await fetch(uploadUrl, {
 					method: "POST",
 					headers: { "Content-Type": file.type },

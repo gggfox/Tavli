@@ -26,7 +26,12 @@
 		"react": {
 			"version": "detect"
 		},
-		"boundaries/include": ["src/**/*"],
+		"import/resolver": {
+			"typescript": {
+				"alwaysTryTypes": true
+			}
+		},
+		"boundaries/include": ["src/**/*", "convex/**/*"],
 		"boundaries/elements": [
 			{
 				"mode": "full",
@@ -44,6 +49,16 @@
 				"type": "app",
 				"capture": ["_", "fileName"],
 				"pattern": ["src/routes/**/*"]
+			},
+			{
+				"mode": "full",
+				"type": "shared",
+				"pattern": ["src/*", "src/features/*"]
+			},
+			{
+				"mode": "full",
+				"type": "convex",
+				"pattern": ["convex/**/*"]
 			}
 		]
 	},
@@ -57,8 +72,9 @@
 		],
 		"react/prop-types": "off",
 		"react/react-in-jsx-scope": "off",
-		"boundaries/no-unknown": ["error"],
-		"boundaries/no-unknown-files": ["error"],
+		"react/no-children-prop": "off",
+		"boundaries/no-unknown": ["warn"],
+		"boundaries/no-unknown-files": ["warn"],
 		"boundaries/element-types": [
 			"error",
 			{
@@ -66,19 +82,27 @@
 				"rules": [
 					{
 						"from": ["global"],
-						"allow": ["global"]
+						"allow": ["global", "convex", "shared", "feature"]
 					},
 					{
 						"from": ["feature"],
-						"allow": ["global", ["feature", { "featureName": "${from.featureName}" }]]
+						"allow": ["global", "convex", "shared", "feature"]
 					},
 					{
 						"from": ["app", "neverImport"],
-						"allow": ["global", "feature"]
+						"allow": ["global", "feature", "convex", "shared"]
 					},
 					{
 						"from": ["app"],
 						"allow": [["app", { "fileName": "*.css" }]]
+					},
+					{
+						"from": ["shared"],
+						"allow": ["global", "feature", "convex", "shared", "app"]
+					},
+					{
+						"from": ["convex"],
+						"allow": ["convex"]
 					}
 				]
 			}

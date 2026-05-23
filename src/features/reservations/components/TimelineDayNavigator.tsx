@@ -106,7 +106,7 @@ export function TimelineDayNavigator({
 	const weekStartsOn = useMemo(() => getWeekStartsOnJsDay(locale), [locale]);
 	const weekdayLabels = useMemo(
 		() => weekdayShortLabels(locale, weekStartsOn),
-		[locale, weekStartsOn],
+		[locale, weekStartsOn]
 	);
 
 	const initialView = useMemo(() => {
@@ -130,7 +130,7 @@ export function TimelineDayNavigator({
 
 	const grid = useMemo(
 		() => buildMonthGrid(viewYear, viewMonthIndex, weekStartsOn),
-		[viewYear, viewMonthIndex, weekStartsOn],
+		[viewYear, viewMonthIndex, weekStartsOn]
 	);
 
 	const valueIndex = useMemo(() => {
@@ -160,9 +160,9 @@ export function TimelineDayNavigator({
 	const monthTitle = useMemo(
 		() =>
 			new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(
-				new Date(viewYear, viewMonthIndex, 1),
+				new Date(viewYear, viewMonthIndex, 1)
 			),
-		[locale, viewYear, viewMonthIndex],
+		[locale, viewYear, viewMonthIndex]
 	);
 
 	const prevMonth = () => {
@@ -329,7 +329,9 @@ export function TimelineDayNavigator({
 												aria-selected={selected}
 												className={[
 													"aspect-square max-h-9 rounded text-sm transition-colors focus:outline-none",
-													cell.inCurrentMonth ? "text-foreground" : "text-faint-foreground opacity-50",
+													cell.inCurrentMonth
+														? "text-foreground"
+														: "text-faint-foreground opacity-50",
 													selected || focused ? "ring-2 ring-(--btn-primary-bg)" : "",
 													selected ? "text-white" : "hover:bg-muted",
 													isCellToday && !selected ? "font-bold underline" : "",

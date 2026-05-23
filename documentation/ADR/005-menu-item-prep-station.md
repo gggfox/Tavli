@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-| ------- | ------- |
-| **Status** | Accepted |
-| **Date** | 2026-05-15 |
-| **Author(s)** | Tavli team |
-| **Supersedes** | — |
-| **Superseded by** | — |
+| Field             | Value      |
+| ----------------- | ---------- |
+| **Status**        | Accepted   |
+| **Date**          | 2026-05-15 |
+| **Author(s)**     | Tavli team |
+| **Supersedes**    | —          |
+| **Superseded by** | —          |
 
 ## Context
 
@@ -49,7 +49,7 @@ We model the **prep station** axis (where an item is prepared) as a
 single-value field on `MenuItem`:
 
 ```ts
-prepStation: v.union(v.literal("kitchen"), v.literal("bar"))
+prepStation: v.union(v.literal("kitchen"), v.literal("bar"));
 ```
 
 Backfilled to `"kitchen"` for all pre-existing rows by
@@ -73,12 +73,12 @@ disappear from a station's filtered queue.
 Two optional timestamps on `Order` track per-station readiness:
 
 ```ts
-kitchenReadyAt: v.optional(v.number())
-barReadyAt: v.optional(v.number())
+kitchenReadyAt: v.optional(v.number());
+barReadyAt: v.optional(v.number());
 ```
 
 A new `markStationReady` mutation stamps the appropriate timestamp.
-When *every applicable* station (= the distinct `prepStation` values
+When _every applicable_ station (= the distinct `prepStation` values
 across the order's items) has been stamped, the same patch flips
 `Order.status` to `"ready"`. `Order.status` therefore remains the single
 source of truth for whole-order completion; the per-station timestamps
@@ -166,7 +166,7 @@ on it.
 - Vocabulary diverges from the existing `SHIFT_ROLE` taxonomy.
 
 **Why not chosen:** It models the wrong axis. The dashboard filter is
-about *routing*, not *content*.
+about _routing_, not _content_.
 
 ### Option 2: Put `prepStation` on `MenuCategory` instead of `MenuItem`
 
@@ -287,8 +287,8 @@ Frontend:
 
 ## References
 
-- [`CONTEXT.md`](../../CONTEXT.md) — glossary entry for *Prep station*
-  and the *flagged ambiguity* about beverage/meal categories.
+- [`CONTEXT.md`](../../CONTEXT.md) — glossary entry for _Prep station_
+  and the _flagged ambiguity_ about beverage/meal categories.
 - [`convex/constants.ts`](../../convex/constants.ts) —
   `PREP_STATION`, `DEFAULT_PREP_STATION`, and `SHIFT_ROLE` for the
   vocabulary alignment.

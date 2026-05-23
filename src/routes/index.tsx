@@ -10,14 +10,11 @@ function App() {
 	if (isLoading) return null;
 
 	if (isAuthenticated) {
-		return <Navigate to="/admin/restaurants" replace />;
+		return <Navigate to="/admin/restaurants" search={{ manage: undefined }} replace />;
 	}
 
 	return (
-		<div
-			className="h-full flex flex-col overflow-hidden bg-background"
-			
-		>
+		<div className="h-full flex flex-col overflow-hidden bg-background">
 			<WelcomeSection />
 		</div>
 	);

@@ -46,8 +46,10 @@ export function MenuItemRow({
 		<div className="space-y-0">
 			<div
 				className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border"
-				style={{borderBottomLeftRadius: expandedPanel ? 0 : undefined,
-				borderBottomRightRadius: expandedPanel ? 0 : undefined}}
+				style={{
+					borderBottomLeftRadius: expandedPanel ? 0 : undefined,
+					borderBottomRightRadius: expandedPanel ? 0 : undefined,
+				}}
 			>
 				<div className="flex items-center gap-2.5">
 					{bulkSelect ? (
@@ -69,26 +71,21 @@ export function MenuItemRow({
 							className="w-10 h-10 rounded object-cover flex-shrink-0"
 						/>
 					) : (
-						<div
-							className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center bg-muted border border-border"
-							
-						>
-							<ImagePlus size={14} className="text-faint-foreground"  />
+						<div className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center bg-muted border border-border">
+							<ImagePlus size={14} className="text-faint-foreground" />
 						</div>
 					)}
 					<div>
 						<span
 							className="text-sm font-medium"
-							style={{color: item.isAvailable ? "var(--text-primary)" : "var(--text-muted)"}}
+							style={{ color: item.isAvailable ? "var(--text-primary)" : "var(--text-muted)" }}
 						>
 							{item.name}
 						</span>
 						{!item.isAvailable && item.unavailableReason && (
-							<span className="text-xs ml-2 text-warning" >
-								({item.unavailableReason})
-							</span>
+							<span className="text-xs ml-2 text-warning">({item.unavailableReason})</span>
 						)}
-						<span className="text-sm ml-3 text-muted-foreground" >
+						<span className="text-sm ml-3 text-muted-foreground">
 							${formatCents(item.basePrice)}
 						</span>
 					</div>
@@ -101,7 +98,9 @@ export function MenuItemRow({
 					>
 						<Pencil
 							size={14}
-							style={{color: expandedPanel === "edit" ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
+							style={{
+								color: expandedPanel === "edit" ? "var(--btn-primary-bg)" : "var(--text-muted)",
+							}}
 						/>
 					</button>
 					<button
@@ -111,12 +110,14 @@ export function MenuItemRow({
 					>
 						<ImagePlus
 							size={16}
-							style={{color:
+							style={{
+								color:
 									expandedPanel === "image"
 										? "var(--btn-primary-bg)"
 										: item.imageUrl
 											? "var(--accent-success)"
-											: "var(--text-muted)"}}
+											: "var(--text-muted)",
+							}}
 						/>
 					</button>
 					<button
@@ -136,9 +137,9 @@ export function MenuItemRow({
 						}
 					>
 						{item.isAvailable ? (
-							<Eye size={16}  />
+							<Eye size={16} />
 						) : (
-							<EyeOff size={16} className="text-faint-foreground"  />
+							<EyeOff size={16} className="text-faint-foreground" />
 						)}
 					</button>
 					<button
@@ -146,7 +147,7 @@ export function MenuItemRow({
 						className="p-1 rounded hover:bg-hover text-destructive"
 						title={t(MenusKeys.ITEM_REMOVE_TITLE)}
 					>
-						<Trash2 size={14}  />
+						<Trash2 size={14} />
 					</button>
 				</div>
 			</div>

@@ -400,7 +400,8 @@ describe("orders", () => {
 				status: "processing",
 				refundStatus: "none",
 				attemptNumber: 1,
-				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt,
+				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!
+					.updatedAt,
 			});
 			const secondPaymentId = await t.mutation(internal.stripeHelpers.createPayment, {
 				restaurantId,
@@ -410,7 +411,8 @@ describe("orders", () => {
 				status: "processing",
 				refundStatus: "none",
 				attemptNumber: 2,
-				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt,
+				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!
+					.updatedAt,
 			});
 			await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 				orderId,
@@ -1058,9 +1060,7 @@ describe("orders", () => {
 				prepStations: ["kitchen"],
 			});
 			if (!Array.isArray(kitchenOrders)) throw new Error("Expected array");
-			expect(new Set(kitchenOrders.map((o) => o._id))).toEqual(
-				new Set([kitchenOnlyId!, mixedId!])
-			);
+			expect(new Set(kitchenOrders.map((o) => o._id))).toEqual(new Set([kitchenOnlyId!, mixedId!]));
 
 			// Items in the response carry the resolved prepStation for the UI.
 			const mixedOrder = allOrders.find((o) => o._id === mixedId!);
@@ -1872,8 +1872,7 @@ describe("orders", () => {
 			const todayPeriodKey = getOrderResetPeriodKey(Date.now(), "UTC", 240, "daily");
 			expect(todayPeriodKey).toBe(todayKey);
 
-			const fetch = async (id: Id<"orders">) =>
-				await t.run(async (ctx) => ctx.db.get(id));
+			const fetch = async (id: Id<"orders">) => await t.run(async (ctx) => ctx.db.get(id));
 
 			const submitted = await fetch(submittedId);
 			const preparing = await fetch(preparingId);

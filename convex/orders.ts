@@ -256,7 +256,9 @@ export const confirmPayment = internalMutation({
 			return;
 		}
 		if (order.status !== "draft" && order.status !== "submitted") {
-			console.warn(`Order ${order._id} is in status ${order.status}, skipping payment confirmation`);
+			console.warn(
+				`Order ${order._id} is in status ${order.status}, skipping payment confirmation`
+			);
 			return;
 		}
 
@@ -309,12 +311,7 @@ export const confirmPayment = internalMutation({
 				restaurant.orderDayStartMinutesFromMidnight,
 				restaurant.orderNumberResetFrequency ?? DEFAULT_ORDER_NUMBER_RESET_FREQUENCY
 			);
-			dailyOrderNumber = await allocateNextOrderNumber(
-				ctx,
-				order.restaurantId,
-				periodKey,
-				now
-			);
+			dailyOrderNumber = await allocateNextOrderNumber(ctx, order.restaurantId, periodKey, now);
 		}
 
 		await ctx.db.patch(order._id, {
@@ -549,17 +546,14 @@ export const getActiveOrdersByRestaurant = query({
 		}
 
 		const stationFilter =
-			args.prepStations && args.prepStations.length > 0
-				? new Set(args.prepStations)
-				: null;
+			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
 
 		const enrichedOrders = ordersWithItems
 			.map((order) => ({
 				...order,
 				items: order.items.map((item) => ({
 					...item,
-					prepStation:
-						menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION,
+					prepStation: menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION,
 					menuItemTranslations: menuItemTranslations.get(item.menuItemId),
 					selectedOptions: item.selectedOptions.map((selected) => ({
 						...selected,
@@ -599,11 +593,7 @@ export const markStationReady = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(
-			ctx,
-			userId,
-			order.restaurantId
-		);
+		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
 		if (restaurantError) return [null, restaurantError];
 
 		// A station can only mark itself ready while the order is in flight
@@ -655,13 +645,9 @@ export const markStationReady = mutation({
 		// status in the same patch. Pre-existing stamps survive (we never
 		// overwrite a prior `*ReadyAt`).
 		const nextKitchenReadyAt =
-			args.station === PREP_STATION.KITCHEN
-				? (order.kitchenReadyAt ?? now)
-				: order.kitchenReadyAt;
+			args.station === PREP_STATION.KITCHEN ? (order.kitchenReadyAt ?? now) : order.kitchenReadyAt;
 		const nextBarReadyAt =
-			args.station === PREP_STATION.BAR
-				? (order.barReadyAt ?? now)
-				: order.barReadyAt;
+			args.station === PREP_STATION.BAR ? (order.barReadyAt ?? now) : order.barReadyAt;
 
 		const everyStationDone = Array.from(applicable).every((station) =>
 			station === PREP_STATION.KITCHEN
@@ -803,9 +789,7 @@ export const internalListOrdersForExportYear = internalQuery({
 									.first();
 								serverDisplay = userRole?.email ?? memberUserId;
 							} else {
-								serverDisplay = member.employeeAccountId
-									? String(member.employeeAccountId)
-									: "—";
+								serverDisplay = member.employeeAccountId ? String(member.employeeAccountId) : "—";
 							}
 						}
 						memberEmailCache.set(order.attributedMemberId, serverDisplay);
@@ -818,9 +802,9 @@ export const internalListOrdersForExportYear = internalQuery({
 					.collect();
 
 				const ITEM_PREVIEW_LIMIT = 5;
-				const preview = items.slice(0, ITEM_PREVIEW_LIMIT).map(
-					(it) => `${it.quantity}× ${it.menuItemName}`
-				);
+				const preview = items
+					.slice(0, ITEM_PREVIEW_LIMIT)
+					.map((it) => `${it.quantity}× ${it.menuItemName}`);
 				const remaining = items.length - preview.length;
 				const itemsSummary =
 					remaining > 0 ? `${preview.join(", ")}, +${remaining} more` : preview.join(", ");
@@ -845,4 +829,3 @@ export const internalListOrdersForExportYear = internalQuery({
 		return denormRows;
 	},
 });
-

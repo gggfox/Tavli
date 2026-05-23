@@ -70,12 +70,10 @@ function CustomerLayout() {
 		return (
 			<div className="flex-1 flex items-center justify-center p-6">
 				<div className="text-center max-w-sm">
-					<h1 className="text-xl font-semibold mb-2 text-foreground" >
+					<h1 className="text-xl font-semibold mb-2 text-foreground">
 						{t(OrderingKeys.SESSION_OOPS)}
 					</h1>
-					<p className="text-sm text-muted-foreground" >
-						{t(errorKey)}
-					</p>
+					<p className="text-sm text-muted-foreground">{t(errorKey)}</p>
 				</div>
 			</div>
 		);
@@ -96,10 +94,7 @@ function CustomerHeader({
 	sessionId,
 }: Readonly<{ slug: string; sessionId: Id<"sessions"> | null }>) {
 	return (
-		<header
-			className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-border bg-muted"
-			
-		>
+		<header className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-border bg-muted">
 			<CustomerNavTabs slug={slug} />
 			<div className="flex items-center gap-2">
 				{sessionId && <MyOrdersLink sessionId={sessionId} slug={slug} />}
@@ -122,7 +117,6 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 		<nav
 			aria-label="Customer sections"
 			className="flex items-center gap-0.5 rounded-full p-0.5 bg-background border border-border"
-			
 		>
 			{lang ? (
 				<TabLink
@@ -177,11 +171,11 @@ function TabLink(props: Readonly<TabLinkProps>) {
 		? {
 				backgroundColor: "var(--btn-primary-bg)",
 				color: "var(--btn-primary-text)",
-		  }
+			}
 		: {
 				color: "var(--text-secondary)",
 				backgroundColor: "transparent",
-		  };
+			};
 
 	if (props.to === "/r/$slug/$lang/menu") {
 		return (
@@ -232,18 +226,13 @@ function CustomerAuthAction() {
 	);
 }
 
-function MyOrdersLink({
-	sessionId,
-	slug,
-}: Readonly<{ sessionId: Id<"sessions">; slug: string }>) {
+function MyOrdersLink({ sessionId, slug }: Readonly<{ sessionId: Id<"sessions">; slug: string }>) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const params = useParams({ strict: false });
 	const lang = (params as { lang?: string }).lang;
 
-	const { data: orders } = useQuery(
-		convexQuery(api.orders.getOrdersBySession, { sessionId })
-	);
+	const { data: orders } = useQuery(convexQuery(api.orders.getOrdersBySession, { sessionId }));
 
 	const visibleOrders = (orders ?? []).filter(
 		(o) => !(o.status === "draft" && o.totalAmount === 0)
@@ -266,15 +255,14 @@ function MyOrdersLink({
 		<button
 			onClick={handleClick}
 			className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium hover:bg-(--bg-hover) transition-colors text-foreground border border-border"
-			
 			aria-label={t(OrderingKeys.SESSION_VIEW_ORDERS)}
 		>
-			<Receipt size={14} className="text-muted-foreground"  />
+			<Receipt size={14} className="text-muted-foreground" />
 			<span>{t(OrderingKeys.SESSION_MY_ORDERS)}</span>
 			{activeCount > 0 && (
 				<span
 					className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary"
-					style={{color: "white"}}
+					style={{ color: "white" }}
 				>
 					{activeCount}
 				</span>
