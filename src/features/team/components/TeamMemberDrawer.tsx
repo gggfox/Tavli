@@ -188,14 +188,14 @@ export function TeamMemberDrawer({
 		if (!file || !row) return;
 		setIsUploadingPhoto(true);
 		try {
-			if (row.rowType === "member" && row.kind === "employeeAccount" && row.employeeAccountId) {
-				const generateUploadUrl = () => generateEaUploadUrlMutation({});
-				const storageId = await uploadImage(generateUploadUrl, file);
+		if (row.rowType === "member" && row.kind === "employeeAccount" && row.employeeAccountId) {
+			const generateUploadUrl = () => generateEaUploadUrlMutation({}) as Promise<[string, null] | [null, Error]>;
+			const storageId = await uploadImage(generateUploadUrl, file);
 				unwrapResult(await updateEmployeeAccountMutation({ employeeAccountId: row.employeeAccountId, photoStorageId: storageId }));
 			} else {
 				const uid = "userId" in row ? row.userId : null;
 				if (!uid) return;
-				const generateUploadUrl = async () => [await generateUserUploadUrlMutation({}), null] as [string, null];
+				const generateUploadUrl = async (): Promise<[string, null] | [null, Error]> => [await generateUserUploadUrlMutation({}), null];
 				const storageId = await uploadImage(generateUploadUrl, file);
 				await setUserPhotoMutation({ photoStorageId: storageId, targetUserId: uid });
 			}

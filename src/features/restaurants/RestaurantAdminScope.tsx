@@ -21,7 +21,7 @@ type RestaurantAdminContextValue = {
 		organizationId: Id<"organizations">;
 		description?: string;
 		timezone?: string;
-	}) => Promise<Id<"restaurants">>;
+	}) => Promise<Id<"restaurants"> | null>;
 	update: (args: {
 		restaurantId: Id<"restaurants">;
 		organizationId: Id<"organizations">;
@@ -36,8 +36,8 @@ type RestaurantAdminContextValue = {
 		supportedLanguages?: string[];
 		orderDayStartMinutesFromMidnight?: number;
 		orderNumberResetFrequency?: "daily" | "weekly" | "biweekly" | "monthly";
-	}) => Promise<Id<"restaurants">>;
-	toggleActive: (restaurantId: Id<"restaurants">) => Promise<boolean>;
+	}) => Promise<Id<"restaurants"> | null>;
+	toggleActive: (restaurantId: Id<"restaurants">) => Promise<boolean | null>;
 };
 
 const RestaurantAdminContext = createContext<RestaurantAdminContextValue | null>(null);

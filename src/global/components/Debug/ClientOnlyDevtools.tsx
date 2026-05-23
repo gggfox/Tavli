@@ -1,4 +1,4 @@
-import { TanStackDevtools, type TanStackDevtoolsProps } from "@tanstack/react-devtools";
+import { TanStackDevtools, type TanStackDevtoolsReactInit } from "@tanstack/react-devtools";
 import { useEffect, useState } from "react";
 
 /**
@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
  * This prevents SSR issues where router hooks are called before
  * the router context is available.
  */
-export function ClientOnlyDevtools(props: TanStackDevtoolsProps) {
+export function ClientOnlyDevtools(props: TanStackDevtoolsReactInit) {
 	const [isClient, setIsClient] = useState(false);
 
 	useEffect(() => {

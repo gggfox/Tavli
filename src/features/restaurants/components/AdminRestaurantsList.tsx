@@ -552,15 +552,15 @@ function CreateRestaurantForm({
 		defaultValues: { name: "", slug: "", currency: "MXN", organizationId: "" },
 		onSubmit: async ({ value }) => {
 			try {
-				const id = unwrapResult(
-					await createMutation.mutateAsync({
-						name: value.name,
-						slug: value.slug,
-						currency: value.currency,
-						organizationId: value.organizationId as Id<"organizations">,
-					})
-				);
-				onCreated(id);
+			const id = unwrapResult(
+				await createMutation.mutateAsync({
+					name: value.name,
+					slug: value.slug,
+					currency: value.currency,
+					organizationId: value.organizationId as Id<"organizations">,
+				})
+			);
+			onCreated(id!);
 			} catch (err) {
 				onError(err instanceof Error ? err.message : t(RestaurantsKeys.FORM_CREATE_FAILED));
 			}

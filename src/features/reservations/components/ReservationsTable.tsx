@@ -167,11 +167,11 @@ export function ReservationsTable({
 				accessorFn: (row) => row.source,
 				enableSorting: false,
 				header: () => <span>{t(ReservationsKeys.COLUMN_SOURCE)}</span>,
-				cell: ({ row }) => {
-					const src = row.original.source;
-					let key = ReservationsKeys.SOURCE_UI;
-					if (src === "whatsapp") key = ReservationsKeys.SOURCE_WHATSAPP;
-					else if (src === "staff") key = ReservationsKeys.SOURCE_STAFF;
+			cell: ({ row }) => {
+				const src = row.original.source;
+				let key: string = ReservationsKeys.SOURCE_UI;
+				if (src === "whatsapp") key = ReservationsKeys.SOURCE_WHATSAPP;
+				else if (src === "staff") key = ReservationsKeys.SOURCE_STAFF;
 					return (
 						<span className="text-sm text-muted-foreground capitalize">{t(key)}</span>
 					);

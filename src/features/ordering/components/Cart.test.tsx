@@ -38,6 +38,7 @@ describe("Cart", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: undefined,
 			isLoading: true,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		render(
@@ -57,6 +58,7 @@ describe("Cart", () => {
 	it("shows empty state when cart has no items", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: [], totalAmount: 0 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		render(
@@ -74,6 +76,7 @@ describe("Cart", () => {
 	it("renders cart items with name, quantity, and price", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		render(
@@ -93,6 +96,7 @@ describe("Cart", () => {
 	it("displays the total amount", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		render(
@@ -110,6 +114,7 @@ describe("Cart", () => {
 	it("calls onBack when Back button is clicked", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		const onBack = vi.fn();
@@ -129,6 +134,7 @@ describe("Cart", () => {
 	it("calls onSubmit when Place Order is clicked", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		const onSubmit = vi.fn();
@@ -148,6 +154,7 @@ describe("Cart", () => {
 	it("disables submit button and shows submitting text while submitting", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		render(
@@ -167,6 +174,7 @@ describe("Cart", () => {
 	it("calls onRemoveItem when trash button is clicked", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} as any);
 
 		const onRemoveItem = vi.fn();

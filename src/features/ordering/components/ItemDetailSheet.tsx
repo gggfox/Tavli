@@ -78,7 +78,7 @@ export function ItemDetailSheet({
 	const optionsTotal = allSelected.reduce((sum, o) => sum + o.priceModifier, 0);
 	const lineTotal = (item.basePrice + optionsTotal) * quantity;
 
-	const handleOptionToggle = (group: any, opt: any) => {
+	const handleOptionToggle = (group: (typeof groups)[number], opt: NonNullable<(typeof groups)[number]["options"]>[number]) => {
 		const newOpt: SelectedOption = {
 			optionGroupId: group._id,
 			optionGroupName: getTranslatedField(group, lang),
@@ -164,10 +164,10 @@ export function ItemDetailSheet({
 					</div>
 
 					{/* Option groups */}
-					{groups.map((group: any) => {
-						const groupSelections = selectedOptions.get(group._id) ?? [];
-						const hasError =
-							showErrors && missingRequiredGroups.some((g: any) => g._id === group._id);
+				{groups.map((group) => {
+					const groupSelections = selectedOptions.get(group._id) ?? [];
+					const hasError =
+						showErrors && missingRequiredGroups.some((g) => g._id === group._id);
 
 						return (
 							<div key={group._id}>
@@ -196,9 +196,9 @@ export function ItemDetailSheet({
 								)}
 
 								<div className="space-y-1.5">
-									{(group.options ?? [])
-										.filter((o: any) => o.isAvailable)
-										.map((opt: any) => {
+							{(group.options ?? [])
+									.filter((o) => o.isAvailable)
+									.map((opt) => {
 											const isOptSelected = groupSelections.some((s) => s.optionId === opt._id);
 											return (
 												<button

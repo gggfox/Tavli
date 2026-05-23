@@ -101,7 +101,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 				</div>
 
 				{/* Option groups */}
-				{(optionGroups ?? []).map((group: any) => {
+				{(optionGroups ?? []).filter((g): g is NonNullable<typeof g> => g != null).map((group) => {
 					const groupSelections = selectedOptions.get(group._id) ?? [];
 					return (
 						<div key={group._id}>
@@ -118,9 +118,9 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 								)}
 							</div>
 							<div className="space-y-1">
-								{(group.options ?? [])
-									.filter((o: any) => o.isAvailable)
-									.map((opt: any) => {
+							{(group.options ?? [])
+								.filter((o) => o.isAvailable)
+								.map((opt) => {
 										const isSelected = groupSelections.some((s) => s.optionId === opt._id);
 										return (
 											<button

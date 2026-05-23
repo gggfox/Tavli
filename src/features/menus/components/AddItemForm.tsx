@@ -13,7 +13,7 @@ type PrepStation = "kitchen" | "bar";
 interface AddItemFormProps {
 	categoryId: Id<"menuCategories">;
 	restaurantId: Id<"restaurants">;
-	generateUploadUrl: () => Promise<[string, null] | [null, any]>;
+	generateUploadUrl: () => Promise<[string, null] | [null, unknown]>;
 	onCreateItem: (args: {
 		categoryId: Id<"menuCategories">;
 		restaurantId: Id<"restaurants">;

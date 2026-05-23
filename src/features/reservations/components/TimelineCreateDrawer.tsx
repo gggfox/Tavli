@@ -78,10 +78,10 @@ export function TimelineCreateDrawer({
 				});
 				const reservationId = unwrapResult(result);
 
-				await confirmMutation.mutateAsync({
-					reservationId,
-					tableIds: [tableId],
-				});
+			await confirmMutation.mutateAsync({
+				reservationId: reservationId!,
+				tableIds: [tableId],
+			});
 
 				onClose();
 			} catch (err) {
