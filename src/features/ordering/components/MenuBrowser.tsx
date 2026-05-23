@@ -9,6 +9,7 @@ import { Check, UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
+import type { MenuItemWithImage } from "./ItemDetailSheet";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export type { SelectedOption } from "../types";
@@ -53,7 +54,7 @@ export function MenuBrowser({
 	const [showPayFlow, setShowPayFlow] = useState(false);
 	const [comment, setComment] = useState("");
 	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(null);
-	const [detailItem, setDetailItem] = useState<Doc<"menuItems"> | null>(null);
+	const [detailItem, setDetailItem] = useState<MenuItemWithImage | null>(null);
 
 	const { data: tables } = useQuery(
 		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
@@ -61,7 +62,7 @@ export function MenuBrowser({
 
 	const currentMenuId = selectedMenuId ?? activeMenus[0]?._id;
 
-	const handleOpenDetail = useCallback((item: Doc<"menuItems">) => {
+	const handleOpenDetail = useCallback((item: MenuItemWithImage) => {
 		setDetailItem(item);
 	}, []);
 
@@ -299,7 +300,7 @@ function MenuCategories({
 	menuId: Id<"menus">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
-	onOpenDetail: (item: Doc<"menuItems">) => void;
+	onOpenDetail: (item: MenuItemWithImage) => void;
 }>) {
 	const { data: categories } = useQuery(convexQuery(api.menus.getCategoriesByMenu, { menuId }));
 	const sorted = [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
@@ -328,7 +329,7 @@ function CategoryItems({
 	category: Doc<"menuCategories">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
-	onOpenDetail: (item: Doc<"menuItems">) => void;
+	onOpenDetail: (item: MenuItemWithImage) => void;
 }>) {
 	const { data: items } = useQuery(
 		convexQuery(api.menuItems.getByCategory, { categoryId: category._id })

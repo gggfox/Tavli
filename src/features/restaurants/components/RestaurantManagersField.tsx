@@ -61,8 +61,8 @@ export function RestaurantManagersField({
 		select: unwrapResult<DirectoryEntry[]>,
 	});
 
-	const members = membersQuery.data ?? [];
-	const directory = directoryQuery.data ?? [];
+	const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
+	const directory = useMemo(() => directoryQuery.data ?? [], [directoryQuery.data]);
 
 	const options = useMemo(
 		() => mergeDirectoryWithManagers(directory, members),

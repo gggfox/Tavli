@@ -348,10 +348,10 @@ export const bulkSetPrepStation = mutation({
 	},
 });
 
-async function resolveImageUrls(
+async function resolveImageUrls<T extends { imageStorageId?: unknown }>(
 	ctx: { storage: { getUrl: (id: unknown) => Promise<string | null> } },
-	items: Array<{ imageStorageId?: unknown }>
-) {
+	items: T[]
+): Promise<(T & { imageUrl: string | null })[]> {
 	return Promise.all(
 		items.map(async (item) => ({
 			...item,

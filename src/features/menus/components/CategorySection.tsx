@@ -69,7 +69,7 @@ export function CategorySection({
 	);
 
 	useEffect(() => {
-		const valid = new Set(rowItems.map((i) => i._id));
+		const valid = new Set(itemIdsFingerprint.split(",").filter(Boolean));
 		setSelectedIds((prev) => {
 			let changed = false;
 			const next = new Set<Id<"menuItems">>();

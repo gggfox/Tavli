@@ -37,7 +37,7 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 	const { data: rawTables } = useQuery(
 		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
 	);
-	const tables = (rawTables ?? []) as Doc<"tables">[];
+	const tables = useMemo(() => (rawTables ?? []) as Doc<"tables">[], [rawTables]);
 
 	const { data: locks } = useQuery({
 		...convexQuery(api.tableLocks.listForRestaurant, { restaurantId }),

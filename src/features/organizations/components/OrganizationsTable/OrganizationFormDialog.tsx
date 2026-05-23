@@ -93,6 +93,7 @@ export function OrganizationFormDialog({
 			setFormError(null);
 			setFieldErrors({});
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- form.reset identity is stable; only re-run on open/organization change
 	}, [isOpen, organization]);
 
 	return (

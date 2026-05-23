@@ -133,6 +133,7 @@ export function CheckoutPage({
 		orderData?.status,
 		orderData?.totalAmount,
 		initPayment,
+		t,
 	]);
 
 	if (!orderData) {

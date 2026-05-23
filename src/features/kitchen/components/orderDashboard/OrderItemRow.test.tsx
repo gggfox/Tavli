@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { OrderItemRow } from "./OrderItemRow";
 import type { DashboardOrderItem } from "./statusConfig";
 
-vi.mock(import("react-i18next"), async (importOriginal) => {
-	const actual = await importOriginal();
+vi.mock("react-i18next", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("react-i18next")>();
 	return {
 		...actual,
 		useTranslation: () => ({
@@ -14,8 +14,8 @@ vi.mock(import("react-i18next"), async (importOriginal) => {
 	};
 });
 
-vi.mock(import("@/global/i18n"), async (importOriginal) => {
-	const actual = await importOriginal();
+vi.mock("@/global/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/global/i18n")>();
 	return {
 		...actual,
 		localizeName: (fallback: string) => fallback,

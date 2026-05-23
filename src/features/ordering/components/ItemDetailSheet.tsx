@@ -13,6 +13,8 @@ import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
 import { toggleOptionSelection } from "../utils";
 
+export type MenuItemWithImage = Doc<"menuItems"> & { imageUrl: string | null };
+
 function optionBorderColor(isSelected: boolean, hasError: boolean): string {
 	if (isSelected) return "var(--btn-primary-bg)";
 	if (hasError) return "#fca5a5";
@@ -20,7 +22,7 @@ function optionBorderColor(isSelected: boolean, hasError: boolean): string {
 }
 
 interface ItemDetailSheetProps {
-	item: Doc<"menuItems">;
+	item: MenuItemWithImage;
 	lang?: string;
 	existingSelection?: {
 		quantity: number;
@@ -56,10 +58,13 @@ export function ItemDetailSheet({
 		() => existingSelection?.selectedOptions ?? new Map()
 	);
 
-	const groups = optionGroups ?? [];
+	const groups = useMemo(
+		() => (optionGroups ?? []).filter((g): g is NonNullable<typeof g> => g != null),
+		[optionGroups]
+	);
 
 	const missingRequiredGroups = useMemo(() => {
-		return groups.filter((g: any) => {
+		return groups.filter((g) => {
 			if (!g.isRequired) return false;
 			const selected = selectedOptions.get(g._id) ?? [];
 			const min = g.minSelections > 0 ? g.minSelections : 1;

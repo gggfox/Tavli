@@ -76,16 +76,11 @@ export function OrderCard({
 		return ["kitchen", "bar"].filter((s): s is DashboardPrepStation => set.has(s as DashboardPrepStation));
 	}, [order.items]);
 
-	const stationStamps: Record<DashboardPrepStation, number | undefined> = {
-		kitchen: order.kitchenReadyAt,
-		bar: order.barReadyAt,
-	};
+	const stationStamps = useMemo<Record<DashboardPrepStation, number | undefined>>(
+		() => ({ kitchen: order.kitchenReadyAt, bar: order.barReadyAt }),
+		[order.kitchenReadyAt, order.barReadyAt]
+	);
 
-	// When exactly one station is selected AND the order has work for
-	// that station that has not yet been stamped, replace the generic
-	// "Mark Ready" with the station-scoped action. Two-station selection
-	// is treated as "no narrowing" and falls back to the whole-order
-	// action so the dashboard does not silently choose for the user.
 	const stationActionTarget: DashboardPrepStation | null = useMemo(() => {
 		if (activeStationFilters.size !== 1) return null;
 		const [only] = [...activeStationFilters];

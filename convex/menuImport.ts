@@ -28,7 +28,7 @@ import { generateText } from "ai";
 import mammoth from "mammoth";
 // pdf-parse v1 loads a test file at module init from its index.js;
 // importing the core module directly avoids that side-effect.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse/lib/pdf-parse") as (
 	dataBuffer: Buffer
 ) => Promise<{ text: string }>;
