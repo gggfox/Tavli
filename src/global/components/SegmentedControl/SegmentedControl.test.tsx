@@ -40,10 +40,7 @@ describe("SegmentedControl", () => {
 			/>
 		);
 
-		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute(
-			"aria-checked",
-			"false"
-		);
+		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute("aria-checked", "false");
 		expect(screen.getByRole("radio", { name: "This week" })).toHaveAttribute(
 			"aria-checked",
 			"true"
@@ -66,10 +63,7 @@ describe("SegmentedControl", () => {
 
 		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute("tabindex", "-1");
 		expect(screen.getByRole("radio", { name: "This week" })).toHaveAttribute("tabindex", "0");
-		expect(screen.getByRole("radio", { name: "This month" })).toHaveAttribute(
-			"tabindex",
-			"-1"
-		);
+		expect(screen.getByRole("radio", { name: "This month" })).toHaveAttribute("tabindex", "-1");
 	});
 
 	it("calls onChange with the clicked option's value", () => {
@@ -117,10 +111,7 @@ describe("SegmentedControl", () => {
 
 		const month = screen.getByRole("radio", { name: "This month" });
 		fireEvent.keyDown(month, { key: "ArrowRight" });
-		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute(
-			"aria-checked",
-			"true"
-		);
+		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute("aria-checked", "true");
 	});
 
 	it("moves selection left and wraps with ArrowLeft", () => {
@@ -161,10 +152,7 @@ describe("SegmentedControl", () => {
 
 		const week = screen.getByRole("radio", { name: "This week" });
 		fireEvent.keyDown(week, { key: "Home" });
-		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute(
-			"aria-checked",
-			"true"
-		);
+		expect(screen.getByRole("radio", { name: "Today" })).toHaveAttribute("aria-checked", "true");
 
 		const today = screen.getByRole("radio", { name: "Today" });
 		fireEvent.keyDown(today, { key: "End" });

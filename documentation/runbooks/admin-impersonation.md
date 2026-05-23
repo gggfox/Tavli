@@ -10,7 +10,7 @@ This runbook covers **Approach 1: Clerk Dashboard impersonation**. Zero code. Go
 
 Tavli auth flows: Clerk issues a JWT → `ConvexProviderWithClerk` passes it to Convex → `convex/_util/auth.ts:getCurrentUserId` returns `identity.subject` (the Clerk user ID) → every query/mutation reads/writes as that user.
 
-When you impersonate via the Clerk Dashboard, Clerk gives your browser a session whose JWT `sub` is the *target* user. Convex therefore returns the target user from `getCurrentUserId`, and the entire app (sidebar, restaurants, theme, language, schedule, orders) renders as if the target were signed in.
+When you impersonate via the Clerk Dashboard, Clerk gives your browser a session whose JWT `sub` is the _target_ user. Convex therefore returns the target user from `getCurrentUserId`, and the entire app (sidebar, restaurants, theme, language, schedule, orders) renders as if the target were signed in.
 
 ## Steps
 
@@ -30,7 +30,7 @@ When you impersonate via the Clerk Dashboard, Clerk gives your browser a session
 
 ## What it does NOT cover
 
-- **Audit trail.** Any mutation you trigger while impersonating is recorded as the *target user*. Don't click anything destructive. Treat this as read-only.
+- **Audit trail.** Any mutation you trigger while impersonating is recorded as the _target user_. Don't click anything destructive. Treat this as read-only.
 - **Stripe.** Stripe Connect calls hit the impersonated restaurant's account. Don't touch payment/refund actions.
 - **External IDs in logs.** Sentry/Convex logs during the session will attribute actions to the target, not to you.
 

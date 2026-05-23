@@ -84,10 +84,7 @@ export function getApplicableStations(
 	return stations;
 }
 
-export async function recalculateTotal(
-	ctx: { db: DatabaseWriter },
-	orderId: Id<"orders">
-) {
+export async function recalculateTotal(ctx: { db: DatabaseWriter }, orderId: Id<"orders">) {
 	const items = await ctx.db
 		.query(TABLE.ORDER_ITEMS)
 		.withIndex("by_order", (q) => q.eq("orderId", orderId))
@@ -173,7 +170,10 @@ export async function loadOrderItemTranslations(
 		Promise.all(optionGroupIds.map((id) => ctx.db.get(id))),
 	]);
 
-	const menuItemTranslations = new Map<string, Record<string, { name?: string; description?: string }> | undefined>();
+	const menuItemTranslations = new Map<
+		string,
+		Record<string, { name?: string; description?: string }> | undefined
+	>();
 	for (const doc of menuItemDocs) {
 		if (doc) menuItemTranslations.set(doc._id, doc.translations);
 	}

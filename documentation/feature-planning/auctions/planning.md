@@ -1225,5 +1225,3 @@ Phase 8 (Templates)
 - [Convex Best Practices](https://docs.convex.dev/understanding/best-practices/)
 - [Effect Schema Documentation](https://effect.website/docs/schema)
 - [TDR-0004: Client-Side Validation](../../tech-debt/0004-client-side-validation-bypassable.md)
-
-

@@ -29,10 +29,7 @@ export function WidgetShell({
 	const { t } = useTranslation();
 	const Icon = descriptor.icon;
 	return (
-		<Surface
-			tone="secondary"
-			className="h-full flex flex-col overflow-hidden"
-		>
+		<Surface tone="secondary" className="h-full flex flex-col overflow-hidden">
 			<div className="flex items-center gap-2 px-3 py-2 border-b border-(--border-default)">
 				{editing ? (
 					<button

@@ -13,11 +13,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { z } from "zod";
-import type {
-	DashboardScopeKind,
-	DashboardWidgetRole,
-	ResolvedRange,
-} from "../types";
+import type { DashboardScopeKind, DashboardWidgetRole, ResolvedRange } from "../types";
 
 export type WidgetRenderContext = {
 	/** Active layout's scope. */
@@ -65,9 +61,7 @@ export function registerWidget<TOptions>(
 	return descriptor;
 }
 
-export function getWidgetDescriptor(
-	type: string
-): AnyWidgetDescriptor | undefined {
+export function getWidgetDescriptor(type: string): AnyWidgetDescriptor | undefined {
 	return REGISTRY.get(type);
 }
 
@@ -102,7 +96,5 @@ export function userHasWidgetRole(
 	if (required === "admin") return userRoles.includes("admin");
 	if (userRoles.includes("owner")) return true;
 	if (required === "manager") return userRoles.includes("manager");
-	return (
-		userRoles.includes("manager") || userRoles.includes("employee")
-	);
+	return userRoles.includes("manager") || userRoles.includes("employee");
 }

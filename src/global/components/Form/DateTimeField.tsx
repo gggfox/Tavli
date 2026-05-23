@@ -25,13 +25,7 @@ function fromDateTimeLocalValue(value: string): number {
 	return new Date(value).getTime();
 }
 
-export function DateTimeField({
-	id,
-	label,
-	valueMs,
-	onChangeMs,
-	description,
-}: DateTimeFieldProps) {
+export function DateTimeField({ id, label, valueMs, onChangeMs, description }: DateTimeFieldProps) {
 	return (
 		<div className="flex flex-col gap-1 text-xs">
 			<FieldLabel htmlFor={id} label={label} description={description} />

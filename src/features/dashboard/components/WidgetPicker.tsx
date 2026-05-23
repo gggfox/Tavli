@@ -13,11 +13,7 @@ import { DashboardKeys } from "@/global/i18n";
 import { Lock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	listWidgetDescriptors,
-	userHasWidgetRole,
-	type AnyWidgetDescriptor,
-} from "../widgets";
+import { listWidgetDescriptors, userHasWidgetRole, type AnyWidgetDescriptor } from "../widgets";
 import type { DashboardScopeKind } from "../types";
 
 interface WidgetPickerProps {
@@ -28,13 +24,7 @@ interface WidgetPickerProps {
 	onClose: () => void;
 }
 
-export function WidgetPicker({
-	open,
-	scopeKind,
-	userRoles,
-	onPick,
-	onClose,
-}: WidgetPickerProps) {
+export function WidgetPicker({ open, scopeKind, userRoles, onPick, onClose }: WidgetPickerProps) {
 	const { t } = useTranslation();
 	const [showLocked, setShowLocked] = useState(false);
 
@@ -48,17 +38,10 @@ export function WidgetPicker({
 	}, [scopeKind, userRoles, showLocked]);
 
 	return (
-		<Drawer
-			isOpen={open}
-			onClose={onClose}
-			ariaLabel={t(DashboardKeys.PICKER_TITLE)}
-			side="right"
-		>
+		<Drawer isOpen={open} onClose={onClose} ariaLabel={t(DashboardKeys.PICKER_TITLE)} side="right">
 			<div className="p-4 space-y-4">
 				<div>
-					<h2 className="text-sm font-semibold text-foreground">
-						{t(DashboardKeys.PICKER_TITLE)}
-					</h2>
+					<h2 className="text-sm font-semibold text-foreground">{t(DashboardKeys.PICKER_TITLE)}</h2>
 					<p className="text-xs text-faint-foreground mt-1">
 						{t(DashboardKeys.PICKER_DESCRIPTION)}
 					</p>
@@ -116,9 +99,7 @@ function WidgetCard({ descriptor, allowed, onPick }: WidgetCardProps) {
 			<Icon size={18} className="text-faint-foreground shrink-0 mt-0.5" />
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-2 flex-wrap">
-					<span className="text-sm font-medium text-foreground">
-						{t(descriptor.i18nLabelKey)}
-					</span>
+					<span className="text-sm font-medium text-foreground">{t(descriptor.i18nLabelKey)}</span>
 					{!allowed && (
 						<span
 							className="text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 bg-hover text-faint-foreground inline-flex items-center gap-1"
@@ -134,9 +115,7 @@ function WidgetCard({ descriptor, allowed, onPick }: WidgetCardProps) {
 						</span>
 					)}
 				</div>
-				<p className="text-xs text-faint-foreground mt-1">
-					{t(descriptor.i18nDescriptionKey)}
-				</p>
+				<p className="text-xs text-faint-foreground mt-1">{t(descriptor.i18nDescriptionKey)}</p>
 			</div>
 		</Surface>
 	);

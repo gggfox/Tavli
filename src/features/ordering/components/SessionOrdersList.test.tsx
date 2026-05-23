@@ -126,7 +126,11 @@ describe("SessionOrdersList", () => {
 	it("sorts the list by creation time, newest first", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: [
-				baseOrder({ _id: "orders:older", _creationTime: now - 2 * 60 * 60 * 1000, totalAmount: 1000 }),
+				baseOrder({
+					_id: "orders:older",
+					_creationTime: now - 2 * 60 * 60 * 1000,
+					totalAmount: 1000,
+				}),
 				baseOrder({ _id: "orders:newer", _creationTime: now, totalAmount: 2000 }),
 			],
 			isLoading: false,

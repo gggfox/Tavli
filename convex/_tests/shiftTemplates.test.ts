@@ -2,11 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import {
-	RESTAURANT_MEMBER_ROLE,
-	SHIFT_STATUS,
-	USER_ROLES,
-} from "../constants";
+import { RESTAURANT_MEMBER_ROLE, SHIFT_STATUS, USER_ROLES } from "../constants";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -73,18 +69,15 @@ describe("shiftTemplates createShiftTemplate", () => {
 		const { restaurantId, employeeMember } = await seedTeam(t);
 
 		const authed = t.withIdentity({ subject: "manager-user" });
-		const [templateId, err] = await authed.mutation(
-			api.shiftTemplates.createShiftTemplate,
-			{
-				memberId: employeeMember,
-				restaurantId,
-				dayOfWeek: 0,
-				startMinutesFromMidnight: 9 * 60,
-				durationMinutes: 8 * 60,
-				shiftRole: "server",
-				activeFromYmd: "2026-01-01",
-			}
-		);
+		const [templateId, err] = await authed.mutation(api.shiftTemplates.createShiftTemplate, {
+			memberId: employeeMember,
+			restaurantId,
+			dayOfWeek: 0,
+			startMinutesFromMidnight: 9 * 60,
+			durationMinutes: 8 * 60,
+			shiftRole: "server",
+			activeFromYmd: "2026-01-01",
+		});
 		expect(err).toBeNull();
 		expect(templateId).toBeTruthy();
 
@@ -133,17 +126,13 @@ describe("shiftTemplates materializeAllTemplates", () => {
 			activeFromYmd: "2026-01-01",
 		});
 
-		const before = await t.run(async (ctx) =>
-			ctx.db.query("shifts").collect()
-		);
+		const before = await t.run(async (ctx) => ctx.db.query("shifts").collect());
 		const beforeCount = before.length;
 
 		await t.mutation(internal.shiftTemplates.materializeAllTemplates, {});
 		await t.mutation(internal.shiftTemplates.materializeAllTemplates, {});
 
-		const after = await t.run(async (ctx) =>
-			ctx.db.query("shifts").collect()
-		);
+		const after = await t.run(async (ctx) => ctx.db.query("shifts").collect());
 		expect(after.length).toBe(beforeCount);
 	});
 
@@ -152,17 +141,14 @@ describe("shiftTemplates materializeAllTemplates", () => {
 		const { restaurantId, employeeMember } = await seedTeam(t);
 
 		const authed = t.withIdentity({ subject: "manager-user" });
-		const [templateId] = await authed.mutation(
-			api.shiftTemplates.createShiftTemplate,
-			{
-				memberId: employeeMember,
-				restaurantId,
-				dayOfWeek: 5,
-				startMinutesFromMidnight: 14 * 60,
-				durationMinutes: 4 * 60,
-				activeFromYmd: "2026-01-01",
-			}
-		);
+		const [templateId] = await authed.mutation(api.shiftTemplates.createShiftTemplate, {
+			memberId: employeeMember,
+			restaurantId,
+			dayOfWeek: 5,
+			startMinutesFromMidnight: 14 * 60,
+			durationMinutes: 4 * 60,
+			activeFromYmd: "2026-01-01",
+		});
 		expect(templateId).toBeTruthy();
 
 		const linked = await t.run(async (ctx) =>
@@ -192,12 +178,9 @@ describe("shiftTemplates materializeAllTemplates", () => {
 				.collect()
 		);
 		const overlapping = all.filter(
-			(s) => s.status !== SHIFT_STATUS.CANCELLED && rangesOverlap(
-				s.startsAt,
-				s.endsAt,
-				detached!.startsAt,
-				detached!.endsAt
-			)
+			(s) =>
+				s.status !== SHIFT_STATUS.CANCELLED &&
+				rangesOverlap(s.startsAt, s.endsAt, detached!.startsAt, detached!.endsAt)
 		);
 		expect(overlapping.length).toBe(1);
 	});
@@ -209,17 +192,14 @@ describe("shiftTemplates deactivateShiftTemplate", () => {
 		const { restaurantId, employeeMember } = await seedTeam(t);
 
 		const authed = t.withIdentity({ subject: "manager-user" });
-		const [templateId] = await authed.mutation(
-			api.shiftTemplates.createShiftTemplate,
-			{
-				memberId: employeeMember,
-				restaurantId,
-				dayOfWeek: 4,
-				startMinutesFromMidnight: 11 * 60,
-				durationMinutes: 6 * 60,
-				activeFromYmd: "2026-01-01",
-			}
-		);
+		const [templateId] = await authed.mutation(api.shiftTemplates.createShiftTemplate, {
+			memberId: employeeMember,
+			restaurantId,
+			dayOfWeek: 4,
+			startMinutesFromMidnight: 11 * 60,
+			durationMinutes: 6 * 60,
+			activeFromYmd: "2026-01-01",
+		});
 
 		const linked = await t.run(async (ctx) =>
 			ctx.db
@@ -237,10 +217,9 @@ describe("shiftTemplates deactivateShiftTemplate", () => {
 			});
 		});
 
-		const [out, err] = await authed.mutation(
-			api.shiftTemplates.deactivateShiftTemplate,
-			{ templateId: templateId! }
-		);
+		const [out, err] = await authed.mutation(api.shiftTemplates.deactivateShiftTemplate, {
+			templateId: templateId!,
+		});
 		expect(err).toBeNull();
 		expect(out).toBeTruthy();
 

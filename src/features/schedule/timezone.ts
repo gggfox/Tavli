@@ -43,11 +43,7 @@ export function getZoneOffsetMs(timezone: string, utcMs: number): number {
 	return localAsUtcMs - utcMs;
 }
 
-export function ymdHmToUtcMs(
-	ymd: string,
-	minutesFromMidnight: number,
-	timezone: string
-): number {
+export function ymdHmToUtcMs(ymd: string, minutesFromMidnight: number, timezone: string): number {
 	const [y, mo, d] = ymd.split("-").map(Number);
 	if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) {
 		throw new TypeError(`Invalid YMD string: ${ymd}`);

@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-| ------- | ------- |
-| **Status** | Accepted |
-| **Date** | 2025-12-21 |
-| **Author(s)** | Development Team |
-| **Supersedes** | N/A |
-| **Superseded by** | N/A |
+| Field             | Value            |
+| ----------------- | ---------------- |
+| **Status**        | Accepted         |
+| **Date**          | 2025-12-21       |
+| **Author(s)**     | Development Team |
+| **Supersedes**    | N/A              |
+| **Superseded by** | N/A              |
 
 ## Context
 
@@ -162,10 +162,10 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  tasks: defineTable({
-    text: v.string(),
-    isCompleted: v.optional(v.boolean()),
-  }),
+	tasks: defineTable({
+		text: v.string(),
+		isCompleted: v.optional(v.boolean()),
+	}),
 });
 ```
 
@@ -178,20 +178,20 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
 export const get = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db.query("tasks").collect();
-  },
+	args: {},
+	handler: async (ctx) => {
+		return await ctx.db.query("tasks").collect();
+	},
 });
 
 export const create = mutation({
-  args: { text: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("tasks", {
-      text: args.text,
-      isCompleted: false,
-    });
-  },
+	args: { text: v.string() },
+	handler: async (ctx, args) => {
+		return await ctx.db.insert("tasks", {
+			text: args.text,
+			isCompleted: false,
+		});
+	},
 });
 ```
 
@@ -231,5 +231,5 @@ As the product scope expands, Convex provides:
 ## Change Log
 
 | Date       | Author           | Description     |
-|------------|------------------|-----------------|
+| ---------- | ---------------- | --------------- |
 | 2025-12-21 | Development Team | Initial version |

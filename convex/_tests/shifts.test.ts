@@ -2,11 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import {
-	RESTAURANT_MEMBER_ROLE,
-	SHIFT_STATUS,
-	USER_ROLES,
-} from "../constants";
+import { RESTAURANT_MEMBER_ROLE, SHIFT_STATUS, USER_ROLES } from "../constants";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -22,9 +18,7 @@ interface SeedOut {
 	otherEmployeeMember: Id<"restaurantMembers">;
 }
 
-async function seedTeam(
-	t: ReturnType<typeof convexTest>
-): Promise<SeedOut> {
+async function seedTeam(t: ReturnType<typeof convexTest>): Promise<SeedOut> {
 	return await t.run(async (ctx) => {
 		const now = Date.now();
 		const orgId = await ctx.db.insert("organizations", {

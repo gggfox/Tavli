@@ -106,10 +106,7 @@ function RootLayout() {
 	return (
 		<ThemeProvider remoteSettings={remoteSettings}>
 			{isCustomerRoute ? (
-				<div
-					className="h-screen flex flex-col overflow-hidden bg-background"
-					
-				>
+				<div className="h-screen flex flex-col overflow-hidden bg-background">
 					<ErrorBoundary>
 						<Outlet />
 					</ErrorBoundary>

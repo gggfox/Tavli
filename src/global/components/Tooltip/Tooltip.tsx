@@ -103,10 +103,7 @@ export function Tooltip({
 		const viewportWidth = globalThis.window.innerWidth;
 
 		let resolved: TooltipPlacement = placement;
-		if (
-			resolved === "top" &&
-			triggerRect.top - tooltipRect.height - TRIGGER_OFFSET < 0
-		) {
+		if (resolved === "top" && triggerRect.top - tooltipRect.height - TRIGGER_OFFSET < 0) {
 			resolved = "bottom";
 		} else if (
 			resolved === "bottom" &&
@@ -220,17 +217,20 @@ export function Tooltip({
 					popover="manual"
 					role="tooltip"
 					id={tooltipId}
-					className="bg-muted text-foreground border border-border" style={{position: "fixed",
-				top: position?.top ?? -9999,
-				left: position?.left ?? -9999,
-				margin: 0,
-				maxWidth: 320,
-				borderRadius: 8,
-				boxShadow: "0 8px 24px rgba(0, 0, 0, 0.25)",
-				padding: "8px 10px",
-				fontSize: 12,
-				lineHeight: 1.4,
-				visibility: position === null ? "hidden" : "visible"}}
+					className="bg-muted text-foreground border border-border"
+					style={{
+						position: "fixed",
+						top: position?.top ?? -9999,
+						left: position?.left ?? -9999,
+						margin: 0,
+						maxWidth: 320,
+						borderRadius: 8,
+						boxShadow: "0 8px 24px rgba(0, 0, 0, 0.25)",
+						padding: "8px 10px",
+						fontSize: 12,
+						lineHeight: 1.4,
+						visibility: position === null ? "hidden" : "visible",
+					}}
 				>
 					{content}
 				</div>

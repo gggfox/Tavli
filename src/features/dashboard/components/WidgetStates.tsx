@@ -38,9 +38,7 @@ export function WidgetError({ error }: WidgetErrorProps) {
 	}
 	return (
 		<div className="h-full flex flex-col items-center justify-center gap-1 text-center px-2">
-			<p className="text-xs font-medium text-foreground">
-				{t(DashboardKeys.WIDGET_ERROR_TITLE)}
-			</p>
+			<p className="text-xs font-medium text-foreground">{t(DashboardKeys.WIDGET_ERROR_TITLE)}</p>
 			<p className="text-[11px] text-faint-foreground">{t(messageKey)}</p>
 		</div>
 	);

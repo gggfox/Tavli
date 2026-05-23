@@ -50,9 +50,7 @@ export type NumberWithDeltaResult = {
 	deltaPct: number | null;
 };
 
-type Errors =
-	| AnalyticsAccessErrors
-	| UserInputValidationErrorObject;
+type Errors = AnalyticsAccessErrors | UserInputValidationErrorObject;
 
 export const compute = query({
 	args: {
@@ -62,10 +60,7 @@ export const compute = query({
 		range: v.object({ from: v.number(), to: v.number() }),
 		compareToPrev: v.boolean(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<NumberWithDeltaResult, Errors> {
+	handler: async function (ctx, args): AsyncReturn<NumberWithDeltaResult, Errors> {
 		const requireManagerOrAbove = MONEY_METRICS.has(args.metric);
 
 		const [restaurantIds, accessErr] = await resolveRestaurantIds(ctx, {
@@ -76,7 +71,12 @@ export const compute = query({
 		if (accessErr) return [null, accessErr];
 		if (restaurantIds.length === 0) {
 			return [
-				{ current: 0, previous: args.compareToPrev ? 0 : null, deltaAbs: args.compareToPrev ? 0 : null, deltaPct: null },
+				{
+					current: 0,
+					previous: args.compareToPrev ? 0 : null,
+					deltaAbs: args.compareToPrev ? 0 : null,
+					deltaPct: null,
+				},
 				null,
 			];
 		}
@@ -94,8 +94,7 @@ export const compute = query({
 			: null;
 
 		const deltaAbs = previous !== null ? current - previous : null;
-		const deltaPct =
-			previous !== null && previous !== 0 ? (current - previous) / previous : null;
+		const deltaPct = previous !== null && previous !== 0 ? (current - previous) / previous : null;
 
 		return [{ current, previous, deltaAbs, deltaPct }, null];
 	},
@@ -114,10 +113,11 @@ async function computeMetric(
 		}
 		case "reservations.confirmed": {
 			const rows = await loadReservationsInRange(ctx, restaurantIds, range);
-			return rows.filter((r) =>
-				r.status === RESERVATION_STATUS.CONFIRMED ||
-				r.status === RESERVATION_STATUS.SEATED ||
-				r.status === RESERVATION_STATUS.COMPLETED
+			return rows.filter(
+				(r) =>
+					r.status === RESERVATION_STATUS.CONFIRMED ||
+					r.status === RESERVATION_STATUS.SEATED ||
+					r.status === RESERVATION_STATUS.COMPLETED
 			).length;
 		}
 		case "orders.count": {
@@ -133,9 +133,8 @@ async function computeMetric(
 		case "covers": {
 			const rows = await loadReservationsInRange(ctx, restaurantIds, range);
 			return rows
-				.filter((r) =>
-					r.status === RESERVATION_STATUS.SEATED ||
-					r.status === RESERVATION_STATUS.COMPLETED
+				.filter(
+					(r) => r.status === RESERVATION_STATUS.SEATED || r.status === RESERVATION_STATUS.COMPLETED
 				)
 				.reduce((sum, r) => sum + r.partySize, 0);
 		}

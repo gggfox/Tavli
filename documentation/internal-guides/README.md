@@ -4,10 +4,10 @@ This folder contains internal documentation for developers working on Fierro Vie
 
 ## Contents
 
-| Document | Description |
-| ---------- | ------------- |
-| [design-system.md](./design-system.md) | Color palette, typography, spacing, component patterns, and visual standards |
-| [component-examples.md](./component-examples.md) | Copy-paste ready component templates |
+| Document                                         | Description                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
+| [design-system.md](./design-system.md)           | Color palette, typography, spacing, component patterns, and visual standards |
+| [component-examples.md](./component-examples.md) | Copy-paste ready component templates                                         |
 
 ## Quick Links
 

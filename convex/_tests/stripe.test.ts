@@ -63,7 +63,7 @@ async function seedRestaurant(
 		organizationId: Id<"organizations">;
 		stripeAccountId?: string;
 		stripeOnboardingComplete?: boolean;
-	},
+	}
 ) {
 	let restaurantId: Id<"restaurants">;
 
@@ -96,7 +96,7 @@ async function seedDraftOrder(
 	args: {
 		restaurantId: Id<"restaurants">;
 		totalAmount: number;
-	},
+	}
 ) {
 	let tableId: Id<"tables">;
 	let sessionId: Id<"sessions">;
@@ -134,7 +134,11 @@ async function seedDraftOrder(
 
 async function seedUserRole(
 	t: ReturnType<typeof convexTest>,
-	args: { userId: string; roles: Array<"admin" | "owner" | "manager" | "employee" | "customer">; organizationId?: Id<"organizations"> },
+	args: {
+		userId: string;
+		roles: Array<"admin" | "owner" | "manager" | "employee" | "customer">;
+		organizationId?: Id<"organizations">;
+	}
 ) {
 	await t.run(async (ctx) => {
 		await ctx.db.insert("userRoles", {
@@ -198,7 +202,7 @@ describe("stripe actions", () => {
 		await expect(
 			intruder.action(api.stripe.getAccountStatus, {
 				restaurantId,
-			}),
+			})
 		).rejects.toMatchObject({
 			name: "NOT_AUTHORIZED",
 		});
@@ -330,9 +334,7 @@ describe("stripe actions", () => {
 
 		expect(second.clientSecret).toBe("pi_secret_replaced");
 
-		const payments = await t.run(async (ctx) =>
-			ctx.db.query("payments").collect()
-		);
+		const payments = await t.run(async (ctx) => ctx.db.query("payments").collect());
 		expect(payments).toHaveLength(2);
 		expect(payments.some((payment) => payment.status === "superseded")).toBe(true);
 		expect(payments.some((payment) => payment.stripePaymentIntentId === "pi_replaced")).toBe(true);
@@ -517,7 +519,7 @@ describe("stripe actions", () => {
 				},
 				expect.objectContaining({
 					idempotencyKey: expect.stringContaining("refund:"),
-				}),
+				})
 			);
 
 			const order = await t.run(async (ctx) => ctx.db.get(orderId));

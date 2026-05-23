@@ -66,9 +66,12 @@ describe("restaurantMembers listOrganizationUsersForRestaurant", () => {
 		});
 
 		const authed = t.withIdentity({ subject: "owner1" });
-		const [rows, err] = await authed.query(api.restaurantMembers.listOrganizationUsersForRestaurant, {
-			restaurantId,
-		});
+		const [rows, err] = await authed.query(
+			api.restaurantMembers.listOrganizationUsersForRestaurant,
+			{
+				restaurantId,
+			}
+		);
 
 		expect(err).toBeNull();
 		expect(Array.isArray(rows)).toBe(true);
@@ -128,7 +131,9 @@ describe("restaurantMembers listOrganizationUsersForRestaurant", () => {
 		const types = (rows as Array<{ rowType: string; userId?: string }>).map((r) => r.rowType);
 		expect(types.filter((x) => x === "restaurantOwner")).toHaveLength(1);
 		expect(types.filter((x) => x === "orgOwner")).toHaveLength(1);
-		const orgOwnerRow = (rows as Array<{ rowType: string; userId: string }>).find((r) => r.rowType === "orgOwner");
+		const orgOwnerRow = (rows as Array<{ rowType: string; userId: string }>).find(
+			(r) => r.rowType === "orgOwner"
+		);
 		expect(orgOwnerRow?.userId).toBe("org-owner-2");
 	});
 
@@ -253,9 +258,12 @@ describe("restaurantMembers listOrganizationUsersForRestaurant", () => {
 		});
 
 		const authed = t.withIdentity({ subject: "locMgr" });
-		const [rows, err] = await authed.query(api.restaurantMembers.listOrganizationUsersForRestaurant, {
-			restaurantId,
-		});
+		const [rows, err] = await authed.query(
+			api.restaurantMembers.listOrganizationUsersForRestaurant,
+			{
+				restaurantId,
+			}
+		);
 
 		expect(rows).toBeNull();
 		expect(err).toMatchObject({ name: "NOT_AUTHORIZED" });

@@ -23,10 +23,7 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	addDaysToYmd,
-	utcMsToYmdInTimezone,
-} from "../timezone";
+import { addDaysToYmd, utcMsToYmdInTimezone } from "../timezone";
 import { dayLabel } from "../roles";
 import type { ChipAbsenceState } from "./ShiftCellChip";
 import type { AssignableMember, ScheduledShiftView } from "../types";
@@ -226,7 +223,11 @@ function MemberRow({
 			>
 				{asterisk}
 				{member.photoUrl ? (
-					<img src={member.photoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0 mr-1.5" />
+					<img
+						src={member.photoUrl}
+						alt=""
+						className="w-5 h-5 rounded-full object-cover shrink-0 mr-1.5"
+					/>
 				) : (
 					<span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[9px] font-medium text-muted-foreground shrink-0 mr-1.5">
 						{initials}

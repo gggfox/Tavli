@@ -18,9 +18,7 @@ export const REVENUE_OVER_TIME_TYPE = "revenueOverTime";
 const optionsSchema = z.object({});
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.revenueOverTime.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.revenueOverTime.compute>>;
 
 function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 	const { t, i18n } = useTranslation();
@@ -97,18 +95,17 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 	);
 }
 
-export const revenueOverTimeDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: REVENUE_OVER_TIME_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_REVENUE_OVER_TIME_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_REVENUE_OVER_TIME_DESCRIPTION,
-		icon: TrendingUp,
-		requiredRole: "manager",
-		portfolioCapable: true,
-		supportsComparison: true,
-		maxRangeDays: 366,
-		defaultGrid: { w: 6, h: 5, minW: 3, minH: 3 },
-		optionsSchema,
-		defaultOptions: {},
-		Component: RevenueOverTimeWidget,
-	});
+export const revenueOverTimeDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: REVENUE_OVER_TIME_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_REVENUE_OVER_TIME_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_REVENUE_OVER_TIME_DESCRIPTION,
+	icon: TrendingUp,
+	requiredRole: "manager",
+	portfolioCapable: true,
+	supportsComparison: true,
+	maxRangeDays: 366,
+	defaultGrid: { w: 6, h: 5, minW: 3, minH: 3 },
+	optionsSchema,
+	defaultOptions: {},
+	Component: RevenueOverTimeWidget,
+});

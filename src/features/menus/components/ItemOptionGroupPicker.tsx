@@ -67,13 +67,15 @@ export function ItemOptionGroupPicker({
 	}
 
 	if (loadError) {
-		return (
-			<div className={`${panelClassName} text-destructive`}>{t(MenusKeys.PICKER_ERROR)}</div>
-		);
+		return <div className={`${panelClassName} text-destructive`}>{t(MenusKeys.PICKER_ERROR)}</div>;
 	}
 
 	if (sorted.length === 0) {
-		return <div className={`${panelClassName} text-faint-foreground`}>{t(MenusKeys.PICKER_NO_GROUPS)}</div>;
+		return (
+			<div className={`${panelClassName} text-faint-foreground`}>
+				{t(MenusKeys.PICKER_NO_GROUPS)}
+			</div>
+		);
 	}
 
 	return (

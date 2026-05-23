@@ -137,15 +137,12 @@ export function CustomerReservationForm({
 
 	if (createdId) {
 		return (
-			<div
-				className="max-w-md mx-auto rounded-xl p-6 text-center space-y-3 bg-muted border border-border"
-				
-			>
-				<Check size={32} className="text-success" style={{margin: "0 auto"}} />
-				<h2 className="text-lg font-semibold text-foreground" >
+			<div className="max-w-md mx-auto rounded-xl p-6 text-center space-y-3 bg-muted border border-border">
+				<Check size={32} className="text-success" style={{ margin: "0 auto" }} />
+				<h2 className="text-lg font-semibold text-foreground">
 					{t(ReservationsKeys.FORM_SUCCESS_TITLE)}
 				</h2>
-				<p className="text-sm text-muted-foreground" >
+				<p className="text-sm text-muted-foreground">
 					{t(ReservationsKeys.FORM_SUCCESS_MESSAGE, {
 						restaurantName,
 						count: partySize,
@@ -166,12 +163,11 @@ export function CustomerReservationForm({
 		<form
 			onSubmit={handleSubmit}
 			className="max-w-md mx-auto rounded-xl p-6 space-y-4 bg-muted border border-border"
-			
 		>
 			<header className="space-y-1">
 				<div className="flex items-center gap-2 text-muted-foreground">
-					<CalendarClock size={18}  />
-					<h1 className="text-lg font-semibold text-foreground" >
+					<CalendarClock size={18} />
+					<h1 className="text-lg font-semibold text-foreground">
 						{t(ReservationsKeys.FORM_TITLE, { restaurantName })}
 					</h1>
 				</div>
@@ -224,7 +220,9 @@ export function CustomerReservationForm({
 									})}
 								</div>
 							) : (
-								<p className="text-xs text-muted-foreground">{t(ReservationsKeys.FORM_SLOTS_EMPTY)}</p>
+								<p className="text-xs text-muted-foreground">
+									{t(ReservationsKeys.FORM_SLOTS_EMPTY)}
+								</p>
 							)}
 						</div>
 					</div>
@@ -234,17 +232,15 @@ export function CustomerReservationForm({
 			{availability && (
 				<div
 					className="rounded-md px-3 py-2 text-xs"
-					style={{backgroundColor: availability.available
+					style={{
+						backgroundColor: availability.available
 							? "var(--bg-primary)"
 							: "rgba(220, 38, 38, 0.08)",
-				color: availability.available
-							? "var(--accent-success)"
-							: "var(--accent-danger)",
-				border: `1px solid ${
-							availability.available
-								? "var(--border-default)"
-								: "rgba(220, 38, 38, 0.3)"
-						}`}}
+						color: availability.available ? "var(--accent-success)" : "var(--accent-danger)",
+						border: `1px solid ${
+							availability.available ? "var(--border-default)" : "rgba(220, 38, 38, 0.3)"
+						}`,
+					}}
 				>
 					{availability.available
 						? t(ReservationsKeys.FORM_AVAILABLE, {
@@ -259,7 +255,6 @@ export function CustomerReservationForm({
 									type="button"
 									onClick={() => setStartsAtMs(ms)}
 									className="text-xs px-2 py-0.5 rounded-full bg-muted border border-border text-foreground"
-									
 								>
 									{new Date(ms).toLocaleTimeString(i18n.language, {
 										hour: "numeric",
@@ -294,24 +289,17 @@ export function CustomerReservationForm({
 			/>
 
 			<label htmlFor="rf-notes" className="flex flex-col gap-1 text-xs text-muted-foreground">
-				<span >
-					{t(ReservationsKeys.FORM_NOTES)}
-				</span>
+				<span>{t(ReservationsKeys.FORM_NOTES)}</span>
 				<textarea
 					id="rf-notes"
 					value={notes}
 					onChange={(e) => setNotes(e.target.value)}
 					rows={2}
 					className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-					
 				/>
 			</label>
 
-			{error && (
-				<p className="text-xs text-destructive" >
-					{error}
-				</p>
-			)}
+			{error && <p className="text-xs text-destructive">{error}</p>}
 
 			<button
 				type="submit"
@@ -330,9 +318,7 @@ export function CustomerReservationForm({
 							: 1,
 				}}
 			>
-				{submitting
-					? t(ReservationsKeys.FORM_SUBMITTING)
-					: t(ReservationsKeys.FORM_SUBMIT)}
+				{submitting ? t(ReservationsKeys.FORM_SUBMITTING) : t(ReservationsKeys.FORM_SUBMIT)}
 			</button>
 		</form>
 	);
@@ -353,7 +339,7 @@ function NumberField({
 }>) {
 	return (
 		<label htmlFor={id} className="flex flex-col gap-1 text-xs text-muted-foreground">
-			<span >{label}</span>
+			<span>{label}</span>
 			<input
 				id={id}
 				type="number"
@@ -361,7 +347,6 @@ function NumberField({
 				min={min}
 				onChange={(e) => onChange(Number.parseInt(e.target.value, 10) || 0)}
 				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-				
 			/>
 		</label>
 	);
@@ -382,7 +367,7 @@ function TextField({
 }>) {
 	return (
 		<label htmlFor={id} className="flex flex-col gap-1 text-xs text-muted-foreground">
-			<span >{label}</span>
+			<span>{label}</span>
 			<input
 				id={id}
 				type="text"
@@ -390,7 +375,6 @@ function TextField({
 				onChange={(e) => onChange(e.target.value)}
 				required={required}
 				className="rounded-md px-3 py-2 text-sm bg-background border border-border text-foreground"
-				
 			/>
 		</label>
 	);

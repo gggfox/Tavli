@@ -26,9 +26,7 @@ export function useNewReservationListener(restaurantId: Id<"restaurants"> | unde
 	const { data: pending } = useQuery({
 		...convexQuery(
 			api.reservations.listRecentPending,
-			restaurantId
-				? { restaurantId, sinceMs: sinceMsRef.current }
-				: "skip"
+			restaurantId ? { restaurantId, sinceMs: sinceMsRef.current } : "skip"
 		),
 		enabled: Boolean(restaurantId),
 		select: unwrapResult<PendingValue>,

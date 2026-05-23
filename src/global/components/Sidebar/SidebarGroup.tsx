@@ -42,10 +42,7 @@ export function SidebarGroup({ isExpanded, pathname, main, subLinks }: SidebarGr
 	const { isOpen, setGroupExpanded, toggleGroup } = useSidebarGroups();
 	const groupKey = main.translationKey;
 
-	const routeActive = useMemo(
-		() => isPathInsideGroup(pathname, subLinks),
-		[pathname, subLinks]
-	);
+	const routeActive = useMemo(() => isPathInsideGroup(pathname, subLinks), [pathname, subLinks]);
 
 	const groupExpanded = isOpen(groupKey);
 

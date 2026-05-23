@@ -18,7 +18,7 @@ export function AdminRestaurantsListSkeleton() {
 						<Skeleton.Card className="flex items-center justify-between px-4 py-3">
 							<div className="flex items-center gap-4">
 								<div className="space-y-2">
-									<Skeleton className="h-4" style={{width: `${110 + (i % 3) * 22}px`}} />
+									<Skeleton className="h-4" style={{ width: `${110 + (i % 3) * 22}px` }} />
 									<Skeleton className="h-3 w-20" />
 								</div>
 								<Skeleton rounded="full" className="h-5 w-14" />

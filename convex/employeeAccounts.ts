@@ -20,7 +20,11 @@ import {
 import { RESTAURANT_MEMBER_ROLE, TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
-type CreateResult = { employeeAccountId: Id<"employeeAccounts">; memberId: Id<"restaurantMembers">; pin: string };
+type CreateResult = {
+	employeeAccountId: Id<"employeeAccounts">;
+	memberId: Id<"restaurantMembers">;
+	pin: string;
+};
 
 export const createEmployeeAccount = mutation({
 	args: {
@@ -36,7 +40,11 @@ export const createEmployeeAccount = mutation({
 		const [actorId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
-		const [restaurant, accessErr] = await requireRestaurantManagerOrAbove(ctx, actorId, args.restaurantId);
+		const [restaurant, accessErr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			actorId,
+			args.restaurantId
+		);
 		if (accessErr) return [null, accessErr];
 
 		if (!args.firstName.trim() || !args.paternalLastname.trim() || !args.maternalLastname.trim()) {
@@ -107,7 +115,10 @@ export const updateEmployeeAccount = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<Id<"employeeAccounts">, AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject> {
+	): AsyncReturn<
+		Id<"employeeAccounts">,
+		AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject
+	> {
 		const [actorId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
@@ -122,19 +133,34 @@ export const updateEmployeeAccount = mutation({
 		const patch: Record<string, unknown> = {};
 		if (args.firstName !== undefined) {
 			if (!args.firstName.trim()) {
-				return [null, new UserInputValidationError({ fields: [{ field: "firstName", message: "Required" }] }).toObject()];
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "firstName", message: "Required" }],
+					}).toObject(),
+				];
 			}
 			patch.firstName = args.firstName.trim();
 		}
 		if (args.paternalLastname !== undefined) {
 			if (!args.paternalLastname.trim()) {
-				return [null, new UserInputValidationError({ fields: [{ field: "paternalLastname", message: "Required" }] }).toObject()];
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "paternalLastname", message: "Required" }],
+					}).toObject(),
+				];
 			}
 			patch.paternalLastname = args.paternalLastname.trim();
 		}
 		if (args.maternalLastname !== undefined) {
 			if (!args.maternalLastname.trim()) {
-				return [null, new UserInputValidationError({ fields: [{ field: "maternalLastname", message: "Required" }] }).toObject()];
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "maternalLastname", message: "Required" }],
+					}).toObject(),
+				];
 			}
 			patch.maternalLastname = args.maternalLastname.trim();
 		}
@@ -205,10 +231,7 @@ export const resetEmployeePin = mutation({
 
 export const removeEmployeeAccount = mutation({
 	args: { employeeAccountId: v.id(TABLE.EMPLOYEE_ACCOUNTS) },
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [actorId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 

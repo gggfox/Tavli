@@ -103,25 +103,17 @@ export async function getRestaurantMembership(
 ): Promise<Doc<"restaurantMembers"> | null> {
 	return await ctx.db
 		.query(TABLE.RESTAURANT_MEMBERS)
-		.withIndex("by_restaurant_user", (q) =>
-			q.eq("restaurantId", restaurantId).eq("userId", userId)
-		)
+		.withIndex("by_restaurant_user", (q) => q.eq("restaurantId", restaurantId).eq("userId", userId))
 		.first();
 }
 
-function orgIdsMatch(
-	orgIdA: string | undefined,
-	orgIdB: Id<"organizations">
-): boolean {
+function orgIdsMatch(orgIdA: string | undefined, orgIdB: Id<"organizations">): boolean {
 	if (!orgIdA) return false;
 	return orgIdA === orgIdB;
 }
 
 /** Primary account on the restaurant row (creator / billing owner). */
-export function isRestaurantDocumentOwner(
-	restaurant: Doc<"restaurants">,
-	userId: string
-): boolean {
+export function isRestaurantDocumentOwner(restaurant: Doc<"restaurants">, userId: string): boolean {
 	return restaurant.ownerId === userId;
 }
 
@@ -445,7 +437,10 @@ export async function getCurrentUserId(
 export async function requireSharedEmployeeSession(
 	ctx: RoleDbContext & AuthenticationContext,
 	restaurantId: Id<"restaurants">
-): AsyncReturn<Doc<"restaurants">, NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject> {
+): AsyncReturn<
+	Doc<"restaurants">,
+	NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject
+> {
 	const identity = await ctx.auth.getUserIdentity();
 	if (!identity) {
 		return [null, new NotAuthenticatedError().toObject()];
@@ -499,7 +494,8 @@ export async function verifyEmployeePin(
 	const valid = compareSync(pin, account.pinHash);
 
 	if (!valid) {
-		const attempts = (account.lockedUntil && now >= account.lockedUntil ? 0 : account.failedPinAttempts) + 1;
+		const attempts =
+			(account.lockedUntil && now >= account.lockedUntil ? 0 : account.failedPinAttempts) + 1;
 		const patch: Record<string, unknown> = { failedPinAttempts: attempts };
 		if (attempts >= PIN_LOCKOUT.MAX_ATTEMPTS) {
 			patch.lockedUntil = now + PIN_LOCKOUT.WINDOW_MS;

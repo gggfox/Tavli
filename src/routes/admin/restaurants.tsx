@@ -38,10 +38,7 @@ function AdminRestaurantsPage() {
 		return (
 			<div className="p-6 flex flex-col h-full">
 				<div className="flex-1 min-h-0 overflow-y-auto">
-					<AdminRestaurantsList
-						manageId={manageId}
-						onManageChange={setManageId}
-					/>
+					<AdminRestaurantsList manageId={manageId} onManageChange={setManageId} />
 				</div>
 			</div>
 		);

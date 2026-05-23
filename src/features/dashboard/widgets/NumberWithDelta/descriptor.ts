@@ -1,10 +1,7 @@
 import { DashboardKeys } from "@/global/i18n";
 import { Hash } from "lucide-react";
 import { registerWidget, type WidgetDescriptor } from "../registry";
-import {
-	numberWithDeltaOptionsSchema,
-	type NumberWithDeltaOptions,
-} from "./schema";
+import { numberWithDeltaOptionsSchema, type NumberWithDeltaOptions } from "./schema";
 import { NumberWithDeltaWidget } from "./Widget";
 
 export const NUMBER_WITH_DELTA_TYPE = "numberWithDelta";

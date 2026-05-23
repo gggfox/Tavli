@@ -28,9 +28,7 @@ export function EmptyState({
 }: EmptyStateProps) {
 	if (variant === "inline") {
 		return (
-			<p className={`${`text-sm py-4 text-center ${className}`} text-faint-foreground`} >
-				{title}
-			</p>
+			<p className={`${`text-sm py-4 text-center ${className}`} text-faint-foreground`}>{title}</p>
 		);
 	}
 
@@ -39,23 +37,15 @@ export function EmptyState({
 	return (
 		<div
 			className={`${`flex flex-col items-center justify-center rounded-lg ${sizing} ${className}`} bg-muted`}
-		 
 		>
 			{Icon && (
-				<div
-					className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-hover"
-					
-				>
-					<Icon size={24} className="text-faint-foreground"  />
+				<div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-hover">
+					<Icon size={24} className="text-faint-foreground" />
 				</div>
 			)}
-			<p className="text-lg font-medium text-foreground" >
-				{title}
-			</p>
+			<p className="text-lg font-medium text-foreground">{title}</p>
 			{description && (
-				<p className="text-sm mt-1 text-center max-w-md text-muted-foreground" >
-					{description}
-				</p>
+				<p className="text-sm mt-1 text-center max-w-md text-muted-foreground">{description}</p>
 			)}
 			{action && <div className="mt-4">{action}</div>}
 		</div>

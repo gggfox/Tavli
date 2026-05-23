@@ -1,10 +1,4 @@
-import {
-	DialogHeader,
-	getStatusToneStyle,
-	Modal,
-	StatusBadge,
-	Surface,
-} from "@/global/components";
+import { DialogHeader, getStatusToneStyle, Modal, StatusBadge, Surface } from "@/global/components";
 import { CommonKeys, OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
@@ -26,11 +20,7 @@ interface OrderDetailModalProps {
 	onClose: () => void;
 }
 
-export function OrderDetailModal({
-	fullOrder,
-	now,
-	onClose,
-}: Readonly<OrderDetailModalProps>) {
+export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDetailModalProps>) {
 	const { t, i18n } = useTranslation();
 	const fullOrderConfig =
 		fullOrder && isDashboardStatus(fullOrder.status) ? STATUS_CONFIG[fullOrder.status] : null;
@@ -55,10 +45,7 @@ export function OrderDetailModal({
 										label={t(fullOrderConfig.labelKey)}
 									/>
 								)}
-								<h2
-									className="text-lg font-semibold text-foreground"
-									
-								>
+								<h2 className="text-lg font-semibold text-foreground">
 									{t(OrdersKeys.CARD_TABLE, { number: fullOrder.tableNumber })}
 								</h2>
 								{fullOrder.dailyOrderNumber != null && (
@@ -72,7 +59,7 @@ export function OrderDetailModal({
 								{fullOrder.paidAt && (
 									<span
 										className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-success"
-										style={{color: "white"}}
+										style={{ color: "white" }}
 									>
 										<CreditCard size={10} />
 										{t(OrdersKeys.CARD_PAID)}
@@ -81,20 +68,14 @@ export function OrderDetailModal({
 							</div>
 						}
 						subtitle={
-							<span
-								className="text-xs font-mono break-all text-faint-foreground"
-								
-							>
+							<span className="text-xs font-mono break-all text-faint-foreground">
 								#{fullOrder._id}
 							</span>
 						}
 						onClose={onClose}
 					/>
 
-					<div
-						className="px-6 py-3 flex items-center justify-between text-xs gap-4 flex-wrap text-faint-foreground border-b border-border"
-						
-					>
+					<div className="px-6 py-3 flex items-center justify-between text-xs gap-4 flex-wrap text-faint-foreground border-b border-border">
 						<div className="flex items-center gap-3 flex-wrap">
 							{fullOrderAge && (
 								<span
@@ -103,16 +84,14 @@ export function OrderDetailModal({
 									{t(fullOrderAge.key, fullOrderAge.vars)}
 								</span>
 							)}
-							<span>
-								{t(CommonKeys.ITEMS_COUNT, { count: fullOrder.items.length })}
-							</span>
+							<span>{t(CommonKeys.ITEMS_COUNT, { count: fullOrder.items.length })}</span>
 							<span className="flex items-center gap-1">
 								<Clock size={12} />
 								{formatOrderDate(fullOrder.createdAt, i18n.language)} ·{" "}
 								{formatOrderTime(fullOrder.createdAt, i18n.language)}
 							</span>
 						</div>
-						<span className="font-medium text-foreground" >
+						<span className="font-medium text-foreground">
 							${formatCents(fullOrder.totalAmount)}
 						</span>
 					</div>

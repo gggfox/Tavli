@@ -76,11 +76,11 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 				>
 					<Globe
 						size={16}
-						style={{color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
+						style={{ color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)" }}
 					/>
 					<span
 						className="text-xs"
-						style={{color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
+						style={{ color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)" }}
 					>
 						{t(MenusKeys.EDITOR_LANGUAGES_LABEL)}
 					</span>
@@ -91,10 +91,8 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors text-faint-foreground"
 					title={t(MenusKeys.EDITOR_OPTIONS_TITLE)}
 				>
-					<LayoutGrid size={16}  />
-					<span className="text-xs text-faint-foreground" >
-						{t(MenusKeys.EDITOR_OPTIONS_LABEL)}
-					</span>
+					<LayoutGrid size={16} />
+					<span className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_OPTIONS_LABEL)}</span>
 				</button>
 			</div>
 
@@ -104,19 +102,13 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 				ariaLabel={t(MenusKeys.EDITOR_OPTION_GROUPS_MODAL_ARIA)}
 				size="3xl"
 			>
-				<div
-					className="rounded-xl overflow-hidden bg-background border border-border"
-					
-				>
-					<div
-						className="flex items-center justify-between px-6 py-4 border-b border-border"
-						
-					>
+				<div className="rounded-xl overflow-hidden bg-background border border-border">
+					<div className="flex items-center justify-between px-6 py-4 border-b border-border">
 						<div>
-							<h2 className="text-lg font-semibold text-foreground" >
+							<h2 className="text-lg font-semibold text-foreground">
 								{t(MenusKeys.EDITOR_OPTION_GROUPS_HEADING)}
 							</h2>
-							<p className="text-xs mt-1 text-muted-foreground" >
+							<p className="text-xs mt-1 text-muted-foreground">
 								{t(MenusKeys.EDITOR_OPTION_GROUPS_DESCRIPTION)}
 							</p>
 						</div>
@@ -125,7 +117,7 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 							onClick={() => setOptionGroupsModalOpen(false)}
 							className="p-1.5 rounded-lg hover:bg-hover text-faint-foreground"
 						>
-							<X size={18}  />
+							<X size={18} />
 						</button>
 					</div>
 					<div className="p-6 max-h-[70vh] overflow-y-auto">
@@ -163,7 +155,6 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 								onBlur={field.handleBlur}
 								placeholder={t(MenusKeys.EDITOR_NEW_CATEGORY_PLACEHOLDER)}
 								className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								
 							/>
 						)}
 					/>
@@ -177,9 +168,7 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 			)}
 
 			{isTranslationMode && (
-				<p className="text-xs text-faint-foreground" >
-					{t(MenusKeys.EDITOR_TRANSLATING_HINT)}
-				</p>
+				<p className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_TRANSLATING_HINT)}</p>
 			)}
 
 			{sorted.map((cat) => (

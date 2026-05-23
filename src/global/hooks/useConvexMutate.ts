@@ -13,10 +13,12 @@ import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, type UseMutationResult } from "@tanstack/react-query";
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from "convex/server";
 
-export function useConvexMutate<
-	Mutation extends FunctionReference<"mutation">,
->(mutation: Mutation): UseMutationResult<FunctionReturnType<Mutation>, Error, FunctionArgs<Mutation>> {
+export function useConvexMutate<Mutation extends FunctionReference<"mutation">>(
+	mutation: Mutation
+): UseMutationResult<FunctionReturnType<Mutation>, Error, FunctionArgs<Mutation>> {
 	return useMutation({
-		mutationFn: useConvexMutation(mutation) as unknown as (args: FunctionArgs<Mutation>) => Promise<FunctionReturnType<Mutation>>,
+		mutationFn: useConvexMutation(mutation) as unknown as (
+			args: FunctionArgs<Mutation>
+		) => Promise<FunctionReturnType<Mutation>>,
 	});
 }

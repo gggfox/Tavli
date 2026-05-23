@@ -1,7 +1,4 @@
-import type {
-	OrderDashboardPrepStationFilter,
-	OrderDashboardStatusFilter,
-} from "@/features";
+import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilter } from "@/features";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import {
 	DashboardShell,
@@ -52,9 +49,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
 	const [now, setNow] = useState(() => Date.now());
 
-	const [activeFilters, setActiveFilters] = useOptimisticUserSetting<
-		OrderDashboardStatusFilter[]
-	>({
+	const [activeFilters, setActiveFilters] = useOptimisticUserSetting<OrderDashboardStatusFilter[]>({
 		serverValue: orderDashboardStatusFilters,
 		persist: updateOrderDashboardStatusFilters,
 		fallback: DEFAULT_STATUS_FILTERS,
@@ -71,8 +66,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	// Pass `undefined` (not `[]`) when no station filter is active so the
 	// query treats it as "no filter" and short-circuits the per-order
 	// presence check on the server side.
-	const queryStations =
-		activeStationFilters.length > 0 ? activeStationFilters : undefined;
+	const queryStations = activeStationFilters.length > 0 ? activeStationFilters : undefined;
 
 	const { orders, isLoading, error, updateStatus, markStationReady } = useOrders(
 		restaurantId,
@@ -86,9 +80,10 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	}, []);
 
 	const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
-	const activeStationFilterSet = useMemo<
-		ReadonlySet<OrderDashboardPrepStationFilter>
-	>(() => new Set(activeStationFilters), [activeStationFilters]);
+	const activeStationFilterSet = useMemo<ReadonlySet<OrderDashboardPrepStationFilter>>(
+		() => new Set(activeStationFilters),
+		[activeStationFilters]
+	);
 
 	const statusFilterOptions = useMemo<
 		ReadonlyArray<StatusFilterOption<OrderDashboardStatusFilter>>
@@ -180,11 +175,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				</div>
 			)}
 
-			<OrderDetailModal
-				fullOrder={fullOrder}
-				now={now}
-				onClose={() => setFullOrder(null)}
-			/>
+			<OrderDetailModal fullOrder={fullOrder} now={now} onClose={() => setFullOrder(null)} />
 		</DashboardShell>
 	);
 }

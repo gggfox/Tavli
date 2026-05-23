@@ -60,8 +60,12 @@ export function RestaurantInviteMultiSelect({
 				onClick={() => setOpen((o) => !o)}
 				className="mt-1 flex w-full items-center justify-between gap-2 rounded border border-border bg-background px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
 			>
-				<span className={hasSelection ? "truncate" : "truncate text-faint-foreground"}>{triggerLabel}</span>
-				<ChevronDown className={`size-4 shrink-0 opacity-60 transition-transform ${open ? "rotate-180" : ""}`} />
+				<span className={hasSelection ? "truncate" : "truncate text-faint-foreground"}>
+					{triggerLabel}
+				</span>
+				<ChevronDown
+					className={`size-4 shrink-0 opacity-60 transition-transform ${open ? "rotate-180" : ""}`}
+				/>
 			</button>
 			{open && options.length > 0 ? (
 				<div

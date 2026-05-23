@@ -31,9 +31,7 @@ import {
 	type SectionSheet,
 	yearInTz,
 } from "./exportHelpers";
-import {
-	requireRestaurantManagerOrAbove,
-} from "./_util/auth";
+import { requireRestaurantManagerOrAbove } from "./_util/auth";
 import { TABLE } from "./constants";
 
 function csvEscape(cell: string): string {
@@ -255,10 +253,7 @@ export const exportOrdersXlsx = action({
 		year: v.number(),
 		locale: v.optional(v.string()),
 	},
-	handler: async (
-		ctx,
-		args
-	): Promise<{ base64: string; filename: string; mimeType: string }> => {
+	handler: async (ctx, args): Promise<{ base64: string; filename: string; mimeType: string }> => {
 		const identity = await ctx.auth.getUserIdentity();
 		if (!identity) throw new Error("Unauthorized");
 
@@ -292,9 +287,7 @@ export const exportOrdersXlsx = action({
 			monthlyTotalsCents[idx] += row.totalAmountCents;
 		}
 
-		const totalLabel = currencyLabel
-			? `total amount (${currencyLabel})`
-			: "total amount";
+		const totalLabel = currencyLabel ? `total amount (${currencyLabel})` : "total amount";
 
 		const headers = [
 			"order service date",
@@ -387,10 +380,7 @@ export const exportPaymentsXlsx = action({
 		year: v.number(),
 		locale: v.optional(v.string()),
 	},
-	handler: async (
-		ctx,
-		args
-	): Promise<{ base64: string; filename: string; mimeType: string }> => {
+	handler: async (ctx, args): Promise<{ base64: string; filename: string; mimeType: string }> => {
 		const identity = await ctx.auth.getUserIdentity();
 		if (!identity) throw new Error("Unauthorized");
 
@@ -435,12 +425,8 @@ export const exportPaymentsXlsx = action({
 			}
 		}
 
-		const amountLabel = currencyLabel
-			? `amount (${currencyLabel})`
-			: "amount";
-		const gratuityLabel = currencyLabel
-			? `gratuity (${currencyLabel})`
-			: "gratuity";
+		const amountLabel = currencyLabel ? `amount (${currencyLabel})` : "amount";
+		const gratuityLabel = currencyLabel ? `gratuity (${currencyLabel})` : "gratuity";
 
 		const headers = [
 			"daily order number",
@@ -559,10 +545,7 @@ export const exportReservationsXlsx = action({
 		year: v.number(),
 		locale: v.optional(v.string()),
 	},
-	handler: async (
-		ctx,
-		args
-	): Promise<{ base64: string; filename: string; mimeType: string }> => {
+	handler: async (ctx, args): Promise<{ base64: string; filename: string; mimeType: string }> => {
 		const identity = await ctx.auth.getUserIdentity();
 		if (!identity) throw new Error("Unauthorized");
 
@@ -727,10 +710,7 @@ export const exportMenuXlsx = action({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 	},
-	handler: async (
-		ctx,
-		args
-	): Promise<{ base64: string; filename: string; mimeType: string }> => {
+	handler: async (ctx, args): Promise<{ base64: string; filename: string; mimeType: string }> => {
 		const identity = await ctx.auth.getUserIdentity();
 		if (!identity) throw new Error("Unauthorized");
 
@@ -749,12 +729,8 @@ export const exportMenuXlsx = action({
 			}
 		);
 
-		const priceLabel = currencyLabel
-			? `base price (${currencyLabel})`
-			: "base price";
-		const modifierLabel = currencyLabel
-			? `price modifier (${currencyLabel})`
-			: "price modifier";
+		const priceLabel = currencyLabel ? `base price (${currencyLabel})` : "base price";
+		const modifierLabel = currencyLabel ? `price modifier (${currencyLabel})` : "price modifier";
 
 		const sections: SectionSheet<unknown>[] = [
 			{
@@ -784,14 +760,7 @@ export const exportMenuXlsx = action({
 			},
 			{
 				name: "Categories",
-				headers: [
-					"menu",
-					"name",
-					"description",
-					"display order",
-					"id",
-					"menu id",
-				],
+				headers: ["menu", "name", "description", "display order", "id", "menu id"],
 				rows: snapshot.categories,
 				mapRow: (raw): CellValue[] => {
 					const c = raw as MenuSnapshot["categories"][number];

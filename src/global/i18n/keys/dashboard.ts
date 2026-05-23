@@ -93,8 +93,7 @@ export const DashboardKeys = {
 		"dashboard.widgets.numberWithDelta.metric.ordersCount",
 	WIDGET_NUMBER_WITH_DELTA_METRIC_PAYMENTS_REVENUE_TOTAL:
 		"dashboard.widgets.numberWithDelta.metric.paymentsRevenueTotal",
-	WIDGET_NUMBER_WITH_DELTA_METRIC_COVERS:
-		"dashboard.widgets.numberWithDelta.metric.covers",
+	WIDGET_NUMBER_WITH_DELTA_METRIC_COVERS: "dashboard.widgets.numberWithDelta.metric.covers",
 
 	WIDGET_TOP_MENU_ITEMS_LABEL: "dashboard.widgets.topMenuItems.label",
 	WIDGET_TOP_MENU_ITEMS_DESCRIPTION: "dashboard.widgets.topMenuItems.description",
@@ -110,8 +109,7 @@ export const DashboardKeys = {
 	WIDGET_ORDERS_BY_HOUR_AXIS: "dashboard.widgets.ordersByHour.axis",
 
 	WIDGET_RESERVATIONS_BY_STATUS_LABEL: "dashboard.widgets.reservationsByStatus.label",
-	WIDGET_RESERVATIONS_BY_STATUS_DESCRIPTION:
-		"dashboard.widgets.reservationsByStatus.description",
+	WIDGET_RESERVATIONS_BY_STATUS_DESCRIPTION: "dashboard.widgets.reservationsByStatus.description",
 
 	WIDGET_TIPS_TOTAL_LABEL: "dashboard.widgets.tipsTotal.label",
 	WIDGET_TIPS_TOTAL_DESCRIPTION: "dashboard.widgets.tipsTotal.description",
@@ -120,8 +118,7 @@ export const DashboardKeys = {
 	WIDGET_TABLE_OCCUPANCY_DESCRIPTION: "dashboard.widgets.tableOccupancy.description",
 
 	WIDGET_BUSY_TIMES_HEATMAP_LABEL: "dashboard.widgets.busyTimesHeatmap.label",
-	WIDGET_BUSY_TIMES_HEATMAP_DESCRIPTION:
-		"dashboard.widgets.busyTimesHeatmap.description",
+	WIDGET_BUSY_TIMES_HEATMAP_DESCRIPTION: "dashboard.widgets.busyTimesHeatmap.description",
 
 	DAY_SUN: "dashboard.day.sun",
 	DAY_MON: "dashboard.day.mon",

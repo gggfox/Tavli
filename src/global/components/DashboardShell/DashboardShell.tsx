@@ -55,11 +55,7 @@ export function DashboardShell({
 	gap = "4",
 	className = "",
 }: DashboardShellProps) {
-	const wrapperClasses = [
-		"flex flex-col min-h-full",
-		GAP_CLASSES[gap],
-		className,
-	]
+	const wrapperClasses = ["flex flex-col min-h-full", GAP_CLASSES[gap], className]
 		.filter(Boolean)
 		.join(" ");
 

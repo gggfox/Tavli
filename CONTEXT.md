@@ -113,7 +113,7 @@ A scheduled work block for a `RestaurantMember`, carrying a
 `ShiftRole` (`server | bartender | host | kitchen | manager`).
 
 **Shift role**:
-The role a `RestaurantMember` is working *for that shift*. Distinct
+The role a `RestaurantMember` is working _for that shift_. Distinct
 from their `RestaurantMember.role` (which is a permission tier). The
 two prep stations (`kitchen`, `bar`) deliberately reuse the
 `SHIFT_ROLE` vocabulary.

@@ -111,8 +111,8 @@ export const listForRestaurant = query({
 			.query(TABLE.SHIFTS)
 			.withIndex("by_restaurant_time", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
-		const filtered = shifts.filter(
-			(s) => rangesOverlap(s.startsAt, s.endsAt, args.fromMs, args.toMs)
+		const filtered = shifts.filter((s) =>
+			rangesOverlap(s.startsAt, s.endsAt, args.fromMs, args.toMs)
 		);
 		return [filtered, null];
 	},
@@ -144,8 +144,7 @@ export const listForRestaurantWeek = query({
 			.collect();
 		const inWindow = shifts.filter(
 			(s) =>
-				s.status !== SHIFT_STATUS.CANCELLED &&
-				rangesOverlap(s.startsAt, s.endsAt, fromMs, toMs)
+				s.status !== SHIFT_STATUS.CANCELLED && rangesOverlap(s.startsAt, s.endsAt, fromMs, toMs)
 		);
 
 		const memberIds = Array.from(new Set(inWindow.map((s) => s.memberId)));
@@ -159,7 +158,10 @@ export const listForRestaurantWeek = query({
 		}
 
 		const emailByUserId = new Map<string, string>();
-		const userAvatarByUserId = new Map<string, { photoStorageId?: string; clerkImageUrl?: string }>();
+		const userAvatarByUserId = new Map<
+			string,
+			{ photoStorageId?: string; clerkImageUrl?: string }
+		>();
 		await Promise.all(
 			Array.from(userIdsForEmail).map(async (uid) => {
 				const rows = await ctx.db
@@ -184,7 +186,15 @@ export const listForRestaurantWeek = query({
 		for (const m of memberDocs) {
 			if (m?.employeeAccountId) employeeAccountIds.add(m.employeeAccountId);
 		}
-		const employeeAccountById = new Map<string, { firstName: string; paternalLastname: string; maternalLastname: string; photoStorageId?: string }>();
+		const employeeAccountById = new Map<
+			string,
+			{
+				firstName: string;
+				paternalLastname: string;
+				maternalLastname: string;
+				photoStorageId?: string;
+			}
+		>();
 		await Promise.all(
 			Array.from(employeeAccountIds).map(async (eaId) => {
 				const ea = await ctx.db.get(eaId as Id<"employeeAccounts">);
@@ -211,9 +221,11 @@ export const listForRestaurantWeek = query({
 					if (m?.employeeAccountId) {
 						const ea = employeeAccountById.get(m.employeeAccountId);
 						if (ea) {
-							displayName = [ea.firstName, ea.paternalLastname, ea.maternalLastname].filter(Boolean).join(" ");
+							displayName = [ea.firstName, ea.paternalLastname, ea.maternalLastname]
+								.filter(Boolean)
+								.join(" ");
 							if (ea.photoStorageId) {
-								photoUrl = await ctx.storage.getUrl(ea.photoStorageId as Id<"_storage">) ?? null;
+								photoUrl = (await ctx.storage.getUrl(ea.photoStorageId as Id<"_storage">)) ?? null;
 							}
 						}
 					} else if (m?.userId) {
@@ -221,7 +233,8 @@ export const listForRestaurantWeek = query({
 						displayName = email ?? m.userId;
 						const avatar = userAvatarByUserId.get(m.userId);
 						if (avatar?.photoStorageId) {
-							photoUrl = await ctx.storage.getUrl(avatar.photoStorageId as Id<"_storage">) ?? null;
+							photoUrl =
+								(await ctx.storage.getUrl(avatar.photoStorageId as Id<"_storage">)) ?? null;
 						} else if (avatar?.clerkImageUrl) {
 							photoUrl = avatar.clerkImageUrl;
 						}
@@ -461,10 +474,7 @@ export const updateShift = mutation({
 
 export const cancelShift = mutation({
 	args: { shiftId: v.id(TABLE.SHIFTS) },
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"shifts">, AuthE | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<Id<"shifts">, AuthE | NotFoundErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
@@ -579,7 +589,10 @@ export const upsertTableAssignment = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<Id<"shiftTableAssignments">, AuthE | NotFoundErrorObject | UserInputValidationErrorObject> {
+	): AsyncReturn<
+		Id<"shiftTableAssignments">,
+		AuthE | NotFoundErrorObject | UserInputValidationErrorObject
+	> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
@@ -708,9 +721,7 @@ export const upsertSectionAssignment = mutation({
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [
-							{ field: "sectionId", message: "Section already covered in this window" },
-						],
+						fields: [{ field: "sectionId", message: "Section already covered in this window" }],
 					}).toObject(),
 				];
 			}
@@ -735,21 +746,14 @@ export const upsertSectionAssignment = mutation({
 
 export const removeSectionAssignment = mutation({
 	args: { assignmentId: v.id(TABLE.SHIFT_SECTION_ASSIGNMENTS) },
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, AuthE | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthE | NotFoundErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
 		const assignment = await ctx.db.get(args.assignmentId);
 		if (!assignment) return [null, new NotFoundError("Assignment not found").toObject()];
 
-		const [, aerr] = await requireRestaurantManagerOrAbove(
-			ctx,
-			userId,
-			assignment.restaurantId
-		);
+		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, userId, assignment.restaurantId);
 		if (aerr) return [null, aerr];
 
 		await ctx.db.delete(args.assignmentId);
@@ -784,11 +788,7 @@ export const listSectionAssignmentsForShift = query({
 // Bulk clear: preview + execute
 // ============================================================================
 
-const BULK_CLEAR_SCOPE = v.union(
-	v.literal("thisWeek"),
-	v.literal("futureWeeks"),
-	v.literal("all")
-);
+const BULK_CLEAR_SCOPE = v.union(v.literal("thisWeek"), v.literal("futureWeeks"), v.literal("all"));
 
 function scopeToRange(
 	scope: "thisWeek" | "futureWeeks" | "all",
@@ -805,11 +805,7 @@ function scopeToRange(
 	}
 }
 
-function isShiftInScope(
-	shift: Doc<"shifts">,
-	fromMs: number,
-	toMs: number | null
-): boolean {
+function isShiftInScope(shift: Doc<"shifts">, fromMs: number, toMs: number | null): boolean {
 	if (shift.status === SHIFT_STATUS.CANCELLED) return false;
 	if (shift.startsAt < fromMs) return false;
 	if (toMs != null && shift.startsAt >= toMs) return false;
@@ -980,7 +976,11 @@ export const internalListShiftsForExport = internalQuery({
 		toMs: v.number(),
 	},
 	handler: async (ctx, args) => {
-		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, args.actingUserId, args.restaurantId);
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
 		if (aerr) throw new Error("Unauthorized");
 
 		const shifts = await ctx.db

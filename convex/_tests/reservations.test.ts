@@ -155,9 +155,7 @@ describe("reservations.create", () => {
 		const startsAt = nowPlusHours(2);
 		const { restaurantId } = await seedRestaurant(t, {
 			settings: {
-				blackoutWindows: [
-					{ startsAt: startsAt - ONE_HOUR_MS, endsAt: startsAt + ONE_HOUR_MS },
-				],
+				blackoutWindows: [{ startsAt: startsAt - ONE_HOUR_MS, endsAt: startsAt + ONE_HOUR_MS }],
 			},
 		});
 

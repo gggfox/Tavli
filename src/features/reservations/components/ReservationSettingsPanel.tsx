@@ -96,22 +96,16 @@ export function ReservationSettingsPanel({
 	return (
 		<div className="space-y-6 max-w-2xl">
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
-			{saved && (
-				<p className="text-xs text-success" >
-					{t(ReservationSettingsKeys.MSG_SAVED)}
-				</p>
-			)}
+			{saved && <p className="text-xs text-success">{t(ReservationSettingsKeys.MSG_SAVED)}</p>}
 			{settings?.isDefault && (
-				<p className="text-xs text-faint-foreground" >
+				<p className="text-xs text-faint-foreground">
 					{t(ReservationSettingsKeys.MSG_USING_DEFAULTS)}
 				</p>
 			)}
 
 			<div className="flex items-center justify-between">
 				<span className="flex items-center gap-1.5 text-sm font-medium">
-					<label htmlFor="accepting">
-						{t(ReservationSettingsKeys.LABEL_ACCEPTING)}
-					</label>
+					<label htmlFor="accepting">{t(ReservationSettingsKeys.LABEL_ACCEPTING)}</label>
 					<InfoTooltip description={t(ReservationSettingsKeys.DESC_ACCEPTING)} />
 				</span>
 				<input
@@ -158,26 +152,20 @@ export function ReservationSettingsPanel({
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
 					<span className="flex items-center gap-1.5">
-						<h3 className="text-sm font-medium">
-							{t(ReservationSettingsKeys.LABEL_TURN_RANGES)}
-						</h3>
+						<h3 className="text-sm font-medium">{t(ReservationSettingsKeys.LABEL_TURN_RANGES)}</h3>
 						<InfoTooltip description={t(ReservationSettingsKeys.DESC_TURN_RANGES)} />
 					</span>
 					<button
 						type="button"
 						onClick={() =>
-							setTurnRanges((rs) => [
-								...rs,
-								{ minPartySize: 1, maxPartySize: 4, turnMinutes: 90 },
-							])
+							setTurnRanges((rs) => [...rs, { minPartySize: 1, maxPartySize: 4, turnMinutes: 90 }])
 						}
 						className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border"
-						
 					>
 						<Plus size={12} /> {t(ReservationSettingsKeys.ACTION_ADD_RANGE)}
 					</button>
 				</div>
-				<p className="text-xs text-faint-foreground" >
+				<p className="text-xs text-faint-foreground">
 					{t(ReservationSettingsKeys.MSG_RANGE_FALLBACK)}
 				</p>
 				{turnRanges.map((r, i) => (
@@ -209,9 +197,7 @@ export function ReservationSettingsPanel({
 							label={t(ReservationSettingsKeys.LABEL_TURN_MINUTES)}
 							value={r.turnMinutes}
 							onChange={(v) =>
-								setTurnRanges((rs) =>
-									rs.map((rr, j) => (j === i ? { ...rr, turnMinutes: v } : rr))
-								)
+								setTurnRanges((rs) => rs.map((rr, j) => (j === i ? { ...rr, turnMinutes: v } : rr)))
 							}
 							min={15}
 						/>
@@ -221,7 +207,7 @@ export function ReservationSettingsPanel({
 							className="p-2 rounded-md text-destructive"
 							aria-label={t(ReservationsKeys.ARIA_REMOVE)}
 						>
-							<Trash2 size={14}  />
+							<Trash2 size={14} />
 						</button>
 					</div>
 				))}
@@ -230,31 +216,22 @@ export function ReservationSettingsPanel({
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
 					<span className="flex items-center gap-1.5">
-						<h3 className="text-sm font-medium">
-							{t(ReservationSettingsKeys.LABEL_BLACKOUTS)}
-						</h3>
+						<h3 className="text-sm font-medium">{t(ReservationSettingsKeys.LABEL_BLACKOUTS)}</h3>
 						<InfoTooltip description={t(ReservationSettingsKeys.DESC_BLACKOUTS)} />
 					</span>
 					<button
 						type="button"
 						onClick={() => {
 							const now = Date.now();
-							setBlackouts((bs) => [
-								...bs,
-								{ startsAt: now, endsAt: now + 2 * 60 * 60 * 1000 },
-							]);
+							setBlackouts((bs) => [...bs, { startsAt: now, endsAt: now + 2 * 60 * 60 * 1000 }]);
 						}}
 						className="flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border"
-						
 					>
 						<Plus size={12} /> {t(ReservationSettingsKeys.ACTION_ADD_WINDOW)}
 					</button>
 				</div>
 				{blackouts.map((b, i) => (
-					<div
-						key={`${b.startsAt}-${b.endsAt}-${i}`}
-						className="flex items-end gap-2 flex-wrap"
-					>
+					<div key={`${b.startsAt}-${b.endsAt}-${i}`} className="flex items-end gap-2 flex-wrap">
 						<DateTimeField
 							id={`bo-start-${i}`}
 							label={t(ReservationSettingsKeys.LABEL_STARTS_AT)}
@@ -285,7 +262,7 @@ export function ReservationSettingsPanel({
 							className="p-2 rounded-md text-destructive"
 							aria-label={t(ReservationsKeys.ARIA_REMOVE)}
 						>
-							<Trash2 size={14}  />
+							<Trash2 size={14} />
 						</button>
 					</div>
 				))}

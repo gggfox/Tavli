@@ -32,7 +32,8 @@ async function requireActiveMember(
 	restaurantId: Id<"restaurants">
 ) {
 	const m = await getRestaurantMembership(ctx, userId, restaurantId);
-	if (!m?.isActive) return [null, new NotFoundError("Not a member of this restaurant").toObject()] as const;
+	if (!m?.isActive)
+		return [null, new NotFoundError("Not a member of this restaurant").toObject()] as const;
 	return [m, null] as const;
 }
 
@@ -127,10 +128,7 @@ export const clockOut = mutation({
 				.first();
 			const shift = await ctx.db.get(args.shiftId);
 			if (row && shift) {
-				const earlyDepartureMinutes = Math.max(
-					0,
-					Math.round((shift.endsAt - now) / 60_000)
-				);
+				const earlyDepartureMinutes = Math.max(0, Math.round((shift.endsAt - now) / 60_000));
 				let status: (typeof ATTENDANCE_STATUS)[keyof typeof ATTENDANCE_STATUS] =
 					ATTENDANCE_STATUS.PRESENT;
 				if (earlyDepartureMinutes > 0 && args.reason) {
@@ -155,10 +153,7 @@ export const correctClockEvent = mutation({
 		newAt: v.number(),
 		reason: v.string(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, AuthE | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthE | NotFoundErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
@@ -197,10 +192,7 @@ export const requestAbsence = mutation({
 		),
 		reason: v.optional(v.string()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"absences">, AuthE | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<Id<"absences">, AuthE | NotFoundErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 		const [member, merr] = await requireActiveMember(ctx, userId, args.restaurantId);
@@ -233,10 +225,7 @@ export const decideAbsence = mutation({
 			v.literal(ABSENCE_REQUEST_STATUS.DENIED)
 		),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, AuthE | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthE | NotFoundErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
@@ -365,7 +354,11 @@ export const internalListClockEventsForExport = internalQuery({
 		toMs: v.number(),
 	},
 	handler: async (ctx, args) => {
-		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, args.actingUserId, args.restaurantId);
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
 		if (aerr) throw new Error("Unauthorized");
 
 		const rows = await ctx.db
@@ -384,7 +377,11 @@ export const internalListAbsencesForExport = internalQuery({
 		toDate: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const [, aerr] = await requireRestaurantManagerOrAbove(ctx, args.actingUserId, args.restaurantId);
+		const [, aerr] = await requireRestaurantManagerOrAbove(
+			ctx,
+			args.actingUserId,
+			args.restaurantId
+		);
 		if (aerr) throw new Error("Unauthorized");
 
 		const rows = await ctx.db

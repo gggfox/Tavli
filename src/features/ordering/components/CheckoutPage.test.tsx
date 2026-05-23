@@ -78,11 +78,7 @@ describe("CheckoutPage", () => {
 		} as any);
 
 		render(
-			<CheckoutPage
-				orderId={baseOrder._id}
-				onBackToMenu={() => {}}
-				onOrderPlaced={() => {}}
-			/>
+			<CheckoutPage orderId={baseOrder._id} onBackToMenu={() => {}} onOrderPlaced={() => {}} />
 		);
 
 		await waitFor(() => {
@@ -108,11 +104,7 @@ describe("CheckoutPage", () => {
 		} as any);
 
 		render(
-			<CheckoutPage
-				orderId={baseOrder._id}
-				onBackToMenu={() => {}}
-				onOrderPlaced={() => {}}
-			/>
+			<CheckoutPage orderId={baseOrder._id} onBackToMenu={() => {}} onOrderPlaced={() => {}} />
 		);
 
 		fireEvent.click(screen.getByText("Retry"));

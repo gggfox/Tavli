@@ -57,16 +57,13 @@ export function StripeStatusSection({
 	if (isFullySetUp) {
 		return (
 			<div className="space-y-3">
-				<p className="text-xs text-muted-foreground" >
-					{t(RestaurantsKeys.STRIPE_FULLY_SETUP)}
-				</p>
+				<p className="text-xs text-muted-foreground">{t(RestaurantsKeys.STRIPE_FULLY_SETUP)}</p>
 				<div className="flex flex-wrap items-center gap-2">
 					<a
 						href="https://dashboard.stripe.com/"
 						target="_blank"
 						rel="noopener noreferrer"
 						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-accent border border-border"
-						
 					>
 						<ExternalLink size={12} />
 						{t(RestaurantsKeys.STRIPE_DASHBOARD)}
@@ -74,7 +71,6 @@ export function StripeStatusSection({
 					<button
 						onClick={onRefresh}
 						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-muted-foreground border border-border"
-						
 					>
 						{t(RestaurantsKeys.STRIPE_REFRESH_STATUS)}
 					</button>
@@ -98,7 +94,7 @@ export function StripeStatusSection({
 					{status.requirementsStatus && (
 						<div
 							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"
-							style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
+							style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
 						>
 							<Clock size={14} />
 							<span>
@@ -106,8 +102,7 @@ export function StripeStatusSection({
 								<strong>{status.requirementsStatus}</strong>
 								{status.requirementsStatus === "currently_due" &&
 									t(RestaurantsKeys.STRIPE_REQ_CURRENTLY_DUE)}
-								{status.requirementsStatus === "past_due" &&
-									t(RestaurantsKeys.STRIPE_REQ_PAST_DUE)}
+								{status.requirementsStatus === "past_due" && t(RestaurantsKeys.STRIPE_REQ_PAST_DUE)}
 							</span>
 						</div>
 					)}
@@ -115,7 +110,7 @@ export function StripeStatusSection({
 					{!status.readyToReceivePayments && (
 						<div
 							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"
-							style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
+							style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
 						>
 							<AlertCircle size={14} />
 							{t(RestaurantsKeys.STRIPE_TRANSFERS_INACTIVE)}
@@ -125,7 +120,7 @@ export function StripeStatusSection({
 					{status.readyToReceivePayments && !status.onboardingComplete && (
 						<div
 							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"
-							style={{backgroundColor: "rgba(217, 119, 6, 0.1)"}}
+							style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
 						>
 							<AlertCircle size={14} />
 							{t(RestaurantsKeys.STRIPE_PARTIAL_REQ)}
@@ -154,7 +149,6 @@ export function StripeStatusSection({
 					<button
 						onClick={onRefresh}
 						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-muted-foreground border border-border"
-						
 					>
 						{t(RestaurantsKeys.STRIPE_REFRESH)}
 					</button>
@@ -172,9 +166,7 @@ export function StripeStatusSection({
 
 	return (
 		<div className="space-y-3">
-			<p className="text-xs text-muted-foreground" >
-				{t(RestaurantsKeys.STRIPE_INTRO)}
-			</p>
+			<p className="text-xs text-muted-foreground">{t(RestaurantsKeys.STRIPE_INTRO)}</p>
 			<button
 				onClick={onSetup}
 				disabled={actionLoading}

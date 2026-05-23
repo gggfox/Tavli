@@ -19,14 +19,9 @@ export function ItemOptionsIcon({ itemId, isActive }: Readonly<ItemOptionsIconPr
 		<div className="relative">
 			<ListChecks
 				size={16}
-				style={{color: isActive ? "var(--btn-primary-bg)" : "var(--text-muted)"}}
+				style={{ color: isActive ? "var(--btn-primary-bg)" : "var(--text-muted)" }}
 			/>
-			{hasLinks && (
-				<div
-					className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary"
-					
-				/>
-			)}
+			{hasLinks && <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" />}
 		</div>
 	);
 }

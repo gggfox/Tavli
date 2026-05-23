@@ -7,7 +7,10 @@
 export { busyTimesHeatmapDescriptor, BUSY_TIMES_HEATMAP_TYPE } from "./BusyTimesHeatmap";
 export { numberWithDeltaDescriptor, NUMBER_WITH_DELTA_TYPE } from "./NumberWithDelta/descriptor";
 export { ordersByHourDescriptor, ORDERS_BY_HOUR_TYPE } from "./OrdersByHour";
-export { reservationsByStatusDescriptor, RESERVATIONS_BY_STATUS_TYPE } from "./ReservationsByStatus";
+export {
+	reservationsByStatusDescriptor,
+	RESERVATIONS_BY_STATUS_TYPE,
+} from "./ReservationsByStatus";
 export { revenueOverTimeDescriptor, REVENUE_OVER_TIME_TYPE } from "./RevenueOverTime";
 export { tableOccupancyDescriptor, TABLE_OCCUPANCY_TYPE } from "./TableOccupancy";
 export { tipsTotalDescriptor, TIPS_TOTAL_TYPE } from "./TipsTotal";

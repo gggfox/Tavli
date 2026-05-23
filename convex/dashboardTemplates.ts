@@ -62,9 +62,7 @@ type TemplateAccessErrors =
 	| NotAuthorizedErrorObject
 	| NotFoundErrorObject;
 
-function validateName(
-	name: string
-): UserInputValidationErrorObject | null {
+function validateName(name: string): UserInputValidationErrorObject | null {
 	const trimmed = name.trim();
 	if (!trimmed) {
 		return new UserInputValidationError({
@@ -85,9 +83,7 @@ function validateDescription(
 	if (description === undefined) return null;
 	if (description.length > MAX_DESCRIPTION_LENGTH) {
 		return new UserInputValidationError({
-			fields: [
-				{ field: "description", message: "ERROR_DASHBOARD_DESCRIPTION_TOO_LONG" },
-			],
+			fields: [{ field: "description", message: "ERROR_DASHBOARD_DESCRIPTION_TOO_LONG" }],
 		}).toObject();
 	}
 	return null;
@@ -101,18 +97,11 @@ export const list = query({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<TemplateDoc[], TemplateAccessErrors> {
+	handler: async function (ctx, args): AsyncReturn<TemplateDoc[], TemplateAccessErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
-		const [, accessErr] = await requireRestaurantStaffAccess(
-			ctx,
-			userId,
-			args.restaurantId
-		);
+		const [, accessErr] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
 		if (accessErr) return [null, accessErr];
 
 		const rows = await ctx.db
@@ -137,18 +126,11 @@ export const publish = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<
-		Id<"dashboardTemplates">,
-		TemplateAccessErrors | UserInputValidationErrorObject
-	> {
+	): AsyncReturn<Id<"dashboardTemplates">, TemplateAccessErrors | UserInputValidationErrorObject> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
-		const [, accessErr] = await requireRestaurantManagerOrAbove(
-			ctx,
-			userId,
-			args.restaurantId
-		);
+		const [, accessErr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (accessErr) return [null, accessErr];
 
 		const nameErr = validateName(args.name);
@@ -184,10 +166,7 @@ export const update = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<
-		Id<"dashboardTemplates">,
-		TemplateAccessErrors | UserInputValidationErrorObject
-	> {
+	): AsyncReturn<Id<"dashboardTemplates">, TemplateAccessErrors | UserInputValidationErrorObject> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -196,11 +175,7 @@ export const update = mutation({
 			return [null, new NotFoundError("Template not found").toObject()];
 		}
 
-		const [, accessErr] = await requireRestaurantManagerOrAbove(
-			ctx,
-			userId,
-			template.restaurantId
-		);
+		const [, accessErr] = await requireRestaurantManagerOrAbove(ctx, userId, template.restaurantId);
 		if (accessErr) return [null, accessErr];
 
 		const patch: Partial<TemplateDoc> = { updatedAt: Date.now() };
@@ -231,10 +206,7 @@ export const unpublish = mutation({
 	args: {
 		templateId: v.id(TABLE.DASHBOARD_TEMPLATES),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<true, TemplateAccessErrors> {
+	handler: async function (ctx, args): AsyncReturn<true, TemplateAccessErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -243,11 +215,7 @@ export const unpublish = mutation({
 			return [null, new NotFoundError("Template not found").toObject()];
 		}
 
-		const [, accessErr] = await requireRestaurantManagerOrAbove(
-			ctx,
-			userId,
-			template.restaurantId
-		);
+		const [, accessErr] = await requireRestaurantManagerOrAbove(ctx, userId, template.restaurantId);
 		if (accessErr) return [null, accessErr];
 
 		await ctx.db.delete(args.templateId);
@@ -268,10 +236,7 @@ export const cloneToLayout = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<
-		Id<"dashboardLayouts">,
-		TemplateAccessErrors | UserInputValidationErrorObject
-	> {
+	): AsyncReturn<Id<"dashboardLayouts">, TemplateAccessErrors | UserInputValidationErrorObject> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -280,11 +245,7 @@ export const cloneToLayout = mutation({
 			return [null, new NotFoundError("Template not found").toObject()];
 		}
 
-		const [, accessErr] = await requireRestaurantStaffAccess(
-			ctx,
-			userId,
-			template.restaurantId
-		);
+		const [, accessErr] = await requireRestaurantStaffAccess(ctx, userId, template.restaurantId);
 		if (accessErr) return [null, accessErr];
 
 		const requestedName = args.name ?? template.name;
@@ -302,15 +263,12 @@ export const cloneToLayout = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [
-						{ field: "layouts", message: "ERROR_DASHBOARD_TOO_MANY_LAYOUTS" },
-					],
+					fields: [{ field: "layouts", message: "ERROR_DASHBOARD_TOO_MANY_LAYOUTS" }],
 				}).toObject(),
 			];
 		}
 
-		const nextPosition =
-			peers.reduce((max, r) => Math.max(max, r.position), -1) + 1;
+		const nextPosition = peers.reduce((max, r) => Math.max(max, r.position), -1) + 1;
 		const now = Date.now();
 
 		const id = await ctx.db.insert(TABLE.DASHBOARD_LAYOUTS, {

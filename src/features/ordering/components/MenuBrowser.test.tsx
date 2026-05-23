@@ -107,7 +107,9 @@ describe("MenuBrowser", () => {
 		fireEvent.click(screen.getByText("Add mocked item"));
 
 		await waitFor(() => {
-			expect(screen.getByText("Online ordering is not available at this restaurant yet.")).toBeTruthy();
+			expect(
+				screen.getByText("Online ordering is not available at this restaurant yet.")
+			).toBeTruthy();
 		});
 
 		const proceedButtons = screen.getAllByText("Proceed to Payment");

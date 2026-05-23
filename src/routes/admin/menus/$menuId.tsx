@@ -21,13 +21,11 @@ function MenuEditorPage() {
 	const navigate = useNavigate();
 	const { restaurant, isLoading } = useRestaurant();
 	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
-	const {
-		data: menu,
-		isLoading: menuLoading,
-	} = useQuery(convexQuery(api.menus.getMenuById, { menuId: menuId as Id<"menus"> }));
+	const { data: menu, isLoading: menuLoading } = useQuery(
+		convexQuery(api.menus.getMenuById, { menuId: menuId as Id<"menus"> })
+	);
 
-	const canEdit =
-		Boolean(restaurant && menu && menu.restaurantId === restaurant._id);
+	const canEdit = Boolean(restaurant && menu && menu.restaurantId === restaurant._id);
 
 	useLayoutEffect(() => {
 		if (isLoading || !restaurant || menuLoading) return;
@@ -49,8 +47,12 @@ function MenuEditorPage() {
 					>
 						<ArrowLeft size={16} /> {t(MenusKeys.EDITOR_BACK_TO_LIST)}
 					</Link>
-					<h1 className="text-2xl font-semibold text-foreground">{t(MenusKeys.EDITOR_HEADER_TITLE)}</h1>
-					<p className="mt-2 text-sm text-muted-foreground">{t(MenusKeys.EDITOR_HEADER_DESCRIPTION)}</p>
+					<h1 className="text-2xl font-semibold text-foreground">
+						{t(MenusKeys.EDITOR_HEADER_TITLE)}
+					</h1>
+					<p className="mt-2 text-sm text-muted-foreground">
+						{t(MenusKeys.EDITOR_HEADER_DESCRIPTION)}
+					</p>
 				</div>
 				{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
 			</div>

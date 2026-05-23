@@ -16,18 +16,12 @@ function ReservePage() {
 	);
 
 	if (isLoading) {
-		return (
-			<div className="p-6 text-center text-sm text-faint-foreground" >
-				Loading…
-			</div>
-		);
+		return <div className="p-6 text-center text-sm text-faint-foreground">Loading…</div>;
 	}
 
 	if (!restaurant) {
 		return (
-			<div className="p-6 text-center text-sm text-faint-foreground" >
-				Restaurant not found.
-			</div>
+			<div className="p-6 text-center text-sm text-faint-foreground">Restaurant not found.</div>
 		);
 	}
 

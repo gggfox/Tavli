@@ -214,12 +214,7 @@ export const update = mutation({
 		supportedLanguages: v.optional(v.array(v.string())),
 		orderDayStartMinutesFromMidnight: v.optional(v.number()),
 		orderNumberResetFrequency: v.optional(
-			v.union(
-				v.literal("daily"),
-				v.literal("weekly"),
-				v.literal("biweekly"),
-				v.literal("monthly")
-			)
+			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
@@ -263,8 +258,7 @@ export const update = mutation({
 
 		if (
 			args.orderDayStartMinutesFromMidnight !== undefined &&
-			(args.orderDayStartMinutesFromMidnight < 0 ||
-				args.orderDayStartMinutesFromMidnight > 1439)
+			(args.orderDayStartMinutesFromMidnight < 0 || args.orderDayStartMinutesFromMidnight > 1439)
 		) {
 			return [
 				null,
@@ -481,10 +475,7 @@ async function collectAccessibleRestaurantsForAdmin(
 
 	for (const m of memberRows) {
 		if (!m.isActive) continue;
-		if (
-			m.role !== RESTAURANT_MEMBER_ROLE.MANAGER &&
-			m.role !== RESTAURANT_MEMBER_ROLE.EMPLOYEE
-		) {
+		if (m.role !== RESTAURANT_MEMBER_ROLE.MANAGER && m.role !== RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
 			continue;
 		}
 		const r = await ctx.db.get(m.restaurantId);
@@ -582,10 +573,7 @@ export const setSharedEmployeeSubject = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		clerkSubject: v.string(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 

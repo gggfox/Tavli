@@ -16,7 +16,8 @@ export const sendInviteEmail = internalAction({
 
 		const apiKey = process.env.RESEND_API_KEY;
 		const from = process.env.RESEND_FROM_ADDRESS ?? process.env.RESEND_FROM;
-		const appUrl = process.env.PUBLIC_APP_URL ?? process.env.VITE_APP_URL ?? "http://localhost:3000";
+		const appUrl =
+			process.env.PUBLIC_APP_URL ?? process.env.VITE_APP_URL ?? "http://localhost:3000";
 
 		if (!apiKey || !from) {
 			console.warn(

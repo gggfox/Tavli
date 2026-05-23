@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-| ------- | ------- |
-| **Status** | Accepted |
-| **Date** | 2025-12-23 |
-| **Author(s)** | Development Team |
-| **Supersedes** | N/A |
-| **Superseded by** | N/A |
+| Field             | Value            |
+| ----------------- | ---------------- |
+| **Status**        | Accepted         |
+| **Date**          | 2025-12-23       |
+| **Author(s)**     | Development Team |
+| **Supersedes**    | N/A              |
+| **Superseded by** | N/A              |
 
 ## Context
 
@@ -62,58 +62,58 @@ Key implementation decisions:
 
 ```md
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           Browser (Client)                               │
+│ Browser (Client) │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────────┐     ┌───────────────────────────────────────┐ │
-│  │   AuthKitProvider    │────▶│        useAuth() / useAccessToken()   │ │
-│  │  (WorkOS TanStack)   │     │          (WorkOS SDK Hooks)           │ │
-│  └──────────────────────┘     └───────────────┬───────────────────────┘ │
-│                                               │                          │
-│                                               ▼                          │
-│                               ┌───────────────────────────────────────┐ │
-│                               │        useAuthForConvex()             │ │
-│                               │      (Custom Bridge Hook)             │ │
-│                               │                                       │ │
-│                               │  • Combines useAuth + useAccessToken  │ │
-│                               │  • Returns Convex-compatible interface│ │
-│                               │  • Stable token ref for consistency   │ │
-│                               └───────────────┬───────────────────────┘ │
-│                                               │                          │
-│                                               ▼                          │
-│                               ┌───────────────────────────────────────┐ │
-│                               │     ConvexProviderWithAuth            │ │
-│                               │                                       │ │
-│                               │  • Receives fetchAccessToken          │ │
-│                               │  • Passes JWT to Convex client        │ │
-│                               └───────────────┬───────────────────────┘ │
-│                                               │                          │
+│ │
+│ ┌──────────────────────┐ ┌───────────────────────────────────────┐ │
+│ │ AuthKitProvider │────▶│ useAuth() / useAccessToken() │ │
+│ │ (WorkOS TanStack) │ │ (WorkOS SDK Hooks) │ │
+│ └──────────────────────┘ └───────────────┬───────────────────────┘ │
+│ │ │
+│ ▼ │
+│ ┌───────────────────────────────────────┐ │
+│ │ useAuthForConvex() │ │
+│ │ (Custom Bridge Hook) │ │
+│ │ │ │
+│ │ • Combines useAuth + useAccessToken │ │
+│ │ • Returns Convex-compatible interface│ │
+│ │ • Stable token ref for consistency │ │
+│ └───────────────┬───────────────────────┘ │
+│ │ │
+│ ▼ │
+│ ┌───────────────────────────────────────┐ │
+│ │ ConvexProviderWithAuth │ │
+│ │ │ │
+│ │ • Receives fetchAccessToken │ │
+│ │ • Passes JWT to Convex client │ │
+│ └───────────────┬───────────────────────┘ │
+│ │ │
 └───────────────────────────────────────────────┼──────────────────────────┘
-                                                │
-                                                │ JWT Token
-                                                ▼
+│
+│ JWT Token
+▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           Convex Backend                                 │
+│ Convex Backend │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                      auth.config.ts                               │   │
-│  │                                                                   │   │
-│  │  • Validates JWT signature via JWKS endpoint                      │   │
-│  │  • Checks issuer matches WorkOS                                   │   │
-│  │  • Verifies audience claim (WORKOS_CLIENT_ID)                     │   │
-│  │  • Supports both SSO and User Management issuers                  │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                               │                          │
-│                                               ▼                          │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │              ctx.auth.getUserIdentity()                           │   │
-│  │                                                                   │   │
-│  │  • Returns authenticated user identity                            │   │
-│  │  • Available in queries/mutations                                 │   │
-│  │  • subject = user ID for data scoping                             │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                          │
+│ │
+│ ┌──────────────────────────────────────────────────────────────────┐ │
+│ │ auth.config.ts │ │
+│ │ │ │
+│ │ • Validates JWT signature via JWKS endpoint │ │
+│ │ • Checks issuer matches WorkOS │ │
+│ │ • Verifies audience claim (WORKOS_CLIENT_ID) │ │
+│ │ • Supports both SSO and User Management issuers │ │
+│ └──────────────────────────────────────────────────────────────────┘ │
+│ │ │
+│ ▼ │
+│ ┌──────────────────────────────────────────────────────────────────┐ │
+│ │ ctx.auth.getUserIdentity() │ │
+│ │ │ │
+│ │ • Returns authenticated user identity │ │
+│ │ • Available in queries/mutations │ │
+│ │ • subject = user ID for data scoping │ │
+│ └──────────────────────────────────────────────────────────────────┘ │
+│ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -122,10 +122,7 @@ Key implementation decisions:
 ```typescript
 // src/hooks/useAuthForConvex.ts
 import { useCallback, useRef } from "react";
-import {
-  useAuth,
-  useAccessToken,
-} from "@workos/authkit-tanstack-react-start/client";
+import { useAuth, useAccessToken } from "@workos/authkit-tanstack-react-start/client";
 
 /**
  * Custom hook that bridges WorkOS TanStack Start auth with Convex's expected auth interface.
@@ -134,36 +131,32 @@ import {
  * into separate hooks, but Convex expects them combined in a single useAuth hook.
  */
 export function useAuthForConvex() {
-  const { user, loading: authLoading } = useAuth();
-  const {
-    accessToken,
-    loading: tokenLoading,
-    error: tokenError,
-  } = useAccessToken();
+	const { user, loading: authLoading } = useAuth();
+	const { accessToken, loading: tokenLoading, error: tokenError } = useAccessToken();
 
-  // Store token in ref for stability across renders
-  const stableAccessToken = useRef<string | null>(null);
-  if (accessToken && !tokenError) {
-    stableAccessToken.current = accessToken;
-  }
+	// Store token in ref for stability across renders
+	const stableAccessToken = useRef<string | null>(null);
+	if (accessToken && !tokenError) {
+		stableAccessToken.current = accessToken;
+	}
 
-  const isLoading = (authLoading ?? false) || (tokenLoading ?? false);
-  // Important: isAuthenticated requires BOTH user AND accessToken
-  const isAuthenticated = !!user && !!accessToken && !isLoading;
+	const isLoading = (authLoading ?? false) || (tokenLoading ?? false);
+	// Important: isAuthenticated requires BOTH user AND accessToken
+	const isAuthenticated = !!user && !!accessToken && !isLoading;
 
-  const fetchAccessToken = useCallback(async () => {
-    const token = stableAccessToken.current;
-    if (token && !tokenError) {
-      return token;
-    }
-    return null;
-  }, [tokenError]);
+	const fetchAccessToken = useCallback(async () => {
+		const token = stableAccessToken.current;
+		if (token && !tokenError) {
+			return token;
+		}
+		return null;
+	}, [tokenError]);
 
-  return {
-    isLoading,
-    isAuthenticated,
-    fetchAccessToken,
-  };
+	return {
+		isLoading,
+		isAuthenticated,
+		fetchAccessToken,
+	};
 }
 ```
 
@@ -180,24 +173,23 @@ import { useAuthForConvex } from "./hooks/useAuthForConvex";
  * Must be rendered inside AuthKitProvider.
  */
 function ConvexAuthBridge({ children, convexClient }) {
-  return (
-    <ConvexProviderWithAuth client={convexClient} useAuth={useAuthForConvex}>
-      {children}
-    </ConvexProviderWithAuth>
-  );
+	return (
+		<ConvexProviderWithAuth client={convexClient} useAuth={useAuthForConvex}>
+			{children}
+		</ConvexProviderWithAuth>
+	);
 }
 
 function AuthWrapper({ children, convexClient }) {
-  return (
-    <AuthKitProvider
-      onSessionExpired={() => {
-        globalThis.location.href = '/api/auth/signin';
-      }}>
-      <ConvexAuthBridge convexClient={convexClient}>
-        {children}
-      </ConvexAuthBridge>
-    </AuthKitProvider>
-  );
+	return (
+		<AuthKitProvider
+			onSessionExpired={() => {
+				globalThis.location.href = "/api/auth/signin";
+			}}
+		>
+			<ConvexAuthBridge convexClient={convexClient}>{children}</ConvexAuthBridge>
+		</AuthKitProvider>
+	);
 }
 ```
 
@@ -208,24 +200,24 @@ function AuthWrapper({ children, convexClient }) {
 const clientId = process.env.WORKOS_CLIENT_ID;
 
 export default {
-  providers: [
-    // WorkOS SSO issuer
-    {
-      type: "customJwt",
-      issuer: `https://api.workos.com/`,
-      algorithm: "RS256",
-      applicationID: clientId,
-      jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-    },
-    // WorkOS User Management issuer (different format)
-    {
-      type: "customJwt",
-      issuer: `https://api.workos.com/user_management/${clientId}`,
-      algorithm: "RS256",
-      applicationID: clientId,
-      jwks: `https://api.workos.com/sso/jwks/${clientId}`,
-    },
-  ],
+	providers: [
+		// WorkOS SSO issuer
+		{
+			type: "customJwt",
+			issuer: `https://api.workos.com/`,
+			algorithm: "RS256",
+			applicationID: clientId,
+			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+		},
+		// WorkOS User Management issuer (different format)
+		{
+			type: "customJwt",
+			issuer: `https://api.workos.com/user_management/${clientId}`,
+			algorithm: "RS256",
+			applicationID: clientId,
+			jwks: `https://api.workos.com/sso/jwks/${clientId}`,
+		},
+	],
 };
 ```
 
@@ -272,12 +264,12 @@ Access via the TanStack Devtools panel (bottom-right corner) → "Auth" tab.
 
 ### Common Issues
 
-| Symptom | Cause | Solution |
-| --------- | ------- | ---------- |
-| WorkOS authenticated but Convex shows unauthenticated | JWT claims mismatch | Check `iss` and `aud` in JWT match `auth.config.ts` |
-| Token missing | `useAccessToken` not returning token | Verify WorkOS session is active, check for errors |
-| "Invalid audience" error | `aud` claim doesn't match | Configure WorkOS JWT template with correct audience |
-| Convex stuck in loading | Token not being passed | Check `useAuthForConvex` is returning correct interface |
+| Symptom                                               | Cause                                | Solution                                                |
+| ----------------------------------------------------- | ------------------------------------ | ------------------------------------------------------- |
+| WorkOS authenticated but Convex shows unauthenticated | JWT claims mismatch                  | Check `iss` and `aud` in JWT match `auth.config.ts`     |
+| Token missing                                         | `useAccessToken` not returning token | Verify WorkOS session is active, check for errors       |
+| "Invalid audience" error                              | `aud` claim doesn't match            | Configure WorkOS JWT template with correct audience     |
+| Convex stuck in loading                               | Token not being passed               | Check `useAuthForConvex` is returning correct interface |
 
 ## Alternatives Considered
 
@@ -307,5 +299,5 @@ Access via the TanStack Devtools panel (bottom-right corner) → "Auth" tab.
 ## Change Log
 
 | Date       | Author           | Description     |
-|------------|------------------|-----------------|
+| ---------- | ---------------- | --------------- |
 | 2025-12-23 | Development Team | Initial version |

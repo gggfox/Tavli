@@ -12,7 +12,6 @@ export function SearchInput({ placeholder, value, onChange }: SearchInputProps) 
 			<Search
 				size={16}
 				className="absolute left-3 top-1/2 -translate-y-1/2 text-faint-foreground"
-				
 			/>
 			<input
 				type="text"
@@ -20,7 +19,6 @@ export function SearchInput({ placeholder, value, onChange }: SearchInputProps) 
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				className="w-full pl-9 pr-4 py-2 rounded-lg text-sm transition-colors focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-inset focus:ring-(--btn-primary-bg) focus:border-transparent bg-muted text-foreground border border-border"
-				
 			/>
 		</div>
 	);

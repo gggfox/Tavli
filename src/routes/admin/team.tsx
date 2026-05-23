@@ -4,10 +4,19 @@ import {
 	TeamMemberDrawer,
 	type TeamMemberDrawerRow,
 } from "@/features/team/components/TeamMemberDrawer";
-import { createTeamDirectoryColumns, type TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
+import {
+	createTeamDirectoryColumns,
+	type TeamDirectoryRow,
+} from "@/features/team/teamDirectoryColumns";
 import { useRestaurant } from "@/features/restaurants";
 import { useCurrentUserRoles } from "@/features/users/hooks";
-import { AdminPageLayout, AdminTable, DialogHeader, Drawer, LoadingState } from "@/global/components";
+import {
+	AdminPageLayout,
+	AdminTable,
+	DialogHeader,
+	Drawer,
+	LoadingState,
+} from "@/global/components";
 import { useAdminTable, useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
@@ -70,9 +79,15 @@ function AdminTeamPage() {
 		select: unwrapResult<Doc<"restaurantMembers">[]>,
 	});
 
-	const createInvitation = useMutation({ mutationFn: useConvexMutation(api.invites.createInvitation) });
-	const revokeInvitation = useMutation({ mutationFn: useConvexMutation(api.invites.revokeInvitation) });
-	const createEmployeeAccount = useMutation({ mutationFn: useConvexMutation(api.employeeAccounts.createEmployeeAccount) });
+	const createInvitation = useMutation({
+		mutationFn: useConvexMutation(api.invites.createInvitation),
+	});
+	const revokeInvitation = useMutation({
+		mutationFn: useConvexMutation(api.invites.revokeInvitation),
+	});
+	const createEmployeeAccount = useMutation({
+		mutationFn: useConvexMutation(api.employeeAccounts.createEmployeeAccount),
+	});
 
 	const [email, setEmail] = useState("");
 	const [role, setRole] = useState<InviteRole>(RESTAURANT_MEMBER_ROLE.EMPLOYEE);
@@ -98,13 +113,10 @@ function AdminTeamPage() {
 	const [shiftDrawerInitial, setShiftDrawerInitial] = useState<ShiftDrawerInitial | null>(null);
 	const [memberDrawerRow, setMemberDrawerRow] = useState<TeamMemberDrawerRow | null>(null);
 
-	const handleOpenAssignShift = useCallback(
-		(memberId: Id<"restaurantMembers">) => {
-			setShiftDrawerInitial({ mode: "create", memberId });
-			setShiftDrawerOpen(true);
-		},
-		[]
-	);
+	const handleOpenAssignShift = useCallback((memberId: Id<"restaurantMembers">) => {
+		setShiftDrawerInitial({ mode: "create", memberId });
+		setShiftDrawerOpen(true);
+	}, []);
 
 	const handleRowClick = useCallback((row: TeamDirectoryRow) => {
 		if (row.rowType === "invite") return;
@@ -131,16 +143,12 @@ function AdminTeamPage() {
 
 	const orgRestaurants = useMemo(
 		() =>
-			organizationId != null
-				? restaurants.filter((r) => r.organizationId === organizationId)
-				: [],
+			organizationId != null ? restaurants.filter((r) => r.organizationId === organizationId) : [],
 		[restaurants, organizationId]
 	);
 
 	const orgIdMatchesProfile =
-		userOrgId != null &&
-		organizationId != null &&
-		userOrgId === String(organizationId);
+		userOrgId != null && organizationId != null && userOrgId === String(organizationId);
 
 	const ownsRestaurantInCurrentOrg = useMemo(() => {
 		if (!userId || !organizationId) return false;
@@ -248,7 +256,14 @@ function AdminTeamPage() {
 				onAssignShift: handleOpenAssignShift,
 				assignableMemberIds: assignableMemberIdSet,
 			}),
-		[t, staffRoleLabelCb, handleRevokeInvite, revokePendingId, handleOpenAssignShift, assignableMemberIdSet]
+		[
+			t,
+			staffRoleLabelCb,
+			handleRevokeInvite,
+			revokePendingId,
+			handleOpenAssignShift,
+			assignableMemberIdSet,
+		]
 	);
 
 	const tableState = useAdminTable<TeamDirectoryRow>({
@@ -348,7 +363,9 @@ function AdminTeamPage() {
 				title={t(SidebarKeys.TEAM)}
 				description={t(AdminStaffKeys.TEAM_DESCRIPTION_NO_RESTAURANT)}
 			>
-				<p className="text-sm text-faint-foreground">{t(AdminStaffKeys.TEAM_SETUP_RESTAURANT_FIRST)}</p>
+				<p className="text-sm text-faint-foreground">
+					{t(AdminStaffKeys.TEAM_SETUP_RESTAURANT_FIRST)}
+				</p>
 			</AdminPageLayout>
 		);
 	}
@@ -407,7 +424,10 @@ function AdminTeamPage() {
 					swipeHandleAriaLabel={t(AdminStaffKeys.SCHEDULE_DRAWER_SWIPE_HANDLE)}
 					panelClassName="bg-background border border-border overflow-hidden"
 				>
-					<DialogHeader title={t(AdminStaffKeys.TEAM_INVITE_MODAL_TITLE)} onClose={closeInviteModal} />
+					<DialogHeader
+						title={t(AdminStaffKeys.TEAM_INVITE_MODAL_TITLE)}
+						onClose={closeInviteModal}
+					/>
 					<div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
 						<label className="block text-xs text-faint-foreground">
 							{t(AdminStaffKeys.TEAM_EMAIL_LABEL)}
@@ -422,7 +442,9 @@ function AdminTeamPage() {
 						<div className="block text-xs text-faint-foreground">
 							<span>{t(AdminStaffKeys.TEAM_ROLE_LABEL)}</span>
 							{allowedInviteRoles.length === 0 ? (
-								<p className="mt-1 text-sm text-faint-foreground">{t(AdminStaffKeys.TEAM_INVITE_NO_ROLE)}</p>
+								<p className="mt-1 text-sm text-faint-foreground">
+									{t(AdminStaffKeys.TEAM_INVITE_NO_ROLE)}
+								</p>
 							) : allowedInviteRoles.length === 1 ? (
 								<>
 									<p className="mt-1 text-sm text-foreground">
@@ -448,7 +470,9 @@ function AdminTeamPage() {
 						</div>
 						{role !== USER_ROLES.OWNER && (
 							<div className="text-xs text-faint-foreground space-y-1">
-								<span className="font-medium text-foreground">{t(AdminStaffKeys.TEAM_RESTAURANTS_LABEL)}</span>
+								<span className="font-medium text-foreground">
+									{t(AdminStaffKeys.TEAM_RESTAURANTS_LABEL)}
+								</span>
 								<RestaurantInviteMultiSelect
 									options={restaurantInviteOptions}
 									selectedIds={selectedRestaurantIds}
@@ -474,7 +498,9 @@ function AdminTeamPage() {
 							}
 							className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
 						>
-							{createInvitation.isPending ? t(AdminStaffKeys.TEAM_SENDING) : t(AdminStaffKeys.TEAM_SEND_INVITE)}
+							{createInvitation.isPending
+								? t(AdminStaffKeys.TEAM_SENDING)
+								: t(AdminStaffKeys.TEAM_SEND_INVITE)}
 						</button>
 					</div>
 				</Drawer>
@@ -490,11 +516,16 @@ function AdminTeamPage() {
 					swipeHandleAriaLabel={t(AdminStaffKeys.SCHEDULE_DRAWER_SWIPE_HANDLE)}
 					panelClassName="bg-background border border-border overflow-hidden"
 				>
-					<DialogHeader title={t(AdminStaffKeys.TEAM_ADD_EMPLOYEE_MODAL_TITLE)} onClose={closeAddEmployee} />
+					<DialogHeader
+						title={t(AdminStaffKeys.TEAM_ADD_EMPLOYEE_MODAL_TITLE)}
+						onClose={closeAddEmployee}
+					/>
 					<div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
 						{generatedPin ? (
 							<div className="space-y-4">
-								<h3 className="text-sm font-semibold text-foreground">{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_TITLE)}</h3>
+								<h3 className="text-sm font-semibold text-foreground">
+									{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_TITLE)}
+								</h3>
 								<div className="flex items-center justify-center">
 									<span className="text-3xl font-mono font-bold tracking-[0.3em] text-foreground bg-muted px-6 py-3 rounded-lg">
 										{generatedPin}
@@ -509,7 +540,9 @@ function AdminTeamPage() {
 										onClick={() => void copyPin()}
 										className="text-sm font-medium px-4 py-1.5 rounded-md bg-muted text-foreground hover:bg-muted/80"
 									>
-										{pinCopied ? t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_COPIED) : t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_COPY)}
+										{pinCopied
+											? t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_COPIED)
+											: t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_COPY)}
 									</button>
 									<button
 										type="button"

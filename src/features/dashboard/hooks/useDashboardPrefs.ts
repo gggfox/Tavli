@@ -73,8 +73,7 @@ export function useDashboardPrefs() {
 			// @ts-expect-error -- partial search merge preserves other keys
 			search: (prev: DashboardSearchParams) => {
 				const needsScope = prev.scope === undefined && stored.scope !== undefined;
-				const needsLayoutId =
-					prev.layoutId === undefined && stored.layoutId !== undefined;
+				const needsLayoutId = prev.layoutId === undefined && stored.layoutId !== undefined;
 				if (!needsScope && !needsLayoutId) return prev;
 				return {
 					...prev,

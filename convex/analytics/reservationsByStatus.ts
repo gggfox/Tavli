@@ -12,11 +12,7 @@ import {
 	UserInputValidationErrorObject,
 } from "../_shared/errors";
 import { RESERVATION_STATUS, TABLE, type ReservationStatus } from "../constants";
-import {
-	buildWindow,
-	loadReservationsInRange,
-	resolveRestaurantIds,
-} from "./_shared";
+import { buildWindow, loadReservationsInRange, resolveRestaurantIds } from "./_shared";
 
 const RESERVATIONS_BY_STATUS_MAX_RANGE_DAYS = 366;
 
@@ -42,10 +38,7 @@ export const compute = query({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		range: v.object({ from: v.number(), to: v.number() }),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<StatusBucket[], Errors> {
+	handler: async function (ctx, args): AsyncReturn<StatusBucket[], Errors> {
 		const [restaurantIds, accessErr] = await resolveRestaurantIds(ctx, {
 			scopeKind: "restaurant",
 			restaurantId: args.restaurantId,
@@ -59,11 +52,7 @@ export const compute = query({
 		);
 		if (rangeErr) return [null, rangeErr];
 
-		const reservations = await loadReservationsInRange(
-			ctx,
-			restaurantIds,
-			windowResult.current
-		);
+		const reservations = await loadReservationsInRange(ctx, restaurantIds, windowResult.current);
 
 		const counts = new Map<ReservationStatus, number>();
 		for (const status of ALL_STATUSES) counts.set(status, 0);
@@ -71,9 +60,6 @@ export const compute = query({
 			counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
 		}
 
-		return [
-			ALL_STATUSES.map((status) => ({ status, count: counts.get(status) ?? 0 })),
-			null,
-		];
+		return [ALL_STATUSES.map((status) => ({ status, count: counts.get(status) ?? 0 })), null];
 	},
 });

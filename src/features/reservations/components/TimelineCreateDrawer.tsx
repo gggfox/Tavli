@@ -78,10 +78,10 @@ export function TimelineCreateDrawer({
 				});
 				const reservationId = unwrapResult(result);
 
-			await confirmMutation.mutateAsync({
-				reservationId: reservationId!,
-				tableIds: [tableId],
-			});
+				await confirmMutation.mutateAsync({
+					reservationId: reservationId!,
+					tableIds: [tableId],
+				});
 
 				onClose();
 			} catch (err) {
@@ -114,17 +114,12 @@ export function TimelineCreateDrawer({
 					<h2 className="text-lg font-semibold text-foreground">
 						{t(ReservationsKeys.TIMELINE_CREATE_TITLE, { tableLabel })}
 					</h2>
-					<p className="text-xs text-muted-foreground mt-0.5">
-						{timeLabel}
-					</p>
+					<p className="text-xs text-muted-foreground mt-0.5">{timeLabel}</p>
 				</div>
 
 				<form onSubmit={handleSubmit} className="space-y-4">
 					<div>
-						<label
-							htmlFor="tl-name"
-							className="block text-sm font-medium mb-1 text-foreground"
-						>
+						<label htmlFor="tl-name" className="block text-sm font-medium mb-1 text-foreground">
 							{t(ReservationsKeys.FORM_NAME)}
 						</label>
 						<input
@@ -138,10 +133,7 @@ export function TimelineCreateDrawer({
 					</div>
 
 					<div>
-						<label
-							htmlFor="tl-phone"
-							className="block text-sm font-medium mb-1 text-foreground"
-						>
+						<label htmlFor="tl-phone" className="block text-sm font-medium mb-1 text-foreground">
 							{t(ReservationsKeys.FORM_PHONE)}
 						</label>
 						<input
@@ -156,10 +148,7 @@ export function TimelineCreateDrawer({
 
 					<div className="grid grid-cols-2 gap-3">
 						<div>
-							<label
-								htmlFor="tl-party"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
+							<label htmlFor="tl-party" className="block text-sm font-medium mb-1 text-foreground">
 								{t(ReservationsKeys.FORM_PARTY_SIZE)}
 							</label>
 							<input
@@ -173,10 +162,7 @@ export function TimelineCreateDrawer({
 							/>
 						</div>
 						<div>
-							<label
-								htmlFor="tl-time"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
+							<label htmlFor="tl-time" className="block text-sm font-medium mb-1 text-foreground">
 								{t(ReservationsKeys.FORM_DATE_TIME)}
 							</label>
 							<input
@@ -190,10 +176,7 @@ export function TimelineCreateDrawer({
 					</div>
 
 					<div>
-						<label
-							htmlFor="tl-notes"
-							className="block text-sm font-medium mb-1 text-foreground"
-						>
+						<label htmlFor="tl-notes" className="block text-sm font-medium mb-1 text-foreground">
 							{t(ReservationsKeys.FORM_NOTES)}
 						</label>
 						<textarea
@@ -205,9 +188,7 @@ export function TimelineCreateDrawer({
 						/>
 					</div>
 
-					{error && (
-						<p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-					)}
+					{error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
 					<div className="flex gap-2 pt-2">
 						<button
@@ -215,9 +196,7 @@ export function TimelineCreateDrawer({
 							disabled={isSaving}
 							className="flex-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 						>
-							{isSaving
-								? t(ReservationsKeys.FORM_SUBMITTING)
-								: t(ReservationsKeys.FORM_SUBMIT)}
+							{isSaving ? t(ReservationsKeys.FORM_SUBMITTING) : t(ReservationsKeys.FORM_SUBMIT)}
 						</button>
 						<button
 							type="button"

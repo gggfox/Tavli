@@ -50,24 +50,14 @@ function AdminSchedulePage() {
 	const { isAuthenticated } = useConvexAuth();
 	const { userId } = useAuth();
 	const { user } = useUser();
-	const { roles: userRoles, organizationId: currentUserOrgId } =
-		useCurrentUserRoles();
+	const { roles: userRoles, organizationId: currentUserOrgId } = useCurrentUserRoles();
 
 	const timezone = restaurant?.timezone ?? DEFAULT_TIMEZONE;
 	const [anchorMs, setAnchorMs] = useState(() => Date.now());
 
-	const mondayYmd = useMemo(
-		() => getMondayYmdOfWeek(anchorMs, timezone),
-		[anchorMs, timezone]
-	);
-	const weekStartMs = useMemo(
-		() => startOfDayMs(mondayYmd, timezone),
-		[mondayYmd, timezone]
-	);
-	const weekEndMs = useMemo(
-		() => endOfWeekMs(mondayYmd, timezone),
-		[mondayYmd, timezone]
-	);
+	const mondayYmd = useMemo(() => getMondayYmdOfWeek(anchorMs, timezone), [anchorMs, timezone]);
+	const weekStartMs = useMemo(() => startOfDayMs(mondayYmd, timezone), [mondayYmd, timezone]);
+	const weekEndMs = useMemo(() => endOfWeekMs(mondayYmd, timezone), [mondayYmd, timezone]);
 
 	const { data: myMemberships } = useQuery({
 		...convexQuery(api.restaurantMembers.listByUser, {}),
@@ -77,11 +67,7 @@ function AdminSchedulePage() {
 
 	const myMembership = useMemo(() => {
 		if (!restaurant?._id || !myMemberships) return null;
-		return (
-			myMemberships.find(
-				(row) => row.restaurantId === restaurant._id && row.isActive
-			) ?? null
-		);
+		return myMemberships.find((row) => row.restaurantId === restaurant._id && row.isActive) ?? null;
 	}, [myMemberships, restaurant?._id]);
 
 	const myMemberId = myMembership?._id ?? null;
@@ -93,16 +79,10 @@ function AdminSchedulePage() {
 		if (!restaurant || !userId) return false;
 		if (userRoles.includes(USER_ROLES.ADMIN)) return true;
 		if (restaurant.ownerId === userId) return true;
-		if (
-			userRoles.includes(USER_ROLES.OWNER) &&
-			currentUserOrgId === restaurant.organizationId
-		) {
+		if (userRoles.includes(USER_ROLES.OWNER) && currentUserOrgId === restaurant.organizationId) {
 			return true;
 		}
-		if (
-			myMembership?.isActive &&
-			myMembership.role === RESTAURANT_MEMBER_ROLE.MANAGER
-		) {
+		if (myMembership?.isActive && myMembership.role === RESTAURANT_MEMBER_ROLE.MANAGER) {
 			return true;
 		}
 		return false;
@@ -124,9 +104,7 @@ function AdminSchedulePage() {
 				title={t(SidebarKeys.SCHEDULE)}
 				description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION_NO_RESTAURANT)}
 			>
-				<p className="text-sm text-faint-foreground">
-					{t(AdminStaffKeys.SCHEDULE_NO_RESTAURANT)}
-				</p>
+				<p className="text-sm text-faint-foreground">{t(AdminStaffKeys.SCHEDULE_NO_RESTAURANT)}</p>
 			</AdminPageLayout>
 		);
 	}
@@ -186,17 +164,9 @@ interface AbsenceMapsResult {
  * stale request from any week still surfaces the asterisk on the row header
  * regardless of which week the manager is currently viewing.
  */
-function buildAbsenceMaps(
-	absences: ReadonlyArray<Doc<"absences">>
-): AbsenceMapsResult {
-	const pending = new Map<
-		Id<"restaurantMembers">,
-		Map<string, Doc<"absences">>
-	>();
-	const approved = new Map<
-		Id<"restaurantMembers">,
-		Map<string, Doc<"absences">>
-	>();
+function buildAbsenceMaps(absences: ReadonlyArray<Doc<"absences">>): AbsenceMapsResult {
+	const pending = new Map<Id<"restaurantMembers">, Map<string, Doc<"absences">>>();
+	const approved = new Map<Id<"restaurantMembers">, Map<string, Doc<"absences">>>();
 	const pendingCount = new Map<Id<"restaurantMembers">, number>();
 	for (const a of absences) {
 		if (a.status === ABSENCE_REQUEST_STATUS.PENDING) {
@@ -271,8 +241,10 @@ function ManagerScheduleView({
 	const shifts = shiftsQuery.data ?? [];
 	const absences = absencesQuery.data ?? [];
 
-	const { pendingDatesByMember, approvedDatesByMember, pendingCountByMember } =
-		useMemo(() => buildAbsenceMaps(absences), [absences]);
+	const { pendingDatesByMember, approvedDatesByMember, pendingCountByMember } = useMemo(
+		() => buildAbsenceMaps(absences),
+		[absences]
+	);
 
 	const draftCount = useMemo(
 		() => shifts.filter((s) => s.status === SHIFT_STATUS.SCHEDULED).length,
@@ -282,15 +254,16 @@ function ManagerScheduleView({
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [drawerInitial, setDrawerInitial] = useState<ShiftDrawerInitial | null>(null);
 
-	const [attendanceMemberId, setAttendanceMemberId] =
-		useState<Id<"restaurantMembers"> | null>(null);
+	const [attendanceMemberId, setAttendanceMemberId] = useState<Id<"restaurantMembers"> | null>(
+		null
+	);
 
 	const [clearModalOpen, setClearModalOpen] = useState(false);
 
 	const [memberFilter, setMemberFilter] = useState("");
-	const [shiftPresenceFilter, setShiftPresenceFilter] = useState<
-		"all" | "withShifts" | "noShifts"
-	>("all");
+	const [shiftPresenceFilter, setShiftPresenceFilter] = useState<"all" | "withShifts" | "noShifts">(
+		"all"
+	);
 
 	const memberIdsWithShifts = useMemo(() => {
 		const ids = new Set<string>();
@@ -301,7 +274,10 @@ function ManagerScheduleView({
 	const shiftPresenceOptions = useMemo(
 		() => [
 			{ value: "all" as const, label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_ALL) },
-			{ value: "withShifts" as const, label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_WITH_SHIFTS) },
+			{
+				value: "withShifts" as const,
+				label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_WITH_SHIFTS),
+			},
 			{ value: "noShifts" as const, label: t(AdminStaffKeys.SCHEDULE_FILTER_SEGMENT_NO_SHIFTS) },
 		],
 		[t]
@@ -334,8 +310,7 @@ function ManagerScheduleView({
 
 	const refetch = () => {
 		queryClient.invalidateQueries({
-			queryKey: convexQuery(api.shifts.listForRestaurantWeek, shiftsQueryArgs)
-				.queryKey,
+			queryKey: convexQuery(api.shifts.listForRestaurantWeek, shiftsQueryArgs).queryKey,
 		});
 	};
 
@@ -456,9 +431,7 @@ function ManagerScheduleView({
 					pendingDatesByMember={pendingDatesByMember}
 					approvedDatesByMember={approvedDatesByMember}
 					pendingCountByMember={pendingCountByMember}
-					onCreateShift={(memberId, ymd) =>
-						openCreate(memberId as Id<"restaurantMembers">, ymd)
-					}
+					onCreateShift={(memberId, ymd) => openCreate(memberId as Id<"restaurantMembers">, ymd)}
 					onEditShift={openEdit}
 					onOpenMemberDrawer={(memberId) => setAttendanceMemberId(memberId)}
 				>
@@ -470,9 +443,7 @@ function ManagerScheduleView({
 								timezone={timezone}
 								absenceState={absenceState}
 								onClick={() =>
-									absenceState === "pending"
-										? setAttendanceMemberId(member.memberId)
-										: openEdit(s)
+									absenceState === "pending" ? setAttendanceMemberId(member.memberId) : openEdit(s)
 								}
 							/>
 						))
@@ -649,9 +620,7 @@ function EmployeeScheduleView({
 					onOpenMemberDrawer={() => setDrawerOpen(true)}
 				>
 					{({ shifts: cellShifts }) =>
-						cellShifts.map((s) => (
-							<ShiftCellChip key={s._id} shift={s} timezone={timezone} />
-						))
+						cellShifts.map((s) => <ShiftCellChip key={s._id} shift={s} timezone={timezone} />)
 					}
 				</ScheduleWeekGrid>
 			)}

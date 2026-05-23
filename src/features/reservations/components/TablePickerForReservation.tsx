@@ -16,9 +16,7 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-type WindowReservations = UnwrappedValue<
-	FunctionReturnType<typeof api.reservations.listForRange>
->;
+type WindowReservations = UnwrappedValue<FunctionReturnType<typeof api.reservations.listForRange>>;
 type Locks = UnwrappedValue<FunctionReturnType<typeof api.tableLocks.listForRestaurant>>;
 
 interface TablePickerForReservationProps {
@@ -97,14 +95,14 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 	return (
 		<div className="space-y-2">
 			<div className="flex items-center justify-between text-xs text-muted-foreground">
-				<span >
+				<span>
 					{t(ReservationsKeys.PICKER_SELECTED_CAPACITY, {
 						capacity: totalSelectedCapacity,
 						partySize: props.partySize,
 					})}
 				</span>
 				{totalSelectedCapacity < props.partySize && (
-					<span className="text-warning" >
+					<span className="text-warning">
 						{t(ReservationsKeys.PICKER_NEED_MORE_SEATS, {
 							count: props.partySize - totalSelectedCapacity,
 						})}
@@ -126,15 +124,13 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 							type="button"
 							onClick={() => !disabled && toggle(table._id)}
 							className="flex flex-col items-start gap-1 rounded-lg px-3 py-2 text-left text-sm"
-							style={{backgroundColor: selected
-									? "var(--btn-primary-bg)"
-									: "var(--bg-secondary)",
-				color: selected ? "var(--btn-primary-fg, white)" : "var(--text-primary)",
-				border: `1px solid ${
-									selected ? "var(--btn-primary-bg)" : "var(--border-default)"
-								}`,
-				opacity: disabled ? 0.45 : 1,
-				cursor: disabled ? "not-allowed" : "pointer"}}
+							style={{
+								backgroundColor: selected ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
+								color: selected ? "var(--btn-primary-fg, white)" : "var(--text-primary)",
+								border: `1px solid ${selected ? "var(--btn-primary-bg)" : "var(--border-default)"}`,
+								opacity: disabled ? 0.45 : 1,
+								cursor: disabled ? "not-allowed" : "pointer",
+							}}
 							aria-pressed={selected}
 							disabled={disabled}
 						>
@@ -152,9 +148,7 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 					);
 				})}
 				{sorted.length === 0 && (
-					<p className="text-sm text-faint-foreground" >
-						{t(ReservationsKeys.PICKER_NO_TABLES)}
-					</p>
+					<p className="text-sm text-faint-foreground">{t(ReservationsKeys.PICKER_NO_TABLES)}</p>
 				)}
 			</div>
 		</div>

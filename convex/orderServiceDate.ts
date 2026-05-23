@@ -1,7 +1,4 @@
-import {
-	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
-	type OrderNumberResetFrequency,
-} from "./constants";
+import { DEFAULT_ORDER_NUMBER_RESET_FREQUENCY, type OrderNumberResetFrequency } from "./constants";
 
 /** Default 04:00 local = start of business “order day” for numbering. */
 export const DEFAULT_ORDER_DAY_START_MINUTES = 240;

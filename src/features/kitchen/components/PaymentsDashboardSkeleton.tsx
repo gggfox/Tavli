@@ -16,7 +16,6 @@ export function PaymentsDashboardSkeleton() {
 					<div
 						key={`summary-${i}`}
 						className="rounded-xl p-4 flex items-center gap-4 border border-border bg-muted"
-						
 					>
 						<Skeleton rounded="lg" className="w-10 h-10 shrink-0" />
 						<div className="flex-1 space-y-2">
@@ -27,14 +26,8 @@ export function PaymentsDashboardSkeleton() {
 				))}
 			</div>
 
-			<div
-				className="rounded-xl overflow-hidden border border-border bg-muted"
-				
-			>
-				<div
-					className="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-4 px-4 py-3 border-b border-border"
-					
-				>
+			<div className="rounded-xl overflow-hidden border border-border bg-muted">
+				<div className="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-4 px-4 py-3 border-b border-border">
 					<Skeleton className="h-3 w-16" />
 					<Skeleton className="h-3 w-12" />
 					<Skeleton className="h-3 w-12" />
@@ -45,13 +38,15 @@ export function PaymentsDashboardSkeleton() {
 					<div
 						key={`row-${rowIndex}`}
 						className="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-4 px-4 py-3"
-						style={{borderBottom:
-								rowIndex < TABLE_ROWS - 1 ? "1px solid var(--border-default)" : undefined}}
+						style={{
+							borderBottom:
+								rowIndex < TABLE_ROWS - 1 ? "1px solid var(--border-default)" : undefined,
+						}}
 					>
 						<Skeleton className="h-4 w-24" />
-						<Skeleton className="h-4" style={{width: `${60 + (rowIndex % 3) * 12}%`}} />
+						<Skeleton className="h-4" style={{ width: `${60 + (rowIndex % 3) * 12}%` }} />
 						<Skeleton className="h-4 w-16" />
-						<Skeleton className="h-4" style={{width: `${50 + (rowIndex % 4) * 14}%`}} />
+						<Skeleton className="h-4" style={{ width: `${50 + (rowIndex % 4) * 14}%` }} />
 						<Skeleton className="h-4 w-16 ml-auto" />
 					</div>
 				))}

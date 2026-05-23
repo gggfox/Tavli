@@ -206,7 +206,10 @@ export async function hardDeleteRestaurantDataTyped(
 	for (const tb of tables) await ctx.db.delete(tb._id);
 }
 
-async function executeHardPurge(ctx: MutationCtx, restaurantId: Id<"restaurants">): Promise<boolean> {
+async function executeHardPurge(
+	ctx: MutationCtx,
+	restaurantId: Id<"restaurants">
+): Promise<boolean> {
 	const restaurant = await ctx.db.get(restaurantId);
 	if (!restaurant) return false;
 

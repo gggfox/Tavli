@@ -26,23 +26,15 @@ function Hero() {
 	const { t } = useTranslation();
 	return (
 		<div className="text-center mb-12">
-			<div
-				className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm mb-6 bg-success-subtle text-success border border-success"
-				
-			>
+			<div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm mb-6 bg-success-subtle text-success border border-success">
 				<UtensilsCrossed size={14} />
 				<span>{t(WelcomeKeys.BADGE)}</span>
 			</div>
-			<h1
-				className="text-4xl md:text-5xl font-bold mb-4 tracking-tight text-foreground"
-				
-			>
+			<h1 className="text-4xl md:text-5xl font-bold mb-4 tracking-tight text-foreground">
 				{t(WelcomeKeys.HEADING_PREFIX)}{" "}
-				<span className="text-primary" >{t(SidebarKeys.BRAND_NAME)}</span>
+				<span className="text-primary">{t(SidebarKeys.BRAND_NAME)}</span>
 			</h1>
-			<p className="text-lg max-w-md mx-auto text-muted-foreground" >
-				{t(WelcomeKeys.SUBHEADING)}
-			</p>
+			<p className="text-lg max-w-md mx-auto text-muted-foreground">{t(WelcomeKeys.SUBHEADING)}</p>
 		</div>
 	);
 }
@@ -78,10 +70,7 @@ function CallToAction() {
 	return (
 		<div className="flex items-center justify-center gap-4">
 			<SignInButton mode="redirect">
-				<button
-					className="flex items-center gap-2 px-6 py-3 rounded-xl hover-btn-secondary border border-border"
-					
-				>
+				<button className="flex items-center gap-2 px-6 py-3 rounded-xl hover-btn-secondary border border-border">
 					<LogIn size={20} />
 					{t(SidebarKeys.SIGN_IN)}
 				</button>

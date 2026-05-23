@@ -11,11 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { useCallback, useMemo } from "react";
-import type {
-	DashboardLayout,
-	DashboardLayoutConfig,
-	DashboardScopeKind,
-} from "../types";
+import type { DashboardLayout, DashboardLayoutConfig, DashboardScopeKind } from "../types";
 
 interface UseDashboardLayoutsArgs {
 	scopeKind: DashboardScopeKind;
@@ -23,11 +19,7 @@ interface UseDashboardLayoutsArgs {
 	enabled: boolean;
 }
 
-export function useDashboardLayouts({
-	scopeKind,
-	restaurantId,
-	enabled,
-}: UseDashboardLayoutsArgs) {
+export function useDashboardLayouts({ scopeKind, restaurantId, enabled }: UseDashboardLayoutsArgs) {
 	const queryArgs = useMemo(
 		() =>
 			!enabled
@@ -68,7 +60,7 @@ export function useDashboardLayouts({
 			}
 			const result = await createMutation.mutateAsync({
 				scopeKind,
-				restaurantId: scopeKind === "restaurant" ? restaurantId ?? undefined : undefined,
+				restaurantId: scopeKind === "restaurant" ? (restaurantId ?? undefined) : undefined,
 				name: args.name,
 				config: args.config,
 			});
@@ -99,10 +91,7 @@ export function useDashboardLayouts({
 	);
 
 	const duplicate = useCallback(
-		async (args: {
-			layoutId: Id<"dashboardLayouts">;
-			name?: string;
-		}) => {
+		async (args: { layoutId: Id<"dashboardLayouts">; name?: string }) => {
 			const result = await duplicateMutation.mutateAsync(args);
 			return unwrapResult(result) as Id<"dashboardLayouts">;
 		},
@@ -114,7 +103,7 @@ export function useDashboardLayouts({
 			if (scopeKind === "restaurant" && !restaurantId) return;
 			const result = await reorderMutation.mutateAsync({
 				scopeKind,
-				restaurantId: scopeKind === "restaurant" ? restaurantId ?? undefined : undefined,
+				restaurantId: scopeKind === "restaurant" ? (restaurantId ?? undefined) : undefined,
 				orderedIds,
 			});
 			return unwrapResult(result);

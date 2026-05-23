@@ -23,12 +23,7 @@
  */
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import {
-	internalMutation,
-	mutation,
-	query,
-	type MutationCtx,
-} from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -77,11 +72,7 @@ function validateTemplateInput(args: {
 	activeUntilYmd?: string;
 }): UserInputValidationErrorObject | null {
 	const fields: { field: string; message: string }[] = [];
-	if (
-		!Number.isInteger(args.dayOfWeek) ||
-		args.dayOfWeek < 0 ||
-		args.dayOfWeek > 6
-	) {
+	if (!Number.isInteger(args.dayOfWeek) || args.dayOfWeek < 0 || args.dayOfWeek > 6) {
 		fields.push({ field: "dayOfWeek", message: "Must be 0..6 (Mon=0)" });
 	}
 	if (
@@ -141,9 +132,7 @@ async function materializeTemplateForRange(
 	const startYmd = utcMsToYmdInTimezone(fromMs, tz);
 	const endYmd = utcMsToYmdInTimezone(toMs, tz);
 	let cursor = maxYmd(startYmd, template.activeFromYmd);
-	const finalYmd = template.activeUntilYmd
-		? minYmd(endYmd, template.activeUntilYmd)
-		: endYmd;
+	const finalYmd = template.activeUntilYmd ? minYmd(endYmd, template.activeUntilYmd) : endYmd;
 
 	if (cursor > finalYmd) return 0;
 

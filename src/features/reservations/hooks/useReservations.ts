@@ -6,10 +6,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { Id } from "convex/_generated/dataModel";
 import { useMemo } from "react";
 import type { ReservationStatus } from "@/features/reservations/statusConfig";
-import {
-	dashboardReservationBounds,
-	type ReservationRange,
-} from "@/features/reservations/utils";
+import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
 
 type ReservationsValue = UnwrappedValue<FunctionReturnType<typeof api.reservations.listForRange>>;
 
@@ -26,10 +23,7 @@ export function useReservations(
 	customDay: string | undefined,
 	statuses?: readonly ReservationStatus[] | undefined
 ) {
-	const bounds = useMemo(
-		() => dashboardReservationBounds(range, customDay),
-		[range, customDay]
-	);
+	const bounds = useMemo(() => dashboardReservationBounds(range, customDay), [range, customDay]);
 
 	const statusesSerialized =
 		statuses && statuses.length > 0
@@ -99,16 +93,13 @@ export function useReservations(
 		reservations: reservations ?? [],
 		isLoading,
 		error,
-		confirm: async (
-			args: Parameters<typeof confirmMutation.mutateAsync>[0]
-		) => unwrapResult(await confirmMutation.mutateAsync(args)),
+		confirm: async (args: Parameters<typeof confirmMutation.mutateAsync>[0]) =>
+			unwrapResult(await confirmMutation.mutateAsync(args)),
 		cancel: async (args: Parameters<typeof cancelMutation.mutateAsync>[0]) =>
 			unwrapResult(await cancelMutation.mutateAsync(args)),
-		markSeated: async (
-			args: Parameters<typeof markSeatedMutation.mutateAsync>[0]
-		) => unwrapResult(await markSeatedMutation.mutateAsync(args)),
-		markCompleted: async (
-			args: Parameters<typeof markCompletedMutation.mutateAsync>[0]
-		) => unwrapResult(await markCompletedMutation.mutateAsync(args)),
+		markSeated: async (args: Parameters<typeof markSeatedMutation.mutateAsync>[0]) =>
+			unwrapResult(await markSeatedMutation.mutateAsync(args)),
+		markCompleted: async (args: Parameters<typeof markCompletedMutation.mutateAsync>[0]) =>
+			unwrapResult(await markCompletedMutation.mutateAsync(args)),
 	};
 }

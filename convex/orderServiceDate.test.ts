@@ -14,10 +14,14 @@ describe("getOrderServiceDateKey", () => {
 
 	it("uses same calendar date at and after cutoff (UTC)", () => {
 		const atCutoff = Date.UTC(2024, 5, 15, 4, 0, 0, 0);
-		expect(getOrderServiceDateKey(atCutoff, "UTC", DEFAULT_ORDER_DAY_START_MINUTES)).toBe("2024-06-15");
+		expect(getOrderServiceDateKey(atCutoff, "UTC", DEFAULT_ORDER_DAY_START_MINUTES)).toBe(
+			"2024-06-15"
+		);
 
 		const after = Date.UTC(2024, 5, 15, 10, 0, 0, 0);
-		expect(getOrderServiceDateKey(after, "UTC", DEFAULT_ORDER_DAY_START_MINUTES)).toBe("2024-06-15");
+		expect(getOrderServiceDateKey(after, "UTC", DEFAULT_ORDER_DAY_START_MINUTES)).toBe(
+			"2024-06-15"
+		);
 	});
 
 	it("defaults cutoff to 04:00 when minutes omitted", () => {

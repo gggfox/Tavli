@@ -140,7 +140,5 @@ function MenusContent({
 		);
 	}
 
-	return (
-		<MenuList menus={menus} onUpdate={onUpdate} onSelect={onSelect} />
-	);
+	return <MenuList menus={menus} onUpdate={onUpdate} onSelect={onSelect} />;
 }

@@ -105,20 +105,19 @@ export function RestaurantSettingsForm({
 			className="space-y-6 max-w-lg"
 		>
 			{restaurant && (
-				<div
-					className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
-					
-				>
+				<div className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border">
 					<div className="flex items-center gap-3">
-						<span className="text-sm font-medium text-foreground" >
+						<span className="text-sm font-medium text-foreground">
 							{t(RestaurantsKeys.FORM_STATUS_LABEL)}
 						</span>
 						<span
 							className="text-xs px-2 py-0.5 rounded-full font-medium"
-							style={{backgroundColor: restaurant.isActive
+							style={{
+								backgroundColor: restaurant.isActive
 									? "var(--accent-success)"
 									: "var(--bg-tertiary)",
-				color: restaurant.isActive ? "white" : "var(--text-muted)"}}
+								color: restaurant.isActive ? "white" : "var(--text-muted)",
+							}}
 						>
 							{restaurant.isActive
 								? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
@@ -136,9 +135,9 @@ export function RestaurantSettingsForm({
 						}
 					>
 						{restaurant.isActive ? (
-							<ToggleRight size={24}  />
+							<ToggleRight size={24} />
 						) : (
-							<ToggleLeft size={24} className="text-faint-foreground"  />
+							<ToggleLeft size={24} className="text-faint-foreground" />
 						)}
 					</button>
 				</div>
@@ -151,7 +150,6 @@ export function RestaurantSettingsForm({
 						<label
 							htmlFor="restaurant-name"
 							className="block text-sm font-medium mb-1 text-foreground"
-							
 						>
 							{t(RestaurantsKeys.FORM_NAME_LABEL)}
 						</label>
@@ -163,7 +161,6 @@ export function RestaurantSettingsForm({
 							onBlur={field.handleBlur}
 							required
 							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							
 						/>
 					</div>
 				)}
@@ -176,7 +173,6 @@ export function RestaurantSettingsForm({
 						<label
 							htmlFor="restaurant-slug"
 							className="block text-sm font-medium mb-1 text-foreground"
-							
 						>
 							{t(RestaurantsKeys.FORM_SLUG_LABEL)}
 						</label>
@@ -188,10 +184,9 @@ export function RestaurantSettingsForm({
 							onBlur={field.handleBlur}
 							required
 							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							
 						/>
 						<div className="flex items-center gap-2 mt-1">
-							<p className="text-xs text-faint-foreground" >
+							<p className="text-xs text-faint-foreground">
 								{t(RestaurantsKeys.FORM_SLUG_HINT, { slug: slugValue || "your-slug" })}
 							</p>
 							{restaurant && slugValue && (
@@ -200,7 +195,6 @@ export function RestaurantSettingsForm({
 									target="_blank"
 									rel="noopener noreferrer"
 									className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded hover:bg-hover text-accent"
-									
 								>
 									<ExternalLink size={12} />
 									{t(RestaurantsKeys.FORM_OPEN_TEST_LINK)}
@@ -218,7 +212,6 @@ export function RestaurantSettingsForm({
 						<label
 							htmlFor="restaurant-desc"
 							className="block text-sm font-medium mb-1 text-foreground"
-							
 						>
 							{t(RestaurantsKeys.FORM_DESCRIPTION_LABEL)}
 						</label>
@@ -229,7 +222,6 @@ export function RestaurantSettingsForm({
 							onBlur={field.handleBlur}
 							rows={3}
 							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							
 						/>
 					</div>
 				)}
@@ -243,7 +235,6 @@ export function RestaurantSettingsForm({
 							<label
 								htmlFor="restaurant-currency"
 								className="block text-sm font-medium mb-1 text-foreground"
-								
 							>
 								{t(RestaurantsKeys.FORM_CURRENCY_LABEL)}
 							</label>
@@ -252,7 +243,6 @@ export function RestaurantSettingsForm({
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								
 							>
 								<option value="USD">USD ($)</option>
 								<option value="EUR">EUR (&euro;)</option>
@@ -269,7 +259,6 @@ export function RestaurantSettingsForm({
 							<label
 								htmlFor="restaurant-tz"
 								className="block text-sm font-medium mb-1 text-foreground"
-								
 							>
 								{t(RestaurantsKeys.FORM_TIMEZONE_LABEL)}
 							</label>
@@ -281,7 +270,6 @@ export function RestaurantSettingsForm({
 								onBlur={field.handleBlur}
 								placeholder={t(RestaurantsKeys.FORM_TIMEZONE_PLACEHOLDER)}
 								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								
 							/>
 							{restaurant && !field.state.value.trim() && (
 								<p className="mt-1 text-xs text-amber-700 dark:text-amber-400/90">
@@ -346,7 +334,6 @@ export function RestaurantSettingsForm({
 						<label
 							htmlFor="restaurant-order-day-start"
 							className="block text-sm font-medium mb-1 text-foreground"
-							
 						>
 							{t(RestaurantsKeys.FORM_ORDER_DAY_START_LABEL)}
 						</label>
@@ -356,7 +343,6 @@ export function RestaurantSettingsForm({
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							className="w-full max-w-48 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							
 						/>
 						<p className="mt-1 text-xs text-faint-foreground max-w-lg">
 							{t(RestaurantsKeys.FORM_ORDER_DAY_START_HINT)}
@@ -379,9 +365,7 @@ export function RestaurantSettingsForm({
 							<select
 								id="restaurant-order-number-reset"
 								value={field.state.value}
-								onChange={(e) =>
-									field.handleChange(e.target.value as OrderNumberResetFrequency)
-								}
+								onChange={(e) => field.handleChange(e.target.value as OrderNumberResetFrequency)}
 								className="w-full max-w-48 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
 							>
 								<option value="daily">
@@ -413,7 +397,6 @@ export function RestaurantSettingsForm({
 							<label
 								htmlFor="restaurant-org"
 								className="block text-sm font-medium mb-1 text-foreground"
-								
 							>
 								{t(RestaurantsKeys.FORM_ORG_LABEL)}
 							</label>
@@ -423,7 +406,6 @@ export function RestaurantSettingsForm({
 								onChange={(e) => field.handleChange(e.target.value)}
 								required
 								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								
 							>
 								<option value="" disabled>
 									{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}

@@ -140,9 +140,7 @@ export function SessionOrdersList({
 			<div className="flex flex-col h-full p-4">
 				<Header onBackToMenu={onBackToMenu} />
 				<div className="flex-1 flex items-center justify-center">
-					<p className="text-sm text-faint-foreground" >
-						{t(OrderingKeys.SESSION_NO_SESSION)}
-					</p>
+					<p className="text-sm text-faint-foreground">{t(OrderingKeys.SESSION_NO_SESSION)}</p>
 				</div>
 			</div>
 		);
@@ -167,11 +165,9 @@ function Header({ onBackToMenu }: Readonly<{ onBackToMenu: () => void }>) {
 				className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
 				aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
 			>
-				<ArrowLeft size={20}  />
+				<ArrowLeft size={20} />
 			</button>
-			<h2 className="text-lg font-bold text-foreground" >
-				{t(OrderingKeys.ORDERS_HEADER)}
-			</h2>
+			<h2 className="text-lg font-bold text-foreground">{t(OrderingKeys.ORDERS_HEADER)}</h2>
 		</div>
 	);
 }
@@ -192,9 +188,7 @@ function SessionOrdersListContent({
 		convexQuery(api.orders.getOrdersBySession, { sessionId })
 	);
 
-	const visible = (orders ?? []).filter(
-		(o) => !(o.status === "draft" && o.totalAmount === 0)
-	);
+	const visible = (orders ?? []).filter((o) => !(o.status === "draft" && o.totalAmount === 0));
 	const sortedOrders = [...visible].sort((a, b) => b._creationTime - a._creationTime);
 
 	if (isLoading && !orders) {
@@ -207,15 +201,12 @@ function SessionOrdersListContent({
 				<Header onBackToMenu={onBackToMenu} />
 
 				{orders && sortedOrders.length === 0 && (
-					<div
-						className="py-12 flex flex-col items-center gap-2 rounded-xl bg-muted"
-						
-					>
-						<UtensilsCrossed size={32} className="text-faint-foreground"  />
-						<p className="text-sm font-medium text-foreground" >
+					<div className="py-12 flex flex-col items-center gap-2 rounded-xl bg-muted">
+						<UtensilsCrossed size={32} className="text-faint-foreground" />
+						<p className="text-sm font-medium text-foreground">
 							{t(OrderingKeys.ORDERS_EMPTY_TITLE)}
 						</p>
-						<p className="text-xs text-center px-6 text-faint-foreground" >
+						<p className="text-xs text-center px-6 text-faint-foreground">
 							{t(OrderingKeys.ORDERS_EMPTY_DESC)}
 						</p>
 						<button
@@ -262,18 +253,17 @@ function OrderCard({
 		<button
 			onClick={handleClick}
 			className="w-full text-left flex items-center gap-3 p-4 rounded-xl transition-colors hover:bg-(--bg-hover) bg-muted border border-border"
-			
 		>
 			<div
 				className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-				style={{backgroundColor: meta.iconBg}}
+				style={{ backgroundColor: meta.iconBg }}
 			>
-				<Icon size={18} style={{color: meta.iconColor}} />
+				<Icon size={18} style={{ color: meta.iconColor }} />
 			</div>
 
 			<div className="flex-1 min-w-0">
 				<div className="flex items-center justify-between gap-2">
-					<span className="text-sm font-semibold text-foreground flex items-center gap-2 min-w-0" >
+					<span className="text-sm font-semibold text-foreground flex items-center gap-2 min-w-0">
 						{order.dailyOrderNumber != null && (
 							<span className="tabular-nums shrink-0 text-foreground">
 								{t(OrderingKeys.ORDERS_DAY_NUMBER, { n: order.dailyOrderNumber })}
@@ -281,17 +271,15 @@ function OrderCard({
 						)}
 						<span className="truncate">{meta.label}</span>
 					</span>
-					<span className="text-sm font-semibold text-foreground" >
+					<span className="text-sm font-semibold text-foreground">
 						${formatCents(order.totalAmount)}
 					</span>
 				</div>
 				<div className="flex items-center justify-between mt-1">
-					<span className="text-xs text-faint-foreground" >
+					<span className="text-xs text-faint-foreground">
 						{formatTime(order._creationTime, t, i18n.language)}
 					</span>
-					<span className="text-xs font-medium text-primary" >
-						{meta.actionLabel} →
-					</span>
+					<span className="text-xs font-medium text-primary">{meta.actionLabel} →</span>
 				</div>
 			</div>
 		</button>

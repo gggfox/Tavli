@@ -92,9 +92,7 @@ export function TemplatesDrawer({
 												{template.name}
 											</p>
 											{template.description && (
-												<p className="text-xs text-faint-foreground mt-1">
-													{template.description}
-												</p>
+												<p className="text-xs text-faint-foreground mt-1">{template.description}</p>
 											)}
 										</div>
 										{canManage && (

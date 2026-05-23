@@ -42,9 +42,7 @@ export function PublishWeekButton({
 	const handleConfirm = async () => {
 		setError(null);
 		try {
-			unwrapResult(
-				await publish.mutateAsync({ restaurantId, weekStartMs })
-			);
+			unwrapResult(await publish.mutateAsync({ restaurantId, weekStartMs }));
 			onPublished();
 			setConfirmOpen(false);
 		} catch (e) {

@@ -17,11 +17,7 @@ const crons = cronJobs();
 // next booking attempt re-checks anyway).
 crons.interval("reservation no-show sweep", { minutes: 15 }, internal.reservations.sweepNoShows);
 
-crons.interval(
-	"invitation expiry sweep",
-	{ hours: 1 },
-	internal.invites.expirePendingInvitations
-);
+crons.interval("invitation expiry sweep", { hours: 1 }, internal.invites.expirePendingInvitations);
 
 crons.interval(
 	"shift attendance no-clockout sweep",

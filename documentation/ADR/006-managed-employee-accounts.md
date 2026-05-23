@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-| ------- | ------- |
-| **Status** | Accepted |
-| **Date** | 2026-05-17 |
-| **Author(s)** | Tavli team |
-| **Supersedes** | — |
-| **Superseded by** | — |
+| Field             | Value      |
+| ----------------- | ---------- |
+| **Status**        | Accepted   |
+| **Date**          | 2026-05-17 |
+| **Author(s)**     | Tavli team |
+| **Supersedes**    | —          |
+| **Superseded by** | —          |
 
 ## Context
 
@@ -206,7 +206,7 @@ New modules:
 ## References
 
 - [`CONTEXT.md`](../../CONTEXT.md) — glossary entries for
-  *EmployeeAccount*, *Personal PIN*, *Shared employee session*.
+  _EmployeeAccount_, _Personal PIN_, _Shared employee session_.
 - [ADR-002](./002-workos-authentication.md) — original auth decision
   (WorkOS; runtime is now Clerk).
 

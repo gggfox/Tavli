@@ -25,9 +25,7 @@ export function AdminPageLayout({ title, description, actions, children }: Admin
 							{actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
 						</div>
 					)}
-					{description && (
-						<p className="mt-2 text-sm text-muted-foreground">{description}</p>
-					)}
+					{description && <p className="mt-2 text-sm text-muted-foreground">{description}</p>}
 				</div>
 			)}
 			<div className="flex-1 overflow-y-auto">{children}</div>

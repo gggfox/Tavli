@@ -18,5 +18,5 @@ export const METRIC_LABEL_KEY: Record<NumberWithDeltaOptions["metric"], string> 
 	"reservations.confirmed": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_RESERVATIONS_CONFIRMED,
 	"orders.count": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_COUNT,
 	"payments.revenueTotal": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_PAYMENTS_REVENUE_TOTAL,
-	"covers": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_COVERS,
+	covers: DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_COVERS,
 };

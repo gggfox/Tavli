@@ -7,11 +7,7 @@
  * filters by the resulting UTC ms — close enough for analytics, since
  * restaurant timezones are bucketed inside the per-widget queries.
  */
-import type {
-	DashboardCustomRange,
-	DashboardRangeKind,
-	ResolvedRange,
-} from "../types";
+import type { DashboardCustomRange, DashboardRangeKind, ResolvedRange } from "../types";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 

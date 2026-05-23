@@ -14,11 +14,7 @@ import {
 } from "../_shared/errors";
 import { PAYMENT_STATUS, TABLE } from "../constants";
 import { utcMsToYmdInTimezone } from "../_util/timezone";
-import {
-	buildWindow,
-	loadPaymentsInRange,
-	resolveRestaurantIds,
-} from "./_shared";
+import { buildWindow, loadPaymentsInRange, resolveRestaurantIds } from "./_shared";
 
 const REVENUE_OVER_TIME_MAX_RANGE_DAYS = 366;
 
@@ -43,10 +39,7 @@ export const compute = query({
 		range: v.object({ from: v.number(), to: v.number() }),
 		compareToPrev: v.boolean(),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<RevenueOverTimeResult, Errors> {
+	handler: async function (ctx, args): AsyncReturn<RevenueOverTimeResult, Errors> {
 		const [restaurantIds, accessErr] = await resolveRestaurantIds(ctx, {
 			scopeKind: args.scopeKind,
 			restaurantId: args.restaurantId,

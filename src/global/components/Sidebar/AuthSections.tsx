@@ -22,8 +22,8 @@ export function AuthSections() {
 			)}
 
 			{!hasAuth && isExpanded && (
-				<div className="p-3 border-t border-border" >
-					<span className="text-xs text-faint-foreground" >
+				<div className="p-3 border-t border-border">
+					<span className="text-xs text-faint-foreground">
 						{t(SidebarKeys.AUTH_NOT_CONFIGURED)}
 					</span>
 				</div>

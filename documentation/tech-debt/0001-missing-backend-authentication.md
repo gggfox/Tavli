@@ -14,13 +14,13 @@ WorkOS AuthKit is configured for client-side authentication (signin, signup, sig
 
 ## Affected Files
 
-| File | Issue |
-| ------ | ------- |
-| `convex/tasks.ts` | No `ctx.auth.getUserIdentity()` checks |
-| `src/routes/demo/start.server-funcs.tsx` | No `getUser()` validation |
-| `src/data/demo.punk-songs.ts` | No auth on server function |
-| `src/router.tsx` | Convex client initialized without auth token |
-| `convex/schema.ts` | No `userId` field for multi-tenancy |
+| File                                     | Issue                                        |
+| ---------------------------------------- | -------------------------------------------- |
+| `convex/tasks.ts`                        | No `ctx.auth.getUserIdentity()` checks       |
+| `src/routes/demo/start.server-funcs.tsx` | No `getUser()` validation                    |
+| `src/data/demo.punk-songs.ts`            | No auth on server function                   |
+| `src/router.tsx`                         | Convex client initialized without auth token |
+| `convex/schema.ts`                       | No `userId` field for multi-tenancy          |
 
 ## Options
 
@@ -59,11 +59,11 @@ WorkOS AuthKit is configured for client-side authentication (signin, signup, sig
 ```ts
 // convex/schema.ts
 export default defineSchema({
-  tasks: defineTable({
-    text: v.string(),
-    isCompleted: v.optional(v.boolean()),
-    userId: v.string(), // NEW: Owner of the task
-  }).index("by_user", ["userId"]),
+	tasks: defineTable({
+		text: v.string(),
+		isCompleted: v.optional(v.boolean()),
+		userId: v.string(), // NEW: Owner of the task
+	}).index("by_user", ["userId"]),
 });
 ```
 
@@ -72,17 +72,17 @@ export default defineSchema({
 ```ts
 // convex/tasks.ts
 export const get = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-    return await ctx.db
-      .query("tasks")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
-      .collect();
-  },
+	args: {},
+	handler: async (ctx) => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw new Error("Not authenticated");
+		}
+		return await ctx.db
+			.query("tasks")
+			.withIndex("by_user", (q) => q.eq("userId", identity.subject))
+			.collect();
+	},
 });
 ```
 
@@ -90,7 +90,7 @@ export const get = query({
 
 ```tsx
 // src/router.tsx - Pass auth token to Convex
-<ConvexProviderWithAuth 
+<ConvexProviderWithAuth
   client={convexQueryClient.convexClient}
   useAuth={useWorkOSAuth} // Custom hook to bridge WorkOS → Convex
 >
@@ -99,14 +99,13 @@ export const get = query({
 ### Step 4: Add Auth to Server Functions
 
 ```ts
-import { getUser } from '@workos/authkit-tanstack-react-start';
+import { getUser } from "@workos/authkit-tanstack-react-start";
 
-const getTodos = createServerFn({ method: 'GET' })
-  .handler(async ({ request }) => {
-    const { user } = await getUser({ ensureSignedIn: true });
-    if (!user) throw new Error("Unauthorized");
-    return await readTodos();
-  });
+const getTodos = createServerFn({ method: "GET" }).handler(async ({ request }) => {
+	const { user } = await getUser({ ensureSignedIn: true });
+	if (!user) throw new Error("Unauthorized");
+	return await readTodos();
+});
 ```
 
 ## Owner

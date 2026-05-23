@@ -57,7 +57,10 @@ async function assertCanCreateInvitation(
 	actorId: string,
 	args: {
 		organizationId: Id<"organizations">;
-		role: typeof USER_ROLES.OWNER | typeof RESTAURANT_MEMBER_ROLE.MANAGER | typeof RESTAURANT_MEMBER_ROLE.EMPLOYEE;
+		role:
+			| typeof USER_ROLES.OWNER
+			| typeof RESTAURANT_MEMBER_ROLE.MANAGER
+			| typeof RESTAURANT_MEMBER_ROLE.EMPLOYEE;
 		restaurantIds: Id<"restaurants">[];
 	}
 ): AsyncReturn<null, NotAuthorizedErrorObject> {
@@ -262,7 +265,9 @@ export const acceptInvitation = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [{ field: "email", message: "Your account must have an email to accept invites" }],
+					fields: [
+						{ field: "email", message: "Your account must have an email to accept invites" },
+					],
 				}).toObject(),
 			];
 		}
@@ -307,7 +312,7 @@ export const acceptInvitation = mutation({
 
 		const now = Date.now();
 
-			const inviteNameFields = {
+		const inviteNameFields = {
 			...(invitation.firstName && { firstName: invitation.firstName }),
 			...(invitation.paternalLastname && { paternalLastname: invitation.paternalLastname }),
 			...(invitation.maternalLastname && { maternalLastname: invitation.maternalLastname }),
@@ -377,9 +382,7 @@ export const acceptInvitation = mutation({
 
 			const ur = await fetchUserRoleRecord(ctx, userId);
 			const sidebarRole =
-				memberRole === RESTAURANT_MEMBER_ROLE.MANAGER
-					? USER_ROLES.MANAGER
-					: USER_ROLES.EMPLOYEE;
+				memberRole === RESTAURANT_MEMBER_ROLE.MANAGER ? USER_ROLES.MANAGER : USER_ROLES.EMPLOYEE;
 			const roles = new Set(ur?.roles ?? []);
 			roles.add(sidebarRole);
 			if (ur) {
@@ -426,10 +429,7 @@ export const acceptInvitation = mutation({
 
 export const revokeInvitation = mutation({
 	args: { invitationId: v.id(TABLE.INVITATIONS) },
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<boolean, AuthErrors | NotFoundErrorObject> {
+	handler: async function (ctx, args): AsyncReturn<boolean, AuthErrors | NotFoundErrorObject> {
 		const [actorId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 

@@ -12,10 +12,7 @@ import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth"
 import { DEFAULT_PREP_STATION, TABLE } from "./constants";
 import { PREP_STATION_VALIDATOR } from "./orderHelpers";
 
-type AuthErrors =
-	| NotAuthenticatedErrorObject
-	| NotAuthorizedErrorObject
-	| NotFoundErrorObject;
+type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
 
 export const generateUploadUrl = mutation({
 	args: {

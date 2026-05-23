@@ -13,11 +13,7 @@
  */
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
-import {
-	ACTIVE_RESERVATION_STATUSES,
-	FALLBACK_TABLE_CAPACITY,
-	TABLE,
-} from "../constants";
+import { ACTIVE_RESERVATION_STATUSES, FALLBACK_TABLE_CAPACITY, TABLE } from "../constants";
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 type ReservationSettingsDoc = Doc<typeof TABLE.RESERVATION_SETTINGS>;

@@ -40,29 +40,17 @@ describe("DashboardShell", () => {
 
 	it("falls back to the default error description when the error has no message", () => {
 		render(
-			<DashboardShell
-				isLoading={false}
-				error={{}}
-				entityName="payments"
-				skeleton={<div />}
-			>
+			<DashboardShell isLoading={false} error={{}} entityName="payments" skeleton={<div />}>
 				<p>real content</p>
 			</DashboardShell>
 		);
 
-		expect(
-			screen.getByText("Please check your permissions and try again.")
-		).toBeInTheDocument();
+		expect(screen.getByText("Please check your permissions and try again.")).toBeInTheDocument();
 	});
 
 	it("renders children when neither loading nor errored", () => {
 		render(
-			<DashboardShell
-				isLoading={false}
-				error={null}
-				entityName="orders"
-				skeleton={<div />}
-			>
+			<DashboardShell isLoading={false} error={null} entityName="orders" skeleton={<div />}>
 				<p>real content</p>
 			</DashboardShell>
 		);

@@ -245,8 +245,7 @@ export function useUserSettings(): UseUserSettingsReturn {
 	);
 
 	const setSidebarGroupExpanded = useCallback(
-		(key: string, expanded: boolean) =>
-			setSidebarGroupExpandedService(client, key, expanded),
+		(key: string, expanded: boolean) => setSidebarGroupExpandedService(client, key, expanded),
 		[client]
 	);
 

@@ -114,13 +114,10 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 
 	if (loading) {
 		return (
-			<div
-				className="rounded-xl p-6 bg-muted border border-border"
-				
-			>
+			<div className="rounded-xl p-6 bg-muted border border-border">
 				<div className="flex items-center gap-2">
-					<Loader2 size={16} className="animate-spin text-faint-foreground"  />
-					<span className="text-sm text-faint-foreground" >
+					<Loader2 size={16} className="animate-spin text-faint-foreground" />
+					<span className="text-sm text-faint-foreground">
 						{t(RestaurantsKeys.STRIPE_CHECKING)}
 					</span>
 				</div>
@@ -132,23 +129,20 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 		status?.connected && status.readyToReceivePayments && status.onboardingComplete;
 
 	return (
-		<div
-			className="rounded-xl p-6 space-y-4 bg-muted border border-border"
-			
-		>
+		<div className="rounded-xl p-6 space-y-4 bg-muted border border-border">
 			<div className="flex items-center justify-between">
 				<div>
-					<h3 className="text-sm font-semibold text-foreground" >
+					<h3 className="text-sm font-semibold text-foreground">
 						{t(RestaurantsKeys.STRIPE_HEADING)}
 					</h3>
-					<p className="text-xs mt-0.5 text-faint-foreground" >
+					<p className="text-xs mt-0.5 text-faint-foreground">
 						{t(RestaurantsKeys.STRIPE_DESCRIPTION)}
 					</p>
 				</div>
 				{isFullySetUp && (
 					<span
 						className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success"
-						style={{color: "white"}}
+						style={{ color: "white" }}
 					>
 						<CheckCircle2 size={12} />
 						{t(RestaurantsKeys.STRIPE_PAYMENTS_ENABLED)}
@@ -159,7 +153,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 			{error && (
 				<div
 					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
-					style={{backgroundColor: "rgba(220, 38, 38, 0.1)"}}
+					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
 				>
 					<AlertCircle size={14} />
 					{error}
@@ -169,7 +163,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 			{resetNotice && (
 				<div
 					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-success"
-					style={{backgroundColor: "rgba(34, 197, 94, 0.1)"}}
+					style={{ backgroundColor: "rgba(34, 197, 94, 0.1)" }}
 				>
 					<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
 					<span>{resetNotice}</span>

@@ -206,10 +206,9 @@ ${text}`,
 				throw err;
 			}
 
-			const userIsAdmin = await ctx.runQuery(
-				internal.menuImportMutation.isUserAdmin,
-				{ userId: identity.subject }
-			);
+			const userIsAdmin = await ctx.runQuery(internal.menuImportMutation.isUserAdmin, {
+				userId: identity.subject,
+			});
 
 			if (userIsAdmin) {
 				const statusCode = (err as { statusCode?: number }).statusCode;
@@ -221,9 +220,7 @@ ${text}`,
 				throw err;
 			}
 
-			throw new Error(
-				"Menu import is temporarily unavailable. Please try again later."
-			);
+			throw new Error("Menu import is temporarily unavailable. Please try again later.");
 		}
 	},
 });

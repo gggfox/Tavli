@@ -154,11 +154,7 @@ describe("AdminTable global search", () => {
 				columns: displayColumns,
 			});
 			return (
-				<AdminTable
-					tableState={tableState}
-					entityName="rows"
-					searchPlaceholder="Search rows..."
-				/>
+				<AdminTable tableState={tableState} entityName="rows" searchPlaceholder="Search rows..." />
 			);
 		}
 

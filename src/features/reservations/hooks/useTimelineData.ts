@@ -5,15 +5,14 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { useMemo } from "react";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import type { FunctionReturnType } from "convex/server";
-import {
-	dashboardReservationBounds,
-	type ReservationRange,
-} from "@/features/reservations/utils";
+import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
 
 type TableDoc = Doc<"tables">;
 type SectionDoc = Doc<"sections">;
 type ReservationDoc = Doc<"reservations">;
-type TableLockDoc = UnwrappedValue<FunctionReturnType<typeof api.tableLocks.listForRestaurant>>[number];
+type TableLockDoc = UnwrappedValue<
+	FunctionReturnType<typeof api.tableLocks.listForRestaurant>
+>[number];
 
 export interface TimelineSection {
 	section: SectionDoc;
@@ -44,44 +43,31 @@ export function useTimelineData(
 	range: ReservationRange,
 	customDay: string | undefined
 ): TimelineData {
-	const bounds = useMemo(
-		() => dashboardReservationBounds(range, customDay),
-		[range, customDay]
-	);
+	const bounds = useMemo(() => dashboardReservationBounds(range, customDay), [range, customDay]);
 
 	const reservationsQuery = useQuery({
 		...convexQuery(
 			api.reservations.listForRange,
-			restaurantId
-				? { restaurantId, fromMs: bounds.fromMs, toMs: bounds.toMs }
-				: "skip"
+			restaurantId ? { restaurantId, fromMs: bounds.fromMs, toMs: bounds.toMs } : "skip"
 		),
 		enabled: Boolean(restaurantId),
 		select: unwrapResult<ReservationDoc[]>,
 	});
 
 	const tablesQuery = useQuery({
-		...convexQuery(
-			api.tables.getActiveByRestaurant,
-			restaurantId ? { restaurantId } : "skip"
-		),
+		...convexQuery(api.tables.getActiveByRestaurant, restaurantId ? { restaurantId } : "skip"),
 		enabled: Boolean(restaurantId),
 	});
 
 	const sectionsQuery = useQuery({
-		...convexQuery(
-			api.sections.getByRestaurant,
-			restaurantId ? { restaurantId } : "skip"
-		),
+		...convexQuery(api.sections.getByRestaurant, restaurantId ? { restaurantId } : "skip"),
 		enabled: Boolean(restaurantId),
 	});
 
 	const locksQuery = useQuery({
 		...convexQuery(
 			api.tableLocks.listForRestaurant,
-			restaurantId
-				? { restaurantId, fromMs: bounds.fromMs, toMs: bounds.toMs }
-				: "skip"
+			restaurantId ? { restaurantId, fromMs: bounds.fromMs, toMs: bounds.toMs } : "skip"
 		),
 		enabled: Boolean(restaurantId),
 		select: unwrapResult<TableLockDoc[]>,

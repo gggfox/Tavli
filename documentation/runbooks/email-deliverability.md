@@ -8,7 +8,7 @@ Symptom this runbook addresses: **an email shows "Delivered" in the Resend dashb
 
 ## Background
 
-Email is sent through [Resend](https://resend.com) from a Tavli-owned domain (currently `gggfox.com`, eventually `tavli.com`). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is *not* the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
+Email is sent through [Resend](https://resend.com) from a Tavli-owned domain (currently `gggfox.com`, eventually `tavli.com`). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
 
 - Sender domain reputation (history of sending from the domain)
 - DNS authentication (SPF, DKIM, DMARC)
@@ -30,12 +30,12 @@ Set with: `npx convex env set <NAME> <VALUE>`. Verify with: `npx convex env list
 
 Resend's domain page provides the exact records. The minimum set is:
 
-| Type | Name | Purpose | Required? |
-|------|------|---------|-----------|
-| `TXT` | `resend._domainkey` | DKIM signing key | Yes |
-| `TXT` | `send` | SPF (`v=spf1 include:amazonses.com ~all`) | Yes |
-| `MX`  | `send` | Bounce/feedback handling (`feedback-smtp.us-east-1.amazonses.com`, priority 10) | Yes |
-| `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:postmaster@<domain>` | Strongly recommended |
+| Type  | Name                | Purpose                                                                         | Required?            |
+| ----- | ------------------- | ------------------------------------------------------------------------------- | -------------------- |
+| `TXT` | `resend._domainkey` | DKIM signing key                                                                | Yes                  |
+| `TXT` | `send`              | SPF (`v=spf1 include:amazonses.com ~all`)                                       | Yes                  |
+| `MX`  | `send`              | Bounce/feedback handling (`feedback-smtp.us-east-1.amazonses.com`, priority 10) | Yes                  |
+| `TXT` | `_dmarc`            | `v=DMARC1; p=none; rua=mailto:postmaster@<domain>`                              | Strongly recommended |
 
 After adding records in Hostinger:
 
@@ -47,12 +47,15 @@ After adding records in Hostinger:
 
 1. Trigger a send (e.g. invite a member from the Miembros UI).
 2. Check Convex logs:
+
    ```bash
    npx convex logs --history 50
    ```
+
    - ✅ `A(inviteActions:sendInviteEmail) Function executed in NNN ms` with no `[ERROR]` line → request accepted by Resend.
    - ❌ `[WARN] '[inviteActions] RESEND_API_KEY or RESEND_FROM_ADDRESS missing'` → env vars not set in Convex.
    - ❌ `[ERROR] '[inviteActions] Resend error:' 4xx` → Resend rejected the send. Body of the error explains why (unverified domain, sandbox-only recipient, etc.).
+
 3. Check Resend dashboard → **Emails** → **Sending** → look for the message and its status (`Delivered`, `Bounced`, `Complained`).
 4. Check the recipient inbox **and the spam folder**.
 
@@ -132,14 +135,14 @@ This is fine for unblocking dev work, but **does not fix the underlying issue** 
 
 ## Common Pitfalls
 
-| Pitfall | Symptom | Fix |
-|---------|---------|-----|
-| Env vars set in `.env.local` instead of Convex | Convex logs show `RESEND_API_KEY missing`, no API call ever made | `npx convex env set RESEND_API_KEY <key>` |
-| Sending to non-owner email before domain verification | Convex logs show 403 from Resend with "you can only send testing emails to your own email address" | Verify a domain in Resend, switch `RESEND_FROM_ADDRESS` to that domain |
-| Gmail `+aliases` in test-mode Resend | Same 403 as above | Either invite the canonical owner email, or verify a domain |
-| Forgot to add `_dmarc` record | Email lands in spam, headers show `DMARC: BESTGUESSPASS` instead of `PASS` | Add TXT `_dmarc` with `v=DMARC1; p=none;` |
-| DKIM record truncated by DNS provider's 255-char TXT limit | DKIM `dig` lookup returns nothing or partial value, Resend won't verify | Hostinger usually handles this, but if not, split the value into 255-char chunks each in quotes |
-| DNS edits in Hostinger but nameservers point elsewhere | DNS records not visible via `dig`, Resend stays "Pending" | Confirm `dig +short NS <domain>` returns Hostinger nameservers; if not, edit DNS at the actual nameserver provider |
+| Pitfall                                                    | Symptom                                                                                            | Fix                                                                                                                |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Env vars set in `.env.local` instead of Convex             | Convex logs show `RESEND_API_KEY missing`, no API call ever made                                   | `npx convex env set RESEND_API_KEY <key>`                                                                          |
+| Sending to non-owner email before domain verification      | Convex logs show 403 from Resend with "you can only send testing emails to your own email address" | Verify a domain in Resend, switch `RESEND_FROM_ADDRESS` to that domain                                             |
+| Gmail `+aliases` in test-mode Resend                       | Same 403 as above                                                                                  | Either invite the canonical owner email, or verify a domain                                                        |
+| Forgot to add `_dmarc` record                              | Email lands in spam, headers show `DMARC: BESTGUESSPASS` instead of `PASS`                         | Add TXT `_dmarc` with `v=DMARC1; p=none;`                                                                          |
+| DKIM record truncated by DNS provider's 255-char TXT limit | DKIM `dig` lookup returns nothing or partial value, Resend won't verify                            | Hostinger usually handles this, but if not, split the value into 255-char chunks each in quotes                    |
+| DNS edits in Hostinger but nameservers point elsewhere     | DNS records not visible via `dig`, Resend stays "Pending"                                          | Confirm `dig +short NS <domain>` returns Hostinger nameservers; if not, edit DNS at the actual nameserver provider |
 
 ## References
 

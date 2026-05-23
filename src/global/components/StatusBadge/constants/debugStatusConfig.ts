@@ -38,4 +38,3 @@ export const debugStatusConfig: Record<DebugStatus, DebugStatusConfig> = {
 export function getDebugStatusConfig(status: DebugStatus): DebugStatusConfig {
 	return debugStatusConfig[status];
 }
-

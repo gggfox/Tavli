@@ -59,18 +59,11 @@ export const run = mutation({
 				.collect();
 
 			const eligible = candidates
-				.filter(
-					(o) => o.dailyOrderNumber === undefined && BACKFILL_STATUSES.has(o.status)
-				)
+				.filter((o) => o.dailyOrderNumber === undefined && BACKFILL_STATUSES.has(o.status))
 				.sort((a, b) => (a.submittedAt ?? a.createdAt) - (b.submittedAt ?? b.createdAt));
 
 			for (const order of eligible) {
-				const dailyOrderNumber = await allocateNextOrderNumber(
-					ctx,
-					restaurant._id,
-					periodKey,
-					now
-				);
+				const dailyOrderNumber = await allocateNextOrderNumber(ctx, restaurant._id, periodKey, now);
 				await ctx.db.patch(order._id, {
 					dailyOrderNumber,
 					orderServiceDateKey,

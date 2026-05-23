@@ -19,9 +19,7 @@ const optionsSchema = z.object({
 
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.topMenuItems.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.topMenuItems.compute>>;
 
 function TopMenuItemsWidget({ options, context }: WidgetProps<Options>) {
 	const { t } = useTranslation();
@@ -46,14 +44,9 @@ function TopMenuItemsWidget({ options, context }: WidgetProps<Options>) {
 	return (
 		<ol className="space-y-1.5">
 			{query.data.map((row, i) => (
-				<li
-					key={row.menuItemId}
-					className="flex items-center justify-between gap-2 text-sm"
-				>
+				<li key={row.menuItemId} className="flex items-center justify-between gap-2 text-sm">
 					<span className="flex items-center gap-2 min-w-0">
-						<span className="text-faint-foreground tabular-nums w-5 text-right">
-							{i + 1}.
-						</span>
+						<span className="text-faint-foreground tabular-nums w-5 text-right">{i + 1}.</span>
 						<span className="truncate text-foreground">{row.menuItemName}</span>
 					</span>
 					<span className="text-xs text-faint-foreground shrink-0">
@@ -65,18 +58,17 @@ function TopMenuItemsWidget({ options, context }: WidgetProps<Options>) {
 	);
 }
 
-export const topMenuItemsDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: TOP_MENU_ITEMS_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_TOP_MENU_ITEMS_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_TOP_MENU_ITEMS_DESCRIPTION,
-		icon: ListOrdered,
-		requiredRole: "employee",
-		portfolioCapable: false,
-		supportsComparison: false,
-		maxRangeDays: 92,
-		defaultGrid: { w: 3, h: 5, minW: 2, minH: 3 },
-		optionsSchema,
-		defaultOptions: { limit: 10 },
-		Component: TopMenuItemsWidget,
-	});
+export const topMenuItemsDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: TOP_MENU_ITEMS_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_TOP_MENU_ITEMS_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_TOP_MENU_ITEMS_DESCRIPTION,
+	icon: ListOrdered,
+	requiredRole: "employee",
+	portfolioCapable: false,
+	supportsComparison: false,
+	maxRangeDays: 92,
+	defaultGrid: { w: 3, h: 5, minW: 2, minH: 3 },
+	optionsSchema,
+	defaultOptions: { limit: 10 },
+	Component: TopMenuItemsWidget,
+});

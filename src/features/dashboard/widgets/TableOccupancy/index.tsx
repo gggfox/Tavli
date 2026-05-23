@@ -17,9 +17,7 @@ export const TABLE_OCCUPANCY_TYPE = "tableOccupancy";
 const optionsSchema = z.object({});
 type Options = z.infer<typeof optionsSchema>;
 
-type Result = UnwrappedValue<
-	FunctionReturnType<typeof api.analytics.tableOccupancy.compute>
->;
+type Result = UnwrappedValue<FunctionReturnType<typeof api.analytics.tableOccupancy.compute>>;
 
 function TableOccupancyWidget({ context }: WidgetProps<Options>) {
 	const queryArgs =
@@ -46,8 +44,7 @@ function TableOccupancyWidget({ context }: WidgetProps<Options>) {
 
 	if (query.isPending && !query.data) return <WidgetLoading />;
 	if (query.error) return <WidgetError error={query.error as Error} />;
-	if (!query.data || query.data.every((row) => row.averageTables === 0))
-		return <WidgetEmpty />;
+	if (!query.data || query.data.every((row) => row.averageTables === 0)) return <WidgetEmpty />;
 
 	return (
 		<LineChart
@@ -63,18 +60,17 @@ function TableOccupancyWidget({ context }: WidgetProps<Options>) {
 	);
 }
 
-export const tableOccupancyDescriptor: WidgetDescriptor<Options> =
-	registerWidget<Options>({
-		type: TABLE_OCCUPANCY_TYPE,
-		i18nLabelKey: DashboardKeys.WIDGET_TABLE_OCCUPANCY_LABEL,
-		i18nDescriptionKey: DashboardKeys.WIDGET_TABLE_OCCUPANCY_DESCRIPTION,
-		icon: LayoutGrid,
-		requiredRole: "employee",
-		portfolioCapable: false,
-		supportsComparison: false,
-		maxRangeDays: 92,
-		defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
-		optionsSchema,
-		defaultOptions: {},
-		Component: TableOccupancyWidget,
-	});
+export const tableOccupancyDescriptor: WidgetDescriptor<Options> = registerWidget<Options>({
+	type: TABLE_OCCUPANCY_TYPE,
+	i18nLabelKey: DashboardKeys.WIDGET_TABLE_OCCUPANCY_LABEL,
+	i18nDescriptionKey: DashboardKeys.WIDGET_TABLE_OCCUPANCY_DESCRIPTION,
+	icon: LayoutGrid,
+	requiredRole: "employee",
+	portfolioCapable: false,
+	supportsComparison: false,
+	maxRangeDays: 92,
+	defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
+	optionsSchema,
+	defaultOptions: {},
+	Component: TableOccupancyWidget,
+});

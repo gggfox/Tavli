@@ -22,11 +22,7 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import {
-	getCurrentUserId,
-	isAdmin,
-	requireRestaurantStaffAccess,
-} from "./_util/auth";
+import { getCurrentUserId, isAdmin, requireRestaurantStaffAccess } from "./_util/auth";
 import { TABLE } from "./constants";
 
 type LayoutDoc = Doc<typeof TABLE.DASHBOARD_LAYOUTS>;
@@ -34,10 +30,7 @@ type LayoutDoc = Doc<typeof TABLE.DASHBOARD_LAYOUTS>;
 const MAX_NAME_LENGTH = 80;
 const MAX_LAYOUTS_PER_USER = 50;
 
-const scopeKindValidator = v.union(
-	v.literal("restaurant"),
-	v.literal("portfolio")
-);
+const scopeKindValidator = v.union(v.literal("restaurant"), v.literal("portfolio"));
 
 const widgetValidator = v.object({
 	instanceId: v.string(),
@@ -82,16 +75,9 @@ async function assertScopeAccess(
 ): AsyncReturn<true, NotAuthorizedErrorObject | NotFoundErrorObject> {
 	if (scopeKind === "restaurant") {
 		if (!restaurantId) {
-			return [
-				null,
-				new NotAuthorizedError("ERROR_DASHBOARD_RESTAURANT_REQUIRED").toObject(),
-			];
+			return [null, new NotAuthorizedError("ERROR_DASHBOARD_RESTAURANT_REQUIRED").toObject()];
 		}
-		const [, accessErr] = await requireRestaurantStaffAccess(
-			ctx,
-			userId,
-			restaurantId
-		);
+		const [, accessErr] = await requireRestaurantStaffAccess(ctx, userId, restaurantId);
 		if (accessErr) return [null, accessErr];
 		return [true, null];
 	}
@@ -105,15 +91,10 @@ async function assertScopeAccess(
 		.first();
 	if (anyMembership) return [true, null];
 
-	return [
-		null,
-		new NotAuthorizedError("ERROR_DASHBOARD_PORTFOLIO_NO_MEMBERSHIP").toObject(),
-	];
+	return [null, new NotAuthorizedError("ERROR_DASHBOARD_PORTFOLIO_NO_MEMBERSHIP").toObject()];
 }
 
-function validateName(
-	name: string
-): UserInputValidationErrorObject | null {
+function validateName(name: string): UserInputValidationErrorObject | null {
 	const trimmed = name.trim();
 	if (!trimmed) {
 		return new UserInputValidationError({
@@ -138,19 +119,11 @@ export const list = query({
 		scopeKind: scopeKindValidator,
 		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<LayoutDoc[], LayoutAccessErrors> {
+	handler: async function (ctx, args): AsyncReturn<LayoutDoc[], LayoutAccessErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
-		const [, scopeErr] = await assertScopeAccess(
-			ctx,
-			userId,
-			args.scopeKind,
-			args.restaurantId
-		);
+		const [, scopeErr] = await assertScopeAccess(ctx, userId, args.scopeKind, args.restaurantId);
 		if (scopeErr) return [null, scopeErr];
 
 		if (args.scopeKind === "restaurant") {
@@ -160,22 +133,15 @@ export const list = query({
 					q.eq("userId", userId).eq("restaurantId", args.restaurantId)
 				)
 				.collect();
-			rows.sort(
-				(a, b) =>
-					a.position - b.position || a._creationTime - b._creationTime
-			);
+			rows.sort((a, b) => a.position - b.position || a._creationTime - b._creationTime);
 			return [rows, null];
 		}
 
 		const rows = await ctx.db
 			.query(TABLE.DASHBOARD_LAYOUTS)
-			.withIndex("by_user_scopeKind", (q) =>
-				q.eq("userId", userId).eq("scopeKind", "portfolio")
-			)
+			.withIndex("by_user_scopeKind", (q) => q.eq("userId", userId).eq("scopeKind", "portfolio"))
 			.collect();
-		rows.sort(
-			(a, b) => a.position - b.position || a._creationTime - b._creationTime
-		);
+		rows.sort((a, b) => a.position - b.position || a._creationTime - b._creationTime);
 		return [rows, null];
 	},
 });
@@ -187,10 +153,7 @@ export const get = query({
 	args: {
 		layoutId: v.id(TABLE.DASHBOARD_LAYOUTS),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<LayoutDoc, LayoutAccessErrors> {
+	handler: async function (ctx, args): AsyncReturn<LayoutDoc, LayoutAccessErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -200,19 +163,14 @@ export const get = query({
 		}
 
 		if (layout.userId !== userId && !(await isAdmin(ctx, userId))) {
-			return [
-				null,
-				new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject(),
-			];
+			return [null, new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject()];
 		}
 
 		return [layout, null];
 	},
 });
 
-type CreateErrors =
-	| LayoutAccessErrors
-	| UserInputValidationErrorObject;
+type CreateErrors = LayoutAccessErrors | UserInputValidationErrorObject;
 
 /**
  * Create a new empty layout (or pre-populated via `config`) at the end of the
@@ -225,22 +183,14 @@ export const create = mutation({
 		name: v.string(),
 		config: v.optional(configValidator),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"dashboardLayouts">, CreateErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"dashboardLayouts">, CreateErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
 		const nameErr = validateName(args.name);
 		if (nameErr) return [null, nameErr];
 
-		const [, scopeErr] = await assertScopeAccess(
-			ctx,
-			userId,
-			args.scopeKind,
-			args.restaurantId
-		);
+		const [, scopeErr] = await assertScopeAccess(ctx, userId, args.scopeKind, args.restaurantId);
 		if (scopeErr) return [null, scopeErr];
 
 		const existing =
@@ -267,15 +217,13 @@ export const create = mutation({
 			];
 		}
 
-		const nextPosition =
-			existing.reduce((max, r) => Math.max(max, r.position), -1) + 1;
+		const nextPosition = existing.reduce((max, r) => Math.max(max, r.position), -1) + 1;
 
 		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.DASHBOARD_LAYOUTS, {
 			userId,
 			scopeKind: args.scopeKind,
-			restaurantId:
-				args.scopeKind === "restaurant" ? args.restaurantId : undefined,
+			restaurantId: args.scopeKind === "restaurant" ? args.restaurantId : undefined,
 			name: args.name.trim(),
 			position: nextPosition,
 			config: args.config ?? {
@@ -303,10 +251,7 @@ export const update = mutation({
 		position: v.optional(v.number()),
 		config: v.optional(configValidator),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"dashboardLayouts">, UpdateErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"dashboardLayouts">, UpdateErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -315,10 +260,7 @@ export const update = mutation({
 			return [null, new NotFoundError("Layout not found").toObject()];
 		}
 		if (layout.userId !== userId) {
-			return [
-				null,
-				new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject(),
-			];
+			return [null, new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject()];
 		}
 
 		const patch: Partial<LayoutDoc> = { updatedAt: Date.now() };
@@ -350,19 +292,11 @@ export const reorder = mutation({
 		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
 		orderedIds: v.array(v.id(TABLE.DASHBOARD_LAYOUTS)),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<true, LayoutAccessErrors> {
+	handler: async function (ctx, args): AsyncReturn<true, LayoutAccessErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
-		const [, scopeErr] = await assertScopeAccess(
-			ctx,
-			userId,
-			args.scopeKind,
-			args.restaurantId
-		);
+		const [, scopeErr] = await assertScopeAccess(ctx, userId, args.scopeKind, args.restaurantId);
 		if (scopeErr) return [null, scopeErr];
 
 		const now = Date.now();
@@ -371,10 +305,7 @@ export const reorder = mutation({
 			const layout = await ctx.db.get(id);
 			if (layout?.userId !== userId) continue;
 			if (layout.scopeKind !== args.scopeKind) continue;
-			if (
-				args.scopeKind === "restaurant" &&
-				layout.restaurantId !== args.restaurantId
-			) {
+			if (args.scopeKind === "restaurant" && layout.restaurantId !== args.restaurantId) {
 				continue;
 			}
 			await ctx.db.patch(id, { position: i, updatedAt: now });
@@ -390,10 +321,7 @@ export const remove = mutation({
 	args: {
 		layoutId: v.id(TABLE.DASHBOARD_LAYOUTS),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<true, LayoutAccessErrors> {
+	handler: async function (ctx, args): AsyncReturn<true, LayoutAccessErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -402,10 +330,7 @@ export const remove = mutation({
 			return [null, new NotFoundError("Layout not found").toObject()];
 		}
 		if (layout.userId !== userId) {
-			return [
-				null,
-				new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject(),
-			];
+			return [null, new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject()];
 		}
 
 		await ctx.db.delete(args.layoutId);
@@ -424,10 +349,7 @@ export const duplicate = mutation({
 		layoutId: v.id(TABLE.DASHBOARD_LAYOUTS),
 		name: v.optional(v.string()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"dashboardLayouts">, CreateErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"dashboardLayouts">, CreateErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
 		if (authErr) return [null, authErr];
 
@@ -436,10 +358,7 @@ export const duplicate = mutation({
 			return [null, new NotFoundError("Layout not found").toObject()];
 		}
 		if (source.userId !== userId) {
-			return [
-				null,
-				new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject(),
-			];
+			return [null, new NotAuthorizedError("ERROR_DASHBOARD_LAYOUT_NOT_OWNER").toObject()];
 		}
 
 		const requestedName = args.name ?? `${source.name} (copy)`;
@@ -470,8 +389,7 @@ export const duplicate = mutation({
 			];
 		}
 
-		const nextPosition =
-			peers.reduce((max, r) => Math.max(max, r.position), -1) + 1;
+		const nextPosition = peers.reduce((max, r) => Math.max(max, r.position), -1) + 1;
 
 		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.DASHBOARD_LAYOUTS, {

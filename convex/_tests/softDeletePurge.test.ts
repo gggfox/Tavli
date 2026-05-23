@@ -8,14 +8,8 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import {
-	RESTAURANT_MEMBER_ROLE,
-	USER_ROLES,
-} from "../constants";
-import {
-	DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS,
-	FEATURE_FLAGS,
-} from "../featureFlags";
+import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "../constants";
+import { DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS, FEATURE_FLAGS } from "../featureFlags";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -251,20 +245,13 @@ describe("softDeletePurge cron", () => {
 			if (tab) await ctx.db.patch(tab._id, { hardDeleteAfterAt: Date.now() - 1000 });
 		});
 
-		const result = await t.mutation(
-			internal.softDeletePurge.purgeExpiredSoftDeletes,
-			{}
-		);
+		const result = await t.mutation(internal.softDeletePurge.purgeExpiredSoftDeletes, {});
 		expect(result.sectionsPurged).toBe(1);
 		expect(result.tablesPurged).toBe(1);
 
-		const sectionRow = await t.run(async (ctx) =>
-			ctx.db.get(sectionId as Id<"sections">)
-		);
+		const sectionRow = await t.run(async (ctx) => ctx.db.get(sectionId as Id<"sections">));
 		expect(sectionRow).toBeNull();
-		const tableRow = await t.run(async (ctx) =>
-			ctx.db.get(tableId as Id<"tables">)
-		);
+		const tableRow = await t.run(async (ctx) => ctx.db.get(tableId as Id<"tables">));
 		expect(tableRow).toBeNull();
 
 		const auditEvents = await t.run(async (ctx) =>
@@ -277,9 +264,7 @@ describe("softDeletePurge cron", () => {
 			(e) => e.aggregateId === String(sectionId) && e.eventType === "sections.hard_deleted"
 		);
 		expect(sectionAudit).toBeDefined();
-		expect((sectionAudit?.payload as { name?: string } | undefined)?.name).toBe(
-			"Doomed"
-		);
+		expect((sectionAudit?.payload as { name?: string } | undefined)?.name).toBe("Doomed");
 
 		const tableAudit = await t.run(async (ctx) =>
 			ctx.db
@@ -306,10 +291,7 @@ describe("softDeletePurge cron", () => {
 			tableId: tableId as Id<"tables">,
 		});
 
-		const result = await t.mutation(
-			internal.softDeletePurge.purgeExpiredSoftDeletes,
-			{}
-		);
+		const result = await t.mutation(internal.softDeletePurge.purgeExpiredSoftDeletes, {});
 		expect(result.tablesPurged).toBe(0);
 		const row = await t.run(async (ctx) => ctx.db.get(tableId as Id<"tables">));
 		expect(row?.deletedAt).toBeTruthy();

@@ -11,7 +11,11 @@ import type { TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
 import { DialogHeader, Drawer } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
-import { getMondayYmdOfWeek, startOfDayMs, utcMsToYmdInTimezone } from "@/features/schedule/timezone";
+import {
+	getMondayYmdOfWeek,
+	startOfDayMs,
+	utcMsToYmdInTimezone,
+} from "@/features/schedule/timezone";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -83,7 +87,8 @@ function computeSubtitle(
 }
 
 function poolStatusLabel(status: string, t: TFunction): string {
-	if (status === TIP_POOL_STATUS.FINALIZED) return t(AdminStaffKeys.TEAM_DRAWER_TIPS_POOL_STATUS_FINALIZED);
+	if (status === TIP_POOL_STATUS.FINALIZED)
+		return t(AdminStaffKeys.TEAM_DRAWER_TIPS_POOL_STATUS_FINALIZED);
 	if (status === TIP_POOL_STATUS.PAID) return t(AdminStaffKeys.TEAM_DRAWER_TIPS_POOL_STATUS_PAID);
 	if (status === TIP_POOL_STATUS.OPEN) return t(AdminStaffKeys.TEAM_DRAWER_TIPS_POOL_STATUS_OPEN);
 	return status;
@@ -110,24 +115,33 @@ export function TeamMemberDrawer({
 	const isOwner = row ? isOwnerRowType(row) : false;
 	const isEmployeeAccount = row?.rowType === "member" && row.kind === "employeeAccount";
 
-	const resetPinMutation = useMutation({ mutationFn: useConvexMutation(api.employeeAccounts.resetEmployeePin) });
-	const removeMemberMutation = useMutation({ mutationFn: useConvexMutation(api.restaurantMembers.removeMember) });
-	const updateEmployeeAccountMutation = useConvexMutation(api.employeeAccounts.updateEmployeeAccount);
-	const generateEaUploadUrlMutation = useConvexMutation(api.employeeAccounts.getEmployeePhotoUploadUrl);
-	const generateUserUploadUrlMutation = useConvexMutation(api.userSettings.generateUserPhotoUploadUrl);
+	const resetPinMutation = useMutation({
+		mutationFn: useConvexMutation(api.employeeAccounts.resetEmployeePin),
+	});
+	const removeMemberMutation = useMutation({
+		mutationFn: useConvexMutation(api.restaurantMembers.removeMember),
+	});
+	const updateEmployeeAccountMutation = useConvexMutation(
+		api.employeeAccounts.updateEmployeeAccount
+	);
+	const generateEaUploadUrlMutation = useConvexMutation(
+		api.employeeAccounts.getEmployeePhotoUploadUrl
+	);
+	const generateUserUploadUrlMutation = useConvexMutation(
+		api.userSettings.generateUserPhotoUploadUrl
+	);
 	const setUserPhotoMutation = useConvexMutation(api.userSettings.setUserPhoto);
 	const [resetPinResult, setResetPinResult] = useState<string | null>(null);
 	const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 	const photoInputRef = useRef<HTMLInputElement>(null);
-	const isClerkBacked = row != null && (
-		(row.rowType === "member" && row.kind === "user") ||
-		row.rowType === "restaurantOwner" ||
-		row.rowType === "orgOwner"
-	);
-	const canEditPhoto = row != null && (
-		(isEmployeeAccount && row.rowType === "member" && row.removedAt == null) ||
-		isClerkBacked
-	);
+	const isClerkBacked =
+		row != null &&
+		((row.rowType === "member" && row.kind === "user") ||
+			row.rowType === "restaurantOwner" ||
+			row.rowType === "orgOwner");
+	const canEditPhoto =
+		row != null &&
+		((isEmployeeAccount && row.rowType === "member" && row.removedAt == null) || isClerkBacked);
 
 	const bounds = useMemo<RangeBounds | null>(() => {
 		if (!row) return null;
@@ -139,7 +153,14 @@ export function TeamMemberDrawer({
 			? { restaurantId, fromMs: bounds.fromMs, toMs: bounds.toMs }
 			: "skip";
 
-	type PerfData = { rows: Array<{ memberId: string; paidOrders: number; attributedRevenue: number; hoursWorked: number }> };
+	type PerfData = {
+		rows: Array<{
+			memberId: string;
+			paidOrders: number;
+			attributedRevenue: number;
+			hoursWorked: number;
+		}>;
+	};
 	const { data: perf } = useQuery({
 		...convexQuery(api.performance.getRestaurantPerformance, perfArgs),
 		select: unwrapResult<PerfData>,
@@ -172,7 +193,9 @@ export function TeamMemberDrawer({
 		const eaId = row?.rowType === "member" ? row.employeeAccountId : null;
 		if (!isEmployeeAccount || !eaId) return;
 		if (!confirm(t(AdminStaffKeys.TEAM_DRAWER_RESET_PIN_CONFIRM))) return;
-		const result = unwrapResult<{ pin: string }>(await resetPinMutation.mutateAsync({ employeeAccountId: eaId }));
+		const result = unwrapResult<{ pin: string }>(
+			await resetPinMutation.mutateAsync({ employeeAccountId: eaId })
+		);
 		setResetPinResult(result.pin);
 	};
 
@@ -188,14 +211,23 @@ export function TeamMemberDrawer({
 		if (!file || !row) return;
 		setIsUploadingPhoto(true);
 		try {
-		if (row.rowType === "member" && row.kind === "employeeAccount" && row.employeeAccountId) {
-			const generateUploadUrl = () => generateEaUploadUrlMutation({}) as Promise<[string, null] | [null, Error]>;
-			const storageId = await uploadImage(generateUploadUrl, file);
-				unwrapResult(await updateEmployeeAccountMutation({ employeeAccountId: row.employeeAccountId, photoStorageId: storageId }));
+			if (row.rowType === "member" && row.kind === "employeeAccount" && row.employeeAccountId) {
+				const generateUploadUrl = () =>
+					generateEaUploadUrlMutation({}) as Promise<[string, null] | [null, Error]>;
+				const storageId = await uploadImage(generateUploadUrl, file);
+				unwrapResult(
+					await updateEmployeeAccountMutation({
+						employeeAccountId: row.employeeAccountId,
+						photoStorageId: storageId,
+					})
+				);
 			} else {
 				const uid = "userId" in row ? row.userId : null;
 				if (!uid) return;
-				const generateUploadUrl = async (): Promise<[string, null] | [null, Error]> => [await generateUserUploadUrlMutation({}), null];
+				const generateUploadUrl = async (): Promise<[string, null] | [null, Error]> => [
+					await generateUserUploadUrlMutation({}),
+					null,
+				];
 				const storageId = await uploadImage(generateUploadUrl, file);
 				await setUserPhotoMutation({ photoStorageId: storageId, targetUserId: uid });
 			}
@@ -265,7 +297,9 @@ export function TeamMemberDrawer({
 							)}
 							{row.addedByEmail && (
 								<div className="text-xs text-muted-foreground">
-									<span className="font-medium">{t(AdminStaffKeys.TEAM_DRAWER_ADDED_BY_LABEL)}:</span>{" "}
+									<span className="font-medium">
+										{t(AdminStaffKeys.TEAM_DRAWER_ADDED_BY_LABEL)}:
+									</span>{" "}
 									{row.addedByEmail}
 								</div>
 							)}
@@ -298,11 +332,15 @@ export function TeamMemberDrawer({
 				{/* Reset PIN result */}
 				{resetPinResult && (
 					<div className="mx-5 mt-3 p-3 rounded-lg bg-muted border border-border space-y-2">
-						<p className="text-xs font-semibold text-foreground">{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_TITLE)}</p>
+						<p className="text-xs font-semibold text-foreground">
+							{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_TITLE)}
+						</p>
 						<p className="text-2xl font-mono font-bold tracking-[0.3em] text-foreground text-center">
 							{resetPinResult}
 						</p>
-						<p className="text-xs text-destructive text-center">{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_WARNING)}</p>
+						<p className="text-xs text-destructive text-center">
+							{t(AdminStaffKeys.TEAM_EMPLOYEE_PIN_WARNING)}
+						</p>
 					</div>
 				)}
 
@@ -324,11 +362,7 @@ export function TeamMemberDrawer({
 					<RangeToggle value={range} onChange={setRange} />
 				</div>
 
-				<PerformanceSection
-					isOwner={isOwner}
-					row={memberPerfRow}
-					currency={restaurantCurrency}
-				/>
+				<PerformanceSection isOwner={isOwner} row={memberPerfRow} currency={restaurantCurrency} />
 
 				<TipsSection
 					isOwner={isOwner}
@@ -418,12 +452,7 @@ function TipsSection({ isOwner, totalCents, perDay, currency }: Readonly<TipsSec
 			<h3 className="text-sm font-semibold text-foreground mb-3">
 				{t(AdminStaffKeys.TEAM_DRAWER_TIPS_TITLE)}
 			</h3>
-			<TipsBody
-				isOwner={isOwner}
-				totalCents={totalCents}
-				perDay={perDay}
-				currency={currency}
-			/>
+			<TipsBody isOwner={isOwner} totalCents={totalCents} perDay={perDay} currency={currency} />
 		</section>
 	);
 }
@@ -439,9 +468,7 @@ function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectio
 	}
 	if (perDay.length === 0) {
 		return (
-			<p className="text-sm text-faint-foreground">
-				{t(AdminStaffKeys.TEAM_DRAWER_TIPS_EMPTY)}
-			</p>
+			<p className="text-sm text-faint-foreground">{t(AdminStaffKeys.TEAM_DRAWER_TIPS_EMPTY)}</p>
 		);
 	}
 	return (
@@ -459,10 +486,7 @@ function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectio
 			</div>
 			<ul className="text-sm divide-y divide-border rounded border border-border">
 				{perDay.map((d) => (
-					<li
-						key={d.businessDate}
-						className="flex items-center justify-between px-3 py-2 gap-2"
-					>
+					<li key={d.businessDate} className="flex items-center justify-between px-3 py-2 gap-2">
 						<div className="flex flex-col min-w-0">
 							<span className="text-sm text-foreground">{d.businessDate}</span>
 							<span className="text-xs text-faint-foreground">
@@ -526,9 +550,7 @@ function KpiCard({ label, value }: Readonly<KpiCardProps>) {
 			<div className="text-[10px] uppercase tracking-wide text-faint-foreground truncate">
 				{label}
 			</div>
-			<div className="text-base font-semibold text-foreground tabular-nums truncate">
-				{value}
-			</div>
+			<div className="text-base font-semibold text-foreground tabular-nums truncate">{value}</div>
 		</div>
 	);
 }

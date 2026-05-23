@@ -14,10 +14,7 @@ function App() {
 	}
 
 	return (
-		<div
-			className="h-full flex flex-col overflow-hidden bg-background"
-			
-		>
+		<div className="h-full flex flex-col overflow-hidden bg-background">
 			<WelcomeSection />
 		</div>
 	);

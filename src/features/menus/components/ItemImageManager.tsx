@@ -76,9 +76,8 @@ export function ItemImageManager({
 			className="px-3 py-3 rounded-b-lg space-y-3 outline-none bg-muted border-l border-border border-r border-border border-b border-border"
 			tabIndex={0}
 			onPaste={handlePaste}
-			
 		>
-			<span className="text-xs font-medium text-faint-foreground" >
+			<span className="text-xs font-medium text-faint-foreground">
 				{t(MenusKeys.FORM_IMAGE_HEADER)}
 			</span>
 
@@ -89,7 +88,6 @@ export function ItemImageManager({
 						onClick={handleRemove}
 						disabled={removeImageMut.isPending}
 						className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium disabled:opacity-50 border border-destructive text-destructive"
-						
 					>
 						<Trash2 size={12} /> {t(MenusKeys.FORM_REMOVE)}
 					</button>
@@ -97,10 +95,7 @@ export function ItemImageManager({
 			)}
 
 			<div className="flex items-center gap-3">
-				<label
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer hover:bg-hover border border-border text-muted-foreground"
-					
-				>
+				<label className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer hover:bg-hover border border-border text-muted-foreground">
 					<ImagePlus size={14} />
 					{currentImageUrl ? t(MenusKeys.FORM_REPLACE_IMAGE) : t(MenusKeys.FORM_UPLOAD_IMAGE)}
 					<input
@@ -112,7 +107,7 @@ export function ItemImageManager({
 					/>
 				</label>
 				{!preview && (
-					<span className="flex items-center gap-1 text-xs text-faint-foreground" >
+					<span className="flex items-center gap-1 text-xs text-faint-foreground">
 						<ClipboardPaste size={12} /> {t(MenusKeys.FORM_PASTE_HINT)}
 					</span>
 				)}

@@ -19,12 +19,8 @@ function OrdersPage() {
 		<div className="p-6 flex flex-col h-full">
 			<div className="mb-6 flex items-start justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-semibold text-foreground">
-						{t(OrdersKeys.PAGE_TITLE)}
-					</h1>
-					<p className="mt-2 text-sm text-muted-foreground">
-						{t(OrdersKeys.PAGE_DESCRIPTION)}
-					</p>
+					<h1 className="text-2xl font-semibold text-foreground">{t(OrdersKeys.PAGE_TITLE)}</h1>
+					<p className="mt-2 text-sm text-muted-foreground">{t(OrdersKeys.PAGE_DESCRIPTION)}</p>
 				</div>
 				{restaurant && canExport ? (
 					<ExportButton restaurantId={restaurant._id} kind="orders" />
@@ -43,11 +39,7 @@ function OrdersContent({
 }: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
 	if (isLoading) return <OrderDashboardSkeleton />;
 	if (!restaurantId) {
-		return (
-			<p className="text-sm text-faint-foreground" >
-				Please set up your restaurant first.
-			</p>
-		);
+		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
 	}
 	return <OrderDashboard restaurantId={restaurantId} />;
 }

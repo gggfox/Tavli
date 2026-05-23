@@ -17,16 +17,8 @@ import {
 	NotFoundErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import {
-	requireSharedEmployeeSession,
-	verifyEmployeePin,
-} from "./_util/auth";
-import {
-	ATTENDANCE_STATUS,
-	CLOCK_EVENT_SOURCE,
-	CLOCK_EVENT_TYPE,
-	TABLE,
-} from "./constants";
+import { requireSharedEmployeeSession, verifyEmployeePin } from "./_util/auth";
+import { ATTENDANCE_STATUS, CLOCK_EVENT_SOURCE, CLOCK_EVENT_TYPE, TABLE } from "./constants";
 
 type SharedErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
 
@@ -301,10 +293,7 @@ export const selfClockInWithPin = mutation({
 		pin: v.string(),
 		shiftId: v.optional(v.id(TABLE.SHIFTS)),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"clockEvents">, SharedErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"clockEvents">, SharedErrors> {
 		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
 		if (sessErr) return [null, sessErr];
 
@@ -375,10 +364,7 @@ export const selfClockOutWithPin = mutation({
 		shiftId: v.optional(v.id(TABLE.SHIFTS)),
 		reason: v.optional(v.string()),
 	},
-	handler: async function (
-		ctx,
-		args
-	): AsyncReturn<Id<"clockEvents">, SharedErrors> {
+	handler: async function (ctx, args): AsyncReturn<Id<"clockEvents">, SharedErrors> {
 		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
 		if (sessErr) return [null, sessErr];
 

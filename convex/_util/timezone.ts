@@ -59,11 +59,7 @@ export function getZoneOffsetMs(timezone: string, utcMs: number): number {
  * Convert a local `(YYYY-MM-DD, minutes-from-midnight)` in `timezone` to UTC ms.
  * DST-safe via two-pass offset resolution.
  */
-export function ymdHmToUtcMs(
-	ymd: string,
-	minutesFromMidnight: number,
-	timezone: string
-): number {
+export function ymdHmToUtcMs(ymd: string, minutesFromMidnight: number, timezone: string): number {
 	const [y, mo, d] = ymd.split("-").map(Number);
 	if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) {
 		throw new TypeError(`Invalid YMD string: ${ymd}`);

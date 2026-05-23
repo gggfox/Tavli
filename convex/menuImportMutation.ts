@@ -11,7 +11,10 @@ import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId, isAdmin, requireRestaurantManagerOrAbove } from "./_util/auth";
 import { DEFAULT_PREP_STATION, TABLE } from "./constants";
 
-type BatchInsertErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
+type BatchInsertErrors =
+	| NotAuthenticatedErrorObject
+	| NotAuthorizedErrorObject
+	| NotFoundErrorObject;
 
 // =============================================================================
 // Internal query for admin check (used by the "use node" action)

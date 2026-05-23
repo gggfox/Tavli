@@ -59,9 +59,7 @@ export const create = mutation({
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [
-							{ field: "sectionId", message: "Cannot create a table in a deleted section" },
-						],
+						fields: [{ field: "sectionId", message: "Cannot create a table in a deleted section" }],
 					}).toObject(),
 				];
 			}
@@ -69,9 +67,7 @@ export const create = mutation({
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [
-							{ field: "sectionId", message: "Cannot create a table in a hidden section" },
-						],
+						fields: [{ field: "sectionId", message: "Cannot create a table in a hidden section" }],
 					}).toObject(),
 				];
 			}
@@ -178,7 +174,10 @@ export const backfillCapacity = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		defaultCapacity: v.optional(v.number()),
 	},
-	handler: async function (ctx, args): AsyncReturn<{ updated: number }, AuthErrors | NotFoundErrorObject> {
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<{ updated: number }, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 
@@ -364,9 +363,7 @@ export const getActiveByRestaurant = query({
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
 		const hiddenOrDeletedSectionIds = new Set(
-			sections
-				.filter((s) => s.deletedAt !== undefined || s.isActive === false)
-				.map((s) => s._id)
+			sections.filter((s) => s.deletedAt !== undefined || s.isActive === false).map((s) => s._id)
 		);
 		return tables.filter(
 			(t) =>
