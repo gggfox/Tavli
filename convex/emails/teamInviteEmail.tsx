@@ -53,7 +53,14 @@ export default function TeamInviteEmail({
 		<Html lang="en">
 			<Head />
 			<Preview>{previewText}</Preview>
-			<Body style={{ backgroundColor: colors.bg, margin: 0, padding: "32px 16px", fontFamily: "Arial, sans-serif" }}>
+			<Body
+				style={{
+					backgroundColor: colors.bg,
+					margin: 0,
+					padding: "32px 16px",
+					fontFamily: "Arial, sans-serif",
+				}}
+			>
 				<Container
 					style={{
 						backgroundColor: colors.card,
@@ -75,26 +82,51 @@ export default function TeamInviteEmail({
 						Tavli
 					</Heading>
 
-					<Text style={{ color: colors.text, fontSize: "16px", lineHeight: "24px", margin: "0 0 16px" }}>
+					<Text
+						style={{ color: colors.text, fontSize: "16px", lineHeight: "24px", margin: "0 0 16px" }}
+					>
 						{greeting}
 					</Text>
 
-					<Text style={{ color: colors.text, fontSize: "16px", lineHeight: "24px", margin: "0 0 12px" }}>
+					<Text
+						style={{ color: colors.text, fontSize: "16px", lineHeight: "24px", margin: "0 0 12px" }}
+					>
 						{bodyIntro}
 					</Text>
 
-					<Text style={{ color: colors.textSecondary, fontSize: "15px", lineHeight: "22px", margin: "0 0 8px" }}>
+					<Text
+						style={{
+							color: colors.textSecondary,
+							fontSize: "15px",
+							lineHeight: "22px",
+							margin: "0 0 8px",
+						}}
+					>
 						{bodyRole}
 					</Text>
 
 					{bodyRestaurants ? (
-						<Text style={{ color: colors.textSecondary, fontSize: "15px", lineHeight: "22px", margin: "0 0 8px" }}>
+						<Text
+							style={{
+								color: colors.textSecondary,
+								fontSize: "15px",
+								lineHeight: "22px",
+								margin: "0 0 8px",
+							}}
+						>
 							{bodyRestaurants}
 						</Text>
 					) : null}
 
 					{bodyInviter ? (
-						<Text style={{ color: colors.textSecondary, fontSize: "15px", lineHeight: "22px", margin: "0 0 24px" }}>
+						<Text
+							style={{
+								color: colors.textSecondary,
+								fontSize: "15px",
+								lineHeight: "22px",
+								margin: "0 0 24px",
+							}}
+						>
 							{bodyInviter}
 						</Text>
 					) : (
@@ -141,7 +173,14 @@ export default function TeamInviteEmail({
 						{footerIgnore}
 					</Text>
 
-					<Text style={{ color: colors.textSecondary, fontSize: "12px", lineHeight: "18px", margin: "8px 0 0" }}>
+					<Text
+						style={{
+							color: colors.textSecondary,
+							fontSize: "12px",
+							lineHeight: "18px",
+							margin: "8px 0 0",
+						}}
+					>
 						{footerSentBy}
 					</Text>
 				</Container>

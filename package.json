@@ -14,7 +14,8 @@
 		"lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
 		"format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
 		"format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
-		"email:dev": "email dev --dir emails --port 3001"
+		"email:dev": "email dev --dir emails --port 3001",
+		"prepare": "husky"
 	},
 	"dependencies": {
 		"@ai-sdk/openai": "^3.0.64",
@@ -82,7 +83,9 @@
 		"eslint-plugin-boundaries": "^5.3.1",
 		"eslint-plugin-react": "^7.37.0",
 		"eslint-plugin-react-hooks": "^5.1.0",
+		"husky": "^9.1.7",
 		"jsdom": "^27.0.0",
+		"lint-staged": "^17.0.6",
 		"prettier": "^3.4.0",
 		"react-email": "^6.5.0",
 		"typescript": "^5.7.2",
@@ -94,6 +97,15 @@
 	"pnpm": {
 		"onlyBuiltDependencies": [
 			"esbuild"
+		]
+	},
+	"lint-staged": {
+		"*.{js,jsx,ts,tsx}": [
+			"eslint --fix",
+			"prettier --write"
+		],
+		"*.{json,css,md}": [
+			"prettier --write"
 		]
 	}
 }
