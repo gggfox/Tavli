@@ -1,7 +1,10 @@
 {
-  "plugins": {
-    "stripe": {
+	"plugins": {
+		"stripe": {
+			"enabled": true
+    },
+    "convex": {
       "enabled": true
     }
-  }
+	}
 }

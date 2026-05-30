@@ -19,3 +19,14 @@ attendance drawer follow-ups
 
 - menu upload pdf
 - chatbot whatsapp
+
+# 21 may 2026
+
+- add waiter id to excel
+- separar ordenes barra y cocia
+- drag and drop de mesa
+- employee role menu visualization (cant edit)
+- dashboard
+- ipad visualization,
+- cell visualization
+- jorge accessos
