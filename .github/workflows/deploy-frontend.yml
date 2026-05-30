@@ -71,5 +71,10 @@ jobs:
     steps:
       - name: Trigger Dokploy webhook
         run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.DOKPLOY_WEBHOOK_URL }}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.DOKPLOY_WEBHOOK_URL }}")
+          echo "Dokploy responded with HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Dokploy webhook failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
