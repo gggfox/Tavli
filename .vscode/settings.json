@@ -39,8 +39,8 @@
 
 	// Code actions on save (linting fixes and import organization)
 	"editor.codeActionsOnSave": {
-		"source.fixAll.eslint": "explicit",
-		"source.organizeImports": "explicit"
+		"source.fixAll.eslint": "always",
+		"source.organizeImports": "always"
 	},
 
 	// ESLint extension settings

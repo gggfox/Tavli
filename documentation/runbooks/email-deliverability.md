@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This runbook covers transactional email delivery for Tavli — currently used by the member invitation flow (`convex/inviteActions.ts`), and any future transactional email (password resets, receipts, reservation confirmations, etc.).
+This runbook covers transactional email delivery for Tavli — currently used by the member invitation flow (`convex/inviteActions.ts` + `convex/emails/teamInviteEmail.tsx`), and any future transactional email (password resets, receipts, reservation confirmations, etc.).
 
 Symptom this runbook addresses: **an email shows "Delivered" in the Resend dashboard but lands in the recipient's spam folder** (or worse, never reaches the inbox at all).
 
@@ -96,7 +96,15 @@ Open the email's HTML and check:
 - Link-to-text ratio reasonable? Emails that are mostly one big link score as suspicious.
 - From-name and from-domain coherent? (`Tavli <invites@unrelated-brand.com>` is a yellow flag.)
 
-The current invitation template at `convex/inviteActions.ts` has a sparse HTML body, no plain-text alternative, and no `List-Unsubscribe` header — all of which contribute to spam scoring. Improving the template is the single biggest deliverability lever.
+The invitation template lives in `convex/emails/teamInviteEmail.tsx` (React Email). Preview wrappers are in `emails/` for local dev. It renders bilingual HTML and plain-text bodies (`en` / `es`, based on the invited restaurant's `defaultLanguage`) before send. Preview locally with:
+
+```bash
+pnpm email:dev
+```
+
+Then open `http://localhost:3001` and select `teamInviteEmail.tsx` (English) or `teamInviteEmailEs.tsx` (Spanish).
+
+For deliverability, the send path includes both `html` and `text` in the Resend API payload. One-to-one transactional invites do not include `List-Unsubscribe` (not bulk marketing).
 
 ### 4. Check engagement signals
 

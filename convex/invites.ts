@@ -30,6 +30,8 @@ import {
 	TABLE,
 	USER_ROLES,
 } from "./constants";
+import { buildInviterDisplayName } from "./emails/contextHelpers";
+import { resolveInviteLocale } from "./emails/locale";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -490,6 +492,58 @@ export const getByIdInternal = internalQuery({
 	args: { invitationId: v.id(TABLE.INVITATIONS) },
 	handler: async (ctx, args) => {
 		return await ctx.db.get(args.invitationId);
+	},
+});
+
+export const getInviteEmailContext = internalQuery({
+	args: { invitationId: v.id(TABLE.INVITATIONS) },
+	handler: async (ctx, args) => {
+		const invitation = await ctx.db.get(args.invitationId);
+		if (!invitation || invitation.status !== INVITATION_STATUS.PENDING) return null;
+
+		const org = await ctx.db.get(invitation.organizationId);
+		if (!org) return null;
+
+		const inviter = await fetchUserRoleRecord(ctx, invitation.invitedBy);
+		const inviterDisplayName = inviter ? buildInviterDisplayName(inviter) : null;
+
+		const restaurantNames: string[] = [];
+		let defaultLanguage: string | undefined;
+
+		if (invitation.restaurantIds.length > 0) {
+			const firstRestaurant = await ctx.db.get(invitation.restaurantIds[0]);
+			defaultLanguage = firstRestaurant?.defaultLanguage;
+
+			for (const restaurantId of invitation.restaurantIds) {
+				const restaurant = await ctx.db.get(restaurantId);
+				if (restaurant) restaurantNames.push(restaurant.name);
+			}
+		} else {
+			const orgRestaurants = await ctx.db
+				.query(TABLE.RESTAURANTS)
+				.withIndex("by_organization", (q) => q.eq("organizationId", invitation.organizationId))
+				.collect();
+
+			const firstActive = orgRestaurants
+				.filter((r) => r.isActive)
+				.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))[0];
+
+			defaultLanguage = firstActive?.defaultLanguage;
+		}
+
+		const locale = resolveInviteLocale(defaultLanguage);
+
+		return {
+			email: invitation.email,
+			token: invitation.token,
+			role: invitation.role as "owner" | "manager" | "employee",
+			expiresAt: invitation.expiresAt,
+			inviteeFirstName: invitation.firstName,
+			organizationName: org.name,
+			restaurantNames,
+			inviterDisplayName,
+			locale,
+		};
 	},
 });
 
