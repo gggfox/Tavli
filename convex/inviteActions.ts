@@ -1,7 +1,10 @@
+"use node";
+
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
-import { INVITATION_STATUS, TABLE } from "./constants";
+import { renderTeamInviteEmail } from "./emails/renderTeamInviteEmail";
+import { TABLE } from "./constants";
 
 /**
  * Sends invitation email via Resend. Requires RESEND_API_KEY and RESEND_FROM in Convex env.
@@ -9,10 +12,10 @@ import { INVITATION_STATUS, TABLE } from "./constants";
 export const sendInviteEmail = internalAction({
 	args: { invitationId: v.id(TABLE.INVITATIONS) },
 	handler: async (ctx, args) => {
-		const invitation = await ctx.runQuery(internal.invites.getByIdInternal, {
+		const context = await ctx.runQuery(internal.invites.getInviteEmailContext, {
 			invitationId: args.invitationId,
 		});
-		if (!invitation || invitation.status !== INVITATION_STATUS.PENDING) return;
+		if (!context) return;
 
 		const apiKey = process.env.RESEND_API_KEY;
 		const from = process.env.RESEND_FROM_ADDRESS ?? process.env.RESEND_FROM;
@@ -26,7 +29,18 @@ export const sendInviteEmail = internalAction({
 			return;
 		}
 
-		const acceptUrl = `${appUrl.replace(/\/$/, "")}/invites/${invitation.token}`;
+		const acceptUrl = `${appUrl.replace(/\/$/, "")}/invites/${context.token}`;
+		const { subject, html, text } = await renderTeamInviteEmail({
+			locale: context.locale,
+			inviteeEmail: context.email,
+			inviteeFirstName: context.inviteeFirstName,
+			organizationName: context.organizationName,
+			role: context.role,
+			restaurantNames: context.restaurantNames,
+			inviterDisplayName: context.inviterDisplayName,
+			acceptUrl,
+			expiresAt: context.expiresAt,
+		});
 
 		const res = await fetch("https://api.resend.com/emails", {
 			method: "POST",
@@ -36,15 +50,16 @@ export const sendInviteEmail = internalAction({
 			},
 			body: JSON.stringify({
 				from,
-				to: [invitation.email],
-				subject: "You're invited to join a restaurant organization",
-				html: `<p>You've been invited to Tavli (${invitation.role}).</p><p><a href="${acceptUrl}">Accept invitation</a></p>`,
+				to: [context.email],
+				subject,
+				html,
+				text,
 			}),
 		});
 
 		if (!res.ok) {
-			const text = await res.text();
-			console.error("[inviteActions] Resend error:", res.status, text);
+			const responseText = await res.text();
+			console.error("[inviteActions] Resend error:", res.status, responseText);
 		}
 	},
 });
