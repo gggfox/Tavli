@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import type { FunctionReturnType } from "convex/server";
 import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
+import { DEFAULT_RESERVATION_SETTINGS } from "convex/constants";
 
 type TableDoc = Doc<"tables">;
 type SectionDoc = Doc<"sections">;
@@ -26,6 +27,7 @@ export interface TimelineData {
 	locksByTable: Map<string, TableLockDoc[]>;
 	openHour: number;
 	closeHour: number;
+	minAdvanceMinutes: number;
 	isLoading: boolean;
 }
 
@@ -71,6 +73,11 @@ export function useTimelineData(
 		),
 		enabled: Boolean(restaurantId),
 		select: unwrapResult<TableLockDoc[]>,
+	});
+
+	const settingsQuery = useQuery({
+		...convexQuery(api.reservationSettings.get, restaurantId ? { restaurantId } : "skip"),
+		enabled: Boolean(restaurantId),
 	});
 
 	const openHour = parseHourFromHHMM(restaurant?.openTime, 10);
@@ -161,6 +168,9 @@ export function useTimelineData(
 		return byTable;
 	}, [locksQuery.data]);
 
+	const minAdvanceMinutes =
+		settingsQuery.data?.minAdvanceMinutes ?? DEFAULT_RESERVATION_SETTINGS.minAdvanceMinutes;
+
 	return {
 		sections,
 		reservationsByTable,
@@ -168,10 +178,12 @@ export function useTimelineData(
 		locksByTable,
 		openHour,
 		closeHour,
+		minAdvanceMinutes,
 		isLoading:
 			reservationsQuery.isLoading ||
 			tablesQuery.isLoading ||
 			sectionsQuery.isLoading ||
-			locksQuery.isLoading,
+			locksQuery.isLoading ||
+			settingsQuery.isLoading,
 	};
 }

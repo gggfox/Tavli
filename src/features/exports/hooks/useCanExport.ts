@@ -8,10 +8,12 @@
  * Authorization paths (any one of these qualifies):
  *   - platform admin (`userRoles.roles` contains `admin`)
  *   - org owner whose `userRoles.organizationId` matches the restaurant's org
+ *   - restaurant document owner (`restaurants.ownerId`)
  *   - active restaurant member with the manager role
  */
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { unwrapResult } from "@/global/utils";
+import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -22,13 +24,15 @@ import { useMemo } from "react";
 
 export function useCanExport(
 	restaurantId: Id<"restaurants"> | undefined,
-	organizationId: Id<"organizations"> | undefined
+	organizationId: Id<"organizations"> | undefined,
+	restaurantOwnerId?: string
 ): { canExport: boolean; isLoading: boolean } {
-	const { isAuthenticated } = useConvexAuth();
+	const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+	const { user, isLoaded: isClerkLoaded } = useUser();
 	const { roles, organizationId: userOrgId, isLoading: rolesLoading } = useCurrentUserRoles();
 	const { data: myMemberships, isLoading: membershipsLoading } = useQuery({
 		...convexQuery(api.restaurantMembers.listByUser, {}),
-		enabled: isAuthenticated,
+		enabled: isAuthenticated && !isAuthLoading,
 		select: unwrapResult<Doc<"restaurantMembers">[]>,
 	});
 
@@ -47,8 +51,15 @@ export function useCanExport(
 		);
 	}, [myMemberships, restaurantId]);
 
+	const isRestaurantDocumentOwner = Boolean(
+		restaurantOwnerId && user?.id && user.id === restaurantOwnerId
+	);
+
 	return {
-		canExport: Boolean(restaurantId && (isAdmin || isOrgOwner || isManager)),
-		isLoading: rolesLoading || (isAuthenticated && membershipsLoading),
+		canExport: Boolean(
+			restaurantId && (isAdmin || isOrgOwner || isManager || isRestaurantDocumentOwner)
+		),
+		isLoading:
+			rolesLoading || !isClerkLoaded || isAuthLoading || (isAuthenticated && membershipsLoading),
 	};
 }

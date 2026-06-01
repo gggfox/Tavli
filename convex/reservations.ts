@@ -11,6 +11,8 @@
  * - `create`                   : public mutation (UI path).
  * - `getAvailability`          : public query (used by the customer form & bot).
  * - `confirm`                  : staff-only; assigns tableIds.
+ * - `reschedule`               : staff-only; moves time and/or tables (timeline DnD).
+ * - `reconfirm`                : staff-only; reopens cancelled / no_show as confirmed.
  * - `cancel`                   : staff or contact owner.
  * - `markSeated` / markCompleted: staff-only state transitions.
  * - `listForRange` /
@@ -21,6 +23,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+	ConflictError,
 	ConflictErrorObject,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
@@ -48,7 +51,12 @@ import {
 	contactValidator,
 	createReservationCore,
 	CreateErrors,
+	applyPerBlockTableMove,
+	buildReopenToConfirmedPatch,
 	ensureConfirmable,
+	ensureReschedulable,
+	ensureTerminalRecoverable,
+	isTerminalRecoverable,
 	findSuggestedTimes,
 	isPartyBookableAt,
 	loadAndValidateTables,
@@ -347,6 +355,245 @@ export const confirm = mutation({
 });
 
 // ============================================================================
+// Reschedule: staff moves time and/or tables (timeline drag-and-drop)
+// ============================================================================
+
+type RescheduleErrors =
+	| StaffAuthErrors
+	| NotFoundErrorObject
+	| UserInputValidationErrorObject
+	| ConflictErrorObject;
+
+/**
+ * Timeline reschedule: optional new `startsAt` (recomputes `endsAt` from turn
+ * settings) and/or per-block table move via `fromTableId` / `toTableId`.
+ * `toTableId: null` drops the dragged table onto the unassigned row.
+ */
+export const reschedule = mutation({
+	args: {
+		reservationId: v.id(TABLE.RESERVATIONS),
+		startsAt: v.optional(v.number()),
+		fromTableId: v.optional(v.id(TABLE.TABLES)),
+		toTableId: v.optional(v.union(v.id(TABLE.TABLES), v.null())),
+		/** When true, cancelled / no_show rows reopen as confirmed before applying the move. */
+		reopen: v.optional(v.literal(true)),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, RescheduleErrors> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+		const reservation = await ctx.db.get(args.reservationId);
+		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
+
+		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
+		if (restError) return [null, restError];
+
+		const reopening = args.reopen === true;
+		if (reopening) {
+			const recoverError = ensureTerminalRecoverable(reservation.status);
+			if (recoverError) return [null, recoverError];
+		} else {
+			const stateError = ensureReschedulable(reservation.status);
+			if (stateError) return [null, stateError];
+		}
+
+		const hasTimeChange = args.startsAt !== undefined;
+		const hasTableChange = args.fromTableId !== undefined || args.toTableId !== undefined;
+		if (!hasTimeChange && !hasTableChange) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "startsAt", message: "No reschedule changes provided" }],
+				}).toObject(),
+			];
+		}
+
+		let startsAt = reservation.startsAt;
+		let endsAt = reservation.endsAt;
+
+		if (hasTimeChange) {
+			const settings = await loadEffectiveSettings(ctx, reservation.restaurantId);
+			const turnMinutes = computeTurnMinutes(settings, reservation.partySize);
+			startsAt = args.startsAt!;
+			endsAt = computeEndsAt(startsAt, turnMinutes);
+			const now = Date.now();
+			if (!isWithinHorizon(settings, startsAt, now)) {
+				return [null, new ConflictError("ERROR_OUTSIDE_BOOKING_HORIZON").toObject()];
+			}
+			if (intersectsBlackout(settings, startsAt, endsAt)) {
+				return [null, new ConflictError("ERROR_BLACKOUT_WINDOW").toObject()];
+			}
+		}
+
+		let newTableIds = reservation.tableIds;
+		if (hasTableChange) {
+			if (args.fromTableId !== undefined && !reservation.tableIds.includes(args.fromTableId)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "fromTableId", message: "Table is not part of the reservation" }],
+					}).toObject(),
+				];
+			}
+			newTableIds = applyPerBlockTableMove(reservation.tableIds, args.fromTableId, args.toTableId);
+		}
+
+		const effectiveStatus = reopening ? RESERVATION_STATUS.CONFIRMED : reservation.status;
+		if (effectiveStatus === RESERVATION_STATUS.SEATED && newTableIds.length === 0) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{
+							field: "tableIds",
+							message: "Seated reservations must keep at least one table",
+						},
+					],
+				}).toObject(),
+			];
+		}
+
+		let loadedTables: Doc<typeof TABLE.TABLES>[] = [];
+		if (newTableIds.length > 0) {
+			const selectionError = validateTableSelection(newTableIds);
+			if (selectionError) return [null, selectionError];
+
+			const [tables, validateError] = await loadAndValidateTables(
+				ctx,
+				newTableIds,
+				reservation.restaurantId
+			);
+			if (validateError) return [null, validateError];
+			loadedTables = tables;
+
+			if (!requiredCapacityCovered(loadedTables, reservation.partySize)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [
+							{
+								field: "tableIds",
+								message: "Selected tables do not cover the party size",
+							},
+						],
+					}).toObject(),
+				];
+			}
+		}
+
+		const conflictError = await checkTablesFreeForReservation(ctx, loadedTables, {
+			_id: reservation._id,
+			startsAt,
+			endsAt,
+		});
+		if (conflictError) return [null, conflictError];
+
+		const now = Date.now();
+		await ctx.db.patch(reservation._id, {
+			...(hasTimeChange && { startsAt, endsAt }),
+			...(hasTableChange && { tableIds: newTableIds }),
+			...(reopening && buildReopenToConfirmedPatch(reservation, now)),
+			updatedAt: now,
+		});
+
+		if (reservation.sessionId && hasTableChange) {
+			const session = await ctx.db.get(reservation.sessionId);
+			if (session) {
+				const sessionTableMoved =
+					args.fromTableId !== undefined && session.tableId === args.fromTableId;
+				if (sessionTableMoved) {
+					const nextSessionTableId =
+						args.toTableId !== undefined &&
+						args.toTableId !== null &&
+						newTableIds.includes(args.toTableId)
+							? args.toTableId
+							: newTableIds[0];
+					if (nextSessionTableId) {
+						await ctx.db.patch(session._id, { tableId: nextSessionTableId });
+					}
+				}
+			}
+		}
+
+		return [reservation._id, null];
+	},
+});
+
+// ============================================================================
+// Reconfirm: reopen cancelled / no_show (drawer)
+// ============================================================================
+
+type ReconfirmErrors =
+	| StaffAuthErrors
+	| NotFoundErrorObject
+	| UserInputValidationErrorObject
+	| ConflictErrorObject;
+
+/**
+ * Reopens a terminal reservation as confirmed. Optionally assigns tables
+ * (same validation as confirm) when `tableIds` is provided.
+ */
+export const reconfirm = mutation({
+	args: {
+		reservationId: v.id(TABLE.RESERVATIONS),
+		tableIds: v.optional(v.array(v.id(TABLE.TABLES))),
+	},
+	handler: async function (ctx, args): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, ReconfirmErrors> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+		const reservation = await ctx.db.get(args.reservationId);
+		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
+
+		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
+		if (restError) return [null, restError];
+
+		const recoverError = ensureTerminalRecoverable(reservation.status);
+		if (recoverError) return [null, recoverError];
+
+		let tableIds = reservation.tableIds;
+		if (args.tableIds !== undefined) {
+			const selectionError = validateTableSelection(args.tableIds);
+			if (selectionError) return [null, selectionError];
+
+			const [tables, validateError] = await loadAndValidateTables(
+				ctx,
+				args.tableIds,
+				reservation.restaurantId
+			);
+			if (validateError) return [null, validateError];
+
+			const conflictError = await checkTablesFreeForReservation(ctx, tables, reservation);
+			if (conflictError) return [null, conflictError];
+
+			if (!requiredCapacityCovered(tables, reservation.partySize)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [
+							{
+								field: "tableIds",
+								message: "Selected tables do not cover the party size",
+							},
+						],
+					}).toObject(),
+				];
+			}
+			tableIds = args.tableIds;
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(reservation._id, {
+			...buildReopenToConfirmedPatch(reservation, now),
+			...(args.tableIds !== undefined && { tableIds }),
+		});
+
+		return [reservation._id, null];
+	},
+});
+
+// ============================================================================
 // Cancel
 // ============================================================================
 
@@ -400,7 +647,11 @@ export const cancel = mutation({
 // Mark seated / completed
 // ============================================================================
 
-type MarkSeatedErrors = StaffAuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
+type MarkSeatedErrors =
+	| StaffAuthErrors
+	| NotFoundErrorObject
+	| UserInputValidationErrorObject
+	| ConflictErrorObject;
 
 export const markSeated = mutation({
 	args: {
@@ -426,7 +677,12 @@ export const markSeated = mutation({
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
 		if (restError) return [null, restError];
 
-		if (reservation.status !== RESERVATION_STATUS.CONFIRMED) {
+		const seatableStatuses: ReservationStatus[] = [
+			RESERVATION_STATUS.CONFIRMED,
+			RESERVATION_STATUS.CANCELLED,
+			RESERVATION_STATUS.NO_SHOW,
+		];
+		if (!seatableStatuses.includes(reservation.status)) {
 			return [
 				null,
 				new UserInputValidationError({
@@ -458,17 +714,33 @@ export const markSeated = mutation({
 			];
 		}
 
+		const [seatedTable, tableLoadError] = await loadAndValidateTables(
+			ctx,
+			[tableId],
+			reservation.restaurantId
+		);
+		if (tableLoadError) return [null, tableLoadError];
+
+		const conflictError = await checkTablesFreeForReservation(ctx, seatedTable, reservation);
+		if (conflictError) return [null, conflictError];
+
 		const sessionId = await createSessionForReservation(ctx, {
 			restaurantId: reservation.restaurantId,
 			tableId,
 			...(args.serverMemberId !== undefined && { serverMemberId: args.serverMemberId }),
 		});
 		const now = Date.now();
+		const fromTerminal = isTerminalRecoverable(reservation.status);
 		await ctx.db.patch(reservation._id, {
 			status: RESERVATION_STATUS.SEATED,
 			sessionId,
 			seatedAt: now,
 			updatedAt: now,
+			...(fromTerminal && {
+				confirmedAt: reservation.confirmedAt ?? now,
+				cancelledAt: undefined,
+				cancelReason: undefined,
+			}),
 		});
 
 		return [{ reservationId: reservation._id, sessionId }, null];

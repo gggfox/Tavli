@@ -71,11 +71,14 @@ export const ReservationsKeys = {
 	DRAWER_CANCEL_REASON_LABEL: "reservations.drawer.cancelReasonLabel",
 
 	ACTION_CONFIRM: "reservations.actions.confirm",
+	ACTION_RECONFIRM: "reservations.actions.reconfirm",
 	ACTION_MARK_SEATED: "reservations.actions.markSeated",
 	ACTION_MARK_COMPLETED: "reservations.actions.markCompleted",
 	ACTION_CONFIRM_CANCEL: "reservations.actions.confirmCancel",
 	ACTION_BACK: "reservations.actions.back",
 	ACTION_CANCEL: "reservations.actions.cancel",
+
+	DRAWER_RECONFIRM_ASSIGN_TABLES_PROMPT: "reservations.drawer.reconfirmAssignTablesPrompt",
 
 	ERROR_ACTION_FAILED: "reservations.errors.actionFailed",
 
@@ -139,6 +142,13 @@ export const ReservationsKeys = {
 	TIMELINE_DAY_NAV_NEXT: "reservations.timeline.dayNavNext",
 	TIMELINE_DAY_NAV_TODAY: "reservations.timeline.dayNavToday",
 	TIMELINE_DAY_NAV_PICK_DATE_ARIA: "reservations.timeline.dayNavPickDateAria",
+	TIMELINE_DRAG_HANDLE_ARIA: "reservations.timeline.dragHandleAria",
+	TIMELINE_RESCHEDULE_SUCCESS: "reservations.timeline.rescheduleSuccess",
+	TIMELINE_RESCHEDULE_ERROR: "reservations.timeline.rescheduleError",
+	TIMELINE_REOPEN_CONFIRM_TITLE: "reservations.timeline.reopenConfirmTitle",
+	TIMELINE_REOPEN_CONFIRM_BODY: "reservations.timeline.reopenConfirmBody",
+	TIMELINE_REOPEN_CONFIRM_BUTTON: "reservations.timeline.reopenConfirmButton",
+	TIMELINE_NOW_LINE_ARIA: "reservations.timeline.nowLineAria",
 } as const;
 
 export type ReservationsKey = (typeof ReservationsKeys)[keyof typeof ReservationsKeys];

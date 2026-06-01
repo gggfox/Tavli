@@ -88,6 +88,12 @@ export function useReservations(
 	const markCompletedMutation = useMutation({
 		mutationFn: useConvexMutation(api.reservations.markCompleted),
 	});
+	const rescheduleMutation = useMutation({
+		mutationFn: useConvexMutation(api.reservations.reschedule),
+	});
+	const reconfirmMutation = useMutation({
+		mutationFn: useConvexMutation(api.reservations.reconfirm),
+	});
 
 	return {
 		reservations: reservations ?? [],
@@ -101,5 +107,9 @@ export function useReservations(
 			unwrapResult(await markSeatedMutation.mutateAsync(args)),
 		markCompleted: async (args: Parameters<typeof markCompletedMutation.mutateAsync>[0]) =>
 			unwrapResult(await markCompletedMutation.mutateAsync(args)),
+		reschedule: async (args: Parameters<typeof rescheduleMutation.mutateAsync>[0]) =>
+			unwrapResult(await rescheduleMutation.mutateAsync(args)),
+		reconfirm: async (args: Parameters<typeof reconfirmMutation.mutateAsync>[0]) =>
+			unwrapResult(await reconfirmMutation.mutateAsync(args)),
 	};
 }

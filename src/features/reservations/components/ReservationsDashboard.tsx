@@ -16,6 +16,7 @@ import { ReservationsTable } from "@/features/reservations/components/Reservatio
 import {
 	ReservationTimeline,
 	type TimelineCreateIntent,
+	type TimelineRescheduleIntent,
 } from "@/features/reservations/components/ReservationTimeline";
 import { TimelineDayNavigator } from "@/features/reservations/components/TimelineDayNavigator";
 import { TimelineCreateDrawer } from "@/features/reservations/components/TimelineCreateDrawer";
@@ -47,6 +48,7 @@ import {
 	StatusBadge,
 	StatusFilterChips,
 	type StatusFilterOption,
+	pushToast,
 	Surface,
 	toneByValue,
 } from "@/global/components";
@@ -100,13 +102,51 @@ export function ReservationsDashboard() {
 		return [...statusFilter].sort((a, b) => a.localeCompare(b));
 	}, [statusFilter]);
 
-	const { reservations, isLoading, error, confirm, cancel, markSeated, markCompleted } =
-		useReservations(
-			restaurantIds.length ? restaurantIds : undefined,
-			range,
-			customDay,
-			statusesForQuery
-		);
+	const {
+		reservations,
+		isLoading,
+		error,
+		confirm,
+		cancel,
+		markSeated,
+		markCompleted,
+		reschedule,
+		reconfirm,
+	} = useReservations(
+		restaurantIds.length ? restaurantIds : undefined,
+		range,
+		customDay,
+		statusesForQuery
+	);
+
+	const handleTimelineReschedule = useCallback(
+		async (intent: TimelineRescheduleIntent) => {
+			try {
+				await reschedule({
+					reservationId: intent.reservationId,
+					...(intent.startsAt !== undefined ? { startsAt: intent.startsAt } : {}),
+					...(intent.fromTableId !== undefined ? { fromTableId: intent.fromTableId } : {}),
+					...(intent.toTableId !== undefined ? { toTableId: intent.toTableId } : {}),
+					...(intent.reopen ? { reopen: true } : {}),
+				});
+				pushToast({
+					id: `reschedule-${intent.reservationId}-${Date.now()}`,
+					kind: "info",
+					title: t(ReservationsKeys.TIMELINE_RESCHEDULE_SUCCESS),
+				});
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : t(ReservationsKeys.TIMELINE_RESCHEDULE_ERROR);
+				pushToast({
+					id: `reschedule-error-${intent.reservationId}-${Date.now()}`,
+					kind: "error",
+					title: t(ReservationsKeys.TIMELINE_RESCHEDULE_ERROR),
+					body: message,
+				});
+			}
+		},
+		[reschedule, t]
+	);
 
 	const enriched = reservations;
 
@@ -230,6 +270,7 @@ export function ReservationsDashboard() {
 					selectedDay={timelineDay}
 					onOpenReservation={setOpenId}
 					onCreateReservation={setCreateIntent}
+					onReschedule={handleTimelineReschedule}
 				/>
 			) : enriched.length === 0 ? (
 				<EmptyState
@@ -263,6 +304,12 @@ export function ReservationsDashboard() {
 					}}
 					onMarkCompleted={async (reservationId) => {
 						await markCompleted({ reservationId });
+					}}
+					onReconfirm={async (reservationId, tableIds) => {
+						await reconfirm({
+							reservationId,
+							...(tableIds !== undefined ? { tableIds } : {}),
+						});
 					}}
 				/>
 			)}

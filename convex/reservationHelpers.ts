@@ -258,6 +258,77 @@ export function ensureConfirmable(
 	}).toObject();
 }
 
+const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+];
+
+export const TERMINAL_RECOVERABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+];
+
+export function isTerminalRecoverable(status: ReservationStatus): boolean {
+	return TERMINAL_RECOVERABLE_STATUSES.includes(status);
+}
+
+export function ensureTerminalRecoverable(
+	status: ReservationStatus
+): UserInputValidationErrorObject | null {
+	if (isTerminalRecoverable(status)) return null;
+	return new UserInputValidationError({
+		fields: [
+			{
+				field: "status",
+				message: `Cannot reopen a reservation in status ${status}`,
+			},
+		],
+	}).toObject();
+}
+
+/** Fields applied when moving cancelled / no_show back into the active lifecycle. */
+export function buildReopenToConfirmedPatch(
+	reservation: Pick<ReservationDoc, "confirmedAt">,
+	now: number
+) {
+	return {
+		status: RESERVATION_STATUS.CONFIRMED,
+		confirmedAt: reservation.confirmedAt ?? now,
+		cancelledAt: undefined,
+		cancelReason: undefined,
+		updatedAt: now,
+	};
+}
+
+export function ensureReschedulable(
+	status: ReservationStatus
+): UserInputValidationErrorObject | null {
+	if (!NON_RESCHEDULABLE_STATUSES.includes(status)) return null;
+	return new UserInputValidationError({
+		fields: [{ field: "status", message: `Cannot reschedule a reservation in status ${status}` }],
+	}).toObject();
+}
+
+/**
+ * Per-block table move: remove `fromTableId` (if present in the list), then append
+ * `toTableId` when provided. `toTableId: null` means drop on the unassigned row
+ * (removal only).
+ */
+export function applyPerBlockTableMove(
+	tableIds: Id<typeof TABLE.TABLES>[],
+	fromTableId: Id<typeof TABLE.TABLES> | undefined,
+	toTableId: Id<typeof TABLE.TABLES> | null | undefined
+): Id<typeof TABLE.TABLES>[] {
+	let next = [...tableIds];
+	if (fromTableId !== undefined) {
+		next = next.filter((id) => id !== fromTableId);
+	}
+	if (toTableId !== undefined && toTableId !== null && !next.includes(toTableId)) {
+		next.push(toTableId);
+	}
+	return next;
+}
+
 export function validateTableSelection(
 	tableIds: Id<typeof TABLE.TABLES>[]
 ): UserInputValidationErrorObject | null {

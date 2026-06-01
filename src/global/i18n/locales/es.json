@@ -993,10 +993,12 @@
 			"assignedTables_one": "Asignada: 1 mesa",
 			"assignedTables_other": "Asignadas: {{count}} mesas",
 			"assignTablesPrompt": "Asigna mesas para confirmar",
+			"reconfirmAssignTablesPrompt": "Asigna mesas para reconfirmar",
 			"cancelReasonLabel": "Motivo de cancelación (opcional)"
 		},
 		"actions": {
 			"confirm": "Confirmar",
+			"reconfirm": "Reconfirmar",
 			"markSeated": "Marcar sentado",
 			"markCompleted": "Marcar completada",
 			"confirmCancel": "Confirmar cancelación",
@@ -1068,7 +1070,14 @@
 			"dayNavPrev": "Día anterior",
 			"dayNavNext": "Día siguiente",
 			"dayNavToday": "Hoy",
-			"dayNavPickDateAria": "Elegir una fecha"
+			"dayNavPickDateAria": "Elegir una fecha",
+			"dragHandleAria": "Arrastrar para reprogramar a {{guest}}",
+			"rescheduleSuccess": "Reservación actualizada",
+			"rescheduleError": "No se pudo reprogramar la reservación",
+			"reopenConfirmTitle": "¿Reabrir reservación?",
+			"reopenConfirmBody": "{{guest}} se moverá al nuevo horario o mesa y volverá a confirmada.",
+			"reopenConfirmButton": "Reabrir y mover",
+			"nowLineAria": "Hora actual"
 		}
 	},
 	"reservationSettings": {

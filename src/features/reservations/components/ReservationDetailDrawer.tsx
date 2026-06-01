@@ -38,6 +38,7 @@ interface ReservationDetailDrawerProps {
 	reservation: Doc<"reservations"> | null;
 	onClose: () => void;
 	onConfirm: (reservationId: Id<"reservations">, tableIds: Id<"tables">[]) => Promise<void>;
+	onReconfirm: (reservationId: Id<"reservations">, tableIds?: Id<"tables">[]) => Promise<void>;
 	onCancel: (reservationId: Id<"reservations">, reason?: string) => Promise<void>;
 	onMarkSeated: (reservationId: Id<"reservations">, tableId?: Id<"tables">) => Promise<void>;
 	onMarkCompleted: (reservationId: Id<"reservations">) => Promise<void>;
@@ -47,6 +48,7 @@ export function ReservationDetailDrawer({
 	reservation,
 	onClose,
 	onConfirm,
+	onReconfirm,
 	onCancel,
 	onMarkSeated,
 	onMarkCompleted,
@@ -104,6 +106,9 @@ export function ReservationDetailDrawer({
 	const palette = getStatusToneStyle(tone);
 	const config = getReservationStatusConfig(reservation.status);
 	const statusLabel = config ? t(config.labelKey) : reservation.status;
+	const isTerminalRecoverable =
+		reservation.status === "cancelled" || reservation.status === "no_show";
+	const needsTablesToReconfirm = isTerminalRecoverable && reservation.tableIds.length === 0;
 
 	return (
 		<Drawer
@@ -195,6 +200,23 @@ export function ReservationDetailDrawer({
 					</div>
 				)}
 
+				{needsTablesToReconfirm && (
+					<div className="pt-4 mt-2 space-y-3 border-t border-border">
+						<p className="text-sm font-medium text-foreground">
+							{t(ReservationsKeys.DRAWER_RECONFIRM_ASSIGN_TABLES_PROMPT)}
+						</p>
+						<TablePickerForReservation
+							restaurantId={reservation.restaurantId}
+							startsAt={reservation.startsAt}
+							endsAt={reservation.endsAt}
+							partySize={reservation.partySize}
+							excludeReservationId={reservation._id}
+							value={pickedTables}
+							onChange={setPickedTables}
+						/>
+					</div>
+				)}
+
 				{showCancel && (
 					<div className="pt-4 mt-2 space-y-2 border-t border-border">
 						<label htmlFor="cancel-reason" className="text-xs text-muted-foreground">
@@ -247,6 +269,35 @@ export function ReservationDetailDrawer({
 						<CheckCircle2 size={14} />
 						{t(ReservationsKeys.ACTION_MARK_COMPLETED)}
 					</button>
+				)}
+				{isTerminalRecoverable && (
+					<>
+						<button
+							type="button"
+							disabled={busy || (needsTablesToReconfirm && pickedTables.length === 0)}
+							onClick={() =>
+								wrap(() =>
+									onReconfirm(reservation._id, needsTablesToReconfirm ? pickedTables : undefined)
+								)
+							}
+							className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+							style={{ opacity: needsTablesToReconfirm && pickedTables.length === 0 ? 0.6 : 1 }}
+						>
+							<CheckCircle2 size={14} />
+							{t(ReservationsKeys.ACTION_RECONFIRM)}
+						</button>
+						{reservation.tableIds.length > 0 && (
+							<button
+								type="button"
+								disabled={busy}
+								onClick={() => wrap(() => onMarkSeated(reservation._id))}
+								className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+							>
+								<UtensilsCrossed size={14} />
+								{t(ReservationsKeys.ACTION_MARK_SEATED)}
+							</button>
+						)}
+					</>
 				)}
 				{(reservation.status === "pending" || reservation.status === "confirmed") &&
 					(showCancel ? (
