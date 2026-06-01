@@ -1,11 +1,11 @@
+import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { useMemo } from "react";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import type { FunctionReturnType } from "convex/server";
-import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
+import { useMemo } from "react";
 
 type TableDoc = Doc<"tables">;
 type SectionDoc = Doc<"sections">;

@@ -1,12 +1,11 @@
-import { useRestaurant } from "@/features/restaurants";
 import { useTimelineData } from "@/features/reservations/hooks/useTimelineData";
 import { useTimelineNow } from "@/features/reservations/hooks/useTimelineNow";
 import {
 	getReservationStatusConfig,
 	RESERVATION_FALLBACK_TONE,
 } from "@/features/reservations/statusConfig";
-import { formatTimeOnly } from "@/features/reservations/utils";
 import type { ReservationRange } from "@/features/reservations/utils";
+import { formatTimeOnly } from "@/features/reservations/utils";
 import {
 	clampStartsAtToHorizon,
 	getTimelineMarkers,
@@ -14,21 +13,23 @@ import {
 	pointerRatioToSnappedMinute,
 	pointerXToStartsAt,
 } from "@/features/reservations/utils/timelineCoordinates";
+import { useRestaurant } from "@/features/restaurants";
 import { getStatusToneStyle, type StatusTone } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
-import type { Doc, Id } from "convex/_generated/dataModel";
+import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import {
 	closestCenter,
 	DndContext,
 	DragOverlay,
-	type DragEndEvent,
-	type DragStartEvent,
 	PointerSensor,
 	useDraggable,
 	useDroppable,
 	useSensor,
 	useSensors,
+	type DragEndEvent,
+	type DragStartEvent,
 } from "@dnd-kit/core";
+import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	ChevronDown,
 	ChevronRight,
@@ -38,7 +39,6 @@ import {
 	UserPlus,
 	Users,
 } from "lucide-react";
-import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TimelineReopenConfirmDialog } from "./TimelineReopenConfirmDialog";

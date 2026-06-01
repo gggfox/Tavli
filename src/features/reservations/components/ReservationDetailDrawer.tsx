@@ -6,9 +6,9 @@
 import {
 	DialogHeader,
 	Drawer,
+	getStatusToneStyle,
 	StatusBadge,
 	Surface,
-	getStatusToneStyle,
 	toneByValue,
 } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
@@ -355,6 +355,23 @@ export function ReservationDetailDrawer({
 					>
 						{reservation.notes}
 					</Surface>
+				)}
+
+				{needsTablesToReconfirm && (
+					<div className="pt-4 mt-2 space-y-3 border-t border-border">
+						<p className="text-sm font-medium text-foreground">
+							{t(ReservationsKeys.DRAWER_RECONFIRM_ASSIGN_TABLES_PROMPT)}
+						</p>
+						<TablePickerForReservation
+							restaurantId={reservation.restaurantId}
+							startsAt={reservation.startsAt}
+							endsAt={reservation.endsAt}
+							partySize={reservation.partySize}
+							excludeReservationId={reservation._id}
+							value={pickedTables}
+							onChange={setPickedTables}
+						/>
+					</div>
 				)}
 
 				{needsTablesToReconfirm && (
