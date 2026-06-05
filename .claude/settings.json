@@ -1,0 +1,17 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-settings.json",
+	"enableAllProjectMcpServers": true,
+	"permissions": {
+		"allow": [
+			"Bash(pnpm install)",
+			"Bash(pnpm dev:*)",
+			"Bash(pnpm build:*)",
+			"Bash(pnpm test:*)",
+			"Bash(pnpm lint:*)",
+			"Bash(pnpm format:*)",
+			"Bash(pnpm email:dev:*)",
+			"Bash(npx convex:*)",
+			"Bash(pnpm exec playwright:*)"
+		]
+	}
+}
