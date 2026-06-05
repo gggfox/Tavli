@@ -2,7 +2,7 @@
 title: Use flatMap to Map and Filter in One Pass
 impact: LOW-MEDIUM
 impactDescription: eliminates intermediate array
-tags: javascript, arrays, flatMap, filter, performance
+tags: [javascript, arrays, flatMap, filter, performance]
 ---
 
 ## Use flatMap to Map and Filter in One Pass

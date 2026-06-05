@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Tavli is a single-context restaurant operations product: menus, online ordering, payments, reservations, attendance, and per-restaurant staff scheduling. Read [`CONTEXT.md`](./CONTEXT.md) before touching domain code — it is the canonical glossary (Restaurant, Menu/MenuCategory/MenuItem, PrepStation, Session/Order/OrderItem, User vs. EmployeeAccount, RestaurantMember, Shift/ShiftRole, etc.) and defines which alternative phrasings to avoid. Architectural decisions live in [`documentation/ADR/`](./documentation/ADR/).
+Tavli is a single-context restaurant operations product: menus, online ordering, payments, reservations, attendance, and per-restaurant staff scheduling. Read [`CONTEXT.md`](./CONTEXT.md) before touching domain code — it is the canonical glossary (Restaurant, Menu/MenuCategory/MenuItem, PrepStation, Session/Order/OrderItem, User vs. EmployeeAccount, RestaurantMember, Shift/ShiftRole, etc.) and defines which alternative phrasings to avoid. Architectural decisions live in [`documentation/ADR/`](./documentation/ADR).
 
 Naming note: the npm package is `tanstack-vc`, the product is **Tavli**, and older docs/ADRs still say "Fierro Viejo" — these all refer to this same project.
 

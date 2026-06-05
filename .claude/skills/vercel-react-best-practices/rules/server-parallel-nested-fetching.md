@@ -2,7 +2,7 @@
 title: Parallel Nested Data Fetching
 impact: CRITICAL
 impactDescription: eliminates server-side waterfalls
-tags: server, rsc, parallel-fetching, promise-chaining
+tags: [server, rsc, parallel-fetching, promise-chaining]
 ---
 
 ## Parallel Nested Data Fetching

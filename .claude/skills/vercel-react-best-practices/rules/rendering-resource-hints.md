@@ -2,7 +2,7 @@
 title: Use React DOM Resource Hints
 impact: HIGH
 impactDescription: reduces load time for critical resources
-tags: rendering, preload, preconnect, prefetch, resource-hints
+tags: [rendering, preload, preconnect, prefetch, resource-hints]
 ---
 
 ## Use React DOM Resource Hints
