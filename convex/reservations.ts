@@ -20,8 +20,8 @@
  * - `sweepNoShows`             : internalMutation called by the cron.
  */
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	ConflictError,
 	ConflictErrorObject,
@@ -47,30 +47,32 @@ import {
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import {
-	checkTablesFreeForReservation,
-	contactValidator,
-	createReservationCore,
-	CreateErrors,
-	applyPerBlockTableMove,
-	buildReopenToConfirmedPatch,
-	ensureConfirmable,
-	ensureReschedulable,
-	ensureTerminalRecoverable,
-	isTerminalRecoverable,
-	findSuggestedTimes,
-	isPartyBookableAt,
-	loadAndValidateTables,
-	sourceValidator,
-	validateTableSelection,
-} from "./reservationHelpers";
-import { createSessionForReservation } from "./sessions";
-import {
 	ACTIVE_RESERVATION_STATUSES,
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
 	ReservationStatus,
 	TABLE,
 } from "./constants";
+import {
+	CreateErrors,
+	applyPerBlockTableMove,
+	buildReopenToConfirmedPatch,
+	checkTablesFreeForReservation,
+	contactValidator,
+	createReservationCore,
+	ensureConfirmable,
+	ensureReschedulable,
+	ensureTerminalRecoverable,
+	findSuggestedTimes,
+	isPartyBookableAt,
+	isTerminalRecoverable,
+	loadAndValidateTables,
+	resolveRescheduleWindow,
+	sourceValidator,
+	validateReservationWindow,
+	validateTableSelection,
+} from "./reservationHelpers";
+import { createSessionForReservation } from "./sessions";
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 
@@ -95,11 +97,12 @@ export const getAvailability = query({
 	},
 	handler: async (ctx, args) => {
 		const settings = await loadEffectiveSettings(ctx, args.restaurantId);
+		const { minAdvanceMinutes, maxAdvanceDays, acceptingReservations } = settings;
 		const turnMinutes = computeTurnMinutes(settings, args.partySize);
 		const endsAt = computeEndsAt(args.startsAt, turnMinutes);
 		const now = Date.now();
 
-		if (!settings.acceptingReservations) {
+		if (!acceptingReservations) {
 			return {
 				available: false,
 				reason: "ERROR_NOT_ACCEPTING_RESERVATIONS" as const,
@@ -108,7 +111,14 @@ export const getAvailability = query({
 				suggestedTimes: [] as number[],
 			};
 		}
-		if (!isWithinHorizon(settings, args.startsAt, now)) {
+		if (
+			!isWithinHorizon({
+				minAdvanceMinutes,
+				maxAdvanceDays,
+				startsAt: args.startsAt,
+				now,
+			})
+		) {
 			return {
 				available: false,
 				reason: "ERROR_OUTSIDE_BOOKING_HORIZON" as const,
@@ -183,8 +193,9 @@ export const listReservationSlotsForDay = query({
 		}
 		const settings = await loadEffectiveSettings(ctx, args.restaurantId);
 		const turnMinutes = computeTurnMinutes(settings, args.partySize);
+		const { minAdvanceMinutes, maxAdvanceDays, acceptingReservations } = settings;
 		const now = Date.now();
-		if (!settings.acceptingReservations) {
+		if (!acceptingReservations) {
 			return { slots: [] as number[], turnMinutes };
 		}
 		const maxStart = args.toMs - turnMinutes * 60_000;
@@ -196,7 +207,7 @@ export const listReservationSlotsForDay = query({
 		) {
 			const endsAt = computeEndsAt(t, turnMinutes);
 			if (endsAt > args.toMs) break;
-			if (!isWithinHorizon(settings, t, now)) continue;
+			if (!isWithinHorizon({ minAdvanceMinutes, maxAdvanceDays, startsAt: t, now })) continue;
 			if (intersectsBlackout(settings, t, endsAt)) continue;
 			const ok = await isPartyBookableAt(ctx, args.restaurantId, args.partySize, t, endsAt);
 			if (ok) slots.push(t);
@@ -365,14 +376,17 @@ type RescheduleErrors =
 	| ConflictErrorObject;
 
 /**
- * Timeline reschedule: optional new `startsAt` (recomputes `endsAt` from turn
- * settings) and/or per-block table move via `fromTableId` / `toTableId`.
- * `toTableId: null` drops the dragged table onto the unassigned row.
+ * Staff reschedule: optional new `startsAt` / `endsAt`, full `tableIds`
+ * replace (drawer), or per-block table move via `fromTableId` / `toTableId`
+ * (timeline DnD). `toTableId: null` drops the dragged table onto the
+ * unassigned row.
  */
 export const reschedule = mutation({
 	args: {
 		reservationId: v.id(TABLE.RESERVATIONS),
 		startsAt: v.optional(v.number()),
+		endsAt: v.optional(v.number()),
+		tableIds: v.optional(v.array(v.id(TABLE.TABLES))),
 		fromTableId: v.optional(v.id(TABLE.TABLES)),
 		toTableId: v.optional(v.union(v.id(TABLE.TABLES), v.null())),
 		/** When true, cancelled / no_show rows reopen as confirmed before applying the move. */
@@ -399,8 +413,10 @@ export const reschedule = mutation({
 			if (stateError) return [null, stateError];
 		}
 
-		const hasTimeChange = args.startsAt !== undefined;
-		const hasTableChange = args.fromTableId !== undefined || args.toTableId !== undefined;
+		const hasTimeChange = args.startsAt !== undefined || args.endsAt !== undefined;
+		const hasTableReplace = args.tableIds !== undefined;
+		const hasPerBlockMove = args.fromTableId !== undefined || args.toTableId !== undefined;
+		const hasTableChange = hasTableReplace || hasPerBlockMove;
 		if (!hasTimeChange && !hasTableChange) {
 			return [
 				null,
@@ -414,12 +430,17 @@ export const reschedule = mutation({
 		let endsAt = reservation.endsAt;
 
 		if (hasTimeChange) {
+			const resolved = resolveRescheduleWindow(reservation, args);
+			startsAt = resolved.startsAt;
+			endsAt = resolved.endsAt;
+
+			const windowError = validateReservationWindow(startsAt, endsAt);
+			if (windowError) return [null, windowError];
+
 			const settings = await loadEffectiveSettings(ctx, reservation.restaurantId);
-			const turnMinutes = computeTurnMinutes(settings, reservation.partySize);
-			startsAt = args.startsAt!;
-			endsAt = computeEndsAt(startsAt, turnMinutes);
+			const { maxAdvanceDays } = settings;
 			const now = Date.now();
-			if (!isWithinHorizon(settings, startsAt, now)) {
+			if (!isWithinHorizon({ minAdvanceMinutes: 0, maxAdvanceDays, startsAt, now })) {
 				return [null, new ConflictError("ERROR_OUTSIDE_BOOKING_HORIZON").toObject()];
 			}
 			if (intersectsBlackout(settings, startsAt, endsAt)) {
@@ -428,7 +449,9 @@ export const reschedule = mutation({
 		}
 
 		let newTableIds = reservation.tableIds;
-		if (hasTableChange) {
+		if (hasTableReplace) {
+			newTableIds = args.tableIds!;
+		} else if (hasPerBlockMove) {
 			if (args.fromTableId !== undefined && !reservation.tableIds.includes(args.fromTableId)) {
 				return [
 					null,
@@ -500,19 +523,27 @@ export const reschedule = mutation({
 
 		if (reservation.sessionId && hasTableChange) {
 			const session = await ctx.db.get(reservation.sessionId);
-			if (session) {
-				const sessionTableMoved =
-					args.fromTableId !== undefined && session.tableId === args.fromTableId;
-				if (sessionTableMoved) {
-					const nextSessionTableId =
-						args.toTableId !== undefined &&
-						args.toTableId !== null &&
-						newTableIds.includes(args.toTableId)
-							? args.toTableId
+			if (session && newTableIds.length > 0) {
+				let nextSessionTableId: Id<typeof TABLE.TABLES> | undefined;
+				if (hasTableReplace) {
+					nextSessionTableId =
+						session.tableId && newTableIds.includes(session.tableId)
+							? session.tableId
 							: newTableIds[0];
-					if (nextSessionTableId) {
-						await ctx.db.patch(session._id, { tableId: nextSessionTableId });
+				} else {
+					const sessionTableMoved =
+						args.fromTableId !== undefined && session.tableId === args.fromTableId;
+					if (sessionTableMoved) {
+						nextSessionTableId =
+							args.toTableId !== undefined &&
+							args.toTableId !== null &&
+							newTableIds.includes(args.toTableId)
+								? args.toTableId
+								: newTableIds[0];
 					}
+				}
+				if (nextSessionTableId) {
+					await ctx.db.patch(session._id, { tableId: nextSessionTableId });
 				}
 			}
 		}

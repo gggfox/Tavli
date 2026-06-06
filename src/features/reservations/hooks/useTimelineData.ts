@@ -6,7 +6,6 @@ import { useMemo } from "react";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import type { FunctionReturnType } from "convex/server";
 import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
-import { DEFAULT_RESERVATION_SETTINGS } from "convex/constants";
 
 type TableDoc = Doc<"tables">;
 type SectionDoc = Doc<"sections">;
@@ -168,8 +167,8 @@ export function useTimelineData(
 		return byTable;
 	}, [locksQuery.data]);
 
-	const minAdvanceMinutes =
-		settingsQuery.data?.minAdvanceMinutes ?? DEFAULT_RESERVATION_SETTINGS.minAdvanceMinutes;
+	// Staff timeline skips min-advance shading and drag clamp; server reschedule does too.
+	const minAdvanceMinutes = 0;
 
 	return {
 		sections,

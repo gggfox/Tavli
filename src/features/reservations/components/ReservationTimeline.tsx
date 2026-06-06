@@ -51,6 +51,8 @@ const TERMINAL_RECOVERABLE_STATUSES = new Set(["cancelled", "no_show"]);
 export interface TimelineRescheduleIntent {
 	readonly reservationId: Id<"reservations">;
 	readonly startsAt?: number;
+	readonly endsAt?: number;
+	readonly tableIds?: Id<"tables">[];
 	readonly fromTableId?: Id<"tables">;
 	readonly toTableId?: Id<"tables"> | null;
 	readonly reopen?: boolean;

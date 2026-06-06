@@ -994,6 +994,16 @@
 			"assignedTables_other": "Asignadas: {{count}} mesas",
 			"assignTablesPrompt": "Asigna mesas para confirmar",
 			"reconfirmAssignTablesPrompt": "Asigna mesas para reconfirmar",
+			"editSectionTitle": "Horario y mesas",
+			"editStart": "Inicio",
+			"editEnd": "Fin",
+			"editTablesPrompt": "Mesas",
+			"editSave": "Guardar cambios",
+			"editSaving": "Guardando…",
+			"editSuccess": "Reservación actualizada",
+			"editEndBeforeStart": "La hora de fin debe ser posterior al inicio",
+			"editMinDuration": "La reservación debe durar al menos 15 minutos",
+			"editSeatedNeedsTable": "Las reservaciones sentadas deben conservar al menos una mesa",
 			"cancelReasonLabel": "Motivo de cancelación (opcional)"
 		},
 		"actions": {

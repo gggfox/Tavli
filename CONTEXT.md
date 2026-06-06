@@ -145,10 +145,10 @@ to `10:00`–`23:00` when unset.
 _Avoid_: business hours, service window.
 
 **Reschedule**:
-A staff action that changes a reservation’s `startsAt` window and/or
-`tableIds` from the **Timeline** (for example by dragging a block to another
-time or table row). Distinct from **confirm**, which is the initial table
-assignment for a pending booking.
+A staff action that changes a reservation’s `startsAt`, `endsAt`, and/or
+`tableIds` from the **Timeline** (for example by dragging a block) or the
+reservation detail drawer. Distinct from **confirm**, which is the initial
+table assignment for a pending booking.
 
 **No-show**:
 A terminal reservation status applied when a booking is still `pending` or

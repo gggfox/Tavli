@@ -119,16 +119,25 @@ export function ReservationsDashboard() {
 		statusesForQuery
 	);
 
+	const runReschedule = useCallback(
+		async (intent: TimelineRescheduleIntent) => {
+			await reschedule({
+				reservationId: intent.reservationId,
+				...(intent.startsAt !== undefined ? { startsAt: intent.startsAt } : {}),
+				...(intent.endsAt !== undefined ? { endsAt: intent.endsAt } : {}),
+				...(intent.tableIds !== undefined ? { tableIds: intent.tableIds } : {}),
+				...(intent.fromTableId !== undefined ? { fromTableId: intent.fromTableId } : {}),
+				...(intent.toTableId !== undefined ? { toTableId: intent.toTableId } : {}),
+				...(intent.reopen ? { reopen: true } : {}),
+			});
+		},
+		[reschedule]
+	);
+
 	const handleTimelineReschedule = useCallback(
 		async (intent: TimelineRescheduleIntent) => {
 			try {
-				await reschedule({
-					reservationId: intent.reservationId,
-					...(intent.startsAt !== undefined ? { startsAt: intent.startsAt } : {}),
-					...(intent.fromTableId !== undefined ? { fromTableId: intent.fromTableId } : {}),
-					...(intent.toTableId !== undefined ? { toTableId: intent.toTableId } : {}),
-					...(intent.reopen ? { reopen: true } : {}),
-				});
+				await runReschedule(intent);
 				pushToast({
 					id: `reschedule-${intent.reservationId}-${Date.now()}`,
 					kind: "info",
@@ -145,7 +154,7 @@ export function ReservationsDashboard() {
 				});
 			}
 		},
-		[reschedule, t]
+		[runReschedule, t]
 	);
 
 	const enriched = reservations;
@@ -311,6 +320,7 @@ export function ReservationsDashboard() {
 							...(tableIds !== undefined ? { tableIds } : {}),
 						});
 					}}
+					onReschedule={runReschedule}
 				/>
 			)}
 

@@ -994,6 +994,16 @@
 			"assignedTables_other": "Assigned: {{count}} tables",
 			"assignTablesPrompt": "Assign tables to confirm",
 			"reconfirmAssignTablesPrompt": "Assign tables to reconfirm",
+			"editSectionTitle": "Time and tables",
+			"editStart": "Start",
+			"editEnd": "End",
+			"editTablesPrompt": "Tables",
+			"editSave": "Save changes",
+			"editSaving": "Saving…",
+			"editSuccess": "Reservation updated",
+			"editEndBeforeStart": "End time must be after start time",
+			"editMinDuration": "Reservation must be at least 15 minutes long",
+			"editSeatedNeedsTable": "Seated reservations must keep at least one table",
 			"cancelReasonLabel": "Cancellation reason (optional)"
 		},
 		"actions": {

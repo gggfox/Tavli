@@ -5,6 +5,10 @@ const MS_PER_MINUTE = 60_000;
 
 export type TimelineDayPhase = "past" | "today" | "future";
 
+/*
+ * The blockedRatio is the ratio of the total minutes to the blocked minutes.
+ * The nowRatio is the ratio of the total minutes to the now minutes.
+ */
 export interface TimelineMarkers {
 	readonly blockedRatio: number | null;
 	readonly nowRatio: number | null;
@@ -89,7 +93,6 @@ export function getTimelineMarkers(params: {
 
 	const nowOffset = minuteOffsetFromOpen(params.nowMs, params.selectedDay, params.openHour);
 	const nowRatio = Math.min(1, Math.max(0, nowOffset / params.totalMinutes));
-
 	return { blockedRatio, nowRatio };
 }
 

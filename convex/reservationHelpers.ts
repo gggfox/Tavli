@@ -35,6 +35,51 @@ import { RESERVATION_SOURCE, RESERVATION_STATUS, ReservationStatus, TABLE } from
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 
+/** Minimum reservation length; matches the 15-minute timeline snap grid. */
+export const MIN_RESERVATION_DURATION_MS = 15 * 60_000;
+
+export function validateReservationWindow(
+	startsAt: number,
+	endsAt: number
+): UserInputValidationErrorObject | null {
+	if (endsAt <= startsAt) {
+		return new UserInputValidationError({
+			fields: [{ field: "endsAt", message: "End time must be after start time" }],
+		}).toObject();
+	}
+	if (endsAt - startsAt < MIN_RESERVATION_DURATION_MS) {
+		return new UserInputValidationError({
+			fields: [
+				{
+					field: "endsAt",
+					message: "Reservation must be at least 15 minutes long",
+				},
+			],
+		}).toObject();
+	}
+	return null;
+}
+
+/**
+ * Resolve the booking window after a reschedule. When only `startsAt` changes,
+ * preserve the existing duration so staff overrides and timeline drags keep
+ * custom lengths.
+ */
+export function resolveRescheduleWindow(
+	reservation: Pick<ReservationDoc, "startsAt" | "endsAt">,
+	args: { startsAt?: number; endsAt?: number }
+): { startsAt: number; endsAt: number } {
+	const startsAt = args.startsAt ?? reservation.startsAt;
+	if (args.endsAt !== undefined) {
+		return { startsAt, endsAt: args.endsAt };
+	}
+	if (args.startsAt !== undefined) {
+		const durationMs = reservation.endsAt - reservation.startsAt;
+		return { startsAt, endsAt: startsAt + durationMs };
+	}
+	return { startsAt: reservation.startsAt, endsAt: reservation.endsAt };
+}
+
 export type CreateErrors =
 	| NotFoundErrorObject
 	| UserInputValidationErrorObject
@@ -213,8 +258,17 @@ export async function createReservationCore(
 	const turnMinutes = computeTurnMinutes(settings, args.partySize);
 	const endsAt = computeEndsAt(args.startsAt, turnMinutes);
 	const now = Date.now();
+	const isWhatsapp = args.source === RESERVATION_SOURCE.WHATSAPP;
+	const minAdvanceMinutes = isWhatsapp ? settings.minAdvanceMinutes : 0;
 
-	if (!isWithinHorizon(settings, args.startsAt, now)) {
+	if (
+		!isWithinHorizon({
+			minAdvanceMinutes,
+			maxAdvanceDays: settings.maxAdvanceDays,
+			startsAt: args.startsAt,
+			now,
+		})
+	) {
 		return [null, new ConflictError("ERROR_OUTSIDE_BOOKING_HORIZON").toObject()];
 	}
 	if (intersectsBlackout(settings, args.startsAt, endsAt)) {
