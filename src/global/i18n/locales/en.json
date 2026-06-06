@@ -695,7 +695,16 @@
 			"purgesIn": "Purges in {{time}}",
 			"showRecentlyDeleted": "Show recently deleted",
 			"hideRecentlyDeleted": "Hide recently deleted",
-			"trashEmpty": "No recently deleted sections or tables."
+			"trashEmpty": "No recently deleted sections or tables.",
+			"selectMode": "Select multiple",
+			"bulkRemove_one": "Remove {{count}} table",
+			"bulkRemove_other": "Remove {{count}} tables",
+			"bulkCancel": "Cancel selection",
+			"bulkConfirmHeading": "Remove selected tables?",
+			"bulkConfirmBody_one": "This will remove 1 table. You can restore it from recently deleted.",
+			"bulkConfirmBody_other": "This will remove {{count}} tables. You can restore them from recently deleted.",
+			"bulkConfirmRemove": "Remove",
+			"bulkRemoveFailed": "Failed to remove tables"
 		},
 		"sections": {
 			"heading": "Floor sections",

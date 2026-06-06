@@ -116,6 +116,13 @@ export const RestaurantsKeys = {
 	TABLES_SHOW_RECENTLY_DELETED: "restaurants.tables.showRecentlyDeleted",
 	TABLES_HIDE_RECENTLY_DELETED: "restaurants.tables.hideRecentlyDeleted",
 	TABLES_TRASH_EMPTY: "restaurants.tables.trashEmpty",
+	TABLES_SELECT_MODE: "restaurants.tables.selectMode",
+	TABLES_BULK_REMOVE: "restaurants.tables.bulkRemove",
+	TABLES_BULK_CANCEL: "restaurants.tables.bulkCancel",
+	TABLES_BULK_CONFIRM_HEADING: "restaurants.tables.bulkConfirmHeading",
+	TABLES_BULK_CONFIRM_BODY: "restaurants.tables.bulkConfirmBody",
+	TABLES_BULK_CONFIRM_REMOVE: "restaurants.tables.bulkConfirmRemove",
+	TABLES_BULK_REMOVE_FAILED: "restaurants.tables.bulkRemoveFailed",
 
 	SECTIONS_HEADING: "restaurants.sections.heading",
 	SECTIONS_HINT: "restaurants.sections.hint",

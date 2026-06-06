@@ -105,6 +105,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const updateTable = useMutation({ mutationFn: useConvexMutation(api.tables.update) });
 	const toggleActive = useMutation({ mutationFn: useConvexMutation(api.tables.toggleActive) });
 	const removeTable = useMutation({ mutationFn: useConvexMutation(api.tables.remove) });
+	const bulkRemoveTables = useMutation({ mutationFn: useConvexMutation(api.tables.bulkRemove) });
 	const restoreTable = useMutation({ mutationFn: useConvexMutation(api.tables.restore) });
 
 	const createSection = useMutation({ mutationFn: useConvexMutation(api.sections.create) });
@@ -122,6 +123,9 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const [showInactive, setShowInactive] = useState(false);
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
 	const [openKebab, setOpenKebab] = useState<Id<"tables"> | null>(null);
+	const [selectionMode, setSelectionMode] = useState(false);
+	const [selectedTableIds, setSelectedTableIds] = useState(() => new Set<Id<"tables">>());
+	const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
 	// Optimistic overrides: cleared once server state catches up.
 	const [tableSectionOverrides, setTableSectionOverrides] = useState<
@@ -220,6 +224,51 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 			unwrapResult(await removeTable.mutateAsync({ tableId }));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_REMOVE_FAILED));
+		}
+	};
+
+	const toggleSelectionMode = (enabled: boolean) => {
+		clearError();
+		if (enabled && editingId !== null) {
+			setEditingId(null);
+		}
+		setSelectionMode(enabled);
+		if (!enabled) {
+			setSelectedTableIds(new Set());
+			setConfirmBulkDelete(false);
+		}
+		setOpenKebab(null);
+	};
+
+	const toggleTableSelected = (tableId: Id<"tables">) => {
+		if (!visibleTableIds.has(tableId)) return;
+		setSelectedTableIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(tableId)) next.delete(tableId);
+			else next.add(tableId);
+			return next;
+		});
+	};
+
+	const cancelSelection = () => {
+		toggleSelectionMode(false);
+	};
+
+	const handleConfirmBulkDelete = async () => {
+		const tableIds = [...selectedTableIds];
+		if (tableIds.length === 0) return;
+		clearError();
+		setConfirmBulkDelete(false);
+		try {
+			unwrapResult(
+				await bulkRemoveTables.mutateAsync({
+					restaurantId,
+					tableIds,
+				})
+			);
+			toggleSelectionMode(false);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : t(RestaurantsKeys.TABLES_BULK_REMOVE_FAILED));
 		}
 	};
 
@@ -363,6 +412,36 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 
 	const inactiveCount = useMemo(() => (tables ?? []).filter((tt) => !tt.isActive).length, [tables]);
 
+	const visibleTableIds = useMemo(() => {
+		const ids = new Set<Id<"tables">>();
+		for (const table of tables ?? []) {
+			if (showInactive || table.isActive) ids.add(table._id);
+		}
+		return ids;
+	}, [tables, showInactive]);
+
+	const tableIdsFingerprint = useMemo(
+		() =>
+			[...(tables ?? [])]
+				.map((tt) => tt._id)
+				.sort()
+				.join(","),
+		[tables]
+	);
+
+	useEffect(() => {
+		const valid = new Set(tableIdsFingerprint.split(",").filter(Boolean));
+		setSelectedTableIds((prev) => {
+			let changed = false;
+			const next = new Set<Id<"tables">>();
+			for (const id of prev) {
+				if (valid.has(id) && visibleTableIds.has(id)) next.add(id);
+				else changed = true;
+			}
+			return changed ? next : prev;
+		});
+	}, [tableIdsFingerprint, visibleTableIds]);
+
 	const nextTableNumber = useMemo(
 		() => (tables ?? []).reduce((max, tt) => Math.max(max, tt.tableNumber), 0) + 1,
 		[tables]
@@ -399,7 +478,9 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	);
 
 	const handleDragStart = (event: DragStartEvent) => {
-		setActiveDragId(String(event.active.id));
+		const activeId = String(event.active.id);
+		if (selectionMode && activeId.startsWith(TABLE_DRAG_PREFIX + ":")) return;
+		setActiveDragId(activeId);
 		setOpenKebab(null);
 	};
 
@@ -409,6 +490,8 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 		if (!over) return;
 		const activeId = String(active.id);
 		const overId = String(over.id);
+
+		if (selectionMode && activeId.startsWith(TABLE_DRAG_PREFIX + ":")) return;
 
 		if (activeId.startsWith(TABLE_DRAG_PREFIX + ":")) {
 			const tableId = activeId.slice(TABLE_DRAG_PREFIX.length + 1) as Id<"tables">;
@@ -464,6 +547,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				/>
 			);
 		}
+		const isVisible = showInactive || table.isActive;
 		return (
 			<DraggableTableRow
 				key={table._id}
@@ -482,6 +566,9 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				isKebabOpen={openKebab === table._id}
 				onOpenKebab={() => setOpenKebab(table._id)}
 				onCloseKebab={closeKebab}
+				selectionMode={selectionMode && isVisible}
+				isSelected={selectedTableIds.has(table._id)}
+				onToggleSelect={() => toggleTableSelected(table._id)}
 				labels={{
 					table: t(RestaurantsKeys.TABLES_TABLE_LABEL, { number: table.tableNumber }),
 					seatsFormat:
@@ -598,6 +685,38 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 							}
 						}}
 					/>
+					{(tables ?? []).length > 0 ? (
+						<div className="flex flex-wrap items-center gap-3">
+							<label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+								<input
+									type="checkbox"
+									checked={selectionMode}
+									onChange={(e) => toggleSelectionMode(e.target.checked)}
+									className="h-4 w-4 rounded border-border accent-[var(--btn-primary-bg)]"
+								/>
+								{t(RestaurantsKeys.TABLES_SELECT_MODE)}
+							</label>
+							{selectionMode ? (
+								<>
+									<button
+										type="button"
+										disabled={selectedTableIds.size === 0}
+										onClick={() => setConfirmBulkDelete(true)}
+										className="px-3 py-1.5 rounded-md text-sm font-medium text-destructive border border-border hover:bg-hover disabled:opacity-50 disabled:pointer-events-none"
+									>
+										{t(RestaurantsKeys.TABLES_BULK_REMOVE, { count: selectedTableIds.size })}
+									</button>
+									<button
+										type="button"
+										onClick={cancelSelection}
+										className="px-3 py-1.5 rounded-md text-sm font-medium border border-border hover:bg-hover"
+									>
+										{t(RestaurantsKeys.TABLES_BULK_CANCEL)}
+									</button>
+								</>
+							) : null}
+						</div>
+					) : null}
 				</div>
 
 				<div className={gridClass}>
@@ -696,6 +815,48 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 					</div>
 				)}
 			</div>
+
+			<Modal
+				isOpen={confirmBulkDelete}
+				onClose={() => setConfirmBulkDelete(false)}
+				ariaLabel={t(RestaurantsKeys.TABLES_BULK_CONFIRM_HEADING)}
+				size="md"
+			>
+				<div className="p-6 rounded-xl bg-background border border-border">
+					<div className="flex items-center justify-between mb-4">
+						<h2 className="text-lg font-semibold text-foreground">
+							{t(RestaurantsKeys.TABLES_BULK_CONFIRM_HEADING)}
+						</h2>
+						<button
+							type="button"
+							onClick={() => setConfirmBulkDelete(false)}
+							className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
+						>
+							<X size={20} />
+						</button>
+					</div>
+					<p className="text-sm text-foreground mb-6">
+						{t(RestaurantsKeys.TABLES_BULK_CONFIRM_BODY, { count: selectedTableIds.size })}
+					</p>
+					<div className="flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => setConfirmBulkDelete(false)}
+							className="px-4 py-2 rounded-lg text-sm font-medium border border-border hover:bg-hover"
+						>
+							{t(RestaurantsKeys.TABLES_CANCEL)}
+						</button>
+						<button
+							type="button"
+							onClick={() => void handleConfirmBulkDelete()}
+							disabled={bulkRemoveTables.isPending}
+							className="px-4 py-2 rounded-lg text-sm font-medium bg-destructive text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+						>
+							{t(RestaurantsKeys.TABLES_BULK_CONFIRM_REMOVE)}
+						</button>
+					</div>
+				</div>
+			</Modal>
 
 			<Modal
 				isOpen={confirmDeleteSection !== undefined}
@@ -1352,6 +1513,9 @@ interface DraggableTableRowProps {
 	isKebabOpen: boolean;
 	onOpenKebab: () => void;
 	onCloseKebab: () => void;
+	selectionMode?: boolean;
+	isSelected?: boolean;
+	onToggleSelect?: () => void;
 	labels: {
 		table: string;
 		seatsFormat: string;
@@ -1376,30 +1540,71 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 		isKebabOpen,
 		onOpenKebab,
 		onCloseKebab,
+		selectionMode = false,
+		isSelected = false,
+		onToggleSelect,
 		labels,
 	} = props;
-	const draggable = useDraggable({ id: `${TABLE_DRAG_PREFIX}:${table._id}` });
+	const draggable = useDraggable({
+		id: `${TABLE_DRAG_PREFIX}:${table._id}`,
+		disabled: selectionMode,
+	});
 	const style = {
 		opacity: draggable.isDragging ? 0 : 1,
 	};
 	const inactive = !table.isActive;
-	const rowClass = `flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border ${
-		inactive ? "opacity-60" : ""
-	}`;
+	const rowClass = [
+		"flex items-center justify-between px-4 py-3 rounded-lg bg-muted border",
+		isSelected ? "border-2 border-destructive" : "border-border",
+		selectionMode ? "cursor-pointer" : "",
+		inactive ? "opacity-60" : "",
+	]
+		.filter(Boolean)
+		.join(" ");
 
 	return (
-		<div ref={draggable.setNodeRef} style={style} className={rowClass}>
+		<div
+			ref={draggable.setNodeRef}
+			style={style}
+			className={rowClass}
+			onClick={
+				selectionMode
+					? () => {
+							onToggleSelect?.();
+						}
+					: undefined
+			}
+			onKeyDown={
+				selectionMode
+					? (e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onToggleSelect?.();
+							}
+						}
+					: undefined
+			}
+			role={selectionMode ? "button" : undefined}
+			tabIndex={selectionMode ? 0 : undefined}
+			aria-pressed={selectionMode ? isSelected : undefined}
+		>
 			<div className="flex items-center gap-3 min-w-0">
-				<button
-					type="button"
-					className="p-1 rounded text-faint-foreground hover:text-foreground hover:bg-hover cursor-grab active:cursor-grabbing touch-none"
-					title={dragHandleLabel}
-					aria-label={dragHandleLabel}
-					{...draggable.attributes}
-					{...draggable.listeners}
-				>
-					<GripVertical size={16} />
-				</button>
+				{selectionMode ? (
+					<span className="p-1 text-faint-foreground" aria-hidden>
+						<GripVertical size={16} />
+					</span>
+				) : (
+					<button
+						type="button"
+						className="p-1 rounded text-faint-foreground hover:text-foreground hover:bg-hover cursor-grab active:cursor-grabbing touch-none"
+						title={dragHandleLabel}
+						aria-label={dragHandleLabel}
+						{...draggable.attributes}
+						{...draggable.listeners}
+					>
+						<GripVertical size={16} />
+					</button>
+				)}
 				<span className={`text-sm font-medium text-foreground ${inactive ? "line-through" : ""}`}>
 					{labels.table}
 				</span>
@@ -1408,68 +1613,70 @@ function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 				)}
 				<span className="text-xs text-faint-foreground">{labels.seatsFormat}</span>
 			</div>
-			<div className="flex items-center gap-2">
-				<select
-					value={table.sectionId ?? ""}
-					onChange={(e) => onAssignSection(table._id, e.target.value as Id<"sections">)}
-					className="md:hidden px-2 py-1 rounded-md bg-background border border-border text-xs text-foreground"
-					aria-label={labels.moveTableAria}
-					title={labels.moveTableAria}
-				>
-					{sectionsList.map((s, idx) => (
-						<option key={s._id} value={s._id}>
-							{sectionLabel(s, idx)}
-						</option>
-					))}
-				</select>
-				<TableActionsKebab
-					isOpen={isKebabOpen}
-					onOpen={onOpenKebab}
-					onClose={onCloseKebab}
-					ariaLabel={labels.rowActionsAria}
-					items={
-						<>
-							<button
-								type="button"
-								onClick={() => {
-									onCloseKebab();
-									onStartEdit();
-								}}
-								className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
-							>
-								<Pencil size={14} />
-								{labels.editTitle}
-							</button>
-							<button
-								type="button"
-								onClick={() => {
-									onCloseKebab();
-									onToggleActive();
-								}}
-								className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
-							>
-								{table.isActive ? (
-									<ToggleRight size={14} className="text-success" />
-								) : (
-									<ToggleLeft size={14} className="text-faint-foreground" />
-								)}
-								{labels.activateTitle}
-							</button>
-							<button
-								type="button"
-								onClick={() => {
-									onCloseKebab();
-									onRemove();
-								}}
-								className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-destructive w-full text-left"
-							>
-								<Trash2 size={14} />
-								{labels.removeTitle}
-							</button>
-						</>
-					}
-				/>
-			</div>
+			{selectionMode ? null : (
+				<div className="flex items-center gap-2">
+					<select
+						value={table.sectionId ?? ""}
+						onChange={(e) => onAssignSection(table._id, e.target.value as Id<"sections">)}
+						className="md:hidden px-2 py-1 rounded-md bg-background border border-border text-xs text-foreground"
+						aria-label={labels.moveTableAria}
+						title={labels.moveTableAria}
+					>
+						{sectionsList.map((s, idx) => (
+							<option key={s._id} value={s._id}>
+								{sectionLabel(s, idx)}
+							</option>
+						))}
+					</select>
+					<TableActionsKebab
+						isOpen={isKebabOpen}
+						onOpen={onOpenKebab}
+						onClose={onCloseKebab}
+						ariaLabel={labels.rowActionsAria}
+						items={
+							<>
+								<button
+									type="button"
+									onClick={() => {
+										onCloseKebab();
+										onStartEdit();
+									}}
+									className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
+								>
+									<Pencil size={14} />
+									{labels.editTitle}
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										onCloseKebab();
+										onToggleActive();
+									}}
+									className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
+								>
+									{table.isActive ? (
+										<ToggleRight size={14} className="text-success" />
+									) : (
+										<ToggleLeft size={14} className="text-faint-foreground" />
+									)}
+									{labels.activateTitle}
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										onCloseKebab();
+										onRemove();
+									}}
+									className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-destructive w-full text-left"
+								>
+									<Trash2 size={14} />
+									{labels.removeTitle}
+								</button>
+							</>
+						}
+					/>
+				</div>
+			)}
 		</div>
 	);
 }

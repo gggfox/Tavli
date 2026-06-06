@@ -695,7 +695,16 @@
 			"purgesIn": "Se eliminará en {{time}}",
 			"showRecentlyDeleted": "Mostrar eliminadas recientemente",
 			"hideRecentlyDeleted": "Ocultar eliminadas recientemente",
-			"trashEmpty": "No hay secciones ni mesas eliminadas recientemente."
+			"trashEmpty": "No hay secciones ni mesas eliminadas recientemente.",
+			"selectMode": "Selección múltiple",
+			"bulkRemove_one": "Eliminar {{count}} mesa",
+			"bulkRemove_other": "Eliminar {{count}} mesas",
+			"bulkCancel": "Cancelar selección",
+			"bulkConfirmHeading": "¿Eliminar mesas seleccionadas?",
+			"bulkConfirmBody_one": "Se eliminará 1 mesa. Puedes restaurarla desde eliminadas recientemente.",
+			"bulkConfirmBody_other": "Se eliminarán {{count}} mesas. Puedes restaurarlas desde eliminadas recientemente.",
+			"bulkConfirmRemove": "Eliminar",
+			"bulkRemoveFailed": "Error al eliminar las mesas"
 		},
 		"sections": {
 			"heading": "Secciones del salón",

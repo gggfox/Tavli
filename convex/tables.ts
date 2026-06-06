@@ -236,6 +236,44 @@ export const remove = mutation({
 	},
 });
 
+export const bulkRemove = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		tableIds: v.array(v.id(TABLE.TABLES)),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<{ removed: number }, AuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, permErr] = await requireOwnerOrManager(ctx, userId, args.restaurantId);
+		if (permErr) return [null, permErr];
+
+		const unique = [...new Set(args.tableIds)];
+		const now = Date.now();
+		const purgeDelayMs = await getSoftDeletePurgeDelayMs(ctx);
+		let removed = 0;
+
+		for (const tableId of unique) {
+			const table = await ctx.db.get(tableId);
+			if (!table || table.restaurantId !== args.restaurantId) continue;
+			if (table.deletedAt !== undefined) continue;
+
+			await ctx.db.patch(tableId, {
+				deletedAt: now,
+				deletedBy: userId,
+				hardDeleteAfterAt: now + purgeDelayMs,
+				softDeleteParentSectionId: undefined,
+			});
+			removed++;
+		}
+
+		return [{ removed }, null];
+	},
+});
+
 /**
  * Restore a soft-deleted table. If the parent section is itself still soft-
  * deleted, the restore is rejected — restoring an orphaned table would leave
