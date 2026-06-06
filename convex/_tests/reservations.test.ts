@@ -117,17 +117,35 @@ describe("reservations.create", () => {
 		expect(reservationId).toBeTruthy();
 	});
 
-	it("rejects creates within the minimum advance window", async () => {
+	it("allows UI creates within the minimum advance window", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId } = await seedRestaurant(t, {
 			settings: { minAdvanceMinutes: 60 },
 		});
 
-		const [, error] = await t.mutation(api.reservations.create, {
+		const [reservationId, error] = await t.mutation(api.reservations.create, {
 			restaurantId,
 			partySize: 2,
 			startsAt: Date.now() + 10 * 60_000,
 			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+
+		expect(error).toBeNull();
+		expect(reservationId).toBeTruthy();
+	});
+
+	it("rejects WhatsApp creates within the minimum advance window", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurant(t, {
+			settings: { minAdvanceMinutes: 60 },
+		});
+
+		const [, error] = await t.mutation(internal.reservations.internalCreate, {
+			restaurantId,
+			partySize: 2,
+			startsAt: Date.now() + 10 * 60_000,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+			source: "whatsapp",
 		});
 
 		expect(error?.name).toBe("CONFLICT");
@@ -476,6 +494,424 @@ describe("reservations.getAvailability", () => {
 			startsAt,
 		});
 		expect(result.available).toBe(false);
+	});
+});
+
+describe("reservations.reschedule", () => {
+	it("moves startsAt without overlap conflict", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+
+		const startsAt = nowPlusHours(3);
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+
+		const newStartsAt = startsAt + 2 * ONE_HOUR_MS;
+		const [id, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			startsAt: newStartsAt,
+		});
+		expect(error).toBeNull();
+		expect(id).toBe(reservationId);
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.startsAt).toBe(newStartsAt);
+		expect(updated?.tableIds).toEqual([tableIds[0]]);
+	});
+
+	it("swaps one table in a multi-table reservation (per-block)", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+			tables: [
+				{ tableNumber: 1, capacity: 4 },
+				{ tableNumber: 2, capacity: 4 },
+				{ tableNumber: 3, capacity: 4 },
+			],
+		});
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(3);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 6,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0], tableIds[1]],
+		});
+
+		const [, swapError] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			fromTableId: tableIds[0],
+			toTableId: tableIds[2],
+		});
+		expect(swapError).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.tableIds).toEqual([tableIds[1], tableIds[2]]);
+	});
+
+	it("removes one table via unassigned drop while keeping others", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+			tables: [
+				{ tableNumber: 1, capacity: 4 },
+				{ tableNumber: 2, capacity: 4 },
+			],
+		});
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(3);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 4,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds,
+		});
+
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			fromTableId: tableIds[0],
+			toTableId: null,
+		});
+		expect(error).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.tableIds).toEqual([tableIds[1]]);
+	});
+
+	it("rejects reschedule that double-books the target table", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(4);
+
+		const [firstId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: firstId!,
+			tableIds: [tableIds[0]],
+		});
+
+		const [secondId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt: startsAt + 3 * ONE_HOUR_MS,
+			contact: { name: "Bob", phone: "+1-555-0200" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: secondId!,
+			tableIds: [tableIds[0]],
+		});
+
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: secondId!,
+			startsAt,
+		});
+		expect(error?.message).toBe("ERROR_TABLE_UNAVAILABLE");
+	});
+
+	it("rejects reschedule on cancelled reservations without reopen", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt: nowPlusHours(2),
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.cancel, { reservationId: reservationId! });
+
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			startsAt: nowPlusHours(5),
+		});
+		expect(error?.name).toBe("VALIDATION_ERROR");
+	});
+
+	it("reopens and reschedules a cancelled reservation when reopen is true", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+
+		const startsAt = nowPlusHours(2);
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+		await owner.mutation(api.reservations.cancel, { reservationId: reservationId! });
+
+		const newStartsAt = nowPlusHours(5);
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			startsAt: newStartsAt,
+			reopen: true,
+		});
+		expect(error).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.status).toBe("confirmed");
+		expect(updated?.startsAt).toBe(newStartsAt);
+		expect(updated?.cancelledAt).toBeUndefined();
+	});
+
+	it("updates session table when seated reservation block moves", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+			tables: [
+				{ tableNumber: 1, capacity: 4 },
+				{ tableNumber: 2, capacity: 4 },
+			],
+		});
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(1);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+		const [seated] = await owner.mutation(api.reservations.markSeated, {
+			reservationId: reservationId!,
+			tableId: tableIds[0],
+		});
+
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			fromTableId: tableIds[0],
+			toTableId: tableIds[1],
+		});
+		expect(error).toBeNull();
+
+		const session = await t.run((ctx) => ctx.db.get(seated!.sessionId));
+		expect(session?.tableId).toBe(tableIds[1]);
+	});
+
+	it("overrides endsAt to shorten or lengthen a booking", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(3);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+
+		const shorterEndsAt = startsAt + 45 * 60_000;
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			endsAt: shorterEndsAt,
+		});
+		expect(error).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.startsAt).toBe(startsAt);
+		expect(updated?.endsAt).toBe(shorterEndsAt);
+	});
+
+	it("replaces tableIds in one call (drawer path)", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+			tables: [
+				{ tableNumber: 1, capacity: 4 },
+				{ tableNumber: 2, capacity: 4 },
+			],
+		});
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(3);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[1]],
+		});
+		expect(error).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.tableIds).toEqual([tableIds[1]]);
+	});
+
+	it("allows reschedule inside the minimum advance window", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+			settings: { minAdvanceMinutes: 60 },
+		});
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(3);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+
+		const soonStartsAt = Date.now() + 10 * 60_000;
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			startsAt: soonStartsAt,
+		});
+		expect(error).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(updated?.startsAt).toBe(soonStartsAt);
+	});
+
+	it("updates session table when seated reservation tableIds are replaced", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t, {
+			tables: [
+				{ tableNumber: 1, capacity: 4 },
+				{ tableNumber: 2, capacity: 4 },
+			],
+		});
+		const owner = t.withIdentity({ subject: ownerId });
+		const startsAt = nowPlusHours(1);
+
+		const [reservationId] = await t.mutation(api.reservations.create, {
+			restaurantId,
+			partySize: 2,
+			startsAt,
+			contact: { name: "Alice", phone: "+1-555-0100" },
+		});
+		await owner.mutation(api.reservations.confirm, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[0]],
+		});
+		const [seated] = await owner.mutation(api.reservations.markSeated, {
+			reservationId: reservationId!,
+			tableId: tableIds[0],
+		});
+
+		const [, error] = await owner.mutation(api.reservations.reschedule, {
+			reservationId: reservationId!,
+			tableIds: [tableIds[1]],
+		});
+		expect(error).toBeNull();
+
+		const session = await t.run((ctx) => ctx.db.get(seated!.sessionId));
+		expect(session?.tableId).toBe(tableIds[1]);
+	});
+});
+
+describe("reservations.reconfirm", () => {
+	it("reopens a no_show reservation as confirmed", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+
+		const startsAt = Date.now() - 30 * 60_000;
+		const reservationId = await t.run(async (ctx) =>
+			ctx.db.insert("reservations", {
+				restaurantId,
+				partySize: 2,
+				startsAt,
+				endsAt: startsAt + 90 * 60_000,
+				tableIds: [tableIds[0]],
+				status: "no_show",
+				source: "ui",
+				contact: { name: "Alice", phone: "+1-555-0100" },
+				confirmedAt: startsAt - ONE_HOUR_MS,
+				createdAt: startsAt - ONE_HOUR_MS,
+				updatedAt: startsAt,
+			})
+		);
+
+		const [, error] = await owner.mutation(api.reservations.reconfirm, {
+			reservationId,
+		});
+		expect(error).toBeNull();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId));
+		expect(updated?.status).toBe("confirmed");
+	});
+});
+
+describe("reservations.markSeated from terminal", () => {
+	it("seats a no_show reservation when the table is still free", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableIds, ownerId } = await seedRestaurant(t);
+		const owner = t.withIdentity({ subject: ownerId });
+
+		const startsAt = Date.now() - 15 * 60_000;
+		const reservationId = await t.run(async (ctx) =>
+			ctx.db.insert("reservations", {
+				restaurantId,
+				partySize: 2,
+				startsAt,
+				endsAt: startsAt + 90 * 60_000,
+				tableIds: [tableIds[0]],
+				status: "no_show",
+				source: "ui",
+				contact: { name: "Alice", phone: "+1-555-0100" },
+				confirmedAt: startsAt - ONE_HOUR_MS,
+				createdAt: startsAt - ONE_HOUR_MS,
+				updatedAt: startsAt,
+			})
+		);
+
+		const [result, error] = await owner.mutation(api.reservations.markSeated, {
+			reservationId,
+		});
+		expect(error).toBeNull();
+		expect(result?.sessionId).toBeTruthy();
+
+		const updated = await t.run((ctx) => ctx.db.get(reservationId));
+		expect(updated?.status).toBe("seated");
+		expect(updated?.sessionId).toBe(result!.sessionId);
 	});
 });
 

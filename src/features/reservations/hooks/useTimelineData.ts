@@ -26,6 +26,7 @@ export interface TimelineData {
 	locksByTable: Map<string, TableLockDoc[]>;
 	openHour: number;
 	closeHour: number;
+	minAdvanceMinutes: number;
 	isLoading: boolean;
 }
 
@@ -71,6 +72,11 @@ export function useTimelineData(
 		),
 		enabled: Boolean(restaurantId),
 		select: unwrapResult<TableLockDoc[]>,
+	});
+
+	const settingsQuery = useQuery({
+		...convexQuery(api.reservationSettings.get, restaurantId ? { restaurantId } : "skip"),
+		enabled: Boolean(restaurantId),
 	});
 
 	const openHour = parseHourFromHHMM(restaurant?.openTime, 10);
@@ -161,6 +167,9 @@ export function useTimelineData(
 		return byTable;
 	}, [locksQuery.data]);
 
+	// Staff timeline skips min-advance shading and drag clamp; server reschedule does too.
+	const minAdvanceMinutes = 0;
+
 	return {
 		sections,
 		reservationsByTable,
@@ -168,10 +177,12 @@ export function useTimelineData(
 		locksByTable,
 		openHour,
 		closeHour,
+		minAdvanceMinutes,
 		isLoading:
 			reservationsQuery.isLoading ||
 			tablesQuery.isLoading ||
 			sectionsQuery.isLoading ||
-			locksQuery.isLoading,
+			locksQuery.isLoading ||
+			settingsQuery.isLoading,
 	};
 }

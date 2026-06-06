@@ -68,14 +68,27 @@ export const ReservationsKeys = {
 	DRAWER_VIA: "reservations.drawer.via",
 	DRAWER_ASSIGNED_TABLES: "reservations.drawer.assignedTables",
 	DRAWER_ASSIGN_TABLES_PROMPT: "reservations.drawer.assignTablesPrompt",
+	DRAWER_EDIT_SECTION_TITLE: "reservations.drawer.editSectionTitle",
+	DRAWER_EDIT_START: "reservations.drawer.editStart",
+	DRAWER_EDIT_END: "reservations.drawer.editEnd",
+	DRAWER_EDIT_TABLES_PROMPT: "reservations.drawer.editTablesPrompt",
+	DRAWER_EDIT_SAVE: "reservations.drawer.editSave",
+	DRAWER_EDIT_SAVING: "reservations.drawer.editSaving",
+	DRAWER_EDIT_SUCCESS: "reservations.drawer.editSuccess",
+	DRAWER_EDIT_END_BEFORE_START: "reservations.drawer.editEndBeforeStart",
+	DRAWER_EDIT_MIN_DURATION: "reservations.drawer.editMinDuration",
+	DRAWER_EDIT_SEATED_NEEDS_TABLE: "reservations.drawer.editSeatedNeedsTable",
 	DRAWER_CANCEL_REASON_LABEL: "reservations.drawer.cancelReasonLabel",
 
 	ACTION_CONFIRM: "reservations.actions.confirm",
+	ACTION_RECONFIRM: "reservations.actions.reconfirm",
 	ACTION_MARK_SEATED: "reservations.actions.markSeated",
 	ACTION_MARK_COMPLETED: "reservations.actions.markCompleted",
 	ACTION_CONFIRM_CANCEL: "reservations.actions.confirmCancel",
 	ACTION_BACK: "reservations.actions.back",
 	ACTION_CANCEL: "reservations.actions.cancel",
+
+	DRAWER_RECONFIRM_ASSIGN_TABLES_PROMPT: "reservations.drawer.reconfirmAssignTablesPrompt",
 
 	ERROR_ACTION_FAILED: "reservations.errors.actionFailed",
 
@@ -139,6 +152,13 @@ export const ReservationsKeys = {
 	TIMELINE_DAY_NAV_NEXT: "reservations.timeline.dayNavNext",
 	TIMELINE_DAY_NAV_TODAY: "reservations.timeline.dayNavToday",
 	TIMELINE_DAY_NAV_PICK_DATE_ARIA: "reservations.timeline.dayNavPickDateAria",
+	TIMELINE_DRAG_HANDLE_ARIA: "reservations.timeline.dragHandleAria",
+	TIMELINE_RESCHEDULE_SUCCESS: "reservations.timeline.rescheduleSuccess",
+	TIMELINE_RESCHEDULE_ERROR: "reservations.timeline.rescheduleError",
+	TIMELINE_REOPEN_CONFIRM_TITLE: "reservations.timeline.reopenConfirmTitle",
+	TIMELINE_REOPEN_CONFIRM_BODY: "reservations.timeline.reopenConfirmBody",
+	TIMELINE_REOPEN_CONFIRM_BUTTON: "reservations.timeline.reopenConfirmButton",
+	TIMELINE_NOW_LINE_ARIA: "reservations.timeline.nowLineAria",
 } as const;
 
 export type ReservationsKey = (typeof ReservationsKeys)[keyof typeof ReservationsKeys];

@@ -993,10 +993,22 @@
 			"assignedTables_one": "Assigned: 1 table",
 			"assignedTables_other": "Assigned: {{count}} tables",
 			"assignTablesPrompt": "Assign tables to confirm",
+			"reconfirmAssignTablesPrompt": "Assign tables to reconfirm",
+			"editSectionTitle": "Time and tables",
+			"editStart": "Start",
+			"editEnd": "End",
+			"editTablesPrompt": "Tables",
+			"editSave": "Save changes",
+			"editSaving": "Saving…",
+			"editSuccess": "Reservation updated",
+			"editEndBeforeStart": "End time must be after start time",
+			"editMinDuration": "Reservation must be at least 15 minutes long",
+			"editSeatedNeedsTable": "Seated reservations must keep at least one table",
 			"cancelReasonLabel": "Cancellation reason (optional)"
 		},
 		"actions": {
 			"confirm": "Confirm",
+			"reconfirm": "Reconfirm",
 			"markSeated": "Mark seated",
 			"markCompleted": "Mark completed",
 			"confirmCancel": "Confirm cancel",
@@ -1068,7 +1080,14 @@
 			"dayNavPrev": "Previous day",
 			"dayNavNext": "Next day",
 			"dayNavToday": "Today",
-			"dayNavPickDateAria": "Pick a date"
+			"dayNavPickDateAria": "Pick a date",
+			"dragHandleAria": "Drag to reschedule {{guest}}",
+			"rescheduleSuccess": "Reservation updated",
+			"rescheduleError": "Could not reschedule reservation",
+			"reopenConfirmTitle": "Reopen reservation?",
+			"reopenConfirmBody": "{{guest}} will move to the new time or table and reopen as confirmed.",
+			"reopenConfirmButton": "Reopen and move",
+			"nowLineAria": "Current time"
 		}
 	},
 	"reservationSettings": {

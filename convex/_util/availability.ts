@@ -56,17 +56,20 @@ export function tableCapacity(table: Pick<TableDoc, "capacity">): number {
 	return table.capacity ?? FALLBACK_TABLE_CAPACITY;
 }
 
+interface IsWithinHorizonParams {
+	minAdvanceMinutes: number;
+	maxAdvanceDays: number;
+	startsAt: number;
+	now: number;
+}
 /**
  * True iff the requested start time is far enough in the future and not too
  * far out, given the restaurant's policy.
  */
-export function isWithinHorizon(
-	settings: Pick<ReservationSettingsDoc, "minAdvanceMinutes" | "maxAdvanceDays">,
-	startsAt: number,
-	now: number
-): boolean {
-	const earliest = now + settings.minAdvanceMinutes * MS_PER_MINUTE;
-	const latest = now + settings.maxAdvanceDays * MS_PER_DAY;
+export function isWithinHorizon(params: IsWithinHorizonParams): boolean {
+	const { minAdvanceMinutes, maxAdvanceDays, startsAt, now } = params;
+	const earliest = now + minAdvanceMinutes * MS_PER_MINUTE;
+	const latest = now + maxAdvanceDays * MS_PER_DAY;
 	return startsAt >= earliest && startsAt <= latest;
 }
 

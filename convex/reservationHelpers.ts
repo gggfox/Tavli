@@ -35,6 +35,51 @@ import { RESERVATION_SOURCE, RESERVATION_STATUS, ReservationStatus, TABLE } from
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 
+/** Minimum reservation length; matches the 15-minute timeline snap grid. */
+export const MIN_RESERVATION_DURATION_MS = 15 * 60_000;
+
+export function validateReservationWindow(
+	startsAt: number,
+	endsAt: number
+): UserInputValidationErrorObject | null {
+	if (endsAt <= startsAt) {
+		return new UserInputValidationError({
+			fields: [{ field: "endsAt", message: "End time must be after start time" }],
+		}).toObject();
+	}
+	if (endsAt - startsAt < MIN_RESERVATION_DURATION_MS) {
+		return new UserInputValidationError({
+			fields: [
+				{
+					field: "endsAt",
+					message: "Reservation must be at least 15 minutes long",
+				},
+			],
+		}).toObject();
+	}
+	return null;
+}
+
+/**
+ * Resolve the booking window after a reschedule. When only `startsAt` changes,
+ * preserve the existing duration so staff overrides and timeline drags keep
+ * custom lengths.
+ */
+export function resolveRescheduleWindow(
+	reservation: Pick<ReservationDoc, "startsAt" | "endsAt">,
+	args: { startsAt?: number; endsAt?: number }
+): { startsAt: number; endsAt: number } {
+	const startsAt = args.startsAt ?? reservation.startsAt;
+	if (args.endsAt !== undefined) {
+		return { startsAt, endsAt: args.endsAt };
+	}
+	if (args.startsAt !== undefined) {
+		const durationMs = reservation.endsAt - reservation.startsAt;
+		return { startsAt, endsAt: startsAt + durationMs };
+	}
+	return { startsAt: reservation.startsAt, endsAt: reservation.endsAt };
+}
+
 export type CreateErrors =
 	| NotFoundErrorObject
 	| UserInputValidationErrorObject
@@ -213,8 +258,17 @@ export async function createReservationCore(
 	const turnMinutes = computeTurnMinutes(settings, args.partySize);
 	const endsAt = computeEndsAt(args.startsAt, turnMinutes);
 	const now = Date.now();
+	const isWhatsapp = args.source === RESERVATION_SOURCE.WHATSAPP;
+	const minAdvanceMinutes = isWhatsapp ? settings.minAdvanceMinutes : 0;
 
-	if (!isWithinHorizon(settings, args.startsAt, now)) {
+	if (
+		!isWithinHorizon({
+			minAdvanceMinutes,
+			maxAdvanceDays: settings.maxAdvanceDays,
+			startsAt: args.startsAt,
+			now,
+		})
+	) {
 		return [null, new ConflictError("ERROR_OUTSIDE_BOOKING_HORIZON").toObject()];
 	}
 	if (intersectsBlackout(settings, args.startsAt, endsAt)) {
@@ -256,6 +310,77 @@ export function ensureConfirmable(
 	return new UserInputValidationError({
 		fields: [{ field: "status", message: `Cannot confirm a reservation in status ${status}` }],
 	}).toObject();
+}
+
+const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+];
+
+export const TERMINAL_RECOVERABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+];
+
+export function isTerminalRecoverable(status: ReservationStatus): boolean {
+	return TERMINAL_RECOVERABLE_STATUSES.includes(status);
+}
+
+export function ensureTerminalRecoverable(
+	status: ReservationStatus
+): UserInputValidationErrorObject | null {
+	if (isTerminalRecoverable(status)) return null;
+	return new UserInputValidationError({
+		fields: [
+			{
+				field: "status",
+				message: `Cannot reopen a reservation in status ${status}`,
+			},
+		],
+	}).toObject();
+}
+
+/** Fields applied when moving cancelled / no_show back into the active lifecycle. */
+export function buildReopenToConfirmedPatch(
+	reservation: Pick<ReservationDoc, "confirmedAt">,
+	now: number
+) {
+	return {
+		status: RESERVATION_STATUS.CONFIRMED,
+		confirmedAt: reservation.confirmedAt ?? now,
+		cancelledAt: undefined,
+		cancelReason: undefined,
+		updatedAt: now,
+	};
+}
+
+export function ensureReschedulable(
+	status: ReservationStatus
+): UserInputValidationErrorObject | null {
+	if (!NON_RESCHEDULABLE_STATUSES.includes(status)) return null;
+	return new UserInputValidationError({
+		fields: [{ field: "status", message: `Cannot reschedule a reservation in status ${status}` }],
+	}).toObject();
+}
+
+/**
+ * Per-block table move: remove `fromTableId` (if present in the list), then append
+ * `toTableId` when provided. `toTableId: null` means drop on the unassigned row
+ * (removal only).
+ */
+export function applyPerBlockTableMove(
+	tableIds: Id<typeof TABLE.TABLES>[],
+	fromTableId: Id<typeof TABLE.TABLES> | undefined,
+	toTableId: Id<typeof TABLE.TABLES> | null | undefined
+): Id<typeof TABLE.TABLES>[] {
+	let next = [...tableIds];
+	if (fromTableId !== undefined) {
+		next = next.filter((id) => id !== fromTableId);
+	}
+	if (toTableId !== undefined && toTableId !== null && !next.includes(toTableId)) {
+		next.push(toTableId);
+	}
+	return next;
 }
 
 export function validateTableSelection(

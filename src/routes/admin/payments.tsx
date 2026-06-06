@@ -16,7 +16,11 @@ export const Route = createFileRoute("/admin/payments")({
 
 function PaymentsPage() {
 	const { restaurant, isLoading } = useRestaurant();
-	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
+	const { canExport } = useCanExport(
+		restaurant?._id,
+		restaurant?.organizationId,
+		restaurant?.ownerId
+	);
 
 	return (
 		<AdminPageLayout

@@ -12,7 +12,8 @@ export function useExportYears(restaurantId: Id<"restaurants">) {
 	const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
 	const query = useQuery({
 		...convexQuery(api.exports.getRestaurantExportYears, { restaurantId }),
-		enabled: isAuthenticated,
+		// Wait until Convex has the Clerk token — avoids transient "Unauthorized" logs.
+		enabled: isAuthenticated && !isAuthLoading,
 	});
 	return {
 		years: query.data?.years ?? [],

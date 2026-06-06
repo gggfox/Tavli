@@ -13,7 +13,11 @@ export const Route = createFileRoute("/admin/orders")({
 function OrdersPage() {
 	const { t } = useTranslation();
 	const { restaurant, isLoading } = useRestaurant();
-	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
+	const { canExport } = useCanExport(
+		restaurant?._id,
+		restaurant?.organizationId,
+		restaurant?.ownerId
+	);
 
 	return (
 		<div className="p-6 flex flex-col h-full">

@@ -126,3 +126,22 @@
 .animate-slide-up {
 	animation: slide-up 0.25s ease-out;
 }
+
+/* ============================================
+ * Timeline stripe patterns
+ * ============================================ */
+
+.timeline-blocked-overlay {
+	background-color: color-mix(in oklch, var(--bg-tertiary) 70%, transparent);
+}
+
+.timeline-lock-stripe {
+	background-color: color-mix(in oklch, var(--bg-tertiary) 50%, transparent);
+	background-image: repeating-linear-gradient(
+		135deg,
+		transparent,
+		transparent 3px,
+		color-mix(in oklch, var(--border-strong) 50%, transparent) 3px,
+		color-mix(in oklch, var(--border-strong) 50%, transparent) 4px
+	);
+}

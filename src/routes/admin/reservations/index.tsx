@@ -53,7 +53,11 @@ export const Route = createFileRoute("/admin/reservations/")({
 function ReservationsPage() {
 	const { t } = useTranslation();
 	const { restaurant, isLoading } = useRestaurant();
-	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
+	const { canExport } = useCanExport(
+		restaurant?._id,
+		restaurant?.organizationId,
+		restaurant?.ownerId
+	);
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [isLocksOpen, setIsLocksOpen] = useState(false);
 

@@ -144,6 +144,27 @@ Defines the visible time range rendered on the **Timeline**. Falls back
 to `10:00`–`23:00` when unset.
 _Avoid_: business hours, service window.
 
+**Reschedule**:
+A staff action that changes a reservation’s `startsAt`, `endsAt`, and/or
+`tableIds` from the **Timeline** (for example by dragging a block) or the
+reservation detail drawer. Distinct from **confirm**, which is the initial
+table assignment for a pending booking.
+
+**No-show**:
+A terminal reservation status applied when a booking is still `pending` or
+`confirmed` after `startsAt + noShowGraceMinutes`. Frees the table for
+availability checks. _Avoid_: autocancel.
+
+**Cancellation**:
+A terminal reservation status set by staff (with an optional reason). Frees
+the table for availability checks.
+
+**Reopen**:
+A staff action that moves a terminal reservation (`cancelled` or `no_show`)
+back into the active lifecycle — usually as `confirmed`, or directly as
+`seated` when the guest has arrived. Distinct from **Reschedule** on bookings
+that are already active.
+
 ## Relationships
 
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,
