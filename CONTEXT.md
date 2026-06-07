@@ -121,6 +121,15 @@ two prep stations (`kitchen`, `bar`) deliberately reuse the
 **Section**:
 A floor zone (e.g. patio, main room) `Tables` belong to. `Servers` are
 assigned to sections for the duration of (a sub-window of) a `Shift`.
+_Avoid_: zone, area (use Section).
+
+**Table**:
+A physical seatable unit in a `Restaurant`, identified by a
+`tableNumber`, with an optional `capacity` and optional membership in a
+`Section`. An inactive table is unavailable for reservations and seating;
+a hidden section still exists on the floor plan but is collapsed in the
+admin layout.
+_Avoid_: seat (too narrow — a table holds multiple seats).
 
 ### Reservations & timeline
 

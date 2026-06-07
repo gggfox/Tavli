@@ -179,6 +179,121 @@ describe("tables soft-delete + restore", () => {
 		expect(err?.name).toBe("VALIDATION_ERROR");
 	});
 
+	it("bulk-removes multiple tables in one call", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [tableA] = await manager.mutation(api.tables.create, {
+			restaurantId,
+			tableNumber: 1,
+			capacity: 4,
+		});
+		const [tableB] = await manager.mutation(api.tables.create, {
+			restaurantId,
+			tableNumber: 2,
+			capacity: 4,
+		});
+		const [tableC] = await manager.mutation(api.tables.create, {
+			restaurantId,
+			tableNumber: 3,
+			capacity: 4,
+		});
+
+		const [result, err] = await manager.mutation(api.tables.bulkRemove, {
+			restaurantId,
+			tableIds: [tableA as Id<"tables">, tableB as Id<"tables">],
+		});
+		expect(err).toBeNull();
+		expect(result?.removed).toBe(2);
+
+		const live = await t.query(api.tables.getByRestaurant, { restaurantId });
+		expect(live.map((tb) => tb._id)).toEqual([tableC]);
+
+		const trash = await t.query(api.tables.getDeletedForRestaurant, { restaurantId });
+		const trashIds = trash.map((tb) => tb._id);
+		expect(trashIds).toContain(tableA);
+		expect(trashIds).toContain(tableB);
+	});
+
+	it("bulk-remove skips already-deleted and wrong-restaurant ids", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const { otherRestaurantId } = await t.run(async (ctx) => {
+			const now = Date.now();
+			const org = await ctx.db.query("organizations").first();
+			if (!org) throw new Error("missing org");
+			const otherRestaurantId = await ctx.db.insert("restaurants", {
+				ownerId: "other-owner",
+				organizationId: org._id,
+				name: "Other",
+				slug: "other-r",
+				currency: "USD",
+				timezone: "UTC",
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			return { otherRestaurantId };
+		});
+
+		const [tableA] = await manager.mutation(api.tables.create, {
+			restaurantId,
+			tableNumber: 1,
+			capacity: 4,
+		});
+		const [tableB] = await manager.mutation(api.tables.create, {
+			restaurantId,
+			tableNumber: 2,
+			capacity: 4,
+		});
+		await manager.mutation(api.tables.remove, {
+			tableId: tableB as Id<"tables">,
+		});
+
+		const [otherTableId] = await t.run(async (ctx) => {
+			const now = Date.now();
+			return [
+				await ctx.db.insert("tables", {
+					restaurantId: otherRestaurantId,
+					tableNumber: 99,
+					capacity: 4,
+					isActive: true,
+					createdAt: now,
+				}),
+			] as const;
+		});
+
+		const [result, err] = await manager.mutation(api.tables.bulkRemove, {
+			restaurantId,
+			tableIds: [tableA as Id<"tables">, tableB as Id<"tables">, otherTableId as Id<"tables">],
+		});
+		expect(err).toBeNull();
+		expect(result?.removed).toBe(1);
+	});
+
+	it("bulk-remove rejects unauthorized caller", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+		const stranger = t.withIdentity({ subject: "stranger-user" });
+
+		const [tableId] = await manager.mutation(api.tables.create, {
+			restaurantId,
+			tableNumber: 1,
+			capacity: 4,
+		});
+
+		const [result, err] = await stranger.mutation(api.tables.bulkRemove, {
+			restaurantId,
+			tableIds: [tableId as Id<"tables">],
+		});
+		expect(result).toBeNull();
+		expect(err?.name).toBe("NOT_AUTHORIZED");
+	});
+
 	it("excludes tables in hidden sections from getActiveByRestaurant", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, managerUserId } = await seed(t);
