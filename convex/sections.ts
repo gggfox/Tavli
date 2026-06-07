@@ -36,7 +36,9 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import { stampUpdated } from "./_util/audit";
 import { getCurrentUserId, requireAdminRole, requireOwnerOrManager } from "./_util/auth";
-import { TABLE } from "./constants";
+import { FALLBACK_TABLE_CAPACITY, TABLE } from "./constants";
+
+const MAX_INITIAL_TABLE_COUNT = 50;
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 type SectionMutationErrors = AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
@@ -82,6 +84,8 @@ export const create = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.optional(v.string()),
 		displayOrder: v.optional(v.number()),
+		initialTableCount: v.optional(v.number()),
+		initialTableCapacity: v.optional(v.number()),
 	},
 	handler: async function (ctx, args): AsyncReturn<Id<"sections">, SectionMutationErrors> {
 		const [userId, authErr] = await getCurrentUserId(ctx);
@@ -95,6 +99,35 @@ export const create = mutation({
 				null,
 				new UserInputValidationError({
 					fields: [{ field: "name", message: "Must be 60 characters or fewer" }],
+				}).toObject(),
+			];
+		}
+
+		const initialTableCount = args.initialTableCount ?? 0;
+		if (
+			!Number.isInteger(initialTableCount) ||
+			initialTableCount < 0 ||
+			initialTableCount > MAX_INITIAL_TABLE_COUNT
+		) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{
+							field: "initialTableCount",
+							message: `Must be between 0 and ${MAX_INITIAL_TABLE_COUNT}`,
+						},
+					],
+				}).toObject(),
+			];
+		}
+
+		const initialTableCapacity = args.initialTableCapacity ?? FALLBACK_TABLE_CAPACITY;
+		if (initialTableCount > 0 && initialTableCapacity < 1) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "initialTableCapacity", message: "Must be at least 1" }],
 				}).toObject(),
 			];
 		}
@@ -118,6 +151,29 @@ export const create = mutation({
 			updatedAt: now,
 			updatedBy: userId,
 		});
+
+		if (initialTableCount > 0) {
+			const liveTables = await ctx.db
+				.query(TABLE.TABLES)
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+				.collect();
+
+			const startNumber =
+				liveTables
+					.filter((t) => t.deletedAt === undefined)
+					.reduce((max, t) => Math.max(max, t.tableNumber), 0) + 1;
+
+			for (let i = 0; i < initialTableCount; i++) {
+				await ctx.db.insert(TABLE.TABLES, {
+					restaurantId: args.restaurantId,
+					tableNumber: startNumber + i,
+					capacity: initialTableCapacity,
+					sectionId: id,
+					isActive: true,
+					createdAt: now,
+				});
+			}
+		}
 
 		return [id, null];
 	},

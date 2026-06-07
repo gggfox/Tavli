@@ -704,13 +704,16 @@
 			"bulkConfirmBody_one": "Se eliminará 1 mesa. Puedes restaurarla desde eliminadas recientemente.",
 			"bulkConfirmBody_other": "Se eliminarán {{count}} mesas. Puedes restaurarlas desde eliminadas recientemente.",
 			"bulkConfirmRemove": "Eliminar",
-			"bulkRemoveFailed": "Error al eliminar las mesas"
+			"bulkRemoveFailed": "Error al eliminar las mesas",
+			"errorNumberExists": "Este número de mesa ya existe"
 		},
 		"sections": {
 			"heading": "Secciones del salón",
 			"hint": "Agrupa las mesas en secciones (zonas). Los meseros se asignan a secciones por turno desde el horario.",
 			"add": "Agregar sección",
 			"newNamePlaceholder": "Nombre de la sección (opcional)",
+			"initialTableCountLabel": "Mesas a crear",
+			"initialTableSeatsLabel": "Asientos por mesa",
 			"renamePlaceholder": "Nombre de la sección",
 			"unnamed": "Sección {{number}}",
 			"autoCreatePlaceholder": "Crear al agregar",

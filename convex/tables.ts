@@ -88,7 +88,7 @@ export const create = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [{ field: "tableNumber", message: "Table number already exists" }],
+					fields: [{ field: "tableNumber", message: "ERROR_TABLE_NUMBER_EXISTS" }],
 				}).toObject(),
 			];
 		}
@@ -147,7 +147,7 @@ export const update = mutation({
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [{ field: "tableNumber", message: "Table number already exists" }],
+						fields: [{ field: "tableNumber", message: "ERROR_TABLE_NUMBER_EXISTS" }],
 					}).toObject(),
 				];
 			}

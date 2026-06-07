@@ -251,6 +251,76 @@ describe("sections.backfillDefault", () => {
 });
 
 describe("sections.create / remove", () => {
+	it("creates a section with no tables when initialTableCount is 0", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [sectionId, err] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Empty zone",
+			initialTableCount: 0,
+		});
+		expect(err).toBeNull();
+
+		const tables = await t.run(async (ctx) => {
+			const rows = await ctx.db
+				.query("tables")
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+				.collect();
+			return rows.filter((row) => row.sectionId === sectionId && row.deletedAt === undefined);
+		});
+		expect(tables).toHaveLength(0);
+	});
+
+	it("creates initial tables in a new section with sequential restaurant-wide numbers", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [sectionId, err] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Terrace",
+			initialTableCount: 3,
+			initialTableCapacity: 6,
+		});
+		expect(err).toBeNull();
+
+		const tables = await t.run(async (ctx) => {
+			const rows = await ctx.db
+				.query("tables")
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+				.collect();
+			return [...rows]
+				.filter((row) => row.sectionId === sectionId && row.deletedAt === undefined)
+				.sort((a, b) => a.tableNumber - b.tableNumber);
+		});
+		expect(tables).toHaveLength(3);
+		expect(tables.map((row) => row.tableNumber)).toEqual([2, 3, 4]);
+		expect(tables.every((row) => row.capacity === 6)).toBe(true);
+	});
+
+	it("rejects bulk table counts above the cap and invalid capacity", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, managerUserId } = await seed(t);
+		const manager = t.withIdentity({ subject: managerUserId });
+
+		const [, tooManyErr] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Overflow",
+			initialTableCount: 51,
+		});
+		expect(tooManyErr?.name).toBe("VALIDATION_ERROR");
+
+		const [, badCapacityErr] = await manager.mutation(api.sections.create, {
+			restaurantId,
+			name: "Bad seats",
+			initialTableCount: 2,
+			initialTableCapacity: 0,
+		});
+		expect(badCapacityErr?.name).toBe("VALIDATION_ERROR");
+	});
+
 	it("manager can create, rename, and delete an empty section", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, managerUserId } = await seed(t);
