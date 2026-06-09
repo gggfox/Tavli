@@ -11,7 +11,6 @@ import "react-grid-layout/css/styles.css";
 // Side-effect: every widget descriptor self-registers when this module loads.
 import "../widgets";
 
-import { unwrapResult } from "@/global/utils";
 import { useRestaurant } from "@/features/restaurants";
 import {
 	AdminPageLayout,
@@ -22,14 +21,15 @@ import {
 	Skeleton,
 } from "@/global/components";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult } from "@/global/utils";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { LayoutDashboard } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
 import type { Layout as RGLLayout } from "react-grid-layout";
+import { useTranslation } from "react-i18next";
 import { BUSINESS_SUMMARY_CONFIG, BUSINESS_SUMMARY_NAME } from "../constants";
 import { useDashboardLayouts } from "../hooks/useDashboardLayouts";
 import { useDashboardPrefs } from "../hooks/useDashboardPrefs";
@@ -428,7 +428,6 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 						config={effectiveConfig}
 						scopeKind={scope}
 						restaurantId={restaurantId}
-						currency={currency}
 						editing={editMode}
 						onLayoutChange={handleGridChange}
 						onRemoveWidget={handleRemoveWidget}

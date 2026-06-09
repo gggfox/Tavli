@@ -1,5 +1,5 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { DonutChart } from "@tremor/react";
@@ -10,9 +10,11 @@ import { PieChart } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { SampleDataBadge } from "../../components/SampleDataBadge";
 import { WidgetExportButton } from "../../components/WidgetExportButton";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
 import { SOBER_CHART_COLORS } from "../../constants";
+import { useWidgetData } from "../../hooks/useWidgetData";
 import { registerWidget, type WidgetDescriptor, type WidgetProps } from "../registry";
 
 export const ITEMS_BY_CATEGORY_TYPE = "itemsByCategory";
@@ -34,16 +36,20 @@ function ItemsByCategoryWidget({ context }: WidgetProps<Options>) {
 		select: unwrapResult<Result>,
 	});
 
-	const data = query.data;
+	const { data, isSample, isPending, error } = useWidgetData<Result>(
+		ITEMS_BY_CATEGORY_TYPE,
+		query,
+		(d) => d.length === 0
+	);
 
 	const money = useMemo(
 		() =>
 			new Intl.NumberFormat(i18n.language, {
 				style: "currency",
-				currency: context.currency ?? "USD",
+				currency: "USD",
 				maximumFractionDigits: 0,
 			}),
-		[i18n.language, context.currency]
+		[i18n.language]
 	);
 
 	const chartData = useMemo(
@@ -56,13 +62,14 @@ function ItemsByCategoryWidget({ context }: WidgetProps<Options>) {
 		[data]
 	);
 
-	if (query.isPending && !data) return <WidgetLoading />;
-	if (query.error) return <WidgetError error={query.error as Error} />;
+	if (isPending && !data) return <WidgetLoading />;
+	if (error) return <WidgetError error={error as Error} />;
 	if (!data || chartData.length === 0) return <WidgetEmpty />;
 
 	return (
 		<div className="h-full flex flex-col">
 			<div className="flex items-center justify-end gap-2 h-4">
+				{isSample && <SampleDataBadge />}
 				<WidgetExportButton filename="items-by-category" rows={exportRows} />
 			</div>
 			<DonutChart
@@ -86,7 +93,7 @@ export const itemsByCategoryDescriptor: WidgetDescriptor<Options> = registerWidg
 	requiredRole: "employee",
 	portfolioCapable: false,
 	supportsComparison: false,
-	maxRangeDays: 366,
+	maxRangeDays: 92,
 	defaultGrid: { w: 4, h: 5, minW: 3, minH: 3 },
 	optionsSchema,
 	defaultOptions: {},

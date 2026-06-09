@@ -1,5 +1,5 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -7,8 +7,10 @@ import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { WidgetProps } from "../registry";
+import { SampleDataBadge } from "../../components/SampleDataBadge";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
+import { useWidgetData } from "../../hooks/useWidgetData";
+import type { WidgetProps } from "../registry";
 import type { NumberWithDeltaOptions } from "./schema";
 import { METRIC_LABEL_KEY } from "./schema";
 
@@ -47,7 +49,15 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 		select: unwrapResult<NumberWithDeltaResult>,
 	});
 
-	const data = query.data;
+	const { data, isSample, isPending, error } = useWidgetData<NumberWithDeltaResult>(
+		`numberWithDelta:${options.metric}`,
+		query,
+		(d) => d.current === 0
+	);
+
+	if (isPending && !data) return <WidgetLoading />;
+	if (error) return <WidgetError error={error as Error} />;
+	if (!data) return <WidgetEmpty />;
 
 	if (query.isPending && !data) return <WidgetLoading />;
 	if (query.error) return <WidgetError error={query.error as Error} />;
@@ -56,7 +66,7 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 	const currency = context.currency ?? "USD";
 	const isMoney = MONEY_METRICS.has(options.metric);
 	const formatted = isMoney
-		? formatMoney(data.current, i18n.language, currency)
+		? formatMoney(data.current, i18n.language)
 		: formatNumber(data.current, i18n.language);
 
 	const deltaPct = data.deltaPct;
@@ -97,6 +107,7 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 				<span className="text-xs uppercase tracking-wide text-faint-foreground truncate">
 					{t(METRIC_LABEL_KEY[options.metric])}
 				</span>
+				{isSample && <SampleDataBadge />}
 			</div>
 			<div className="flex-1 flex flex-col items-center justify-center gap-2">
 				<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>

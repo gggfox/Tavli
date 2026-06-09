@@ -5,23 +5,18 @@
 import type { DashboardLayoutConfig } from "./types";
 
 /**
- * Chart palette (tremor named Tailwind colors). TAVLI-2: "respect the platform's
- * design and color palette, mainly using sober colors." Muted, professional
- * hues that stay visually **distinct** from one another so multi-series charts
- * (e.g. the items-by-category donut) are readable — an all-grayscale set made
- * adjacent slices indistinguishable. Keep in sync with the tremor color
- * safelist in `global/styles/index.css`.
+ * Muted, professional chart colors (tremor named Tailwind colors). TAVLI-2:
+ * "respect the platform's design and color palette, mainly using sober colors."
  */
-export const SOBER_CHART_COLORS = ["blue", "teal", "amber", "violet", "rose", "slate"] as const;
+export const SOBER_CHART_COLORS = ["blue", "slate", "stone", "zinc", "neutral", "gray"] as const;
 
 /** Name of the curated default layout (also used as its tab title once saved). */
 export const BUSINESS_SUMMARY_NAME = "Business Summary";
 
 /**
- * Global default for where dashboard error reports are routed (TAVLI-2:
- * "redirect the user to an email contact so they can submit a report"). Used as
- * the guaranteed fallback when a restaurant has no `supportEmail` set, or when
- * restaurant context is unavailable (the error fallback can render outside it).
+ * Where dashboard error reports are routed (TAVLI-2: "redirect the user to an
+ * email contact so they can submit a report"). TODO: confirm the real address
+ * — this is a stub.
  */
 export const SUPPORT_EMAIL = "support@tavli.app";
 

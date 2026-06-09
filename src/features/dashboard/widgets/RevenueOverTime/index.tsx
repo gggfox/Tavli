@@ -1,5 +1,5 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart } from "@tremor/react";
@@ -92,13 +92,12 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 					new Intl.NumberFormat(i18n.language, {
 						style: "currency",
 						currency: query.data?.currency ?? "USD",
-						notation: "compact",
-						maximumFractionDigits: 1,
+						maximumFractionDigits: 0,
 					}).format(v)
 				}
 				showLegend={false}
 				showGridLines={false}
-				yAxisWidth={96}
+				yAxisWidth={48}
 			/>
 		</div>
 	);

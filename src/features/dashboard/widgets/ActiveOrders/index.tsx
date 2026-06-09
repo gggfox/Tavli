@@ -1,5 +1,5 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -8,7 +8,9 @@ import type { FunctionReturnType } from "convex/server";
 import { Activity } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { SampleDataBadge } from "../../components/SampleDataBadge";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
+import { useWidgetData } from "../../hooks/useWidgetData";
 import { registerWidget, type WidgetDescriptor, type WidgetProps } from "../registry";
 
 export const ACTIVE_ORDERS_TYPE = "activeOrders";
@@ -30,19 +32,24 @@ function ActiveOrdersWidget({ context }: WidgetProps<Options>) {
 		select: unwrapResult<Result>,
 	});
 
-	const data = query.data;
+	const { data, isSample, isPending, error } = useWidgetData<Result>(
+		ACTIVE_ORDERS_TYPE,
+		query,
+		(d) => d.seatedTables === 0 && d.activeOrderCount === 0
+	);
 
-	if (query.isPending && !data) return <WidgetLoading />;
-	if (query.error) return <WidgetError error={query.error as Error} />;
+	if (isPending && !data) return <WidgetLoading />;
+	if (error) return <WidgetError error={error as Error} />;
 	if (!data) return <WidgetEmpty />;
 
 	const money = new Intl.NumberFormat(i18n.language, {
 		style: "currency",
-		currency: context.currency ?? "USD",
+		currency: "USD",
 	}).format(data.activeOrderValue);
 
 	return (
 		<div className="h-full flex flex-col">
+			<div className="flex items-center justify-end h-4">{isSample && <SampleDataBadge />}</div>
 			<div className="flex-1 grid grid-cols-2 gap-3 content-center">
 				<Stat
 					label={t(DashboardKeys.WIDGET_ACTIVE_ORDERS_SEATED)}

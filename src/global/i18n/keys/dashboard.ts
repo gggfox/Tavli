@@ -71,6 +71,8 @@ export const DashboardKeys = {
 
 	WIDGET_LOADING: "dashboard.widget.loading",
 	WIDGET_EXPORT_CSV: "dashboard.widget.exportCsv",
+	WIDGET_SAMPLE_DATA_BADGE: "dashboard.widget.sampleDataBadge",
+	WIDGET_SAMPLE_DATA_TOOLTIP: "dashboard.widget.sampleDataTooltip",
 	WIDGET_ERROR_TITLE: "dashboard.widget.errorTitle",
 	WIDGET_ERROR_DESCRIPTION: "dashboard.widget.errorDescription",
 	WIDGET_ERROR_RANGE_TOO_LARGE: "dashboard.widget.errorRangeTooLarge",

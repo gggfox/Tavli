@@ -1223,6 +1223,8 @@
 			"overrideRemove": "Use global range",
 			"loading": "Loading…",
 			"exportCsv": "Export CSV",
+			"sampleDataBadge": "Sample data",
+			"sampleDataTooltip": "Showing sample data in development — no real data for this range yet.",
 			"errorTitle": "Could not load widget.",
 			"errorDescription": "Try again or pick a different range.",
 			"errorRangeTooLarge": "Date range too large for this widget. Pick a shorter range.",
