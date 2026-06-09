@@ -1213,6 +1213,9 @@
 			"overrideBadge": "Rango propio",
 			"overrideRemove": "Usar rango global",
 			"loading": "Cargando…",
+			"exportCsv": "Exportar CSV",
+			"sampleDataBadge": "Datos de ejemplo",
+			"sampleDataTooltip": "Mostrando datos de ejemplo en desarrollo — aún no hay datos reales para este rango.",
 			"errorTitle": "No se pudo cargar el widget.",
 			"errorDescription": "Intenta de nuevo o elige otro rango.",
 			"errorRangeTooLarge": "El rango es demasiado grande para este widget. Elige uno más corto.",
@@ -1258,6 +1261,8 @@
 					"reservationsCount": "Reservas",
 					"reservationsConfirmed": "Reservas confirmadas",
 					"ordersCount": "Órdenes pagadas",
+					"ordersAvgDishValue": "Valor promedio por platillo",
+					"ordersAvgCheck": "Cuenta promedio",
 					"paymentsRevenueTotal": "Ingresos",
 					"covers": "Comensales"
 				}
@@ -1282,6 +1287,25 @@
 				"label": "Reservas por estado",
 				"description": "Conteo de reservas que comienzan en el rango, agrupadas por estado."
 			},
+			"activeOrders": {
+				"label": "Órdenes activas",
+				"description": "Vista en vivo de mesas ocupadas y órdenes en curso en este momento.",
+				"seated": "Mesas ocupadas",
+				"active": "Órdenes activas",
+				"value": "Valor en curso"
+			},
+			"itemsByCategory": {
+				"label": "Productos por categoría",
+				"description": "Proporción de ingresos por categoría del menú en el rango."
+			},
+			"serverPerformance": {
+				"label": "Desempeño de meseros",
+				"description": "Meseros ordenados por ventas atribuidas, con órdenes y cuenta promedio.",
+				"colServer": "Mesero",
+				"colSales": "Ventas",
+				"colOrders": "Órdenes",
+				"colAvgCheck": "Cuenta prom."
+			},
 			"tipsTotal": {
 				"label": "Total de propinas",
 				"description": "Suma de propinas en el rango con un sparkline diario."
@@ -1294,6 +1318,12 @@
 				"label": "Mapa de horas pico",
 				"description": "Volumen de órdenes por día de la semana y hora."
 			}
+		},
+		"errorBoundary": {
+			"title": "Algo salió mal",
+			"description": "El tablero tuvo un error inesperado. Escríbenos por correo para resolverlo lo antes posible.",
+			"contactAction": "Escribir a soporte",
+			"emailSubject": "Reporte de error del tablero"
 		},
 		"day": {
 			"sun": "Dom",

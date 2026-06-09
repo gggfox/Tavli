@@ -8,6 +8,7 @@ import type { FunctionReturnType } from "convex/server";
 import { ListOrdered } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { WidgetExportButton } from "../../components/WidgetExportButton";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
 import { registerWidget, type WidgetDescriptor, type WidgetProps } from "../registry";
 
@@ -41,20 +42,31 @@ function TopMenuItemsWidget({ options, context }: WidgetProps<Options>) {
 	if (query.error) return <WidgetError error={query.error as Error} />;
 	if (!query.data || query.data.length === 0) return <WidgetEmpty />;
 
+	const exportRows = query.data.map((row) => ({
+		item: row.menuItemName,
+		quantity: row.quantity,
+		revenue: row.revenue,
+	}));
+
 	return (
-		<ol className="space-y-1.5">
-			{query.data.map((row, i) => (
-				<li key={row.menuItemId} className="flex items-center justify-between gap-2 text-sm">
-					<span className="flex items-center gap-2 min-w-0">
-						<span className="text-faint-foreground tabular-nums w-5 text-right">{i + 1}.</span>
-						<span className="truncate text-foreground">{row.menuItemName}</span>
-					</span>
-					<span className="text-xs text-faint-foreground shrink-0">
-						{t(DashboardKeys.WIDGET_TOP_MENU_ITEMS_QUANTITY, { count: row.quantity })}
-					</span>
-				</li>
-			))}
-		</ol>
+		<div className="h-full flex flex-col">
+			<div className="flex items-center justify-end h-4">
+				<WidgetExportButton filename="top-menu-items" rows={exportRows} />
+			</div>
+			<ol className="space-y-1.5 mt-1 overflow-auto">
+				{query.data.map((row, i) => (
+					<li key={row.menuItemId} className="flex items-center justify-between gap-2 text-sm">
+						<span className="flex items-center gap-2 min-w-0">
+							<span className="text-faint-foreground tabular-nums w-5 text-right">{i + 1}.</span>
+							<span className="truncate text-foreground">{row.menuItemName}</span>
+						</span>
+						<span className="text-xs text-faint-foreground shrink-0">
+							{t(DashboardKeys.WIDGET_TOP_MENU_ITEMS_QUANTITY, { count: row.quantity })}
+						</span>
+					</li>
+				))}
+			</ol>
+		</div>
 	);
 }
 

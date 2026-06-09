@@ -30,6 +30,7 @@ import { LayoutDashboard } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Layout as RGLLayout } from "react-grid-layout";
+import { BUSINESS_SUMMARY_CONFIG, BUSINESS_SUMMARY_NAME } from "../constants";
 import { useDashboardLayouts } from "../hooks/useDashboardLayouts";
 import { useDashboardPrefs } from "../hooks/useDashboardPrefs";
 import type {
@@ -100,6 +101,11 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 	}, [activeLayout, activeLayoutId, setActiveLayoutId]);
 
 	const [draftConfig, setDraftConfig] = useState<DashboardLayoutConfig | null>(null);
+	// In-session config for the curated default view shown when the user has no
+	// saved layout. Lets the global range / compare controls work before the
+	// layout is materialized (on first edit).
+	const [defaultViewConfig, setDefaultViewConfig] =
+		useState<DashboardLayoutConfig>(BUSINESS_SUMMARY_CONFIG);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [templatesOpen, setTemplatesOpen] = useState(false);
 	const [publishOpen, setPublishOpen] = useState(false);
@@ -122,8 +128,9 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 		}
 	}, [editMode]);
 
+	// No saved layout → show the curated "Business Summary" default config.
 	const effectiveConfig: DashboardLayoutConfig =
-		(editMode && draftConfig) || activeLayout?.config || DEFAULT_CONFIG;
+		(editMode && draftConfig) || activeLayout?.config || defaultViewConfig;
 
 	const dirty =
 		editMode &&
@@ -141,8 +148,20 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 	});
 
 	const handleEnterEdit = useCallback(() => {
+		// Editing the curated default materializes it as the user's own layout.
+		if (!activeLayout) {
+			void (async () => {
+				const id = await create({
+					name: BUSINESS_SUMMARY_NAME,
+					config: structuredClone(defaultViewConfig),
+				});
+				setActiveLayoutId(id);
+				setEditMode(true);
+			})();
+			return;
+		}
 		setEditMode(true);
-	}, [setEditMode]);
+	}, [activeLayout, create, defaultViewConfig, setActiveLayoutId, setEditMode]);
 
 	const handleDiscard = useCallback(() => {
 		setDraftConfig(null);
@@ -247,7 +266,9 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 			}
 			if (activeLayout) {
 				void update({ layoutId: activeLayout._id, config: updated });
+				return;
 			}
+			setDefaultViewConfig(updated);
 		},
 		[effectiveConfig, editMode, activeLayout, update]
 	);
@@ -265,7 +286,9 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 			}
 			if (activeLayout) {
 				void update({ layoutId: activeLayout._id, config: updated });
+				return;
 			}
+			setDefaultViewConfig(updated);
 		},
 		[effectiveConfig, editMode, activeLayout, update]
 	);
@@ -376,14 +399,12 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 				onDelete={(id) => void handleDeleteLayout(id)}
 			/>
 
-			{activeLayout && (
-				<DashboardGlobalControls
-					rangeKind={effectiveConfig.globalDateRange}
-					compareToPrev={effectiveConfig.compareToPrev}
-					onRangeChange={handleRangeChange}
-					onCompareToggle={handleCompareToggle}
-				/>
-			)}
+			<DashboardGlobalControls
+				rangeKind={effectiveConfig.globalDateRange}
+				compareToPrev={effectiveConfig.compareToPrev}
+				onRangeChange={handleRangeChange}
+				onCompareToggle={handleCompareToggle}
+			/>
 		</div>
 	);
 
@@ -398,31 +419,14 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 					header={header}
 					gap="6"
 				>
-					{!activeLayout ? (
-						<EmptyState
-							icon={LayoutDashboard}
-							title={t(DashboardKeys.TABS_EMPTY_TITLE)}
-							description={t(DashboardKeys.TABS_EMPTY_DESCRIPTION)}
-							action={
-								<button
-									type="button"
-									onClick={() => void handleCreateLayout()}
-									className="text-xs px-3 py-1.5 rounded-md bg-(--btn-primary-bg) text-(--btn-primary-text)"
-								>
-									{t(DashboardKeys.TABS_EMPTY_ACTION)}
-								</button>
-							}
-						/>
-					) : (
-						<DashboardGrid
-							config={effectiveConfig}
-							scopeKind={scope}
-							restaurantId={restaurantId}
-							editing={editMode}
-							onLayoutChange={handleGridChange}
-							onRemoveWidget={handleRemoveWidget}
-						/>
-					)}
+					<DashboardGrid
+						config={effectiveConfig}
+						scopeKind={scope}
+						restaurantId={restaurantId}
+						editing={editMode}
+						onLayoutChange={handleGridChange}
+						onRemoveWidget={handleRemoveWidget}
+					/>
 				</DashboardShell>
 			</AdminPageLayout>
 

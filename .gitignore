@@ -14,6 +14,8 @@ todos.json
 coverage/
 .worktrees/
 .idea
+
+# clerk configuration (can include secrets)
 .clerk
 
 # Handoff docs — keep the folders, ignore their (potentially sensitive) contents

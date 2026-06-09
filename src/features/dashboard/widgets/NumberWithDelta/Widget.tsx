@@ -8,7 +8,9 @@ import type { FunctionReturnType } from "convex/server";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { WidgetProps } from "../registry";
+import { SampleDataBadge } from "../../components/SampleDataBadge";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
+import { useWidgetData } from "../../hooks/useWidgetData";
 import type { NumberWithDeltaOptions } from "./schema";
 import { METRIC_LABEL_KEY } from "./schema";
 
@@ -16,7 +18,11 @@ type NumberWithDeltaResult = UnwrappedValue<
 	FunctionReturnType<typeof api.analytics.numberWithDelta.compute>
 >;
 
-const MONEY_METRICS = new Set<NumberWithDeltaOptions["metric"]>(["payments.revenueTotal"]);
+const MONEY_METRICS = new Set<NumberWithDeltaOptions["metric"]>([
+	"payments.revenueTotal",
+	"orders.avgDishValue",
+	"orders.avgCheck",
+]);
 
 export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWithDeltaOptions>) {
 	const { t, i18n } = useTranslation();
@@ -43,17 +49,23 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 		select: unwrapResult<NumberWithDeltaResult>,
 	});
 
-	if (query.isPending && !query.data) return <WidgetLoading />;
-	if (query.error) return <WidgetError error={query.error as Error} />;
-	if (!query.data) return <WidgetEmpty />;
+	const { data, isSample, isPending, error } = useWidgetData<NumberWithDeltaResult>(
+		`numberWithDelta:${options.metric}`,
+		query,
+		(d) => d.current === 0
+	);
+
+	if (isPending && !data) return <WidgetLoading />;
+	if (error) return <WidgetError error={error as Error} />;
+	if (!data) return <WidgetEmpty />;
 
 	const isMoney = MONEY_METRICS.has(options.metric);
 	const formatted = isMoney
-		? formatMoney(query.data.current, i18n.language)
-		: formatNumber(query.data.current, i18n.language);
+		? formatMoney(data.current, i18n.language)
+		: formatNumber(data.current, i18n.language);
 
-	const deltaPct = query.data.deltaPct;
-	const deltaAbs = query.data.deltaAbs;
+	const deltaPct = data.deltaPct;
+	const deltaAbs = data.deltaAbs;
 
 	let deltaNode: React.ReactNode = null;
 	if (deltaPct !== null) {
@@ -86,9 +98,12 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 
 	return (
 		<div className="h-full flex flex-col">
-			<span className="text-xs uppercase tracking-wide text-faint-foreground">
-				{t(METRIC_LABEL_KEY[options.metric])}
-			</span>
+			<div className="flex items-center justify-between gap-2">
+				<span className="text-xs uppercase tracking-wide text-faint-foreground truncate">
+					{t(METRIC_LABEL_KEY[options.metric])}
+				</span>
+				{isSample && <SampleDataBadge />}
+			</div>
 			<div className="flex-1 flex flex-col items-center justify-center gap-2">
 				<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
 				{deltaNode}

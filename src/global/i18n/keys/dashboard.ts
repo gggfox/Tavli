@@ -70,6 +70,9 @@ export const DashboardKeys = {
 	TEMPLATES_PUBLISHED_BY: "dashboard.templates.publishedBy",
 
 	WIDGET_LOADING: "dashboard.widget.loading",
+	WIDGET_EXPORT_CSV: "dashboard.widget.exportCsv",
+	WIDGET_SAMPLE_DATA_BADGE: "dashboard.widget.sampleDataBadge",
+	WIDGET_SAMPLE_DATA_TOOLTIP: "dashboard.widget.sampleDataTooltip",
 	WIDGET_ERROR_TITLE: "dashboard.widget.errorTitle",
 	WIDGET_ERROR_DESCRIPTION: "dashboard.widget.errorDescription",
 	WIDGET_ERROR_RANGE_TOO_LARGE: "dashboard.widget.errorRangeTooLarge",
@@ -91,9 +94,29 @@ export const DashboardKeys = {
 		"dashboard.widgets.numberWithDelta.metric.reservationsConfirmed",
 	WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_COUNT:
 		"dashboard.widgets.numberWithDelta.metric.ordersCount",
+	WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_AVG_DISH_VALUE:
+		"dashboard.widgets.numberWithDelta.metric.ordersAvgDishValue",
+	WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_AVG_CHECK:
+		"dashboard.widgets.numberWithDelta.metric.ordersAvgCheck",
 	WIDGET_NUMBER_WITH_DELTA_METRIC_PAYMENTS_REVENUE_TOTAL:
 		"dashboard.widgets.numberWithDelta.metric.paymentsRevenueTotal",
 	WIDGET_NUMBER_WITH_DELTA_METRIC_COVERS: "dashboard.widgets.numberWithDelta.metric.covers",
+
+	WIDGET_ACTIVE_ORDERS_LABEL: "dashboard.widgets.activeOrders.label",
+	WIDGET_ACTIVE_ORDERS_DESCRIPTION: "dashboard.widgets.activeOrders.description",
+	WIDGET_ACTIVE_ORDERS_SEATED: "dashboard.widgets.activeOrders.seated",
+	WIDGET_ACTIVE_ORDERS_ACTIVE: "dashboard.widgets.activeOrders.active",
+	WIDGET_ACTIVE_ORDERS_VALUE: "dashboard.widgets.activeOrders.value",
+
+	WIDGET_ITEMS_BY_CATEGORY_LABEL: "dashboard.widgets.itemsByCategory.label",
+	WIDGET_ITEMS_BY_CATEGORY_DESCRIPTION: "dashboard.widgets.itemsByCategory.description",
+
+	WIDGET_SERVER_PERFORMANCE_LABEL: "dashboard.widgets.serverPerformance.label",
+	WIDGET_SERVER_PERFORMANCE_DESCRIPTION: "dashboard.widgets.serverPerformance.description",
+	WIDGET_SERVER_PERFORMANCE_COL_SERVER: "dashboard.widgets.serverPerformance.colServer",
+	WIDGET_SERVER_PERFORMANCE_COL_SALES: "dashboard.widgets.serverPerformance.colSales",
+	WIDGET_SERVER_PERFORMANCE_COL_ORDERS: "dashboard.widgets.serverPerformance.colOrders",
+	WIDGET_SERVER_PERFORMANCE_COL_AVG_CHECK: "dashboard.widgets.serverPerformance.colAvgCheck",
 
 	WIDGET_TOP_MENU_ITEMS_LABEL: "dashboard.widgets.topMenuItems.label",
 	WIDGET_TOP_MENU_ITEMS_DESCRIPTION: "dashboard.widgets.topMenuItems.description",
@@ -119,6 +142,11 @@ export const DashboardKeys = {
 
 	WIDGET_BUSY_TIMES_HEATMAP_LABEL: "dashboard.widgets.busyTimesHeatmap.label",
 	WIDGET_BUSY_TIMES_HEATMAP_DESCRIPTION: "dashboard.widgets.busyTimesHeatmap.description",
+
+	ERROR_BOUNDARY_TITLE: "dashboard.errorBoundary.title",
+	ERROR_BOUNDARY_DESCRIPTION: "dashboard.errorBoundary.description",
+	ERROR_BOUNDARY_CONTACT_ACTION: "dashboard.errorBoundary.contactAction",
+	ERROR_BOUNDARY_EMAIL_SUBJECT: "dashboard.errorBoundary.emailSubject",
 
 	DAY_SUN: "dashboard.day.sun",
 	DAY_MON: "dashboard.day.mon",
