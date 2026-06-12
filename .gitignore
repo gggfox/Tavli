@@ -14,3 +14,10 @@ todos.json
 coverage/
 .worktrees/
 .idea
+.clerk
+
+# Handoff docs — keep the folders, ignore their (potentially sensitive) contents
+.claude/handoffs/*
+!.claude/handoffs/.gitkeep
+.cursor/handoffs/*
+!.cursor/handoffs/.gitkeep
