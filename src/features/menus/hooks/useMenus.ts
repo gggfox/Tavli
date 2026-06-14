@@ -12,6 +12,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 	const updateMenu = useConvexMutate(api.menus.updateMenu);
 
 	const createCategory = useConvexMutate(api.menus.createCategory);
+	const createCategories = useConvexMutate(api.menus.createCategories);
 	const updateCategory = useConvexMutate(api.menus.updateCategory);
 	const deleteCategory = useConvexMutate(api.menus.deleteCategory);
 
@@ -20,6 +21,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 		isLoading,
 		updateMenu: updateMenu.mutateAsync,
 		createCategory: createCategory.mutateAsync,
+		createCategories: createCategories.mutateAsync,
 		updateCategory: updateCategory.mutateAsync,
 		deleteCategory: deleteCategory.mutateAsync,
 	};

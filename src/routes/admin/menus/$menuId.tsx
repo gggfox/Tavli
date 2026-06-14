@@ -1,14 +1,15 @@
 import { ExportMenuButton, useCanExport } from "@/features/exports";
-import { MenuEditor, MenuEditorSkeleton } from "@/features/menus";
+import { AddCategoriesModal, MenuEditor, MenuEditorSkeleton } from "@/features/menus";
 import { useRestaurant } from "@/features/restaurants";
+import { AdminPageLayout, Button } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { Id } from "convex/_generated/dataModel";
-import { ArrowLeft } from "lucide-react";
-import { useLayoutEffect } from "react";
+import { ArrowLeft, Plus } from "lucide-react";
+import { useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/admin/menus/$menuId")({
@@ -35,33 +36,53 @@ function MenuEditorPage() {
 	}, [isLoading, restaurant, menuLoading, menu, navigate]);
 
 	const showSkeleton = isLoading || !restaurant || menuLoading || !canEdit;
+	const [addCategoriesOpen, setAddCategoriesOpen] = useState(false);
+	const [isTranslationMode, setIsTranslationMode] = useState(false);
 
 	return (
-		<div className="p-6 flex flex-col h-full">
-			<div className="mb-6 flex items-start justify-between gap-4">
-				<div>
-					<Link
-						to="/admin/menus"
-						search={{ view: "list" }}
-						className="flex items-center gap-1 text-sm mb-3 hover:underline text-primary"
-					>
-						<ArrowLeft size={16} /> {t(MenusKeys.EDITOR_BACK_TO_LIST)}
-					</Link>
-					<h1 className="text-2xl font-semibold text-foreground">
-						{t(MenusKeys.EDITOR_HEADER_TITLE)}
-					</h1>
-					<p className="mt-2 text-sm text-muted-foreground">
-						{t(MenusKeys.EDITOR_HEADER_DESCRIPTION)}
-					</p>
-				</div>
-				{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
-			</div>
-			<div className="flex-1 min-h-0 overflow-y-auto">
-				{showSkeleton && <MenuEditorSkeleton />}
-				{!showSkeleton && restaurant && (
-					<MenuEditor menuId={menuId as Id<"menus">} restaurantId={restaurant._id} />
-				)}
-			</div>
-		</div>
+		<AdminPageLayout
+			breadcrumb={
+				<Link
+					to="/admin/menus"
+					search={{ view: "list" }}
+					className="flex items-center gap-1 text-sm hover:underline text-primary"
+				>
+					<ArrowLeft size={16} /> {t(MenusKeys.EDITOR_BACK_TO_LIST)}
+				</Link>
+			}
+			actions={
+				<>
+					{!isTranslationMode ? (
+						<Button
+							variant="primary"
+							size="md"
+							leadingIcon={<Plus size={14} />}
+							onClick={() => setAddCategoriesOpen(true)}
+						>
+							{t(MenusKeys.EDITOR_ADD_CATEGORY)}
+						</Button>
+					) : null}
+					{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
+				</>
+			}
+		>
+			{restaurant && canEdit ? (
+				<AddCategoriesModal
+					isOpen={addCategoriesOpen}
+					onClose={() => setAddCategoriesOpen(false)}
+					menuId={menuId as Id<"menus">}
+					restaurantId={restaurant._id}
+				/>
+			) : null}
+			{showSkeleton && <MenuEditorSkeleton />}
+			{!showSkeleton && restaurant && (
+				<MenuEditor
+					menuId={menuId as Id<"menus">}
+					restaurantId={restaurant._id}
+					onTranslationModeChange={setIsTranslationMode}
+					onAddCategoriesClick={() => setAddCategoriesOpen(true)}
+				/>
+			)}
+		</AdminPageLayout>
 	);
 }

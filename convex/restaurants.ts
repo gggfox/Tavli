@@ -29,6 +29,7 @@ import {
 	USER_ROLES,
 } from "./constants";
 import { insertMenuForRestaurant } from "./menus";
+import { isValidIanaTimezone, resolveRestaurantTimezone } from "./_util/timezone";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -183,7 +184,7 @@ export const create = mutation({
 			slug: args.slug,
 			description: args.description,
 			currency: args.currency,
-			timezone: args.timezone,
+			timezone: resolveRestaurantTimezone(args.timezone),
 			isActive: false,
 			createdAt: now,
 			updatedAt: now,
@@ -288,12 +289,26 @@ export const update = mutation({
 			}
 		}
 
+		if (args.timezone !== undefined) {
+			const raw = args.timezone.trim();
+			if (raw.length > 0 && !isValidIanaTimezone(raw)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "timezone", message: "Invalid timezone identifier" }],
+					}).toObject(),
+				];
+			}
+		}
+
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
 			...(args.slug !== undefined && { slug: args.slug }),
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
-			...(args.timezone !== undefined && { timezone: args.timezone }),
+			...(args.timezone !== undefined && {
+				timezone: args.timezone.trim() ? args.timezone.trim() : undefined,
+			}),
 			...(args.openTime !== undefined && { openTime: args.openTime }),
 			...(args.closeTime !== undefined && { closeTime: args.closeTime }),
 			...(args.defaultLanguage !== undefined && { defaultLanguage: args.defaultLanguage }),

@@ -1,4 +1,5 @@
 import { Skeleton } from "@/global/components";
+import { useIsTabletPortraitViewport } from "@/global/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
 import { useTranslation } from "react-i18next";
 
@@ -6,6 +7,7 @@ const ROWS = 4;
 
 export function AdminRestaurantsListSkeleton() {
 	const { t } = useTranslation();
+	const isTabletPortrait = useIsTabletPortraitViewport();
 	return (
 		<div className="space-y-4" aria-label={t(RestaurantsKeys.LIST_LOADING_ARIA)} aria-busy="true">
 			<div className="flex justify-end">
@@ -14,15 +16,15 @@ export function AdminRestaurantsListSkeleton() {
 
 			<div className="space-y-2">
 				<Skeleton.Repeat count={ROWS} keyPrefix="restaurant">
-					{(i) => (
+					{() => (
 						<Skeleton.Card className="flex items-center justify-between px-4 py-3">
-							<div className="flex items-center gap-4">
-								<div className="space-y-2">
-									<Skeleton className="h-4" style={{ width: `${110 + (i % 3) * 22}px` }} />
+							<div className="flex items-center gap-4 min-w-0">
+								<div className="w-40 shrink-0 space-y-2">
+									<Skeleton className="h-4 w-28" />
 									<Skeleton className="h-3 w-20" />
 								</div>
 								<Skeleton rounded="full" className="h-5 w-14" />
-								<Skeleton className="h-3 w-10" />
+								{!isTabletPortrait && <Skeleton className="h-3 w-10" />}
 							</div>
 							<div className="flex items-center gap-2">
 								<Skeleton rounded="md" className="h-7 w-7" />

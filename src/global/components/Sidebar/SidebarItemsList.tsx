@@ -9,7 +9,7 @@ export function SidebarItemsList({
 	const { isExpanded } = useToggleSidebar();
 
 	return (
-		<nav className="flex-1 p-2 overflow-y-auto overflow-x-hidden space-y-0.5">
+		<nav className="flex-1 min-h-0 p-2 overflow-y-auto overflow-x-hidden space-y-0.5">
 			{list.map((item: SidebarItem) => {
 				return (
 					<RenderSidebarItem

@@ -26,6 +26,8 @@ export const OrderingKeys = {
 	MENU_TOTAL_WITH_COUNT: "ordering.menu.totalWithCount",
 	MENU_TAP_TO_START: "ordering.menu.tapToStart",
 	MENU_NO_ONLINE_ORDERING: "ordering.menu.noOnlineOrdering",
+	MENU_FILTER_PLACEHOLDER: "ordering.menu.filterPlaceholder",
+	MENU_FILTER_NO_MATCHES: "ordering.menu.filterNoMatches",
 
 	ITEM_REQUIRED: "ordering.item.required",
 	ITEM_PICK_ONE: "ordering.item.pickOne",

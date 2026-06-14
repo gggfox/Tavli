@@ -1,4 +1,5 @@
 import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
+import { resolveRestaurantTimezone } from "@/global/utils/timezone";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -44,7 +45,11 @@ export function useTimelineData(
 	range: ReservationRange,
 	customDay: string | undefined
 ): TimelineData {
-	const bounds = useMemo(() => dashboardReservationBounds(range, customDay), [range, customDay]);
+	const timezone = resolveRestaurantTimezone(restaurant?.timezone);
+	const bounds = useMemo(
+		() => dashboardReservationBounds(range, customDay, undefined, timezone),
+		[range, customDay, timezone]
+	);
 
 	const reservationsQuery = useQuery({
 		...convexQuery(

@@ -1,3 +1,4 @@
+export { AddCategoriesModal } from "./components/AddCategoriesModal";
 export { MenuEditor } from "./components/MenuEditor";
 export { MenuEditorSkeleton } from "./components/MenuEditorSkeleton";
 export { MenuImportDialog } from "./components/MenuImportDialog";

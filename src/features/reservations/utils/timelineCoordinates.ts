@@ -1,4 +1,12 @@
-import { todayLocalYmd, ymdToLocalDate } from "@/global/utils/calendarMonth";
+import {
+	parseHm,
+	resolveRestaurantTimezone,
+	SCHEDULE_MS_PER_DAY,
+	startOfDayMs,
+	utcMsToHmInTimezone,
+	utcMsToYmdInTimezone,
+	ymdHmToUtcMs,
+} from "@/global/utils/timezone";
 
 const SNAP_MINUTES = 15;
 const MS_PER_MINUTE = 60_000;
@@ -29,13 +37,11 @@ export function snapMinuteUp(minuteOffset: number): number {
 export function minuteOffsetToStartsAt(
 	selectedDay: string,
 	openHour: number,
-	minuteOffset: number
+	minuteOffset: number,
+	timezone: string
 ): number {
-	const clickedHour = Math.floor((openHour * 60 + minuteOffset) / 60);
-	const clickedMinute = (openHour * 60 + minuteOffset) % 60;
-	const baseDate = ymdToLocalDate(selectedDay);
-	baseDate.setHours(clickedHour, clickedMinute, 0, 0);
-	return baseDate.getTime();
+	const minutesFromMidnight = openHour * 60 + minuteOffset;
+	return ymdHmToUtcMs(selectedDay, minutesFromMidnight, timezone);
 }
 
 /** Map pointer X within a row container to snapped `startsAt`. */
@@ -44,11 +50,12 @@ export function pointerXToStartsAt(
 	containerRect: DOMRect,
 	openHour: number,
 	totalMinutes: number,
-	selectedDay: string
+	selectedDay: string,
+	timezone: string
 ): number {
 	const ratio = (clientX - containerRect.left) / containerRect.width;
 	const snapped = pointerRatioToSnappedMinute(ratio, totalMinutes);
-	return minuteOffsetToStartsAt(selectedDay, openHour, snapped);
+	return minuteOffsetToStartsAt(selectedDay, openHour, snapped, timezone);
 }
 
 export function getTimelineDayPhase(selectedDay: string, todayYmd: string): TimelineDayPhase {
@@ -57,15 +64,46 @@ export function getTimelineDayPhase(selectedDay: string, todayYmd: string): Time
 	return "today";
 }
 
-/** Minutes elapsed from timeline open on `selectedDay` to `timestampMs`. */
+/** Minutes elapsed from timeline open on `selectedDay` to `timestampMs` in restaurant TZ. */
 export function minuteOffsetFromOpen(
 	timestampMs: number,
 	selectedDay: string,
-	openHour: number
+	openHour: number,
+	timezone: string
 ): number {
-	const timelineStart = ymdToLocalDate(selectedDay);
-	timelineStart.setHours(openHour, 0, 0, 0);
-	return (timestampMs - timelineStart.getTime()) / MS_PER_MINUTE;
+	const timelineStart = ymdHmToUtcMs(selectedDay, openHour * 60, timezone);
+	return (timestampMs - timelineStart) / MS_PER_MINUTE;
+}
+
+/** `[startOfDay, startOfNextDay)` for a restaurant-local calendar day. */
+export function restaurantDayBounds(
+	ymd: string,
+	timezone: string | undefined
+): { fromMs: number; toMs: number } {
+	const tz = resolveRestaurantTimezone(timezone);
+	const fromMs = startOfDayMs(ymd, tz);
+	return { fromMs, toMs: fromMs + SCHEDULE_MS_PER_DAY };
+}
+
+/** Minutes from timeline open for a UTC instant on the selected service day. */
+export function utcMsToMinutesFromOpen(
+	utcMs: number,
+	selectedDay: string,
+	openHour: number,
+	timezone: string
+): number {
+	const dayYmd = utcMsToYmdInTimezone(utcMs, timezone);
+	if (dayYmd !== selectedDay) {
+		const hm = utcMsToHmInTimezone(utcMs, timezone);
+		const minutes = parseHm(hm) ?? 0;
+		if (dayYmd < selectedDay) {
+			return minutes - openHour * 60;
+		}
+		return minutes - openHour * 60 + 24 * 60;
+	}
+	const hm = utcMsToHmInTimezone(utcMs, timezone);
+	const minutes = parseHm(hm) ?? 0;
+	return minutes - openHour * 60;
 }
 
 export function getTimelineMarkers(params: {
@@ -74,9 +112,10 @@ export function getTimelineMarkers(params: {
 	readonly totalMinutes: number;
 	readonly nowMs: number;
 	readonly minAdvanceMinutes: number;
+	readonly timezone: string;
 	readonly todayYmd?: string;
 }): TimelineMarkers {
-	const todayYmd = params.todayYmd ?? todayLocalYmd(new Date(params.nowMs));
+	const todayYmd = params.todayYmd ?? utcMsToYmdInTimezone(params.nowMs, params.timezone);
 	const phase = getTimelineDayPhase(params.selectedDay, todayYmd);
 
 	if (phase === "future") {
@@ -88,10 +127,20 @@ export function getTimelineMarkers(params: {
 	}
 
 	const horizonMs = params.nowMs + params.minAdvanceMinutes * MS_PER_MINUTE;
-	const blockedOffset = minuteOffsetFromOpen(horizonMs, params.selectedDay, params.openHour);
+	const blockedOffset = minuteOffsetFromOpen(
+		horizonMs,
+		params.selectedDay,
+		params.openHour,
+		params.timezone
+	);
 	const blockedRatio = Math.min(1, Math.max(0, blockedOffset / params.totalMinutes));
 
-	const nowOffset = minuteOffsetFromOpen(params.nowMs, params.selectedDay, params.openHour);
+	const nowOffset = minuteOffsetFromOpen(
+		params.nowMs,
+		params.selectedDay,
+		params.openHour,
+		params.timezone
+	);
 	const nowRatio = Math.min(1, Math.max(0, nowOffset / params.totalMinutes));
 	return { blockedRatio, nowRatio };
 }
@@ -103,20 +152,47 @@ export function clampStartsAtToHorizon(
 	openHour: number,
 	minAdvanceMinutes: number,
 	nowMs: number,
+	timezone: string,
 	todayYmd?: string
 ): number {
-	const today = todayYmd ?? todayLocalYmd(new Date(nowMs));
+	const today = todayYmd ?? utcMsToYmdInTimezone(nowMs, timezone);
 	if (getTimelineDayPhase(selectedDay, today) !== "today") {
 		return startsAtMs;
 	}
 
 	const horizonMs = nowMs + minAdvanceMinutes * MS_PER_MINUTE;
-	const horizonOffset = minuteOffsetFromOpen(horizonMs, selectedDay, openHour);
+	const horizonOffset = minuteOffsetFromOpen(horizonMs, selectedDay, openHour, timezone);
 	const earliestStartsAt = minuteOffsetToStartsAt(
 		selectedDay,
 		openHour,
-		snapMinuteUp(horizonOffset)
+		snapMinuteUp(horizonOffset),
+		timezone
 	);
 
 	return Math.max(startsAtMs, earliestStartsAt);
+}
+
+const DEFAULT_NOW_SCROLL_MARGIN = 0.1;
+
+/**
+ * Horizontal scroll offset so the now line sits near the right edge of the
+ * first visible hour cell (≈90% through that column).
+ */
+export function computeTimelineScrollToNow(params: {
+	readonly nowRatio: number | null;
+	readonly timelineWidth: number;
+	readonly hourColumnWidth: number;
+	readonly scrollWidth: number;
+	readonly clientWidth: number;
+	readonly margin?: number;
+}): number {
+	if (params.nowRatio === null || params.timelineWidth <= 0 || params.hourColumnWidth <= 0) {
+		return 0;
+	}
+
+	const margin = params.margin ?? DEFAULT_NOW_SCROLL_MARGIN;
+	const maxScroll = Math.max(0, params.scrollWidth - params.clientWidth);
+	const raw = params.nowRatio * params.timelineWidth - params.hourColumnWidth * (1 - margin);
+
+	return Math.min(maxScroll, Math.max(0, raw));
 }

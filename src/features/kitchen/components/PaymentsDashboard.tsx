@@ -106,6 +106,7 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			error={tableState.error}
 			entityName="payments"
 			skeleton={<PaymentsDashboardSkeleton />}
+			header={timeFrameControl}
 			gap="6"
 		>
 			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -133,7 +134,6 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 				getResultCountText={(count) => t(PaymentsKeys.RESULT_COUNT, { count })}
 				emptyIcon={CreditCard}
 				emptyTitle={t(PaymentsKeys.EMPTY_NO_PAYMENTS)}
-				actions={timeFrameControl}
 			/>
 		</DashboardShell>
 	);

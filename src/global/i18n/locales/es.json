@@ -72,8 +72,8 @@
 			"sendInvitation": "Enviar invitación",
 			"emailLabel": "Correo electrónico",
 			"roleLabel": "Rol",
-			"roleOwnerOption": "Propietario de la organización",
-			"roleManagerOption": "Gerente de restaurante",
+			"roleOwnerOption": "Propietario",
+			"roleManagerOption": "Gerente",
 			"roleEmployeeOption": "Empleado",
 			"restaurantsLabel": "Restaurantes",
 			"restaurantsPlaceholder": "Elige restaurantes…",
@@ -90,8 +90,8 @@
 			"noMembers": "Aún no hay miembros en este restaurante.",
 			"memberInactive": "inactivo",
 			"roleDisplay": {
-				"owner": "Propietario de la organización",
-				"manager": "Gerente de restaurante",
+				"owner": "Propietario",
+				"manager": "Gerente",
 				"employee": "Empleado"
 			},
 			"directoryColIdentity": "Correo / usuario",
@@ -109,8 +109,8 @@
 			"drawerSwipeHandle": "Arrastra hacia abajo para cerrar",
 			"drawerSubtitleOwner": "Propietario · No registra turnos",
 			"drawerRangeToday": "Hoy",
-			"drawerRangeWeek": "Esta semana",
-			"drawerRangeMonth": "Este mes",
+			"drawerRangeWeek": "Semana",
+			"drawerRangeMonth": "Mes",
 			"drawerPerformanceTitle": "Rendimiento",
 			"drawerPerformancePaidOrders": "Pedidos pagados",
 			"drawerPerformanceRevenue": "Ingresos atribuidos",
@@ -417,17 +417,21 @@
 		}
 	},
 	"payments": {
+		"page": {
+			"title": "Pagos",
+			"description": "Revisa pedidos pagados e ingresos de tu restaurante."
+		},
 		"aria": {
 			"filter": "Filtrar pagos por periodo",
 			"loading": "Cargando pagos"
 		},
 		"timeFrame": {
 			"today": "Hoy",
-			"week": "Esta semana",
-			"month": "Este mes",
-			"quarter": "Este trimestre",
-			"year": "Este año",
-			"all": "Todo el tiempo"
+			"week": "Semana",
+			"month": "Mes",
+			"quarter": "Trimestre",
+			"year": "Año",
+			"all": "Todo"
 		},
 		"summary": {
 			"totalRevenue": "Ingresos totales",
@@ -472,7 +476,10 @@
 		"generic": "Ocurrió un error. Por favor, inténtalo de nuevo.",
 		"ERROR_ADMIN_REQUIRED": "No tienes permiso para realizar esta acción.",
 		"ERROR_MANAGER_REQUIRED": "Necesitas permisos de gerente para realizar esta acción.",
-		"ERROR_INSUFFICIENT_PERMISSIONS": "No tienes los permisos necesarios."
+		"ERROR_INSUFFICIENT_PERMISSIONS": "No tienes los permisos necesarios.",
+		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "El nombre de la categoría es obligatorio.",
+		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Ingresa al menos un nombre de categoría.",
+		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "El nombre de la categoría es demasiado largo."
 	},
 	"time": {
 		"relative": {
@@ -506,7 +513,9 @@
 			"totalWithCount_one": "Total (1 producto)",
 			"totalWithCount_other": "Total ({{count}} productos)",
 			"tapToStart": "Toca productos para iniciar tu pedido",
-			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea."
+			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea.",
+			"filterPlaceholder": "Buscar en el menú",
+			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda."
 		},
 		"item": {
 			"required": "Obligatorio",
@@ -629,7 +638,14 @@
 			"currencyLabel": "Moneda",
 			"timezoneLabel": "Zona horaria",
 			"timezonePlaceholder": "America/Mexico_City",
-			"timezoneMissingHint": "Define una zona horaria IANA válida para que los números diarios usen tu día hábil local. Hasta entonces se usa UTC.",
+			"timezoneMissingHint": "Por defecto es Ciudad de México si no se define. Se usa en la línea de tiempo de reservaciones, horarios y numeración del día de pedidos.",
+			"timezoneOptionMexicoCity": "Ciudad de México (America/Mexico_City)",
+			"timezoneOptionCancun": "Cancún (America/Cancun)",
+			"timezoneOptionTijuana": "Tijuana (America/Tijuana)",
+			"timezoneOptionNewYork": "Nueva York (America/New_York)",
+			"timezoneOptionUtc": "UTC",
+			"timezoneOptionOther": "Otra zona IANA…",
+			"timezoneOtherPlaceholder": "p. ej. Europe/Madrid",
 			"openTimeLabel": "Hora de apertura",
 			"closeTimeLabel": "Hora de cierre",
 			"operatingHoursHint": "El horario de operación define el rango visible en la línea de tiempo de reservaciones.",
@@ -812,6 +828,8 @@
 			"optionGroupsDescription": "Crea grupos de opciones reutilizables y vincúlalos a los productos del menú.",
 			"newCategoryPlaceholder": "Nueva categoría (p. ej. Entradas)",
 			"addCategory": "Agregar categoría",
+			"filterPlaceholder": "Filtrar categorías y productos",
+			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
 			"translatingHint": "Traduciendo nombres y descripciones. Los precios, imágenes y opciones se comparten entre todos los idiomas.",
 			"noCategories": "Aún no hay categorías. Agrega tu primera arriba.",
 			"noCategoriesTitle": "Sin categorías todavía",
@@ -821,6 +839,14 @@
 			"backToList": "Volver a todos los menús",
 			"headerTitle": "Editor del menú",
 			"headerDescription": "Agrega categorías y artículos a este menú."
+		},
+		"addCategories": {
+			"modalAria": "Agregar categorías del menú",
+			"heading": "Agregar categorías",
+			"description": "Escribe un nombre de categoría por línea.",
+			"placeholder": "Una categoría por línea (p. ej. Entradas)",
+			"submit": "Agregar categorías",
+			"validation": "Ingresa al menos un nombre de categoría."
 		},
 		"category": {
 			"itemsCount_one": "(1 producto)",
@@ -956,11 +982,11 @@
 		},
 		"range": {
 			"today": "Hoy",
-			"week": "Esta semana",
-			"month": "Este mes",
-			"quarter": "Este trimestre",
-			"year": "Este año",
-			"all": "Todo el tiempo"
+			"week": "Semana",
+			"month": "Mes",
+			"quarter": "Trimestre",
+			"year": "Año",
+			"all": "Todo"
 		},
 		"viewMode": {
 			"cards": "Lista de tarjetas",

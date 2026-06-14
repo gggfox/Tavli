@@ -1,5 +1,7 @@
 import { CollapsibleCard, InlineEditInput } from "@/global/components";
+import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { MenusKeys } from "@/global/i18n";
+import { getTranslatedField } from "@/global/utils/translations";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
@@ -21,6 +23,9 @@ interface CategorySectionProps {
 	restaurantId: Id<"restaurants">;
 	onDeleteCategory: () => void;
 	selectedLang?: string;
+	searchQuery?: string;
+	filterLang?: string;
+	onFilterVisibility?: (visible: boolean) => void;
 }
 
 export function CategorySection({
@@ -28,9 +33,13 @@ export function CategorySection({
 	restaurantId,
 	onDeleteCategory,
 	selectedLang,
+	searchQuery = "",
+	filterLang,
+	onFilterVisibility,
 }: Readonly<CategorySectionProps>) {
 	const { t } = useTranslation();
 	const isTranslating = !!selectedLang;
+	const { matches, isActive: isFilterActive } = useFuzzyMatch(searchQuery);
 	const [expanded, setExpanded] = useState(true);
 	const {
 		items,
@@ -57,7 +66,27 @@ export function CategorySection({
 
 	const rowItems = items as MenuItemRowDoc[];
 	const sorted = [...rowItems].sort((a, b) => a.displayOrder - b.displayOrder);
-	const allSelected = sorted.length > 0 && sorted.every((item) => selectedIds.has(item._id));
+
+	const categoryNameForFilter = filterLang
+		? getTranslatedField(category, filterLang)
+		: category.name;
+	const categoryNameMatches = matches(categoryNameForFilter);
+
+	const visibleItems = useMemo(() => {
+		if (!isFilterActive || categoryNameMatches) return sorted;
+		return sorted.filter((item) =>
+			matches(filterLang ? getTranslatedField(item, filterLang) : item.name)
+		);
+	}, [sorted, isFilterActive, categoryNameMatches, matches, filterLang]);
+
+	const isVisible = !isFilterActive || categoryNameMatches || visibleItems.length > 0;
+
+	useEffect(() => {
+		onFilterVisibility?.(isVisible);
+	}, [isVisible, onFilterVisibility]);
+
+	const allSelected =
+		visibleItems.length > 0 && visibleItems.every((item) => selectedIds.has(item._id));
 
 	const itemIdsFingerprint = useMemo(
 		() =>
@@ -89,7 +118,7 @@ export function CategorySection({
 
 	const handleToggleSelectAll = () => {
 		if (allSelected) setSelectedIds(new Set());
-		else setSelectedIds(new Set(sorted.map((i) => i._id)));
+		else setSelectedIds(new Set(visibleItems.map((i) => i._id)));
 	};
 
 	const handleBulkHide = async () => {
@@ -154,10 +183,12 @@ export function CategorySection({
 		<>
 			<span className="text-sm font-medium text-foreground">{category.name}</span>
 			<span className="text-xs text-faint-foreground">
-				{t(MenusKeys.CATEGORY_ITEMS_COUNT, { count: sorted.length })}
+				{t(MenusKeys.CATEGORY_ITEMS_COUNT, { count: visibleItems.length })}
 			</span>
 		</>
 	);
+
+	if (!isVisible) return null;
 
 	return (
 		<CollapsibleCard
@@ -180,7 +211,7 @@ export function CategorySection({
 			}
 		>
 			<div className="space-y-3">
-				{!isTranslating && sorted.length > 0 ? (
+				{!isTranslating && visibleItems.length > 0 ? (
 					<div className="flex flex-wrap items-center gap-2 px-1 pb-1 border-b border-border">
 						<label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
 							<input
@@ -233,7 +264,7 @@ export function CategorySection({
 						) : null}
 					</div>
 				) : null}
-				{sorted.map((item) =>
+				{visibleItems.map((item) =>
 					isTranslating ? (
 						<MenuItemTranslationRow
 							key={item._id}

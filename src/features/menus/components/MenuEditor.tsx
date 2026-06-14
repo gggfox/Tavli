@@ -1,13 +1,14 @@
 import { OptionGroupManager } from "@/features/options";
-import { EmptyState, LanguageTabBar, Modal } from "@/global/components";
+import { EmptyState, LanguageTabBar, Modal, SearchInput } from "@/global/components";
+import { useAdminPageToolbar } from "@/global/hooks/useAdminPageToolbar";
+import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { Languages, MenusKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
-import { useForm } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { Globe, LayoutGrid, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { Globe, LayoutGrid, X } from "lucide-react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCategories, useMenus } from "../hooks/useMenus";
 import { CategorySection } from "./CategorySection";
@@ -16,33 +17,59 @@ import { MenuLanguageSettings } from "./MenuLanguageSettings";
 interface MenuEditorProps {
 	menuId: Id<"menus">;
 	restaurantId: Id<"restaurants">;
+	onTranslationModeChange?: (isTranslationMode: boolean) => void;
+	onAddCategoriesClick?: () => void;
 }
 
-export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) {
+export function MenuEditor({
+	menuId,
+	restaurantId,
+	onTranslationModeChange,
+	onAddCategoriesClick,
+}: Readonly<MenuEditorProps>) {
 	const { t } = useTranslation();
 	const { data: menu } = useQuery(convexQuery(api.menus.getMenuById, { menuId }));
 	const { categories } = useCategories(menuId);
-	const { createCategory, deleteCategory, updateMenu } = useMenus(restaurantId);
+	const { deleteCategory, updateMenu } = useMenus(restaurantId);
 
 	const defaultLang = menu?.defaultLanguage ?? Languages.EN;
-	const supportedLangs = menu?.supportedLanguages ?? [defaultLang];
+	const supportedLangs = useMemo(
+		() => menu?.supportedLanguages ?? [defaultLang],
+		[menu?.supportedLanguages, defaultLang]
+	);
 	const [selectedLang, setSelectedLang] = useState(defaultLang);
 	const isTranslationMode = selectedLang !== defaultLang;
+	const filterLang = isTranslationMode ? selectedLang : defaultLang;
 
 	const [langSettingsOpen, setLangSettingsOpen] = useState(false);
 	const [optionGroupsModalOpen, setOptionGroupsModalOpen] = useState(false);
-	const categoryInputRef = useRef<HTMLInputElement>(null);
+	const [searchQuery, setSearchQuery] = useState("");
+	const deferredSearchQuery = useDeferredValue(searchQuery);
+	const { isActive: isFilterActive } = useFuzzyMatch(deferredSearchQuery);
+	const [filterVisibility, setFilterVisibility] = useState<Record<string, boolean>>({});
 
-	const categoryForm = useForm({
-		defaultValues: { name: "" },
-		onSubmit: async ({ value }) => {
-			if (!value.name.trim()) return;
-			await createCategory({ menuId, restaurantId, name: value.name.trim() });
-			categoryForm.reset();
-		},
-	});
+	useEffect(() => {
+		onTranslationModeChange?.(isTranslationMode);
+	}, [isTranslationMode, onTranslationModeChange]);
 
 	const sorted = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
+	const categoryIdsFingerprint = useMemo(() => sorted.map((c) => c._id).join(","), [sorted]);
+
+	useEffect(() => {
+		setFilterVisibility({});
+	}, [deferredSearchQuery, categoryIdsFingerprint]);
+
+	const handleFilterVisibility = useCallback((categoryId: string, visible: boolean) => {
+		setFilterVisibility((prev) => {
+			if (prev[categoryId] === visible) return prev;
+			return { ...prev, [categoryId]: visible };
+		});
+	}, []);
+
+	const reportedCount = Object.keys(filterVisibility).length;
+	const hasFilterMatch = !isFilterActive || Object.values(filterVisibility).some(Boolean);
+	const showFilterNoMatches =
+		isFilterActive && sorted.length > 0 && reportedCount === sorted.length && !hasFilterMatch;
 
 	const handleDefaultLangChange = async (lang: string) => {
 		const newSupported = supportedLangs.includes(lang) ? supportedLangs : [...supportedLangs, lang];
@@ -59,43 +86,63 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 		if (!newSupported.includes(selectedLang)) setSelectedLang(defaultLang);
 	};
 
+	const toolbar = useMemo(
+		() => (
+			<div className="flex flex-col gap-3">
+				<div className="flex flex-wrap items-center gap-3">
+					<LanguageTabBar
+						languages={supportedLangs}
+						defaultLanguage={defaultLang}
+						selectedLanguage={selectedLang}
+						onSelect={setSelectedLang}
+					/>
+					<button
+						type="button"
+						onClick={() => setLangSettingsOpen((prev) => !prev)}
+						className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors"
+						title={t(MenusKeys.EDITOR_LANGUAGES_TITLE)}
+					>
+						<Globe
+							size={16}
+							style={{
+								color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)",
+							}}
+						/>
+						<span
+							className="text-xs"
+							style={{
+								color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)",
+							}}
+						>
+							{t(MenusKeys.EDITOR_LANGUAGES_LABEL)}
+						</span>
+					</button>
+					<button
+						type="button"
+						onClick={() => setOptionGroupsModalOpen(true)}
+						className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors text-faint-foreground"
+						title={t(MenusKeys.EDITOR_OPTIONS_TITLE)}
+					>
+						<LayoutGrid size={16} />
+						<span className="text-xs text-faint-foreground">
+							{t(MenusKeys.EDITOR_OPTIONS_LABEL)}
+						</span>
+					</button>
+				</div>
+				<SearchInput
+					placeholder={t(MenusKeys.EDITOR_FILTER_PLACEHOLDER)}
+					value={searchQuery}
+					onChange={setSearchQuery}
+				/>
+			</div>
+		),
+		[defaultLang, langSettingsOpen, searchQuery, selectedLang, setSearchQuery, supportedLangs, t]
+	);
+
+	useAdminPageToolbar(toolbar);
+
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="flex items-center gap-3">
-				<LanguageTabBar
-					languages={supportedLangs}
-					defaultLanguage={defaultLang}
-					selectedLanguage={selectedLang}
-					onSelect={setSelectedLang}
-				/>
-				<button
-					type="button"
-					onClick={() => setLangSettingsOpen((prev) => !prev)}
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors"
-					title={t(MenusKeys.EDITOR_LANGUAGES_TITLE)}
-				>
-					<Globe
-						size={16}
-						style={{ color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)" }}
-					/>
-					<span
-						className="text-xs"
-						style={{ color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)" }}
-					>
-						{t(MenusKeys.EDITOR_LANGUAGES_LABEL)}
-					</span>
-				</button>
-				<button
-					type="button"
-					onClick={() => setOptionGroupsModalOpen(true)}
-					className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-hover transition-colors text-faint-foreground"
-					title={t(MenusKeys.EDITOR_OPTIONS_TITLE)}
-				>
-					<LayoutGrid size={16} />
-					<span className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_OPTIONS_LABEL)}</span>
-				</button>
-			</div>
-
 			<Modal
 				isOpen={optionGroupsModalOpen}
 				onClose={() => setOptionGroupsModalOpen(false)}
@@ -135,41 +182,13 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 				/>
 			)}
 
-			{!isTranslationMode && (
-				<form
-					onSubmit={(e) => {
-						e.preventDefault();
-						e.stopPropagation();
-						categoryForm.handleSubmit();
-					}}
-					className="flex gap-3"
-				>
-					<categoryForm.Field
-						name="name"
-						children={(field) => (
-							<input
-								ref={categoryInputRef}
-								type="text"
-								value={field.state.value}
-								onChange={(e) => field.handleChange(e.target.value)}
-								onBlur={field.handleBlur}
-								placeholder={t(MenusKeys.EDITOR_NEW_CATEGORY_PLACEHOLDER)}
-								className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							/>
-						)}
-					/>
-					<button
-						type="submit"
-						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-					>
-						<Plus size={16} /> {t(MenusKeys.EDITOR_ADD_CATEGORY)}
-					</button>
-				</form>
-			)}
-
 			{isTranslationMode && (
 				<p className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_TRANSLATING_HINT)}</p>
 			)}
+
+			{showFilterNoMatches ? (
+				<p className="text-sm text-muted-foreground">{t(MenusKeys.EDITOR_FILTER_NO_MATCHES)}</p>
+			) : null}
 
 			{sorted.map((cat) => (
 				<CategorySection
@@ -178,6 +197,9 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 					restaurantId={restaurantId}
 					onDeleteCategory={() => deleteCategory({ categoryId: cat._id })}
 					selectedLang={isTranslationMode ? selectedLang : undefined}
+					searchQuery={deferredSearchQuery}
+					filterLang={filterLang}
+					onFilterVisibility={(visible) => handleFilterVisibility(cat._id, visible)}
 				/>
 			))}
 			{sorted.length === 0 && !isTranslationMode && (
@@ -187,13 +209,15 @@ export function MenuEditor({ menuId, restaurantId }: Readonly<MenuEditorProps>) 
 					title={t(MenusKeys.EDITOR_NO_CATEGORIES_TITLE)}
 					description={t(MenusKeys.EDITOR_NO_CATEGORIES_DESCRIPTION)}
 					action={
-						<button
-							type="button"
-							onClick={() => categoryInputRef.current?.focus()}
-							className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-						>
-							<Plus size={16} /> {t(MenusKeys.EDITOR_NO_CATEGORIES_ACTION)}
-						</button>
+						onAddCategoriesClick ? (
+							<button
+								type="button"
+								onClick={onAddCategoriesClick}
+								className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+							>
+								{t(MenusKeys.EDITOR_NO_CATEGORIES_ACTION)}
+							</button>
+						) : undefined
 					}
 				/>
 			)}

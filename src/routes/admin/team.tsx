@@ -18,7 +18,7 @@ import {
 	LoadingState,
 } from "@/global/components";
 import { useAdminTable, useIsNarrowViewport } from "@/global/hooks";
-import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
+import { AdminStaffKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -359,10 +359,7 @@ function AdminTeamPage() {
 
 	if (!restaurant || !organizationId) {
 		return (
-			<AdminPageLayout
-				title={t(SidebarKeys.TEAM)}
-				description={t(AdminStaffKeys.TEAM_DESCRIPTION_NO_RESTAURANT)}
-			>
+			<AdminPageLayout>
 				<p className="text-sm text-faint-foreground">
 					{t(AdminStaffKeys.TEAM_SETUP_RESTAURANT_FIRST)}
 				</p>
@@ -371,11 +368,7 @@ function AdminTeamPage() {
 	}
 
 	return (
-		<AdminPageLayout
-			title={t(SidebarKeys.TEAM)}
-			description={t(AdminStaffKeys.TEAM_DESCRIPTION)}
-			actions={headerActions}
-		>
+		<AdminPageLayout actions={headerActions}>
 			<section className="flex flex-col h-full min-h-0 gap-6">
 				<div className="flex items-center gap-3">
 					<label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">

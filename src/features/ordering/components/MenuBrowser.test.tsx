@@ -38,7 +38,7 @@ describe("MenuBrowser", () => {
 		let callCount = 0;
 		vi.mocked(useQuery).mockImplementation(() => {
 			callCount += 1;
-			const phase = (callCount - 1) % 5;
+			const phase = (callCount - 1) % 6;
 			if (phase === 0) {
 				return { data: false } as any;
 			}
@@ -64,7 +64,7 @@ describe("MenuBrowser", () => {
 					],
 				} as any;
 			}
-			if (phase === 3) {
+			if (phase === 3 || phase === 4) {
 				return {
 					data: [
 						{

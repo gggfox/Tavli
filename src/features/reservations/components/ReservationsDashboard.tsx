@@ -53,7 +53,7 @@ import {
 } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
 import { type UnwrappedValue, unwrapResult } from "@/global/utils";
-import { todayLocalYmd } from "@/global/utils/calendarMonth";
+import { resolveRestaurantTimezone, utcMsToYmdInTimezone } from "@/global/utils/timezone";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useSearch } from "@tanstack/react-router";
@@ -70,6 +70,8 @@ export function ReservationsDashboard() {
 	const { t, i18n } = useTranslation();
 	const { restaurant } = useRestaurant();
 	const restaurantIds = useMemo(() => (restaurant ? [restaurant._id] : []), [restaurant]);
+	const timezone = resolveRestaurantTimezone(restaurant?.timezone);
+	const restaurantToday = useMemo(() => utcMsToYmdInTimezone(Date.now(), timezone), [timezone]);
 
 	const {
 		range,
@@ -85,10 +87,10 @@ export function ReservationsDashboard() {
 
 	const setViewMode = useCallback(
 		(mode: typeof viewMode) => {
-			if (mode === "timeline") setCustomDay(todayLocalYmd());
+			if (mode === "timeline") setCustomDay(utcMsToYmdInTimezone(Date.now(), timezone));
 			setViewModeRaw(mode);
 		},
-		[setViewModeRaw, setCustomDay]
+		[setViewModeRaw, setCustomDay, timezone]
 	);
 
 	const [openId, setOpenId] = useState<Id<"reservations"> | null>(null);
@@ -226,7 +228,7 @@ export function ReservationsDashboard() {
 		[t]
 	);
 
-	const timelineDay = customDay ?? todayLocalYmd();
+	const timelineDay = customDay ?? restaurantToday;
 
 	const header = (
 		<div className="flex flex-wrap items-center gap-3">
@@ -249,6 +251,7 @@ export function ReservationsDashboard() {
 						selectedDay={timelineDay}
 						onDayChange={setCustomDay}
 						locale={i18n.language}
+						timezone={timezone}
 					/>
 				) : (
 					<SegmentedControl<ReservationDashboardRangeValue>

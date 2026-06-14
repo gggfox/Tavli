@@ -8,10 +8,7 @@ export const Route = createFileRoute("/admin/organizations")({
 
 function AdminOrganizationsPage() {
 	return (
-		<AdminPageLayout
-			title="Organizations"
-			description="Manage organizations for restaurant owners."
-		>
+		<AdminPageLayout>
 			<OrganizationsTable />
 		</AdminPageLayout>
 	);

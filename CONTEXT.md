@@ -148,10 +148,17 @@ _Avoid_: date picker (that is the popover widget inside it), range
 selector.
 
 **Operating hours**:
-The `openTime` / `closeTime` pair on a `Restaurant` (HH:MM strings).
-Defines the visible time range rendered on the **Timeline**. Falls back
-to `10:00`–`23:00` when unset.
+The `openTime` / `closeTime` pair on a `Restaurant` (HH:MM strings),
+expressed in the **Restaurant timezone**. Defines the visible time range
+rendered on the **Timeline**. Falls back to `10:00`–`23:00` when unset.
 _Avoid_: business hours, service window.
+
+**Restaurant timezone**:
+The IANA timezone on a `Restaurant` (default `America/Mexico_City`).
+Defines the restaurant’s calendar day, **Operating hours**, **Timeline**
+layout (now line, blocks, drag/create), **Schedule** week grid, and
+order-day numbering. Distinct from the staff device’s local timezone.
+_Avoid_: locale, UTC offset string.
 
 **Reschedule**:
 A staff action that changes a reservation’s `startsAt`, `endsAt`, and/or

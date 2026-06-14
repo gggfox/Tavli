@@ -8,15 +8,17 @@ import type { ReservationRange } from "@/features/reservations/utils";
 import { formatTimeOnly } from "@/features/reservations/utils";
 import {
 	clampStartsAtToHorizon,
+	computeTimelineScrollToNow,
 	getTimelineMarkers,
 	minuteOffsetToStartsAt,
 	pointerRatioToSnappedMinute,
 	pointerXToStartsAt,
+	utcMsToMinutesFromOpen,
 } from "@/features/reservations/utils/timelineCoordinates";
 import { useRestaurant } from "@/features/restaurants";
 import { getStatusToneStyle, type StatusTone } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
-import { todayLocalYmd } from "@/global/utils/calendarMonth";
+import { resolveRestaurantTimezone, utcMsToYmdInTimezone } from "@/global/utils/timezone";
 import {
 	closestCenter,
 	DndContext,
@@ -39,7 +41,7 @@ import {
 	UserPlus,
 	Users,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TimelineReopenConfirmDialog } from "./TimelineReopenConfirmDialog";
 
@@ -93,8 +95,8 @@ function parseRowDropId(id: string): { toTableId: Id<"tables"> | null } | null {
 	return { toTableId: key === UNASSIGNED_ROW_KEY ? null : (key as Id<"tables">) };
 }
 
-function isReservationDraggable(status: string, selectedDay: string): boolean {
-	if (selectedDay < todayLocalYmd()) return false;
+function isReservationDraggable(status: string, selectedDay: string, todayYmd: string): boolean {
+	if (selectedDay < todayYmd) return false;
 	if (status === "completed") return false;
 	return true;
 }
@@ -130,6 +132,7 @@ export function ReservationTimeline({
 }: ReservationTimelineProps) {
 	const { restaurant } = useRestaurant();
 	const restaurantId = restaurantIds[0] ?? null;
+	const timezone = resolveRestaurantTimezone(restaurant?.timezone);
 
 	const {
 		sections,
@@ -142,8 +145,12 @@ export function ReservationTimeline({
 		isLoading,
 	} = useTimelineData(restaurantId, restaurant, range, customDay);
 
-	const timelineMarkersEnabled = selectedDay <= todayLocalYmd();
+	const timelineMarkersEnabled = useMemo(() => {
+		const today = utcMsToYmdInTimezone(Date.now(), timezone);
+		return selectedDay <= today;
+	}, [selectedDay, timezone]);
 	const nowMs = useTimelineNow(timelineMarkersEnabled);
+	const todayYmd = utcMsToYmdInTimezone(nowMs, timezone);
 
 	const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 	const [activeDragReservation, setActiveDragReservation] = useState<Doc<"reservations"> | null>(
@@ -152,6 +159,9 @@ export function ReservationTimeline({
 	const [pendingReopen, setPendingReopen] = useState<PendingReopenIntent | null>(null);
 	const [reopenConfirmBusy, setReopenConfirmBusy] = useState(false);
 	const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const gridRef = useRef<HTMLDivElement>(null);
+	const lastAutoScrolledDayRef = useRef<string | null>(null);
 	const skipNextClickRef = useRef(false);
 	const { t, i18n } = useTranslation();
 
@@ -191,8 +201,10 @@ export function ReservationTimeline({
 				totalMinutes,
 				nowMs,
 				minAdvanceMinutes,
+				timezone,
+				todayYmd,
 			}),
-		[selectedDay, openHour, totalMinutes, nowMs, minAdvanceMinutes]
+		[selectedDay, openHour, totalMinutes, nowMs, minAdvanceMinutes, timezone, todayYmd]
 	);
 
 	const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -225,14 +237,17 @@ export function ReservationTimeline({
 				rowEl.getBoundingClientRect(),
 				openHour,
 				totalMinutes,
-				selectedDay
+				selectedDay,
+				timezone
 			);
 			const newStartsAt = clampStartsAtToHorizon(
 				rawStartsAt,
 				selectedDay,
 				openHour,
 				minAdvanceMinutes,
-				nowMs
+				nowMs,
+				timezone,
+				todayYmd
 			);
 
 			const { fromTableId } = parsed;
@@ -266,7 +281,16 @@ export function ReservationTimeline({
 
 			void onReschedule(intent);
 		},
-		[onReschedule, openHour, totalMinutes, selectedDay, minAdvanceMinutes, nowMs]
+		[
+			onReschedule,
+			openHour,
+			totalMinutes,
+			selectedDay,
+			minAdvanceMinutes,
+			nowMs,
+			timezone,
+			todayYmd,
+		]
 	);
 
 	const handleReopenConfirm = useCallback(async () => {
@@ -280,7 +304,57 @@ export function ReservationTimeline({
 		}
 	}, [pendingReopen, onReschedule]);
 
-	const timelineCanDrag = Boolean(onReschedule) && selectedDay >= todayLocalYmd();
+	const timelineCanDrag = Boolean(onReschedule) && selectedDay >= todayYmd;
+
+	const gridRowPlan = useMemo(() => {
+		let row = 2;
+		const unassignedRow = unassignedReservations.length > 0 ? { gridRow: row++ } : null;
+		const sectionsPlan = sections.map((sg) => {
+			const sectionKey = sg.section._id as string;
+			const isCollapsed = collapsedSections.has(sectionKey);
+			const headerRow = row++;
+			const tableRows = isCollapsed
+				? []
+				: sg.tables.map((table, rowIndex) => ({
+						table,
+						rowIndex,
+						gridRow: row++,
+					}));
+			return { sg, headerRow, tableRows, isCollapsed, sectionKey };
+		});
+		return { unassignedRow, sectionsPlan };
+	}, [sections, unassignedReservations.length, collapsedSections]);
+
+	useLayoutEffect(() => {
+		if (selectedDay !== todayYmd) {
+			lastAutoScrolledDayRef.current = null;
+			return;
+		}
+
+		if (isLoading || nowRatio === null) return;
+		if (lastAutoScrolledDayRef.current === selectedDay) return;
+
+		const scrollEl = scrollContainerRef.current;
+		const gridEl = gridRef.current;
+		if (!scrollEl || !gridEl) return;
+
+		const rowHeader = gridEl.querySelector<HTMLElement>('[role="rowheader"]');
+		const tableColumnWidth = rowHeader?.offsetWidth ?? 0;
+		const timelineWidth = gridEl.scrollWidth - tableColumnWidth;
+		if (timelineWidth <= 0 || hourCount <= 0) return;
+
+		const hourColumnWidth = timelineWidth / hourCount;
+		const scrollLeft = computeTimelineScrollToNow({
+			nowRatio,
+			timelineWidth,
+			hourColumnWidth,
+			scrollWidth: scrollEl.scrollWidth,
+			clientWidth: scrollEl.clientWidth,
+		});
+
+		scrollEl.scrollLeft = scrollLeft;
+		lastAutoScrolledDayRef.current = selectedDay;
+	}, [isLoading, selectedDay, todayYmd, hourCount, nowRatio]);
 
 	if (isLoading) {
 		return (
@@ -301,6 +375,7 @@ export function ReservationTimeline({
 
 	const grid = (
 		<div
+			ref={gridRef}
 			role="grid"
 			className="min-w-[900px] grid"
 			style={{
@@ -310,7 +385,8 @@ export function ReservationTimeline({
 			{/* Header row */}
 			<div
 				role="columnheader"
-				className="sticky left-0 z-20 bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-border"
+				className="sticky left-0 z-30 bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-border"
+				style={{ gridRow: 1 }}
 			>
 				{t(ReservationsKeys.COLUMN_TABLES)}
 			</div>
@@ -319,14 +395,16 @@ export function ReservationTimeline({
 					key={h}
 					role="columnheader"
 					className="bg-muted text-xs font-semibold text-faint-foreground px-2 py-2 border-b border-l border-border text-center"
+					style={{ gridRow: 1 }}
 				>
 					{String(h).padStart(2, "0")}:00
 				</div>
 			))}
 
 			{/* Unassigned row */}
-			{unassignedReservations.length > 0 && (
+			{gridRowPlan.unassignedRow ? (
 				<UnassignedRow
+					gridRow={gridRowPlan.unassignedRow.gridRow}
 					reservations={unassignedReservations}
 					hours={hours}
 					hourCount={hourCount}
@@ -339,37 +417,39 @@ export function ReservationTimeline({
 					skipNextClickRef={skipNextClickRef}
 					blockedRatio={blockedRatio}
 					nowRatio={nowRatio}
+					timezone={timezone}
+					todayYmd={todayYmd}
 				/>
-			)}
+			) : null}
 
 			{/* Section groups */}
-			{sections.map((sg) => {
-				const sectionKey = sg.section._id as string;
-				const isCollapsed = collapsedSections.has(sectionKey);
-				return (
-					<SectionGroup
-						key={sectionKey}
-						section={sg.section}
-						tables={sg.tables}
-						isCollapsed={isCollapsed}
-						onToggle={() => toggleSection(sectionKey)}
-						reservationsByTable={reservationsByTable}
-						locksByTable={locksByTable}
-						hours={hours}
-						hourCount={hourCount}
-						openHour={openHour}
-						locale={i18n.language}
-						selectedDay={selectedDay}
-						onOpenReservation={onOpenReservation}
-						onCreateReservation={onCreateReservation}
-						timelineCanDrag={timelineCanDrag}
-						registerRowRef={registerRowRef}
-						skipNextClickRef={skipNextClickRef}
-						blockedRatio={blockedRatio}
-						nowRatio={nowRatio}
-					/>
-				);
-			})}
+			{gridRowPlan.sectionsPlan.map(({ sg, headerRow, tableRows, isCollapsed, sectionKey }) => (
+				<SectionGroup
+					key={sectionKey}
+					section={sg.section}
+					tables={sg.tables}
+					tableRows={tableRows}
+					sectionHeaderGridRow={headerRow}
+					isCollapsed={isCollapsed}
+					onToggle={() => toggleSection(sectionKey)}
+					reservationsByTable={reservationsByTable}
+					locksByTable={locksByTable}
+					hours={hours}
+					hourCount={hourCount}
+					openHour={openHour}
+					locale={i18n.language}
+					selectedDay={selectedDay}
+					onOpenReservation={onOpenReservation}
+					onCreateReservation={onCreateReservation}
+					timelineCanDrag={timelineCanDrag}
+					registerRowRef={registerRowRef}
+					skipNextClickRef={skipNextClickRef}
+					blockedRatio={blockedRatio}
+					nowRatio={nowRatio}
+					timezone={timezone}
+					todayYmd={todayYmd}
+				/>
+			))}
 		</div>
 	);
 
@@ -382,7 +462,7 @@ export function ReservationTimeline({
 				onClose={() => setPendingReopen(null)}
 				onConfirm={() => void handleReopenConfirm()}
 			/>
-			<div className="overflow-x-auto rounded-lg border border-border">
+			<div ref={scrollContainerRef} className="overflow-x-auto rounded-lg border border-border">
 				{timelineCanDrag ? (
 					<DndContext
 						sensors={sensors}
@@ -394,7 +474,11 @@ export function ReservationTimeline({
 						{grid}
 						<DragOverlay dropAnimation={null}>
 							{activeDragReservation ? (
-								<TimelineBlockOverlay reservation={activeDragReservation} locale={i18n.language} />
+								<TimelineBlockOverlay
+									reservation={activeDragReservation}
+									locale={i18n.language}
+									timezone={timezone}
+								/>
 							) : null}
 						</DragOverlay>
 					</DndContext>
@@ -411,6 +495,7 @@ export function ReservationTimeline({
  * ============================================================================ */
 
 interface UnassignedRowProps {
+	readonly gridRow: number;
 	readonly reservations: Doc<"reservations">[];
 	readonly hours: number[];
 	readonly hourCount: number;
@@ -423,9 +508,12 @@ interface UnassignedRowProps {
 	readonly skipNextClickRef: React.RefObject<boolean>;
 	readonly blockedRatio: number | null;
 	readonly nowRatio: number | null;
+	readonly timezone: string;
+	readonly todayYmd: string;
 }
 
 function UnassignedRow({
+	gridRow,
 	reservations,
 	hours,
 	hourCount,
@@ -438,19 +526,22 @@ function UnassignedRow({
 	skipNextClickRef,
 	blockedRatio,
 	nowRatio,
+	timezone,
+	todayYmd,
 }: UnassignedRowProps) {
 	const { t } = useTranslation();
 	return (
-		<>
+		<div role="row" className="contents">
 			<div
 				role="rowheader"
-				className="sticky left-0 z-10 bg-amber-50 dark:bg-amber-950/30 border-b border-border px-3 py-2 flex items-center text-xs font-medium text-amber-700 dark:text-amber-400"
+				className="sticky left-0 z-20 isolation-isolate bg-amber-50 dark:bg-amber-950/30 border-b border-border px-3 py-2 flex items-center text-xs font-medium text-amber-700 dark:text-amber-400"
+				style={{ gridRow }}
 			>
 				{t(ReservationsKeys.TIMELINE_UNASSIGNED_ROW)}
 			</div>
 			<div
-				className="border-b border-border bg-amber-50/50 dark:bg-amber-950/20 col-span-full relative"
-				style={{ gridColumn: `2 / span ${hourCount}` }}
+				className="border-b border-border bg-amber-50/50 dark:bg-amber-950/20 relative overflow-hidden"
+				style={{ gridRow, gridColumn: `2 / span ${hourCount}` }}
 			>
 				<TimelineRowContent
 					reservations={reservations}
@@ -469,9 +560,11 @@ function UnassignedRow({
 					blockedRatio={blockedRatio}
 					nowRatio={nowRatio}
 					nowLineAriaLabel={t(ReservationsKeys.TIMELINE_NOW_LINE_ARIA)}
+					timezone={timezone}
+					todayYmd={todayYmd}
 				/>
 			</div>
-		</>
+		</div>
 	);
 }
 
@@ -482,6 +575,12 @@ function UnassignedRow({
 interface SectionGroupProps {
 	readonly section: Doc<"sections">;
 	readonly tables: Doc<"tables">[];
+	readonly tableRows: ReadonlyArray<{
+		readonly table: Doc<"tables">;
+		readonly rowIndex: number;
+		readonly gridRow: number;
+	}>;
+	readonly sectionHeaderGridRow: number;
 	readonly isCollapsed: boolean;
 	readonly onToggle: () => void;
 	readonly reservationsByTable: Map<string, Doc<"reservations">[]>;
@@ -498,11 +597,15 @@ interface SectionGroupProps {
 	readonly skipNextClickRef: React.RefObject<boolean>;
 	readonly blockedRatio: number | null;
 	readonly nowRatio: number | null;
+	readonly timezone: string;
+	readonly todayYmd: string;
 }
 
 function SectionGroup({
 	section,
 	tables,
+	tableRows,
+	sectionHeaderGridRow,
 	isCollapsed,
 	onToggle,
 	reservationsByTable,
@@ -519,6 +622,8 @@ function SectionGroup({
 	skipNextClickRef,
 	blockedRatio,
 	nowRatio,
+	timezone,
+	todayYmd,
 }: SectionGroupProps) {
 	const { t } = useTranslation();
 	const sectionName = section.name || "Other";
@@ -532,8 +637,8 @@ function SectionGroup({
 				aria-label={t(ReservationsKeys.TIMELINE_SECTION_TOGGLE_ARIA, {
 					section: sectionName,
 				})}
-				className="sticky left-0 z-10 bg-muted/80 border-b border-border px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors col-span-full cursor-pointer"
-				style={{ gridColumn: `1 / span ${hourCount + 1}` }}
+				className="sticky left-0 z-20 isolation-isolate bg-muted border-b border-border px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+				style={{ gridRow: sectionHeaderGridRow, gridColumn: `1 / span ${hourCount + 1}` }}
 			>
 				{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
 				{sectionName}
@@ -541,28 +646,30 @@ function SectionGroup({
 			</button>
 
 			{/* Table rows */}
-			{!isCollapsed &&
-				tables.map((table, rowIndex) => (
-					<TableRow
-						key={table._id}
-						rowIndex={rowIndex}
-						table={table}
-						reservations={reservationsByTable.get(table._id as string) ?? []}
-						locks={locksByTable.get(table._id as string) ?? []}
-						hours={hours}
-						hourCount={hourCount}
-						openHour={openHour}
-						locale={locale}
-						selectedDay={selectedDay}
-						onOpenReservation={onOpenReservation}
-						onCreateReservation={onCreateReservation}
-						timelineCanDrag={timelineCanDrag}
-						registerRowRef={registerRowRef}
-						skipNextClickRef={skipNextClickRef}
-						blockedRatio={blockedRatio}
-						nowRatio={nowRatio}
-					/>
-				))}
+			{tableRows.map(({ table, rowIndex, gridRow }) => (
+				<TableRow
+					key={table._id}
+					gridRow={gridRow}
+					rowIndex={rowIndex}
+					table={table}
+					reservations={reservationsByTable.get(table._id as string) ?? []}
+					locks={locksByTable.get(table._id as string) ?? []}
+					hours={hours}
+					hourCount={hourCount}
+					openHour={openHour}
+					locale={locale}
+					selectedDay={selectedDay}
+					onOpenReservation={onOpenReservation}
+					onCreateReservation={onCreateReservation}
+					timelineCanDrag={timelineCanDrag}
+					registerRowRef={registerRowRef}
+					skipNextClickRef={skipNextClickRef}
+					blockedRatio={blockedRatio}
+					nowRatio={nowRatio}
+					timezone={timezone}
+					todayYmd={todayYmd}
+				/>
+			))}
 		</>
 	);
 }
@@ -571,12 +678,18 @@ function SectionGroup({
  * Table Row
  * ============================================================================ */
 
-function getTableRowSurfaceClasses(rowIndex: number): string {
+function getStickyRowHeaderClasses(rowIndex: number): string {
+	const zebra = rowIndex % 2 === 1 ? "bg-muted" : "bg-background";
+	return `${zebra} border-b border-border-strong`;
+}
+
+function getTimelineCellClasses(rowIndex: number): string {
 	const zebra = rowIndex % 2 === 1 ? "bg-muted/20 dark:bg-muted/10" : "bg-background";
 	return `${zebra} border-b border-border-strong`;
 }
 
 interface TableRowProps {
+	readonly gridRow: number;
 	readonly rowIndex: number;
 	readonly table: Doc<"tables">;
 	readonly reservations: Doc<"reservations">[];
@@ -593,9 +706,12 @@ interface TableRowProps {
 	readonly skipNextClickRef: React.RefObject<boolean>;
 	readonly blockedRatio: number | null;
 	readonly nowRatio: number | null;
+	readonly timezone: string;
+	readonly todayYmd: string;
 }
 
 function TableRow({
+	gridRow,
 	rowIndex,
 	table,
 	reservations,
@@ -612,16 +728,20 @@ function TableRow({
 	skipNextClickRef,
 	blockedRatio,
 	nowRatio,
+	timezone,
+	todayYmd,
 }: TableRowProps) {
 	const tableLabel = table.label || `#${table.tableNumber}`;
 	const { t } = useTranslation();
-	const rowSurfaceClasses = getTableRowSurfaceClasses(rowIndex);
+	const stickyRowHeaderClasses = getStickyRowHeaderClasses(rowIndex);
+	const timelineCellClasses = getTimelineCellClasses(rowIndex);
 
 	return (
-		<>
+		<div role="row" className="contents">
 			<div
 				role="rowheader"
-				className={`sticky left-0 z-10 px-3 py-2 flex items-center text-xs font-medium text-foreground truncate ${rowSurfaceClasses}`}
+				className={`sticky left-0 z-20 isolation-isolate px-3 py-2 flex items-center text-xs font-medium text-foreground truncate ${stickyRowHeaderClasses}`}
+				style={{ gridRow }}
 			>
 				{tableLabel}
 				{table.capacity != null && (
@@ -630,8 +750,8 @@ function TableRow({
 			</div>
 			<div
 				role="gridcell"
-				className={`relative ${rowSurfaceClasses}`}
-				style={{ gridColumn: `2 / span ${hourCount}` }}
+				className={`relative overflow-hidden ${timelineCellClasses}`}
+				style={{ gridRow, gridColumn: `2 / span ${hourCount}` }}
 			>
 				<TimelineRowContent
 					reservations={reservations}
@@ -653,9 +773,11 @@ function TableRow({
 					blockedRatio={blockedRatio}
 					nowRatio={nowRatio}
 					nowLineAriaLabel={t(ReservationsKeys.TIMELINE_NOW_LINE_ARIA)}
+					timezone={timezone}
+					todayYmd={todayYmd}
 				/>
 			</div>
-		</>
+		</div>
 	);
 }
 
@@ -683,6 +805,8 @@ interface TimelineRowContentProps {
 	readonly blockedRatio: number | null;
 	readonly nowRatio: number | null;
 	readonly nowLineAriaLabel: string;
+	readonly timezone: string;
+	readonly todayYmd: string;
 }
 
 function TimelineRowContent({
@@ -705,6 +829,8 @@ function TimelineRowContent({
 	blockedRatio,
 	nowRatio,
 	nowLineAriaLabel,
+	timezone,
+	todayYmd,
 }: TimelineRowContentProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const totalMinutes = hourCount * 60;
@@ -722,14 +848,11 @@ function TimelineRowContent({
 
 	const getPosition = useCallback(
 		(startsAt: number, endsAt: number) => {
-			const startDate = new Date(startsAt);
-			const startMinute = startDate.getHours() * 60 + startDate.getMinutes();
-			const endDate = new Date(endsAt);
-			const endMinute = endDate.getHours() * 60 + endDate.getMinutes();
+			const startMinute = utcMsToMinutesFromOpen(startsAt, selectedDay, openHour, timezone);
+			const endMinute = utcMsToMinutesFromOpen(endsAt, selectedDay, openHour, timezone);
 
-			const baseMinute = openHour * 60;
-			const leftMin = Math.max(0, startMinute - baseMinute);
-			const rightMin = Math.min(totalMinutes, endMinute - baseMinute);
+			const leftMin = Math.max(0, startMinute);
+			const rightMin = Math.min(totalMinutes, endMinute);
 			const width = Math.max(rightMin - leftMin, 15);
 
 			return {
@@ -737,7 +860,7 @@ function TimelineRowContent({
 				width: `${(width / totalMinutes) * 100}%`,
 			};
 		},
-		[openHour, totalMinutes]
+		[openHour, totalMinutes, selectedDay, timezone]
 	);
 
 	return (
@@ -758,21 +881,18 @@ function TimelineRowContent({
 			{nowRatio !== null ? <TimelineNowLine ratio={nowRatio} ariaLabel={nowLineAriaLabel} /> : null}
 
 			{/* Empty slot click handler (disabled for past days) */}
-			{tableId &&
-				tableLabel &&
-				onCreateReservation &&
-				selectedDay &&
-				selectedDay >= todayLocalYmd() && (
-					<EmptySlotClickArea
-						containerRef={containerRef}
-						openHour={openHour}
-						totalMinutes={totalMinutes}
-						tableId={tableId}
-						tableLabel={tableLabel}
-						selectedDay={selectedDay}
-						onCreateReservation={onCreateReservation}
-					/>
-				)}
+			{tableId && tableLabel && onCreateReservation && selectedDay && selectedDay >= todayYmd && (
+				<EmptySlotClickArea
+					containerRef={containerRef}
+					openHour={openHour}
+					totalMinutes={totalMinutes}
+					tableId={tableId}
+					tableLabel={tableLabel}
+					selectedDay={selectedDay}
+					timezone={timezone}
+					onCreateReservation={onCreateReservation}
+				/>
+			)}
 
 			{/* Lock blocks */}
 			{locks.map((lock) => {
@@ -790,7 +910,8 @@ function TimelineRowContent({
 						style={pos}
 						locale={locale}
 						fromTableKey={fromTableKey}
-						canDrag={timelineCanDrag && isReservationDraggable(r.status, selectedDay)}
+						canDrag={timelineCanDrag && isReservationDraggable(r.status, selectedDay, todayYmd)}
+						timezone={timezone}
 						onOpen={() => {
 							if (skipNextClickRef.current) {
 								skipNextClickRef.current = false;
@@ -813,6 +934,7 @@ interface DraggableTimelineBlockProps {
 	readonly reservation: Doc<"reservations">;
 	readonly style: { left: string; width: string };
 	readonly locale: string;
+	readonly timezone: string;
 	readonly fromTableKey: Id<"tables"> | typeof UNASSIGNED_ROW_KEY;
 	readonly canDrag: boolean;
 	readonly onOpen: () => void;
@@ -822,6 +944,7 @@ function DraggableTimelineBlock({
 	reservation,
 	style,
 	locale,
+	timezone,
 	fromTableKey,
 	canDrag,
 	onOpen,
@@ -842,6 +965,7 @@ function DraggableTimelineBlock({
 			<TimelineBlockContent
 				reservation={reservation}
 				locale={locale}
+				timezone={timezone}
 				onClick={onOpen}
 				dragHandleProps={canDrag ? { ...attributes, ...listeners } : undefined}
 			/>
@@ -852,13 +976,20 @@ function DraggableTimelineBlock({
 function TimelineBlockOverlay({
 	reservation,
 	locale,
+	timezone,
 }: {
 	readonly reservation: Doc<"reservations">;
 	readonly locale: string;
+	readonly timezone: string;
 }) {
 	return (
 		<div className="w-32 opacity-90 shadow-lg">
-			<TimelineBlockContent reservation={reservation} locale={locale} onClick={() => {}} />
+			<TimelineBlockContent
+				reservation={reservation}
+				locale={locale}
+				timezone={timezone}
+				onClick={() => {}}
+			/>
 		</div>
 	);
 }
@@ -866,6 +997,7 @@ function TimelineBlockOverlay({
 interface TimelineBlockContentProps {
 	readonly reservation: Doc<"reservations">;
 	readonly locale: string;
+	readonly timezone: string;
 	readonly onClick: () => void;
 	readonly dragHandleProps?: Record<string, unknown>;
 }
@@ -873,6 +1005,7 @@ interface TimelineBlockContentProps {
 function TimelineBlockContent({
 	reservation,
 	locale,
+	timezone,
 	onClick,
 	dragHandleProps,
 }: TimelineBlockContentProps) {
@@ -881,8 +1014,8 @@ function TimelineBlockContent({
 	const tone: StatusTone = config?.tone ?? RESERVATION_FALLBACK_TONE;
 	const palette = getStatusToneStyle(tone);
 
-	const startTime = formatTimeOnly(reservation.startsAt, locale);
-	const endTime = formatTimeOnly(reservation.endsAt, locale);
+	const startTime = formatTimeOnly(reservation.startsAt, locale, timezone);
+	const endTime = formatTimeOnly(reservation.endsAt, locale, timezone);
 	const sourceIcon = getSourceIcon(reservation.source);
 	const isDimmed = reservation.status === "cancelled" || reservation.status === "no_show";
 
@@ -1021,6 +1154,7 @@ interface EmptySlotClickAreaProps {
 	readonly tableId: Id<"tables">;
 	readonly tableLabel: string;
 	readonly selectedDay: string;
+	readonly timezone: string;
 	readonly onCreateReservation: (intent: TimelineCreateIntent) => void;
 }
 
@@ -1031,6 +1165,7 @@ function EmptySlotClickArea({
 	tableId,
 	tableLabel,
 	selectedDay,
+	timezone,
 	onCreateReservation,
 }: EmptySlotClickAreaProps) {
 	const { t } = useTranslation();
@@ -1044,11 +1179,20 @@ function EmptySlotClickArea({
 			const rect = container.getBoundingClientRect();
 			const ratio = (e.clientX - rect.left) / rect.width;
 			const snapped = pointerRatioToSnappedMinute(ratio, totalMinutes);
-			const startsAt = minuteOffsetToStartsAt(selectedDay, openHour, snapped);
+			const startsAt = minuteOffsetToStartsAt(selectedDay, openHour, snapped, timezone);
 
 			onCreateReservation({ tableId, tableLabel, startsAt });
 		},
-		[containerRef, openHour, totalMinutes, tableId, tableLabel, selectedDay, onCreateReservation]
+		[
+			containerRef,
+			openHour,
+			totalMinutes,
+			tableId,
+			tableLabel,
+			selectedDay,
+			timezone,
+			onCreateReservation,
+		]
 	);
 
 	return (

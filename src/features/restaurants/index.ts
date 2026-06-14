@@ -4,3 +4,4 @@ export { RestaurantSettingsForm } from "./components/RestaurantSettingsForm";
 export { TablesManager } from "./components/TablesManager";
 export { RestaurantAdminProvider, useRestaurant } from "./RestaurantAdminScope";
 export { pickDefaultRestaurantId, resolveSelectedRestaurantId } from "./restaurantAdminSelection";
+export { useCanManageRestaurantSettings } from "./hooks/useCanManageRestaurantSettings";

@@ -25,6 +25,8 @@ export const MenusKeys = {
 	EDITOR_OPTION_GROUPS_DESCRIPTION: "menus.editor.optionGroupsDescription",
 	EDITOR_NEW_CATEGORY_PLACEHOLDER: "menus.editor.newCategoryPlaceholder",
 	EDITOR_ADD_CATEGORY: "menus.editor.addCategory",
+	EDITOR_FILTER_PLACEHOLDER: "menus.editor.filterPlaceholder",
+	EDITOR_FILTER_NO_MATCHES: "menus.editor.filterNoMatches",
 	EDITOR_TRANSLATING_HINT: "menus.editor.translatingHint",
 	EDITOR_NO_CATEGORIES: "menus.editor.noCategories",
 	EDITOR_NO_CATEGORIES_TITLE: "menus.editor.noCategoriesTitle",
@@ -34,6 +36,13 @@ export const MenusKeys = {
 	EDITOR_BACK_TO_LIST: "menus.editor.backToList",
 	EDITOR_HEADER_TITLE: "menus.editor.headerTitle",
 	EDITOR_HEADER_DESCRIPTION: "menus.editor.headerDescription",
+
+	ADD_CATEGORIES_MODAL_ARIA: "menus.addCategories.modalAria",
+	ADD_CATEGORIES_HEADING: "menus.addCategories.heading",
+	ADD_CATEGORIES_DESCRIPTION: "menus.addCategories.description",
+	ADD_CATEGORIES_PLACEHOLDER: "menus.addCategories.placeholder",
+	ADD_CATEGORIES_SUBMIT: "menus.addCategories.submit",
+	ADD_CATEGORIES_VALIDATION: "menus.addCategories.validation",
 
 	CATEGORY_ITEMS_COUNT: "menus.category.itemsCount",
 	CATEGORY_TRANSLATION_PLACEHOLDER: "menus.category.translationPlaceholder",

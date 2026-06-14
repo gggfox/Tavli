@@ -31,3 +31,13 @@ export function useMediaQuery(
 export function useIsNarrowViewport(): boolean {
 	return useMediaQuery("(max-width: 767px)");
 }
+
+/** Matches Tailwind `lg` breakpoint — iPad portrait/landscape and smaller tablets. */
+export function useIsTabletViewport(): boolean {
+	return useMediaQuery("(max-width: 1024px)");
+}
+
+/** Tablet portrait — iPad vertical and similar (≤1024px wide, portrait orientation). */
+export function useIsTabletPortraitViewport(): boolean {
+	return useMediaQuery("(max-width: 1024px) and (orientation: portrait)");
+}

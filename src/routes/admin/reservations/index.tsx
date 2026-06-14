@@ -1,4 +1,3 @@
-import { DialogHeader, Drawer } from "@/global/components";
 import { ExportButton, useCanExport } from "@/features/exports";
 import {
 	ReservationSettingsPanel,
@@ -11,6 +10,7 @@ import type { ReservationStatus } from "@/features/reservations/statusConfig";
 import { RESERVATION_STATUS_CONFIG } from "@/features/reservations/statusConfig";
 import { ORDERED_RANGES, type ReservationRange } from "@/features/reservations/utils";
 import { isValidYmd } from "@/global/utils/calendarMonth";
+import { Button, DialogHeader, Drawer, AdminPageLayout } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import { Lock, Settings } from "lucide-react";
@@ -61,47 +61,33 @@ function ReservationsPage() {
 	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const [isLocksOpen, setIsLocksOpen] = useState(false);
 
-	const triggerStyle = {
-		border: "1px solid var(--border-default)",
-		color: "var(--text-secondary)",
-	} as const;
-
 	return (
-		<div className="p-6 flex flex-col h-full">
-			<div className="mb-6 flex items-start justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-semibold text-foreground">
-						{t(ReservationsKeys.PAGE_TITLE)}
-					</h1>
-					<p className="mt-2 text-sm text-muted-foreground">
-						{t(ReservationsKeys.PAGE_DESCRIPTION)}
-					</p>
-				</div>
-				<div className="flex items-center gap-2">
+		<AdminPageLayout
+			actions={
+				<>
 					{restaurant && canExport ? (
 						<ExportButton restaurantId={restaurant._id} kind="reservations" />
 					) : null}
-					<button
-						type="button"
+					<Button
+						variant="secondary"
+						size="md"
+						leadingIcon={<Lock size={14} />}
 						onClick={() => setIsLocksOpen(true)}
-						className="flex items-center gap-1 text-sm px-3 py-2 rounded-md"
-						style={triggerStyle}
 					>
-						<Lock size={14} /> {t(ReservationsKeys.PAGE_LOCKS_BUTTON)}
-					</button>
-					<button
-						type="button"
+						{t(ReservationsKeys.PAGE_LOCKS_BUTTON)}
+					</Button>
+					<Button
+						variant="secondary"
+						size="md"
+						leadingIcon={<Settings size={14} />}
 						onClick={() => setIsSettingsOpen(true)}
-						className="flex items-center gap-1 text-sm px-3 py-2 rounded-md"
-						style={triggerStyle}
 					>
-						<Settings size={14} /> {t(ReservationsKeys.PAGE_SETTINGS_BUTTON)}
-					</button>
-				</div>
-			</div>
-			<div className="flex-1 min-h-0 overflow-y-auto">
-				<ReservationsContent hasRestaurant={Boolean(restaurant?._id)} isLoading={isLoading} />
-			</div>
+						{t(ReservationsKeys.PAGE_SETTINGS_BUTTON)}
+					</Button>
+				</>
+			}
+		>
+			<ReservationsContent hasRestaurant={Boolean(restaurant?._id)} isLoading={isLoading} />
 
 			<Drawer
 				isOpen={isSettingsOpen}
@@ -142,7 +128,7 @@ function ReservationsPage() {
 					)}
 				</div>
 			</Drawer>
-		</div>
+		</AdminPageLayout>
 	);
 }
 

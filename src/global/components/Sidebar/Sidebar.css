@@ -12,3 +12,9 @@
 :root[data-sidebar-expanded="false"] .tavli-sidebar-width {
 	width: 4rem;
 }
+
+@media (max-width: 1024px) and (orientation: portrait) {
+	:root:not([data-sidebar-expanded="false"]) .tavli-sidebar-width {
+		width: 13rem; /* w-52 */
+	}
+}

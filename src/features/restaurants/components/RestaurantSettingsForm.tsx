@@ -1,14 +1,42 @@
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
+import { isValidIanaTimezone } from "@/global/utils/timezone";
 import { sanitizeSlug } from "@/global/utils/slug";
 import { useForm } from "@tanstack/react-form";
-import { USER_ROLES } from "convex/constants";
+import { DEFAULT_RESTAURANT_TIMEZONE, USER_ROLES } from "convex/constants";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const DEFAULT_ORDER_DAY_START_MINUTES = 240;
 const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency = "monthly";
+
+const PRESET_TIMEZONES = [
+	{
+		id: "mexico_city",
+		value: "America/Mexico_City",
+		labelKey: RestaurantsKeys.FORM_TIMEZONE_OPTION_MEXICO_CITY,
+	},
+	{ id: "cancun", value: "America/Cancun", labelKey: RestaurantsKeys.FORM_TIMEZONE_OPTION_CANCUN },
+	{
+		id: "tijuana",
+		value: "America/Tijuana",
+		labelKey: RestaurantsKeys.FORM_TIMEZONE_OPTION_TIJUANA,
+	},
+	{
+		id: "new_york",
+		value: "America/New_York",
+		labelKey: RestaurantsKeys.FORM_TIMEZONE_OPTION_NEW_YORK,
+	},
+	{ id: "utc", value: "UTC", labelKey: RestaurantsKeys.FORM_TIMEZONE_OPTION_UTC },
+] as const;
+
+const TIMEZONE_OTHER = "__other__";
+
+function timezoneSelectValue(tz: string): string {
+	const preset = PRESET_TIMEZONES.find((p) => p.value === tz);
+	return preset?.value ?? TIMEZONE_OTHER;
+}
 
 type OrderNumberResetFrequency = "daily" | "weekly" | "biweekly" | "monthly";
 
@@ -44,6 +72,8 @@ interface RestaurantSettingsFormProps {
 	}) => Promise<unknown>;
 	onToggleActive?: (restaurantId: Id<"restaurants">) => Promise<unknown>;
 	isSaving?: boolean;
+	/** Org admins see all fields; managers edit operational settings only. */
+	settingsAccess?: "full" | "manager";
 }
 
 export function RestaurantSettingsForm({
@@ -52,10 +82,12 @@ export function RestaurantSettingsForm({
 	onSave,
 	onToggleActive,
 	isSaving,
+	settingsAccess = "full",
 }: Readonly<RestaurantSettingsFormProps>) {
 	const { t } = useTranslation();
 	const { roles } = useCurrentUserRoles();
 	const isAdmin = roles.includes(USER_ROLES.ADMIN);
+	const isManagerSettings = settingsAccess === "manager";
 	const initialResetFrequency: OrderNumberResetFrequency =
 		(restaurant?.orderNumberResetFrequency as OrderNumberResetFrequency | undefined) ??
 		DEFAULT_ORDER_NUMBER_RESET_FREQUENCY;
@@ -65,7 +97,7 @@ export function RestaurantSettingsForm({
 			slug: restaurant?.slug ?? "",
 			description: restaurant?.description ?? "",
 			currency: restaurant?.currency ?? "MXN",
-			timezone: restaurant?.timezone ?? "",
+			timezone: restaurant?.timezone ?? DEFAULT_RESTAURANT_TIMEZONE,
 			openTime: restaurant?.openTime ?? "10:00",
 			closeTime: restaurant?.closeTime ?? "23:00",
 			orderDayStartTime: minutesToTimeInput(
@@ -104,7 +136,7 @@ export function RestaurantSettingsForm({
 			}}
 			className="space-y-6 max-w-lg"
 		>
-			{restaurant && (
+			{restaurant && !isManagerSettings && (
 				<div className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border">
 					<div className="flex items-center gap-3">
 						<span className="text-sm font-medium text-foreground">
@@ -254,30 +286,59 @@ export function RestaurantSettingsForm({
 				/>
 				<form.Field
 					name="timezone"
-					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-tz"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_TIMEZONE_LABEL)}
-							</label>
-							<input
-								id="restaurant-tz"
-								type="text"
-								value={field.state.value}
-								onChange={(e) => field.handleChange(e.target.value)}
-								onBlur={field.handleBlur}
-								placeholder={t(RestaurantsKeys.FORM_TIMEZONE_PLACEHOLDER)}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							/>
-							{restaurant && !field.state.value.trim() && (
-								<p className="mt-1 text-xs text-amber-700 dark:text-amber-400/90">
-									{t(RestaurantsKeys.FORM_TIMEZONE_MISSING_HINT)}
-								</p>
-							)}
-						</div>
-					)}
+					children={(field) => {
+						const selectValue = timezoneSelectValue(field.state.value);
+						const showCustom = selectValue === TIMEZONE_OTHER;
+						return (
+							<div>
+								<label
+									htmlFor="restaurant-tz"
+									className="block text-sm font-medium mb-1 text-foreground"
+								>
+									{t(RestaurantsKeys.FORM_TIMEZONE_LABEL)}
+								</label>
+								<select
+									id="restaurant-tz"
+									value={selectValue}
+									onChange={(e) => {
+										const next = e.target.value;
+										if (next === TIMEZONE_OTHER) {
+											if (PRESET_TIMEZONES.some((p) => p.value === field.state.value)) {
+												field.handleChange("");
+											}
+											return;
+										}
+										field.handleChange(next);
+									}}
+									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								>
+									{PRESET_TIMEZONES.map((preset) => (
+										<option key={preset.id} value={preset.value}>
+											{t(preset.labelKey)}
+										</option>
+									))}
+									<option value={TIMEZONE_OTHER}>
+										{t(RestaurantsKeys.FORM_TIMEZONE_OPTION_OTHER)}
+									</option>
+								</select>
+								{showCustom ? (
+									<input
+										type="text"
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										placeholder={t(RestaurantsKeys.FORM_TIMEZONE_OTHER_PLACEHOLDER)}
+										className="mt-2 w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+									/>
+								) : null}
+								{field.state.value.trim() && !isValidIanaTimezone(field.state.value.trim()) ? (
+									<p className="mt-1 text-xs text-destructive">
+										{t(RestaurantsKeys.FORM_TIMEZONE_MISSING_HINT)}
+									</p>
+								) : null}
+							</div>
+						);
+					}}
 				/>
 			</div>
 
@@ -351,7 +412,7 @@ export function RestaurantSettingsForm({
 				)}
 			/>
 
-			{isAdmin && (
+			{isAdmin && !isManagerSettings && (
 				<form.Field
 					name="orderNumberResetFrequency"
 					children={(field) => (
@@ -389,7 +450,7 @@ export function RestaurantSettingsForm({
 				/>
 			)}
 
-			{organizations && organizations.length > 0 && (
+			{organizations && !isManagerSettings && organizations.length > 0 && (
 				<form.Field
 					name="organizationId"
 					children={(field) => (
