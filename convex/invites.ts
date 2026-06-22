@@ -471,13 +471,15 @@ export const listForOrganization = query({
 });
 
 export const getByTokenPublic = query({
-	args: { token: v.string() },
+	args: { token: v.string(), now: v.number() },
 	handler: async (ctx, args) => {
 		const row = await ctx.db
 			.query(TABLE.INVITATIONS)
 			.withIndex("by_token", (q) => q.eq("token", args.token))
 			.first();
 		if (!row) return null;
+		if (row.status !== INVITATION_STATUS.PENDING) return null;
+		if (row.expiresAt < args.now) return null;
 		return {
 			email: row.email,
 			organizationId: row.organizationId,

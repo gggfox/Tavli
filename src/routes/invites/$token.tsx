@@ -4,19 +4,22 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { SignInButton, useAuth } from "@clerk/tanstack-react-start";
 import { api } from "convex/_generated/api";
-import { INVITATION_STATUS } from "convex/constants";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
 export const Route = createFileRoute("/invites/$token")({
+	head: () => ({
+		meta: [{ name: "referrer", content: "no-referrer" }],
+	}),
 	component: InviteAcceptPage,
 });
 
 function InviteAcceptPage() {
 	const { token } = Route.useParams();
 	const { isSignedIn } = useAuth();
+	const [now] = useState(() => Date.now());
 	const preview = useQuery({
-		...convexQuery(api.invites.getByTokenPublic, { token }),
+		...convexQuery(api.invites.getByTokenPublic, { token, now }),
 	});
 
 	const accept = useMutation({ mutationFn: useConvexMutation(api.invites.acceptInvitation) });
@@ -33,8 +36,7 @@ function InviteAcceptPage() {
 	};
 
 	const row = preview.data;
-	const expired = row ? row.expiresAt < Date.now() : false;
-	const invalid = !row || row.status !== INVITATION_STATUS.PENDING || expired;
+	const invalid = !row;
 
 	let inviteActions: ReactNode = null;
 	if (isSignedIn) {
@@ -85,7 +87,10 @@ function InviteAcceptPage() {
 						This invitation link is not valid or has expired.
 					</p>
 				)}
-				{row && !invalid && (
+				{row && !invalid && !isSignedIn && (
+					<p className="text-sm text-muted-foreground">You&apos;ve been invited to join a team.</p>
+				)}
+				{row && !invalid && isSignedIn && (
 					<div className="text-sm space-y-1 text-muted-foreground">
 						<p>
 							<span className="text-foreground font-medium">Role:</span> {row.role}
