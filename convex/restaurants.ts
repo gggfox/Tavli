@@ -3,6 +3,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery, mutation, query } from "./_generated/server";
 import {
+	ConflictError,
+	ConflictErrorObject,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
 	NotAuthorizedErrorObject,
@@ -36,6 +38,21 @@ type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 function tombstoneSlug(restaurantId: Id<"restaurants">, slug: string): string {
 	const safe = slug.replace(/[^a-zA-Z0-9_-]/g, "_");
 	return `${safe}__deleted__${restaurantId}`;
+}
+
+/** Clerk JWT `sub` for a user — prefix `user_` plus base62 id (see Clerk user id format). */
+const CLERK_USER_SUBJECT_PATTERN = /^user_[a-zA-Z0-9]{20,64}$/;
+
+function validateSharedEmployeeClerkSubject(
+	clerkSubject: string
+): UserInputValidationErrorObject | null {
+	const trimmed = clerkSubject.trim();
+	if (!trimmed || !CLERK_USER_SUBJECT_PATTERN.test(trimmed)) {
+		return new UserInputValidationError({
+			fields: [{ field: "clerkSubject", message: "ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT" }],
+		}).toObject();
+	}
+	return null;
 }
 
 export const softDelete = mutation({
@@ -588,15 +605,37 @@ export const setSharedEmployeeSubject = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		clerkSubject: v.string(),
 	},
-	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<
+		null,
+		AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject | ConflictErrorObject
+	> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
+
+		const validationError = validateSharedEmployeeClerkSubject(args.clerkSubject);
+		if (validationError) return [null, validationError];
+
+		const clerkSubject = args.clerkSubject.trim();
 
 		const [, permErr] = await requireRestaurantOwnerOrAdmin(ctx, userId, args.restaurantId);
 		if (permErr) return [null, permErr];
 
+		const boundElsewhere = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_shared_employee_subject", (q) =>
+				q.eq("sharedEmployeeClerkSubject", clerkSubject)
+			)
+			.first();
+
+		if (boundElsewhere && boundElsewhere._id !== args.restaurantId) {
+			return [null, new ConflictError("ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND").toObject()];
+		}
+
 		await ctx.db.patch(args.restaurantId, {
-			sharedEmployeeClerkSubject: args.clerkSubject,
+			sharedEmployeeClerkSubject: clerkSubject,
 			...stampUpdated(userId),
 		});
 
@@ -604,7 +643,7 @@ export const setSharedEmployeeSubject = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.sharedEmployeeSubjectSet",
-			payload: { clerkSubject: args.clerkSubject },
+			payload: { clerkSubject },
 			userId,
 		});
 
