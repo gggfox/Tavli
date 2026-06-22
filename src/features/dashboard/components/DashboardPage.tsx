@@ -328,10 +328,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 
 	if (restaurants.length === 0) {
 		return (
-			<AdminPageLayout
-				title={t(DashboardKeys.PAGE_TITLE)}
-				description={t(DashboardKeys.PAGE_DESCRIPTION)}
-			>
+			<AdminPageLayout>
 				<EmptyState
 					icon={LayoutDashboard}
 					title={t(DashboardKeys.PAGE_NO_RESTAURANT_TITLE)}
@@ -392,10 +389,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 
 	return (
 		<>
-			<AdminPageLayout
-				title={t(DashboardKeys.PAGE_TITLE)}
-				description={t(DashboardKeys.PAGE_DESCRIPTION)}
-			>
+			<AdminPageLayout>
 				<DashboardShell
 					isLoading={layoutsLoading}
 					error={layoutsError as { message?: string } | null}

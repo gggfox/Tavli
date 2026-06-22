@@ -7,12 +7,14 @@
  *
  * Renders:
  *   1. `header` always (filter pills, range chips, page actions, etc.).
+ *      When inside AdminPageLayout, the header registers as sticky toolbar chrome.
  *   2. `skeleton` while `isLoading` is true.
  *   3. An `EmptyState` with `AlertTriangle` when `error` is non-null.
  *   4. `children` otherwise.
  */
+import { useAdminPageChromeContext } from "@/global/hooks/useAdminPageToolbar";
 import { AlertTriangle } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { EmptyState } from "../EmptyState";
 
 interface DashboardShellError {
@@ -55,14 +57,24 @@ export function DashboardShell({
 	gap = "4",
 	className = "",
 }: DashboardShellProps) {
-	const wrapperClasses = ["flex flex-col min-h-full", GAP_CLASSES[gap], className]
+	const chromeContext = useAdminPageChromeContext();
+
+	useEffect(() => {
+		if (!chromeContext || !header) return;
+		chromeContext.registerToolbar(header);
+		return () => chromeContext.registerToolbar(null);
+	}, [chromeContext, header]);
+
+	const inlineHeader = chromeContext ? null : header;
+
+	const wrapperClasses = ["flex min-h-0 flex-1 flex-col", GAP_CLASSES[gap], className]
 		.filter(Boolean)
 		.join(" ");
 
 	if (isLoading) {
 		return (
 			<div className={wrapperClasses}>
-				{header}
+				{inlineHeader}
 				{skeleton}
 			</div>
 		);
@@ -71,7 +83,7 @@ export function DashboardShell({
 	if (error) {
 		return (
 			<div className={wrapperClasses}>
-				{header}
+				{inlineHeader}
 				<EmptyState
 					icon={AlertTriangle}
 					title={`Could not load ${entityName}.`}
@@ -84,7 +96,7 @@ export function DashboardShell({
 
 	return (
 		<div className={wrapperClasses}>
-			{header}
+			{inlineHeader}
 			{children}
 		</div>
 	);

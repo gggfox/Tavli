@@ -1,14 +1,18 @@
 import { useClickOutside } from "@/global/hooks/useClickOutside";
+import { useAnchoredPopoverPosition } from "@/global/hooks/useAnchoredPopoverPosition";
 import { useCalendarVariant } from "@/global/hooks/useCalendarVariant";
 import { useEscapeKey } from "@/global/hooks/useEscapeKey";
 import { KEY } from "@/global/utils/keyboard";
+import {
+	addDaysToYmd,
+	resolveRestaurantTimezone,
+	utcMsToYmdInTimezone,
+} from "@/global/utils/timezone";
 import {
 	addMonths,
 	buildMonthGrid,
 	getWeekStartsOnJsDay,
 	isValidYmd,
-	localDateToYmd,
-	todayLocalYmd,
 	ymdToLocalDate,
 } from "@/global/utils/calendarMonth";
 import { ReservationsKeys } from "@/global/i18n";
@@ -28,12 +32,11 @@ interface TimelineDayNavigatorProps {
 	readonly selectedDay: string;
 	readonly onDayChange: (ymd: string) => void;
 	readonly locale: string;
+	readonly timezone?: string;
 }
 
 function shiftDay(ymd: string, delta: number): string {
-	const d = ymdToLocalDate(ymd);
-	d.setDate(d.getDate() + delta);
-	return localDateToYmd(d);
+	return addDaysToYmd(ymd, delta);
 }
 
 function weekdayShortLabels(localeTag: string, weekStartsOnJs: number): string[] {
@@ -80,9 +83,11 @@ export function TimelineDayNavigator({
 	selectedDay,
 	onDayChange,
 	locale,
+	timezone: timezoneProp,
 }: TimelineDayNavigatorProps) {
 	const { t } = useTranslation();
 	const variant = useCalendarVariant();
+	const timezone = resolveRestaurantTimezone(timezoneProp);
 	const listId = useId();
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
@@ -90,7 +95,7 @@ export function TimelineDayNavigator({
 	const nativeRef = useRef<HTMLInputElement>(null);
 	const [open, setOpen] = useState(false);
 
-	const today = todayLocalYmd();
+	const today = utcMsToYmdInTimezone(Date.now(), timezone);
 	const isToday = selectedDay === today;
 
 	const displayLabel = useMemo(() => {
@@ -222,6 +227,11 @@ export function TimelineDayNavigator({
 	const rows = chunk7(grid);
 	const activeDescendantId = `${listId}-cell-${focusedIdx}`;
 
+	const popoverPosition = useAnchoredPopoverPosition(triggerRef, panelRef, {
+		open: open && variant === "custom",
+		repositionKey: `${viewYear}-${viewMonthIndex}`,
+	});
+
 	return (
 		<div className="flex items-center gap-1.5">
 			<button
@@ -266,10 +276,16 @@ export function TimelineDayNavigator({
 					<div
 						ref={panelRef}
 						id={listId}
+						popover="manual"
 						role="dialog"
 						aria-label={t(ReservationsKeys.TIMELINE_DAY_NAV_PICK_DATE_ARIA)}
-						className="absolute left-1/2 -translate-x-1/2 z-50 mt-1 w-[min(100vw-2rem,20rem)] rounded-lg p-3 text-foreground"
+						className="w-[min(100vw-2rem,20rem)] rounded-lg p-3 text-foreground"
 						style={{
+							position: "fixed",
+							top: popoverPosition?.top ?? -9999,
+							left: popoverPosition?.left ?? -9999,
+							margin: 0,
+							visibility: popoverPosition === null ? "hidden" : "visible",
 							backgroundColor: "var(--bg-secondary)",
 							border: "1px solid var(--border-default)",
 							boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
@@ -361,7 +377,7 @@ export function TimelineDayNavigator({
 							type="button"
 							className="mt-2 w-full rounded py-1.5 text-xs text-muted-foreground hover:bg-muted"
 							onClick={() => {
-								onDayChange(todayLocalYmd());
+								onDayChange(today);
 								setOpen(false);
 								triggerRef.current?.focus();
 							}}
@@ -384,7 +400,7 @@ export function TimelineDayNavigator({
 			{!isToday && (
 				<button
 					type="button"
-					onClick={() => onDayChange(todayLocalYmd())}
+					onClick={() => onDayChange(today)}
 					className="ml-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
 				>
 					{t(ReservationsKeys.TIMELINE_DAY_NAV_TODAY)}

@@ -417,6 +417,10 @@
 		}
 	},
 	"payments": {
+		"page": {
+			"title": "Payments",
+			"description": "Review paid orders and revenue for your restaurant."
+		},
 		"aria": {
 			"filter": "Filter payments by time frame",
 			"loading": "Loading payments"
@@ -472,7 +476,10 @@
 		"generic": "An error occurred. Please try again.",
 		"ERROR_ADMIN_REQUIRED": "You don't have permission to perform this action.",
 		"ERROR_MANAGER_REQUIRED": "You need manager permissions to perform this action.",
-		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions."
+		"ERROR_INSUFFICIENT_PERMISSIONS": "You don't have the required permissions.",
+		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "Category name is required.",
+		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Enter at least one category name.",
+		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "Category name is too long."
 	},
 	"time": {
 		"relative": {
@@ -506,7 +513,9 @@
 			"totalWithCount_one": "Total (1 item)",
 			"totalWithCount_other": "Total ({{count}} items)",
 			"tapToStart": "Tap on items to start your order",
-			"noOnlineOrdering": "Online ordering is not available at this restaurant yet."
+			"noOnlineOrdering": "Online ordering is not available at this restaurant yet.",
+			"filterPlaceholder": "Search menu",
+			"filterNoMatches": "No categories or items match your search."
 		},
 		"item": {
 			"required": "Required",
@@ -628,8 +637,15 @@
 			"descriptionLabel": "Description",
 			"currencyLabel": "Currency",
 			"timezoneLabel": "Timezone",
-			"timezonePlaceholder": "America/New_York",
-			"timezoneMissingHint": "Set a valid IANA timezone so daily order numbers use your local business day. Until then, UTC is used.",
+			"timezonePlaceholder": "America/Mexico_City",
+			"timezoneMissingHint": "Defaults to Mexico City when unset. Used for the reservation timeline, schedule, and order-day numbering.",
+			"timezoneOptionMexicoCity": "Mexico City (America/Mexico_City)",
+			"timezoneOptionCancun": "Cancún (America/Cancun)",
+			"timezoneOptionTijuana": "Tijuana (America/Tijuana)",
+			"timezoneOptionNewYork": "New York (America/New_York)",
+			"timezoneOptionUtc": "UTC",
+			"timezoneOptionOther": "Other IANA timezone…",
+			"timezoneOtherPlaceholder": "e.g. Europe/Madrid",
 			"openTimeLabel": "Opening time",
 			"closeTimeLabel": "Closing time",
 			"operatingHoursHint": "Operating hours define the visible range on the reservation timeline.",
@@ -812,6 +828,8 @@
 			"optionGroupsDescription": "Create reusable option groups and link them to menu items.",
 			"newCategoryPlaceholder": "New category (e.g. Appetizers)",
 			"addCategory": "Add Category",
+			"filterPlaceholder": "Filter categories and items",
+			"filterNoMatches": "No categories or items match your search.",
 			"translatingHint": "Translating names and descriptions. Prices, images, and options are shared across all languages.",
 			"noCategories": "No categories yet. Add your first category above.",
 			"noCategoriesTitle": "No categories yet",
@@ -821,6 +839,14 @@
 			"backToList": "Back to all menus",
 			"headerTitle": "Menu editor",
 			"headerDescription": "Add categories and items to this menu."
+		},
+		"addCategories": {
+			"modalAria": "Add menu categories",
+			"heading": "Add categories",
+			"description": "Enter one category name per line.",
+			"placeholder": "One category per line (e.g. Appetizers)",
+			"submit": "Add categories",
+			"validation": "Enter at least one category name."
 		},
 		"category": {
 			"itemsCount_one": "(1 item)",

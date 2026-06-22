@@ -1,3 +1,5 @@
+import { SearchInput } from "@/global/components";
+import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getTranslatedField } from "@/global/utils/translations";
@@ -6,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, UtensilsCrossed, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
 import type { MenuItemWithImage } from "./ItemDetailSheet";
@@ -19,6 +21,8 @@ interface ItemSelection {
 	basePrice: number;
 	selectedOptions: Map<string, SelectedOption[]>;
 }
+
+const bottomBarSafePadding = "pb-[max(1rem,env(safe-area-inset-bottom))]";
 
 interface MenuBrowserProps {
 	restaurantId: Id<"restaurants">;
@@ -55,12 +59,36 @@ export function MenuBrowser({
 	const [comment, setComment] = useState("");
 	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(null);
 	const [detailItem, setDetailItem] = useState<MenuItemWithImage | null>(null);
+	const [searchQuery, setSearchQuery] = useState("");
+	const deferredSearchQuery = useDeferredValue(searchQuery);
+	const { isActive: isFilterActive } = useFuzzyMatch(deferredSearchQuery);
+	const [filterVisibility, setFilterVisibility] = useState<Record<string, boolean>>({});
+
+	const handleFilterVisibility = useCallback((categoryId: string, visible: boolean) => {
+		setFilterVisibility((prev) => {
+			if (prev[categoryId] === visible) return prev;
+			return { ...prev, [categoryId]: visible };
+		});
+	}, []);
 
 	const { data: tables } = useQuery(
 		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
 	);
 
 	const currentMenuId = selectedMenuId ?? activeMenus[0]?._id;
+
+	useEffect(() => {
+		setFilterVisibility({});
+	}, [deferredSearchQuery, currentMenuId]);
+
+	const { data: categories } = useQuery(
+		convexQuery(api.menus.getCategoriesByMenu, currentMenuId ? { menuId: currentMenuId } : "skip")
+	);
+	const categoryCount = categories?.length ?? 0;
+	const reportedCount = Object.keys(filterVisibility).length;
+	const hasFilterMatch = !isFilterActive || Object.values(filterVisibility).some(Boolean);
+	const showFilterNoMatches =
+		isFilterActive && categoryCount > 0 && reportedCount === categoryCount && !hasFilterMatch;
 
 	const handleOpenDetail = useCallback((item: MenuItemWithImage) => {
 		setDetailItem(item);
@@ -124,7 +152,7 @@ export function MenuBrowser({
 	};
 
 	return (
-		<div className="flex flex-col h-full">
+		<div className="flex flex-col h-full min-h-0">
 			{activeMenus.length > 1 && (
 				<div className="flex gap-2 px-4 pt-4 overflow-x-auto">
 					{activeMenus.map((menu) => (
@@ -146,13 +174,26 @@ export function MenuBrowser({
 				</div>
 			)}
 
-			<div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+			<div className="px-4 pt-4">
+				<SearchInput
+					placeholder={t(OrderingKeys.MENU_FILTER_PLACEHOLDER)}
+					value={searchQuery}
+					onChange={setSearchQuery}
+				/>
+			</div>
+
+			<div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-6">
+				{showFilterNoMatches ? (
+					<p className="text-sm text-muted-foreground">{t(OrderingKeys.MENU_FILTER_NO_MATCHES)}</p>
+				) : null}
 				{currentMenuId && (
 					<MenuCategories
 						menuId={currentMenuId}
 						lang={lang}
 						selections={selections}
 						onOpenDetail={handleOpenDetail}
+						searchQuery={deferredSearchQuery}
+						onFilterVisibility={handleFilterVisibility}
 					/>
 				)}
 			</div>
@@ -160,19 +201,23 @@ export function MenuBrowser({
 			{/* Bottom bar: total + pay */}
 			{paymentsEnabled === false && itemCount > 0 && (
 				<div
-					className="shrink-0 px-4 py-3 text-center text-sm border-t border-border text-warning"
+					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning ${bottomBarSafePadding}`}
 					style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
 				>
 					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
 			)}
 			{itemCount === 0 && (
-				<div className="shrink-0 px-4 py-4 text-center border-t border-border bg-background text-faint-foreground">
+				<div
+					className={`shrink-0 px-4 pt-4 text-center border-t border-border bg-background text-faint-foreground ${bottomBarSafePadding}`}
+				>
 					<p className="text-sm">{t(OrderingKeys.MENU_TAP_TO_START)}</p>
 				</div>
 			)}
 			{itemCount > 0 && (
-				<div className="shrink-0 px-4 pb-4 pt-3 space-y-3 border-t border-border bg-background">
+				<div
+					className={`shrink-0 px-4 pt-3 space-y-3 border-t border-border bg-background ${bottomBarSafePadding}`}
+				>
 					{showPayFlow ? (
 						<>
 							<div className="flex items-center justify-between">
@@ -285,11 +330,15 @@ function MenuCategories({
 	lang,
 	selections,
 	onOpenDetail,
+	searchQuery,
+	onFilterVisibility,
 }: Readonly<{
 	menuId: Id<"menus">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
 	onOpenDetail: (item: MenuItemWithImage) => void;
+	searchQuery: string;
+	onFilterVisibility?: (categoryId: string, visible: boolean) => void;
 }>) {
 	const { data: categories } = useQuery(convexQuery(api.menus.getCategoriesByMenu, { menuId }));
 	const sorted = [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
@@ -303,6 +352,8 @@ function MenuCategories({
 					lang={lang}
 					selections={selections}
 					onOpenDetail={onOpenDetail}
+					searchQuery={searchQuery}
+					onFilterVisibility={(visible) => onFilterVisibility?.(cat._id, visible)}
 				/>
 			))}
 		</>
@@ -314,12 +365,17 @@ function CategoryItems({
 	lang,
 	selections,
 	onOpenDetail,
+	searchQuery,
+	onFilterVisibility,
 }: Readonly<{
 	category: Doc<"menuCategories">;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
 	onOpenDetail: (item: MenuItemWithImage) => void;
+	searchQuery: string;
+	onFilterVisibility?: (visible: boolean) => void;
 }>) {
+	const { matches, isActive: isFilterActive } = useFuzzyMatch(searchQuery);
 	const { data: items } = useQuery(
 		convexQuery(api.menuItems.getByCategory, { categoryId: category._id })
 	);
@@ -327,7 +383,7 @@ function CategoryItems({
 	const now = new Date();
 	const dayOfWeek = now.getDay();
 
-	const visibleItems = (items ?? [])
+	const availabilityFiltered = (items ?? [])
 		.filter((item) => {
 			if (!item.isAvailable) return false;
 			if (item.availableDays && item.availableDays.length > 0) {
@@ -337,7 +393,21 @@ function CategoryItems({
 		})
 		.sort((a, b) => a.displayOrder - b.displayOrder);
 
-	if (visibleItems.length === 0) return null;
+	const categoryNameForFilter = getTranslatedField(category, lang);
+	const categoryNameMatches = matches(categoryNameForFilter);
+
+	const visibleItems = useMemo(() => {
+		if (!isFilterActive || categoryNameMatches) return availabilityFiltered;
+		return availabilityFiltered.filter((item) => matches(getTranslatedField(item, lang)));
+	}, [availabilityFiltered, isFilterActive, categoryNameMatches, matches, lang]);
+
+	const isVisible = !isFilterActive || categoryNameMatches || visibleItems.length > 0;
+
+	useEffect(() => {
+		onFilterVisibility?.(isVisible);
+	}, [isVisible, onFilterVisibility]);
+
+	if (!isVisible) return null;
 
 	return (
 		<div>

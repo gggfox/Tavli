@@ -1,6 +1,7 @@
 import { ExportMenuButton, useCanExport } from "@/features/exports";
 import { MenuImportDialog, MenuList, MenuListSkeleton, useMenus } from "@/features/menus";
 import { useRestaurant } from "@/features/restaurants";
+import { AdminPageLayout, Button } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useLayoutEffect, useState } from "react";
@@ -49,40 +50,36 @@ function MenusPage() {
 		navigate({ to: "/admin/menus/$menuId", params: { menuId } });
 
 	return (
-		<div className="p-6 flex flex-col h-full">
-			<div className="mb-6 flex items-start justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-semibold text-foreground">{t(MenusKeys.PAGE_TITLE)}</h1>
-					<p className="mt-2 text-sm text-muted-foreground">{t(MenusKeys.PAGE_DESCRIPTION)}</p>
-				</div>
-				<div className="flex items-center gap-2">
-					{restaurant && (
-						<button
+		<AdminPageLayout
+			actions={
+				<>
+					{restaurant ? (
+						<Button
+							variant="secondary"
+							size="md"
+							leadingIcon={<FileUp size={14} />}
 							onClick={() => setImportOpen(true)}
-							className="flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-border text-foreground hover:bg-hover"
 						>
-							<FileUp size={16} />
 							{t(MenusKeys.IMPORT_BUTTON)}
-						</button>
-					)}
+						</Button>
+					) : null}
 					{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
-				</div>
-			</div>
-			<div className="flex-1 min-h-0 overflow-y-auto">
-				{shouldAutoRedirect ? (
-					<MenuListSkeleton />
-				) : (
-					<MenusContent
-						setupFirstMessage={t(MenusKeys.PAGE_SETUP_RESTAURANT_FIRST)}
-						restaurantId={restaurant?._id}
-						isLoading={isLoading || menusLoading}
-						menus={menus}
-						onUpdate={updateMenu}
-						onSelect={handleSelect}
-						onImportClick={() => setImportOpen(true)}
-					/>
-				)}
-			</div>
+				</>
+			}
+		>
+			{shouldAutoRedirect ? (
+				<MenuListSkeleton />
+			) : (
+				<MenusContent
+					setupFirstMessage={t(MenusKeys.PAGE_SETUP_RESTAURANT_FIRST)}
+					restaurantId={restaurant?._id}
+					isLoading={isLoading || menusLoading}
+					menus={menus}
+					onUpdate={updateMenu}
+					onSelect={handleSelect}
+					onImportClick={() => setImportOpen(true)}
+				/>
+			)}
 			{restaurant && (
 				<MenuImportDialog
 					isOpen={importOpen}
@@ -91,7 +88,7 @@ function MenusPage() {
 					menus={menus}
 				/>
 			)}
-		</div>
+		</AdminPageLayout>
 	);
 }
 

@@ -1,4 +1,6 @@
+export * from "./useAnchoredPopoverPosition";
 export * from "./useAdminTable";
+export * from "./useAdminPageToolbar";
 export * from "./useCalendarVariant";
 export * from "./useBackdropClick";
 export * from "./useBodyScrollLock";
@@ -7,5 +9,6 @@ export * from "./useConvexMutate";
 export * from "./useDialogCancel";
 export * from "./useDialogPhase";
 export * from "./useEscapeKey";
+export * from "./useFuzzyMatch";
 export * from "./useMediaQuery";
 export * from "./useOptimisticUserSetting";

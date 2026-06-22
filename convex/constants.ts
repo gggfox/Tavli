@@ -101,6 +101,9 @@ export type OrderNumberResetFrequency =
 export const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency =
 	ORDER_NUMBER_RESET_FREQUENCY.MONTHLY;
 
+/** Default IANA timezone for restaurants when unset or invalid. */
+export const DEFAULT_RESTAURANT_TIMEZONE = "America/Mexico_City";
+
 export const ORDER_PAYMENT_STATE = {
 	UNPAID: "unpaid",
 	PENDING: "pending",

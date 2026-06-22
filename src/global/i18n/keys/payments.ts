@@ -2,6 +2,9 @@
  * Translation keys for the staff-facing PaymentsDashboard.
  */
 export const PaymentsKeys = {
+	PAGE_TITLE: "payments.page.title",
+	PAGE_DESCRIPTION: "payments.page.description",
+
 	ARIA_FILTER: "payments.aria.filter",
 	ARIA_LOADING: "payments.aria.loading",
 

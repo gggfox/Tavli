@@ -7,6 +7,7 @@ import {
 	createRootRouteWithContext,
 	useRouterState,
 } from "@tanstack/react-router";
+import { useConvexAuth } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -61,7 +62,7 @@ export const Route = createRootRouteWithContext<{
 			},
 			{
 				name: "viewport",
-				content: "width=device-width, initial-scale=1",
+				content: "width=device-width, initial-scale=1, viewport-fit=cover",
 			},
 			{
 				name: "color-scheme",
@@ -106,7 +107,7 @@ function RootLayout() {
 	return (
 		<ThemeProvider remoteSettings={remoteSettings}>
 			{isCustomerRoute ? (
-				<div className="h-screen flex flex-col overflow-hidden bg-background">
+				<div className="h-dvh flex flex-col overflow-hidden bg-background">
 					<ErrorBoundary>
 						<Outlet />
 					</ErrorBoundary>
@@ -123,11 +124,15 @@ function RootLayout() {
 function StaffLayout() {
 	const pathname = useRouterState({ select: (s) => s.location.pathname });
 	const { restaurant } = useRestaurant();
+	const { isAuthenticated, isLoading } = useConvexAuth();
 	useNewReservationListener(restaurant?._id);
+
+	const hideSidebar = pathname === "/" && !isLoading && !isAuthenticated;
+
 	return (
-		<div className="h-screen flex overflow-hidden bg-background">
-			<Sidebar pathname={pathname} />
-			<main className="flex-1 overflow-auto bg-background">
+		<div className="h-dvh flex overflow-hidden bg-background">
+			{!hideSidebar && <Sidebar pathname={pathname} />}
+			<main className="flex-1 min-h-0 overflow-auto bg-background">
 				<ErrorBoundary>
 					<Outlet />
 				</ErrorBoundary>

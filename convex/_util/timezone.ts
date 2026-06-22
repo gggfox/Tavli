@@ -20,6 +20,8 @@
  *     industry convention and matches `date-fns-tz` / `luxon` behavior.
  */
 
+import { DEFAULT_RESTAURANT_TIMEZONE } from "../constants";
+
 /** UTC millis ↔ minute conversion. */
 const MINUTE_MS = 60_000;
 
@@ -134,3 +136,23 @@ export function parseHm(hm: string): number | null {
 
 /** Convenience: ms-per-minute constant export for callers. */
 export const MS_PER_MINUTE = MINUTE_MS;
+
+/** Returns true when `tz` is a valid IANA timezone identifier. */
+export function isValidIanaTimezone(tz: string): boolean {
+	try {
+		new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Resolve a restaurant's IANA timezone for display and bucketing.
+ * Missing or invalid values fall back to {@link DEFAULT_RESTAURANT_TIMEZONE}.
+ */
+export function resolveRestaurantTimezone(tz: string | undefined): string {
+	const raw = tz?.trim();
+	if (raw && isValidIanaTimezone(raw)) return raw;
+	return DEFAULT_RESTAURANT_TIMEZONE;
+}

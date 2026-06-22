@@ -7,6 +7,8 @@ import {
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
+	UserInputValidationError,
+	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent, stampUpdated } from "./_util/audit";
@@ -14,6 +16,23 @@ import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth"
 import { TABLE } from "./constants";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
+
+const MAX_CATEGORY_NAME_LENGTH = 120;
+
+function validateCategoryName(name: string, field = "name"): UserInputValidationErrorObject | null {
+	const trimmed = name.trim();
+	if (!trimmed) {
+		return new UserInputValidationError({
+			fields: [{ field, message: "ERROR_MENU_CATEGORY_NAME_REQUIRED" }],
+		}).toObject();
+	}
+	if (trimmed.length > MAX_CATEGORY_NAME_LENGTH) {
+		return new UserInputValidationError({
+			fields: [{ field, message: "ERROR_MENU_CATEGORY_NAME_TOO_LONG" }],
+		}).toObject();
+	}
+	return null;
+}
 
 /** Insert a menu row + audit; used by `restaurants.create` and admin backfills. */
 export async function insertMenuForRestaurant(
@@ -210,11 +229,18 @@ export const createCategory = mutation({
 		name: v.string(),
 		description: v.optional(v.string()),
 	},
-	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<string, AuthErrors | UserInputValidationErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
 		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (error2) return [null, error2];
+
+		const nameError = validateCategoryName(args.name);
+		if (nameError) return [null, nameError];
+		const trimmedName = args.name.trim();
 
 		const existing = await ctx.db
 			.query(TABLE.MENU_CATEGORIES)
@@ -225,7 +251,7 @@ export const createCategory = mutation({
 		const id = await ctx.db.insert(TABLE.MENU_CATEGORIES, {
 			menuId: args.menuId,
 			restaurantId: args.restaurantId,
-			name: args.name,
+			name: trimmedName,
 			description: args.description,
 			displayOrder: existing.length,
 			createdAt: now,
@@ -237,11 +263,91 @@ export const createCategory = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: id,
 			eventType: "menuCategories.created",
-			payload: { name: args.name },
+			payload: { name: trimmedName },
 			userId,
 		});
 
 		return [id, null];
+	},
+});
+
+export const createCategories = mutation({
+	args: {
+		menuId: v.id(TABLE.MENUS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		names: v.array(v.string()),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<{ ids: Id<"menuCategories">[] }, AuthErrors | UserInputValidationErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [null, error2];
+
+		const trimmedNames = args.names.map((name) => name.trim()).filter(Boolean);
+		if (trimmedNames.length === 0) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "names", message: "ERROR_MENU_CATEGORY_NAMES_REQUIRED" }],
+				}).toObject(),
+			];
+		}
+
+		for (let i = 0; i < args.names.length; i++) {
+			const raw = args.names[i];
+			if (!raw.trim()) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [
+							{
+								field: `names[${i}]`,
+								message: "ERROR_MENU_CATEGORY_NAME_REQUIRED",
+							},
+						],
+					}).toObject(),
+				];
+			}
+			const nameError = validateCategoryName(raw, `names[${i}]`);
+			if (nameError) return [null, nameError];
+		}
+
+		const existing = await ctx.db
+			.query(TABLE.MENU_CATEGORIES)
+			.withIndex("by_menu", (q) => q.eq("menuId", args.menuId))
+			.collect();
+
+		const now = Date.now();
+		const ids: Id<"menuCategories">[] = [];
+		let displayOrder = existing.length;
+
+		for (const name of trimmedNames) {
+			const id = await ctx.db.insert(TABLE.MENU_CATEGORIES, {
+				menuId: args.menuId,
+				restaurantId: args.restaurantId,
+				name,
+				displayOrder,
+				createdAt: now,
+				updatedAt: now,
+				updatedBy: userId,
+			});
+			displayOrder++;
+
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.MENU_CATEGORIES,
+				aggregateId: id,
+				eventType: "menuCategories.created",
+				payload: { name },
+				userId,
+			});
+
+			ids.push(id);
+		}
+
+		return [{ ids }, null];
 	},
 });
 

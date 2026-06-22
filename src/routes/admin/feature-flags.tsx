@@ -8,10 +8,7 @@ export const Route = createFileRoute("/admin/feature-flags")({
 
 function AdminFeatureFlagsPage() {
 	return (
-		<AdminPageLayout
-			title="Feature flags"
-			description="Toggle global feature flags. Keys are defined in convex/featureFlags.ts."
-		>
+		<AdminPageLayout>
 			<FeatureFlagsTable />
 		</AdminPageLayout>
 	);

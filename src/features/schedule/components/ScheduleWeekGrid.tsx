@@ -19,6 +19,7 @@
  * mutation; the parent route shapes shifts + members and passes callbacks.
  */
 import { AdminStaffKeys } from "@/global/i18n";
+import { useIsTabletViewport } from "@/global/hooks";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Plus } from "lucide-react";
 import { useMemo } from "react";
@@ -127,16 +128,24 @@ export function ScheduleWeekGrid({
 		return map;
 	}, [shifts, timezone]);
 
+	const isTablet = useIsTabletViewport();
+	const gridTemplateColumns = isTablet
+		? "minmax(72px, 0.9fr) repeat(7, minmax(52px, 1fr))"
+		: "minmax(160px, 1.2fr) repeat(7, minmax(120px, 1fr))";
+	const headerClass = isTablet
+		? "bg-muted text-[10px] font-semibold text-faint-foreground px-1.5 py-1.5 border-b border-border"
+		: "bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-border";
+
 	return (
 		<div className="overflow-x-auto rounded-lg border border-border">
 			<div
 				role="grid"
-				className="min-w-[720px] grid"
-				style={{ gridTemplateColumns: "minmax(160px, 1.2fr) repeat(7, minmax(120px, 1fr))" }}
+				className={isTablet ? "min-w-0 grid" : "min-w-[720px] grid"}
+				style={{ gridTemplateColumns }}
 			>
 				<div
 					role="columnheader"
-					className="sticky left-0 z-10 bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-border"
+					className={`sticky left-0 z-10 border-b border-border ${headerClass}`}
 				>
 					{t(AdminStaffKeys.SCHEDULE_COL_MEMBER)}
 				</div>
@@ -147,7 +156,7 @@ export function ScheduleWeekGrid({
 						<div
 							key={d.ymd}
 							role="columnheader"
-							className="bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-l border-border"
+							className={`border-l border-border ${headerClass}`}
 						>
 							{t(AdminStaffKeys.SCHEDULE_GRID_DAY_HEADER_FORMAT, {
 								day: dayLabel(d.index, t),
@@ -162,6 +171,7 @@ export function ScheduleWeekGrid({
 						key={m.memberId}
 						member={m}
 						days={days}
+						isTablet={isTablet}
 						shiftsByMemberAndDay={shiftsByMemberAndDay}
 						onCreateShift={onCreateShift}
 						onOpenMemberDrawer={onOpenMemberDrawer}
@@ -179,6 +189,7 @@ export function ScheduleWeekGrid({
 interface MemberRowProps {
 	readonly member: AssignableMember;
 	readonly days: ReadonlyArray<DayInfo>;
+	readonly isTablet: boolean;
 	readonly shiftsByMemberAndDay: Map<string, ScheduledShiftView[]>;
 	readonly onCreateShift?: (memberId: string, ymd: string) => void;
 	readonly onOpenMemberDrawer?: (memberId: Id<"restaurantMembers">) => void;
@@ -191,6 +202,7 @@ interface MemberRowProps {
 function MemberRow({
 	member,
 	days,
+	isTablet,
 	shiftsByMemberAndDay,
 	onCreateShift,
 	onOpenMemberDrawer,
@@ -203,6 +215,8 @@ function MemberRow({
 	const label = member.displayName || "—";
 	const initials = (member.displayName.charAt(0) || "?").toUpperCase();
 	const labelClasses = "text-xs font-medium truncate";
+	const rowHeaderPadding = isTablet ? "px-1.5 py-1.5" : "px-3 py-2";
+	const cellPadding = isTablet ? "p-1" : "p-1.5";
 	const asterisk =
 		pendingCount > 0 ? (
 			<span
@@ -219,7 +233,7 @@ function MemberRow({
 		<>
 			<div
 				role="rowheader"
-				className="sticky left-0 z-10 bg-background border-b border-border px-3 py-2 flex items-center min-w-0"
+				className={`sticky left-0 z-10 bg-background border-b border-border flex items-center min-w-0 ${rowHeaderPadding}`}
 			>
 				{asterisk}
 				{member.photoUrl ? (
@@ -257,7 +271,7 @@ function MemberRow({
 					<div
 						key={`${member.memberId}-${d.ymd}`}
 						role="gridcell"
-						className="border-b border-l border-border min-h-20 p-1.5 bg-background hover:bg-(--bg-hover) transition-colors"
+						className={`border-b border-l border-border min-h-20 bg-background hover:bg-(--bg-hover) transition-colors ${cellPadding}`}
 					>
 						<DayCellContent
 							day={d}

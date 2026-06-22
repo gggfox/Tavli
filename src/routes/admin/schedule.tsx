@@ -18,7 +18,7 @@ import { ClearSchedulesModal } from "@/features/schedule/components/ClearSchedul
 import { SegmentedControl } from "@/global/components/SegmentedControl/SegmentedControl";
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { AdminPageLayout, EmptyState, LoadingState } from "@/global/components";
-import { AdminStaffKeys, SidebarKeys } from "@/global/i18n";
+import { AdminStaffKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useAuth, useUser } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
@@ -28,6 +28,7 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	ABSENCE_REQUEST_STATUS,
+	DEFAULT_RESTAURANT_TIMEZONE,
 	RESTAURANT_MEMBER_ROLE,
 	SHIFT_STATUS,
 	USER_ROLES,
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/admin/schedule")({
 	component: AdminSchedulePage,
 });
 
-const DEFAULT_TIMEZONE = "UTC";
+const DEFAULT_TIMEZONE = DEFAULT_RESTAURANT_TIMEZONE;
 
 function AdminSchedulePage() {
 	const { t, i18n } = useTranslation();
@@ -100,10 +101,7 @@ function AdminSchedulePage() {
 
 	if (!restaurant) {
 		return (
-			<AdminPageLayout
-				title={t(SidebarKeys.SCHEDULE)}
-				description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION_NO_RESTAURANT)}
-			>
+			<AdminPageLayout>
 				<p className="text-sm text-faint-foreground">{t(AdminStaffKeys.SCHEDULE_NO_RESTAURANT)}</p>
 			</AdminPageLayout>
 		);
@@ -316,10 +314,7 @@ function ManagerScheduleView({
 
 	if (members.length === 0) {
 		return (
-			<AdminPageLayout
-				title={t(SidebarKeys.SCHEDULE)}
-				description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION)}
-			>
+			<AdminPageLayout>
 				<div className="flex flex-col h-full">
 					<EmptyState
 						fill
@@ -368,11 +363,7 @@ function ManagerScheduleView({
 	);
 
 	return (
-		<AdminPageLayout
-			title={t(SidebarKeys.SCHEDULE)}
-			description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION)}
-			actions={headerActions}
-		>
+		<AdminPageLayout actions={headerActions}>
 			<div className="flex flex-wrap items-center justify-between gap-2 mb-4">
 				<div className="flex items-center gap-2">
 					<button
@@ -567,10 +558,7 @@ function EmployeeScheduleView({
 
 	if (!myMembership) {
 		return (
-			<AdminPageLayout
-				title={t(SidebarKeys.SCHEDULE)}
-				description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION_EMPLOYEE)}
-			>
+			<AdminPageLayout>
 				<EmptyState
 					icon={CalendarRange}
 					title={t(AdminStaffKeys.SCHEDULE_EMPLOYEE_EMPTY_TITLE)}
@@ -584,10 +572,7 @@ function EmployeeScheduleView({
 	// ownLabel is still used for the attendance drawer memberLabel prop
 
 	return (
-		<AdminPageLayout
-			title={t(SidebarKeys.SCHEDULE)}
-			description={t(AdminStaffKeys.SCHEDULE_DESCRIPTION_EMPLOYEE)}
-		>
+		<AdminPageLayout>
 			<div className="flex flex-wrap items-center justify-between gap-2 mb-4">
 				<div className="flex items-center gap-2">
 					<button

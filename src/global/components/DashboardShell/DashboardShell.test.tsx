@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { AdminPageLayout } from "../AdminPageLayout";
 import { DashboardShell } from "./DashboardShell";
 
 describe("DashboardShell", () => {
@@ -55,6 +56,25 @@ describe("DashboardShell", () => {
 			</DashboardShell>
 		);
 
+		expect(screen.getByText("real content")).toBeInTheDocument();
+	});
+
+	it("registers header as admin toolbar when inside AdminPageLayout", () => {
+		render(
+			<AdminPageLayout>
+				<DashboardShell
+					isLoading={false}
+					error={null}
+					entityName="orders"
+					header={<nav>filters</nav>}
+					skeleton={<div />}
+				>
+					<p>real content</p>
+				</DashboardShell>
+			</AdminPageLayout>
+		);
+
+		expect(screen.getByText("filters")).toBeInTheDocument();
 		expect(screen.getByText("real content")).toBeInTheDocument();
 	});
 });

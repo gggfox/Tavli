@@ -7,5 +7,6 @@ export * from "./money";
 export * from "./relativeTime";
 export * from "./slug";
 export * from "./theme";
+export * from "./timezone";
 export * from "./translations";
 export * from "./unwrapResult";

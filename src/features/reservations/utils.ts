@@ -1,15 +1,14 @@
 /**
  * Date-range and formatting helpers for the reservation dashboard.
  *
- * The dashboard exposes named ranges (today, week, month, ...) that all
- * resolve to a `[fromMs, toMs)` window in the user's local timezone. This
- * matches the user's intuition for "this week" and avoids the complexity of
- * per-restaurant timezone math (which is a v2 concern -- v1 trusts the
- * browser timezone for display).
+ * List/card range pills (today, week, month, ...) resolve to `[fromMs, toMs)`
+ * in the browser's local timezone. The timeline uses restaurant-local day
+ * bounds when a timezone is supplied to `customDayBounds`.
  */
 
 import { ReservationsKeys } from "@/global/i18n";
 import { isValidYmd, ymdToLocalDate } from "@/global/utils/calendarMonth";
+import { restaurantDayBounds } from "@/features/reservations/utils/timelineCoordinates";
 
 export type ReservationRange = "today" | "week" | "month" | "quarter" | "year" | "all";
 
@@ -99,8 +98,11 @@ export function rangeBounds(range: ReservationRange, now: Date = new Date()): Ra
 	return { fromMs: start.getTime(), toMs: end.getTime() };
 }
 
-/** Local calendar day as `[startOfDay, startOfNextDay)` in the browser timezone. */
-export function customDayBounds(ymd: string): RangeBounds {
+/** Calendar day as `[startOfDay, startOfNextDay)`; uses restaurant TZ when provided. */
+export function customDayBounds(ymd: string, timezone?: string): RangeBounds {
+	if (timezone) {
+		return restaurantDayBounds(ymd, timezone);
+	}
 	const start = ymdToLocalDate(ymd);
 	const end = new Date(start);
 	end.setDate(end.getDate() + 1);
@@ -110,9 +112,10 @@ export function customDayBounds(ymd: string): RangeBounds {
 export function dashboardReservationBounds(
 	range: ReservationRange,
 	customDay: string | undefined,
-	now?: Date
+	now?: Date,
+	timezone?: string
 ): RangeBounds {
-	if (customDay && isValidYmd(customDay)) return customDayBounds(customDay);
+	if (customDay && isValidYmd(customDay)) return customDayBounds(customDay, timezone);
 	return rangeBounds(range, now);
 }
 
@@ -153,10 +156,11 @@ export function formatReservationTime(ms: number, locale?: string): string {
 	});
 }
 
-export function formatTimeOnly(ms: number, locale?: string): string {
+export function formatTimeOnly(ms: number, locale?: string, timeZone?: string): string {
 	return new Date(ms).toLocaleTimeString(locale, {
 		hour: "numeric",
 		minute: "2-digit",
+		...(timeZone ? { timeZone } : {}),
 	});
 }
 

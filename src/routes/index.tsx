@@ -14,7 +14,7 @@ function App() {
 	}
 
 	return (
-		<div className="h-full flex flex-col overflow-hidden bg-background">
+		<div className="min-h-full flex flex-col bg-background">
 			<WelcomeSection />
 		</div>
 	);

@@ -108,7 +108,7 @@ export function ExportButton({ restaurantId, kind }: ExportButtonProps) {
 				trailingIcon={hasMultipleYears ? <ChevronDown size={14} /> : undefined}
 				onClick={handleTriggerClick}
 				disabled={disabled}
-				loadingLabel={t(ExportsKeys.STATUS_PREPARING)}
+				loadingLabel={<span className="sr-only">{t(ExportsKeys.STATUS_PREPARING)}</span>}
 				state={isSubmitting ? "loading" : undefined}
 				aria-label={t(ExportsKeys.BUTTON_ARIA)}
 				aria-haspopup={hasMultipleYears ? "listbox" : undefined}

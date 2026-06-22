@@ -1,9 +1,7 @@
 import { AdminRestaurantsList } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
-import { RestaurantsKeys } from "@/global/i18n";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Id } from "convex/_generated/dataModel";
-import { useTranslation } from "react-i18next";
 
 function validateRestaurantsSearch(search: Record<string, unknown>) {
 	const raw = search.manage;
@@ -17,7 +15,6 @@ export const Route = createFileRoute("/admin/restaurants")({
 });
 
 function AdminRestaurantsPage() {
-	const { t } = useTranslation();
 	const { manage } = Route.useSearch();
 	const navigate = useNavigate();
 	const manageId = (manage as Id<"restaurants"> | undefined) ?? null;
@@ -45,10 +42,7 @@ function AdminRestaurantsPage() {
 	}
 
 	return (
-		<AdminPageLayout
-			title={t(RestaurantsKeys.ADMIN_ALL_TITLE)}
-			description={t(RestaurantsKeys.ADMIN_ALL_DESCRIPTION)}
-		>
+		<AdminPageLayout>
 			<AdminRestaurantsList manageId={null} onManageChange={setManageId} />
 		</AdminPageLayout>
 	);

@@ -80,9 +80,9 @@ function CustomerLayout() {
 	}
 
 	return (
-		<div className="flex-1 flex flex-col overflow-hidden">
+		<div className="flex-1 flex flex-col min-h-0 overflow-hidden">
 			<CustomerHeader slug={slug} sessionId={sessionId} />
-			<div className="flex-1 overflow-hidden">
+			<div className="flex-1 min-h-0 overflow-hidden">
 				<Outlet />
 			</div>
 		</div>

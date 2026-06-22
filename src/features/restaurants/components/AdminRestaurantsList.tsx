@@ -6,14 +6,17 @@ import { StripeConnectSetup } from "@/features/restaurants/components/StripeConn
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global/components";
+import { useIsTabletPortraitViewport } from "@/global/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
 import { sanitizeSlug, unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "convex/_generated/dataModel";
+import { DEFAULT_RESTAURANT_TIMEZONE, RESTAURANT_MEMBER_ROLE, USER_ROLES } from "convex/constants";
 import {
 	ChevronLeft,
 	ExternalLink,
@@ -26,7 +29,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type OrganizationsValue = UnwrappedValue<
@@ -68,14 +71,43 @@ export function AdminRestaurantsList({
 	onManageChange,
 }: Readonly<AdminRestaurantsListProps> = {}) {
 	const { t } = useTranslation();
+	const isTabletPortrait = useIsTabletPortraitViewport();
 	const { isAuthenticated } = useConvexAuth();
 	const { setSelectedRestaurantId } = useRestaurant();
 	const organizations = useOrganizations();
 
-	const { roles: userRoles } = useCurrentUserRoles();
+	const { roles: userRoles, organizationId: userOrgId } = useCurrentUserRoles();
+	const { user } = useUser();
 	const canManage = useMemo(
-		() => userRoles.includes("admin") || userRoles.includes("owner"),
+		() => userRoles.includes(USER_ROLES.ADMIN) || userRoles.includes(USER_ROLES.OWNER),
 		[userRoles]
+	);
+
+	const { data: myMemberships = [] } = useQuery({
+		...convexQuery(api.restaurantMembers.listByUser, {}),
+		enabled: isAuthenticated,
+		select: unwrapResult<Doc<"restaurantMembers">[]>,
+	});
+
+	const canEditSettingsFor = useCallback(
+		(restaurant: Doc<"restaurants">) => {
+			if (canManage) return true;
+			if (user?.id && restaurant.ownerId === user.id) return true;
+			if (
+				userRoles.includes(USER_ROLES.OWNER) &&
+				userOrgId != null &&
+				String(restaurant.organizationId) === userOrgId
+			) {
+				return true;
+			}
+			return myMemberships.some(
+				(m) =>
+					m.isActive &&
+					m.restaurantId === restaurant._id &&
+					m.role === RESTAURANT_MEMBER_ROLE.MANAGER
+			);
+		},
+		[canManage, user?.id, userRoles, userOrgId, myMemberships]
 	);
 
 	const {
@@ -238,12 +270,13 @@ export function AdminRestaurantsList({
 							key={r._id}
 							className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
 						>
-							<div className="flex items-center gap-4">
-								<div>
-									<span className="text-sm font-medium text-foreground">{r.name}</span>
-									<span className="text-xs ml-2 text-faint-foreground">/{r.slug}</span>
+							<div className="flex items-center gap-4 min-w-0">
+								<div className="w-40 shrink-0 min-w-0">
+									<div className="text-sm font-medium text-foreground truncate">{r.name}</div>
+									<div className="text-xs text-faint-foreground truncate">/{r.slug}</div>
 								</div>
 								<StatusBadge
+									className="shrink-0"
 									bgColor={r.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
 									textColor={r.isActive ? "white" : "var(--text-muted)"}
 									label={
@@ -252,10 +285,12 @@ export function AdminRestaurantsList({
 											: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
 									}
 								/>
-								<span className="text-xs text-faint-foreground">{r.currency}</span>
+								{!isTabletPortrait && (
+									<span className="text-xs text-faint-foreground">{r.currency}</span>
+								)}
 							</div>
 							<div className="flex items-center gap-2">
-								{canManage && (
+								{canEditSettingsFor(r) && (
 									<button
 										type="button"
 										onClick={() => setModal({ kind: "edit", restaurant: r })}
@@ -378,6 +413,7 @@ export function AdminRestaurantsList({
 						<RestaurantSettingsForm
 							restaurant={modal.restaurant}
 							organizations={organizations}
+							settingsAccess={canManage ? "full" : "manager"}
 							onSave={async (data) => {
 								try {
 									unwrapResult(
@@ -393,26 +429,34 @@ export function AdminRestaurantsList({
 									);
 								}
 							}}
-							onToggleActive={async (restaurantId) => {
-								try {
-									unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
-								} catch (err) {
-									setError(
-										err instanceof Error ? err.message : t(RestaurantsKeys.LIST_TOGGLE_FAILED)
-									);
-								}
-							}}
+							onToggleActive={
+								canManage
+									? async (restaurantId) => {
+											try {
+												unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
+											} catch (err) {
+												setError(
+													err instanceof Error ? err.message : t(RestaurantsKeys.LIST_TOGGLE_FAILED)
+												);
+											}
+										}
+									: undefined
+							}
 							isSaving={updateMutation.isPending}
 						/>
-						<div className="mt-6 border-t border-border pt-6">
-							<RestaurantManagersField
-								restaurantId={modal.restaurant._id}
-								onError={(msg) => setError(msg)}
-							/>
-						</div>
-						<div className="mt-6">
-							<StripeConnectSetup restaurantId={modal.restaurant._id} />
-						</div>
+						{canManage ? (
+							<>
+								<div className="mt-6 border-t border-border pt-6">
+									<RestaurantManagersField
+										restaurantId={modal.restaurant._id}
+										onError={(msg) => setError(msg)}
+									/>
+								</div>
+								<div className="mt-6">
+									<StripeConnectSetup restaurantId={modal.restaurant._id} />
+								</div>
+							</>
+						) : null}
 					</div>
 				</Modal>
 			)}
@@ -483,6 +527,7 @@ interface ExpandedTablesRowProps {
 
 function ExpandedTablesRow({ restaurant, onClose }: Readonly<ExpandedTablesRowProps>) {
 	const { t } = useTranslation();
+	const isTabletPortrait = useIsTabletPortraitViewport();
 	return (
 		<div className="rounded-xl bg-background border border-border min-h-[calc(100vh-12rem)] flex flex-col">
 			<div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-6 py-4 bg-background border-b border-border rounded-t-xl">
@@ -506,7 +551,9 @@ function ExpandedTablesRow({ restaurant, onClose }: Readonly<ExpandedTablesRowPr
 								: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
 						}
 					/>
-					<span className="text-xs text-faint-foreground">{restaurant.currency}</span>
+					{!isTabletPortrait && (
+						<span className="text-xs text-faint-foreground">{restaurant.currency}</span>
+					)}
 				</div>
 				<button
 					type="button"
@@ -547,6 +594,7 @@ function CreateRestaurantForm({
 						name: value.name,
 						slug: value.slug,
 						currency: value.currency,
+						timezone: DEFAULT_RESTAURANT_TIMEZONE,
 						organizationId: value.organizationId as Id<"organizations">,
 					})
 				);

@@ -62,6 +62,11 @@ export type TeamDirectoryRow =
 			addedByEmail: string | null;
 	  };
 
+function nameFromEmail(value: string): string {
+	const at = value.indexOf("@");
+	return at === -1 ? value : value.slice(0, at);
+}
+
 function displayName(row: {
 	firstName: string | null;
 	paternalLastname: string | null;
@@ -70,7 +75,7 @@ function displayName(row: {
 }): string {
 	const parts = [row.firstName, row.paternalLastname, row.maternalLastname].filter(Boolean);
 	if (parts.length > 0) return parts.join(" ");
-	if ("email" in row && row.email) return row.email;
+	if ("email" in row && row.email) return nameFromEmail(row.email);
 	return "";
 }
 
@@ -114,7 +119,11 @@ export function createTeamDirectoryColumns(args: {
 						)}
 						<span className="text-sm text-foreground truncate">
 							{name ||
-								(r.rowType === "invite" ? r.email : "userId" in r && r.userId ? r.userId : "—")}
+								(r.rowType === "invite"
+									? nameFromEmail(r.email)
+									: "userId" in r && r.userId
+										? r.userId
+										: "—")}
 						</span>
 					</div>
 				);

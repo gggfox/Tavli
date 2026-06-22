@@ -11,11 +11,7 @@ import type { TeamDirectoryRow } from "@/features/team/teamDirectoryColumns";
 import { DialogHeader, Drawer } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
-import {
-	getMondayYmdOfWeek,
-	startOfDayMs,
-	utcMsToYmdInTimezone,
-} from "@/features/schedule/timezone";
+import { getMondayYmdOfWeek, startOfDayMs, utcMsToYmdInTimezone } from "@/global/utils/timezone";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
