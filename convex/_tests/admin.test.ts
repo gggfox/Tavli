@@ -35,6 +35,7 @@ async function readRoles(t: T, userId: string) {
 
 describe("admin.devSetOwnRoles", () => {
 	const originalEnv = process.env.CONVEX_ENV;
+	const originalSwitcher = process.env.DEV_ROLE_SWITCHER_ENABLED;
 
 	afterEach(() => {
 		if (originalEnv === undefined) {
@@ -42,11 +43,17 @@ describe("admin.devSetOwnRoles", () => {
 		} else {
 			process.env.CONVEX_ENV = originalEnv;
 		}
+		if (originalSwitcher === undefined) {
+			delete process.env.DEV_ROLE_SWITCHER_ENABLED;
+		} else {
+			process.env.DEV_ROLE_SWITCHER_ENABLED = originalSwitcher;
+		}
 	});
 
 	describe("in development environment", () => {
 		beforeEach(() => {
 			process.env.CONVEX_ENV = "development";
+			process.env.DEV_ROLE_SWITCHER_ENABLED = "true";
 		});
 
 		it("lets a user with no roles assign themselves any role", async () => {
@@ -122,6 +129,22 @@ describe("admin.devSetOwnRoles", () => {
 			});
 
 			expect(error).toBeNull();
+		});
+
+		it("blocks when DEV_ROLE_SWITCHER_ENABLED is not explicitly true (TAVLI-34)", async () => {
+			delete process.env.DEV_ROLE_SWITCHER_ENABLED;
+			const t = convexTest(schema, modules);
+			const user = t.withIdentity({ subject: "user-1" });
+
+			const [value, error] = await user.mutation(api.admin.devSetOwnRoles, {
+				roles: ["admin"],
+			});
+
+			expect(value).toBeNull();
+			expect(error).toMatchObject({
+				name: "NOT_AUTHORIZED",
+				message: DEV_ONLY_ERROR_MESSAGE,
+			});
 		});
 	});
 

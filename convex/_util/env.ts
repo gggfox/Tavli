@@ -42,3 +42,8 @@ export function getConvexEnv(): ConvexEnv {
 export function isDevEnv(): boolean {
 	return getConvexEnv() === CONVEX_ENV.DEVELOPMENT;
 }
+
+/** Explicit opt-in for the dev role switcher (TAVLI-34). Requires isDevEnv(). */
+export function isDevRoleSwitcherEnabled(): boolean {
+	return isDevEnv() && process.env.DEV_ROLE_SWITCHER_ENABLED === "true";
+}

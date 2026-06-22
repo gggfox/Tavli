@@ -16,7 +16,7 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
-import { isDevEnv } from "./_util/env";
+import { isDevRoleSwitcherEnabled } from "./_util/env";
 import { findExistingEventByKey, findExistingEventByKeyAndType } from "./_util/idempotency";
 import type { UserRoleDoc } from "./constants";
 import { TABLE } from "./constants";
@@ -380,7 +380,7 @@ export const devSetOwnRoles = mutation({
 		),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, DevSetOwnRolesErrors> {
-		if (!isDevEnv()) {
+		if (!isDevRoleSwitcherEnabled()) {
 			return [null, new NotAuthorizedError(DEV_ONLY_ERROR_MESSAGE).toObject()];
 		}
 
