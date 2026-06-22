@@ -4,6 +4,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
+	ERROR_NAMES,
+	IdempotencyKeyConflictErrorObject,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
 	NotAuthorizedErrorObject,
@@ -186,6 +188,7 @@ type CreateUserRoleErrors =
 	| NotAuthenticatedErrorObject
 	| NotAuthorizedErrorObject
 	| NotFoundErrorObject
+	| IdempotencyKeyConflictErrorObject
 	| UserInputValidationErrorObject;
 
 export const createUserRole = mutation({
@@ -257,7 +260,11 @@ export const createUserRole = mutation({
 				args.idempotencyKey
 			);
 
-			if (existingError && existingError.name !== "NOT_FOUND") {
+			if (existingError?.name === ERROR_NAMES.IDEMPOTENCY_KEY_CONFLICT) {
+				return [null, existingError];
+			}
+
+			if (existingError && existingError.name !== ERROR_NAMES.NOT_FOUND) {
 				return [null, existingError];
 			}
 
