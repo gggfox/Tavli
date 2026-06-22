@@ -32,7 +32,7 @@ const mockStripeClient = {
 	webhooks: {
 		constructEvent: vi.fn(),
 	},
-	parseThinEvent: vi.fn(),
+	parseEventNotification: vi.fn(),
 };
 
 const StripeConstructor = vi.fn(() => mockStripeClient);
