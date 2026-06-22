@@ -28,6 +28,7 @@ import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
 import { resolveAttributedMemberId } from "./_util/attribution";
 import {
+	assertPositiveIntegerQuantity,
 	DASHBOARD_STATUS_VALIDATOR,
 	getApplicableStations,
 	invalidateActivePayment,
@@ -94,6 +95,8 @@ export const addItem = mutation({
 		lang: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
+		assertPositiveIntegerQuantity(args.quantity);
+
 		const order = await ctx.db.get(args.orderId);
 		if (order?.status !== "draft") {
 			throw new NotFoundError("Draft order not found");
@@ -140,6 +143,10 @@ export const updateItem = mutation({
 	handler: async (ctx, args) => {
 		const item = await ctx.db.get(args.orderItemId);
 		if (!item) throw new NotFoundError("Order item not found");
+
+		if (args.quantity !== undefined) {
+			assertPositiveIntegerQuantity(args.quantity);
+		}
 
 		const order = await ctx.db.get(item.orderId);
 		if (order?.status !== "draft") {
