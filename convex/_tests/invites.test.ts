@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "../constants";
+import { RESTAURANT_MEMBER_ROLE, USER_ROLES, INVITATION_STATUS } from "../constants";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
@@ -554,5 +554,82 @@ describe("restaurantMembers listTeamDirectory", () => {
 		if (!Array.isArray(rows)) throw new Error("expected directory rows");
 		const hit = rows.find((r) => r.rowType === "invite" && r.email === "owner-inv2@example.com");
 		expect(hit).toBeTruthy();
+	});
+});
+
+describe("invites getByTokenPublic", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	async function seedPendingInvite(
+		t: ReturnType<typeof convexTest>,
+		args: { email: string; expiresAt: number }
+	): Promise<string> {
+		return await t.run(async (ctx) => {
+			const now = Date.now();
+			const orgId = await ctx.db.insert("organizations", {
+				name: "Public Preview Org",
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			return ctx.db.insert("invitations", {
+				token: "preview-token-abc",
+				email: args.email,
+				organizationId: orgId,
+				role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+				restaurantIds: [],
+				invitedBy: "owner1",
+				status: INVITATION_STATUS.PENDING,
+				expiresAt: args.expiresAt,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+	}
+
+	it("returns pending invite details when now is before expiry", async () => {
+		const t = convexTest(schema, modules);
+		const now = Date.now();
+		await seedPendingInvite(t, { email: "invitee@example.com", expiresAt: now + 60_000 });
+
+		const row = await t.query(api.invites.getByTokenPublic, {
+			token: "preview-token-abc",
+			now,
+		});
+
+		expect(row).toMatchObject({
+			email: "invitee@example.com",
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+			status: INVITATION_STATUS.PENDING,
+		});
+	});
+
+	it("returns null when now is at or after expiry", async () => {
+		const t = convexTest(schema, modules);
+		const now = Date.now();
+		await seedPendingInvite(t, { email: "invitee@example.com", expiresAt: now - 1 });
+
+		const row = await t.query(api.invites.getByTokenPublic, {
+			token: "preview-token-abc",
+			now,
+		});
+
+		expect(row).toBeNull();
+	});
+
+	it("returns null for unknown token", async () => {
+		const t = convexTest(schema, modules);
+
+		const row = await t.query(api.invites.getByTokenPublic, {
+			token: "missing-token",
+			now: Date.now(),
+		});
+
+		expect(row).toBeNull();
 	});
 });
