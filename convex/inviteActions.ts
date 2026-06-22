@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { renderTeamInviteEmail } from "./emails/renderTeamInviteEmail";
+import { parseResendErrorSummary, redactExternalId } from "./_shared/integrationLogging";
 import { TABLE } from "./constants";
 
 /**
@@ -59,7 +60,12 @@ export const sendInviteEmail = internalAction({
 
 		if (!res.ok) {
 			const responseText = await res.text();
-			console.error("[inviteActions] Resend error:", res.status, responseText);
+			console.error("[inviteActions] Resend error:", {
+				integration: "resend",
+				operation: "sendInviteEmail",
+				invitationId: redactExternalId(args.invitationId),
+				...parseResendErrorSummary(res.status, responseText),
+			});
 		}
 	},
 });
