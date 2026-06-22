@@ -462,6 +462,7 @@
 			"reserve": "Reserve"
 		},
 		"auth": {
+			"signIn": "Sign In",
 			"signUp": "Sign up"
 		}
 	},
@@ -493,6 +494,8 @@
 		"session": {
 			"errorNotFound": "This restaurant was not found or is currently unavailable. Please check the link.",
 			"errorGeneric": "Something went wrong. Please try refreshing the page.",
+			"signInRequired": "Sign in to order",
+			"signInPrompt": "Create an account or sign in to browse the menu and place orders at this restaurant.",
 			"oops": "Oops!",
 			"noSession": "No active session. Please return to the menu.",
 			"viewOrders": "View your orders",

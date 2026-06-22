@@ -354,6 +354,8 @@ export default defineSchema({
 	[TABLE.SESSIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		tableId: v.optional(v.id(TABLE.TABLES)),
+		/** Clerk subject of the diner who owns this session (required for ordering). */
+		userId: v.optional(v.string()),
 		status: v.union(v.literal("active"), v.literal("closed")),
 		startedAt: v.number(),
 		closedAt: v.optional(v.number()),
@@ -361,7 +363,8 @@ export default defineSchema({
 		serverMemberId: v.optional(v.id(TABLE.RESTAURANT_MEMBERS)),
 	})
 		.index("by_table_status", ["tableId", "status"])
-		.index("by_restaurant", ["restaurantId"]),
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_user", ["userId"]),
 
 	[TABLE.ORDERS]: defineTable({
 		sessionId: v.id(TABLE.SESSIONS),

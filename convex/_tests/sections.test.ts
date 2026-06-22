@@ -83,6 +83,7 @@ async function seed(t: ReturnType<typeof convexTest>): Promise<SeedOut> {
 		const sessionId = await ctx.db.insert("sessions", {
 			restaurantId,
 			tableId,
+			userId: "diner1",
 			status: "active",
 			startedAt: now,
 		});
@@ -131,17 +132,18 @@ async function createPaidOrder(
 		menuItemId: Id<"menuItems">;
 	}
 ): Promise<Id<"orders">> {
-	const orderId = await t.mutation(api.orders.createDraft, {
+	const diner = t.withIdentity({ subject: "diner1" });
+	const orderId = await diner.mutation(api.orders.createDraft, {
 		sessionId: args.sessionId,
 		tableId: args.tableId,
 	});
-	await t.mutation(api.orders.addItem, {
+	await diner.mutation(api.orders.addItem, {
 		orderId,
 		menuItemId: args.menuItemId,
 		quantity: 1,
 		selectedOptions: [],
 	});
-	const snap = (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt;
+	const snap = (await diner.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt;
 	const paymentId = await t.mutation(internal.stripeHelpers.createPayment, {
 		restaurantId: args.restaurantId,
 		orderId,
@@ -754,7 +756,8 @@ describe("confirmPayment attribution", () => {
 			menuItemId,
 		});
 
-		const order = await t.query(api.orders.getOrderWithItems, { orderId });
+		const diner = t.withIdentity({ subject: "diner1" });
+		const order = await diner.query(api.orders.getOrderWithItems, { orderId });
 		expect(order?.attributedMemberId).toBe(managerMember);
 	});
 
@@ -773,7 +776,8 @@ describe("confirmPayment attribution", () => {
 			menuItemId,
 		});
 
-		const order = await t.query(api.orders.getOrderWithItems, { orderId });
+		const diner = t.withIdentity({ subject: "diner1" });
+		const order = await diner.query(api.orders.getOrderWithItems, { orderId });
 		expect(order?.attributedMemberId).toBe(otherMember);
 	});
 
@@ -788,7 +792,8 @@ describe("confirmPayment attribution", () => {
 			menuItemId,
 		});
 
-		const order = await t.query(api.orders.getOrderWithItems, { orderId });
+		const diner = t.withIdentity({ subject: "diner1" });
+		const order = await diner.query(api.orders.getOrderWithItems, { orderId });
 		expect(order?.attributedMemberId).toBeUndefined();
 	});
 });
