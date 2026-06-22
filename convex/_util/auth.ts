@@ -514,13 +514,24 @@ export async function verifyEmployeePin(
 	return [account, null];
 }
 
+/** Largest multiple of 10 below 256 for unbiased digit sampling. */
+const UNBIASED_BYTE_MAX = 256 - (256 % 10);
+
+function randomDigit(): number {
+	const byte = new Uint8Array(1);
+	do {
+		crypto.getRandomValues(byte);
+	} while (byte[0] >= UNBIASED_BYTE_MAX);
+	return byte[0] % 10;
+}
+
 /**
  * Generates a random numeric PIN of `PIN_LOCKOUT.PIN_LENGTH` digits.
  */
 export function generatePin(): string {
 	const digits: string[] = [];
 	for (let i = 0; i < PIN_LOCKOUT.PIN_LENGTH; i++) {
-		digits.push(String(Math.floor(Math.random() * 10)));
+		digits.push(String(randomDigit()));
 	}
 	return digits.join("");
 }
