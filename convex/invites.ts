@@ -39,6 +39,15 @@ function normalizeEmail(email: string): string {
 	return email.trim().toLowerCase();
 }
 
+function maskInviteEmail(email: string): string {
+	const at = email.indexOf("@");
+	if (at <= 0) return "***";
+	const local = email.slice(0, at);
+	const domain = email.slice(at);
+	if (local.length === 0) return `***${domain}`;
+	return `${local[0]}***${domain}`;
+}
+
 type DbCtx = { db: DatabaseReader };
 
 async function assertOrgOwnerOrAdmin(
@@ -471,15 +480,35 @@ export const listForOrganization = query({
 });
 
 export const getByTokenPublic = query({
-	args: { token: v.string() },
+	args: {
+		token: v.string(),
+		now: v.optional(v.number()),
+	},
+	returns: v.union(
+		v.object({
+			email: v.string(),
+			organizationId: v.id(TABLE.ORGANIZATIONS),
+			role: v.union(
+				v.literal(USER_ROLES.OWNER),
+				v.literal(RESTAURANT_MEMBER_ROLE.MANAGER),
+				v.literal(RESTAURANT_MEMBER_ROLE.EMPLOYEE)
+			),
+			status: v.literal(INVITATION_STATUS.PENDING),
+			expiresAt: v.number(),
+		}),
+		v.null()
+	),
 	handler: async (ctx, args) => {
 		const row = await ctx.db
 			.query(TABLE.INVITATIONS)
 			.withIndex("by_token", (q) => q.eq("token", args.token))
 			.first();
 		if (!row) return null;
+		if (row.status !== INVITATION_STATUS.PENDING) return null;
+		if (args.now !== undefined && row.expiresAt < args.now) return null;
+
 		return {
-			email: row.email,
+			email: maskInviteEmail(row.email),
 			organizationId: row.organizationId,
 			role: row.role,
 			status: row.status,
