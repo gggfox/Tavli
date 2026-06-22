@@ -23,6 +23,7 @@ import { httpRouter } from "convex/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
+import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import { TABLE, RESERVATION_SOURCE } from "./constants";
 
 const http = httpRouter();
@@ -58,7 +59,13 @@ http.route({
 				headers: { "Content-Type": "application/json" },
 			});
 		} catch (error) {
-			console.error("Webhook processing error:", error);
+			console.error(
+				"[http.stripe/webhook]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-webhook",
+					operation: "POST /stripe/webhook",
+				})
+			);
 			return new Response("Webhook handler failed", { status: 400 });
 		}
 	}),
@@ -106,7 +113,13 @@ http.route({
 				headers: { "Content-Type": "application/json" },
 			});
 		} catch (error) {
-			console.error("Connect webhook processing error:", error);
+			console.error(
+				"[http.stripe/connect-webhook]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-connect-webhook",
+					operation: "POST /stripe/connect-webhook",
+				})
+			);
 			return new Response("Webhook handler failed", { status: 400 });
 		}
 	}),
