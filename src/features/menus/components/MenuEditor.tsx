@@ -28,7 +28,7 @@ export function MenuEditor({
 	onAddCategoriesClick,
 }: Readonly<MenuEditorProps>) {
 	const { t } = useTranslation();
-	const { data: menu } = useQuery(convexQuery(api.menus.getMenuById, { menuId }));
+	const { data: menu } = useQuery(convexQuery(api.menus.getByIdForStaff, { menuId }));
 	const { categories } = useCategories(menuId);
 	const { deleteCategory, updateMenu } = useMenus(restaurantId);
 
