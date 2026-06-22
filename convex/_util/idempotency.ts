@@ -6,7 +6,12 @@
  */
 import type { Doc } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
-import { NotFoundError, NotFoundErrorObject } from "../_shared/errors";
+import {
+	IdempotencyKeyConflictError,
+	IdempotencyKeyConflictErrorObject,
+	NotFoundError,
+	NotFoundErrorObject,
+} from "../_shared/errors";
 import { AsyncReturn } from "../_shared/types";
 import { TABLE, type TableName } from "../constants";
 
@@ -56,7 +61,7 @@ export async function findExistingEventByKeyAndType(
 	ctx: { db: DatabaseReader },
 	aggregateType: TableName,
 	idempotencyKey: string
-): AsyncReturn<EventDoc, NotFoundErrorObject> {
+): AsyncReturn<EventDoc, NotFoundErrorObject | IdempotencyKeyConflictErrorObject> {
 	const events = await ctx.db
 		.query(TABLE.ALL_EVENTS)
 		.withIndex("by_aggregate_type", (q) => q.eq("aggregateType", aggregateType))
@@ -71,7 +76,9 @@ export async function findExistingEventByKeyAndType(
 	if (existing.length > 1) {
 		return [
 			null,
-			new NotFoundError("Multiple events found with the same idempotency key").toObject(),
+			new IdempotencyKeyConflictError(
+				"Multiple events found with the same idempotency key"
+			).toObject(),
 		];
 	}
 
