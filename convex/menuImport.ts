@@ -26,12 +26,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import mammoth from "mammoth";
-// pdf-parse v1 loads a test file at module init from its index.js;
-// importing the core module directly avoids that side-effect.
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-const pdfParse = require("pdf-parse/lib/pdf-parse") as (
-	dataBuffer: Buffer
-) => Promise<{ text: string }>;
+import { PDFParse } from "pdf-parse";
 import { z } from "zod";
 
 import { v } from "convex/values";
@@ -40,6 +35,7 @@ import { action } from "./_generated/server";
 import { NotAuthenticatedError } from "./_shared/errors";
 import { TABLE } from "./constants";
 import { isDevEnv } from "./_util/env";
+import { assertPdfBufferWithinLimits, MAX_PDF_PAGES } from "./menuImportPdfHelpers";
 
 // =============================================================================
 // Zod schema for LLM structured output
@@ -96,8 +92,18 @@ Rules:
 // =============================================================================
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
-	const data = await pdfParse(buffer);
-	return data.text;
+	assertPdfBufferWithinLimits(buffer);
+
+	const parser = new PDFParse({
+		data: buffer,
+		isEvalSupported: false,
+	});
+	try {
+		const result = await parser.getText({ first: MAX_PDF_PAGES });
+		return result.text;
+	} finally {
+		await parser.destroy();
+	}
 }
 
 async function extractTextFromDocx(buffer: Buffer): Promise<string> {
