@@ -18,9 +18,13 @@ Set on each Convex deployment via the dashboard or `npx convex env set`:
   user adopt any role for testing. When unset (or set to anything other than
   `development`/`dev`), the role switcher returns `NOT_AUTHORIZED`. Always set
   this to `production` on prod deployments.
+- `ENABLE_DEV_ROLE_SWITCHER` — must be set to a truthy value (`true`, `1`, or
+  `yes`) **in addition to** `CONVEX_ENV=development` to enable the role
+  switcher. Omit or leave unset on staging and production.
 
   ```bash
   npx convex env set CONVEX_ENV development           # local dev deployment
+  npx convex env set ENABLE_DEV_ROLE_SWITCHER true    # enable role switcher locally
   npx convex env set --prod CONVEX_ENV production     # production deployment
   ```
 

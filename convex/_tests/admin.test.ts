@@ -35,6 +35,12 @@ async function readRoles(t: T, userId: string) {
 
 describe("admin.devSetOwnRoles", () => {
 	const originalEnv = process.env.CONVEX_ENV;
+	const originalRoleSwitcher = process.env.ENABLE_DEV_ROLE_SWITCHER;
+
+	function enableDevRoleSwitcher() {
+		process.env.CONVEX_ENV = "development";
+		process.env.ENABLE_DEV_ROLE_SWITCHER = "true";
+	}
 
 	afterEach(() => {
 		if (originalEnv === undefined) {
@@ -42,11 +48,16 @@ describe("admin.devSetOwnRoles", () => {
 		} else {
 			process.env.CONVEX_ENV = originalEnv;
 		}
+		if (originalRoleSwitcher === undefined) {
+			delete process.env.ENABLE_DEV_ROLE_SWITCHER;
+		} else {
+			process.env.ENABLE_DEV_ROLE_SWITCHER = originalRoleSwitcher;
+		}
 	});
 
 	describe("in development environment", () => {
 		beforeEach(() => {
-			process.env.CONVEX_ENV = "development";
+			enableDevRoleSwitcher();
 		});
 
 		it("lets a user with no roles assign themselves any role", async () => {
@@ -122,6 +133,45 @@ describe("admin.devSetOwnRoles", () => {
 			});
 
 			expect(error).toBeNull();
+		});
+
+		it("writes an audit event when roles are changed", async () => {
+			const t = convexTest(schema, modules);
+			await seedUserRole(t, { userId: "user-1", roles: ["customer"] });
+			const user = t.withIdentity({ subject: "user-1" });
+
+			const [, error] = await user.mutation(api.admin.devSetOwnRoles, {
+				roles: ["admin"],
+			});
+			expect(error).toBeNull();
+
+			const events = await t.run(async (ctx) =>
+				ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("eventType"), "userRoles.dev_set_own_roles"))
+					.collect()
+			);
+			expect(events).toHaveLength(1);
+			expect(events[0]?.userId).toBe("user-1");
+			expect(events[0]?.payload).toEqual({
+				roles: ["admin"],
+				previousRoles: ["customer"],
+			});
+		});
+
+		it("blocks when ENABLE_DEV_ROLE_SWITCHER is unset even in development", async () => {
+			delete process.env.ENABLE_DEV_ROLE_SWITCHER;
+			const t = convexTest(schema, modules);
+			const user = t.withIdentity({ subject: "user-1" });
+
+			const [value, error] = await user.mutation(api.admin.devSetOwnRoles, {
+				roles: ["admin"],
+			});
+
+			expect(value).toBeNull();
+			expect(error).toBeTruthy();
+			expect(error!.name).toBe("NOT_AUTHORIZED");
+			expect(error!.message).toBe(DEV_ONLY_ERROR_MESSAGE);
 		});
 	});
 

@@ -13,8 +13,9 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
+import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
-import { isDevEnv } from "./_util/env";
+import { isDevRoleSwitcherEnabled } from "./_util/env";
 import { findExistingEventByKey, findExistingEventByKeyAndType } from "./_util/idempotency";
 import type { UserRoleDoc } from "./constants";
 import { TABLE } from "./constants";
@@ -350,9 +351,10 @@ export const deleteUserRole = mutation({
 /**
  * Set own roles to an arbitrary combination (development environment only).
  *
- * Available only when `process.env.CONVEX_ENV === "development"`. In any other
- * deployment this returns NOT_AUTHORIZED so the dev-only role switcher in the
- * UI cannot be used to escalate privileges in staging/production.
+ * Available only when `CONVEX_ENV` is development **and**
+ * `ENABLE_DEV_ROLE_SWITCHER` is explicitly set. In any other deployment this
+ * returns NOT_AUTHORIZED so the dev-only role switcher in the UI cannot be used
+ * to escalate privileges in staging/production.
  *
  * Inside dev we deliberately skip the admin-role check: switching to a
  * non-admin role would otherwise lock the user out of switching back, defeating
@@ -373,7 +375,7 @@ export const devSetOwnRoles = mutation({
 		),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, DevSetOwnRolesErrors> {
-		if (!isDevEnv()) {
+		if (!isDevRoleSwitcherEnabled()) {
 			return [null, new NotAuthorizedError(DEV_ONLY_ERROR_MESSAGE).toObject()];
 		}
 
@@ -391,6 +393,9 @@ export const devSetOwnRoles = mutation({
 			.first();
 
 		const now = Date.now();
+		const previousRoles = existingUser?.roles;
+
+		let roleRecordId: string;
 
 		if (existingUser) {
 			await ctx.db.patch(existingUser._id, {
@@ -398,17 +403,25 @@ export const devSetOwnRoles = mutation({
 				email,
 				updatedAt: now,
 			});
-			return [existingUser._id, null];
+			roleRecordId = existingUser._id;
+		} else {
+			roleRecordId = await ctx.db.insert(TABLE.USER_ROLES, {
+				userId,
+				email,
+				roles: args.roles,
+				createdAt: now,
+				updatedAt: now,
+			});
 		}
 
-		const roleId = await ctx.db.insert(TABLE.USER_ROLES, {
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.USER_ROLES,
+			aggregateId: roleRecordId,
+			eventType: "userRoles.dev_set_own_roles",
+			payload: { roles: args.roles, previousRoles },
 			userId,
-			email,
-			roles: args.roles,
-			createdAt: now,
-			updatedAt: now,
 		});
 
-		return [roleId, null];
+		return [roleRecordId, null];
 	},
 });
