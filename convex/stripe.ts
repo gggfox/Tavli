@@ -327,27 +327,23 @@ export const handleThinEvent = internalAction({
 			);
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const thinEvent = (stripeClient as any).parseThinEvent(
+		const eventNotification = stripeClient.parseEventNotification(
 			args.payloadString,
 			args.signatureHeader,
 			webhookSecret
 		);
 
-		const event = await stripeClient.v2.core.events.retrieve(thinEvent.id);
-
-		switch (event.type) {
+		switch (eventNotification.type) {
 			case "v2.core.account[requirements].updated":
 			case "v2.core.account[configuration.recipient].capability_status_updated": {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const accountId = (event as any).related_object?.id;
+				const accountId = eventNotification.related_object?.id;
 				if (accountId) {
 					await handleAccountStatusChange(ctx, stripeClient, accountId);
 				}
 				break;
 			}
 			default: {
-				console.log(`Unhandled thin event type: ${event.type}`);
+				console.log(`Unhandled thin event type: ${eventNotification.type}`);
 			}
 		}
 	},
