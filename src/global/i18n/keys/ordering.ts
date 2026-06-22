@@ -6,6 +6,8 @@
 export const OrderingKeys = {
 	SESSION_ERROR_NOT_FOUND: "ordering.session.errorNotFound",
 	SESSION_ERROR_GENERIC: "ordering.session.errorGeneric",
+	SESSION_SIGN_IN_REQUIRED: "ordering.session.signInRequired",
+	SESSION_SIGN_IN_PROMPT: "ordering.session.signInPrompt",
 	SESSION_OOPS: "ordering.session.oops",
 	SESSION_NO_SESSION: "ordering.session.noSession",
 	SESSION_VIEW_ORDERS: "ordering.session.viewOrders",
