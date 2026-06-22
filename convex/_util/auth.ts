@@ -484,19 +484,29 @@ export async function verifyEmployeePin(
 		return [null, new NotAuthorizedError("ERROR_PIN_LOCKED").toObject()];
 	}
 
+	let failedAttempts = account.failedPinAttempts;
 	if (account.lockedUntil && now >= account.lockedUntil) {
+		failedAttempts = 0;
 		await ctx.db.patch(employeeAccountId, {
 			failedPinAttempts: 0,
 			lockedUntil: undefined,
+			lastPinAttemptAt: undefined,
 		});
+	} else if (
+		account.lastPinAttemptAt != null &&
+		now - account.lastPinAttemptAt > PIN_LOCKOUT.WINDOW_MS
+	) {
+		failedAttempts = 0;
 	}
 
 	const valid = compareSync(pin, account.pinHash);
 
 	if (!valid) {
-		const attempts =
-			(account.lockedUntil && now >= account.lockedUntil ? 0 : account.failedPinAttempts) + 1;
-		const patch: Record<string, unknown> = { failedPinAttempts: attempts };
+		const attempts = failedAttempts + 1;
+		const patch: Record<string, unknown> = {
+			failedPinAttempts: attempts,
+			lastPinAttemptAt: now,
+		};
 		if (attempts >= PIN_LOCKOUT.MAX_ATTEMPTS) {
 			patch.lockedUntil = now + PIN_LOCKOUT.WINDOW_MS;
 		}
@@ -504,10 +514,15 @@ export async function verifyEmployeePin(
 		return [null, new NotAuthorizedError("ERROR_INVALID_PIN").toObject()];
 	}
 
-	if (account.failedPinAttempts > 0) {
+	if (
+		account.failedPinAttempts > 0 ||
+		account.lockedUntil != null ||
+		account.lastPinAttemptAt != null
+	) {
 		await ctx.db.patch(employeeAccountId, {
 			failedPinAttempts: 0,
 			lockedUntil: undefined,
+			lastPinAttemptAt: undefined,
 		});
 	}
 

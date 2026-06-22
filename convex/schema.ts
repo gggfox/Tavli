@@ -942,6 +942,7 @@ export default defineSchema({
 		pinSetAt: v.number(),
 		pinResetCount: v.number(),
 		failedPinAttempts: v.number(),
+		lastPinAttemptAt: v.optional(v.number()),
 		lockedUntil: v.optional(v.number()),
 		removedAt: v.optional(v.number()),
 		removedBy: v.optional(v.string()),
