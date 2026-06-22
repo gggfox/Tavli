@@ -149,6 +149,31 @@ async function assertCanManageMembership(
 	return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
 }
 
+async function assertTargetUserInOrganization(
+	ctx: { db: import("./_generated/server").MutationCtx["db"] },
+	targetUserId: string,
+	restaurant: Doc<"restaurants">
+): AsyncReturn<null, NotFoundErrorObject> {
+	if (isRestaurantDocumentOwner(restaurant, targetUserId)) {
+		return [null, null];
+	}
+
+	const roleRows = await fetchUserRoleRecordsByUserId(ctx, targetUserId);
+	if (roleRows.length === 0) {
+		return [null, new NotFoundError("User not found").toObject()];
+	}
+
+	const orgIdStr = orgIdString(restaurant.organizationId);
+	const belongsToOrg = roleRows.some(
+		(r) => r.organizationId != null && r.organizationId === orgIdStr
+	);
+	if (!belongsToOrg) {
+		return [null, new NotFoundError("User not found").toObject()];
+	}
+
+	return [null, null];
+}
+
 export const listByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args) => {
@@ -594,6 +619,9 @@ export const addMember = mutation({
 			restaurantId: args.restaurantId,
 		});
 		if (permErr) return [null, permErr];
+
+		const [, userErr] = await assertTargetUserInOrganization(ctx, args.userId, restaurant);
+		if (userErr) return [null, userErr];
 
 		const existing = await ctx.db
 			.query(TABLE.RESTAURANT_MEMBERS)
