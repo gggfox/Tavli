@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
@@ -357,6 +359,29 @@ async function resolveImageUrls<T extends { imageStorageId?: unknown }>(
 	);
 }
 
+async function isCategoryOnActiveMenu(
+	ctx: QueryCtx,
+	categoryId: Id<"menuCategories">
+): Promise<boolean> {
+	const category = await ctx.db.get(categoryId);
+	if (!category) return false;
+	const menu = await ctx.db.get(category.menuId);
+	return menu?.isActive === true;
+}
+
+async function filterPublicMenuItems<
+	T extends { isAvailable: boolean; categoryId: Id<"menuCategories"> },
+>(ctx: QueryCtx, items: T[]): Promise<T[]> {
+	const available = items.filter((item) => item.isAvailable);
+	const visible: T[] = [];
+	for (const item of available) {
+		if (await isCategoryOnActiveMenu(ctx, item.categoryId)) {
+			visible.push(item);
+		}
+	}
+	return visible;
+}
+
 export const setTranslation = mutation({
 	args: {
 		itemId: v.id(TABLE.MENU_ITEMS),
@@ -393,19 +418,77 @@ export const setTranslation = mutation({
 	},
 });
 
+/** Public read: available items on active menus only. */
 export const getById = query({
 	args: { itemId: v.id(TABLE.MENU_ITEMS) },
 	handler: async (ctx, args) => {
 		const item = await ctx.db.get(args.itemId);
-		if (!item) return null;
+		if (!item?.isAvailable) return null;
+		if (!(await isCategoryOnActiveMenu(ctx, item.categoryId))) return null;
 		const [resolved] = await resolveImageUrls(ctx, [item]);
 		return resolved;
 	},
 });
 
+/** Public read: available items on active menus only. */
 export const getByCategory = query({
 	args: { categoryId: v.id(TABLE.MENU_CATEGORIES) },
 	handler: async (ctx, args) => {
+		if (!(await isCategoryOnActiveMenu(ctx, args.categoryId))) return [];
+
+		const items = await ctx.db
+			.query(TABLE.MENU_ITEMS)
+			.withIndex("by_category", (q) => q.eq("categoryId", args.categoryId))
+			.collect();
+		return resolveImageUrls(
+			ctx,
+			items.filter((item) => item.isAvailable)
+		);
+	},
+});
+
+/** Public read: available items on active menus only. */
+export const getByRestaurant = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args) => {
+		const items = await ctx.db
+			.query(TABLE.MENU_ITEMS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+		const visible = await filterPublicMenuItems(ctx, items);
+		return resolveImageUrls(ctx, visible);
+	},
+});
+
+/** Staff read: any item by id, including unavailable. */
+export const getByIdForStaff = query({
+	args: { itemId: v.id(TABLE.MENU_ITEMS) },
+	handler: async (ctx, args) => {
+		const item = await ctx.db.get(args.itemId);
+		if (!item) return null;
+
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return null;
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
+		if (error2) return null;
+
+		const [resolved] = await resolveImageUrls(ctx, [item]);
+		return resolved;
+	},
+});
+
+/** Staff read: all items in a category, including unavailable. */
+export const listByCategoryForStaff = query({
+	args: { categoryId: v.id(TABLE.MENU_CATEGORIES) },
+	handler: async (ctx, args) => {
+		const category = await ctx.db.get(args.categoryId);
+		if (!category) return [];
+
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [];
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, category.restaurantId);
+		if (error2) return [];
+
 		const items = await ctx.db
 			.query(TABLE.MENU_ITEMS)
 			.withIndex("by_category", (q) => q.eq("categoryId", args.categoryId))
@@ -414,9 +497,15 @@ export const getByCategory = query({
 	},
 });
 
-export const getByRestaurant = query({
+/** Staff read: all items for a restaurant, including unavailable. */
+export const listByRestaurantForStaff = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [];
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [];
+
 		const items = await ctx.db
 			.query(TABLE.MENU_ITEMS)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
