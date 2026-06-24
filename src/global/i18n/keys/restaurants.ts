@@ -50,6 +50,8 @@ export const RestaurantsKeys = {
 	FORM_SLUG_HINT: "restaurants.form.slugHint",
 	FORM_OPEN_TEST_LINK: "restaurants.form.openTestLink",
 	FORM_DESCRIPTION_LABEL: "restaurants.form.descriptionLabel",
+	FORM_SUPPORT_EMAIL_LABEL: "restaurants.form.supportEmailLabel",
+	FORM_SUPPORT_EMAIL_HINT: "restaurants.form.supportEmailHint",
 	FORM_CURRENCY_LABEL: "restaurants.form.currencyLabel",
 	FORM_TIMEZONE_LABEL: "restaurants.form.timezoneLabel",
 	FORM_TIMEZONE_PLACEHOLDER: "restaurants.form.timezonePlaceholder",

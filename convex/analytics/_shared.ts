@@ -27,7 +27,7 @@ import {
 	requireRestaurantManagerOrAbove,
 	requireRestaurantStaffAccess,
 } from "../_util/auth";
-import { TABLE } from "../constants";
+import { ORDER_STATUS, TABLE } from "../constants";
 
 /** Convex query context limited to read-only operations. */
 export type AnalyticsCtx = GenericQueryCtx<DataModel>;
@@ -244,6 +244,30 @@ export async function loadSessionsOverlapping(
 			const end = s.closedAt ?? Date.now();
 			if (end >= range.from && start < range.to) out.push(s);
 		}
+	}
+	return out;
+}
+
+/**
+ * Loads the `orderItems` of every non-cancelled order whose timestamp falls in
+ * `[from, to)`. Used by the per-dish-value and items-by-category widgets, which
+ * aggregate at the line-item level. Cancelled orders are excluded so they don't
+ * inflate quantity / revenue.
+ */
+export async function loadOrderItemsInRange(
+	ctx: AnalyticsCtx,
+	restaurantIds: Id<"restaurants">[],
+	range: DashboardRange
+): Promise<Doc<"orderItems">[]> {
+	const orders = await loadOrdersInRange(ctx, restaurantIds, range);
+	const out: Doc<"orderItems">[] = [];
+	for (const order of orders) {
+		if (order.status === ORDER_STATUS.CANCELLED) continue;
+		const items = await ctx.db
+			.query(TABLE.ORDER_ITEMS)
+			.withIndex("by_order", (q) => q.eq("orderId", order._id))
+			.collect();
+		out.push(...items);
 	}
 	return out;
 }

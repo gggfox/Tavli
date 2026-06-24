@@ -20,6 +20,12 @@ export type WidgetRenderContext = {
 	scopeKind: DashboardScopeKind;
 	/** Restaurant id for restaurant-scoped layouts (null for portfolio). */
 	restaurantId: string | null;
+	/**
+	 * ISO currency code for formatting money in widgets. Restaurant scope: the
+	 * restaurant's `currency`. Portfolio scope: the first restaurant's currency
+	 * (best-effort, mirrors `revenueOverTime`). `null` falls back to "USD".
+	 */
+	currency: string | null;
 	/** Resolved date range to query. */
 	range: ResolvedRange;
 	/** Comparison range (previous period of equal length) when enabled. */

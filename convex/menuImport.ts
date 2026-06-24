@@ -26,7 +26,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
 import { z } from "zod";
 
 import { v } from "convex/values";
@@ -121,6 +120,13 @@ ${sanitized}
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 	assertPdfBufferWithinLimits(buffer);
+
+	// Loaded lazily (not a top-level import): `pdf-parse` pulls in pdf.js, which
+	// references `DOMMatrix`/`@napi-rs/canvas` at module load. Convex evaluates
+	// module imports during push analysis, so a top-level import fails the push
+	// with "DOMMatrix is not defined". Deferring to runtime (this Node action)
+	// keeps the push analyzable; text extraction doesn't need canvas rendering.
+	const { PDFParse } = await import("pdf-parse");
 
 	const parser = new PDFParse({
 		data: buffer,

@@ -17,7 +17,7 @@ import {
 import { ORDER_STATUS, TABLE } from "../constants";
 import { buildWindow, loadOrdersInRange, resolveRestaurantIds } from "./_shared";
 
-const TOP_MENU_ITEMS_MAX_RANGE_DAYS = 92;
+const TOP_MENU_ITEMS_MAX_RANGE_DAYS = 366;
 
 export type TopMenuItemRow = {
 	menuItemId: string;
