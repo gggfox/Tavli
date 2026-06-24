@@ -5,10 +5,14 @@
 import type { DashboardLayoutConfig } from "./types";
 
 /**
- * Muted, professional chart colors (tremor named Tailwind colors). TAVLI-2:
- * "respect the platform's design and color palette, mainly using sober colors."
+ * Chart palette (tremor named Tailwind colors). TAVLI-2: "respect the platform's
+ * design and color palette, mainly using sober colors." Muted, professional
+ * hues that stay visually **distinct** from one another so multi-series charts
+ * (e.g. the items-by-category donut) are readable — an all-grayscale set made
+ * adjacent slices indistinguishable. Keep in sync with the tremor color
+ * safelist in `global/styles/index.css`.
  */
-export const SOBER_CHART_COLORS = ["blue", "slate", "stone", "zinc", "neutral", "gray"] as const;
+export const SOBER_CHART_COLORS = ["blue", "teal", "amber", "violet", "rose", "slate"] as const;
 
 /** Name of the curated default layout (also used as its tab title once saved). */
 export const BUSINESS_SUMMARY_NAME = "Business Summary";

@@ -92,12 +92,13 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 					new Intl.NumberFormat(i18n.language, {
 						style: "currency",
 						currency: query.data?.currency ?? "USD",
-						maximumFractionDigits: 0,
+						notation: "compact",
+						maximumFractionDigits: 1,
 					}).format(v)
 				}
 				showLegend={false}
 				showGridLines={false}
-				yAxisWidth={48}
+				yAxisWidth={96}
 			/>
 		</div>
 	);
