@@ -635,6 +635,8 @@
 			"slugHint": "Los clientes visitarán: /r/{{slug}}/en/menu",
 			"openTestLink": "Abrir enlace de prueba",
 			"descriptionLabel": "Descripción",
+			"supportEmailLabel": "Correo de soporte",
+			"supportEmailHint": "A dónde se envían los reportes de error del panel. Déjalo vacío para usar el valor predeterminado de la plataforma.",
 			"currencyLabel": "Moneda",
 			"timezoneLabel": "Zona horaria",
 			"timezonePlaceholder": "America/Mexico_City",

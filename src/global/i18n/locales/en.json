@@ -635,6 +635,8 @@
 			"slugHint": "Customers will visit: /r/{{slug}}/en/menu",
 			"openTestLink": "Open Test Link",
 			"descriptionLabel": "Description",
+			"supportEmailLabel": "Support email",
+			"supportEmailHint": "Where dashboard error reports are sent. Leave blank to use the platform default.",
 			"currencyLabel": "Currency",
 			"timezoneLabel": "Timezone",
 			"timezonePlaceholder": "America/Mexico_City",

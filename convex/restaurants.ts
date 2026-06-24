@@ -225,6 +225,7 @@ export const update = mutation({
 		slug: v.optional(v.string()),
 		description: v.optional(v.string()),
 		currency: v.optional(v.string()),
+		supportEmail: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		openTime: v.optional(v.string()),
 		closeTime: v.optional(v.string()),
@@ -318,11 +319,27 @@ export const update = mutation({
 			}
 		}
 
+		if (args.supportEmail !== undefined) {
+			const raw = args.supportEmail.trim();
+			// Lightweight shape check — this value feeds a `mailto:` on the client.
+			if (raw.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "supportEmail", message: "Invalid email address" }],
+					}).toObject(),
+				];
+			}
+		}
+
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
 			...(args.slug !== undefined && { slug: args.slug }),
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
+			...(args.supportEmail !== undefined && {
+				supportEmail: args.supportEmail.trim() ? args.supportEmail.trim() : undefined,
+			}),
 			...(args.timezone !== undefined && {
 				timezone: args.timezone.trim() ? args.timezone.trim() : undefined,
 			}),

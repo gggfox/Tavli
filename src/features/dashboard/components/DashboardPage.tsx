@@ -71,6 +71,11 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 		useDashboardPrefs();
 
 	const restaurantId = scope === "restaurant" ? (restaurant?._id ?? null) : null;
+	// Currency for money widgets. Restaurant scope: the selected restaurant's.
+	// Portfolio scope: best-effort first restaurant's (mirrors revenueOverTime,
+	// which aggregates across possibly-different currencies).
+	const currency =
+		scope === "restaurant" ? (restaurant?.currency ?? null) : (restaurants[0]?.currency ?? null);
 
 	const {
 		layouts,
@@ -423,6 +428,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 						config={effectiveConfig}
 						scopeKind={scope}
 						restaurantId={restaurantId}
+						currency={currency}
 						editing={editMode}
 						onLayoutChange={handleGridChange}
 						onRemoveWidget={handleRemoveWidget}

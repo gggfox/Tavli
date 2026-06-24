@@ -44,10 +44,10 @@ function ServerPerformanceWidget({ context }: WidgetProps<Options>) {
 		() =>
 			new Intl.NumberFormat(i18n.language, {
 				style: "currency",
-				currency: "USD",
+				currency: context.currency ?? "USD",
 				maximumFractionDigits: 0,
 			}),
-		[i18n.language]
+		[i18n.language, context.currency]
 	);
 
 	const maxSales = useMemo(() => Math.max(1, ...(data ?? []).map((r) => r.sales)), [data]);

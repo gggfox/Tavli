@@ -168,6 +168,8 @@ export default defineSchema({
 		slug: v.string(),
 		description: v.optional(v.string()),
 		currency: v.string(),
+		/** Where dashboard error reports are routed (TAVLI-2). Falls back to the global SUPPORT_EMAIL default when unset. */
+		supportEmail: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		/** Minutes from local midnight (0–1439) when the business “order day” starts; default 240 (04:00) in app logic. */
 		orderDayStartMinutesFromMidnight: v.optional(v.number()),

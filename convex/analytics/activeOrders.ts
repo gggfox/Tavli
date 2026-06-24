@@ -8,7 +8,7 @@
 import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { AsyncReturn } from "../_shared/types";
-import { ORDER_STATUS, TABLE } from "../constants";
+import { ORDER_STATUS, SESSION_STATUS, TABLE } from "../constants";
 import { resolveRestaurantIds, type AnalyticsAccessErrors } from "./_shared";
 
 export type ActiveOrdersResult = {
@@ -43,7 +43,7 @@ export const compute = query({
 			.query(TABLE.SESSIONS)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
-		const seatedTables = sessions.filter((s) => s.status === "active").length;
+		const seatedTables = sessions.filter((s) => s.status === SESSION_STATUS.ACTIVE).length;
 
 		const orders = await ctx.db
 			.query(TABLE.ORDERS)

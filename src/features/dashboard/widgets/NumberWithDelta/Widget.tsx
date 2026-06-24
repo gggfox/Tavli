@@ -59,9 +59,10 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 	if (error) return <WidgetError error={error as Error} />;
 	if (!data) return <WidgetEmpty />;
 
+	const currency = context.currency ?? "USD";
 	const isMoney = MONEY_METRICS.has(options.metric);
 	const formatted = isMoney
-		? formatMoney(data.current, i18n.language)
+		? formatMoney(data.current, i18n.language, currency)
 		: formatNumber(data.current, i18n.language);
 
 	const deltaPct = data.deltaPct;
@@ -89,7 +90,7 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 			<div className="text-xs text-faint-foreground">
 				{deltaAbs > 0 ? "+" : ""}
 				{isMoney
-					? formatMoney(deltaAbs, i18n.language)
+					? formatMoney(deltaAbs, i18n.language, currency)
 					: formatNumber(deltaAbs, i18n.language)}{" "}
 				{t(DashboardKeys.WIDGET_DELTA_VS_PREV)}
 			</div>
@@ -116,9 +117,9 @@ function formatNumber(value: number, locale: string): string {
 	return new Intl.NumberFormat(locale).format(value);
 }
 
-function formatMoney(value: number, locale: string): string {
+function formatMoney(value: number, locale: string, currency: string): string {
 	return new Intl.NumberFormat(locale, {
 		style: "currency",
-		currency: "USD",
+		currency,
 	}).format(value);
 }
