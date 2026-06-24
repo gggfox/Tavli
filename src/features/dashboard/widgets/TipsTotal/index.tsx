@@ -85,10 +85,8 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	}
 
 	return (
-		<div className="h-full flex flex-col justify-between gap-2">
-			<div className="flex items-end gap-3">
-				<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
-			</div>
+		<div className="h-full flex flex-col items-center justify-center gap-2">
+			<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
 			{sparkData.length > 0 && (
 				<SparkAreaChart
 					data={sparkData}

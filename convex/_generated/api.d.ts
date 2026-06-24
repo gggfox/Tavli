@@ -51,6 +51,7 @@ import type * as inviteActions from "../inviteActions.js";
 import type * as invites from "../invites.js";
 import type * as menuImport from "../menuImport.js";
 import type * as menuImportMutation from "../menuImportMutation.js";
+import type * as menuImportPdfHelpers from "../menuImportPdfHelpers.js";
 import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
 import type * as migrations_backfillDailyOrderNumber from "../migrations/backfillDailyOrderNumber.js";
@@ -135,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   invites: typeof invites;
   menuImport: typeof menuImport;
   menuImportMutation: typeof menuImportMutation;
+  menuImportPdfHelpers: typeof menuImportPdfHelpers;
   menuItems: typeof menuItems;
   menus: typeof menus;
   "migrations/backfillDailyOrderNumber": typeof migrations_backfillDailyOrderNumber;

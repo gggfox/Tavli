@@ -1216,8 +1216,6 @@
 			"overrideRemove": "Usar rango global",
 			"loading": "Cargando…",
 			"exportCsv": "Exportar CSV",
-			"sampleDataBadge": "Datos de ejemplo",
-			"sampleDataTooltip": "Mostrando datos de ejemplo en desarrollo — aún no hay datos reales para este rango.",
 			"errorTitle": "No se pudo cargar el widget.",
 			"errorDescription": "Intenta de nuevo o elige otro rango.",
 			"errorRangeTooLarge": "El rango es demasiado grande para este widget. Elige uno más corto.",

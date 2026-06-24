@@ -15,7 +15,7 @@ import { TABLE } from "../constants";
 import { getZoneOffsetMs } from "../_util/timezone";
 import { buildWindow, loadOrdersInRange, resolveRestaurantIds } from "./_shared";
 
-const ORDERS_BY_HOUR_MAX_RANGE_DAYS = 92;
+const ORDERS_BY_HOUR_MAX_RANGE_DAYS = 366;
 
 export type HourBucket = { hour: number; averagePerDay: number; total: number };
 

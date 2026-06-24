@@ -9,10 +9,8 @@ import { Trophy } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { SampleDataBadge } from "../../components/SampleDataBadge";
 import { WidgetExportButton } from "../../components/WidgetExportButton";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
-import { useWidgetData } from "../../hooks/useWidgetData";
 import { registerWidget, type WidgetDescriptor, type WidgetProps } from "../registry";
 
 export const SERVER_PERFORMANCE_TYPE = "serverPerformance";
@@ -34,11 +32,7 @@ function ServerPerformanceWidget({ context }: WidgetProps<Options>) {
 		select: unwrapResult<Result>,
 	});
 
-	const { data, isSample, isPending, error } = useWidgetData<Result>(
-		SERVER_PERFORMANCE_TYPE,
-		query,
-		(d) => d.length === 0
-	);
+	const data = query.data;
 
 	const money = useMemo(
 		() =>
@@ -63,14 +57,13 @@ function ServerPerformanceWidget({ context }: WidgetProps<Options>) {
 		[data]
 	);
 
-	if (isPending && !data) return <WidgetLoading />;
-	if (error) return <WidgetError error={error as Error} />;
+	if (query.isPending && !data) return <WidgetLoading />;
+	if (query.error) return <WidgetError error={query.error as Error} />;
 	if (!data || data.length === 0) return <WidgetEmpty />;
 
 	return (
 		<div className="h-full flex flex-col">
 			<div className="flex items-center justify-end gap-2 h-4">
-				{isSample && <SampleDataBadge />}
 				<WidgetExportButton filename="server-performance" rows={exportRows} />
 			</div>
 			<div className="flex-1 overflow-auto mt-1">

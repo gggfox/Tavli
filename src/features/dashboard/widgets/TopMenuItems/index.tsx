@@ -78,7 +78,7 @@ export const topMenuItemsDescriptor: WidgetDescriptor<Options> = registerWidget<
 	requiredRole: "employee",
 	portfolioCapable: false,
 	supportsComparison: false,
-	maxRangeDays: 92,
+	maxRangeDays: 366,
 	defaultGrid: { w: 3, h: 5, minW: 2, minH: 3 },
 	optionsSchema,
 	defaultOptions: { limit: 10 },

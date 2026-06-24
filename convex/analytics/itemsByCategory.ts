@@ -22,7 +22,7 @@ import {
 	type AnalyticsAccessErrors,
 } from "./_shared";
 
-const ITEMS_BY_CATEGORY_MAX_RANGE_DAYS = 92;
+const ITEMS_BY_CATEGORY_MAX_RANGE_DAYS = 366;
 
 export type CategoryRevenueRow = {
 	categoryId: string;
