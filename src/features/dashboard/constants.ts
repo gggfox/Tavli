@@ -14,9 +14,10 @@ export const SOBER_CHART_COLORS = ["blue", "slate", "stone", "zinc", "neutral", 
 export const BUSINESS_SUMMARY_NAME = "Business Summary";
 
 /**
- * Where dashboard error reports are routed (TAVLI-2: "redirect the user to an
- * email contact so they can submit a report"). TODO: confirm the real address
- * — this is a stub.
+ * Global default for where dashboard error reports are routed (TAVLI-2:
+ * "redirect the user to an email contact so they can submit a report"). Used as
+ * the guaranteed fallback when a restaurant has no `supportEmail` set, or when
+ * restaurant context is unavailable (the error fallback can render outside it).
  */
 export const SUPPORT_EMAIL = "support@tavli.app";
 

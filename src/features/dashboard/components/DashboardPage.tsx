@@ -428,6 +428,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 						config={effectiveConfig}
 						scopeKind={scope}
 						restaurantId={restaurantId}
+						currency={currency}
 						editing={editMode}
 						onLayoutChange={handleGridChange}
 						onRemoveWidget={handleRemoveWidget}

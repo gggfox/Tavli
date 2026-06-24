@@ -59,14 +59,10 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 	if (error) return <WidgetError error={error as Error} />;
 	if (!data) return <WidgetEmpty />;
 
-	if (query.isPending && !data) return <WidgetLoading />;
-	if (query.error) return <WidgetError error={query.error as Error} />;
-	if (!data) return <WidgetEmpty />;
-
 	const currency = context.currency ?? "USD";
 	const isMoney = MONEY_METRICS.has(options.metric);
 	const formatted = isMoney
-		? formatMoney(data.current, i18n.language)
+		? formatMoney(data.current, i18n.language, currency)
 		: formatNumber(data.current, i18n.language);
 
 	const deltaPct = data.deltaPct;

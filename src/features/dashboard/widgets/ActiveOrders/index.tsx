@@ -44,7 +44,7 @@ function ActiveOrdersWidget({ context }: WidgetProps<Options>) {
 
 	const money = new Intl.NumberFormat(i18n.language, {
 		style: "currency",
-		currency: "USD",
+		currency: context.currency ?? "USD",
 	}).format(data.activeOrderValue);
 
 	return (
