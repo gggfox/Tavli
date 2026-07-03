@@ -16,7 +16,7 @@ import { TABLE } from "../constants";
 import { getZoneOffsetMs } from "../_util/timezone";
 import { buildWindow, loadOrdersInRange, resolveRestaurantIds } from "./_shared";
 
-const BUSY_TIMES_MAX_RANGE_DAYS = 92;
+const BUSY_TIMES_MAX_RANGE_DAYS = 366;
 
 export type HeatmapCell = { dayOfWeek: number; hour: number; count: number };
 

@@ -230,3 +230,8 @@ that are already active.
 - "category" sometimes shows up in old chat about orders meaning
   "**PrepStation**". In the current language, **MenuCategory** is purely
   diner-facing organization; routing is **PrepStation**.
+- "waiter" appears in product tickets and stakeholder language (e.g. the
+  dashboard's "waiter performance"). The canonical term is **Server** — the
+  `ShiftRole.SERVER` who is credited for sales via
+  `orders.attributedMemberId`. Use **Server** in code and the English UI;
+  "waiter" is an external synonym only.

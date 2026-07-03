@@ -635,6 +635,8 @@
 			"slugHint": "Customers will visit: /r/{{slug}}/en/menu",
 			"openTestLink": "Open Test Link",
 			"descriptionLabel": "Description",
+			"supportEmailLabel": "Support email",
+			"supportEmailHint": "Where dashboard error reports are sent. Leave blank to use the platform default.",
 			"currencyLabel": "Currency",
 			"timezoneLabel": "Timezone",
 			"timezonePlaceholder": "America/Mexico_City",
@@ -1213,6 +1215,7 @@
 			"overrideBadge": "Custom range",
 			"overrideRemove": "Use global range",
 			"loading": "Loading…",
+			"exportCsv": "Export CSV",
 			"errorTitle": "Could not load widget.",
 			"errorDescription": "Try again or pick a different range.",
 			"errorRangeTooLarge": "Date range too large for this widget. Pick a shorter range.",
@@ -1258,6 +1261,8 @@
 					"reservationsCount": "Reservations",
 					"reservationsConfirmed": "Confirmed reservations",
 					"ordersCount": "Paid orders",
+					"ordersAvgDishValue": "Avg dish value",
+					"ordersAvgCheck": "Avg check",
 					"paymentsRevenueTotal": "Revenue",
 					"covers": "Covers"
 				}
@@ -1282,6 +1287,25 @@
 				"label": "Reservations by status",
 				"description": "Count of reservations starting in the window grouped by status."
 			},
+			"activeOrders": {
+				"label": "Active orders",
+				"description": "Live snapshot of seated tables and in-flight orders right now.",
+				"seated": "Seated tables",
+				"active": "Active orders",
+				"value": "In-flight value"
+			},
+			"itemsByCategory": {
+				"label": "Items by category",
+				"description": "Share of sales revenue per menu category in the date range."
+			},
+			"serverPerformance": {
+				"label": "Server performance",
+				"description": "Servers ranked by attributed sales, with orders and average check.",
+				"colServer": "Server",
+				"colSales": "Sales",
+				"colOrders": "Orders",
+				"colAvgCheck": "Avg check"
+			},
 			"tipsTotal": {
 				"label": "Tips total",
 				"description": "Tip pool entries summed over the date range with a daily sparkline."
@@ -1294,6 +1318,12 @@
 				"label": "Busy times heatmap",
 				"description": "Order volume by day-of-week and hour-of-day."
 			}
+		},
+		"errorBoundary": {
+			"title": "Something went wrong",
+			"description": "The dashboard hit an unexpected error. Please email us so we can fix it as soon as possible.",
+			"contactAction": "Email support",
+			"emailSubject": "Dashboard error report"
 		},
 		"day": {
 			"sun": "Sun",

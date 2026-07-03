@@ -6,6 +6,8 @@ export const numberWithDeltaOptionsSchema = z.object({
 		"reservations.count",
 		"reservations.confirmed",
 		"orders.count",
+		"orders.avgDishValue",
+		"orders.avgCheck",
 		"payments.revenueTotal",
 		"covers",
 	]),
@@ -17,6 +19,8 @@ export const METRIC_LABEL_KEY: Record<NumberWithDeltaOptions["metric"], string> 
 	"reservations.count": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_RESERVATIONS_COUNT,
 	"reservations.confirmed": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_RESERVATIONS_CONFIRMED,
 	"orders.count": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_COUNT,
+	"orders.avgDishValue": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_AVG_DISH_VALUE,
+	"orders.avgCheck": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_ORDERS_AVG_CHECK,
 	"payments.revenueTotal": DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_PAYMENTS_REVENUE_TOTAL,
 	covers: DashboardKeys.WIDGET_NUMBER_WITH_DELTA_METRIC_COVERS,
 };
