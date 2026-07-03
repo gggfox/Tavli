@@ -1,8 +1,22 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Tooltip } from "./Tooltip";
 
+function mockHoverCapability(hasHover: boolean) {
+	Object.defineProperty(globalThis.window, "matchMedia", {
+		writable: true,
+		configurable: true,
+		value: vi.fn().mockImplementation((query: string) => ({
+			matches: query === "(hover: hover)" ? hasHover : false,
+			media: query,
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+		})),
+	});
+}
+
 beforeEach(() => {
+	mockHoverCapability(true);
 	if (!("showPopover" in HTMLElement.prototype)) {
 		Object.defineProperty(HTMLElement.prototype, "showPopover", {
 			configurable: true,
@@ -71,6 +85,40 @@ describe("Tooltip", () => {
 	it("does not open when disabled", () => {
 		render(
 			<Tooltip content="Hello tooltip" delay={0} disabled>
+				<button type="button">Trigger</button>
+			</Tooltip>
+		);
+		fireEvent.focus(screen.getByRole("button", { name: "Trigger" }));
+		expect(screen.queryByRole("tooltip", { hidden: true })).not.toBeInTheDocument();
+	});
+
+	it("opens on long-press when hover is unavailable", () => {
+		vi.useFakeTimers();
+		mockHoverCapability(false);
+		render(
+			<Tooltip content="Touch tooltip" longPressDelay={500}>
+				<button type="button">Trigger</button>
+			</Tooltip>
+		);
+		const trigger = screen.getByRole("button", { name: "Trigger" });
+
+		fireEvent.touchStart(trigger, { touches: [{ clientX: 0, clientY: 0 }] });
+		expect(screen.queryByRole("tooltip", { hidden: true })).not.toBeInTheDocument();
+
+		act(() => {
+			vi.advanceTimersByTime(500);
+		});
+		expect(screen.getByRole("tooltip", { hidden: true })).toHaveTextContent("Touch tooltip");
+
+		fireEvent.touchEnd(trigger);
+		expect(screen.queryByRole("tooltip", { hidden: true })).not.toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it("does not open on focus when long-press mode is active", () => {
+		mockHoverCapability(false);
+		render(
+			<Tooltip content="Touch tooltip" longPressDelay={500} delay={0}>
 				<button type="button">Trigger</button>
 			</Tooltip>
 		);
