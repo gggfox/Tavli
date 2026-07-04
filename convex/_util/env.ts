@@ -43,7 +43,20 @@ export function isDevEnv(): boolean {
 	return getConvexEnv() === CONVEX_ENV.DEVELOPMENT;
 }
 
-/** Explicit opt-in for the dev role switcher (TAVLI-34). Requires isDevEnv(). */
+/** Convex env var that must be set (truthy) to enable the dev role switcher. */
+export const ENABLE_DEV_ROLE_SWITCHER_ENV = "ENABLE_DEV_ROLE_SWITCHER";
+
+function isTruthyEnv(value: string | undefined): boolean {
+	if (!value) return false;
+	const normalized = value.toLowerCase().trim();
+	return normalized === "true" || normalized === "1" || normalized === "yes";
+}
+
+/**
+ * Whether the dev-only role switcher is enabled. Requires both development
+ * `CONVEX_ENV` and an explicit `ENABLE_DEV_ROLE_SWITCHER` flag so a mis-set
+ * env alone cannot expose privilege escalation in non-dev deployments.
+ */
 export function isDevRoleSwitcherEnabled(): boolean {
-	return isDevEnv() && process.env.DEV_ROLE_SWITCHER_ENABLED === "true";
+	return isDevEnv() && isTruthyEnv(process.env[ENABLE_DEV_ROLE_SWITCHER_ENV]);
 }
