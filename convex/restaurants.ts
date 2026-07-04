@@ -40,6 +40,37 @@ function tombstoneSlug(restaurantId: Id<"restaurants">, slug: string): string {
 	return `${safe}__deleted__${restaurantId}`;
 }
 
+/** Fields safe to expose to anonymous diners (ordering / public reservation pages). */
+export type PublicRestaurant = {
+	_id: Id<"restaurants">;
+	name: string;
+	slug: string;
+	description?: string;
+	currency: string;
+	timezone?: string;
+	openTime?: string;
+	closeTime?: string;
+	defaultLanguage?: string;
+	supportedLanguages?: string[];
+	isActive: boolean;
+};
+
+export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
+	return {
+		_id: r._id,
+		name: r.name,
+		slug: r.slug,
+		description: r.description,
+		currency: r.currency,
+		timezone: r.timezone,
+		openTime: r.openTime,
+		closeTime: r.closeTime,
+		defaultLanguage: r.defaultLanguage,
+		supportedLanguages: r.supportedLanguages,
+		isActive: r.isActive,
+	};
+}
+
 /** Clerk JWT `sub` for a user — prefix `user_` plus base62 id (see Clerk user id format). */
 const CLERK_USER_SUBJECT_PATTERN = /^user_[a-zA-Z0-9]{20,64}$/;
 
@@ -434,13 +465,13 @@ export const getManageableForStripe = query({
 
 export const getBySlug = query({
 	args: { slug: v.string() },
-	handler: async (ctx, args) => {
+	handler: async (ctx, args): Promise<PublicRestaurant | null> => {
 		const r = await ctx.db
 			.query(TABLE.RESTAURANTS)
 			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
 			.first();
 		if (!r || r.deletedAt != null) return null;
-		return r;
+		return toPublicRestaurant(r);
 	},
 });
 

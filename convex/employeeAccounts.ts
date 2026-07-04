@@ -281,10 +281,14 @@ export const removeEmployeeAccount = mutation({
 });
 
 export const getEmployeePhotoUploadUrl = mutation({
-	args: {},
-	handler: async (ctx) => {
-		const [, err] = await getCurrentUserId(ctx);
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
+		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
+		const [, accessErr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (accessErr) return [null, accessErr];
 		return [await ctx.storage.generateUploadUrl(), null];
 	},
 });

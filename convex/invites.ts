@@ -265,7 +265,21 @@ export const acceptInvitation = mutation({
 		if (!identity) {
 			return [null, new NotAuthenticatedError().toObject()];
 		}
-		const idRecord = identity as unknown as { email?: string; emailAddress?: string };
+		const idRecord = identity as unknown as {
+			email?: string;
+			emailAddress?: string;
+			emailVerified?: boolean;
+			email_verified?: boolean;
+		};
+		const emailVerified = idRecord.emailVerified ?? idRecord.email_verified;
+		if (emailVerified !== true) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "email", message: "ERROR_EMAIL_NOT_VERIFIED" }],
+				}).toObject(),
+			];
+		}
 		const email =
 			typeof idRecord.email === "string"
 				? idRecord.email
