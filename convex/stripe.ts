@@ -46,6 +46,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
 import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
+import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getStripeClient,
@@ -162,10 +163,13 @@ export const resetStripeConnection = action({
 			});
 			closedStripeAccount = true;
 		} catch (err) {
-			// eslint-disable-next-line no-console
 			console.error(
-				`[stripe.resetStripeConnection] Failed to close Stripe account ${restaurant.stripeAccountId}; clearing Convex link anyway:`,
-				err
+				"[stripe.resetStripeConnection]",
+				buildIntegrationErrorLog(err, {
+					integration: "stripe",
+					operation: "closeAccount",
+					eventId: restaurant.stripeAccountId,
+				})
 			);
 		}
 
@@ -328,24 +332,49 @@ export const handleThinEvent = internalAction({
 			);
 		}
 
-		const eventNotification = stripeClient.parseEventNotification(
-			args.payloadString,
-			args.signatureHeader,
-			webhookSecret
-		);
+		let eventNotification: ReturnType<typeof stripeClient.parseEventNotification>;
+		try {
+			eventNotification = stripeClient.parseEventNotification(
+				args.payloadString,
+				args.signatureHeader,
+				webhookSecret
+			);
+		} catch (error) {
+			console.error(
+				"[stripe.handleThinEvent]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-connect-webhook",
+					operation: "parseEventNotification",
+				})
+			);
+			throw error;
+		}
 
-		switch (eventNotification.type) {
-			case "v2.core.account[requirements].updated":
-			case "v2.core.account[configuration.recipient].capability_status_updated": {
-				const accountId = eventNotification.related_object?.id;
-				if (accountId) {
-					await handleAccountStatusChange(ctx, stripeClient, accountId);
+		try {
+			switch (eventNotification.type) {
+				case "v2.core.account[requirements].updated":
+				case "v2.core.account[configuration.recipient].capability_status_updated": {
+					const accountId = eventNotification.related_object?.id;
+					if (accountId) {
+						await handleAccountStatusChange(ctx, stripeClient, accountId);
+					}
+					break;
 				}
-				break;
+				default: {
+					console.log(`Unhandled thin event type: ${eventNotification.type}`);
+				}
 			}
-			default: {
-				console.log(`Unhandled thin event type: ${eventNotification.type}`);
-			}
+		} catch (error) {
+			console.error(
+				"[stripe.handleThinEvent]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-connect-webhook",
+					operation: "processEvent",
+					eventType: eventNotification.type,
+					eventId: eventNotification.id,
+				})
+			);
+			throw error;
 		}
 	},
 });
@@ -384,57 +413,82 @@ export const fulfillPayment = internalAction({
 			);
 		}
 
-		const event = stripeClient.webhooks.constructEvent(
-			args.payloadString,
-			args.signatureHeader,
-			webhookSecret
-		);
+		let event: Stripe.Event;
+		try {
+			event = stripeClient.webhooks.constructEvent(
+				args.payloadString,
+				args.signatureHeader,
+				webhookSecret
+			);
+		} catch (error) {
+			console.error(
+				"[stripe.fulfillPayment]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-webhook",
+					operation: "constructEvent",
+				})
+			);
+			throw error;
+		}
 
-		const processedEvent = await ctx.runQuery(
-			internal.stripeHelpers.getProcessedStripeWebhookEventInternal,
-			{
+		try {
+			const processedEvent = await ctx.runQuery(
+				internal.stripeHelpers.getProcessedStripeWebhookEventInternal,
+				{
+					eventId: event.id,
+				}
+			);
+			if (processedEvent) {
+				return;
+			}
+
+			let paymentId: Id<"payments"> | undefined;
+
+			switch (event.type) {
+				case "payment_intent.succeeded": {
+					paymentId = await handlePaymentIntentSuccess(ctx, event.data.object);
+					break;
+				}
+
+				case "payment_intent.payment_failed": {
+					paymentId = await handlePaymentIntentFailure(ctx, event.data.object);
+					break;
+				}
+
+				case "account.updated": {
+					// Legacy V1 account update event — kept for backward compatibility
+					const account = event.data.object;
+					const isComplete = !!(
+						"charges_enabled" in account &&
+						account.charges_enabled &&
+						"payouts_enabled" in account &&
+						account.payouts_enabled
+					);
+					await ctx.runMutation(internal.stripeHelpers.updateOnboardingByAccountId, {
+						stripeAccountId: account.id,
+						stripeOnboardingComplete: isComplete,
+					});
+					break;
+				}
+			}
+
+			await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
 				eventId: event.id,
-			}
-		);
-		if (processedEvent) {
-			return;
+				eventType: event.type,
+				paymentId,
+			});
+		} catch (error) {
+			console.error(
+				"[stripe.fulfillPayment]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-webhook",
+					operation: "processEvent",
+					eventType: event.type,
+					eventId: event.id,
+				})
+			);
+			throw error;
 		}
-
-		let paymentId: Id<"payments"> | undefined;
-
-		switch (event.type) {
-			case "payment_intent.succeeded": {
-				paymentId = await handlePaymentIntentSuccess(ctx, event.data.object);
-				break;
-			}
-
-			case "payment_intent.payment_failed": {
-				paymentId = await handlePaymentIntentFailure(ctx, event.data.object);
-				break;
-			}
-
-			case "account.updated": {
-				// Legacy V1 account update event — kept for backward compatibility
-				const account = event.data.object;
-				const isComplete = !!(
-					"charges_enabled" in account &&
-					account.charges_enabled &&
-					"payouts_enabled" in account &&
-					account.payouts_enabled
-				);
-				await ctx.runMutation(internal.stripeHelpers.updateOnboardingByAccountId, {
-					stripeAccountId: account.id,
-					stripeOnboardingComplete: isComplete,
-				});
-				break;
-			}
-		}
-
-		await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
-			eventId: event.id,
-			eventType: event.type,
-			paymentId,
-		});
 	},
 });
 
