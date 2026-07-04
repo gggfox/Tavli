@@ -1,3 +1,4 @@
+export { OpenTabsPanel } from "./components/OpenTabsPanel";
 export { OrderDashboard } from "./components/orderDashboard/OrderDashboard";
 export { OrderDashboardSkeleton } from "./components/orderDashboard/OrderDashboardSkeleton";
 export { PaymentsDashboard } from "./components/PaymentsDashboard";

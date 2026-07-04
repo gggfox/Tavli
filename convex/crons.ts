@@ -25,6 +25,11 @@ crons.interval(
 	internal.attendance.sweepStaleShiftAttendance
 );
 
+// End-of-day tab hygiene (TAVLI-6): active tabs older than 24h are closed
+// when settled and flagged (never auto-charged) when they still owe money,
+// so staff see lingering walkout candidates in the open-tabs view.
+crons.interval("stale open tab sweep", { hours: 1 }, internal.sessions.sweepStaleOpenTabs);
+
 crons.interval(
 	"restaurant soft-delete hard purge",
 	{ hours: 24 },

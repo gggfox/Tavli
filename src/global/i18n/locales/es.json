@@ -26,7 +26,8 @@
 			"admin": "Administración",
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
-			"adminFeatureFlags": "Feature flags"
+			"adminFeatureFlags": "Feature flags",
+			"tabs": "Cuentas abiertas"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -125,7 +126,6 @@
 			"drawerTipsPoolStatusOpen": "Abierta",
 			"drawerTipsPoolStatusFinalized": "Finalizada",
 			"drawerTipsPoolStatusPaid": "Pagada",
-
 			"addEmployee": "Agregar empleado",
 			"addEmployeeModalTitle": "Agregar empleado",
 			"employeeFirstName": "Nombre",
@@ -518,7 +518,8 @@
 			"tapToStart": "Toca productos para iniciar tu pedido",
 			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea.",
 			"filterPlaceholder": "Buscar en el menú",
-			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda."
+			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
+			"placeOrder": "Enviar pedido a cocina"
 		},
 		"item": {
 			"required": "Obligatorio",
@@ -584,6 +585,39 @@
 			"lifecycleReady": "Listo",
 			"lifecycleServed": "Entregado",
 			"lifecycleCancelled": "Cancelado"
+		},
+		"tab": {
+			"heading": "Cuenta de la mesa",
+			"memberCount": "{{count}} personas",
+			"shareCodeLabel": "Comparte este código con tu mesa",
+			"codeCopied": "¡Código copiado!",
+			"lockedNotice": "Hay un pago en curso — los pedidos están pausados hasta que termine.",
+			"payCta": "Pagar cuenta · ${{amount}}",
+			"joinHeading": "¿Te unes a la cuenta de un amigo?",
+			"joinPlaceholder": "Código de la cuenta",
+			"joinCta": "Unirme",
+			"joinInvalid": "Ese código no corresponde a una cuenta abierta.",
+			"empty": "Tu cuenta no tiene pedidos pendientes de pago.",
+			"payHeading": "Pagar tu cuenta",
+			"subtotal": "Pedidos ({{count}})",
+			"tipLabel": "Propina",
+			"tipHeading": "Agrega una propina para tu mesero",
+			"tipCustom": "Otra",
+			"tipCustomPlaceholder": "Monto de propina",
+			"changeTip": "Cambiar propina",
+			"continueToPayment": "Continuar al pago",
+			"paidTitle": "Cuenta pagada — ¡gracias!",
+			"paidDesc": "Tu pago se procesó y la cuenta quedó cerrada. ¡Esperamos verte pronto!",
+			"paidDone": "Listo"
+		},
+		"geofence": {
+			"blockedTitle": "Los pedidos están disponibles en el restaurante",
+			"outside": "Parece que estás fuera del restaurante. Puedes ver el menú y ordenar cuando llegues.",
+			"locationUnavailable": "No pudimos acceder a tu ubicación. Permite el acceso o pide al personal un código de mesa.",
+			"codePlaceholder": "Código de mesa",
+			"codeSubmit": "Desbloquear",
+			"codeInvalid": "Ese código no es válido.",
+			"retry": "Verificar mi ubicación de nuevo"
 		}
 	},
 	"restaurants": {
@@ -671,7 +705,15 @@
 			"create": "Crear",
 			"creating": "Creando...",
 			"updateFailed": "Error al actualizar el restaurante",
-			"createFailed": "Error al crear el restaurante"
+			"createFailed": "Error al crear el restaurante",
+			"geofenceSectionTitle": "Geocerca de pedidos",
+			"geofenceSectionHint": "Los clientes siempre pueden ver el menú, pero los pedidos se desbloquean solo cerca de estas coordenadas. Deja latitud/longitud vacías para desactivar la geocerca.",
+			"geofenceLatitudeLabel": "Latitud",
+			"geofenceLongitudeLabel": "Longitud",
+			"geofenceRadiusLabel": "Radio (metros)",
+			"geofenceBypassLabel": "Código de mesa",
+			"geofenceBypassHint": "El personal comparte este código con clientes cuya ubicación esté denegada o no disponible.",
+			"geofenceUseMyLocation": "Usar mi ubicación actual"
 		},
 		"managers": {
 			"sectionTitle": "Gerentes del local",
@@ -1355,5 +1397,21 @@
 			"tooLarge": "Esta exportación es demasiado grande para descargarse en un solo archivo. Contacta a soporte."
 		},
 		"noYears": "Aún no hay datos para exportar."
+	},
+	"tabs": {
+		"header": "Cuentas abiertas",
+		"empty": "No hay cuentas abiertas por ahora.",
+		"tableLabel": "Mesa {{number}}",
+		"noTable": "Sin mesa",
+		"joinCode": "Código",
+		"members": "{{count}} personas",
+		"orders": "{{count}} pedidos",
+		"unpaidTotal": "Por pagar",
+		"openedAt": "Abierta {{time}}",
+		"staleBadge": "Antigua",
+		"lockedBadge": "Pagando",
+		"closeTab": "Cerrar cuenta",
+		"closeTabConfirm": "¿Cerrar esta cuenta? Úsalo cuando el saldo se pagó en persona.",
+		"closeFailed": "No se pudo cerrar la cuenta."
 	}
 }

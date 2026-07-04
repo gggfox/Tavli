@@ -17,6 +17,7 @@ import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTeamRouteImport } from './routes/admin/team'
+import { Route as AdminTabsRouteImport } from './routes/admin/tabs'
 import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
@@ -82,6 +83,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 const AdminTeamRoute = AdminTeamRouteImport.update({
   id: '/team',
   path: '/team',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTabsRoute = AdminTabsRouteImport.update({
+  id: '/tabs',
+  path: '/tabs',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminScheduleRoute = AdminScheduleRouteImport.update({
@@ -226,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -262,6 +269,7 @@ export interface FileRoutesByTo {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -299,6 +307,7 @@ export interface FileRoutesById {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
+  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -337,6 +346,7 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
+    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -373,6 +383,7 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
+    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -409,6 +420,7 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
+    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -500,6 +512,13 @@ declare module '@tanstack/react-router' {
       path: '/team'
       fullPath: '/admin/team'
       preLoaderRoute: typeof AdminTeamRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/tabs': {
+      id: '/admin/tabs'
+      path: '/tabs'
+      fullPath: '/admin/tabs'
+      preLoaderRoute: typeof AdminTabsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/schedule': {
@@ -718,6 +737,7 @@ interface AdminRouteChildren {
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
+  AdminTabsRoute: typeof AdminTabsRoute
   AdminTeamRoute: typeof AdminTeamRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
@@ -732,6 +752,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
+  AdminTabsRoute: AdminTabsRoute,
   AdminTeamRoute: AdminTeamRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,

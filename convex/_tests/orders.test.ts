@@ -384,7 +384,9 @@ describe("orders", () => {
 	});
 
 	describe("submitOrder", () => {
-		it("validates the draft order but keeps it in draft status", async () => {
+		// TAVLI-6: payment moved to the end of the visit — submitting sends the
+		// order to the kitchen immediately and it joins the tab as unpaid.
+		it("submits the order to the kitchen unpaid and assigns a daily number", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
@@ -400,7 +402,10 @@ describe("orders", () => {
 			await authed.mutation(api.orders.submitOrder, { orderId });
 
 			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
-			expect(order!.status).toBe("draft");
+			expect(order!.status).toBe("submitted");
+			expect(order!.paymentState).toBe("unpaid");
+			expect(order!.submittedAt).toBeDefined();
+			expect(order!.dailyOrderNumber).toBe(1);
 		});
 
 		it("saves special instructions", async () => {

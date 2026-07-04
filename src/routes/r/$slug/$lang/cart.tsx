@@ -16,11 +16,12 @@ function CartPage() {
 	const { removeItem, submitOrder, isSubmitting } = useCart();
 
 	const handleSubmit = async () => {
+		// Submitting sends the order to the kitchen; payment happens later from
+		// the tab view (TAVLI-6).
 		await submitOrder({ orderId: orderId as Id<"orders"> });
 		navigate({
-			to: "/r/$slug/$lang/checkout",
+			to: "/r/$slug/$lang/orders",
 			params: { slug, lang },
-			search: { orderId },
 		});
 	};
 

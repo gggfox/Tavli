@@ -11,6 +11,7 @@ function Page() {
 
 	return (
 		<SessionOrdersList
+			slug={slug}
 			onBackToMenu={() => navigate({ to: "/r/$slug/menu", params: { slug } })}
 			onViewOrder={(orderId) =>
 				navigate({
@@ -18,11 +19,10 @@ function Page() {
 					params: { slug, orderId },
 				})
 			}
-			onResumeCheckout={(orderId) =>
+			onPayTab={() =>
 				navigate({
 					to: "/r/$slug/$lang/checkout",
 					params: { slug, lang: "en" },
-					search: { orderId },
 				})
 			}
 		/>

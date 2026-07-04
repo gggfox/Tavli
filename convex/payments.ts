@@ -58,14 +58,23 @@ export const internalListPaymentsForExportYear = internalQuery({
 
 		const denormRows = await Promise.all(
 			filtered.map(async (payment) => {
-				let orderInfo = orderCache.get(payment.orderId);
-				if (!orderInfo) {
-					const order = await ctx.db.get(payment.orderId);
-					orderInfo = {
-						tableId: order?.tableId ?? null,
-						dailyOrderNumber: order?.dailyOrderNumber ?? null,
-					};
-					orderCache.set(payment.orderId, orderInfo);
+				// Tab (session-level) payments have no single order behind them.
+				let orderInfo: { tableId: Id<"tables"> | null; dailyOrderNumber: number | null } = {
+					tableId: null,
+					dailyOrderNumber: null,
+				};
+				if (payment.orderId) {
+					const cached = orderCache.get(payment.orderId);
+					if (cached) {
+						orderInfo = cached;
+					} else {
+						const order = await ctx.db.get(payment.orderId);
+						orderInfo = {
+							tableId: order?.tableId ?? null,
+							dailyOrderNumber: order?.dailyOrderNumber ?? null,
+						};
+						orderCache.set(payment.orderId, orderInfo);
+					}
 				}
 
 				let tableNumber: number | null = null;
@@ -83,7 +92,8 @@ export const internalListPaymentsForExportYear = internalQuery({
 
 				return {
 					id: payment._id as string,
-					orderId: payment.orderId as string,
+					orderId: (payment.orderId as string | undefined) ?? "",
+					sessionId: (payment.sessionId as string | undefined) ?? "",
 					dailyOrderNumber: orderInfo.dailyOrderNumber,
 					tableNumber,
 					status: payment.status,

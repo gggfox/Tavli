@@ -37,6 +37,10 @@ interface MenuBrowserProps {
 		tableId: Id<"tables">;
 	}) => void;
 	isSubmitting: boolean;
+	/** Geofence gate (TAVLI-6): menu stays browsable but ordering is hidden. */
+	orderingBlocked?: boolean;
+	/** Rendered in place of the order controls while `orderingBlocked`. */
+	blockedNotice?: React.ReactNode;
 }
 
 export function MenuBrowser({
@@ -44,6 +48,8 @@ export function MenuBrowser({
 	lang,
 	onSubmitOrder,
 	isSubmitting,
+	orderingBlocked = false,
+	blockedNotice,
 }: Readonly<MenuBrowserProps>) {
 	const { t } = useTranslation();
 	const { data: paymentsEnabled } = useQuery(
@@ -199,7 +205,14 @@ export function MenuBrowser({
 			</div>
 
 			{/* Bottom bar: total + pay */}
-			{paymentsEnabled === false && itemCount > 0 && (
+			{orderingBlocked && (
+				<div
+					className={`shrink-0 px-4 pt-3 border-t border-border bg-background ${bottomBarSafePadding}`}
+				>
+					{blockedNotice}
+				</div>
+			)}
+			{!orderingBlocked && paymentsEnabled === false && itemCount > 0 && (
 				<div
 					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning ${bottomBarSafePadding}`}
 					style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
@@ -207,14 +220,14 @@ export function MenuBrowser({
 					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
 			)}
-			{itemCount === 0 && (
+			{!orderingBlocked && itemCount === 0 && (
 				<div
 					className={`shrink-0 px-4 pt-4 text-center border-t border-border bg-background text-faint-foreground ${bottomBarSafePadding}`}
 				>
 					<p className="text-sm">{t(OrderingKeys.MENU_TAP_TO_START)}</p>
 				</div>
 			)}
-			{itemCount > 0 && (
+			{!orderingBlocked && itemCount > 0 && (
 				<div
 					className={`shrink-0 px-4 pt-3 space-y-3 border-t border-border bg-background ${bottomBarSafePadding}`}
 				>
@@ -283,9 +296,7 @@ export function MenuBrowser({
 								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								{isSubmitting
-									? t(OrderingKeys.MENU_PREPARING)
-									: t(OrderingKeys.MENU_PROCEED_TO_PAYMENT)}
+								{isSubmitting ? t(OrderingKeys.MENU_PREPARING) : t(OrderingKeys.MENU_PLACE_ORDER)}
 							</button>
 						</>
 					) : (
@@ -299,7 +310,7 @@ export function MenuBrowser({
 								disabled={paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								{t(OrderingKeys.MENU_PROCEED_TO_PAYMENT)}
+								{t(OrderingKeys.MENU_PLACE_ORDER)}
 							</button>
 						</>
 					)}

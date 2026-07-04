@@ -53,6 +53,11 @@ export type PublicRestaurant = {
 	defaultLanguage?: string;
 	supportedLanguages?: string[];
 	isActive: boolean;
+	// Geofence for ordering (TAVLI-6). Coordinates are public information;
+	// the bypass code is intentionally NOT exposed here.
+	latitude?: number;
+	longitude?: number;
+	geofenceRadiusMeters?: number;
 };
 
 export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
@@ -68,6 +73,9 @@ export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
 		defaultLanguage: r.defaultLanguage,
 		supportedLanguages: r.supportedLanguages,
 		isActive: r.isActive,
+		latitude: r.latitude,
+		longitude: r.longitude,
+		geofenceRadiusMeters: r.geofenceRadiusMeters,
 	};
 }
 
@@ -266,6 +274,11 @@ export const update = mutation({
 		orderNumberResetFrequency: v.optional(
 			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
+		// Geofence for customer ordering (TAVLI-6). Pass null to clear.
+		latitude: v.optional(v.union(v.number(), v.null())),
+		longitude: v.optional(v.union(v.number(), v.null())),
+		geofenceRadiusMeters: v.optional(v.union(v.number(), v.null())),
+		geofenceBypassCode: v.optional(v.union(v.string(), v.null())),
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
 	handler: async function (
@@ -363,6 +376,26 @@ export const update = mutation({
 			}
 		}
 
+		if (
+			(args.latitude != null && (args.latitude < -90 || args.latitude > 90)) ||
+			(args.longitude != null && (args.longitude < -180 || args.longitude > 180))
+		) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "latitude", message: "Invalid coordinates" }],
+				}).toObject(),
+			];
+		}
+		if (args.geofenceRadiusMeters != null && args.geofenceRadiusMeters <= 0) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "geofenceRadiusMeters", message: "Geofence radius must be positive" }],
+				}).toObject(),
+			];
+		}
+
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
 			...(args.slug !== undefined && { slug: args.slug }),
@@ -383,6 +416,16 @@ export const update = mutation({
 			}),
 			...(args.orderNumberResetFrequency !== undefined && {
 				orderNumberResetFrequency: args.orderNumberResetFrequency,
+			}),
+			...(args.latitude !== undefined && { latitude: args.latitude ?? undefined }),
+			...(args.longitude !== undefined && { longitude: args.longitude ?? undefined }),
+			...(args.geofenceRadiusMeters !== undefined && {
+				geofenceRadiusMeters: args.geofenceRadiusMeters ?? undefined,
+			}),
+			...(args.geofenceBypassCode !== undefined && {
+				geofenceBypassCode: args.geofenceBypassCode?.trim()
+					? args.geofenceBypassCode.trim().toUpperCase()
+					: undefined,
 			}),
 			...(args.organizationId !== undefined && { organizationId: args.organizationId }),
 			...stampUpdated(userId),
@@ -472,6 +515,24 @@ export const getBySlug = query({
 			.first();
 		if (!r || r.deletedAt != null) return null;
 		return toPublicRestaurant(r);
+	},
+});
+
+/**
+ * Checks a staff-shared geofence bypass code (TAVLI-6). Customers whose
+ * browser location is denied/unavailable can enter this code to unlock
+ * ordering. The geofence is a soft UX gate, so a boolean check is enough.
+ */
+export const verifyGeofenceBypass = query({
+	args: { slug: v.string(), code: v.string() },
+	returns: v.boolean(),
+	handler: async (ctx, args): Promise<boolean> => {
+		const r = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
+			.first();
+		if (!r || r.deletedAt != null || !r.geofenceBypassCode) return false;
+		return args.code.trim().toUpperCase() === r.geofenceBypassCode;
 	},
 });
 

@@ -1,78 +1,58 @@
 import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
-import { convexQuery } from "@convex-dev/react-query";
-import { useQuery } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
+import type { FunctionReturnType } from "convex/server";
 import {
 	ArrowLeft,
 	CheckCircle2,
 	ChefHat,
 	Clock,
+	Copy,
 	CreditCard,
+	Lock,
+	Users,
 	UtensilsCrossed,
 	XCircle,
 } from "lucide-react";
 import type { TFunction } from "i18next";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { grantGeofenceBypass } from "../hooks/useGeofence";
 import { useSessionStore } from "../hooks/useSession";
 import { SessionOrdersListSkeleton } from "./SessionOrdersListSkeleton";
 
 interface SessionOrdersListProps {
+	slug: string;
 	onBackToMenu: () => void;
 	onViewOrder: (orderId: Id<"orders">) => void;
-	onResumeCheckout: (orderId: Id<"orders">) => void;
+	/** Navigate to the tab checkout (tip + one Stripe payment for the whole tab). */
+	onPayTab: () => void;
 }
 
 type OrderDoc = Doc<"orders">;
 
 interface StatusMeta {
 	label: string;
-	action: "resume-checkout" | "view-order" | "none";
-	actionLabel: string;
 	icon: typeof Clock;
 	iconColor: string;
 	iconBg: string;
 }
 
 function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
-	if (order.status === "draft") {
-		if (order.paymentState === "failed") {
-			return {
-				label: t(OrderingKeys.ORDERS_LIFECYCLE_PAYMENT_FAILED),
-				action: "resume-checkout",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_TRY_AGAIN),
-				icon: XCircle,
-				iconColor: "var(--accent-danger)",
-				iconBg: "rgba(220, 38, 38, 0.12)",
-			};
-		}
-		if (order.paymentState === "processing" || order.paymentState === "pending") {
-			return {
-				label: t(OrderingKeys.ORDERS_LIFECYCLE_PAYMENT_PROCESSING),
-				action: "view-order",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
-				icon: CreditCard,
-				iconColor: "var(--btn-primary-bg)",
-				iconBg: "rgba(35, 131, 226, 0.12)",
-			};
-		}
-		return {
-			label: t(OrderingKeys.ORDERS_LIFECYCLE_UNPAID),
-			action: "resume-checkout",
-			actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_FINISH_CHECKOUT),
-			icon: CreditCard,
-			iconColor: "var(--accent-warning)",
-			iconBg: "rgba(217, 119, 6, 0.12)",
-		};
-	}
-
 	switch (order.status) {
+		case "draft":
+			return {
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_UNPAID),
+				icon: CreditCard,
+				iconColor: "var(--accent-warning)",
+				iconBg: "rgba(217, 119, 6, 0.12)",
+			};
 		case "submitted":
 			return {
 				label: t(OrderingKeys.ORDERS_LIFECYCLE_PLACED),
-				action: "view-order",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: Clock,
 				iconColor: "var(--btn-primary-bg)",
 				iconBg: "rgba(35, 131, 226, 0.12)",
@@ -80,8 +60,6 @@ function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 		case "preparing":
 			return {
 				label: t(OrderingKeys.ORDERS_LIFECYCLE_PREPARING),
-				action: "view-order",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: ChefHat,
 				iconColor: "var(--btn-primary-bg)",
 				iconBg: "rgba(35, 131, 226, 0.12)",
@@ -89,8 +67,6 @@ function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 		case "ready":
 			return {
 				label: t(OrderingKeys.ORDERS_LIFECYCLE_READY),
-				action: "view-order",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: CheckCircle2,
 				iconColor: "var(--accent-success)",
 				iconBg: "rgba(5, 150, 105, 0.12)",
@@ -98,8 +74,6 @@ function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 		case "served":
 			return {
 				label: t(OrderingKeys.ORDERS_LIFECYCLE_SERVED),
-				action: "view-order",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: UtensilsCrossed,
 				iconColor: "var(--text-muted)",
 				iconBg: "var(--bg-secondary)",
@@ -107,8 +81,6 @@ function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 		case "cancelled":
 			return {
 				label: t(OrderingKeys.ORDERS_LIFECYCLE_CANCELLED),
-				action: "view-order",
-				actionLabel: t(OrderingKeys.ORDERS_LIFECYCLE_VIEW),
 				icon: XCircle,
 				iconColor: "var(--accent-danger)",
 				iconBg: "rgba(220, 38, 38, 0.12)",
@@ -128,9 +100,10 @@ function formatTime(timestamp: number, t: TFunction, locale: string): string {
 }
 
 export function SessionOrdersList({
+	slug,
 	onBackToMenu,
 	onViewOrder,
-	onResumeCheckout,
+	onPayTab,
 }: Readonly<SessionOrdersListProps>) {
 	const { t } = useTranslation();
 	const { sessionId } = useSessionStore();
@@ -148,10 +121,11 @@ export function SessionOrdersList({
 
 	return (
 		<SessionOrdersListContent
+			slug={slug}
 			sessionId={sessionId}
 			onBackToMenu={onBackToMenu}
 			onViewOrder={onViewOrder}
-			onResumeCheckout={onResumeCheckout}
+			onPayTab={onPayTab}
 		/>
 	);
 }
@@ -173,20 +147,23 @@ function Header({ onBackToMenu }: Readonly<{ onBackToMenu: () => void }>) {
 }
 
 function SessionOrdersListContent({
+	slug,
 	sessionId,
 	onBackToMenu,
 	onViewOrder,
-	onResumeCheckout,
+	onPayTab,
 }: Readonly<{
+	slug: string;
 	sessionId: Id<"sessions">;
 	onBackToMenu: () => void;
 	onViewOrder: (orderId: Id<"orders">) => void;
-	onResumeCheckout: (orderId: Id<"orders">) => void;
+	onPayTab: () => void;
 }>) {
 	const { t } = useTranslation();
 	const { data: orders, isLoading } = useQuery(
 		convexQuery(api.orders.getOrdersBySession, { sessionId })
 	);
+	const { data: tab } = useQuery(convexQuery(api.sessions.getTabSummary, { sessionId }));
 
 	const visible = (orders ?? []).filter((o) => !(o.status === "draft" && o.totalAmount === 0));
 	const sortedOrders = [...visible].sort((a, b) => b._creationTime - a._creationTime);
@@ -199,6 +176,9 @@ function SessionOrdersListContent({
 		<div className="flex flex-col h-full overflow-y-auto">
 			<div className="max-w-lg w-full mx-auto p-4 pb-8 flex flex-col gap-3">
 				<Header onBackToMenu={onBackToMenu} />
+
+				{tab && <TabSummaryCard tab={tab} onPayTab={onPayTab} />}
+				<JoinTabCard slug={slug} />
 
 				{orders && sortedOrders.length === 0 && (
 					<div className="py-12 flex flex-col items-center gap-2 rounded-xl bg-muted">
@@ -219,14 +199,139 @@ function SessionOrdersListContent({
 				)}
 
 				{sortedOrders.map((order) => (
-					<OrderCard
-						key={order._id}
-						order={order}
-						onViewOrder={onViewOrder}
-						onResumeCheckout={onResumeCheckout}
-					/>
+					<OrderCard key={order._id} order={order} onViewOrder={onViewOrder} />
 				))}
 			</div>
+		</div>
+	);
+}
+
+type TabSummary = NonNullable<FunctionReturnType<typeof api.sessions.getTabSummary>>;
+
+function TabSummaryCard({
+	tab,
+	onPayTab,
+}: Readonly<{
+	tab: TabSummary;
+	onPayTab: () => void;
+}>) {
+	const { t } = useTranslation();
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = async () => {
+		if (!tab.joinCode) return;
+		try {
+			await navigator.clipboard.writeText(tab.joinCode);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			// Clipboard unavailable — the code is visible on screen anyway.
+		}
+	};
+
+	return (
+		<div className="rounded-xl p-4 space-y-3 bg-muted border border-border">
+			<div className="flex items-center justify-between gap-2">
+				<div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+					<Users size={16} className="text-muted-foreground" />
+					<span>{t(OrderingKeys.TAB_HEADING)}</span>
+					{tab.memberCount > 1 && (
+						<span className="text-xs font-medium text-faint-foreground">
+							{t(OrderingKeys.TAB_MEMBER_COUNT, { count: tab.memberCount })}
+						</span>
+					)}
+				</div>
+				<span className="text-sm font-semibold text-foreground">${formatCents(tab.subtotal)}</span>
+			</div>
+
+			{tab.joinCode && (
+				<button
+					type="button"
+					onClick={handleCopy}
+					className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm bg-background border border-border hover:bg-(--bg-hover)"
+				>
+					<span className="text-xs text-muted-foreground">
+						{t(OrderingKeys.TAB_SHARE_CODE_LABEL)}
+					</span>
+					<span className="flex items-center gap-2 font-mono font-bold tracking-widest text-foreground">
+						{tab.joinCode}
+						<Copy size={14} className="text-faint-foreground" />
+					</span>
+				</button>
+			)}
+			{copied && <p className="text-xs text-success">{t(OrderingKeys.TAB_CODE_COPIED)}</p>}
+
+			{tab.lockedForPayment ? (
+				<div className="flex items-center gap-2 text-xs text-muted-foreground">
+					<Lock size={14} />
+					<span>{t(OrderingKeys.TAB_LOCKED_NOTICE)}</span>
+				</div>
+			) : null}
+
+			<button
+				type="button"
+				onClick={onPayTab}
+				disabled={tab.subtotal <= 0}
+				className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold hover-btn-primary disabled:opacity-50"
+			>
+				<CreditCard size={16} />
+				{t(OrderingKeys.TAB_PAY_CTA, { amount: formatCents(tab.subtotal) })}
+			</button>
+		</div>
+	);
+}
+
+function JoinTabCard({ slug }: Readonly<{ slug: string }>) {
+	const { t } = useTranslation();
+	const { setSession } = useSessionStore();
+	const [code, setCode] = useState("");
+	const [error, setError] = useState(false);
+	const joinByCode = useMutation({
+		mutationFn: useConvexMutation(api.sessions.joinByCode),
+	});
+
+	const handleJoin = async () => {
+		const normalized = code.trim().toUpperCase();
+		if (!normalized) return;
+		setError(false);
+		try {
+			const result = await joinByCode.mutateAsync({
+				restaurantSlug: slug,
+				joinCode: normalized,
+			});
+			setSession({ sessionId: result.sessionId, restaurantId: result.restaurantId });
+			// A shared code proves physical presence at the table.
+			grantGeofenceBypass(slug);
+			setCode("");
+		} catch {
+			setError(true);
+		}
+	};
+
+	return (
+		<div className="rounded-xl p-4 space-y-2 bg-muted border border-border">
+			<p className="text-xs font-semibold text-muted-foreground">
+				{t(OrderingKeys.TAB_JOIN_HEADING)}
+			</p>
+			<div className="flex items-center gap-2">
+				<input
+					type="text"
+					value={code}
+					onChange={(e) => setCode(e.target.value.toUpperCase())}
+					placeholder={t(OrderingKeys.TAB_JOIN_PLACEHOLDER)}
+					className="flex-1 px-3 py-2 rounded-lg text-sm uppercase font-mono bg-background border border-border text-foreground"
+					aria-label={t(OrderingKeys.TAB_JOIN_PLACEHOLDER)}
+				/>
+				<button
+					type="button"
+					onClick={handleJoin}
+					disabled={!code.trim() || joinByCode.isPending}
+					className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50"
+				>
+					{t(OrderingKeys.TAB_JOIN_CTA)}
+				</button>
+			</div>
+			{error && <p className="text-xs text-destructive">{t(OrderingKeys.TAB_JOIN_INVALID)}</p>}
 		</div>
 	);
 }
@@ -234,24 +339,17 @@ function SessionOrdersListContent({
 function OrderCard({
 	order,
 	onViewOrder,
-	onResumeCheckout,
 }: Readonly<{
 	order: OrderDoc;
 	onViewOrder: (orderId: Id<"orders">) => void;
-	onResumeCheckout: (orderId: Id<"orders">) => void;
 }>) {
 	const { t, i18n } = useTranslation();
 	const meta = getStatusMeta(order, t);
 	const Icon = meta.icon;
 
-	const handleClick = () => {
-		if (meta.action === "resume-checkout") onResumeCheckout(order._id);
-		else onViewOrder(order._id);
-	};
-
 	return (
 		<button
-			onClick={handleClick}
+			onClick={() => onViewOrder(order._id)}
 			className="w-full text-left flex items-center gap-3 p-4 rounded-xl transition-colors hover:bg-(--bg-hover) bg-muted border border-border"
 		>
 			<div
@@ -279,7 +377,9 @@ function OrderCard({
 					<span className="text-xs text-faint-foreground">
 						{formatTime(order._creationTime, t, i18n.language)}
 					</span>
-					<span className="text-xs font-medium text-primary">{meta.actionLabel} →</span>
+					<span className="text-xs font-medium text-primary">
+						{t(OrderingKeys.ORDERS_LIFECYCLE_VIEW)} →
+					</span>
 				</div>
 			</div>
 		</button>

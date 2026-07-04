@@ -145,6 +145,45 @@ export const SESSION_STATUS = {
 
 export type SessionStatus = (typeof SESSION_STATUS)[keyof typeof SESSION_STATUS];
 
+/**
+ * Payment lifecycle of a Session's shared tab. The tab (Session) is the unit
+ * a group pays for: one Stripe payment covers every payable order in the
+ * session plus an optional tip.
+ */
+export const SESSION_PAYMENT_STATE = {
+	UNPAID: "unpaid",
+	PENDING: "pending",
+	PROCESSING: "processing",
+	PAID: "paid",
+	FAILED: "failed",
+} as const;
+
+export type SessionPaymentState =
+	(typeof SESSION_PAYMENT_STATE)[keyof typeof SESSION_PAYMENT_STATE];
+
+/**
+ * Order statuses whose totals count toward the tab balance. Draft orders are
+ * not yet sent to the kitchen; cancelled orders are excluded.
+ */
+export const TAB_PAYABLE_ORDER_STATUSES = ["submitted", "preparing", "ready", "served"] as const;
+
+/** Alphabet for session join codes: no 0/O/1/I lookalikes. */
+export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const JOIN_CODE_LENGTH = 6;
+
+/** Platform application fee, applied to the tab subtotal only (never the tip). */
+export const PLATFORM_APPLICATION_FEE_RATE = 0.06;
+
+/** Tip selector presets (percent of tab subtotal). Ticket TAVLI-6: default 10%. */
+export const TIP_PERCENT_PRESETS = [0, 10, 15, 20] as const;
+export const DEFAULT_TIP_PERCENT = 10;
+
+/** Geofence radius fallback when a restaurant configured coordinates but no radius. */
+export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
+
+/** Active tabs older than this are swept: closed when settled, flagged when unpaid. */
+export const STALE_TAB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export const SELECTION_TYPE = {
 	SINGLE: "single",
 	MULTI: "multi",

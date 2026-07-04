@@ -179,6 +179,18 @@ export async function handlePaymentIntentSuccess(
 				? gratuityRaw
 				: 0;
 
+	// Tab (session-level) payments settle the whole session; legacy per-order
+	// payments keep the original order confirmation path.
+	if (payment.sessionId) {
+		await ctx.runMutation(internal.sessions.confirmTabPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			stripeChargeId: chargeId,
+			gratuityAmount: Number.isFinite(gratuityAmount) ? gratuityAmount : 0,
+		});
+		return payment._id;
+	}
+
 	await ctx.runMutation(internal.orders.confirmPayment, {
 		paymentId: payment._id,
 		stripePaymentIntentId: paymentIntent.id,
@@ -206,6 +218,16 @@ export async function handlePaymentIntentFailure(
 		}
 	);
 	if (!payment) return undefined;
+
+	if (payment.sessionId) {
+		await ctx.runMutation(internal.sessions.failTabPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
+			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
+		});
+		return payment._id;
+	}
 
 	await ctx.runMutation(internal.orders.failPayment, {
 		paymentId: payment._id,

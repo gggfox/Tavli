@@ -17,6 +17,7 @@ export const OrderingKeys = {
 	BACK_TO_MENU_ARIA: "ordering.backToMenuAria",
 
 	MENU_PROCEED_TO_PAYMENT: "ordering.menu.proceedToPayment",
+	MENU_PLACE_ORDER: "ordering.menu.placeOrder",
 	MENU_PREPARING: "ordering.menu.preparing",
 	MENU_REVIEW_ORDER: "ordering.menu.reviewOrder",
 	MENU_TABLE_NUMBER: "ordering.menu.tableNumber",
@@ -90,6 +91,39 @@ export const OrderingKeys = {
 	ORDERS_LIFECYCLE_READY: "ordering.orders.lifecycleReady",
 	ORDERS_LIFECYCLE_SERVED: "ordering.orders.lifecycleServed",
 	ORDERS_LIFECYCLE_CANCELLED: "ordering.orders.lifecycleCancelled",
+
+	// Group tab (TAVLI-6): shared session balance paid once at the end.
+	TAB_HEADING: "ordering.tab.heading",
+	TAB_MEMBER_COUNT: "ordering.tab.memberCount",
+	TAB_SHARE_CODE_LABEL: "ordering.tab.shareCodeLabel",
+	TAB_CODE_COPIED: "ordering.tab.codeCopied",
+	TAB_LOCKED_NOTICE: "ordering.tab.lockedNotice",
+	TAB_PAY_CTA: "ordering.tab.payCta",
+	TAB_JOIN_HEADING: "ordering.tab.joinHeading",
+	TAB_JOIN_PLACEHOLDER: "ordering.tab.joinPlaceholder",
+	TAB_JOIN_CTA: "ordering.tab.joinCta",
+	TAB_JOIN_INVALID: "ordering.tab.joinInvalid",
+	TAB_EMPTY: "ordering.tab.empty",
+	TAB_PAY_HEADING: "ordering.tab.payHeading",
+	TAB_SUBTOTAL: "ordering.tab.subtotal",
+	TAB_TIP_LABEL: "ordering.tab.tipLabel",
+	TAB_TIP_HEADING: "ordering.tab.tipHeading",
+	TAB_TIP_CUSTOM: "ordering.tab.tipCustom",
+	TAB_TIP_CUSTOM_PLACEHOLDER: "ordering.tab.tipCustomPlaceholder",
+	TAB_CHANGE_TIP: "ordering.tab.changeTip",
+	TAB_CONTINUE_TO_PAYMENT: "ordering.tab.continueToPayment",
+	TAB_PAID_TITLE: "ordering.tab.paidTitle",
+	TAB_PAID_DESC: "ordering.tab.paidDesc",
+	TAB_PAID_DONE: "ordering.tab.paidDone",
+
+	// Geofence gate (TAVLI-6): menu browsable, ordering hidden while away.
+	GEOFENCE_BLOCKED_TITLE: "ordering.geofence.blockedTitle",
+	GEOFENCE_OUTSIDE: "ordering.geofence.outside",
+	GEOFENCE_LOCATION_UNAVAILABLE: "ordering.geofence.locationUnavailable",
+	GEOFENCE_CODE_PLACEHOLDER: "ordering.geofence.codePlaceholder",
+	GEOFENCE_CODE_SUBMIT: "ordering.geofence.codeSubmit",
+	GEOFENCE_CODE_INVALID: "ordering.geofence.codeInvalid",
+	GEOFENCE_RETRY: "ordering.geofence.retry",
 } as const;
 
 export type OrderingKey = (typeof OrderingKeys)[keyof typeof OrderingKeys];

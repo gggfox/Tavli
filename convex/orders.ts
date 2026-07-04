@@ -17,6 +17,7 @@ import {
 import {
 	requireOwnedActiveSession,
 	requireOwnedOrder,
+	requireUnlockedOwnedSession,
 	toDinerVisiblePayment,
 } from "./_util/dinerSession";
 import {
@@ -58,7 +59,7 @@ export const createDraft = mutation({
 		tableId: v.id(TABLE.TABLES),
 	},
 	handler: async (ctx, args) => {
-		const session = await requireOwnedActiveSession(ctx, args.sessionId);
+		const session = await requireUnlockedOwnedSession(ctx, args.sessionId);
 
 		const table = await ctx.db.get(args.tableId);
 		if (!table || !table.isActive || table.restaurantId !== session.restaurantId) {
@@ -185,13 +186,20 @@ export const removeItem = mutation({
 	},
 });
 
+/**
+ * Sends a draft order to the kitchen/bar immediately (TAVLI-6). Payment moved
+ * to the end of the visit: the order joins the session's tab balance as
+ * `unpaid` and the whole tab is settled with one Stripe payment (or by staff
+ * in person). Allocates the daily order number and server attribution here,
+ * where the order becomes real for the restaurant.
+ */
 export const submitOrder = mutation({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
 		specialInstructions: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
+		const order = await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
 
 		const items = await ctx.db
 			.query(TABLE.ORDER_ITEMS)
@@ -204,12 +212,46 @@ export const submitOrder = mutation({
 			});
 		}
 
-		if (args.specialInstructions) {
-			await ctx.db.patch(args.orderId, {
-				specialInstructions: args.specialInstructions,
-				updatedAt: Date.now(),
-			});
+		const restaurant = await ctx.db.get(order.restaurantId);
+		if (!restaurant) {
+			throw new NotFoundError("Restaurant not found");
 		}
+
+		const now = Date.now();
+
+		const orderServiceDateKey = getOrderServiceDateKey(
+			now,
+			restaurant.timezone,
+			restaurant.orderDayStartMinutesFromMidnight
+		);
+		const periodKey = getOrderResetPeriodKey(
+			now,
+			restaurant.timezone,
+			restaurant.orderDayStartMinutesFromMidnight,
+			restaurant.orderNumberResetFrequency ?? DEFAULT_ORDER_NUMBER_RESET_FREQUENCY
+		);
+		const dailyOrderNumber = await allocateNextOrderNumber(ctx, order.restaurantId, periodKey, now);
+
+		const session = await ctx.db.get(order.sessionId);
+		const attributedMemberId = await resolveAttributedMemberId(ctx, {
+			restaurantId: order.restaurantId,
+			tableId: order.tableId,
+			atMs: now,
+			sessionServerMemberId: session?.serverMemberId,
+		});
+
+		await ctx.db.patch(args.orderId, {
+			status: "submitted",
+			paymentState: ORDER_PAYMENT_STATE.UNPAID,
+			submittedAt: now,
+			dailyOrderNumber,
+			orderServiceDateKey,
+			...(attributedMemberId !== undefined && { attributedMemberId }),
+			...(args.specialInstructions !== undefined && {
+				specialInstructions: args.specialInstructions,
+			}),
+			updatedAt: now,
+		});
 	},
 });
 
@@ -229,11 +271,15 @@ export const confirmPayment = internalMutation({
 		if (!payment) {
 			throw new Error(`Payment ${args.paymentId} not found`);
 		}
+		if (!payment.orderId) {
+			throw new Error(`Payment ${args.paymentId} is not an order payment`);
+		}
+		const paymentOrderId = payment.orderId;
 		if (payment.status === PAYMENT_STATUS.SUCCEEDED) {
 			return;
 		}
 
-		const order = await ctx.db.get(payment.orderId);
+		const order = await ctx.db.get(paymentOrderId);
 		if (!order) throw new Error(`Order ${payment.orderId} not found`);
 		if (order.activePaymentId !== payment._id) {
 			console.warn(`Payment ${payment._id} is no longer active for order ${order._id}, skipping`);
@@ -261,11 +307,11 @@ export const confirmPayment = internalMutation({
 
 		const items = await ctx.db
 			.query(TABLE.ORDER_ITEMS)
-			.withIndex("by_order", (q) => q.eq("orderId", payment.orderId))
+			.withIndex("by_order", (q) => q.eq("orderId", paymentOrderId))
 			.collect();
 
 		if (items.length === 0) {
-			throw new Error(`Order ${payment.orderId} has no items`);
+			throw new Error(`Order ${paymentOrderId} has no items`);
 		}
 
 		const session = await ctx.db.get(order.sessionId);
@@ -335,7 +381,7 @@ export const failPayment = internalMutation({
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
-		if (!payment) return;
+		if (!payment?.orderId) return;
 		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
 
 		const now = Date.now();

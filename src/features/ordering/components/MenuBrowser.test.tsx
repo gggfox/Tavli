@@ -112,7 +112,7 @@ describe("MenuBrowser", () => {
 			).toBeTruthy();
 		});
 
-		const proceedButtons = screen.getAllByText("Proceed to Payment");
+		const proceedButtons = screen.getAllByText("Send order to kitchen");
 		const paymentButton = proceedButtons.at(-1) as HTMLButtonElement;
 		expect(paymentButton.disabled).toBe(true);
 	});

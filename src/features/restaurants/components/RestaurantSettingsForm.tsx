@@ -47,6 +47,14 @@ function minutesToTimeInput(totalMinutes: number): string {
 	return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
+/** "" → null (clear); otherwise a finite number or null when unparsable. */
+function parseCoordinate(s: string): number | null {
+	const trimmed = s.trim();
+	if (!trimmed) return null;
+	const parsed = Number.parseFloat(trimmed);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
 function timeInputToMinutes(s: string): number {
 	const parts = s.split(":");
 	const h = Number.parseInt(parts[0] ?? "0", 10);
@@ -69,6 +77,11 @@ interface RestaurantSettingsFormProps {
 		closeTime?: string;
 		orderDayStartMinutesFromMidnight: number;
 		orderNumberResetFrequency?: OrderNumberResetFrequency;
+		// Ordering geofence (TAVLI-6); null clears the value.
+		latitude: number | null;
+		longitude: number | null;
+		geofenceRadiusMeters: number | null;
+		geofenceBypassCode: string | null;
 		organizationId: Id<"organizations">;
 	}) => Promise<unknown>;
 	onToggleActive?: (restaurantId: Id<"restaurants">) => Promise<unknown>;
@@ -106,6 +119,11 @@ export function RestaurantSettingsForm({
 				restaurant?.orderDayStartMinutesFromMidnight ?? DEFAULT_ORDER_DAY_START_MINUTES
 			),
 			orderNumberResetFrequency: initialResetFrequency,
+			latitude: restaurant?.latitude != null ? String(restaurant.latitude) : "",
+			longitude: restaurant?.longitude != null ? String(restaurant.longitude) : "",
+			geofenceRadiusMeters:
+				restaurant?.geofenceRadiusMeters != null ? String(restaurant.geofenceRadiusMeters) : "",
+			geofenceBypassCode: restaurant?.geofenceBypassCode ?? "",
 			organizationId: (restaurant?.organizationId as string) ?? "",
 		},
 		onSubmit: async ({ value }) => {
@@ -122,6 +140,10 @@ export function RestaurantSettingsForm({
 				...(isAdmin && {
 					orderNumberResetFrequency: value.orderNumberResetFrequency,
 				}),
+				latitude: parseCoordinate(value.latitude),
+				longitude: parseCoordinate(value.longitude),
+				geofenceRadiusMeters: parseCoordinate(value.geofenceRadiusMeters),
+				geofenceBypassCode: value.geofenceBypassCode.trim() || null,
 				organizationId: value.organizationId as Id<"organizations">,
 			});
 		},
@@ -439,6 +461,131 @@ export function RestaurantSettingsForm({
 					</div>
 				)}
 			/>
+
+			{/* Ordering geofence (TAVLI-6) */}
+			<div className="space-y-3 border-t border-border pt-6">
+				<div>
+					<h3 className="text-sm font-semibold text-foreground">
+						{t(RestaurantsKeys.FORM_GEOFENCE_SECTION_TITLE)}
+					</h3>
+					<p className="mt-1 text-xs text-faint-foreground">
+						{t(RestaurantsKeys.FORM_GEOFENCE_SECTION_HINT)}
+					</p>
+				</div>
+				<div className="grid grid-cols-2 gap-4">
+					<form.Field
+						name="latitude"
+						children={(field) => (
+							<div>
+								<label
+									htmlFor="restaurant-latitude"
+									className="block text-sm font-medium mb-1 text-foreground"
+								>
+									{t(RestaurantsKeys.FORM_GEOFENCE_LATITUDE_LABEL)}
+								</label>
+								<input
+									id="restaurant-latitude"
+									type="number"
+									step="any"
+									min="-90"
+									max="90"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								/>
+							</div>
+						)}
+					/>
+					<form.Field
+						name="longitude"
+						children={(field) => (
+							<div>
+								<label
+									htmlFor="restaurant-longitude"
+									className="block text-sm font-medium mb-1 text-foreground"
+								>
+									{t(RestaurantsKeys.FORM_GEOFENCE_LONGITUDE_LABEL)}
+								</label>
+								<input
+									id="restaurant-longitude"
+									type="number"
+									step="any"
+									min="-180"
+									max="180"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								/>
+							</div>
+						)}
+					/>
+				</div>
+				<button
+					type="button"
+					onClick={() => {
+						if (typeof navigator === "undefined" || !navigator.geolocation) return;
+						navigator.geolocation.getCurrentPosition((position) => {
+							form.setFieldValue("latitude", String(position.coords.latitude));
+							form.setFieldValue("longitude", String(position.coords.longitude));
+						});
+					}}
+					className="text-xs font-medium underline text-muted-foreground"
+				>
+					{t(RestaurantsKeys.FORM_GEOFENCE_USE_MY_LOCATION)}
+				</button>
+				<div className="grid grid-cols-2 gap-4">
+					<form.Field
+						name="geofenceRadiusMeters"
+						children={(field) => (
+							<div>
+								<label
+									htmlFor="restaurant-geofence-radius"
+									className="block text-sm font-medium mb-1 text-foreground"
+								>
+									{t(RestaurantsKeys.FORM_GEOFENCE_RADIUS_LABEL)}
+								</label>
+								<input
+									id="restaurant-geofence-radius"
+									type="number"
+									min="1"
+									step="1"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									placeholder="150"
+									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								/>
+							</div>
+						)}
+					/>
+					<form.Field
+						name="geofenceBypassCode"
+						children={(field) => (
+							<div>
+								<label
+									htmlFor="restaurant-geofence-bypass"
+									className="block text-sm font-medium mb-1 text-foreground"
+								>
+									{t(RestaurantsKeys.FORM_GEOFENCE_BYPASS_LABEL)}
+								</label>
+								<input
+									id="restaurant-geofence-bypass"
+									type="text"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value.toUpperCase())}
+									onBlur={field.handleBlur}
+									className="w-full px-3 py-2 rounded-lg text-sm uppercase bg-muted border border-border text-foreground"
+								/>
+							</div>
+						)}
+					/>
+				</div>
+				<p className="text-xs text-faint-foreground">
+					{t(RestaurantsKeys.FORM_GEOFENCE_BYPASS_HINT)}
+				</p>
+			</div>
 
 			{isAdmin && !isManagerSettings && (
 				<form.Field

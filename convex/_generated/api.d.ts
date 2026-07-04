@@ -74,6 +74,7 @@ import type * as restaurantMembers from "../restaurantMembers.js";
 import type * as restaurantPurge from "../restaurantPurge.js";
 import type * as restaurants from "../restaurants.js";
 import type * as sections from "../sections.js";
+import type * as sessionHelpers from "../sessionHelpers.js";
 import type * as sessions from "../sessions.js";
 import type * as sharedEmployee from "../sharedEmployee.js";
 import type * as shiftTemplates from "../shiftTemplates.js";
@@ -159,6 +160,7 @@ declare const fullApi: ApiFromModules<{
   restaurantPurge: typeof restaurantPurge;
   restaurants: typeof restaurants;
   sections: typeof sections;
+  sessionHelpers: typeof sessionHelpers;
   sessions: typeof sessions;
   sharedEmployee: typeof sharedEmployee;
   shiftTemplates: typeof shiftTemplates;
