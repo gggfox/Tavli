@@ -367,3 +367,56 @@ describe("restaurantMembers addMember", () => {
 		expect(row?.role).toBe(RESTAURANT_MEMBER_ROLE.MANAGER);
 	});
 });
+
+describe("restaurantMembers updateRole authorization", () => {
+	it("rejects when a manager tries to demote a peer manager", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
+		await seedUserRole(t, {
+			userId: "mgr-a",
+			roles: [USER_ROLES.MANAGER],
+			organizationId: orgId,
+		});
+		await seedUserRole(t, {
+			userId: "mgr-b",
+			roles: [USER_ROLES.MANAGER],
+			organizationId: orgId,
+		});
+
+		const peerManagerMemberId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("restaurantMembers", {
+				userId: "mgr-b",
+				restaurantId,
+				organizationId: orgId,
+				role: RESTAURANT_MEMBER_ROLE.MANAGER,
+				isActive: true,
+				addedBy: "seed-owner",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("restaurantMembers", {
+				userId: "mgr-a",
+				restaurantId,
+				organizationId: orgId,
+				role: RESTAURANT_MEMBER_ROLE.MANAGER,
+				isActive: true,
+				addedBy: "seed-owner",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const manager = t.withIdentity({ subject: "mgr-a" });
+		const [id, err] = await manager.mutation(api.restaurantMembers.updateRole, {
+			memberId: peerManagerMemberId,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+		});
+
+		expect(id).toBeNull();
+		expect(err).toMatchObject({ name: "NOT_AUTHORIZED" });
+	});
+});

@@ -119,6 +119,10 @@ async function assertCanManageMembership(
 	actorUserId: string,
 	args: {
 		organizationId: Id<"organizations">;
+		currentRole:
+			| typeof RESTAURANT_MEMBER_ROLE.MANAGER
+			| typeof RESTAURANT_MEMBER_ROLE.EMPLOYEE
+			| null;
 		targetRole: typeof RESTAURANT_MEMBER_ROLE.MANAGER | typeof RESTAURANT_MEMBER_ROLE.EMPLOYEE;
 		restaurantId: Id<"restaurants">;
 	}
@@ -139,7 +143,13 @@ async function assertCanManageMembership(
 		return [null, null];
 	}
 
-	if (args.targetRole === RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
+	const effectiveRole =
+		args.currentRole === RESTAURANT_MEMBER_ROLE.MANAGER ||
+		args.targetRole === RESTAURANT_MEMBER_ROLE.MANAGER
+			? RESTAURANT_MEMBER_ROLE.MANAGER
+			: RESTAURANT_MEMBER_ROLE.EMPLOYEE;
+
+	if (effectiveRole === RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
 		const member = await getRestaurantMembership(ctx, actorUserId, args.restaurantId);
 		if (member?.isActive && member.role === RESTAURANT_MEMBER_ROLE.MANAGER) {
 			return [null, null];
@@ -615,6 +625,7 @@ export const addMember = mutation({
 
 		const [, permErr] = await assertCanManageMembership(ctx, actorId, {
 			organizationId: restaurant.organizationId,
+			currentRole: null,
 			targetRole: args.role,
 			restaurantId: args.restaurantId,
 		});
@@ -704,6 +715,7 @@ export const updateRole = mutation({
 
 		const [, permErr] = await assertCanManageMembership(ctx, actorId, {
 			organizationId: row.organizationId,
+			currentRole: row.role,
 			targetRole: args.role,
 			restaurantId: row.restaurantId,
 		});
@@ -737,6 +749,7 @@ export const removeMember = mutation({
 
 		const [, permErr] = await assertCanManageMembership(ctx, actorId, {
 			organizationId: row.organizationId,
+			currentRole: row.role,
 			targetRole: row.role,
 			restaurantId: row.restaurantId,
 		});
