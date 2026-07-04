@@ -13,6 +13,7 @@ import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
@@ -27,6 +28,17 @@ type PinVerifiedEmployee = {
 	account: Doc<"employeeAccounts">;
 	memberId: Id<"restaurantMembers">;
 };
+
+function assertShiftBelongsToMember(
+	shift: Doc<"shifts">,
+	memberId: Id<"restaurantMembers">,
+	restaurantId: Id<"restaurants">
+): NotAuthorizedErrorObject | null {
+	if (shift.memberId !== memberId || shift.restaurantId !== restaurantId) {
+		return new NotAuthorizedError().toObject();
+	}
+	return null;
+}
 
 async function verifySharedEmployeePinStepUp(
 	ctx: MutationCtx,
@@ -298,30 +310,37 @@ export const selfClockInWithPin = mutation({
 
 		if (args.shiftId) {
 			const shift = await ctx.db.get(args.shiftId);
-			if (shift) {
-				const shiftId = args.shiftId;
-				const lateMinutes = Math.max(0, Math.round((now - shift.startsAt) / 60_000));
-				const existing = await ctx.db
-					.query(TABLE.SHIFT_ATTENDANCE)
-					.withIndex("by_shift", (q) => q.eq("shiftId", shiftId))
-					.first();
-				const patch = {
-					shiftId: args.shiftId,
-					restaurantId: args.restaurantId,
-					memberId: memberRow._id,
-					status: ATTENDANCE_STATUS.PRESENT,
-					scheduledStart: shift.startsAt,
-					scheduledEnd: shift.endsAt,
-					actualStart: now,
-					lateMinutes,
-					earlyDepartureMinutes: 0,
-					lastComputedAt: now,
-				};
-				if (existing) {
-					await ctx.db.patch(existing._id, patch);
-				} else {
-					await ctx.db.insert(TABLE.SHIFT_ATTENDANCE, patch);
-				}
+			if (!shift) {
+				return [null, new NotFoundError("Shift not found").toObject()];
+			}
+			const scopeErr = assertShiftBelongsToMember(shift, memberRow._id, args.restaurantId);
+			if (scopeErr) return [null, scopeErr];
+
+			const shiftId = args.shiftId;
+			const lateMinutes = Math.max(0, Math.round((now - shift.startsAt) / 60_000));
+			const existing = await ctx.db
+				.query(TABLE.SHIFT_ATTENDANCE)
+				.withIndex("by_shift", (q) => q.eq("shiftId", shiftId))
+				.first();
+			if (existing && existing.memberId !== memberRow._id) {
+				return [null, new NotAuthorizedError().toObject()];
+			}
+			const patch = {
+				shiftId: args.shiftId,
+				restaurantId: args.restaurantId,
+				memberId: memberRow._id,
+				status: ATTENDANCE_STATUS.PRESENT,
+				scheduledStart: shift.startsAt,
+				scheduledEnd: shift.endsAt,
+				actualStart: now,
+				lateMinutes,
+				earlyDepartureMinutes: 0,
+				lastComputedAt: now,
+			};
+			if (existing) {
+				await ctx.db.patch(existing._id, patch);
+			} else {
+				await ctx.db.insert(TABLE.SHIFT_ATTENDANCE, patch);
 			}
 		}
 
@@ -364,6 +383,13 @@ export const selfClockOutWithPin = mutation({
 		});
 
 		if (args.shiftId) {
+			const shift = await ctx.db.get(args.shiftId);
+			if (!shift) {
+				return [null, new NotFoundError("Shift not found").toObject()];
+			}
+			const scopeErr = assertShiftBelongsToMember(shift, memberRow._id, args.restaurantId);
+			if (scopeErr) return [null, scopeErr];
+
 			const shiftId = args.shiftId;
 			const attendance = await ctx.db
 				.query(TABLE.SHIFT_ATTENDANCE)
