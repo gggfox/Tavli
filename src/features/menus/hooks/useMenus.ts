@@ -6,7 +6,7 @@ import type { Id } from "convex/_generated/dataModel";
 
 export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 	const { data: menus, isLoading } = useQuery(
-		convexQuery(api.menus.getMenusByRestaurant, restaurantId ? { restaurantId } : "skip")
+		convexQuery(api.menus.listForRestaurant, restaurantId ? { restaurantId } : "skip")
 	);
 
 	const updateMenu = useConvexMutate(api.menus.updateMenu);
@@ -29,7 +29,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 
 export function useCategories(menuId: Id<"menus"> | undefined) {
 	const { data, isLoading } = useQuery(
-		convexQuery(api.menus.getCategoriesByMenu, menuId ? { menuId } : "skip")
+		convexQuery(api.menus.listCategoriesForMenu, menuId ? { menuId } : "skip")
 	);
 
 	return { categories: data ?? [], isLoading };
@@ -40,7 +40,7 @@ export function useMenuItems(
 	restaurantId: Id<"restaurants"> | undefined
 ) {
 	const { data, isLoading } = useQuery(
-		convexQuery(api.menuItems.getByCategory, categoryId ? { categoryId } : "skip")
+		convexQuery(api.menuItems.listByCategoryForStaff, categoryId ? { categoryId } : "skip")
 	);
 
 	const createItem = useConvexMutate(api.menuItems.create);

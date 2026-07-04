@@ -8,6 +8,7 @@ interface LanguageTabBarProps {
 	defaultLanguage: string;
 	selectedLanguage: string;
 	onSelect: (lang: string) => void;
+	className?: string;
 }
 
 export function LanguageTabBar({
@@ -15,11 +16,12 @@ export function LanguageTabBar({
 	defaultLanguage,
 	selectedLanguage,
 	onSelect,
+	className,
 }: Readonly<LanguageTabBarProps>) {
 	if (languages.length <= 1) return null;
 
 	return (
-		<div className="flex gap-1 p-1 rounded-lg bg-muted">
+		<div className={`flex h-9 items-center gap-1 rounded-lg bg-muted p-1 ${className ?? ""}`}>
 			{languages.map((lang) => {
 				const isActive = lang === selectedLanguage;
 				const isDefault = lang === defaultLanguage;
@@ -28,7 +30,7 @@ export function LanguageTabBar({
 						key={lang}
 						type="button"
 						onClick={() => onSelect(lang)}
-						className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+						className="h-7 rounded-md px-3 text-xs font-medium transition-colors"
 						style={{
 							backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
 							color: isActive ? "var(--btn-primary-text)" : "var(--text-secondary)",

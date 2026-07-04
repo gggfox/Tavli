@@ -25,6 +25,17 @@ export const isUserAdmin = internalQuery({
 	handler: async (ctx, args) => isAdmin(ctx, args.userId),
 });
 
+export const verifyMenuImportAccess = internalQuery({
+	args: {
+		userId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async (ctx, args) => {
+		const [, err] = await requireRestaurantManagerOrAbove(ctx, args.userId, args.restaurantId);
+		return { allowed: err == null, errorMessage: err?.message };
+	},
+});
+
 export const batchInsertMenuCategories = mutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),

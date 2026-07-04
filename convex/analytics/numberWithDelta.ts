@@ -6,11 +6,14 @@
  * - `reservations.count`     — count of reservations starting in window (any status)
  * - `reservations.confirmed` — count where status = confirmed | seated | completed
  * - `orders.count`           — paid orders by `paidAt`
+ * - `orders.avgDishValue`    — Σ order-item lineTotal ÷ Σ order-item quantity
+ * - `orders.avgCheck`        — succeeded-payment revenue ÷ count of paid orders
  * - `payments.revenueTotal`  — sum of payments.amount where status = succeeded
  * - `covers`                 — sum of `partySize` of seated/completed reservations
  *
- * Money metrics (`payments.revenueTotal`) require manager-or-above; counts are
- * available to any staff member with restaurant access.
+ * Money metrics (`payments.revenueTotal`, `orders.avgDishValue`,
+ * `orders.avgCheck`) require manager-or-above; counts are available to any
+ * staff member with restaurant access.
  */
 import { v } from "convex/values";
 import { query } from "../_generated/server";
@@ -20,6 +23,7 @@ import { PAYMENT_STATUS, RESERVATION_STATUS, TABLE } from "../constants";
 import type { Id } from "../_generated/dataModel";
 import {
 	buildWindow,
+	loadOrderItemsInRange,
 	loadOrdersInRange,
 	loadPaymentsInRange,
 	loadReservationsInRange,
@@ -35,13 +39,19 @@ const metricValidator = v.union(
 	v.literal("reservations.count"),
 	v.literal("reservations.confirmed"),
 	v.literal("orders.count"),
+	v.literal("orders.avgDishValue"),
+	v.literal("orders.avgCheck"),
 	v.literal("payments.revenueTotal"),
 	v.literal("covers")
 );
 
 type Metric = typeof metricValidator.type;
 
-const MONEY_METRICS: ReadonlySet<Metric> = new Set(["payments.revenueTotal"]);
+const MONEY_METRICS: ReadonlySet<Metric> = new Set([
+	"payments.revenueTotal",
+	"orders.avgDishValue",
+	"orders.avgCheck",
+]);
 
 export type NumberWithDeltaResult = {
 	current: number;
@@ -123,6 +133,26 @@ async function computeMetric(
 		case "orders.count": {
 			const rows = await loadOrdersInRange(ctx, restaurantIds, range);
 			return rows.length;
+		}
+		case "orders.avgDishValue": {
+			const items = await loadOrderItemsInRange(ctx, restaurantIds, range);
+			let totalLine = 0;
+			let totalQty = 0;
+			for (const it of items) {
+				totalLine += it.lineTotal;
+				totalQty += it.quantity;
+			}
+			return totalQty > 0 ? totalLine / totalQty : 0;
+		}
+		case "orders.avgCheck": {
+			const orders = await loadOrdersInRange(ctx, restaurantIds, range);
+			const paidOrderCount = orders.filter((o) => o.paidAt !== undefined).length;
+			if (paidOrderCount === 0) return 0;
+			const payments = await loadPaymentsInRange(ctx, restaurantIds, range);
+			const revenue = payments
+				.filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED)
+				.reduce((sum, p) => sum + p.amount, 0);
+			return revenue / paidOrderCount;
 		}
 		case "payments.revenueTotal": {
 			const rows = await loadPaymentsInRange(ctx, restaurantIds, range);

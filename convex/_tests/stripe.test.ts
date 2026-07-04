@@ -32,7 +32,7 @@ const mockStripeClient = {
 	webhooks: {
 		constructEvent: vi.fn(),
 	},
-	parseThinEvent: vi.fn(),
+	parseEventNotification: vi.fn(),
 };
 
 const StripeConstructor = vi.fn(() => mockStripeClient);
@@ -96,8 +96,10 @@ async function seedDraftOrder(
 	args: {
 		restaurantId: Id<"restaurants">;
 		totalAmount: number;
+		dinerId?: string;
 	}
 ) {
+	const dinerId = args.dinerId ?? "diner-stripe";
 	let tableId: Id<"tables">;
 	let sessionId: Id<"sessions">;
 	let orderId: Id<"orders">;
@@ -113,6 +115,7 @@ async function seedDraftOrder(
 		sessionId = await ctx.db.insert("sessions", {
 			restaurantId: args.restaurantId,
 			tableId,
+			userId: dinerId,
 			status: "active",
 			startedAt: Date.now(),
 		});
@@ -129,7 +132,7 @@ async function seedDraftOrder(
 		});
 	});
 
-	return orderId!;
+	return { orderId: orderId!, diner: t.withIdentity({ subject: dinerId }) };
 }
 
 async function seedUserRole(
@@ -266,7 +269,7 @@ describe("stripe actions", () => {
 			stripeAccountId: "acct_ready",
 			stripeOnboardingComplete: true,
 		});
-		const orderId = await seedDraftOrder(t, {
+		const { orderId, diner } = await seedDraftOrder(t, {
 			restaurantId,
 			totalAmount: 2400,
 		});
@@ -280,10 +283,10 @@ describe("stripe actions", () => {
 			client_secret: "pi_secret_reuse",
 		});
 
-		const first = await t.action(api.stripe.createPaymentIntent, {
+		const first = await diner.action(api.stripe.createPaymentIntent, {
 			orderId,
 		});
-		const second = await t.action(api.stripe.createPaymentIntent, {
+		const second = await diner.action(api.stripe.createPaymentIntent, {
 			orderId,
 		});
 
@@ -302,7 +305,7 @@ describe("stripe actions", () => {
 			stripeAccountId: "acct_ready",
 			stripeOnboardingComplete: true,
 		});
-		const orderId = await seedDraftOrder(t, {
+		const { orderId, diner } = await seedDraftOrder(t, {
 			restaurantId,
 			totalAmount: 1800,
 		});
@@ -317,7 +320,7 @@ describe("stripe actions", () => {
 				client_secret: "pi_secret_replaced",
 			});
 
-		await t.action(api.stripe.createPaymentIntent, {
+		await diner.action(api.stripe.createPaymentIntent, {
 			orderId,
 		});
 
@@ -328,7 +331,7 @@ describe("stripe actions", () => {
 			});
 		});
 
-		const second = await t.action(api.stripe.createPaymentIntent, {
+		const second = await diner.action(api.stripe.createPaymentIntent, {
 			orderId,
 		});
 
@@ -353,7 +356,7 @@ describe("stripe actions", () => {
 			stripeAccountId: "acct_ready",
 			stripeOnboardingComplete: true,
 		});
-		const orderId = await seedDraftOrder(t, {
+		const { orderId } = await seedDraftOrder(t, {
 			restaurantId,
 			totalAmount: 2400,
 		});
@@ -456,7 +459,7 @@ describe("stripe actions", () => {
 				stripeAccountId: "acct_refund",
 				stripeOnboardingComplete: true,
 			});
-			const orderId = await seedDraftOrder(t, {
+			const { orderId } = await seedDraftOrder(t, {
 				restaurantId,
 				totalAmount: 2400,
 			});

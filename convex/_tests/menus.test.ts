@@ -45,6 +45,172 @@ async function seedMenuContext(t: ReturnType<typeof convexTest>) {
 	});
 }
 
+async function seedInactiveMenuWithCategory(
+	t: ReturnType<typeof convexTest>,
+	restaurantId: Id<"restaurants">
+) {
+	return await t.run(async (ctx) => {
+		const now = Date.now();
+		const inactiveMenuId = await ctx.db.insert("menus", {
+			restaurantId,
+			name: "Draft Menu",
+			isActive: false,
+			displayOrder: 1,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const categoryId = await ctx.db.insert("menuCategories", {
+			menuId: inactiveMenuId,
+			restaurantId,
+			name: "Hidden",
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const itemId = await ctx.db.insert("menuItems", {
+			categoryId,
+			restaurantId,
+			name: "Secret Dish",
+			basePrice: 500,
+			isAvailable: true,
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+		return { inactiveMenuId, categoryId, itemId };
+	});
+}
+
+describe("public menu reads", () => {
+	it("getMenusByRestaurant excludes inactive menus", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, menuId } = await seedMenuContext(t);
+		const { inactiveMenuId } = await seedInactiveMenuWithCategory(t, restaurantId);
+
+		const menus = await t.query(api.menus.getMenusByRestaurant, { restaurantId });
+		expect(menus).toHaveLength(1);
+		expect(menus![0]._id).toBe(menuId);
+		expect(menus!.some((m) => m._id === inactiveMenuId)).toBe(false);
+	});
+
+	it("getMenuById returns null for inactive menus", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const { inactiveMenuId } = await seedInactiveMenuWithCategory(t, restaurantId);
+
+		const menu = await t.query(api.menus.getMenuById, { menuId: inactiveMenuId });
+		expect(menu).toBeNull();
+	});
+
+	it("getCategoriesByMenu returns empty for inactive menus", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const { inactiveMenuId } = await seedInactiveMenuWithCategory(t, restaurantId);
+
+		const categories = await t.query(api.menus.getCategoriesByMenu, { menuId: inactiveMenuId });
+		expect(categories).toEqual([]);
+	});
+
+	it("listForRestaurant includes inactive menus for managers", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const { inactiveMenuId } = await seedInactiveMenuWithCategory(t, restaurantId);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const menus = await manager.query(api.menus.listForRestaurant, { restaurantId });
+		expect(menus).toHaveLength(2);
+		expect(menus!.some((m) => m._id === inactiveMenuId)).toBe(true);
+	});
+});
+
+describe("public menu item reads", () => {
+	it("getById returns null for items on inactive menus", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const { itemId } = await seedInactiveMenuWithCategory(t, restaurantId);
+
+		const item = await t.query(api.menuItems.getById, { itemId });
+		expect(item).toBeNull();
+	});
+
+	it("getByCategory excludes unavailable items", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, menuId } = await seedMenuContext(t);
+		const categoryId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("menuCategories", {
+				menuId,
+				restaurantId,
+				name: "Mains",
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("menuItems", {
+				categoryId,
+				restaurantId,
+				name: "Available",
+				basePrice: 1000,
+				isAvailable: true,
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("menuItems", {
+				categoryId,
+				restaurantId,
+				name: "Unavailable",
+				basePrice: 1200,
+				isAvailable: false,
+				displayOrder: 1,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const items = await t.query(api.menuItems.getByCategory, { categoryId });
+		expect(items).toHaveLength(1);
+		expect(items![0].name).toBe("Available");
+	});
+
+	it("listByCategoryForStaff includes unavailable items for managers", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, menuId } = await seedMenuContext(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+		const categoryId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("menuCategories", {
+				menuId,
+				restaurantId,
+				name: "Mains",
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("menuItems", {
+				categoryId,
+				restaurantId,
+				name: "Unavailable",
+				basePrice: 1200,
+				isAvailable: false,
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const items = await manager.query(api.menuItems.listByCategoryForStaff, { categoryId });
+		expect(items).toHaveLength(1);
+		expect(items![0].name).toBe("Unavailable");
+	});
+});
+
 describe("menus.createCategory", () => {
 	it("rejects whitespace-only names", async () => {
 		const t = convexTest(schema, modules);

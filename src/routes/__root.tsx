@@ -19,6 +19,7 @@ import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import { ErrorBoundary, NotificationCenter, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
+import { config } from "@/global/utils/config";
 import {
 	LOCAL_STORAGE_THEME_KEY,
 	type RemoteThemeSettings,
@@ -155,23 +156,25 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 					</head>
 					<body>
 						{children}
-						<ClientOnlyDevtools
-							config={{
-								position: "bottom-right",
-							}}
-							plugins={[
-								{
-									id: "auth",
-									name: "Auth",
-									render: <AuthDebugPanel />,
-								},
-								{
-									id: "router",
-									name: "Router",
-									render: <SafeRouterDevtoolsPanel />,
-								},
-							]}
-						/>
+						{config.isDev ? (
+							<ClientOnlyDevtools
+								config={{
+									position: "bottom-right",
+								}}
+								plugins={[
+									{
+										id: "auth",
+										name: "Auth",
+										render: <AuthDebugPanel />,
+									},
+									{
+										id: "router",
+										name: "Router",
+										render: <SafeRouterDevtoolsPanel />,
+									},
+								]}
+							/>
+						) : null}
 						<Scripts />
 					</body>
 				</html>

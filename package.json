@@ -14,12 +14,13 @@
 		"lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
 		"format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
 		"format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
+		"audit:check": "pnpm audit --audit-level high",
 		"email:dev": "email dev --dir emails --port 3001",
 		"prepare": "husky"
 	},
 	"dependencies": {
 		"@ai-sdk/openai": "^3.0.64",
-		"@clerk/tanstack-react-start": "^1.0.7",
+		"@clerk/tanstack-react-start": "^1.4.12",
 		"@convex-dev/react-query": "^0.1.0",
 		"@dnd-kit/core": "^6.3.1",
 		"@dnd-kit/sortable": "^10.0.0",
@@ -48,12 +49,12 @@
 		"lucide-react": "^0.544.0",
 		"mammoth": "^1.12.0",
 		"nitro": "3.0.1-alpha.0",
-		"pdf-parse": "1.1.1",
+		"pdf-parse": "2.4.5",
 		"react": "19.2.6",
 		"react-dom": "19.2.6",
 		"react-grid-layout": "^2.2.3",
 		"react-i18next": "^16.5.0",
-		"stripe": "^21.0.1",
+		"stripe": "^22.0.0",
 		"tailwindcss": "^4.0.6",
 		"vite-tsconfig-paths": "^5.1.4",
 		"xlsx": "^0.18.5",
@@ -89,7 +90,7 @@
 		"prettier": "^3.4.0",
 		"react-email": "^6.5.0",
 		"typescript": "^5.7.2",
-		"vite": "^7.1.7",
+		"vite": "^7.3.5",
 		"vitest": "^3.0.5",
 		"web-vitals": "^5.1.0"
 	},
@@ -97,7 +98,39 @@
 	"pnpm": {
 		"onlyBuiltDependencies": [
 			"esbuild"
-		]
+		],
+		"auditConfig": {
+			"ignoreGhsas": [
+				"GHSA-3vj8-jmxq-cgj5",
+				"GHSA-22cc-p3c6-wpvm"
+			]
+		},
+		"overrides": {
+			"@clerk/shared": "^4.8.3",
+			"@clerk/backend": "^3.2.14",
+			"@clerk/react": "^6.4.3",
+			"seroval": ">=1.5.4",
+			"undici": "^7.27.2",
+			"flatted": ">=3.4.2",
+			"handlebars": ">=4.7.9",
+			"vitest": "^3.2.6",
+			"rollup": ">=4.61.1",
+			"shell-quote": ">=1.8.4",
+			"defu": ">=6.1.5",
+			"js-cookie": ">=3.0.7",
+			"ws": ">=8.21.0",
+			"vite": "^7.3.5",
+			"xlsx": "npm:@e965/xlsx@^0.20.3",
+			"eslint>minimatch": "^3.1.4",
+			"eslint-plugin-react>minimatch": "^3.1.4",
+			"glob>minimatch": "^9.0.7",
+			"@typescript-eslint/typescript-estree>minimatch": "^9.0.7",
+			"micromatch>picomatch": "^2.3.2",
+			"tinyglobby>picomatch": "^4.0.4",
+			"anymatch>picomatch": "^2.3.2",
+			"readdirp>picomatch": "^2.3.2",
+			"unplugin>picomatch": "^4.0.4"
+		}
 	},
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx}": [

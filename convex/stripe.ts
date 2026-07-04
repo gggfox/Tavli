@@ -45,7 +45,8 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
-import { fromErrorObject, NotAuthenticatedError } from "./_shared/errors";
+import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
+import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getStripeClient,
 	handleAccountStatusChange,
@@ -327,27 +328,23 @@ export const handleThinEvent = internalAction({
 			);
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const thinEvent = (stripeClient as any).parseThinEvent(
+		const eventNotification = stripeClient.parseEventNotification(
 			args.payloadString,
 			args.signatureHeader,
 			webhookSecret
 		);
 
-		const event = await stripeClient.v2.core.events.retrieve(thinEvent.id);
-
-		switch (event.type) {
+		switch (eventNotification.type) {
 			case "v2.core.account[requirements].updated":
 			case "v2.core.account[configuration.recipient].capability_status_updated": {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const accountId = (event as any).related_object?.id;
+				const accountId = eventNotification.related_object?.id;
 				if (accountId) {
 					await handleAccountStatusChange(ctx, stripeClient, accountId);
 				}
 				break;
 			}
 			default: {
-				console.log(`Unhandled thin event type: ${event.type}`);
+				console.log(`Unhandled thin event type: ${eventNotification.type}`);
 			}
 		}
 	},
@@ -538,6 +535,19 @@ export const createPaymentIntent = action({
 		ctx,
 		args
 	): Promise<{ clientSecret: string | null; paymentId: Id<"payments"> }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw fromErrorObject(new NotAuthenticatedError().toObject());
+		}
+
+		const ownedOrderId = await ctx.runQuery(internal.orders.verifyDraftOrderOwnerInternal, {
+			orderId: args.orderId,
+			userId: identity.subject,
+		});
+		if (!ownedOrderId) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.ACCESS_DENIED).toObject());
+		}
+
 		const order: Doc<"orders"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getOrderInternal,
 			{ orderId: args.orderId }

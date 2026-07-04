@@ -37,6 +37,7 @@ type RestaurantAdminContextValue = {
 		slug?: string;
 		description?: string;
 		currency?: string;
+		supportEmail?: string;
 		timezone?: string;
 		openTime?: string;
 		closeTime?: string;
@@ -152,6 +153,7 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 			slug?: string;
 			description?: string;
 			currency?: string;
+			supportEmail?: string;
 			timezone?: string;
 			openTime?: string;
 			closeTime?: string;

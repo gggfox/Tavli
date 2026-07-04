@@ -50,6 +50,20 @@ export const addTipEntry = mutation({
 			];
 		}
 
+		if (args.memberId) {
+			const member = await ctx.db.get(args.memberId);
+			if (!member || member.restaurantId !== args.restaurantId || !member.isActive) {
+				return [null, new NotFoundError("Team member not found for restaurant").toObject()];
+			}
+		}
+
+		if (args.shiftId) {
+			const shift = await ctx.db.get(args.shiftId);
+			if (!shift || shift.restaurantId !== args.restaurantId) {
+				return [null, new NotFoundError("Shift not found").toObject()];
+			}
+		}
+
 		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.TIP_ENTRIES, {
 			restaurantId: args.restaurantId,

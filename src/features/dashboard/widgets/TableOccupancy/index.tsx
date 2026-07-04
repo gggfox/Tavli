@@ -68,7 +68,7 @@ export const tableOccupancyDescriptor: WidgetDescriptor<Options> = registerWidge
 	requiredRole: "employee",
 	portfolioCapable: false,
 	supportsComparison: false,
-	maxRangeDays: 92,
+	maxRangeDays: 366,
 	defaultGrid: { w: 6, h: 4, minW: 3, minH: 3 },
 	optionsSchema,
 	defaultOptions: {},

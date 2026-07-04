@@ -1,5 +1,5 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart } from "@tremor/react";
@@ -10,6 +10,7 @@ import { TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { WidgetExportButton } from "../../components/WidgetExportButton";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
 import { registerWidget, type WidgetDescriptor, type WidgetProps } from "../registry";
 
@@ -74,24 +75,32 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 		categories.push(t(DashboardKeys.WIDGET_DELTA_VS_PREV));
 	}
 
+	const exportRows = query.data.buckets.map((b) => ({ date: b.date, revenue: b.amount }));
+
 	return (
-		<LineChart
-			className="h-full"
-			data={chartData}
-			index="date"
-			categories={categories}
-			colors={["blue", "slate"]}
-			valueFormatter={(v) =>
-				new Intl.NumberFormat(i18n.language, {
-					style: "currency",
-					currency: query.data?.currency ?? "USD",
-					maximumFractionDigits: 0,
-				}).format(v)
-			}
-			showLegend={false}
-			showGridLines={false}
-			yAxisWidth={48}
-		/>
+		<div className="h-full flex flex-col">
+			<div className="flex items-center justify-end h-4">
+				<WidgetExportButton filename="revenue-over-time" rows={exportRows} />
+			</div>
+			<LineChart
+				className="flex-1 mt-1"
+				data={chartData}
+				index="date"
+				categories={categories}
+				colors={["blue", "slate"]}
+				valueFormatter={(v) =>
+					new Intl.NumberFormat(i18n.language, {
+						style: "currency",
+						currency: query.data?.currency ?? "USD",
+						notation: "compact",
+						maximumFractionDigits: 1,
+					}).format(v)
+				}
+				showLegend={false}
+				showGridLines={false}
+				yAxisWidth={96}
+			/>
+		</div>
 	);
 }
 

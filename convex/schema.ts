@@ -168,6 +168,8 @@ export default defineSchema({
 		slug: v.string(),
 		description: v.optional(v.string()),
 		currency: v.string(),
+		/** Where dashboard error reports are routed (TAVLI-2). Falls back to the global SUPPORT_EMAIL default when unset. */
+		supportEmail: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		/** Minutes from local midnight (0–1439) when the business “order day” starts; default 240 (04:00) in app logic. */
 		orderDayStartMinutesFromMidnight: v.optional(v.number()),
@@ -354,6 +356,8 @@ export default defineSchema({
 	[TABLE.SESSIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		tableId: v.optional(v.id(TABLE.TABLES)),
+		/** Clerk subject of the diner who owns this session (required for ordering). */
+		userId: v.optional(v.string()),
 		status: v.union(v.literal("active"), v.literal("closed")),
 		startedAt: v.number(),
 		closedAt: v.optional(v.number()),
@@ -361,7 +365,8 @@ export default defineSchema({
 		serverMemberId: v.optional(v.id(TABLE.RESTAURANT_MEMBERS)),
 	})
 		.index("by_table_status", ["tableId", "status"])
-		.index("by_restaurant", ["restaurantId"]),
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_user", ["userId"]),
 
 	[TABLE.ORDERS]: defineTable({
 		sessionId: v.id(TABLE.SESSIONS),
@@ -556,7 +561,7 @@ export default defineSchema({
 		.index("by_restaurant_time", ["restaurantId", "startsAt"])
 		.index("by_restaurant_status_time", ["restaurantId", "status", "startsAt"])
 		.index("by_phone", ["restaurantId", "contact.phone"])
-		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_restaurant_idempotency", ["restaurantId", "idempotencyKey"])
 		.index("by_session", ["sessionId"]),
 
 	// Time-windowed locks marking a table unavailable. Stackable, auditable.
@@ -942,6 +947,7 @@ export default defineSchema({
 		pinSetAt: v.number(),
 		pinResetCount: v.number(),
 		failedPinAttempts: v.number(),
+		lastPinAttemptAt: v.optional(v.number()),
 		lockedUntil: v.optional(v.number()),
 		removedAt: v.optional(v.number()),
 		removedBy: v.optional(v.string()),

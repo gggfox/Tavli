@@ -2,3 +2,12 @@
 @import "./theme.css";
 @import "./base.css";
 @import "./utilities.css";
+
+/* Tremor v3 + Tailwind v4: tremor builds its chart color classes as template
+   literals (`fill-${color}-500`, `dark:fill-${color}-500`, etc.), so Tailwind's
+   content scanner never sees a literal and the donut sectors / line series get
+   no fill. Force-generate the utilities for the SOBER_CHART_COLORS palette
+   (shade 500 = tremor's `background` shade), light + dark variants. Keep the
+   color list in sync with SOBER_CHART_COLORS in features/dashboard/constants. */
+@source inline("{fill,stroke,bg}-{blue,teal,amber,violet,rose,slate}-500");
+@source inline("dark:{fill,stroke,bg}-{blue,teal,amber,violet,rose,slate}-500");
