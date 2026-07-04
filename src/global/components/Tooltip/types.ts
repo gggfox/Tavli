@@ -5,7 +5,7 @@ import type { ReactElement, ReactNode } from "react";
  * The component will automatically flip to the opposite edge if the
  * preferred placement does not fit in the viewport.
  */
-export type TooltipPlacement = "top" | "bottom";
+export type TooltipPlacement = "top" | "bottom" | "left" | "right";
 
 /**
  * Props for the Tooltip component.
@@ -34,6 +34,18 @@ export interface TooltipProps {
 	 * Defaults to `100`. Set to `0` for instant display.
 	 */
 	delay?: number;
+
+	/**
+	 * When set, touch-primary devices (`(hover: none)`) open the tooltip
+	 * via long-press instead of hover/focus. Defaults to `500` when enabled.
+	 */
+	longPressDelay?: number;
+
+	/**
+	 * Inner padding for tooltip content. Use `"none"` for edge-to-edge
+	 * media such as image previews.
+	 */
+	contentPadding?: "default" | "none";
 
 	/**
 	 * When `true`, the tooltip never opens. Useful for conditionally

@@ -3,6 +3,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery, mutation, query } from "./_generated/server";
 import {
+	ConflictError,
+	ConflictErrorObject,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
 	NotAuthorizedErrorObject,
@@ -36,6 +38,52 @@ type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 function tombstoneSlug(restaurantId: Id<"restaurants">, slug: string): string {
 	const safe = slug.replace(/[^a-zA-Z0-9_-]/g, "_");
 	return `${safe}__deleted__${restaurantId}`;
+}
+
+/** Fields safe to expose to anonymous diners (ordering / public reservation pages). */
+export type PublicRestaurant = {
+	_id: Id<"restaurants">;
+	name: string;
+	slug: string;
+	description?: string;
+	currency: string;
+	timezone?: string;
+	openTime?: string;
+	closeTime?: string;
+	defaultLanguage?: string;
+	supportedLanguages?: string[];
+	isActive: boolean;
+};
+
+export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
+	return {
+		_id: r._id,
+		name: r.name,
+		slug: r.slug,
+		description: r.description,
+		currency: r.currency,
+		timezone: r.timezone,
+		openTime: r.openTime,
+		closeTime: r.closeTime,
+		defaultLanguage: r.defaultLanguage,
+		supportedLanguages: r.supportedLanguages,
+		isActive: r.isActive,
+	};
+}
+
+/** Clerk JWT `sub` for a user — prefix `user_` plus base62 id (see Clerk user id format). */
+const CLERK_USER_SUBJECT_PATTERN = /^user_[a-zA-Z0-9]{20,64}$/;
+
+function validateSharedEmployeeClerkSubject(
+	clerkSubject: string
+): UserInputValidationErrorObject | null {
+	const trimmed = clerkSubject.trim();
+	if (!trimmed || !CLERK_USER_SUBJECT_PATTERN.test(trimmed)) {
+		return new UserInputValidationError({
+			fields: [{ field: "clerkSubject", message: "ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT" }],
+		}).toObject();
+	}
+	return null;
 }
 
 export const softDelete = mutation({
@@ -208,6 +256,7 @@ export const update = mutation({
 		slug: v.optional(v.string()),
 		description: v.optional(v.string()),
 		currency: v.optional(v.string()),
+		supportEmail: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		openTime: v.optional(v.string()),
 		closeTime: v.optional(v.string()),
@@ -301,11 +350,27 @@ export const update = mutation({
 			}
 		}
 
+		if (args.supportEmail !== undefined) {
+			const raw = args.supportEmail.trim();
+			// Lightweight shape check — this value feeds a `mailto:` on the client.
+			if (raw.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "supportEmail", message: "Invalid email address" }],
+					}).toObject(),
+				];
+			}
+		}
+
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
 			...(args.slug !== undefined && { slug: args.slug }),
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
+			...(args.supportEmail !== undefined && {
+				supportEmail: args.supportEmail.trim() ? args.supportEmail.trim() : undefined,
+			}),
 			...(args.timezone !== undefined && {
 				timezone: args.timezone.trim() ? args.timezone.trim() : undefined,
 			}),
@@ -400,13 +465,13 @@ export const getManageableForStripe = query({
 
 export const getBySlug = query({
 	args: { slug: v.string() },
-	handler: async (ctx, args) => {
+	handler: async (ctx, args): Promise<PublicRestaurant | null> => {
 		const r = await ctx.db
 			.query(TABLE.RESTAURANTS)
 			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
 			.first();
 		if (!r || r.deletedAt != null) return null;
-		return r;
+		return toPublicRestaurant(r);
 	},
 });
 
@@ -588,15 +653,37 @@ export const setSharedEmployeeSubject = mutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		clerkSubject: v.string(),
 	},
-	handler: async function (ctx, args): AsyncReturn<null, AuthErrors | NotFoundErrorObject> {
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<
+		null,
+		AuthErrors | NotFoundErrorObject | UserInputValidationErrorObject | ConflictErrorObject
+	> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
+
+		const validationError = validateSharedEmployeeClerkSubject(args.clerkSubject);
+		if (validationError) return [null, validationError];
+
+		const clerkSubject = args.clerkSubject.trim();
 
 		const [, permErr] = await requireRestaurantOwnerOrAdmin(ctx, userId, args.restaurantId);
 		if (permErr) return [null, permErr];
 
+		const boundElsewhere = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_shared_employee_subject", (q) =>
+				q.eq("sharedEmployeeClerkSubject", clerkSubject)
+			)
+			.first();
+
+		if (boundElsewhere && boundElsewhere._id !== args.restaurantId) {
+			return [null, new ConflictError("ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND").toObject()];
+		}
+
 		await ctx.db.patch(args.restaurantId, {
-			sharedEmployeeClerkSubject: args.clerkSubject,
+			sharedEmployeeClerkSubject: clerkSubject,
 			...stampUpdated(userId),
 		});
 
@@ -604,7 +691,7 @@ export const setSharedEmployeeSubject = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.sharedEmployeeSubjectSet",
-			payload: { clerkSubject: args.clerkSubject },
+			payload: { clerkSubject },
 			userId,
 		});
 

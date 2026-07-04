@@ -10,8 +10,9 @@ import {
 	type FocusEvent,
 	type MouseEvent,
 	type Ref,
+	type TouchEvent,
 } from "react";
-import { useClickOutside, useEscapeKey } from "@/global/hooks";
+import { useClickOutside, useEscapeKey, useLongPress, useMediaQuery } from "@/global/hooks";
 import type { TooltipPlacement, TooltipProps } from "./types";
 
 const VIEWPORT_GUTTER = 8;
@@ -31,6 +32,11 @@ type TriggerProps = {
 	onMouseLeave?: (event: MouseEvent<HTMLElement>) => void;
 	onFocus?: (event: FocusEvent<HTMLElement>) => void;
 	onBlur?: (event: FocusEvent<HTMLElement>) => void;
+	onTouchStart?: (event: TouchEvent<HTMLElement>) => void;
+	onTouchEnd?: (event: TouchEvent<HTMLElement>) => void;
+	onTouchMove?: (event: TouchEvent<HTMLElement>) => void;
+	onTouchCancel?: (event: TouchEvent<HTMLElement>) => void;
+	onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 };
 
 /**
@@ -53,22 +59,23 @@ export function Tooltip({
 	content,
 	placement = "top",
 	delay = 100,
+	longPressDelay,
+	contentPadding = "default",
 	disabled = false,
 }: Readonly<TooltipProps>) {
-	const [supportsPopover, setSupportsPopover] = useState(false);
+	const [supportsPopover] = useState(
+		() => typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype
+	);
 	const [isOpen, setIsOpen] = useState(false);
 	const [position, setPosition] = useState<ResolvedPosition | null>(null);
+	const hasHover = useMediaQuery("(hover: hover)", () => true);
+	const touchLongPressDelay = longPressDelay ?? 500;
+	const useLongPressTrigger = longPressDelay !== undefined && !hasHover;
 
 	const triggerRef = useRef<HTMLElement | null>(null);
 	const tooltipRef = useRef<HTMLDivElement | null>(null);
 	const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const tooltipId = useId();
-
-	useEffect(() => {
-		setSupportsPopover(
-			typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype
-		);
-	}, []);
 
 	const clearShowTimer = useCallback(() => {
 		if (showTimerRef.current !== null) {
@@ -87,10 +94,23 @@ export function Tooltip({
 		showTimerRef.current = setTimeout(() => setIsOpen(true), delay);
 	}, [disabled, delay, clearShowTimer, supportsPopover]);
 
+	const showImmediate = useCallback(() => {
+		if (disabled || !supportsPopover) return;
+		clearShowTimer();
+		setIsOpen(true);
+	}, [disabled, clearShowTimer, supportsPopover]);
+
 	const hide = useCallback(() => {
 		clearShowTimer();
 		setIsOpen(false);
 	}, [clearShowTimer]);
+
+	const longPressHandlers = useLongPress({
+		onLongPress: showImmediate,
+		onCancel: hide,
+		delay: touchLongPressDelay,
+		disabled: disabled || !useLongPressTrigger || !supportsPopover,
+	});
 
 	const computePosition = useCallback(() => {
 		const trigger = triggerRef.current;
@@ -103,6 +123,7 @@ export function Tooltip({
 		const viewportWidth = globalThis.window.innerWidth;
 
 		let resolved: TooltipPlacement = placement;
+
 		if (resolved === "top" && triggerRect.top - tooltipRect.height - TRIGGER_OFFSET < 0) {
 			resolved = "bottom";
 		} else if (
@@ -110,19 +131,43 @@ export function Tooltip({
 			triggerRect.bottom + tooltipRect.height + TRIGGER_OFFSET > viewportHeight
 		) {
 			resolved = "top";
+		} else if (
+			resolved === "right" &&
+			triggerRect.right + tooltipRect.width + TRIGGER_OFFSET > viewportWidth
+		) {
+			resolved = "left";
+		} else if (resolved === "left" && triggerRect.left - tooltipRect.width - TRIGGER_OFFSET < 0) {
+			resolved = "right";
 		}
 
-		const top =
-			resolved === "top"
-				? triggerRect.top - tooltipRect.height - TRIGGER_OFFSET
-				: triggerRect.bottom + TRIGGER_OFFSET;
+		let top: number;
+		let left: number;
 
-		const triggerCenter = triggerRect.left + triggerRect.width / 2;
-		const minLeft = VIEWPORT_GUTTER;
-		const maxLeft = viewportWidth - tooltipRect.width - VIEWPORT_GUTTER;
-		let left = triggerCenter - tooltipRect.width / 2;
-		if (left < minLeft) left = minLeft;
-		if (left > maxLeft) left = maxLeft;
+		if (resolved === "left" || resolved === "right") {
+			const triggerCenterY = triggerRect.top + triggerRect.height / 2;
+			const minTop = VIEWPORT_GUTTER;
+			const maxTop = viewportHeight - tooltipRect.height - VIEWPORT_GUTTER;
+			top = triggerCenterY - tooltipRect.height / 2;
+			if (top < minTop) top = minTop;
+			if (top > maxTop) top = maxTop;
+
+			left =
+				resolved === "right"
+					? triggerRect.right + TRIGGER_OFFSET
+					: triggerRect.left - tooltipRect.width - TRIGGER_OFFSET;
+		} else {
+			top =
+				resolved === "top"
+					? triggerRect.top - tooltipRect.height - TRIGGER_OFFSET
+					: triggerRect.bottom + TRIGGER_OFFSET;
+
+			const triggerCenter = triggerRect.left + triggerRect.width / 2;
+			const minLeft = VIEWPORT_GUTTER;
+			const maxLeft = viewportWidth - tooltipRect.width - VIEWPORT_GUTTER;
+			left = triggerCenter - tooltipRect.width / 2;
+			if (left < minLeft) left = minLeft;
+			if (left > maxLeft) left = maxLeft;
+		}
 
 		setPosition({ top, left, placement: resolved });
 	}, [placement]);
@@ -192,19 +237,47 @@ export function Tooltip({
 		"aria-describedby": mergedDescribedBy,
 		onMouseEnter: (event: MouseEvent<HTMLElement>) => {
 			childProps.onMouseEnter?.(event);
-			show();
+			if (!useLongPressTrigger) {
+				show();
+			}
 		},
 		onMouseLeave: (event: MouseEvent<HTMLElement>) => {
 			childProps.onMouseLeave?.(event);
-			hide();
+			if (!useLongPressTrigger) {
+				hide();
+			}
 		},
 		onFocus: (event: FocusEvent<HTMLElement>) => {
 			childProps.onFocus?.(event);
-			show();
+			if (!useLongPressTrigger) {
+				show();
+			}
 		},
 		onBlur: (event: FocusEvent<HTMLElement>) => {
 			childProps.onBlur?.(event);
-			hide();
+			if (!useLongPressTrigger) {
+				hide();
+			}
+		},
+		onTouchStart: (event: TouchEvent<HTMLElement>) => {
+			childProps.onTouchStart?.(event);
+			longPressHandlers.onTouchStart(event);
+		},
+		onTouchEnd: (event: TouchEvent<HTMLElement>) => {
+			childProps.onTouchEnd?.(event);
+			longPressHandlers.onTouchEnd();
+		},
+		onTouchMove: (event: TouchEvent<HTMLElement>) => {
+			childProps.onTouchMove?.(event);
+			longPressHandlers.onTouchMove(event);
+		},
+		onTouchCancel: (event: TouchEvent<HTMLElement>) => {
+			childProps.onTouchCancel?.(event);
+			longPressHandlers.onTouchCancel();
+		},
+		onContextMenu: (event: MouseEvent<HTMLElement>) => {
+			childProps.onContextMenu?.(event);
+			longPressHandlers.onContextMenu(event);
 		},
 	});
 
@@ -226,9 +299,10 @@ export function Tooltip({
 						maxWidth: 320,
 						borderRadius: 8,
 						boxShadow: "0 8px 24px rgba(0, 0, 0, 0.25)",
-						padding: "8px 10px",
+						padding: contentPadding === "none" ? 0 : "8px 10px",
 						fontSize: 12,
 						lineHeight: 1.4,
+						overflow: "hidden",
 						visibility: position === null ? "hidden" : "visible",
 					}}
 				>

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ItemEditForm } from "./ItemEditForm";
 import { ItemImageManager } from "./ItemImageManager";
+import { MenuItemImagePreview } from "./MenuItemImagePreview";
 import { ItemOptionGroupPicker } from "./ItemOptionGroupPicker";
 import { ItemOptionsIcon } from "./ItemOptionsIcon";
 
@@ -64,17 +65,7 @@ export function MenuItemRow({
 							aria-label={item.name}
 						/>
 					) : null}
-					{item.imageUrl ? (
-						<img
-							src={item.imageUrl}
-							alt={item.name}
-							className="w-10 h-10 rounded object-cover flex-shrink-0"
-						/>
-					) : (
-						<div className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center bg-muted border border-border">
-							<ImagePlus size={14} className="text-faint-foreground" />
-						</div>
-					)}
+					<MenuItemImagePreview imageUrl={item.imageUrl} itemName={item.name} />
 					<div>
 						<span
 							className="text-sm font-medium"

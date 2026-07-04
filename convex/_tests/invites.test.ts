@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "../constants";
+import { RESTAURANT_MEMBER_ROLE, USER_ROLES, INVITATION_STATUS } from "../constants";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
@@ -554,5 +554,112 @@ describe("restaurantMembers listTeamDirectory", () => {
 		if (!Array.isArray(rows)) throw new Error("expected directory rows");
 		const hit = rows.find((r) => r.rowType === "invite" && r.email === "owner-inv2@example.com");
 		expect(hit).toBeTruthy();
+	});
+});
+
+describe("invites getByTokenPublic", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	async function seedInviteContext(t: ReturnType<typeof convexTest>) {
+		const { orgId, r1 } = await seedOrgAndRestaurants(t);
+		await seedUserRole(t, { userId: "owner1", roles: [USER_ROLES.OWNER], organizationId: orgId });
+		return { orgId, r1, ownerAuthed: t.withIdentity({ subject: "owner1" }) };
+	}
+
+	async function createInviteToken(
+		t: ReturnType<typeof convexTest>,
+		ctx: Awaited<ReturnType<typeof seedInviteContext>>,
+		args: { email: string; status?: string; expiresAt?: number }
+	): Promise<string> {
+		const [inviteId] = await ctx.ownerAuthed.mutation(api.invites.createInvitation, {
+			organizationId: ctx.orgId,
+			email: args.email,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+			restaurantIds: [ctx.r1],
+		});
+		if (!inviteId) throw new Error("expected invite id");
+
+		if (args.status && args.status !== INVITATION_STATUS.PENDING) {
+			await t.run(async (dbCtx) => {
+				await dbCtx.db.patch(inviteId, {
+					status: args.status as "accepted" | "revoked" | "expired",
+				});
+			});
+		}
+		if (args.expiresAt !== undefined) {
+			await t.run(async (dbCtx) => {
+				await dbCtx.db.patch(inviteId, { expiresAt: args.expiresAt });
+			});
+		}
+
+		return await t.run(async (dbCtx) => {
+			const row = await dbCtx.db.get(inviteId);
+			if (!row) throw new Error("invite missing");
+			return row.token;
+		});
+	}
+
+	it("returns masked email for pending non-expired invites", async () => {
+		const t = convexTest(schema, modules);
+		const ctx = await seedInviteContext(t);
+		const token = await createInviteToken(t, ctx, { email: "jane.doe@example.com" });
+		const now = Date.now();
+
+		const preview = await t.query(api.invites.getByTokenPublic, { token, now });
+
+		expect(preview).toMatchObject({
+			email: "j***@example.com",
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+			status: INVITATION_STATUS.PENDING,
+		});
+	});
+
+	it("returns null for accepted, revoked, and expired invitations", async () => {
+		const t = convexTest(schema, modules);
+		const ctx = await seedInviteContext(t);
+		const acceptedToken = await createInviteToken(t, ctx, {
+			email: "accepted@example.com",
+			status: INVITATION_STATUS.ACCEPTED,
+		});
+		const revokedToken = await createInviteToken(t, ctx, {
+			email: "revoked@example.com",
+			status: INVITATION_STATUS.REVOKED,
+		});
+		const expiredToken = await createInviteToken(t, ctx, {
+			email: "expired@example.com",
+			status: INVITATION_STATUS.EXPIRED,
+		});
+		const now = Date.now();
+
+		expect(await t.query(api.invites.getByTokenPublic, { token: acceptedToken, now })).toBeNull();
+		expect(await t.query(api.invites.getByTokenPublic, { token: revokedToken, now })).toBeNull();
+		expect(await t.query(api.invites.getByTokenPublic, { token: expiredToken, now })).toBeNull();
+	});
+
+	it("returns null when a pending invite is past expiresAt", async () => {
+		const t = convexTest(schema, modules);
+		const ctx = await seedInviteContext(t);
+		const token = await createInviteToken(t, ctx, {
+			email: "late@example.com",
+			expiresAt: Date.now() - 1,
+		});
+
+		expect(await t.query(api.invites.getByTokenPublic, { token, now: Date.now() })).toBeNull();
+	});
+
+	it("returns null for unknown tokens", async () => {
+		const t = convexTest(schema, modules);
+		expect(
+			await t.query(api.invites.getByTokenPublic, {
+				token: "00000000-0000-4000-8000-000000000000",
+				now: Date.now(),
+			})
+		).toBeNull();
 	});
 });

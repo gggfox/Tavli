@@ -208,8 +208,9 @@ export function TeamMemberDrawer({
 		setIsUploadingPhoto(true);
 		try {
 			if (row.rowType === "member" && row.kind === "employeeAccount" && row.employeeAccountId) {
+				if (!restaurantId) return;
 				const generateUploadUrl = () =>
-					generateEaUploadUrlMutation({}) as Promise<[string, null] | [null, Error]>;
+					generateEaUploadUrlMutation({ restaurantId }) as Promise<[string, null] | [null, Error]>;
 				const storageId = await uploadImage(generateUploadUrl, file);
 				unwrapResult(
 					await updateEmployeeAccountMutation({

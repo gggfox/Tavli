@@ -86,7 +86,8 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 
 	const themeLabel = theme === "light" ? t(SidebarKeys.DARK_MODE) : t(SidebarKeys.LIGHT_MODE);
 	const ThemeIcon = theme === "light" ? Moon : Sun;
-	const showDevTools = config.isDev && isAuthenticated;
+	const showDevTools =
+		config.isDev && import.meta.env.VITE_DEV_ROLE_SWITCHER_ENABLED === "true" && isAuthenticated;
 
 	return (
 		<Modal

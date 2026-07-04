@@ -484,19 +484,29 @@ export async function verifyEmployeePin(
 		return [null, new NotAuthorizedError("ERROR_PIN_LOCKED").toObject()];
 	}
 
+	let failedAttempts = account.failedPinAttempts;
 	if (account.lockedUntil && now >= account.lockedUntil) {
+		failedAttempts = 0;
 		await ctx.db.patch(employeeAccountId, {
 			failedPinAttempts: 0,
 			lockedUntil: undefined,
+			lastPinAttemptAt: undefined,
 		});
+	} else if (
+		account.lastPinAttemptAt != null &&
+		now - account.lastPinAttemptAt > PIN_LOCKOUT.WINDOW_MS
+	) {
+		failedAttempts = 0;
 	}
 
 	const valid = compareSync(pin, account.pinHash);
 
 	if (!valid) {
-		const attempts =
-			(account.lockedUntil && now >= account.lockedUntil ? 0 : account.failedPinAttempts) + 1;
-		const patch: Record<string, unknown> = { failedPinAttempts: attempts };
+		const attempts = failedAttempts + 1;
+		const patch: Record<string, unknown> = {
+			failedPinAttempts: attempts,
+			lastPinAttemptAt: now,
+		};
 		if (attempts >= PIN_LOCKOUT.MAX_ATTEMPTS) {
 			patch.lockedUntil = now + PIN_LOCKOUT.WINDOW_MS;
 		}
@@ -504,14 +514,30 @@ export async function verifyEmployeePin(
 		return [null, new NotAuthorizedError("ERROR_INVALID_PIN").toObject()];
 	}
 
-	if (account.failedPinAttempts > 0) {
+	if (
+		account.failedPinAttempts > 0 ||
+		account.lockedUntil != null ||
+		account.lastPinAttemptAt != null
+	) {
 		await ctx.db.patch(employeeAccountId, {
 			failedPinAttempts: 0,
 			lockedUntil: undefined,
+			lastPinAttemptAt: undefined,
 		});
 	}
 
 	return [account, null];
+}
+
+/** Largest multiple of 10 below 256 for unbiased digit sampling. */
+const UNBIASED_BYTE_MAX = 256 - (256 % 10);
+
+function randomDigit(): number {
+	const byte = new Uint8Array(1);
+	do {
+		crypto.getRandomValues(byte);
+	} while (byte[0] >= UNBIASED_BYTE_MAX);
+	return byte[0] % 10;
 }
 
 /**
@@ -520,7 +546,7 @@ export async function verifyEmployeePin(
 export function generatePin(): string {
 	const digits: string[] = [];
 	for (let i = 0; i < PIN_LOCKOUT.PIN_LENGTH; i++) {
-		digits.push(String(Math.floor(Math.random() * 10)));
+		digits.push(String(randomDigit()));
 	}
 	return digits.join("");
 }

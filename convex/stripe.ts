@@ -45,8 +45,9 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
-import { fromErrorObject, NotAuthenticatedError } from "./_shared/errors";
+import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
+import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getStripeClient,
 	handleAccountStatusChange,
@@ -331,11 +332,9 @@ export const handleThinEvent = internalAction({
 			);
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		let thinEvent: any;
+		let eventNotification: ReturnType<typeof stripeClient.parseEventNotification>;
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			thinEvent = (stripeClient as any).parseThinEvent(
+			eventNotification = stripeClient.parseEventNotification(
 				args.payloadString,
 				args.signatureHeader,
 				webhookSecret
@@ -345,40 +344,24 @@ export const handleThinEvent = internalAction({
 				"[stripe.handleThinEvent]",
 				buildIntegrationErrorLog(error, {
 					integration: "stripe-connect-webhook",
-					operation: "parseThinEvent",
-				})
-			);
-			throw error;
-		}
-
-		let event: Awaited<ReturnType<typeof stripeClient.v2.core.events.retrieve>>;
-		try {
-			event = await stripeClient.v2.core.events.retrieve(thinEvent.id);
-		} catch (error) {
-			console.error(
-				"[stripe.handleThinEvent]",
-				buildIntegrationErrorLog(error, {
-					integration: "stripe-connect-webhook",
-					operation: "retrieveEvent",
-					eventId: thinEvent.id,
+					operation: "parseEventNotification",
 				})
 			);
 			throw error;
 		}
 
 		try {
-			switch (event.type) {
+			switch (eventNotification.type) {
 				case "v2.core.account[requirements].updated":
 				case "v2.core.account[configuration.recipient].capability_status_updated": {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					const accountId = (event as any).related_object?.id;
+					const accountId = eventNotification.related_object?.id;
 					if (accountId) {
 						await handleAccountStatusChange(ctx, stripeClient, accountId);
 					}
 					break;
 				}
 				default: {
-					console.log(`Unhandled thin event type: ${event.type}`);
+					console.log(`Unhandled thin event type: ${eventNotification.type}`);
 				}
 			}
 		} catch (error) {
@@ -387,8 +370,8 @@ export const handleThinEvent = internalAction({
 				buildIntegrationErrorLog(error, {
 					integration: "stripe-connect-webhook",
 					operation: "processEvent",
-					eventType: event.type,
-					eventId: thinEvent.id,
+					eventType: eventNotification.type,
+					eventId: eventNotification.id,
 				})
 			);
 			throw error;
@@ -606,6 +589,19 @@ export const createPaymentIntent = action({
 		ctx,
 		args
 	): Promise<{ clientSecret: string | null; paymentId: Id<"payments"> }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw fromErrorObject(new NotAuthenticatedError().toObject());
+		}
+
+		const ownedOrderId = await ctx.runQuery(internal.orders.verifyDraftOrderOwnerInternal, {
+			orderId: args.orderId,
+			userId: identity.subject,
+		});
+		if (!ownedOrderId) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.ACCESS_DENIED).toObject());
+		}
+
 		const order: Doc<"orders"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getOrderInternal,
 			{ orderId: args.orderId }

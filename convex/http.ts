@@ -159,19 +159,25 @@ function jsonResponse(payload: unknown, status = 200): Response {
 	});
 }
 
-function isAuthorizedBotRequest(request: Request): boolean {
+const MIN_RESERVATIONS_BOT_TOKEN_LENGTH = 32;
+
+async function sha256Hex(value: string): Promise<string> {
+	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+	return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function isAuthorizedBotRequest(request: Request): Promise<boolean> {
 	const expected = process.env.RESERVATIONS_BOT_TOKEN;
-	if (!expected) return false;
+	if (!expected || expected.length < MIN_RESERVATIONS_BOT_TOKEN_LENGTH) return false;
 	const header = request.headers.get("authorization");
 	if (!header) return false;
 	const [scheme, token] = header.split(" ");
 	if (scheme !== "Bearer" || !token) return false;
-	// Constant-time-ish compare. The token is a shared secret, not a JWT, so
-	// length-equal + char-by-char is sufficient.
-	if (token.length !== expected.length) return false;
+	const [providedHash, expectedHash] = await Promise.all([sha256Hex(token), sha256Hex(expected)]);
+	if (providedHash.length !== expectedHash.length) return false;
 	let mismatch = 0;
-	for (let i = 0; i < token.length; i++) {
-		mismatch |= (token.codePointAt(i) ?? 0) ^ (expected.codePointAt(i) ?? 0);
+	for (let i = 0; i < providedHash.length; i++) {
+		mismatch |= providedHash.charCodeAt(i) ^ expectedHash.charCodeAt(i);
 	}
 	return mismatch === 0;
 }
@@ -180,7 +186,7 @@ http.route({
 	path: "/api/v1/reservations/availability",
 	method: "POST",
 	handler: httpAction(async (ctx, request) => {
-		if (!isAuthorizedBotRequest(request)) return unauthorizedResponse();
+		if (!(await isAuthorizedBotRequest(request))) return unauthorizedResponse();
 		let body: {
 			restaurantId?: string;
 			partySize?: number;
@@ -207,7 +213,7 @@ http.route({
 	path: "/api/v1/reservations",
 	method: "POST",
 	handler: httpAction(async (ctx, request) => {
-		if (!isAuthorizedBotRequest(request)) return unauthorizedResponse();
+		if (!(await isAuthorizedBotRequest(request))) return unauthorizedResponse();
 		let body: {
 			restaurantId?: string;
 			partySize?: number;
@@ -243,7 +249,6 @@ http.route({
 				email: body.contact.email,
 			},
 			source: RESERVATION_SOURCE.WHATSAPP,
-			userId: body.userId,
 			notes: body.notes,
 			idempotencyKey,
 		});
@@ -258,7 +263,7 @@ http.route({
 	pathPrefix: "/api/v1/reservations/cancel/",
 	method: "POST",
 	handler: httpAction(async (_ctx, request) => {
-		if (!isAuthorizedBotRequest(request)) return unauthorizedResponse();
+		if (!(await isAuthorizedBotRequest(request))) return unauthorizedResponse();
 		// Path is /api/v1/reservations/cancel/<reservationId>
 		const url = new URL(request.url);
 		const reservationId = url.pathname.split("/").pop();

@@ -270,7 +270,61 @@ describe("restaurantMembers listOrganizationUsersForRestaurant", () => {
 	});
 });
 
-describe("restaurantMembers addMember reactivate", () => {
+describe("restaurantMembers addMember", () => {
+	it("rejects unknown userId", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
+		await seedUserRole(t, {
+			userId: "owner1",
+			roles: [USER_ROLES.OWNER],
+			organizationId: orgId,
+		});
+
+		const authed = t.withIdentity({ subject: "owner1" });
+		const [id, err] = await authed.mutation(api.restaurantMembers.addMember, {
+			restaurantId,
+			userId: "attacker-fabricated-clerk-subject",
+			role: RESTAURANT_MEMBER_ROLE.MANAGER,
+		});
+
+		expect(id).toBeNull();
+		expect(err).toMatchObject({ name: "NOT_FOUND" });
+	});
+
+	it("rejects userId from another organization", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
+		const otherOrgId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("organizations", {
+				name: "Other Org",
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		await seedUserRole(t, {
+			userId: "owner1",
+			roles: [USER_ROLES.OWNER],
+			organizationId: orgId,
+		});
+		await seedUserRole(t, {
+			userId: "otherOrgUser",
+			roles: [USER_ROLES.EMPLOYEE],
+			organizationId: otherOrgId,
+		});
+
+		const authed = t.withIdentity({ subject: "owner1" });
+		const [id, err] = await authed.mutation(api.restaurantMembers.addMember, {
+			restaurantId,
+			userId: "otherOrgUser",
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+		});
+
+		expect(id).toBeNull();
+		expect(err).toMatchObject({ name: "NOT_FOUND" });
+	});
+
 	it("reactivates inactive membership with new role", async () => {
 		const t = convexTest(schema, modules);
 		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
@@ -311,5 +365,58 @@ describe("restaurantMembers addMember reactivate", () => {
 		const row = await t.run(async (ctx) => ctx.db.get(memberId));
 		expect(row?.isActive).toBe(true);
 		expect(row?.role).toBe(RESTAURANT_MEMBER_ROLE.MANAGER);
+	});
+});
+
+describe("restaurantMembers updateRole authorization", () => {
+	it("rejects when a manager tries to demote a peer manager", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
+		await seedUserRole(t, {
+			userId: "mgr-a",
+			roles: [USER_ROLES.MANAGER],
+			organizationId: orgId,
+		});
+		await seedUserRole(t, {
+			userId: "mgr-b",
+			roles: [USER_ROLES.MANAGER],
+			organizationId: orgId,
+		});
+
+		const peerManagerMemberId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("restaurantMembers", {
+				userId: "mgr-b",
+				restaurantId,
+				organizationId: orgId,
+				role: RESTAURANT_MEMBER_ROLE.MANAGER,
+				isActive: true,
+				addedBy: "seed-owner",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("restaurantMembers", {
+				userId: "mgr-a",
+				restaurantId,
+				organizationId: orgId,
+				role: RESTAURANT_MEMBER_ROLE.MANAGER,
+				isActive: true,
+				addedBy: "seed-owner",
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const manager = t.withIdentity({ subject: "mgr-a" });
+		const [id, err] = await manager.mutation(api.restaurantMembers.updateRole, {
+			memberId: peerManagerMemberId,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+		});
+
+		expect(id).toBeNull();
+		expect(err).toMatchObject({ name: "NOT_AUTHORIZED" });
 	});
 });

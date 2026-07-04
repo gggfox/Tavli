@@ -4,6 +4,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
+	ERROR_NAMES,
+	IdempotencyKeyConflictErrorObject,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
 	NotAuthorizedErrorObject,
@@ -14,7 +16,7 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
-import { isDevEnv } from "./_util/env";
+import { isDevRoleSwitcherEnabled } from "./_util/env";
 import { findExistingEventByKey, findExistingEventByKeyAndType } from "./_util/idempotency";
 import type { UserRoleDoc } from "./constants";
 import { TABLE } from "./constants";
@@ -186,6 +188,7 @@ type CreateUserRoleErrors =
 	| NotAuthenticatedErrorObject
 	| NotAuthorizedErrorObject
 	| NotFoundErrorObject
+	| IdempotencyKeyConflictErrorObject
 	| UserInputValidationErrorObject;
 
 export const createUserRole = mutation({
@@ -257,7 +260,11 @@ export const createUserRole = mutation({
 				args.idempotencyKey
 			);
 
-			if (existingError && existingError.name !== "NOT_FOUND") {
+			if (existingError?.name === ERROR_NAMES.IDEMPOTENCY_KEY_CONFLICT) {
+				return [null, existingError];
+			}
+
+			if (existingError && existingError.name !== ERROR_NAMES.NOT_FOUND) {
 				return [null, existingError];
 			}
 
@@ -373,7 +380,7 @@ export const devSetOwnRoles = mutation({
 		),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, DevSetOwnRolesErrors> {
-		if (!isDevEnv()) {
+		if (!isDevRoleSwitcherEnabled()) {
 			return [null, new NotAuthorizedError(DEV_ONLY_ERROR_MESSAGE).toObject()];
 		}
 

@@ -49,10 +49,11 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	if (query.error) return <WidgetError error={query.error as Error} />;
 	if (!query.data) return <WidgetEmpty />;
 
+	const currency = context.currency ?? "USD";
 	const totalDollars = query.data.totalCents / 100;
 	const formatted = new Intl.NumberFormat(i18n.language, {
 		style: "currency",
-		currency: "USD",
+		currency,
 	}).format(totalDollars);
 
 	let deltaNode: React.ReactNode = null;
@@ -75,7 +76,7 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 						? `${(Math.abs(pct) * 100).toFixed(1)}%`
 						: new Intl.NumberFormat(i18n.language, {
 								style: "currency",
-								currency: "USD",
+								currency,
 							}).format(Math.abs(diff) / 100)}
 				</span>
 				<span className="text-faint-foreground">{t(DashboardKeys.WIDGET_DELTA_VS_PREV)}</span>
@@ -84,10 +85,8 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	}
 
 	return (
-		<div className="h-full flex flex-col justify-between gap-2">
-			<div className="flex items-end gap-3">
-				<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
-			</div>
+		<div className="h-full flex flex-col items-center justify-center gap-2">
+			<span className="text-3xl font-semibold text-foreground tabular-nums">{formatted}</span>
 			{sparkData.length > 0 && (
 				<SparkAreaChart
 					data={sparkData}
