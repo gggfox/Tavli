@@ -245,7 +245,9 @@ export async function createReservationCore(
 	if (args.idempotencyKey) {
 		const existing = await ctx.db
 			.query(TABLE.RESERVATIONS)
-			.withIndex("by_idempotency", (q) => q.eq("idempotencyKey", args.idempotencyKey))
+			.withIndex("by_restaurant_idempotency", (q) =>
+				q.eq("restaurantId", args.restaurantId).eq("idempotencyKey", args.idempotencyKey)
+			)
 			.first();
 		if (existing) return [existing._id, null];
 	}
