@@ -121,6 +121,39 @@ describe("restaurants", () => {
 			expect(restaurant!.isActive).toBe(false);
 		});
 
+		it("does not expose internal fields to anonymous callers", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			await authed.mutation(api.restaurants.create, {
+				name: "Secret Fields",
+				slug: "secret-fields",
+				currency: "USD",
+				organizationId: orgId,
+			});
+
+			await t.run(async (ctx) => {
+				const row = await ctx.db
+					.query("restaurants")
+					.withIndex("by_slug", (q) => q.eq("slug", "secret-fields"))
+					.first();
+				if (!row) throw new Error("missing restaurant");
+				await ctx.db.patch(row._id, {
+					stripeAccountId: "acct_secret",
+					sharedEmployeeClerkSubject: "user_shared123456789012345678",
+				});
+			});
+
+			const restaurant = await t.query(api.restaurants.getBySlug, { slug: "secret-fields" });
+			expect(restaurant).toBeTruthy();
+			expect(restaurant).not.toHaveProperty("ownerId");
+			expect(restaurant).not.toHaveProperty("organizationId");
+			expect(restaurant).not.toHaveProperty("stripeAccountId");
+			expect(restaurant).not.toHaveProperty("sharedEmployeeClerkSubject");
+		});
+
 		it("returns null for a non-existent slug", async () => {
 			const t = convexTest(schema, modules);
 			const result = await t.query(api.restaurants.getBySlug, { slug: "nope" });
