@@ -284,7 +284,7 @@ export const getEmployeePhotoUploadUrl = mutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 	},
-	handler: async function (ctx, args): AsyncReturn<string, AuthErrors> {
+	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 		const [, accessErr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
