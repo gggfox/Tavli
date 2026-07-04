@@ -1,5 +1,5 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -7,8 +7,8 @@ import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { WidgetProps } from "../registry";
 import { WidgetEmpty, WidgetError, WidgetLoading } from "../../components/WidgetStates";
+import type { WidgetProps } from "../registry";
 import type { NumberWithDeltaOptions } from "./schema";
 import { METRIC_LABEL_KEY } from "./schema";
 

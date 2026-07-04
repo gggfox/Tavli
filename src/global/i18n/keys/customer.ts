@@ -4,6 +4,7 @@
 export const CustomerKeys = {
 	MENU: "customer.nav.menu",
 	RESERVE: "customer.nav.reserve",
+	SIGN_IN: "customer.auth.signIn",
 	SIGN_UP: "customer.auth.signUp",
 } as const;
 

@@ -15,6 +15,11 @@ import {
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
 import {
+	requireOwnedActiveSession,
+	requireOwnedOrder,
+	toDinerVisiblePayment,
+} from "./_util/dinerSession";
+import {
 	AUDIT_SYSTEM_USER_ID,
 	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
 	DEFAULT_PREP_STATION,
@@ -44,7 +49,7 @@ import {
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
 // ============================================================================
-// Customer-facing (public, identified by sessionId)
+// Customer-facing (Clerk auth required; session ownership enforced)
 // ============================================================================
 
 export const createDraft = mutation({
@@ -53,10 +58,7 @@ export const createDraft = mutation({
 		tableId: v.id(TABLE.TABLES),
 	},
 	handler: async (ctx, args) => {
-		const session = await ctx.db.get(args.sessionId);
-		if (session?.status !== "active") {
-			throw new NotFoundError("Active session not found");
-		}
+		const session = await requireOwnedActiveSession(ctx, args.sessionId);
 
 		const table = await ctx.db.get(args.tableId);
 		if (!table || !table.isActive || table.restaurantId !== session.restaurantId) {
@@ -97,10 +99,7 @@ export const addItem = mutation({
 	handler: async (ctx, args) => {
 		assertPositiveIntegerQuantity(args.quantity);
 
-		const order = await ctx.db.get(args.orderId);
-		if (order?.status !== "draft") {
-			throw new NotFoundError("Draft order not found");
-		}
+		const order = await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
 
 		const menuItem = await ctx.db.get(args.menuItemId);
 		if (!menuItem) throw new NotFoundError("Menu item not found");
@@ -148,10 +147,7 @@ export const updateItem = mutation({
 			assertPositiveIntegerQuantity(args.quantity);
 		}
 
-		const order = await ctx.db.get(item.orderId);
-		if (order?.status !== "draft") {
-			throw new NotFoundError("Draft order not found");
-		}
+		const order = await requireOwnedOrder(ctx, item.orderId, { draftOnly: true });
 
 		const quantity = args.quantity ?? item.quantity;
 		const selectedOptions =
@@ -181,10 +177,7 @@ export const removeItem = mutation({
 		const item = await ctx.db.get(args.orderItemId);
 		if (!item) throw new NotFoundError("Order item not found");
 
-		const order = await ctx.db.get(item.orderId);
-		if (order?.status !== "draft") {
-			throw new NotFoundError("Draft order not found");
-		}
+		const order = await requireOwnedOrder(ctx, item.orderId, { draftOnly: true });
 
 		await ctx.db.delete(args.orderItemId);
 		await invalidateActivePayment(ctx, order);
@@ -198,10 +191,7 @@ export const submitOrder = mutation({
 		specialInstructions: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const order = await ctx.db.get(args.orderId);
-		if (order?.status !== "draft") {
-			throw new NotFoundError("Draft order not found");
-		}
+		await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
 
 		const items = await ctx.db
 			.query(TABLE.ORDER_ITEMS)
@@ -371,20 +361,24 @@ export const failPayment = internalMutation({
 export const getOrderWithItems = query({
 	args: { orderId: v.id(TABLE.ORDERS) },
 	handler: async (ctx, args) => {
-		const order = await ctx.db.get(args.orderId);
-		if (!order) return null;
+		let order;
+		try {
+			order = await requireOwnedOrder(ctx, args.orderId);
+		} catch {
+			return null;
+		}
 
 		const items = await ctx.db
 			.query(TABLE.ORDER_ITEMS)
 			.withIndex("by_order", (q) => q.eq("orderId", args.orderId))
 			.collect();
 
-		const activePayment = order.activePaymentId ? await ctx.db.get(order.activePaymentId) : null;
+		const activePaymentRaw = order.activePaymentId ? await ctx.db.get(order.activePaymentId) : null;
 
 		return {
 			...order,
 			paymentState: order.paymentState ?? ORDER_PAYMENT_STATE.UNPAID,
-			activePayment,
+			activePayment: toDinerVisiblePayment(activePaymentRaw),
 			items,
 		};
 	},
@@ -393,10 +387,34 @@ export const getOrderWithItems = query({
 export const getOrdersBySession = query({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
 	handler: async (ctx, args) => {
+		try {
+			await requireOwnedActiveSession(ctx, args.sessionId);
+		} catch {
+			return [];
+		}
+
 		return await ctx.db
 			.query(TABLE.ORDERS)
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
 			.collect();
+	},
+});
+
+/** Used by Stripe actions to enforce diner ownership before payment intent creation. */
+export const verifyDraftOrderOwnerInternal = internalQuery({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		userId: v.string(),
+	},
+	returns: v.union(v.id(TABLE.ORDERS), v.null()),
+	handler: async (ctx, args) => {
+		const order = await ctx.db.get(args.orderId);
+		if (!order || order.status !== "draft") return null;
+		const session = await ctx.db.get(order.sessionId);
+		if (!session || session.status !== "active" || session.userId !== args.userId) {
+			return null;
+		}
+		return order._id;
 	},
 });
 

@@ -25,7 +25,7 @@ async function seedOrganization(t: ReturnType<typeof convexTest>) {
 	return organizationId!;
 }
 
-async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>) {
+async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>, dinerId = "diner1") {
 	let restaurantId: Id<"restaurants">;
 	let tableId: Id<"tables">;
 	let sessionId: Id<"sessions">;
@@ -60,16 +60,21 @@ async function seedRestaurantAndSession(t: ReturnType<typeof convexTest>) {
 		sessionId = await ctx.db.insert("sessions", {
 			restaurantId,
 			tableId,
+			userId: dinerId,
 			status: "active",
 			startedAt: Date.now(),
 		});
 	});
+
+	const authed = t.withIdentity({ subject: dinerId });
 
 	return {
 		organizationId: organizationId!,
 		restaurantId: restaurantId!,
 		tableId: tableId!,
 		sessionId: sessionId!,
+		authed,
+		dinerId,
 	};
 }
 
@@ -226,30 +231,30 @@ describe("orders", () => {
 	describe("createDraft", () => {
 		it("creates a draft order for an active session", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId, authed } = await seedRestaurantAndSession(t);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
 			expect(orderId).toBeTruthy();
 		});
 
 		it("returns existing draft if one already exists", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId, authed } = await seedRestaurantAndSession(t);
 
-			const id1 = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			const id2 = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			const id1 = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			const id2 = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
 			expect(id1).toBe(id2);
 		});
 
 		it("throws for a closed session", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId, authed } = await seedRestaurantAndSession(t);
 
 			await t.run(async (ctx) => {
 				await ctx.db.patch(sessionId, { status: "closed", closedAt: Date.now() });
 			});
 
-			await expect(t.mutation(api.orders.createDraft, { sessionId, tableId })).rejects.toThrow(
+			await expect(authed.mutation(api.orders.createDraft, { sessionId, tableId })).rejects.toThrow(
 				"Active session not found"
 			);
 		});
@@ -258,11 +263,11 @@ describe("orders", () => {
 	describe("addItem", () => {
 		it("adds an item to a draft order and recalculates total", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			const itemId = await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			const itemId = await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 2,
@@ -270,7 +275,7 @@ describe("orders", () => {
 			});
 			expect(itemId).toBeTruthy();
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.items).toHaveLength(1);
 			expect(order!.items[0].menuItemName).toBe("Bruschetta");
 			expect(order!.items[0].quantity).toBe(2);
@@ -279,12 +284,12 @@ describe("orders", () => {
 
 		it("recalculates selected option pricing from server-side records", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const { optionGroupId, optionId } = await seedOptionGroupAndOption(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
@@ -299,7 +304,7 @@ describe("orders", () => {
 				],
 			});
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.totalAmount).toBe(1050);
 			expect(order!.items[0].selectedOptions[0].priceModifier).toBe(250);
 			expect(order!.items[0].selectedOptions[0].optionName).toBe("Extra cheese");
@@ -309,12 +314,12 @@ describe("orders", () => {
 			"rejects invalid quantity %s on addItem",
 			async (quantity) => {
 				const t = convexTest(schema, modules);
-				const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+				const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 				const menuItemId = await seedMenuItem(t, restaurantId);
-				const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+				const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
 
 				await expect(
-					t.mutation(api.orders.addItem, {
+					authed.mutation(api.orders.addItem, {
 						orderId,
 						menuItemId,
 						quantity,
@@ -328,10 +333,10 @@ describe("orders", () => {
 	describe("updateItem", () => {
 		it.each([0, -2, 2.5, NaN])("rejects invalid quantity %s on updateItem", async (quantity) => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			const itemId = await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			const itemId = await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
@@ -339,7 +344,7 @@ describe("orders", () => {
 			});
 
 			await expect(
-				t.mutation(api.orders.updateItem, { orderItemId: itemId, quantity })
+				authed.mutation(api.orders.updateItem, { orderItemId: itemId, quantity })
 			).rejects.toMatchObject({ name: ERROR_NAMES.VALIDATION_ERROR });
 		});
 	});
@@ -359,20 +364,20 @@ describe("orders", () => {
 	describe("removeItem", () => {
 		it("removes an item and recalculates total", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			const itemId = await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			const itemId = await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
 
-			await t.mutation(api.orders.removeItem, { orderItemId: itemId });
+			await authed.mutation(api.orders.removeItem, { orderItemId: itemId });
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.items).toHaveLength(0);
 			expect(order!.totalAmount).toBe(0);
 		});
@@ -381,63 +386,63 @@ describe("orders", () => {
 	describe("submitOrder", () => {
 		it("validates the draft order but keeps it in draft status", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
 
-			await t.mutation(api.orders.submitOrder, { orderId });
+			await authed.mutation(api.orders.submitOrder, { orderId });
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.status).toBe("draft");
 		});
 
 		it("saves special instructions", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
 
-			await t.mutation(api.orders.submitOrder, {
+			await authed.mutation(api.orders.submitOrder, {
 				orderId,
 				specialInstructions: "No onions please",
 			});
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.specialInstructions).toBe("No onions please");
 		});
 
 		it("throws when submitting an empty order", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, tableId, authed } = await seedRestaurantAndSession(t);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
 
-			await expect(t.mutation(api.orders.submitOrder, { orderId })).rejects.toThrow(
+			await expect(authed.mutation(api.orders.submitOrder, { orderId })).rejects.toThrow(
 				"items: Order must have at least one item"
 			);
 		});
 
 		it("ignores stale payment confirmations for non-active payment attempts", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
@@ -452,7 +457,7 @@ describe("orders", () => {
 				status: "processing",
 				refundStatus: "none",
 				attemptNumber: 1,
-				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!
+				orderUpdatedAtSnapshot: (await authed.query(api.orders.getOrderWithItems, { orderId }))!
 					.updatedAt,
 			});
 			const secondPaymentId = await t.mutation(internal.stripeHelpers.createPayment, {
@@ -463,7 +468,7 @@ describe("orders", () => {
 				status: "processing",
 				refundStatus: "none",
 				attemptNumber: 2,
-				orderUpdatedAtSnapshot: (await t.query(api.orders.getOrderWithItems, { orderId }))!
+				orderUpdatedAtSnapshot: (await authed.query(api.orders.getOrderWithItems, { orderId }))!
 					.updatedAt,
 			});
 			await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
@@ -478,7 +483,7 @@ describe("orders", () => {
 				stripePaymentIntentId: "pi_stale",
 			});
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.status).toBe("draft");
 			expect(order!.paymentState).toBe("processing");
 
@@ -490,8 +495,13 @@ describe("orders", () => {
 	describe("updateStatus", () => {
 		it("follows valid state transitions", async () => {
 			const t = convexTest(schema, modules);
-			const { organizationId, sessionId, restaurantId, tableId } =
-				await seedRestaurantAndSession(t);
+			const {
+				organizationId,
+				sessionId,
+				restaurantId,
+				tableId,
+				authed: diner,
+			} = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "employee1" });
 
@@ -515,14 +525,14 @@ describe("orders", () => {
 				});
 			});
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+			await diner.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
-			await t.mutation(api.orders.submitOrder, { orderId });
+			await diner.mutation(api.orders.submitOrder, { orderId });
 			await simulatePaymentConfirmation(t, orderId);
 
 			const [, err1] = await authed.mutation(api.orders.updateStatus, {
@@ -543,14 +553,19 @@ describe("orders", () => {
 			});
 			expect(err3).toBeNull();
 
-			const order = await t.query(api.orders.getOrderWithItems, { orderId });
+			const order = await diner.query(api.orders.getOrderWithItems, { orderId });
 			expect(order!.status).toBe("served");
 		});
 
 		it("rejects invalid state transitions", async () => {
 			const t = convexTest(schema, modules);
-			const { organizationId, sessionId, restaurantId, tableId } =
-				await seedRestaurantAndSession(t);
+			const {
+				organizationId,
+				sessionId,
+				restaurantId,
+				tableId,
+				authed: diner,
+			} = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "employee1" });
 
@@ -574,14 +589,14 @@ describe("orders", () => {
 				});
 			});
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+			await diner.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
-			await t.mutation(api.orders.submitOrder, { orderId });
+			await diner.mutation(api.orders.submitOrder, { orderId });
 			await simulatePaymentConfirmation(t, orderId);
 
 			await expect(
@@ -594,17 +609,17 @@ describe("orders", () => {
 
 		it("requires authentication", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
-			await t.mutation(api.orders.submitOrder, { orderId });
+			await authed.mutation(api.orders.submitOrder, { orderId });
 			await simulatePaymentConfirmation(t, orderId);
 
 			const [value, error] = await t.mutation(api.orders.updateStatus, {
@@ -620,8 +635,13 @@ describe("orders", () => {
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
 			try {
 				const t = convexTest(schema, modules);
-				const { organizationId, sessionId, restaurantId, tableId } =
-					await seedRestaurantAndSession(t);
+				const {
+					organizationId,
+					sessionId,
+					restaurantId,
+					tableId,
+					authed: diner,
+				} = await seedRestaurantAndSession(t);
 				const menuItemId = await seedMenuItem(t, restaurantId);
 				const authed = t.withIdentity({ subject: "employee1" });
 
@@ -680,7 +700,7 @@ describe("orders", () => {
 				});
 				expect(err).toBeNull();
 
-				const order = await t.query(api.orders.getOrderWithItems, { orderId: legacyOrderId! });
+				const order = await diner.query(api.orders.getOrderWithItems, { orderId: legacyOrderId! });
 				expect(order!.status).toBe("preparing");
 				expect(order!.dailyOrderNumber).toBe(1);
 				expect(order!.orderServiceDateKey).toBe(getOrderServiceDateKey(Date.now(), "UTC", 240));
@@ -706,8 +726,13 @@ describe("orders", () => {
 	describe("getActiveOrdersByRestaurant", () => {
 		it("returns submitted orders for an authenticated owner", async () => {
 			const t = convexTest(schema, modules);
-			const { organizationId, sessionId, restaurantId, tableId } =
-				await seedRestaurantAndSession(t);
+			const {
+				organizationId,
+				sessionId,
+				restaurantId,
+				tableId,
+				authed: diner,
+			} = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "owner1" });
 
@@ -721,14 +746,14 @@ describe("orders", () => {
 				});
 			});
 
-			const orderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const orderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+			await diner.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId,
 				quantity: 2,
 				selectedOptions: [],
 			});
-			await t.mutation(api.orders.submitOrder, { orderId });
+			await diner.mutation(api.orders.submitOrder, { orderId });
 			await simulatePaymentConfirmation(t, orderId);
 
 			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
@@ -746,8 +771,13 @@ describe("orders", () => {
 
 		it("filters out draft, served, and cancelled orders", async () => {
 			const t = convexTest(schema, modules);
-			const { organizationId, sessionId, restaurantId, tableId } =
-				await seedRestaurantAndSession(t);
+			const {
+				organizationId,
+				sessionId,
+				restaurantId,
+				tableId,
+				authed: diner,
+			} = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
 			const authed = t.withIdentity({ subject: "owner1" });
 
@@ -761,8 +791,8 @@ describe("orders", () => {
 				});
 			});
 
-			const draftOrderId = await t.mutation(api.orders.createDraft, { sessionId, tableId });
-			await t.mutation(api.orders.addItem, {
+			const draftOrderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+			await diner.mutation(api.orders.addItem, {
 				orderId: draftOrderId,
 				menuItemId,
 				quantity: 1,
@@ -1490,19 +1520,20 @@ describe("orders", () => {
 				sessionId: Id<"sessions">;
 				tableId: Id<"tables">;
 				menuItemId: Id<"menuItems">;
-			}
+			},
+			authed: ReturnType<ReturnType<typeof convexTest>["withIdentity"]>
 		) {
-			const orderId = await t.mutation(api.orders.createDraft, {
+			const orderId = await authed.mutation(api.orders.createDraft, {
 				sessionId: args.sessionId,
 				tableId: args.tableId,
 			});
-			await t.mutation(api.orders.addItem, {
+			await authed.mutation(api.orders.addItem, {
 				orderId,
 				menuItemId: args.menuItemId,
 				quantity: 1,
 				selectedOptions: [],
 			});
-			const snap = (await t.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt;
+			const snap = (await authed.query(api.orders.getOrderWithItems, { orderId }))!.updatedAt;
 			const paymentId = await t.mutation(internal.stripeHelpers.createPayment, {
 				restaurantId: args.restaurantId,
 				orderId,
@@ -1525,7 +1556,7 @@ describe("orders", () => {
 		it("assigns 1 then 2 on the same service date and creates a counter row", async () => {
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
 				await ctx.db.patch(restaurantId, {
 					timezone: "UTC",
@@ -1534,33 +1565,41 @@ describe("orders", () => {
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(t, {
-				restaurantId,
-				sessionId,
-				tableId,
-				menuItemId,
-			});
+			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(
+				t,
+				{
+					restaurantId,
+					sessionId,
+					tableId,
+					menuItemId,
+				},
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: paymentId1,
 				stripePaymentIntentId: `pi_${orderId1}`,
 			});
 
 			const expectedKey = getOrderServiceDateKey(Date.now(), "UTC", 240);
-			const o1 = await t.query(api.orders.getOrderWithItems, { orderId: orderId1 });
+			const o1 = await authed.query(api.orders.getOrderWithItems, { orderId: orderId1 });
 			expect(o1!.dailyOrderNumber).toBe(1);
 			expect(o1!.orderServiceDateKey).toBe(expectedKey);
 
-			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(t, {
-				restaurantId,
-				sessionId,
-				tableId,
-				menuItemId,
-			});
+			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(
+				t,
+				{
+					restaurantId,
+					sessionId,
+					tableId,
+					menuItemId,
+				},
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: paymentId2,
 				stripePaymentIntentId: `pi_${orderId2}`,
 			});
-			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
+			const o2 = await authed.query(api.orders.getOrderWithItems, { orderId: orderId2 });
 			expect(o2!.dailyOrderNumber).toBe(2);
 			expect(o2!.orderServiceDateKey).toBe(expectedKey);
 
@@ -1577,7 +1616,7 @@ describe("orders", () => {
 		it("resets sequence when the service date changes", async () => {
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
 				await ctx.db.patch(restaurantId, {
 					timezone: "UTC",
@@ -1586,30 +1625,38 @@ describe("orders", () => {
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(t, {
-				restaurantId,
-				sessionId,
-				tableId,
-				menuItemId,
-			});
+			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(
+				t,
+				{
+					restaurantId,
+					sessionId,
+					tableId,
+					menuItemId,
+				},
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: paymentId1,
 				stripePaymentIntentId: `pi_${orderId1}`,
 			});
 
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 16, 12, 0, 0)));
-			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(t, {
-				restaurantId,
-				sessionId,
-				tableId,
-				menuItemId,
-			});
+			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(
+				t,
+				{
+					restaurantId,
+					sessionId,
+					tableId,
+					menuItemId,
+				},
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: paymentId2,
 				stripePaymentIntentId: `pi_${orderId2}`,
 			});
 
-			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
+			const o2 = await authed.query(api.orders.getOrderWithItems, { orderId: orderId2 });
 			expect(o2!.dailyOrderNumber).toBe(1);
 			expect(o2!.orderServiceDateKey).toBe(getOrderServiceDateKey(Date.now(), "UTC", 240));
 		});
@@ -1617,7 +1664,7 @@ describe("orders", () => {
 		it("keeps the same service date before the UTC cutoff after midnight", async () => {
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
 				await ctx.db.patch(restaurantId, {
 					timezone: "UTC",
@@ -1626,12 +1673,16 @@ describe("orders", () => {
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(t, {
-				restaurantId,
-				sessionId,
-				tableId,
-				menuItemId,
-			});
+			const { orderId: orderId1, paymentId: paymentId1 } = await seedPaymentForOrder(
+				t,
+				{
+					restaurantId,
+					sessionId,
+					tableId,
+					menuItemId,
+				},
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: paymentId1,
 				stripePaymentIntentId: `pi_${orderId1}`,
@@ -1640,18 +1691,22 @@ describe("orders", () => {
 			expect(key15).toBe("2024-06-15");
 
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 16, 2, 0, 0)));
-			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(t, {
-				restaurantId,
-				sessionId,
-				tableId,
-				menuItemId,
-			});
+			const { orderId: orderId2, paymentId: paymentId2 } = await seedPaymentForOrder(
+				t,
+				{
+					restaurantId,
+					sessionId,
+					tableId,
+					menuItemId,
+				},
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: paymentId2,
 				stripePaymentIntentId: `pi_${orderId2}`,
 			});
 
-			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: orderId2 });
+			const o2 = await authed.query(api.orders.getOrderWithItems, { orderId: orderId2 });
 			expect(o2!.orderServiceDateKey).toBe("2024-06-15");
 			expect(o2!.dailyOrderNumber).toBe(2);
 		});
@@ -1659,27 +1714,35 @@ describe("orders", () => {
 		it("monthly (default) keeps incrementing across days within the same month", async () => {
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			// No frequency patch — should default to monthly.
 			await t.run(async (ctx) => {
 				await ctx.db.patch(restaurantId, { timezone: "UTC" });
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const first = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const first = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: first.paymentId,
 				stripePaymentIntentId: `pi_${first.orderId}`,
 			});
 
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 16, 12, 0, 0)));
-			const second = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const second = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: second.paymentId,
 				stripePaymentIntentId: `pi_${second.orderId}`,
 			});
 
-			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: second.orderId });
+			const o2 = await authed.query(api.orders.getOrderWithItems, { orderId: second.orderId });
 			// Counter does NOT reset — same month → number = 2.
 			expect(o2!.dailyOrderNumber).toBe(2);
 			// orderServiceDateKey on the order is still daily, for tip-pool matching.
@@ -1698,7 +1761,7 @@ describe("orders", () => {
 		it("monthly resets the counter when crossing a month boundary", async () => {
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 30, 12, 0, 0)));
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
 				await ctx.db.patch(restaurantId, {
 					timezone: "UTC",
@@ -1707,20 +1770,28 @@ describe("orders", () => {
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const first = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const first = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: first.paymentId,
 				stripePaymentIntentId: `pi_${first.orderId}`,
 			});
 
 			vi.setSystemTime(new Date(Date.UTC(2024, 6, 2, 12, 0, 0)));
-			const second = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const second = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: second.paymentId,
 				stripePaymentIntentId: `pi_${second.orderId}`,
 			});
 
-			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: second.orderId });
+			const o2 = await authed.query(api.orders.getOrderWithItems, { orderId: second.orderId });
 			expect(o2!.dailyOrderNumber).toBe(1);
 			expect(o2!.orderServiceDateKey).toBe("2024-07-02");
 
@@ -1738,7 +1809,7 @@ describe("orders", () => {
 			// 2024-06-12 is Wednesday of ISO week 24.
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 12, 12, 0, 0)));
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			await t.run(async (ctx) => {
 				await ctx.db.patch(restaurantId, {
 					timezone: "UTC",
@@ -1747,7 +1818,11 @@ describe("orders", () => {
 			});
 			const menuItemId = await seedMenuItem(t, restaurantId);
 
-			const first = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const first = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: first.paymentId,
 				stripePaymentIntentId: `pi_${first.orderId}`,
@@ -1755,22 +1830,30 @@ describe("orders", () => {
 
 			// Two days later, still ISO week 24.
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 14, 12, 0, 0)));
-			const second = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const second = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: second.paymentId,
 				stripePaymentIntentId: `pi_${second.orderId}`,
 			});
-			const o2 = await t.query(api.orders.getOrderWithItems, { orderId: second.orderId });
+			const o2 = await authed.query(api.orders.getOrderWithItems, { orderId: second.orderId });
 			expect(o2!.dailyOrderNumber).toBe(2);
 
 			// Jump to the next ISO week (2024-06-17 is Mon of week 25).
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 17, 12, 0, 0)));
-			const third = await seedPaymentForOrder(t, { restaurantId, sessionId, tableId, menuItemId });
+			const third = await seedPaymentForOrder(
+				t,
+				{ restaurantId, sessionId, tableId, menuItemId },
+				authed
+			);
 			await t.mutation(internal.orders.confirmPayment, {
 				paymentId: third.paymentId,
 				stripePaymentIntentId: `pi_${third.orderId}`,
 			});
-			const o3 = await t.query(api.orders.getOrderWithItems, { orderId: third.orderId });
+			const o3 = await authed.query(api.orders.getOrderWithItems, { orderId: third.orderId });
 			expect(o3!.dailyOrderNumber).toBe(1);
 
 			const counter = await t.run(async (ctx) =>
