@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@clerk/shared': ^4.8.1
+  '@clerk/backend': ^3.2.14
+  '@clerk/react': ^6.4.3
+
 importers:
 
   .:
