@@ -99,6 +99,12 @@
 		"onlyBuiltDependencies": [
 			"esbuild"
 		],
+		"auditConfig": {
+			"ignoreGhsas": [
+				"GHSA-3vj8-jmxq-cgj5",
+				"GHSA-22cc-p3c6-wpvm"
+			]
+		},
 		"overrides": {
 			"@clerk/shared": "^4.8.3",
 			"@clerk/backend": "^3.2.14",
@@ -110,8 +116,6 @@
 			"vitest": "^3.2.6",
 			"rollup": ">=4.61.1",
 			"shell-quote": ">=1.8.4",
-			"h3": ">=2.0.1-rc.15",
-			"h3-v2": "npm:h3@2.0.1-rc.22",
 			"defu": ">=6.1.5",
 			"js-cookie": ">=3.0.7",
 			"ws": ">=8.21.0",
