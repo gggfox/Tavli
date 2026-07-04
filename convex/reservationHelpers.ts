@@ -180,18 +180,59 @@ export async function findSuggestedTimes(
 }
 
 export function validateCreateInputs(args: CreateCoreArgs): UserInputValidationErrorObject | null {
-	if (args.partySize < 1) {
+	if (!Number.isInteger(args.partySize) || args.partySize < 1 || args.partySize > MAX_PARTY_SIZE) {
 		return new UserInputValidationError({
-			fields: [{ field: "partySize", message: "Must be at least 1" }],
+			fields: [{ field: "partySize", message: "ERROR_INVALID_PARTY_SIZE" }],
 		}).toObject();
 	}
-	if (!args.contact.name.trim() || !args.contact.phone.trim()) {
+
+	const name = args.contact.name.trim();
+	const phone = args.contact.phone.trim();
+	if (!name || !phone) {
 		return new UserInputValidationError({
 			fields: [
 				{ field: "contact.name", message: "Required" },
 				{ field: "contact.phone", message: "Required" },
 			],
 		}).toObject();
+	}
+	if (name.length > MAX_CONTACT_NAME_LENGTH || phone.length > MAX_PHONE_LENGTH) {
+		return new UserInputValidationError({
+			fields: [{ field: "contact", message: "ERROR_CONTACT_FIELD_TOO_LONG" }],
+		}).toObject();
+	}
+
+	const email = args.contact.email?.trim();
+	if (email) {
+		if (email.length > MAX_EMAIL_LENGTH || !BASIC_EMAIL_PATTERN.test(email)) {
+			return new UserInputValidationError({
+				fields: [{ field: "contact.email", message: "ERROR_INVALID_EMAIL" }],
+			}).toObject();
+		}
+	}
+
+	if (args.notes && args.notes.length > MAX_NOTES_LENGTH) {
+		return new UserInputValidationError({
+			fields: [{ field: "notes", message: "ERROR_NOTES_TOO_LONG" }],
+		}).toObject();
+	}
+
+	return null;
+}
+
+async function assertReservationCreateNotRateLimited(
+	ctx: CreateCoreCtx,
+	restaurantId: Id<typeof TABLE.RESTAURANTS>,
+	phone: string
+): Promise<ConflictErrorObject | null> {
+	const since = Date.now() - RESERVATION_RATE_LIMIT_WINDOW_MS;
+	const recent = await ctx.db
+		.query(TABLE.RESERVATIONS)
+		.withIndex("by_phone", (q) => q.eq("restaurantId", restaurantId).eq("contact.phone", phone))
+		.collect();
+	const count = recent.filter((row) => row.createdAt >= since).length;
+	if (count >= RESERVATION_RATE_LIMIT_MAX) {
+		return new ConflictError("ERROR_RESERVATION_RATE_LIMITED").toObject();
 	}
 	return null;
 }
@@ -242,10 +283,19 @@ export async function createReservationCore(
 		return [null, new NotFoundError("Restaurant not found").toObject()];
 	}
 
+	const rateLimitError = await assertReservationCreateNotRateLimited(
+		ctx,
+		args.restaurantId,
+		args.contact.phone.trim()
+	);
+	if (rateLimitError) return [null, rateLimitError];
+
 	if (args.idempotencyKey) {
 		const existing = await ctx.db
 			.query(TABLE.RESERVATIONS)
-			.withIndex("by_idempotency", (q) => q.eq("idempotencyKey", args.idempotencyKey))
+			.withIndex("by_restaurant_idempotency", (q) =>
+				q.eq("restaurantId", args.restaurantId).eq("idempotencyKey", args.idempotencyKey)
+			)
 			.first();
 		if (existing) return [existing._id, null];
 	}
