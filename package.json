@@ -19,7 +19,7 @@
 	},
 	"dependencies": {
 		"@ai-sdk/openai": "^3.0.64",
-		"@clerk/tanstack-react-start": "^1.0.7",
+		"@clerk/tanstack-react-start": "^1.4.12",
 		"@convex-dev/react-query": "^0.1.0",
 		"@dnd-kit/core": "^6.3.1",
 		"@dnd-kit/sortable": "^10.0.0",
@@ -97,7 +97,12 @@
 	"pnpm": {
 		"onlyBuiltDependencies": [
 			"esbuild"
-		]
+		],
+		"overrides": {
+			"@clerk/shared": "^4.8.1",
+			"@clerk/backend": "^3.2.14",
+			"@clerk/react": "^6.4.3"
+		}
 	},
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx}": [
