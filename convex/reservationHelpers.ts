@@ -38,6 +38,18 @@ type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 /** Minimum reservation length; matches the 15-minute timeline snap grid. */
 export const MIN_RESERVATION_DURATION_MS = 15 * 60_000;
 
+// Abuse-control bounds for the public (unauthenticated) create surface.
+export const MAX_PARTY_SIZE = 50;
+export const MAX_CONTACT_NAME_LENGTH = 120;
+export const MAX_PHONE_LENGTH = 32;
+export const MAX_EMAIL_LENGTH = 254;
+export const MAX_NOTES_LENGTH = 1000;
+/** Loose shape check only — deliverability is verified via confirmation email. */
+export const BASIC_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Max reservations per phone number per restaurant within the window. */
+export const RESERVATION_RATE_LIMIT_MAX = 5;
+export const RESERVATION_RATE_LIMIT_WINDOW_MS = 60 * 60_000;
+
 export function validateReservationWindow(
 	startsAt: number,
 	endsAt: number
