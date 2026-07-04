@@ -4,14 +4,16 @@
  *
  * All queries/mutations in this module are gated by
  * `requireSharedEmployeeSession` — only the per-restaurant shared Clerk
- * identity can call them. Data-specific endpoints additionally require
- * PIN verification via `verifyEmployeePin`.
+ * identity can call them. PIN-gated reads use mutations so failed attempts
+ * persist lockout state via `verifyEmployeePin`.
  */
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
@@ -21,6 +23,49 @@ import { requireSharedEmployeeSession, verifyEmployeePin } from "./_util/auth";
 import { ATTENDANCE_STATUS, CLOCK_EVENT_SOURCE, CLOCK_EVENT_TYPE, TABLE } from "./constants";
 
 type SharedErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
+
+type PinVerifiedEmployee = {
+	account: Doc<"employeeAccounts">;
+	memberId: Id<"restaurantMembers">;
+};
+
+function assertShiftBelongsToMember(
+	shift: Doc<"shifts">,
+	memberId: Id<"restaurantMembers">,
+	restaurantId: Id<"restaurants">
+): NotAuthorizedErrorObject | null {
+	if (shift.memberId !== memberId || shift.restaurantId !== restaurantId) {
+		return new NotAuthorizedError().toObject();
+	}
+	return null;
+}
+
+async function verifySharedEmployeePinStepUp(
+	ctx: MutationCtx,
+	restaurantId: Id<"restaurants">,
+	employeeAccountId: Id<"employeeAccounts">,
+	pin: string
+): AsyncReturn<PinVerifiedEmployee, SharedErrors> {
+	const [, sessErr] = await requireSharedEmployeeSession(ctx, restaurantId);
+	if (sessErr) return [null, sessErr];
+
+	const [account, pinErr] = await verifyEmployeePin(ctx, employeeAccountId, pin);
+	if (pinErr) return [null, pinErr];
+
+	if (account.restaurantId !== restaurantId) {
+		return [null, new NotFoundError("Employee account not found").toObject()];
+	}
+
+	const memberRow = await ctx.db
+		.query(TABLE.RESTAURANT_MEMBERS)
+		.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", employeeAccountId))
+		.first();
+	if (!memberRow) {
+		return [null, new NotFoundError("Membership not found").toObject()];
+	}
+
+	return [{ account, memberId: memberRow._id }, null];
+}
 
 export const listDirectoryForSharedSession = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
@@ -87,7 +132,7 @@ export const listDirectoryForSharedSession = query({
 	},
 });
 
-export const getOwnTipsWithPin = query({
+export const getOwnTipsWithPin = mutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		employeeAccountId: v.id(TABLE.EMPLOYEE_ACCOUNTS),
@@ -96,35 +141,14 @@ export const getOwnTipsWithPin = query({
 		toBusinessDate: v.string(),
 	},
 	handler: async (ctx, args) => {
-		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
-		if (sessErr) return [null, sessErr];
-
-		// PIN verification requires write access; queries are read-only.
-		// We validate by comparing the hash directly (read-only check).
-		const account = await ctx.db.get(args.employeeAccountId);
-		if (!account || account.removedAt != null) {
-			return [null, new NotFoundError("Employee account not found").toObject()];
-		}
-		if (account.restaurantId !== args.restaurantId) {
-			return [null, new NotFoundError("Employee account not found").toObject()];
-		}
-
-		const { compareSync } = await import("bcryptjs");
-		const now = Date.now();
-		if (account.lockedUntil && now < account.lockedUntil) {
-			return [null, { name: "NOT_AUTHORIZED" as const, message: "ERROR_PIN_LOCKED" }];
-		}
-		if (!compareSync(args.pin, account.pinHash)) {
-			return [null, { name: "NOT_AUTHORIZED" as const, message: "ERROR_INVALID_PIN" }];
-		}
-
-		const memberRow = await ctx.db
-			.query(TABLE.RESTAURANT_MEMBERS)
-			.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", args.employeeAccountId))
-			.first();
-		if (!memberRow) {
-			return [null, new NotFoundError("Membership not found").toObject()];
-		}
+		const [verified, verifyErr] = await verifySharedEmployeePinStepUp(
+			ctx,
+			args.restaurantId,
+			args.employeeAccountId,
+			args.pin
+		);
+		if (verifyErr) return [null, verifyErr];
+		const { memberId } = verified;
 
 		const pools = await ctx.db
 			.query(TABLE.TIP_POOLS)
@@ -148,7 +172,7 @@ export const getOwnTipsWithPin = query({
 			const share = await ctx.db
 				.query(TABLE.TIP_POOL_SHARES)
 				.withIndex("by_pool", (q) => q.eq("poolId", pool._id))
-				.filter((q) => q.eq(q.field("memberId"), memberRow._id))
+				.filter((q) => q.eq(q.field("memberId"), memberId))
 				.first();
 			if (!share) continue;
 			totalCents += share.amountCents;
@@ -166,7 +190,7 @@ export const getOwnTipsWithPin = query({
 	},
 });
 
-export const getOwnAttendanceWithPin = query({
+export const getOwnAttendanceWithPin = mutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		employeeAccountId: v.id(TABLE.EMPLOYEE_ACCOUNTS),
@@ -175,35 +199,19 @@ export const getOwnAttendanceWithPin = query({
 		toMs: v.number(),
 	},
 	handler: async (ctx, args) => {
-		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
-		if (sessErr) return [null, sessErr];
-
-		const account = await ctx.db.get(args.employeeAccountId);
-		if (!account || account.removedAt != null || account.restaurantId !== args.restaurantId) {
-			return [null, new NotFoundError("Employee account not found").toObject()];
-		}
-
-		const { compareSync } = await import("bcryptjs");
-		const now = Date.now();
-		if (account.lockedUntil && now < account.lockedUntil) {
-			return [null, { name: "NOT_AUTHORIZED" as const, message: "ERROR_PIN_LOCKED" }];
-		}
-		if (!compareSync(args.pin, account.pinHash)) {
-			return [null, { name: "NOT_AUTHORIZED" as const, message: "ERROR_INVALID_PIN" }];
-		}
-
-		const memberRow = await ctx.db
-			.query(TABLE.RESTAURANT_MEMBERS)
-			.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", args.employeeAccountId))
-			.first();
-		if (!memberRow) {
-			return [null, new NotFoundError("Membership not found").toObject()];
-		}
+		const [verified, verifyErr] = await verifySharedEmployeePinStepUp(
+			ctx,
+			args.restaurantId,
+			args.employeeAccountId,
+			args.pin
+		);
+		if (verifyErr) return [null, verifyErr];
+		const { memberId } = verified;
 
 		const clockEvents = await ctx.db
 			.query(TABLE.CLOCK_EVENTS)
 			.withIndex("by_member_time", (q) =>
-				q.eq("memberId", memberRow._id).gte("at", args.fromMs).lte("at", args.toMs)
+				q.eq("memberId", memberId).gte("at", args.fromMs).lte("at", args.toMs)
 			)
 			.collect();
 
@@ -232,7 +240,7 @@ export const getOwnAttendanceWithPin = query({
 	},
 });
 
-export const getOwnScheduleWithPin = query({
+export const getOwnScheduleWithPin = mutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		employeeAccountId: v.id(TABLE.EMPLOYEE_ACCOUNTS),
@@ -241,36 +249,18 @@ export const getOwnScheduleWithPin = query({
 		toMs: v.number(),
 	},
 	handler: async (ctx, args) => {
-		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
-		if (sessErr) return [null, sessErr];
-
-		const account = await ctx.db.get(args.employeeAccountId);
-		if (!account || account.removedAt != null || account.restaurantId !== args.restaurantId) {
-			return [null, new NotFoundError("Employee account not found").toObject()];
-		}
-
-		const { compareSync } = await import("bcryptjs");
-		const now = Date.now();
-		if (account.lockedUntil && now < account.lockedUntil) {
-			return [null, { name: "NOT_AUTHORIZED" as const, message: "ERROR_PIN_LOCKED" }];
-		}
-		if (!compareSync(args.pin, account.pinHash)) {
-			return [null, { name: "NOT_AUTHORIZED" as const, message: "ERROR_INVALID_PIN" }];
-		}
-
-		const memberRow = await ctx.db
-			.query(TABLE.RESTAURANT_MEMBERS)
-			.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", args.employeeAccountId))
-			.first();
-		if (!memberRow) {
-			return [null, new NotFoundError("Membership not found").toObject()];
-		}
+		const [verified, verifyErr] = await verifySharedEmployeePinStepUp(
+			ctx,
+			args.restaurantId,
+			args.employeeAccountId,
+			args.pin
+		);
+		if (verifyErr) return [null, verifyErr];
+		const { memberId } = verified;
 
 		const shifts = await ctx.db
 			.query(TABLE.SHIFTS)
-			.withIndex("by_member_time", (q) =>
-				q.eq("memberId", memberRow._id).gte("startsAt", args.fromMs)
-			)
+			.withIndex("by_member_time", (q) => q.eq("memberId", memberId).gte("startsAt", args.fromMs))
 			.filter((q) => q.lte(q.field("startsAt"), args.toMs))
 			.collect();
 
@@ -294,20 +284,15 @@ export const selfClockInWithPin = mutation({
 		shiftId: v.optional(v.id(TABLE.SHIFTS)),
 	},
 	handler: async function (ctx, args): AsyncReturn<Id<"clockEvents">, SharedErrors> {
-		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
-		if (sessErr) return [null, sessErr];
+		const [verified, verifyErr] = await verifySharedEmployeePinStepUp(
+			ctx,
+			args.restaurantId,
+			args.employeeAccountId,
+			args.pin
+		);
+		if (verifyErr) return [null, verifyErr];
 
-		const [account, pinErr] = await verifyEmployeePin(ctx, args.employeeAccountId, args.pin);
-		if (pinErr) return [null, pinErr];
-
-		if (account.restaurantId !== args.restaurantId) {
-			return [null, new NotFoundError("Employee account not found").toObject()];
-		}
-
-		const memberRow = await ctx.db
-			.query(TABLE.RESTAURANT_MEMBERS)
-			.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", args.employeeAccountId))
-			.first();
+		const memberRow = await ctx.db.get(verified.memberId);
 		if (!memberRow?.isActive) {
 			return [null, new NotFoundError("Membership not found").toObject()];
 		}
@@ -325,30 +310,37 @@ export const selfClockInWithPin = mutation({
 
 		if (args.shiftId) {
 			const shift = await ctx.db.get(args.shiftId);
-			if (shift) {
-				const shiftId = args.shiftId;
-				const lateMinutes = Math.max(0, Math.round((now - shift.startsAt) / 60_000));
-				const existing = await ctx.db
-					.query(TABLE.SHIFT_ATTENDANCE)
-					.withIndex("by_shift", (q) => q.eq("shiftId", shiftId))
-					.first();
-				const patch = {
-					shiftId: args.shiftId,
-					restaurantId: args.restaurantId,
-					memberId: memberRow._id,
-					status: ATTENDANCE_STATUS.PRESENT,
-					scheduledStart: shift.startsAt,
-					scheduledEnd: shift.endsAt,
-					actualStart: now,
-					lateMinutes,
-					earlyDepartureMinutes: 0,
-					lastComputedAt: now,
-				};
-				if (existing) {
-					await ctx.db.patch(existing._id, patch);
-				} else {
-					await ctx.db.insert(TABLE.SHIFT_ATTENDANCE, patch);
-				}
+			if (!shift) {
+				return [null, new NotFoundError("Shift not found").toObject()];
+			}
+			const scopeErr = assertShiftBelongsToMember(shift, memberRow._id, args.restaurantId);
+			if (scopeErr) return [null, scopeErr];
+
+			const shiftId = args.shiftId;
+			const lateMinutes = Math.max(0, Math.round((now - shift.startsAt) / 60_000));
+			const existing = await ctx.db
+				.query(TABLE.SHIFT_ATTENDANCE)
+				.withIndex("by_shift", (q) => q.eq("shiftId", shiftId))
+				.first();
+			if (existing && existing.memberId !== memberRow._id) {
+				return [null, new NotAuthorizedError().toObject()];
+			}
+			const patch = {
+				shiftId: args.shiftId,
+				restaurantId: args.restaurantId,
+				memberId: memberRow._id,
+				status: ATTENDANCE_STATUS.PRESENT,
+				scheduledStart: shift.startsAt,
+				scheduledEnd: shift.endsAt,
+				actualStart: now,
+				lateMinutes,
+				earlyDepartureMinutes: 0,
+				lastComputedAt: now,
+			};
+			if (existing) {
+				await ctx.db.patch(existing._id, patch);
+			} else {
+				await ctx.db.insert(TABLE.SHIFT_ATTENDANCE, patch);
 			}
 		}
 
@@ -365,20 +357,15 @@ export const selfClockOutWithPin = mutation({
 		reason: v.optional(v.string()),
 	},
 	handler: async function (ctx, args): AsyncReturn<Id<"clockEvents">, SharedErrors> {
-		const [, sessErr] = await requireSharedEmployeeSession(ctx, args.restaurantId);
-		if (sessErr) return [null, sessErr];
+		const [verified, verifyErr] = await verifySharedEmployeePinStepUp(
+			ctx,
+			args.restaurantId,
+			args.employeeAccountId,
+			args.pin
+		);
+		if (verifyErr) return [null, verifyErr];
 
-		const [account, pinErr] = await verifyEmployeePin(ctx, args.employeeAccountId, args.pin);
-		if (pinErr) return [null, pinErr];
-
-		if (account.restaurantId !== args.restaurantId) {
-			return [null, new NotFoundError("Employee account not found").toObject()];
-		}
-
-		const memberRow = await ctx.db
-			.query(TABLE.RESTAURANT_MEMBERS)
-			.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", args.employeeAccountId))
-			.first();
+		const memberRow = await ctx.db.get(verified.memberId);
 		if (!memberRow?.isActive) {
 			return [null, new NotFoundError("Membership not found").toObject()];
 		}
@@ -396,6 +383,13 @@ export const selfClockOutWithPin = mutation({
 		});
 
 		if (args.shiftId) {
+			const shift = await ctx.db.get(args.shiftId);
+			if (!shift) {
+				return [null, new NotFoundError("Shift not found").toObject()];
+			}
+			const scopeErr = assertShiftBelongsToMember(shift, memberRow._id, args.restaurantId);
+			if (scopeErr) return [null, scopeErr];
+
 			const shiftId = args.shiftId;
 			const attendance = await ctx.db
 				.query(TABLE.SHIFT_ATTENDANCE)

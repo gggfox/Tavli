@@ -119,3 +119,27 @@ input[type="number"].number-input::-webkit-inner-spin-button {
 	border-color: var(--border-default) !important;
 	color: var(--text-primary) !important;
 }
+
+/* The DonutChart center label uses tremor's `fill-tremor-content-emphasis`
+   theme token, which isn't configured in this project (no tremor Tailwind
+   theme), so the text falls back to black and is unreadable on the dark card.
+   Give any tremor content-emphasis SVG label a legible fill in both themes. */
+[class*="tremor-content-emphasis"] {
+	fill: var(--text-primary);
+}
+
+/* The tremor chart tooltip wrapper uses unthemed tokens too
+   (`bg-tremor-background`, `border-tremor-border`), so it floats with no
+   background/border and is unreadable over a chart. Give it a solid elevated
+   surface; `--bg-elevated` / `--border-default` are theme-aware. */
+[class~="bg-tremor-background"] {
+	background-color: var(--bg-elevated);
+	border-color: var(--border-default);
+}
+
+/* Hide the colored swatch in chart tooltips (tremor's `ChartTooltipRow` dot),
+   leaving just the label + value. Scoped to the tooltip frame so chart legends
+   elsewhere are unaffected. */
+[class~="bg-tremor-background"] [class~="rounded-tremor-full"] {
+	display: none;
+}

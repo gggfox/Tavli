@@ -201,20 +201,57 @@ export const setMenuTranslation = mutation({
 	},
 });
 
+/** Public read: active menus only. Staff management uses `listForRestaurant`. */
 export const getMenuById = query({
 	args: { menuId: v.id(TABLE.MENUS) },
 	handler: async (ctx, args) => {
-		return await ctx.db.get(args.menuId);
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu?.isActive) return null;
+		return menu;
 	},
 });
 
+/** Public read: active menus only. Staff management uses `listForRestaurant`. */
 export const getMenusByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args) => {
+		const menus = await ctx.db
+			.query(TABLE.MENUS)
+			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.collect();
+		return menus.filter((menu) => menu.isActive);
+	},
+});
+
+/** Staff read: all menus for a restaurant, including inactive. */
+export const listForRestaurant = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [];
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [];
+
 		return await ctx.db
 			.query(TABLE.MENUS)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
+	},
+});
+
+/** Staff read: any menu by id, including inactive. */
+export const getByIdForStaff = query({
+	args: { menuId: v.id(TABLE.MENUS) },
+	handler: async (ctx, args) => {
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu) return null;
+
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return null;
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, menu.restaurantId);
+		if (error2) return null;
+
+		return menu;
 	},
 });
 
@@ -451,9 +488,32 @@ export const setCategoryTranslation = mutation({
 	},
 });
 
+/** Public read: categories only when the parent menu is active. */
 export const getCategoriesByMenu = query({
 	args: { menuId: v.id(TABLE.MENUS) },
 	handler: async (ctx, args) => {
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu?.isActive) return [];
+
+		return await ctx.db
+			.query(TABLE.MENU_CATEGORIES)
+			.withIndex("by_menu", (q) => q.eq("menuId", args.menuId))
+			.collect();
+	},
+});
+
+/** Staff read: categories for any menu, including inactive. */
+export const listCategoriesForMenu = query({
+	args: { menuId: v.id(TABLE.MENUS) },
+	handler: async (ctx, args) => {
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu) return [];
+
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [];
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, menu.restaurantId);
+		if (error2) return [];
+
 		return await ctx.db
 			.query(TABLE.MENU_CATEGORIES)
 			.withIndex("by_menu", (q) => q.eq("menuId", args.menuId))

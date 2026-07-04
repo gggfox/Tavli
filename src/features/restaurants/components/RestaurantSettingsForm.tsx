@@ -63,6 +63,7 @@ interface RestaurantSettingsFormProps {
 		slug: string;
 		description?: string;
 		currency: string;
+		supportEmail?: string;
 		timezone?: string;
 		openTime?: string;
 		closeTime?: string;
@@ -96,6 +97,7 @@ export function RestaurantSettingsForm({
 			name: restaurant?.name ?? "",
 			slug: restaurant?.slug ?? "",
 			description: restaurant?.description ?? "",
+			supportEmail: restaurant?.supportEmail ?? "",
 			currency: restaurant?.currency ?? "MXN",
 			timezone: restaurant?.timezone ?? DEFAULT_RESTAURANT_TIMEZONE,
 			openTime: restaurant?.openTime ?? "10:00",
@@ -111,6 +113,7 @@ export function RestaurantSettingsForm({
 				name: value.name,
 				slug: value.slug,
 				description: value.description || undefined,
+				supportEmail: value.supportEmail || undefined,
 				currency: value.currency,
 				timezone: value.timezone || undefined,
 				openTime: value.openTime || undefined,
@@ -255,6 +258,31 @@ export function RestaurantSettingsForm({
 							rows={3}
 							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
 						/>
+					</div>
+				)}
+			/>
+
+			<form.Field
+				name="supportEmail"
+				children={(field) => (
+					<div>
+						<label
+							htmlFor="restaurant-support-email"
+							className="block text-sm font-medium mb-1 text-foreground"
+						>
+							{t(RestaurantsKeys.FORM_SUPPORT_EMAIL_LABEL)}
+						</label>
+						<input
+							id="restaurant-support-email"
+							type="email"
+							value={field.state.value}
+							onChange={(e) => field.handleChange(e.target.value)}
+							onBlur={field.handleBlur}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+						/>
+						<p className="mt-1 text-xs text-faint-foreground">
+							{t(RestaurantsKeys.FORM_SUPPORT_EMAIL_HINT)}
+						</p>
 					</div>
 				)}
 			/>

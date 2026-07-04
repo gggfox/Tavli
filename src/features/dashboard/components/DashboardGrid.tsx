@@ -26,6 +26,7 @@ interface DashboardGridProps {
 	readonly config: DashboardLayoutConfig;
 	readonly scopeKind: DashboardScopeKind;
 	readonly restaurantId: string | null;
+	readonly currency: string | null;
 	readonly editing: boolean;
 	readonly onLayoutChange?: (next: Layout) => void;
 	readonly onRemoveWidget?: (instanceId: string) => void;
@@ -39,6 +40,7 @@ export function DashboardGrid({
 	config,
 	scopeKind,
 	restaurantId,
+	currency,
 	editing,
 	onLayoutChange,
 	onRemoveWidget,
@@ -118,6 +120,7 @@ export function DashboardGrid({
 								widget,
 								scopeKind,
 								restaurantId,
+								currency,
 								baseRange,
 								compareRange,
 								compareToPrev: config.compareToPrev,
@@ -136,6 +139,7 @@ interface RenderWidgetItemArgs {
 	widget: DashboardWidgetInstance;
 	scopeKind: DashboardScopeKind;
 	restaurantId: string | null;
+	currency: string | null;
 	baseRange: ResolvedRange;
 	compareRange: ResolvedRange | null;
 	compareToPrev: boolean;
@@ -147,6 +151,7 @@ function renderWidgetItem({
 	widget,
 	scopeKind,
 	restaurantId,
+	currency,
 	baseRange,
 	compareRange,
 	compareToPrev,
@@ -175,6 +180,7 @@ function renderWidgetItem({
 	const context: WidgetRenderContext = {
 		scopeKind,
 		restaurantId,
+		currency,
 		range,
 		comparisonRange: widgetCompareRange,
 		compareToPrev,

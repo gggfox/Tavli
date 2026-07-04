@@ -1,6 +1,6 @@
 import { restoreSession, useSessionStore } from "@/features/ordering";
 import { CustomerKeys, OrderingKeys } from "@/global/i18n";
-import { SignUpButton, useAuth } from "@clerk/tanstack-react-start";
+import { SignInButton, SignUpButton, useAuth } from "@clerk/tanstack-react-start";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -13,8 +13,8 @@ import {
 } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { CalendarClock, Receipt, UserPlus, UtensilsCrossed } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CalendarClock, LogIn, Receipt, UserPlus, UtensilsCrossed } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 function getSessionErrorKey(err: unknown): string {
@@ -24,6 +24,9 @@ function getSessionErrorKey(err: unknown): string {
 
 	if (raw.includes("Restaurant not found")) {
 		return OrderingKeys.SESSION_ERROR_NOT_FOUND;
+	}
+	if (raw.includes("NOT_AUTHENTICATED")) {
+		return OrderingKeys.SESSION_SIGN_IN_REQUIRED;
 	}
 	return OrderingKeys.SESSION_ERROR_GENERIC;
 }
@@ -35,26 +38,61 @@ export const Route = createFileRoute("/r/$slug")({
 function CustomerLayout() {
 	const { t } = useTranslation();
 	const { slug } = Route.useParams();
-	const { sessionId, setSession } = useSessionStore();
+	const { isLoaded, isSignedIn } = useAuth();
+	const { sessionId, setSession, clearSession } = useSessionStore();
 	const [errorKey, setErrorKey] = useState<string | null>(null);
+	const [creatingSession, setCreatingSession] = useState(false);
 
 	const createSession = useMutation({
 		mutationFn: useConvexMutation(api.sessions.create),
 	});
 
-	useEffect(() => {
-		if (sessionId) return;
+	const restoredFromStorage = useMemo(
+		() => (!sessionId && isSignedIn ? restoreSession() : null),
+		[sessionId, isSignedIn]
+	);
 
-		const restored = restoreSession();
-		if (restored) {
-			setSession(restored);
+	const { data: restoredSession, isPending: validatingRestore } = useQuery({
+		...convexQuery(
+			api.sessions.getActive,
+			restoredFromStorage?.sessionId
+				? { sessionId: restoredFromStorage.sessionId as Id<"sessions"> }
+				: "skip"
+		),
+		enabled: isLoaded && isSignedIn && !sessionId && !!restoredFromStorage?.sessionId,
+	});
+
+	useEffect(() => {
+		if (!isLoaded) return;
+
+		if (!isSignedIn) {
+			clearSession();
+			setErrorKey(null);
 			return;
 		}
 
+		if (sessionId) return;
+
+		if (restoredFromStorage && validatingRestore) return;
+
+		if (restoredFromStorage && restoredSession) {
+			setSession({
+				sessionId: restoredSession._id,
+				restaurantId: restoredSession.restaurantId,
+			});
+			return;
+		}
+
+		if (restoredFromStorage && restoredSession === null) {
+			clearSession();
+		}
+
+		if (creatingSession) return;
+
+		setCreatingSession(true);
+		setErrorKey(null);
 		createSession
-			.mutateAsync({
-				restaurantSlug: slug,
-			})
+			.mutateAsync({ restaurantSlug: slug })
 			.then((result) => {
 				setSession({
 					sessionId: result.sessionId,
@@ -63,8 +101,72 @@ function CustomerLayout() {
 			})
 			.catch((err: unknown) => {
 				setErrorKey(getSessionErrorKey(err));
+			})
+			.finally(() => {
+				setCreatingSession(false);
 			});
-	}, [slug]);
+	}, [
+		isLoaded,
+		isSignedIn,
+		slug,
+		sessionId,
+		restoredFromStorage,
+		restoredSession,
+		validatingRestore,
+		creatingSession,
+		setSession,
+		clearSession,
+		createSession,
+	]);
+
+	if (!isLoaded) {
+		return (
+			<div className="flex-1 flex items-center justify-center p-6">
+				<p className="text-sm text-muted-foreground">{t(OrderingKeys.SESSION_NO_SESSION)}</p>
+			</div>
+		);
+	}
+
+	if (!isSignedIn) {
+		return (
+			<div className="flex-1 flex flex-col min-h-0">
+				<header className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-border bg-muted">
+					<CustomerNavTabs slug={slug} />
+					<CustomerAuthAction forceShow />
+				</header>
+				<div className="flex-1 flex items-center justify-center p-6">
+					<div className="text-center max-w-sm space-y-4">
+						<h1 className="text-xl font-semibold text-foreground">
+							{t(OrderingKeys.SESSION_SIGN_IN_REQUIRED)}
+						</h1>
+						<p className="text-sm text-muted-foreground">
+							{t(OrderingKeys.SESSION_SIGN_IN_PROMPT)}
+						</p>
+						<div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+							<SignInButton mode="redirect">
+								<button
+									type="button"
+									className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium hover-btn-primary transition-colors"
+								>
+									<LogIn size={16} />
+									{t(CustomerKeys.SIGN_IN)}
+								</button>
+							</SignInButton>
+							<SignUpButton mode="redirect">
+								<button
+									type="button"
+									className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium border border-border hover-secondary transition-colors"
+								>
+									<UserPlus size={16} />
+									{t(CustomerKeys.SIGN_UP)}
+								</button>
+							</SignUpButton>
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
 	if (errorKey) {
 		return (
@@ -75,6 +177,14 @@ function CustomerLayout() {
 					</h1>
 					<p className="text-sm text-muted-foreground">{t(errorKey)}</p>
 				</div>
+			</div>
+		);
+	}
+
+	if (!sessionId) {
+		return (
+			<div className="flex-1 flex items-center justify-center p-6">
+				<p className="text-sm text-muted-foreground">{t(OrderingKeys.SESSION_NO_SESSION)}</p>
 			</div>
 		);
 	}
@@ -206,23 +316,35 @@ function TabLink(props: Readonly<TabLinkProps>) {
 	);
 }
 
-function CustomerAuthAction() {
+function CustomerAuthAction({ forceShow = false }: Readonly<{ forceShow?: boolean }>) {
 	const { t } = useTranslation();
 	const { isLoaded, isSignedIn } = useAuth();
 
-	if (!isLoaded || isSignedIn) return null;
+	if (!isLoaded || (isSignedIn && !forceShow)) return null;
 
 	return (
-		<SignUpButton mode="redirect">
-			<button
-				type="button"
-				className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium hover-btn-primary transition-colors"
-				aria-label={t(CustomerKeys.SIGN_UP)}
-			>
-				<UserPlus size={14} />
-				<span>{t(CustomerKeys.SIGN_UP)}</span>
-			</button>
-		</SignUpButton>
+		<div className="flex items-center gap-1.5">
+			<SignInButton mode="redirect">
+				<button
+					type="button"
+					className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium hover-secondary transition-colors"
+					aria-label={t(CustomerKeys.SIGN_IN)}
+				>
+					<LogIn size={14} />
+					<span>{t(CustomerKeys.SIGN_IN)}</span>
+				</button>
+			</SignInButton>
+			<SignUpButton mode="redirect">
+				<button
+					type="button"
+					className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium hover-btn-primary transition-colors"
+					aria-label={t(CustomerKeys.SIGN_UP)}
+				>
+					<UserPlus size={14} />
+					<span>{t(CustomerKeys.SIGN_UP)}</span>
+				</button>
+			</SignUpButton>
+		</div>
 	);
 }
 

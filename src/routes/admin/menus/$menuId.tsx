@@ -23,7 +23,7 @@ function MenuEditorPage() {
 	const { restaurant, isLoading } = useRestaurant();
 	const { canExport } = useCanExport(restaurant?._id, restaurant?.organizationId);
 	const { data: menu, isLoading: menuLoading } = useQuery(
-		convexQuery(api.menus.getMenuById, { menuId: menuId as Id<"menus"> })
+		convexQuery(api.menus.getByIdForStaff, { menuId: menuId as Id<"menus"> })
 	);
 
 	const canEdit = Boolean(restaurant && menu && menu.restaurantId === restaurant._id);

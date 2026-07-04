@@ -19,7 +19,7 @@ import { TABLE } from "../constants";
 import { getZoneOffsetMs } from "../_util/timezone";
 import { buildWindow, loadSessionsOverlapping, resolveRestaurantIds } from "./_shared";
 
-const TABLE_OCCUPANCY_MAX_RANGE_DAYS = 92;
+const TABLE_OCCUPANCY_MAX_RANGE_DAYS = 366;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 

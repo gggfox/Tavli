@@ -121,6 +121,39 @@ describe("restaurants", () => {
 			expect(restaurant!.isActive).toBe(false);
 		});
 
+		it("does not expose internal fields to anonymous callers", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			await authed.mutation(api.restaurants.create, {
+				name: "Secret Fields",
+				slug: "secret-fields",
+				currency: "USD",
+				organizationId: orgId,
+			});
+
+			await t.run(async (ctx) => {
+				const row = await ctx.db
+					.query("restaurants")
+					.withIndex("by_slug", (q) => q.eq("slug", "secret-fields"))
+					.first();
+				if (!row) throw new Error("missing restaurant");
+				await ctx.db.patch(row._id, {
+					stripeAccountId: "acct_secret",
+					sharedEmployeeClerkSubject: "user_shared123456789012345678",
+				});
+			});
+
+			const restaurant = await t.query(api.restaurants.getBySlug, { slug: "secret-fields" });
+			expect(restaurant).toBeTruthy();
+			expect(restaurant).not.toHaveProperty("ownerId");
+			expect(restaurant).not.toHaveProperty("organizationId");
+			expect(restaurant).not.toHaveProperty("stripeAccountId");
+			expect(restaurant).not.toHaveProperty("sharedEmployeeClerkSubject");
+		});
+
 		it("returns null for a non-existent slug", async () => {
 			const t = convexTest(schema, modules);
 			const result = await t.query(api.restaurants.getBySlug, { slug: "nope" });
@@ -530,5 +563,171 @@ describe("restaurants", () => {
 			);
 			expect(events.some((e) => e.aggregateId === String(rid))).toBe(true);
 		});
+	});
+});
+
+describe("setSharedEmployeeSubject", () => {
+	const VALID_SUBJECT = "user_2NNEqL2nrIRdJ1slkLWQabc123";
+	const OTHER_SUBJECT = "user_3OOFrM3osJSeK2tmlMXRdef456";
+
+	async function seedOwnedRestaurant(
+		t: ReturnType<typeof convexTest>,
+		args: { ownerId: string; slug: string }
+	) {
+		const orgId = await seedOrganization(t);
+		await seedUserRole(t, {
+			userId: args.ownerId,
+			roles: [USER_ROLES.OWNER],
+			organizationId: orgId,
+		});
+		const authed = t.withIdentity({ subject: args.ownerId });
+		const [restaurantId] = await authed.mutation(api.restaurants.create, {
+			name: "Shared Employee Test",
+			slug: args.slug,
+			currency: "USD",
+			organizationId: orgId,
+		});
+		return { orgId, restaurantId: restaurantId!, authed };
+	}
+
+	it("binds a valid Clerk subject for owner/admin", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
+			ownerId: "owner-subject",
+			slug: "subject-bind-ok",
+		});
+
+		const [, err] = await authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId,
+			clerkSubject: VALID_SUBJECT,
+		});
+
+		expect(err).toBeNull();
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.sharedEmployeeClerkSubject).toBe(VALID_SUBJECT);
+	});
+
+	it("rejects empty or malformed clerkSubject", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
+			ownerId: "owner-invalid-subject",
+			slug: "subject-bind-invalid",
+		});
+
+		for (const clerkSubject of ["", "   ", "not-a-clerk-subject", "user_short"]) {
+			const [, err] = await authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+				restaurantId,
+				clerkSubject,
+			});
+			expect(err).not.toBeNull();
+			expect(err!.name).toBe("VALIDATION_ERROR");
+			expect(err!.message).toContain("ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT");
+		}
+	});
+
+	it("rejects binding a subject already used by another restaurant", async () => {
+		const t = convexTest(schema, modules);
+		const first = await seedOwnedRestaurant(t, {
+			ownerId: "owner-subject-a",
+			slug: "subject-bind-a",
+		});
+		const second = await seedOwnedRestaurant(t, {
+			ownerId: "owner-subject-b",
+			slug: "subject-bind-b",
+		});
+
+		const [, firstErr] = await first.authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId: first.restaurantId,
+			clerkSubject: VALID_SUBJECT,
+		});
+		expect(firstErr).toBeNull();
+
+		const [, secondErr] = await second.authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId: second.restaurantId,
+			clerkSubject: VALID_SUBJECT,
+		});
+		expect(secondErr).not.toBeNull();
+		expect(secondErr!.name).toBe("CONFLICT");
+		expect(secondErr!.message).toBe("ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND");
+	});
+
+	it("allows rebinding the same subject to the same restaurant", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
+			ownerId: "owner-rebind",
+			slug: "subject-bind-rebind",
+		});
+
+		const [, firstErr] = await authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId,
+			clerkSubject: VALID_SUBJECT,
+		});
+		expect(firstErr).toBeNull();
+
+		const [, secondErr] = await authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId,
+			clerkSubject: VALID_SUBJECT,
+		});
+		expect(secondErr).toBeNull();
+	});
+
+	it("trims whitespace before validating and storing", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
+			ownerId: "owner-trim",
+			slug: "subject-bind-trim",
+		});
+
+		const [, err] = await authed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId,
+			clerkSubject: `  ${OTHER_SUBJECT}  `,
+		});
+		expect(err).toBeNull();
+
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.sharedEmployeeClerkSubject).toBe(OTHER_SUBJECT);
+	});
+
+	it("rejects restaurant managers without owner/admin access", async () => {
+		const t = convexTest(schema, modules);
+		const orgId = await seedOrganization(t);
+		const restaurantId = await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("restaurants", {
+				ownerId: "creator",
+				organizationId: orgId,
+				name: "Mgr Subject Test",
+				slug: "subject-bind-mgr",
+				currency: "USD",
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		await seedUserRole(t, {
+			userId: "mgr-subject",
+			roles: [USER_ROLES.MANAGER],
+			organizationId: orgId,
+		});
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("restaurantMembers", {
+				userId: "mgr-subject",
+				restaurantId,
+				organizationId: orgId,
+				role: RESTAURANT_MEMBER_ROLE.MANAGER,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const mgrAuthed = t.withIdentity({ subject: "mgr-subject" });
+		const [, err] = await mgrAuthed.mutation(api.restaurants.setSharedEmployeeSubject, {
+			restaurantId,
+			clerkSubject: VALID_SUBJECT,
+		});
+		expect(err).not.toBeNull();
+		expect(err!.name).toBe("NOT_AUTHORIZED");
 	});
 });

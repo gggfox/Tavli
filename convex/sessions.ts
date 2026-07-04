@@ -4,17 +4,19 @@ import type { DatabaseWriter } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { NotFoundError } from "./_shared/errors";
 import { SESSION_STATUS, TABLE } from "./constants";
+import { requireAuthenticatedDiner, requireOwnedActiveSession } from "./_util/dinerSession";
 
 /**
- * Create a new session for a customer.
- * Public -- no auth required. Validates restaurant exists.
- * Table is assigned later at order creation time.
+ * Create a new session for a signed-in customer.
+ * Requires Clerk authentication; binds the session to the current user.
  */
 export const create = mutation({
 	args: {
 		restaurantSlug: v.string(),
 	},
 	handler: async (ctx, args) => {
+		const userId = await requireAuthenticatedDiner(ctx);
+
 		const restaurant = await ctx.db
 			.query(TABLE.RESTAURANTS)
 			.withIndex("by_slug", (q) => q.eq("slug", args.restaurantSlug))
@@ -28,6 +30,7 @@ export const create = mutation({
 
 		const sessionId = await ctx.db.insert(TABLE.SESSIONS, {
 			restaurantId: restaurant._id,
+			userId,
 			status: "active",
 			startedAt: now,
 		});
@@ -39,17 +42,18 @@ export const create = mutation({
 export const getActive = query({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
 	handler: async (ctx, args) => {
-		const session = await ctx.db.get(args.sessionId);
-		if (!session || session.status !== "active") return null;
-		return session;
+		try {
+			return await requireOwnedActiveSession(ctx, args.sessionId);
+		} catch {
+			return null;
+		}
 	},
 });
 
 export const close = mutation({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
 	handler: async (ctx, args) => {
-		const session = await ctx.db.get(args.sessionId);
-		if (!session) throw new NotFoundError("Session not found");
+		await requireOwnedActiveSession(ctx, args.sessionId);
 
 		await ctx.db.patch(args.sessionId, {
 			status: "closed",
@@ -71,6 +75,8 @@ export async function createSessionForReservation(
 		restaurantId: Id<typeof TABLE.RESTAURANTS>;
 		tableId: Id<typeof TABLE.TABLES>;
 		serverMemberId?: Id<"restaurantMembers">;
+		/** Set when the reservation was made by a signed-in user. */
+		userId?: string;
 	}
 ): Promise<Id<typeof TABLE.SESSIONS>> {
 	return await ctx.db.insert(TABLE.SESSIONS, {
@@ -79,5 +85,6 @@ export async function createSessionForReservation(
 		status: SESSION_STATUS.ACTIVE,
 		startedAt: Date.now(),
 		...(args.serverMemberId !== undefined && { serverMemberId: args.serverMemberId }),
+		...(args.userId !== undefined && { userId: args.userId }),
 	});
 }

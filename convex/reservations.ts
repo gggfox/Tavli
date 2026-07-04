@@ -759,6 +759,7 @@ export const markSeated = mutation({
 			restaurantId: reservation.restaurantId,
 			tableId,
 			...(args.serverMemberId !== undefined && { serverMemberId: args.serverMemberId }),
+			...(reservation.userId !== undefined && { userId: reservation.userId }),
 		});
 		const now = Date.now();
 		const fromTerminal = isTerminalRecoverable(reservation.status);

@@ -119,6 +119,10 @@ async function assertCanManageMembership(
 	actorUserId: string,
 	args: {
 		organizationId: Id<"organizations">;
+		currentRole:
+			| typeof RESTAURANT_MEMBER_ROLE.MANAGER
+			| typeof RESTAURANT_MEMBER_ROLE.EMPLOYEE
+			| null;
 		targetRole: typeof RESTAURANT_MEMBER_ROLE.MANAGER | typeof RESTAURANT_MEMBER_ROLE.EMPLOYEE;
 		restaurantId: Id<"restaurants">;
 	}
@@ -139,7 +143,13 @@ async function assertCanManageMembership(
 		return [null, null];
 	}
 
-	if (args.targetRole === RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
+	const effectiveRole =
+		args.currentRole === RESTAURANT_MEMBER_ROLE.MANAGER ||
+		args.targetRole === RESTAURANT_MEMBER_ROLE.MANAGER
+			? RESTAURANT_MEMBER_ROLE.MANAGER
+			: RESTAURANT_MEMBER_ROLE.EMPLOYEE;
+
+	if (effectiveRole === RESTAURANT_MEMBER_ROLE.EMPLOYEE) {
 		const member = await getRestaurantMembership(ctx, actorUserId, args.restaurantId);
 		if (member?.isActive && member.role === RESTAURANT_MEMBER_ROLE.MANAGER) {
 			return [null, null];
@@ -147,6 +157,31 @@ async function assertCanManageMembership(
 	}
 
 	return [null, new NotAuthorizedError(RoleErrorMessages.INSUFFICIENT_PERMISSIONS).toObject()];
+}
+
+async function assertTargetUserInOrganization(
+	ctx: { db: import("./_generated/server").MutationCtx["db"] },
+	targetUserId: string,
+	restaurant: Doc<"restaurants">
+): AsyncReturn<null, NotFoundErrorObject> {
+	if (isRestaurantDocumentOwner(restaurant, targetUserId)) {
+		return [null, null];
+	}
+
+	const roleRows = await fetchUserRoleRecordsByUserId(ctx, targetUserId);
+	if (roleRows.length === 0) {
+		return [null, new NotFoundError("User not found").toObject()];
+	}
+
+	const orgIdStr = orgIdString(restaurant.organizationId);
+	const belongsToOrg = roleRows.some(
+		(r) => r.organizationId != null && r.organizationId === orgIdStr
+	);
+	if (!belongsToOrg) {
+		return [null, new NotFoundError("User not found").toObject()];
+	}
+
+	return [null, null];
 }
 
 export const listByRestaurant = query({
@@ -590,10 +625,14 @@ export const addMember = mutation({
 
 		const [, permErr] = await assertCanManageMembership(ctx, actorId, {
 			organizationId: restaurant.organizationId,
+			currentRole: null,
 			targetRole: args.role,
 			restaurantId: args.restaurantId,
 		});
 		if (permErr) return [null, permErr];
+
+		const [, userErr] = await assertTargetUserInOrganization(ctx, args.userId, restaurant);
+		if (userErr) return [null, userErr];
 
 		const existing = await ctx.db
 			.query(TABLE.RESTAURANT_MEMBERS)
@@ -676,6 +715,7 @@ export const updateRole = mutation({
 
 		const [, permErr] = await assertCanManageMembership(ctx, actorId, {
 			organizationId: row.organizationId,
+			currentRole: row.role,
 			targetRole: args.role,
 			restaurantId: row.restaurantId,
 		});
@@ -709,6 +749,7 @@ export const removeMember = mutation({
 
 		const [, permErr] = await assertCanManageMembership(ctx, actorId, {
 			organizationId: row.organizationId,
+			currentRole: row.role,
 			targetRole: row.role,
 			restaurantId: row.restaurantId,
 		});

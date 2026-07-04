@@ -9,15 +9,17 @@ export function MenuEditorSkeleton() {
 	const { t } = useTranslation();
 	return (
 		<div className="space-y-6" aria-label={t(MenusKeys.EDITOR_LOADING_ARIA)} aria-busy="true">
-			<div className="flex items-center gap-3">
-				<Skeleton rounded="lg" className="h-9 w-32" />
-				<Skeleton rounded="lg" className="h-9 w-24" />
-				<Skeleton rounded="lg" className="h-9 w-24" />
-			</div>
-
-			<div className="flex gap-3">
-				<Skeleton rounded="lg" className="h-10 flex-1" />
-				<Skeleton rounded="lg" className="h-10 w-36" />
+			<div className="flex min-h-9 items-center justify-between gap-3">
+				<div className="flex min-w-0 flex-1 items-center gap-3">
+					<Skeleton rounded="md" className="h-4 w-4 shrink-0" />
+					<Skeleton rounded="lg" className="h-9 flex-1 max-w-md" />
+				</div>
+				<div className="flex shrink-0 items-center gap-2">
+					<Skeleton rounded="lg" className="h-9 w-24" />
+					<Skeleton rounded="lg" className="h-9 w-32" />
+					<Skeleton rounded="lg" className="h-9 w-20" />
+					<Skeleton rounded="lg" className="h-9 w-20" />
+				</div>
 			</div>
 
 			<Skeleton.Repeat count={CATEGORY_COUNT} keyPrefix="menu-cat">
