@@ -561,7 +561,7 @@ export default defineSchema({
 		.index("by_restaurant_time", ["restaurantId", "startsAt"])
 		.index("by_restaurant_status_time", ["restaurantId", "status", "startsAt"])
 		.index("by_phone", ["restaurantId", "contact.phone"])
-		.index("by_idempotency", ["idempotencyKey"])
+		.index("by_restaurant_idempotency", ["restaurantId", "idempotencyKey"])
 		.index("by_session", ["sessionId"]),
 
 	// Time-windowed locks marking a table unavailable. Stackable, auditable.
