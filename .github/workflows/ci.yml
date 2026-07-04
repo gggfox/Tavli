@@ -129,9 +129,15 @@ jobs:
     # E2E tests require CONVEX_URL / VITE_CONVEX_URL environment variables.
     # Set these as GitHub repository secrets pointing to a test/preview
     # Convex deployment. Without them the dev server will fail to start.
+    # Clerk >=1.4 also requires publishable + secret keys at SSR startup;
+    # the E2E suite only smoke-tests public pages, so syntactically valid
+    # placeholders are used unless real test-instance secrets are configured.
     env:
       CONVEX_URL: ${{ secrets.CONVEX_URL }}
       VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY_E2E || 'sk_test_e2eplaceholder0000000000000000000000000000' }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk' }}
+      VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk' }}
     steps:
       - uses: actions/checkout@v4
 
