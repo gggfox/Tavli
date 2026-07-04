@@ -2,13 +2,12 @@ import { CollapsibleCard, InlineEditInput } from "@/global/components";
 import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { MenusKeys } from "@/global/i18n";
 import { getTranslatedField } from "@/global/utils/translations";
-import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMenuItems } from "../hooks/useMenus";
 import { AddItemForm } from "./AddItemForm";
@@ -26,6 +25,11 @@ interface CategorySectionProps {
 	searchQuery?: string;
 	filterLang?: string;
 	onFilterVisibility?: (visible: boolean) => void;
+	expanded: boolean;
+	onExpandedChange: (expanded: boolean) => void;
+	selectedIds: ReadonlySet<Id<"menuItems">>;
+	onSelectedIdsChange: (updater: (prev: Set<Id<"menuItems">>) => Set<Id<"menuItems">>) => void;
+	onVisibleItemIdsChange?: (itemIds: Id<"menuItems">[]) => void;
 }
 
 export function CategorySection({
@@ -36,20 +40,21 @@ export function CategorySection({
 	searchQuery = "",
 	filterLang,
 	onFilterVisibility,
+	expanded,
+	onExpandedChange,
+	selectedIds,
+	onSelectedIdsChange,
+	onVisibleItemIdsChange,
 }: Readonly<CategorySectionProps>) {
 	const { t } = useTranslation();
 	const isTranslating = !!selectedLang;
 	const { matches, isActive: isFilterActive } = useFuzzyMatch(searchQuery);
-	const [expanded, setExpanded] = useState(true);
 	const {
 		items,
 		createItem,
 		updateItem,
 		removeItem,
 		toggleAvailability: toggleAvail,
-		bulkRemoveItems,
-		bulkSetAvailability,
-		bulkSetPrepStation,
 		generateUploadUrl,
 	} = useMenuItems(category._id, restaurantId);
 
@@ -61,8 +66,6 @@ export function CategorySection({
 	});
 
 	const [showAddForm, setShowAddForm] = useState(false);
-	const [selectedIds, setSelectedIds] = useState(() => new Set<Id<"menuItems">>());
-	const selectAllRef = useRef<HTMLInputElement>(null);
 
 	const rowItems = items as MenuItemRowDoc[];
 	const sorted = [...rowItems].sort((a, b) => a.displayOrder - b.displayOrder);
@@ -81,85 +84,20 @@ export function CategorySection({
 
 	const isVisible = !isFilterActive || categoryNameMatches || visibleItems.length > 0;
 
+	const visibleItemIds = useMemo(() => visibleItems.map((item) => item._id), [visibleItems]);
+	const visibleItemIdsFingerprint = visibleItemIds.join(",");
+
 	useEffect(() => {
 		onFilterVisibility?.(isVisible);
 	}, [isVisible, onFilterVisibility]);
 
-	const allSelected =
-		visibleItems.length > 0 && visibleItems.every((item) => selectedIds.has(item._id));
-
-	const itemIdsFingerprint = useMemo(
-		() =>
-			[...(items as MenuItemRowDoc[])]
-				.map((i) => i._id)
-				.sort()
-				.join(","),
-		[items]
-	);
-
 	useEffect(() => {
-		const valid = new Set(itemIdsFingerprint.split(",").filter(Boolean));
-		setSelectedIds((prev) => {
-			let changed = false;
-			const next = new Set<Id<"menuItems">>();
-			for (const id of prev) {
-				if (valid.has(id)) next.add(id);
-				else changed = true;
-			}
-			return changed ? next : prev;
-		});
-	}, [itemIdsFingerprint]);
-
-	useEffect(() => {
-		const el = selectAllRef.current;
-		if (!el) return;
-		el.indeterminate = selectedIds.size > 0 && !allSelected;
-	}, [selectedIds, allSelected]);
-
-	const handleToggleSelectAll = () => {
-		if (allSelected) setSelectedIds(new Set());
-		else setSelectedIds(new Set(visibleItems.map((i) => i._id)));
-	};
-
-	const handleBulkHide = async () => {
-		const itemIds = [...selectedIds];
-		if (itemIds.length === 0) return;
-		unwrapResult(
-			await bulkSetAvailability({
-				restaurantId,
-				itemIds,
-				isAvailable: false,
-			})
-		);
-		setSelectedIds(new Set());
-	};
-
-	const handleBulkShow = async () => {
-		const itemIds = [...selectedIds];
-		if (itemIds.length === 0) return;
-		unwrapResult(
-			await bulkSetAvailability({
-				restaurantId,
-				itemIds,
-				isAvailable: true,
-			})
-		);
-		setSelectedIds(new Set());
-	};
-
-	const handleBulkDelete = async () => {
-		const itemIds = [...selectedIds];
-		if (itemIds.length === 0) return;
-		unwrapResult(await bulkRemoveItems({ restaurantId, itemIds }));
-		setSelectedIds(new Set());
-	};
-
-	const handleBulkSetPrepStation = async (prepStation: "kitchen" | "bar") => {
-		const itemIds = [...selectedIds];
-		if (itemIds.length === 0) return;
-		unwrapResult(await bulkSetPrepStation({ restaurantId, itemIds, prepStation }));
-		setSelectedIds(new Set());
-	};
+		if (!isVisible) {
+			onVisibleItemIdsChange?.([]);
+			return;
+		}
+		onVisibleItemIdsChange?.(visibleItemIds);
+	}, [isVisible, visibleItemIdsFingerprint, onVisibleItemIdsChange, visibleItemIds]);
 
 	const headerContent = isTranslating ? (
 		<div className="flex items-center gap-2 flex-1 min-w-0">
@@ -193,7 +131,7 @@ export function CategorySection({
 	return (
 		<CollapsibleCard
 			expanded={expanded}
-			onToggle={() => setExpanded(!expanded)}
+			onToggle={() => onExpandedChange(!expanded)}
 			headerContent={headerContent}
 			headerActions={
 				!isTranslating ? (
@@ -211,59 +149,6 @@ export function CategorySection({
 			}
 		>
 			<div className="space-y-3">
-				{!isTranslating && visibleItems.length > 0 ? (
-					<div className="flex flex-wrap items-center gap-2 px-1 pb-1 border-b border-border">
-						<label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-							<input
-								ref={selectAllRef}
-								type="checkbox"
-								checked={allSelected}
-								onChange={handleToggleSelectAll}
-								className="h-4 w-4 rounded border-border accent-[var(--btn-primary-bg)]"
-							/>
-							{allSelected ? t(MenusKeys.CATEGORY_DESELECT_ALL) : t(MenusKeys.CATEGORY_SELECT_ALL)}
-						</label>
-						{selectedIds.size > 0 ? (
-							<>
-								<button
-									type="button"
-									onClick={() => void handleBulkHide()}
-									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
-								>
-									{t(MenusKeys.CATEGORY_BULK_HIDE)}
-								</button>
-								<button
-									type="button"
-									onClick={() => void handleBulkShow()}
-									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
-								>
-									{t(MenusKeys.CATEGORY_BULK_SHOW)}
-								</button>
-								<button
-									type="button"
-									onClick={() => void handleBulkSetPrepStation("kitchen")}
-									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
-								>
-									{t(MenusKeys.CATEGORY_BULK_MARK_KITCHEN)}
-								</button>
-								<button
-									type="button"
-									onClick={() => void handleBulkSetPrepStation("bar")}
-									className="px-2 py-1 rounded-md text-xs font-medium border border-border hover:bg-hover"
-								>
-									{t(MenusKeys.CATEGORY_BULK_MARK_BAR)}
-								</button>
-								<button
-									type="button"
-									onClick={() => void handleBulkDelete()}
-									className="px-2 py-1 rounded-md text-xs font-medium text-destructive border border-border hover:bg-hover"
-								>
-									{t(MenusKeys.CATEGORY_BULK_DELETE)}
-								</button>
-							</>
-						) : null}
-					</div>
-				) : null}
 				{visibleItems.map((item) =>
 					isTranslating ? (
 						<MenuItemTranslationRow
@@ -282,7 +167,7 @@ export function CategorySection({
 							bulkSelect={{
 								isSelected: selectedIds.has(item._id),
 								onToggle: () =>
-									setSelectedIds((prev) => {
+									onSelectedIdsChange((prev) => {
 										const next = new Set(prev);
 										if (next.has(item._id)) next.delete(item._id);
 										else next.add(item._id);

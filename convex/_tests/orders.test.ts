@@ -2,6 +2,8 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { ERROR_NAMES } from "../_shared/errors";
+import { assertPositiveIntegerQuantity } from "../orderHelpers";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "../orderServiceDate";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
@@ -306,6 +308,56 @@ describe("orders", () => {
 			expect(order!.totalAmount).toBe(1050);
 			expect(order!.items[0].selectedOptions[0].priceModifier).toBe(250);
 			expect(order!.items[0].selectedOptions[0].optionName).toBe("Extra cheese");
+		});
+
+		it.each([0, -1, -5, 1.5, NaN, Infinity])(
+			"rejects invalid quantity %s on addItem",
+			async (quantity) => {
+				const t = convexTest(schema, modules);
+				const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
+				const menuItemId = await seedMenuItem(t, restaurantId);
+				const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+
+				await expect(
+					authed.mutation(api.orders.addItem, {
+						orderId,
+						menuItemId,
+						quantity,
+						selectedOptions: [],
+					})
+				).rejects.toMatchObject({ name: ERROR_NAMES.VALIDATION_ERROR });
+			}
+		);
+	});
+
+	describe("updateItem", () => {
+		it.each([0, -2, 2.5, NaN])("rejects invalid quantity %s on updateItem", async (quantity) => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			const itemId = await authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+
+			await expect(
+				authed.mutation(api.orders.updateItem, { orderItemId: itemId, quantity })
+			).rejects.toMatchObject({ name: ERROR_NAMES.VALIDATION_ERROR });
+		});
+	});
+
+	describe("assertPositiveIntegerQuantity", () => {
+		it.each([1, 2, 99])("accepts %s", (quantity) => {
+			expect(() => assertPositiveIntegerQuantity(quantity)).not.toThrow();
+		});
+
+		it.each([0, -1, 1.5, NaN, Infinity])("rejects %s", (quantity) => {
+			expect(() => assertPositiveIntegerQuantity(quantity)).toThrow(
+				expect.objectContaining({ name: ERROR_NAMES.VALIDATION_ERROR })
+			);
 		});
 	});
 

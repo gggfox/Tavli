@@ -1,6 +1,6 @@
-import { DashboardPage } from "@/features/dashboard";
+import { DashboardErrorFallback, DashboardPage } from "@/features/dashboard";
 import { useCurrentUserRoles } from "@/features/users/hooks";
-import { EmptyState, LoadingState } from "@/global/components";
+import { EmptyState, ErrorBoundary, LoadingState } from "@/global/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { STAFF_ROLES } from "convex/constants";
 import { useMemo } from "react";
@@ -31,7 +31,9 @@ function DashboardRoute() {
 
 	return (
 		<div className="h-full flex flex-col overflow-hidden bg-background">
-			<DashboardPage userRoles={roles} />
+			<ErrorBoundary fallback={<DashboardErrorFallback />}>
+				<DashboardPage userRoles={roles} />
+			</ErrorBoundary>
 		</div>
 	);
 }

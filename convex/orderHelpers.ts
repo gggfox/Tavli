@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { DatabaseReader, DatabaseWriter } from "./_generated/server";
-import { NotFoundError } from "./_shared/errors";
+import { NotFoundError, UserInputValidationError } from "./_shared/errors";
 import {
 	DEFAULT_PREP_STATION,
 	ORDER_PAYMENT_STATE,
@@ -82,6 +82,15 @@ export function getApplicableStations(
 		stations.add(menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION);
 	}
 	return stations;
+}
+
+/** Rejects zero, negative, fractional, NaN, and Infinity quantities. */
+export function assertPositiveIntegerQuantity(quantity: number): void {
+	if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity < 1) {
+		throw new UserInputValidationError({
+			fields: [{ field: "quantity", message: "Must be a positive whole number" }],
+		});
+	}
 }
 
 export async function recalculateTotal(ctx: { db: DatabaseWriter }, orderId: Id<"orders">) {

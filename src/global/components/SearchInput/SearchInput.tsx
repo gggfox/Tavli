@@ -4,11 +4,19 @@ export type SearchInputProps = Readonly<{
 	placeholder: string;
 	value: string;
 	onChange: (value: string) => void;
+	className?: string;
+	inputClassName?: string;
 }>;
 
-export function SearchInput({ placeholder, value, onChange }: SearchInputProps) {
+export function SearchInput({
+	placeholder,
+	value,
+	onChange,
+	className,
+	inputClassName,
+}: SearchInputProps) {
 	return (
-		<div className="relative flex-1 max-w-md">
+		<div className={`relative flex-1 max-w-md ${className ?? ""}`}>
 			<Search
 				size={16}
 				className="absolute left-3 top-1/2 -translate-y-1/2 text-faint-foreground"
@@ -18,7 +26,7 @@ export function SearchInput({ placeholder, value, onChange }: SearchInputProps) 
 				placeholder={placeholder}
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="w-full pl-9 pr-4 py-2 rounded-lg text-sm transition-colors focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-inset focus:ring-(--btn-primary-bg) focus:border-transparent bg-muted text-foreground border border-border"
+				className={`w-full h-full pl-9 pr-4 py-2 rounded-lg text-sm transition-colors focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-inset focus:ring-(--btn-primary-bg) focus:border-transparent bg-muted text-foreground border border-border ${inputClassName ?? ""}`}
 			/>
 		</div>
 	);
