@@ -404,3 +404,25 @@ export type WhatsappConversationStatus =
 
 /** Hard cap on stored inbound message length (defensive bound on customer input). */
 export const WHATSAPP_MAX_INBOUND_BODY_CHARS = 2000;
+
+/**
+ * OpenRouter model slug for the WhatsApp assistant. Overridable via the
+ * `WHATSAPP_MODEL` env var; shares `OPENROUTER_API_KEY` with menu import. A
+ * cheap default keeps per-message cost low (set e.g. "anthropic/claude-3.5-haiku"
+ * to prefer Claude).
+ */
+export const WHATSAPP_DEFAULT_MODEL = "openai/gpt-4o-mini";
+
+/** How many recent messages are replayed to the model as conversation context. */
+export const WHATSAPP_CONTEXT_MESSAGE_LIMIT = 12;
+
+/** Upper bound on tool-calling steps per turn (cost + latency guardrail). */
+export const WHATSAPP_MAX_LLM_STEPS = 5;
+
+/** Supported reply locales for the bot. */
+export const WHATSAPP_LOCALE = {
+	EN: "en",
+	ES: "es",
+} as const;
+
+export type WhatsappLocale = (typeof WHATSAPP_LOCALE)[keyof typeof WHATSAPP_LOCALE];

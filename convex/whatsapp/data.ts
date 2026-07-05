@@ -169,3 +169,35 @@ export const recordOutbound = internalMutation({
 		await ctx.db.patch(args.conversationId, { lastMessageAt: now, updatedAt: now });
 	},
 });
+
+/** Last N messages for a conversation, oldest-first, as LLM context. */
+export const getConversationContext = internalQuery({
+	args: {
+		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
+		limit: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const recent = await ctx.db
+			.query(TABLE.WHATSAPP_MESSAGES)
+			.withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
+			.order("desc")
+			.take(args.limit);
+		return recent.reverse().map((m) => ({ direction: m.direction, body: m.body }));
+	},
+});
+
+/** Minimal restaurant context the bot needs for the system prompt and links. */
+export const getRestaurantContext = internalQuery({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args) => {
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (!restaurant) return null;
+		return {
+			name: restaurant.name,
+			currency: restaurant.currency,
+			defaultLanguage: restaurant.defaultLanguage ?? null,
+			slug: restaurant.slug,
+			timezone: restaurant.timezone ?? null,
+		};
+	},
+});

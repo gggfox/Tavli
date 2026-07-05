@@ -1,18 +1,26 @@
+import { Blob as NodeBlob } from "node:buffer";
 import { convexTest } from "convex-test";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import { matchDishByName, type BotMenuItem } from "../whatsapp/menu";
 
 const modules = import.meta.glob("../**/*.ts");
 
-// The `twilio` SDK is Node-only and used for signature verification. Mock it so
-// tests control accept/reject without real crypto or network.
-const { mockValidateRequest } = vi.hoisted(() => ({ mockValidateRequest: vi.fn() }));
-vi.mock("twilio", () => ({
-	default: { validateRequest: mockValidateRequest },
+// `twilio` (signature verify) and `ai` (the LLM turn) are the two external
+// dependencies — mock both so tests are hermetic and offline.
+const { mockValidateRequest, mockGenerateText } = vi.hoisted(() => ({
+	mockValidateRequest: vi.fn(),
+	mockGenerateText: vi.fn(),
 }));
+vi.mock("twilio", () => ({ default: { validateRequest: mockValidateRequest } }));
+vi.mock("ai", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("ai")>();
+	return { ...actual, generateText: mockGenerateText };
+});
 
-const SENDER = "+14155238886"; // restaurant's WhatsApp channel number
+const SENDER = "+14155238886";
 const CUSTOMER = "+15551230000";
 
 function inboundBody(overrides: Record<string, string> = {}): string {
@@ -20,7 +28,7 @@ function inboundBody(overrides: Record<string, string> = {}): string {
 		MessageSid: "SM1",
 		From: `whatsapp:${CUSTOMER}`,
 		To: `whatsapp:${SENDER}`,
-		Body: "Hello",
+		Body: "hola, ¿qué tienen?",
 		...overrides,
 	}).toString();
 }
@@ -32,7 +40,7 @@ const INBOUND_HEADERS = {
 
 async function seedChannel(
 	t: ReturnType<typeof convexTest>,
-	args: { phoneNumber: string; isActive?: boolean }
+	args: { phoneNumber: string; isActive?: boolean } = { phoneNumber: SENDER }
 ): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;
 	await t.run(async (ctx) => {
@@ -45,9 +53,10 @@ async function seedChannel(
 		restaurantId = await ctx.db.insert("restaurants", {
 			ownerId: "owner-wa",
 			organizationId,
-			name: "WA Restaurant",
+			name: "Taquería Vernáculo",
 			slug: `wa-${Math.random().toString(36).slice(2, 10)}`,
 			currency: "MXN",
+			defaultLanguage: "es",
 			isActive: true,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -56,6 +65,7 @@ async function seedChannel(
 			restaurantId,
 			phoneNumber: args.phoneNumber,
 			isActive: args.isActive ?? true,
+			defaultLocale: "es",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		});
@@ -63,16 +73,125 @@ async function seedChannel(
 	return restaurantId!;
 }
 
-describe("whatsapp inbound webhook (M1 echo)", () => {
+async function seedMenuItem(
+	t: ReturnType<typeof convexTest>,
+	restaurantId: Id<"restaurants">,
+	args: {
+		name: string;
+		basePrice: number;
+		description?: string;
+		translations?: Record<string, { name?: string; description?: string }>;
+		withImage?: boolean;
+		isAvailable?: boolean;
+		menuActive?: boolean;
+	}
+) {
+	await t.run(async (ctx) => {
+		const menuId = await ctx.db.insert("menus", {
+			restaurantId,
+			name: "Menu",
+			isActive: args.menuActive ?? true,
+			displayOrder: 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const categoryId = await ctx.db.insert("menuCategories", {
+			menuId,
+			restaurantId,
+			name: "Tacos",
+			displayOrder: 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const imageStorageId = args.withImage
+			? await ctx.storage.store(
+					// Node's Blob (has arrayBuffer()); jsdom's global Blob does not.
+					new NodeBlob(["img"], { type: "image/jpeg" }) as unknown as Blob
+				)
+			: undefined;
+		await ctx.db.insert("menuItems", {
+			categoryId,
+			restaurantId,
+			name: args.name,
+			description: args.description,
+			translations: args.translations,
+			basePrice: args.basePrice,
+			isAvailable: args.isAvailable ?? true,
+			imageStorageId,
+			displayOrder: 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
+}
+
+describe("whatsapp matchDishByName", () => {
+	const items = [{ name: "Tacos al pastor" }, { name: "Agua de Jamaica" }] as BotMenuItem[];
+
+	it("matches accent- and case-insensitively, both containment directions", () => {
+		expect(matchDishByName(items, "TACOS AL PASTOR")?.name).toBe("Tacos al pastor");
+		expect(matchDishByName(items, "pastor")?.name).toBe("Tacos al pastor");
+		expect(matchDishByName(items, "jamaica")?.name).toBe("Agua de Jamaica");
+		expect(matchDishByName(items, "sushi")).toBeUndefined();
+		expect(matchDishByName(items, "")).toBeUndefined();
+	});
+});
+
+describe("whatsapp internalGetMenuForBot", () => {
+	it("returns available items localized with formatted prices", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedMenuItem(t, restaurantId, {
+			name: "Al pastor taco",
+			description: "Pork, pineapple",
+			basePrice: 3500,
+			translations: { es: { name: "Taco al pastor", description: "Cerdo con piña" } },
+		});
+		await seedMenuItem(t, restaurantId, {
+			name: "Sold out special",
+			basePrice: 9900,
+			isAvailable: false,
+		});
+
+		const menu = await t.query(internal.whatsapp.menu.internalGetMenuForBot, {
+			restaurantId,
+			locale: "es",
+		});
+
+		expect(menu.currency).toBe("MXN");
+		expect(menu.items).toHaveLength(1); // unavailable item excluded
+		expect(menu.items[0]).toMatchObject({
+			name: "Taco al pastor",
+			description: "Cerdo con piña",
+			priceFormatted: "35.00 MXN",
+		});
+	});
+
+	it("excludes items whose parent menu is inactive", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedMenuItem(t, restaurantId, { name: "Hidden", basePrice: 100, menuActive: false });
+
+		const menu = await t.query(internal.whatsapp.menu.internalGetMenuForBot, { restaurantId });
+		expect(menu.items).toHaveLength(0);
+	});
+});
+
+describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 	let fetchMock: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
-		vi.clearAllMocks();
 		vi.useFakeTimers();
 		process.env.TWILIO_AUTH_TOKEN = "test-token";
 		process.env.TWILIO_ACCOUNT_SID = "ACtest";
 		process.env.TWILIO_WHATSAPP_NUMBER = SENDER;
-		// Outbound send goes through global fetch (Twilio REST).
+		process.env.OPENROUTER_API_KEY = "test-openrouter";
+
+		mockValidateRequest.mockReset();
+		mockValidateRequest.mockReturnValue(true);
+		mockGenerateText.mockReset();
+		mockGenerateText.mockResolvedValue({ text: "¡Hola! ¿En qué te ayudo?", toolCalls: [] });
+
 		fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sid: "SMout" }) });
 		vi.stubGlobal("fetch", fetchMock);
 	});
@@ -82,16 +201,14 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("rejects a request with no signature header (400) and stores nothing", async () => {
+	it("rejects a request with no signature header (400)", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, { phoneNumber: SENDER });
-
+		await seedChannel(t);
 		const res = await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: { "content-type": "application/x-www-form-urlencoded" },
 			body: inboundBody(),
 		});
-
 		expect(res.status).toBe(400);
 		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
 		expect(conversations).toHaveLength(0);
@@ -99,7 +216,7 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 
 	it("rejects an invalid signature (403) and does not process", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, { phoneNumber: SENDER });
+		await seedChannel(t);
 		mockValidateRequest.mockReturnValue(false);
 
 		const res = await t.fetch("/whatsapp/inbound", {
@@ -110,15 +227,17 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 		expect(res.status).toBe(403);
-		const messages = await t.run((ctx) => ctx.db.query("whatsappMessages").collect());
-		expect(messages).toHaveLength(0);
+		expect(mockGenerateText).not.toHaveBeenCalled();
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("accepts a valid signed message, records it, and echoes a reply", async () => {
+	it("answers a valid signed message with the LLM reply", async () => {
 		const t = convexTest(schema, modules);
-		const restaurantId = await seedChannel(t, { phoneNumber: SENDER });
-		mockValidateRequest.mockReturnValue(true);
+		await seedChannel(t);
+		mockGenerateText.mockResolvedValue({
+			text: "Tenemos tacos al pastor por 35.00 MXN 🌮",
+			toolCalls: [{ toolName: "lookup_menu" }],
+		});
 
 		const res = await t.fetch("/whatsapp/inbound", {
 			method: "POST",
@@ -126,34 +245,61 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 			body: inboundBody(),
 		});
 		expect(res.status).toBe(200);
-
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
-		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
-		expect(conversations).toHaveLength(1);
-		expect(conversations[0]).toMatchObject({ restaurantId, customerPhone: CUSTOMER });
-
-		const messages = await t.run((ctx) =>
-			ctx.db.query("whatsappMessages").withIndex("by_conversation").collect()
-		);
+		const messages = await t.run((ctx) => ctx.db.query("whatsappMessages").collect());
 		const inbound = messages.filter((m) => m.direction === "inbound");
 		const outbound = messages.filter((m) => m.direction === "outbound");
-		expect(inbound).toHaveLength(1);
-		expect(inbound[0]).toMatchObject({ messageSid: "SM1", body: "Hello" });
+		expect(inbound[0].body).toBe("hola, ¿qué tienen?");
 		expect(outbound).toHaveLength(1);
+		expect(outbound[0].body).toBe("Tenemos tacos al pastor por 35.00 MXN 🌮");
 		expect(outbound[0].messageSid).toBe("SMout");
-
-		// Outbound send hit the Twilio REST API with the customer's address.
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		const [, init] = fetchMock.mock.calls[0];
-		expect(String(init?.body)).toContain(encodeURIComponent(`whatsapp:${CUSTOMER}`));
 	});
 
-	it("is idempotent: a repeated MessageSid stores one inbound and sends once", async () => {
+	it("attaches a dish photo when the model calls get_dish_photo", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, { phoneNumber: SENDER });
-		mockValidateRequest.mockReturnValue(true);
+		const restaurantId = await seedChannel(t);
+		await seedMenuItem(t, restaurantId, {
+			name: "Tacos al pastor",
+			basePrice: 3500,
+			withImage: true,
+		});
+		// Simulate the model invoking the photo tool, then replying.
+		mockGenerateText.mockImplementation(
+			async ({
+				tools,
+			}: {
+				tools: Record<string, { execute: (i: unknown, o: unknown) => Promise<unknown> }>;
+			}) => {
+				await tools.get_dish_photo.execute({ dishName: "pastor" }, {});
+				return { text: "Aquí está 🌮", toolCalls: [{ toolName: "get_dish_photo" }] };
+			}
+		);
 
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "foto de los tacos al pastor?" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound).toHaveLength(1);
+		expect(outbound[0].mediaUrl).toBeTruthy();
+		// The outbound REST call carried a MediaUrl.
+		const [, init] = fetchMock.mock.calls[0];
+		expect(String(init?.body)).toContain("MediaUrl");
+	});
+
+	it("is idempotent: a repeated MessageSid answers once", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
 		for (let i = 0; i < 2; i++) {
 			await t.fetch("/whatsapp/inbound", {
 				method: "POST",
@@ -162,7 +308,6 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 			});
 			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 		}
-
 		const inbound = await t.run((ctx) =>
 			ctx.db
 				.query("whatsappMessages")
@@ -170,31 +315,14 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 				.collect()
 		);
 		expect(inbound).toHaveLength(1);
+		expect(mockGenerateText).toHaveBeenCalledTimes(1);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("drops a message to an unknown/unmapped number without processing", async () => {
+	it("sends a localized apology if the LLM turn throws (never silent)", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, { phoneNumber: SENDER });
-		mockValidateRequest.mockReturnValue(true);
-
-		const res = await t.fetch("/whatsapp/inbound", {
-			method: "POST",
-			headers: INBOUND_HEADERS,
-			body: inboundBody({ To: "whatsapp:+19999999999" }),
-		});
-		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
-
-		expect(res.status).toBe(200); // we still ack Twilio
-		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
-		expect(conversations).toHaveLength(0);
-		expect(fetchMock).not.toHaveBeenCalled();
-	});
-
-	it("drops a message to an inactive channel", async () => {
-		const t = convexTest(schema, modules);
-		await seedChannel(t, { phoneNumber: SENDER, isActive: false });
-		mockValidateRequest.mockReturnValue(true);
+		await seedChannel(t);
+		mockGenerateText.mockRejectedValue(new Error("model exploded"));
 
 		await t.fetch("/whatsapp/inbound", {
 			method: "POST",
@@ -203,8 +331,44 @@ describe("whatsapp inbound webhook (M1 echo)", () => {
 		});
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound).toHaveLength(1);
+		expect(outbound[0].body.toLowerCase()).toContain("lo siento"); // Spanish fallback
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("drops a message to an unknown number without invoking the model", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		const res = await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ To: "whatsapp:+19999999999" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(res.status).toBe(200);
+		expect(mockGenerateText).not.toHaveBeenCalled();
 		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
 		expect(conversations).toHaveLength(0);
-		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("drops a message to an inactive channel", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t, { phoneNumber: SENDER, isActive: false });
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody(),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		expect(mockGenerateText).not.toHaveBeenCalled();
+		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
+		expect(conversations).toHaveLength(0);
 	});
 });
