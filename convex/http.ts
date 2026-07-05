@@ -291,4 +291,70 @@ http.route({
 	}),
 });
 
+// =============================================================================
+// WhatsApp Inbound Webhook (Twilio) — see ADR 007
+// =============================================================================
+//
+// Twilio POSTs inbound WhatsApp messages here as `application/x-www-form-
+// urlencoded` (not JSON). We verify `X-Twilio-Signature` via a Node action
+// (the `twilio` SDK needs Node's crypto and can't be imported into this default-
+// runtime router), reject forged requests with 403, then fast-ack with empty
+// TwiML and process the message asynchronously — the reply is sent out-of-band
+// via the REST API, keeping us under Twilio's ~15s webhook timeout.
+//
+// Configure the Twilio sandbox/sender webhook to:
+//   https://<deployment>.convex.site/whatsapp/inbound
+
+http.route({
+	path: "/whatsapp/inbound",
+	method: "POST",
+	handler: httpAction(async (ctx, request) => {
+		const signature = request.headers.get("x-twilio-signature");
+		if (!signature) {
+			return new Response("Missing X-Twilio-Signature header", { status: 400 });
+		}
+
+		const rawBody = await request.text();
+		const params = Object.fromEntries(new URLSearchParams(rawBody).entries());
+
+		let valid = false;
+		try {
+			valid = await ctx.runAction(internal.whatsapp.twilioValidation.validateTwilioRequest, {
+				url: request.url,
+				params,
+				signature,
+			});
+		} catch (error) {
+			console.error(
+				"[http.whatsapp/inbound]",
+				buildIntegrationErrorLog(error, {
+					integration: "twilio-webhook",
+					operation: "POST /whatsapp/inbound",
+				})
+			);
+			return new Response("Webhook handler failed", { status: 400 });
+		}
+		if (!valid) {
+			return new Response("Invalid signature", { status: 403 });
+		}
+
+		// A validly-signed Twilio message always carries these fields.
+		if (!params.MessageSid || !params.From || !params.To) {
+			return badRequestResponse("MessageSid, From, and To are required");
+		}
+
+		await ctx.scheduler.runAfter(0, internal.whatsapp.processing.handleInboundMessage, {
+			messageSid: params.MessageSid,
+			from: params.From,
+			to: params.To,
+			body: params.Body ?? "",
+		});
+
+		return new Response("<Response></Response>", {
+			status: 200,
+			headers: { "Content-Type": "text/xml" },
+		});
+	}),
+});
+
 export default http;

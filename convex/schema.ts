@@ -20,6 +20,8 @@ import {
 	TIP_ENTRY_SOURCE,
 	TIP_POOL_STATUS,
 	USER_ROLES,
+	WHATSAPP_CONVERSATION_STATUS,
+	WHATSAPP_MESSAGE_DIRECTION,
 } from "./constants";
 
 const structuredName = {
@@ -957,6 +959,72 @@ export default defineSchema({
 	})
 		.index("by_restaurant", ["restaurantId"])
 		.index("by_organization", ["organizationId"]),
+
+	// ============================================================================
+	// WhatsApp Chatbot (Twilio) — see ADR 007
+	// ============================================================================
+	//
+	// A read-only "first responder". `whatsappChannels` maps a restaurant's
+	// WhatsApp sender number (the Twilio "To") to a restaurant so an inbound
+	// message can be routed. A `Conversation` is the thread with one customer
+	// phone on one channel; `whatsappMessages` is the append-only in/out log,
+	// deduped on Twilio's `messageSid`. Phone numbers are stored normalized to
+	// E.164 (no "whatsapp:" prefix).
+	[TABLE.WHATSAPP_CHANNELS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Normalized E.164 of the WhatsApp sender number (Twilio "To").
+		phoneNumber: v.string(),
+		isActive: v.boolean(),
+		// Fallback reply locale for this channel ("en" | "es") before per-message
+		// detection; falls back further to restaurant.defaultLanguage.
+		defaultLocale: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedBy: v.optional(v.string()),
+	})
+		.index("by_phone_number", ["phoneNumber"])
+		.index("by_restaurant", ["restaurantId"]),
+
+	[TABLE.WHATSAPP_CONVERSATIONS]: defineTable({
+		channelId: v.id(TABLE.WHATSAPP_CHANNELS),
+		// Denormalized for direct restaurant-scoped reads.
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Normalized E.164 of the customer (Twilio "From").
+		customerPhone: v.string(),
+		status: v.union(
+			v.literal(WHATSAPP_CONVERSATION_STATUS.ACTIVE),
+			v.literal(WHATSAPP_CONVERSATION_STATUS.HANDOFF),
+			v.literal(WHATSAPP_CONVERSATION_STATUS.CLOSED)
+		),
+		// Sticky reply locale once detected for this customer.
+		locale: v.optional(v.string()),
+		// Drives the retention purge and context ordering.
+		lastMessageAt: v.number(),
+		// Last inbound timestamp — WhatsApp 24h freeform-reply window bookkeeping.
+		lastInboundAt: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_channel_customer", ["channelId", "customerPhone"])
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_last_message", ["lastMessageAt"]),
+
+	[TABLE.WHATSAPP_MESSAGES]: defineTable({
+		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		direction: v.union(
+			v.literal(WHATSAPP_MESSAGE_DIRECTION.INBOUND),
+			v.literal(WHATSAPP_MESSAGE_DIRECTION.OUTBOUND)
+		),
+		// Twilio SID: inbound MessageSid (dedupe) or the SID returned on send.
+		messageSid: v.optional(v.string()),
+		body: v.string(),
+		mediaUrl: v.optional(v.string()),
+		createdAt: v.number(),
+	})
+		.index("by_conversation", ["conversationId"])
+		.index("by_message_sid", ["messageSid"])
+		.index("by_created", ["createdAt"]),
 
 	// ============================================================================
 	// Unified Event Store

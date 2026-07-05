@@ -9,11 +9,13 @@
  */
 
 import type * as _shared_errors from "../_shared/errors.js";
+import type * as _shared_integrationLogging from "../_shared/integrationLogging.js";
 import type * as _shared_types from "../_shared/types.js";
 import type * as _util_attribution from "../_util/attribution.js";
 import type * as _util_audit from "../_util/audit.js";
 import type * as _util_auth from "../_util/auth.js";
 import type * as _util_availability from "../_util/availability.js";
+import type * as _util_dinerSession from "../_util/dinerSession.js";
 import type * as _util_env from "../_util/env.js";
 import type * as _util_idempotency from "../_util/idempotency.js";
 import type * as _util_reservationSettings from "../_util/reservationSettings.js";
@@ -85,6 +87,11 @@ import type * as tableLocks from "../tableLocks.js";
 import type * as tables from "../tables.js";
 import type * as tips from "../tips.js";
 import type * as userSettings from "../userSettings.js";
+import type * as whatsapp_data from "../whatsapp/data.js";
+import type * as whatsapp_outbound from "../whatsapp/outbound.js";
+import type * as whatsapp_phone from "../whatsapp/phone.js";
+import type * as whatsapp_processing from "../whatsapp/processing.js";
+import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 
 import type {
   ApiFromModules,
@@ -94,11 +101,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "_shared/errors": typeof _shared_errors;
+  "_shared/integrationLogging": typeof _shared_integrationLogging;
   "_shared/types": typeof _shared_types;
   "_util/attribution": typeof _util_attribution;
   "_util/audit": typeof _util_audit;
   "_util/auth": typeof _util_auth;
   "_util/availability": typeof _util_availability;
+  "_util/dinerSession": typeof _util_dinerSession;
   "_util/env": typeof _util_env;
   "_util/idempotency": typeof _util_idempotency;
   "_util/reservationSettings": typeof _util_reservationSettings;
@@ -170,6 +179,11 @@ declare const fullApi: ApiFromModules<{
   tables: typeof tables;
   tips: typeof tips;
   userSettings: typeof userSettings;
+  "whatsapp/data": typeof whatsapp_data;
+  "whatsapp/outbound": typeof whatsapp_outbound;
+  "whatsapp/phone": typeof whatsapp_phone;
+  "whatsapp/processing": typeof whatsapp_processing;
+  "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
 }>;
 
 /**

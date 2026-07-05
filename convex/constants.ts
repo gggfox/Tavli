@@ -39,6 +39,9 @@ export const TABLE = {
 	DASHBOARD_LAYOUTS: "dashboardLayouts",
 	DASHBOARD_TEMPLATES: "dashboardTemplates",
 	EMPLOYEE_ACCOUNTS: "employeeAccounts",
+	WHATSAPP_CHANNELS: "whatsappChannels",
+	WHATSAPP_CONVERSATIONS: "whatsappConversations",
+	WHATSAPP_MESSAGES: "whatsappMessages",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -369,3 +372,35 @@ export const AUDIT_SYSTEM_USER_ID = "system";
 
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+// ============================================================================
+// WhatsApp Chatbot (Twilio) — see ADR 007
+// ============================================================================
+//
+// A read-only "first responder": customers message a restaurant's WhatsApp
+// number and get automated menu / availability answers, a booking deep-link,
+// or a captured message for staff. A WhatsApp thread is a `Conversation`
+// (deliberately NOT reusing the ordering-domain word "Session"). Inbound
+// routing maps the Twilio "To" number to a `whatsappChannels` row.
+
+/** Direction of a stored WhatsApp message relative to the restaurant. */
+export const WHATSAPP_MESSAGE_DIRECTION = {
+	INBOUND: "inbound",
+	OUTBOUND: "outbound",
+} as const;
+
+export type WhatsappMessageDirection =
+	(typeof WHATSAPP_MESSAGE_DIRECTION)[keyof typeof WHATSAPP_MESSAGE_DIRECTION];
+
+/** Lifecycle of a WhatsApp `Conversation`. */
+export const WHATSAPP_CONVERSATION_STATUS = {
+	ACTIVE: "active",
+	HANDOFF: "handoff",
+	CLOSED: "closed",
+} as const;
+
+export type WhatsappConversationStatus =
+	(typeof WHATSAPP_CONVERSATION_STATUS)[keyof typeof WHATSAPP_CONVERSATION_STATUS];
+
+/** Hard cap on stored inbound message length (defensive bound on customer input). */
+export const WHATSAPP_MAX_INBOUND_BODY_CHARS = 2000;
