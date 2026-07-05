@@ -88,6 +88,11 @@ import type * as tableLocks from "../tableLocks.js";
 import type * as tables from "../tables.js";
 import type * as tips from "../tips.js";
 import type * as userSettings from "../userSettings.js";
+import type * as whatsapp_data from "../whatsapp/data.js";
+import type * as whatsapp_outbound from "../whatsapp/outbound.js";
+import type * as whatsapp_phone from "../whatsapp/phone.js";
+import type * as whatsapp_processing from "../whatsapp/processing.js";
+import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 
 import type {
   ApiFromModules,
@@ -176,6 +181,11 @@ declare const fullApi: ApiFromModules<{
   tables: typeof tables;
   tips: typeof tips;
   userSettings: typeof userSettings;
+  "whatsapp/data": typeof whatsapp_data;
+  "whatsapp/outbound": typeof whatsapp_outbound;
+  "whatsapp/phone": typeof whatsapp_phone;
+  "whatsapp/processing": typeof whatsapp_processing;
+  "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
 }>;
 
 /**
