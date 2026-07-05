@@ -3,10 +3,16 @@ import { RestaurantsKeys } from "@/global/i18n";
 import { isValidIanaTimezone } from "@/global/utils/timezone";
 import { sanitizeSlug } from "@/global/utils/slug";
 import { useForm } from "@tanstack/react-form";
-import { DEFAULT_RESTAURANT_TIMEZONE, USER_ROLES } from "convex/constants";
+import {
+	DEFAULT_GEOFENCE_RADIUS_METERS,
+	DEFAULT_RESTAURANT_TIMEZONE,
+	USER_ROLES,
+} from "convex/constants";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { LocationPicker } from "./LocationPicker";
 
 const DEFAULT_ORDER_DAY_START_MINUTES = 240;
 const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency = "monthly";
@@ -102,6 +108,7 @@ export function RestaurantSettingsForm({
 	const { roles } = useCurrentUserRoles();
 	const isAdmin = roles.includes(USER_ROLES.ADMIN);
 	const isManagerSettings = settingsAccess === "manager";
+	const [locationRecenterKey, setLocationRecenterKey] = useState(0);
 	const initialResetFrequency: OrderNumberResetFrequency =
 		(restaurant?.orderNumberResetFrequency as OrderNumberResetFrequency | undefined) ??
 		DEFAULT_ORDER_NUMBER_RESET_FREQUENCY;
@@ -472,56 +479,26 @@ export function RestaurantSettingsForm({
 						{t(RestaurantsKeys.FORM_GEOFENCE_SECTION_HINT)}
 					</p>
 				</div>
-				<div className="grid grid-cols-2 gap-4">
-					<form.Field
-						name="latitude"
-						children={(field) => (
-							<div>
-								<label
-									htmlFor="restaurant-latitude"
-									className="block text-sm font-medium mb-1 text-foreground"
-								>
-									{t(RestaurantsKeys.FORM_GEOFENCE_LATITUDE_LABEL)}
-								</label>
-								<input
-									id="restaurant-latitude"
-									type="number"
-									step="any"
-									min="-90"
-									max="90"
-									value={field.state.value}
-									onChange={(e) => field.handleChange(e.target.value)}
-									onBlur={field.handleBlur}
-									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								/>
-							</div>
-						)}
-					/>
-					<form.Field
-						name="longitude"
-						children={(field) => (
-							<div>
-								<label
-									htmlFor="restaurant-longitude"
-									className="block text-sm font-medium mb-1 text-foreground"
-								>
-									{t(RestaurantsKeys.FORM_GEOFENCE_LONGITUDE_LABEL)}
-								</label>
-								<input
-									id="restaurant-longitude"
-									type="number"
-									step="any"
-									min="-180"
-									max="180"
-									value={field.state.value}
-									onChange={(e) => field.handleChange(e.target.value)}
-									onBlur={field.handleBlur}
-									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-								/>
-							</div>
-						)}
-					/>
-				</div>
+				<p className="text-xs text-faint-foreground">{t(RestaurantsKeys.FORM_GEOFENCE_MAP_HINT)}</p>
+				<form.Subscribe
+					selector={(state) => ({
+						latitude: state.values.latitude,
+						longitude: state.values.longitude,
+						radius: state.values.geofenceRadiusMeters,
+					})}
+					children={({ latitude, longitude, radius }) => (
+						<LocationPicker
+							latitude={parseCoordinate(latitude)}
+							longitude={parseCoordinate(longitude)}
+							radiusMeters={parseCoordinate(radius) ?? DEFAULT_GEOFENCE_RADIUS_METERS}
+							recenterKey={locationRecenterKey}
+							onChange={({ latitude: lat, longitude: lng }) => {
+								form.setFieldValue("latitude", String(lat));
+								form.setFieldValue("longitude", String(lng));
+							}}
+						/>
+					)}
+				/>
 				<button
 					type="button"
 					onClick={() => {
@@ -529,12 +506,68 @@ export function RestaurantSettingsForm({
 						navigator.geolocation.getCurrentPosition((position) => {
 							form.setFieldValue("latitude", String(position.coords.latitude));
 							form.setFieldValue("longitude", String(position.coords.longitude));
+							setLocationRecenterKey((key) => key + 1);
 						});
 					}}
 					className="text-xs font-medium underline text-muted-foreground"
 				>
 					{t(RestaurantsKeys.FORM_GEOFENCE_USE_MY_LOCATION)}
 				</button>
+				<details className="group">
+					<summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+						{t(RestaurantsKeys.FORM_GEOFENCE_COORDINATES_ADVANCED)}
+					</summary>
+					<div className="mt-3 grid grid-cols-2 gap-4">
+						<form.Field
+							name="latitude"
+							children={(field) => (
+								<div>
+									<label
+										htmlFor="restaurant-latitude"
+										className="block text-sm font-medium mb-1 text-foreground"
+									>
+										{t(RestaurantsKeys.FORM_GEOFENCE_LATITUDE_LABEL)}
+									</label>
+									<input
+										id="restaurant-latitude"
+										type="number"
+										step="any"
+										min="-90"
+										max="90"
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+									/>
+								</div>
+							)}
+						/>
+						<form.Field
+							name="longitude"
+							children={(field) => (
+								<div>
+									<label
+										htmlFor="restaurant-longitude"
+										className="block text-sm font-medium mb-1 text-foreground"
+									>
+										{t(RestaurantsKeys.FORM_GEOFENCE_LONGITUDE_LABEL)}
+									</label>
+									<input
+										id="restaurant-longitude"
+										type="number"
+										step="any"
+										min="-180"
+										max="180"
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+									/>
+								</div>
+							)}
+						/>
+					</div>
+				</details>
 				<div className="grid grid-cols-2 gap-4">
 					<form.Field
 						name="geofenceRadiusMeters"

@@ -11,7 +11,7 @@ import { DEFAULT_GEOFENCE_RADIUS_METERS } from "convex/constants";
 import { useEffect, useState } from "react";
 
 export type GeofenceStatus =
-	/** Restaurant has no coordinates configured — geofence skipped. */
+	/** Restaurant has no coordinates configured — online ordering is off. */
 	| "unconfigured"
 	/** Waiting for the restaurant config or the device position. */
 	| "checking"

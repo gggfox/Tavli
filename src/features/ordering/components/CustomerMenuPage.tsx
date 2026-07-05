@@ -2,7 +2,9 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
+import { OrderingKeys } from "@/global/i18n";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useCart } from "../hooks/useCart";
 import { useGeofence } from "../hooks/useGeofence";
 import { useSessionStore } from "../hooks/useSession";
@@ -26,6 +28,7 @@ export function CustomerMenuPage({
 	lang,
 	onOrderSubmitted,
 }: Readonly<CustomerMenuPageProps>) {
+	const { t } = useTranslation();
 	const { sessionId, restaurantId } = useSessionStore();
 	const { createDraft, addItem, submitOrder } = useCart();
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,10 +67,23 @@ export function CustomerMenuPage({
 		}
 	};
 
-	// The menu is always browsable; ordering is gated while the device is
-	// outside the geofence (or location is denied). "checking" hides the
-	// order controls without the warning banner to avoid a flash.
-	const orderingBlocked = geofence.status === "outside" || geofence.status === "unavailable";
+	// Menu is always browsable; ordering unlocks only when inside the geofence
+	// (or staff bypass). Unconfigured geofence = online ordering off.
+	const orderingBlocked = geofence.status !== "inside";
+
+	const blockedNotice =
+		geofence.status === "unconfigured" ? (
+			<p className="text-sm text-center text-muted-foreground py-2">
+				{t(OrderingKeys.MENU_ORDERING_UNAVAILABLE)}
+			</p>
+		) : geofence.status === "outside" || geofence.status === "unavailable" ? (
+			<GeofenceNotice
+				slug={slug}
+				status={geofence.status}
+				onRetry={geofence.retry}
+				onBypass={geofence.bypass}
+			/>
+		) : undefined;
 
 	return (
 		<MenuBrowser
@@ -76,16 +92,7 @@ export function CustomerMenuPage({
 			onSubmitOrder={handleSubmitOrder}
 			isSubmitting={isSubmitting}
 			orderingBlocked={orderingBlocked}
-			blockedNotice={
-				orderingBlocked ? (
-					<GeofenceNotice
-						slug={slug}
-						status={geofence.status}
-						onRetry={geofence.retry}
-						onBypass={geofence.bypass}
-					/>
-				) : undefined
-			}
+			blockedNotice={blockedNotice}
 		/>
 	);
 }

@@ -204,8 +204,8 @@ export function MenuBrowser({
 				)}
 			</div>
 
-			{/* Bottom bar: total + pay */}
-			{orderingBlocked && (
+			{/* Bottom bar: geofence / ordering-unavailable notice */}
+			{orderingBlocked && blockedNotice && (
 				<div
 					className={`shrink-0 px-4 pt-3 border-t border-border bg-background ${bottomBarSafePadding}`}
 				>

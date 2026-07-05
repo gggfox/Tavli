@@ -517,6 +517,7 @@
 			"totalWithCount_other": "Total ({{count}} productos)",
 			"tapToStart": "Toca productos para iniciar tu pedido",
 			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea.",
+			"orderingUnavailable": "Los pedidos en línea aún no están disponibles aquí.",
 			"filterPlaceholder": "Buscar en el menú",
 			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
 			"placeOrder": "Enviar pedido a cocina"
@@ -707,13 +708,18 @@
 			"updateFailed": "Error al actualizar el restaurante",
 			"createFailed": "Error al crear el restaurante",
 			"geofenceSectionTitle": "Geocerca de pedidos",
-			"geofenceSectionHint": "Los clientes siempre pueden ver el menú, pero los pedidos se desbloquean solo cerca de estas coordenadas. Deja latitud/longitud vacías para desactivar la geocerca.",
+			"geofenceSectionHint": "Los clientes siempre pueden ver el menú. Marca una ubicación en el mapa para activar pedidos en línea — deben estar cerca (o usar el código del personal) para ordenar.",
 			"geofenceLatitudeLabel": "Latitud",
 			"geofenceLongitudeLabel": "Longitud",
 			"geofenceRadiusLabel": "Radio (metros)",
 			"geofenceBypassLabel": "Código de mesa",
 			"geofenceBypassHint": "El personal comparte este código con clientes cuya ubicación esté denegada o no disponible.",
-			"geofenceUseMyLocation": "Usar mi ubicación actual"
+			"geofenceUseMyLocation": "Usar mi ubicación actual",
+			"geofenceMapHint": "Haz clic en el mapa o arrastra el pin para marcar la ubicación. El círculo muestra el radio de pedidos.",
+			"geofenceMapSearchPlaceholder": "Buscar dirección…",
+			"geofenceMapSearchButton": "Buscar",
+			"geofenceMapSearchNotFound": "No se encontró la dirección. Prueba otra búsqueda.",
+			"geofenceCoordinatesAdvanced": "Avanzado: editar coordenadas"
 		},
 		"managers": {
 			"sectionTitle": "Gerentes del local",

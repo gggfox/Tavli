@@ -517,6 +517,7 @@
 			"totalWithCount_other": "Total ({{count}} items)",
 			"tapToStart": "Tap on items to start your order",
 			"noOnlineOrdering": "Online ordering is not available at this restaurant yet.",
+			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
 			"filterNoMatches": "No categories or items match your search.",
 			"placeOrder": "Send order to kitchen"
@@ -707,13 +708,18 @@
 			"updateFailed": "Failed to update restaurant",
 			"createFailed": "Failed to create restaurant",
 			"geofenceSectionTitle": "Ordering geofence",
-			"geofenceSectionHint": "Customers can always browse the menu, but ordering unlocks only near these coordinates. Leave latitude/longitude empty to disable the geofence.",
+			"geofenceSectionHint": "Customers can always browse the menu. Set a location on the map to enable online ordering — customers must be nearby (or use a staff bypass code) to place orders.",
 			"geofenceLatitudeLabel": "Latitude",
 			"geofenceLongitudeLabel": "Longitude",
 			"geofenceRadiusLabel": "Radius (meters)",
 			"geofenceBypassLabel": "Table bypass code",
 			"geofenceBypassHint": "Staff share this code with customers whose location is denied or unavailable.",
-			"geofenceUseMyLocation": "Use my current location"
+			"geofenceUseMyLocation": "Use my current location",
+			"geofenceMapHint": "Click the map or drag the pin to set your restaurant location. The circle shows the ordering radius.",
+			"geofenceMapSearchPlaceholder": "Search address…",
+			"geofenceMapSearchButton": "Search",
+			"geofenceMapSearchNotFound": "Address not found. Try a different search.",
+			"geofenceCoordinatesAdvanced": "Advanced: edit coordinates"
 		},
 		"managers": {
 			"sectionTitle": "Location managers",

@@ -116,4 +116,43 @@ describe("MenuBrowser", () => {
 		const paymentButton = proceedButtons.at(-1) as HTMLButtonElement;
 		expect(paymentButton.disabled).toBe(true);
 	});
+
+	it("shows blocked notice instead of order controls when ordering is blocked", async () => {
+		render(
+			<MenuBrowser
+				restaurantId={"restaurants:test" as any}
+				onSubmitOrder={() => {}}
+				isSubmitting={false}
+				orderingBlocked
+				blockedNotice={<p>Ordering unavailable</p>}
+			/>
+		);
+
+		fireEvent.click(screen.getByText("Bruschetta"));
+		fireEvent.click(screen.getByText("Add mocked item"));
+
+		await waitFor(() => {
+			expect(screen.getByText("Ordering unavailable")).toBeTruthy();
+		});
+		expect(screen.queryByText("Send order to kitchen")).toBeNull();
+	});
+
+	it("renders no footer while ordering is blocked without a notice (checking)", async () => {
+		render(
+			<MenuBrowser
+				restaurantId={"restaurants:test" as any}
+				onSubmitOrder={() => {}}
+				isSubmitting={false}
+				orderingBlocked
+			/>
+		);
+
+		fireEvent.click(screen.getByText("Bruschetta"));
+		fireEvent.click(screen.getByText("Add mocked item"));
+
+		await waitFor(() => {
+			expect(screen.queryByText("Send order to kitchen")).toBeNull();
+		});
+		expect(screen.queryByText("Tap items to start your order")).toBeNull();
+	});
 });
