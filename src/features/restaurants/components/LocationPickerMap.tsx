@@ -1,3 +1,4 @@
+import { Theme, useTheme } from "@/global/utils/theme";
 import { DEFAULT_GEOFENCE_RADIUS_METERS } from "convex/constants";
 import L from "leaflet";
 import iconRetina from "leaflet/dist/images/marker-icon-2x.png";
@@ -6,6 +7,14 @@ import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import { useEffect, useMemo, useState } from "react";
 import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+
+const CARTO_ATTRIBUTION =
+	'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+const CARTO_TILE_URL = {
+	[Theme.LIGHT]: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+	[Theme.DARK]: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+} as const;
 
 const DEFAULT_CENTER: L.LatLngExpression = [19.4326, -99.1332];
 
@@ -93,6 +102,7 @@ export function LocationPickerMap({
 	searchNotFoundLabel,
 	onChange,
 }: Readonly<LocationPickerMapProps>) {
+	const { theme } = useTheme();
 	const [searchQuery, setSearchQuery] = useState("");
 	const [isSearching, setIsSearching] = useState(false);
 	const [searchError, setSearchError] = useState(false);
@@ -154,10 +164,7 @@ export function LocationPickerMap({
 
 			<div className="h-64 rounded-lg overflow-hidden border border-border z-0">
 				<MapContainer center={center} zoom={zoom} className="h-full w-full" scrollWheelZoom>
-					<TileLayer
-						attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-						url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-					/>
+					<TileLayer key={theme} attribution={CARTO_ATTRIBUTION} url={CARTO_TILE_URL[theme]} />
 					<MapRecenter center={center} zoom={zoom} recenterKey={recenterKey} />
 					<MapClickHandler onMapClick={(lat, lng) => onChange({ latitude: lat, longitude: lng })} />
 					{hasPin ? (
