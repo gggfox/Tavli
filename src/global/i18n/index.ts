@@ -10,6 +10,7 @@ export { MenusKeys, type MenusKey } from "./keys/menus";
 export { OptionsKeys, type OptionsKey } from "./keys/options";
 export { OrderingKeys, type OrderingKey } from "./keys/ordering";
 export { OrdersKeys, type OrdersKey } from "./keys/orders";
+export { TabsKeys, type TabsKey } from "./keys/tabs";
 export { PaymentsKeys, type PaymentsKey } from "./keys/payments";
 export { ReservationSettingsKeys, type ReservationSettingsKey } from "./keys/reservationSettings";
 export { ReservationsKeys, type ReservationsKey } from "./keys/reservations";

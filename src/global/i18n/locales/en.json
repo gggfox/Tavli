@@ -26,7 +26,8 @@
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations",
-			"adminFeatureFlags": "Feature flags"
+			"adminFeatureFlags": "Feature flags",
+			"tabs": "Open tabs"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -125,7 +126,6 @@
 			"drawerTipsPoolStatusOpen": "Open",
 			"drawerTipsPoolStatusFinalized": "Finalized",
 			"drawerTipsPoolStatusPaid": "Paid",
-
 			"addEmployee": "Add employee",
 			"addEmployeeModalTitle": "Add employee",
 			"employeeFirstName": "First name",
@@ -517,8 +517,10 @@
 			"totalWithCount_other": "Total ({{count}} items)",
 			"tapToStart": "Tap on items to start your order",
 			"noOnlineOrdering": "Online ordering is not available at this restaurant yet.",
+			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
-			"filterNoMatches": "No categories or items match your search."
+			"filterNoMatches": "No categories or items match your search.",
+			"placeOrder": "Send order to kitchen"
 		},
 		"item": {
 			"required": "Required",
@@ -584,6 +586,39 @@
 			"lifecycleReady": "Ready",
 			"lifecycleServed": "Served",
 			"lifecycleCancelled": "Cancelled"
+		},
+		"tab": {
+			"heading": "Table tab",
+			"memberCount": "{{count}} people",
+			"shareCodeLabel": "Share this code with your table",
+			"codeCopied": "Code copied!",
+			"lockedNotice": "A payment is in progress — ordering is paused until it finishes.",
+			"payCta": "Pay tab · ${{amount}}",
+			"joinHeading": "Joining a friend's tab?",
+			"joinPlaceholder": "Enter tab code",
+			"joinCta": "Join",
+			"joinInvalid": "That code doesn't match an open tab.",
+			"empty": "Your tab has no unpaid orders.",
+			"payHeading": "Pay your tab",
+			"subtotal": "Orders ({{count}})",
+			"tipLabel": "Tip",
+			"tipHeading": "Add a tip for your server",
+			"tipCustom": "Custom",
+			"tipCustomPlaceholder": "Tip amount",
+			"changeTip": "Change tip",
+			"continueToPayment": "Continue to payment",
+			"paidTitle": "Tab paid — thank you!",
+			"paidDesc": "Your payment went through and the tab is closed. We hope to see you again soon.",
+			"paidDone": "Done"
+		},
+		"geofence": {
+			"blockedTitle": "Ordering is available at the restaurant",
+			"outside": "You seem to be outside the restaurant. You can browse the menu, and order once you arrive.",
+			"locationUnavailable": "We couldn't access your location. Allow location access, or ask the staff for a table code.",
+			"codePlaceholder": "Table code",
+			"codeSubmit": "Unlock",
+			"codeInvalid": "That code is not valid.",
+			"retry": "Check my location again"
 		}
 	},
 	"restaurants": {
@@ -671,7 +706,20 @@
 			"create": "Create",
 			"creating": "Creating...",
 			"updateFailed": "Failed to update restaurant",
-			"createFailed": "Failed to create restaurant"
+			"createFailed": "Failed to create restaurant",
+			"geofenceSectionTitle": "Ordering geofence",
+			"geofenceSectionHint": "Customers can always browse the menu. Set a location on the map to enable online ordering — customers must be nearby (or use a staff bypass code) to place orders.",
+			"geofenceLatitudeLabel": "Latitude",
+			"geofenceLongitudeLabel": "Longitude",
+			"geofenceRadiusLabel": "Radius (meters)",
+			"geofenceBypassLabel": "Table bypass code",
+			"geofenceBypassHint": "Staff share this code with customers whose location is denied or unavailable.",
+			"geofenceUseMyLocation": "Use my current location",
+			"geofenceMapHint": "Click the map or drag the pin to set your restaurant location. The circle shows the ordering radius.",
+			"geofenceMapSearchPlaceholder": "Search address…",
+			"geofenceMapSearchButton": "Search",
+			"geofenceMapSearchNotFound": "Address not found. Try a different search.",
+			"geofenceCoordinatesAdvanced": "Advanced: edit coordinates"
 		},
 		"managers": {
 			"sectionTitle": "Location managers",
@@ -1355,5 +1403,21 @@
 			"tooLarge": "This export is too large to download in a single file. Please contact support."
 		},
 		"noYears": "No data available to export yet."
+	},
+	"tabs": {
+		"header": "Open tabs",
+		"empty": "No open tabs right now.",
+		"tableLabel": "Table {{number}}",
+		"noTable": "No table",
+		"joinCode": "Code",
+		"members": "{{count}} people",
+		"orders": "{{count}} orders",
+		"unpaidTotal": "Unpaid",
+		"openedAt": "Opened {{time}}",
+		"staleBadge": "Stale",
+		"lockedBadge": "Paying",
+		"closeTab": "Close tab",
+		"closeTabConfirm": "Close this tab? Use this when the balance was settled in person.",
+		"closeFailed": "Could not close the tab."
 	}
 }

@@ -9,11 +9,13 @@
  */
 
 import type * as _shared_errors from "../_shared/errors.js";
+import type * as _shared_integrationLogging from "../_shared/integrationLogging.js";
 import type * as _shared_types from "../_shared/types.js";
 import type * as _util_attribution from "../_util/attribution.js";
 import type * as _util_audit from "../_util/audit.js";
 import type * as _util_auth from "../_util/auth.js";
 import type * as _util_availability from "../_util/availability.js";
+import type * as _util_dinerSession from "../_util/dinerSession.js";
 import type * as _util_env from "../_util/env.js";
 import type * as _util_idempotency from "../_util/idempotency.js";
 import type * as _util_reservationSettings from "../_util/reservationSettings.js";
@@ -74,6 +76,7 @@ import type * as restaurantMembers from "../restaurantMembers.js";
 import type * as restaurantPurge from "../restaurantPurge.js";
 import type * as restaurants from "../restaurants.js";
 import type * as sections from "../sections.js";
+import type * as sessionHelpers from "../sessionHelpers.js";
 import type * as sessions from "../sessions.js";
 import type * as sharedEmployee from "../sharedEmployee.js";
 import type * as shiftTemplates from "../shiftTemplates.js";
@@ -94,11 +97,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "_shared/errors": typeof _shared_errors;
+  "_shared/integrationLogging": typeof _shared_integrationLogging;
   "_shared/types": typeof _shared_types;
   "_util/attribution": typeof _util_attribution;
   "_util/audit": typeof _util_audit;
   "_util/auth": typeof _util_auth;
   "_util/availability": typeof _util_availability;
+  "_util/dinerSession": typeof _util_dinerSession;
   "_util/env": typeof _util_env;
   "_util/idempotency": typeof _util_idempotency;
   "_util/reservationSettings": typeof _util_reservationSettings;
@@ -159,6 +164,7 @@ declare const fullApi: ApiFromModules<{
   restaurantPurge: typeof restaurantPurge;
   restaurants: typeof restaurants;
   sections: typeof sections;
+  sessionHelpers: typeof sessionHelpers;
   sessions: typeof sessions;
   sharedEmployee: typeof sharedEmployee;
   shiftTemplates: typeof shiftTemplates;

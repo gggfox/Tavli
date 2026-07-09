@@ -99,8 +99,20 @@ async function refreshPoolTotal(
 	let digitalTips = 0;
 	for (const p of payments) {
 		if ((p.gratuityAmount ?? 0) <= 0) continue;
-		const order = await ctx.db.get(p.orderId);
-		if (!order?.orderServiceDateKey || order.orderServiceDateKey !== businessDate) continue;
+		if (p.orderId) {
+			const order = await ctx.db.get(p.orderId);
+			if (!order?.orderServiceDateKey || order.orderServiceDateKey !== businessDate) continue;
+		} else if (p.sessionId) {
+			// Tab payment: the tip belongs to the business date of the orders it
+			// settled. Count it when any order in the session carries that date.
+			const sessionOrders = await ctx.db
+				.query(TABLE.ORDERS)
+				.withIndex("by_session", (q) => q.eq("sessionId", p.sessionId!))
+				.collect();
+			if (!sessionOrders.some((o) => o.orderServiceDateKey === businessDate)) continue;
+		} else {
+			continue;
+		}
 		digitalTips += p.gratuityAmount ?? 0;
 	}
 

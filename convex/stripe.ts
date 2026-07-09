@@ -44,7 +44,13 @@ import type Stripe from "stripe";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
-import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
+import {
+	ORDER_PAYMENT_STATE,
+	PAYMENT_REFUND_STATUS,
+	PAYMENT_STATUS,
+	PLATFORM_APPLICATION_FEE_RATE,
+	TABLE,
+} from "./constants";
 import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
@@ -514,6 +520,13 @@ export const createRefund = internalAction({
 		if (!payment?.stripePaymentIntentId) {
 			throw new Error("Payment does not have a Stripe payment intent");
 		}
+		if (!payment.orderId) {
+			// Tab (session-level) payments are refunded manually via the Stripe
+			// dashboard in v1 — cancelling one order out of a paid tab has no
+			// clean automatic refund semantics.
+			throw new Error("Tab payments cannot be auto-refunded");
+		}
+		const paymentOrderId = payment.orderId;
 
 		await ctx.runMutation(internal.stripeHelpers.updatePayment, {
 			paymentId: args.paymentId,
@@ -521,7 +534,7 @@ export const createRefund = internalAction({
 			refundRequestedAt: Date.now(),
 		});
 		await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-			orderId: payment.orderId,
+			orderId: paymentOrderId,
 			paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 		});
 
@@ -548,7 +561,7 @@ export const createRefund = internalAction({
 				...(refund.status === "succeeded" && { refundedAt: Date.now() }),
 			});
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: payment.orderId,
+				orderId: paymentOrderId,
 				paymentState:
 					refund.status === "succeeded"
 						? ORDER_PAYMENT_STATE.REFUNDED
@@ -563,7 +576,7 @@ export const createRefund = internalAction({
 				failureMessage: error instanceof Error ? error.message : "Refund failed",
 			});
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: payment.orderId,
+				orderId: paymentOrderId,
 				paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
 			});
 			throw error;
@@ -580,6 +593,10 @@ export const createRefund = internalAction({
  * Stripe Elements. Customers pay within the app (not via hosted checkout).
  *
  * Uses destination charges with a 6% application fee.
+ *
+ * @deprecated TAVLI-6 moved payment to the end of the visit: the customer
+ * flow now uses {@link createTabPaymentIntent} to settle the whole session
+ * tab at once. Kept so in-flight per-order payments keep working.
  */
 export const createPaymentIntent = action({
 	args: {
@@ -736,6 +753,145 @@ export const createPaymentIntent = action({
 				orderId: args.orderId,
 				paymentState: ORDER_PAYMENT_STATE.FAILED,
 				activePaymentId: paymentId,
+			});
+			throw error;
+		}
+	},
+});
+
+// =============================================================================
+// 8. Tab Payment Intent (TAVLI-6 — one payment settles the whole session tab)
+// =============================================================================
+
+/**
+ * Creates a PaymentIntent covering every payable order in the session plus an
+ * optional tip. Any tab member can pay. The tab locks (no new/edited orders)
+ * while the payment is in flight; a failed or abandoned payment unlocks it.
+ *
+ * Fee policy (ticket TAVLI-6): the 6% platform application fee applies to the
+ * tab subtotal only — the full tip lands in the restaurant's connected account.
+ */
+export const createTabPaymentIntent = action({
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		/** Tip in the smallest currency unit; must be a non-negative integer. */
+		tipAmount: v.number(),
+	},
+	handler: async (
+		ctx,
+		args
+	): Promise<{ clientSecret: string | null; paymentId: Id<"payments"> }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw fromErrorObject(new NotAuthenticatedError().toObject());
+		}
+
+		if (!Number.isInteger(args.tipAmount) || args.tipAmount < 0) {
+			throw new Error("Tip must be a non-negative integer amount");
+		}
+
+		const tab = await ctx.runQuery(internal.sessions.verifyTabForPaymentInternal, {
+			sessionId: args.sessionId,
+			userId: identity.subject,
+		});
+		if (!tab) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.ACCESS_DENIED).toObject());
+		}
+		if (tab.subtotal <= 0) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_EMPTY).toObject());
+		}
+
+		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getRestaurantInternal,
+			{ restaurantId: tab.restaurantId }
+		);
+		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
+			throw new Error("Restaurant is not set up for payments");
+		}
+
+		const currency = restaurant.currency.toLowerCase();
+		const totalAmount = tab.subtotal + args.tipAmount;
+		// Fee on the subtotal only — the tip passes through to the restaurant.
+		const applicationFeeAmount = Math.round(tab.subtotal * PLATFORM_APPLICATION_FEE_RATE);
+		const stripeClient = getStripeClient();
+
+		// Retry-friendly reuse: if an intent is already processing for the same
+		// total (same balance + same tip), hand back its client secret instead
+		// of superseding it.
+		if (tab.activePaymentId) {
+			const activePayment: Doc<"payments"> | null = await ctx.runQuery(
+				internal.stripeHelpers.getPaymentInternal,
+				{ paymentId: tab.activePaymentId }
+			);
+			if (
+				activePayment?.status === PAYMENT_STATUS.PROCESSING &&
+				activePayment.amount === totalAmount &&
+				activePayment.gratuityAmount === args.tipAmount &&
+				activePayment.currency === currency &&
+				activePayment.stripePaymentIntentId
+			) {
+				const existingIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+					activePayment.stripePaymentIntentId
+				);
+				if (
+					existingIntent.status !== "succeeded" &&
+					existingIntent.status !== "canceled" &&
+					existingIntent.client_secret
+				) {
+					return {
+						clientSecret: existingIntent.client_secret,
+						paymentId: activePayment._id,
+					};
+				}
+			}
+		}
+
+		// Locks the tab, supersedes any prior attempt, and re-validates the
+		// balance inside the transaction.
+		const paymentId: Id<"payments"> = await ctx.runMutation(internal.sessions.beginTabPayment, {
+			sessionId: args.sessionId,
+			restaurantId: tab.restaurantId,
+			amount: totalAmount,
+			currency,
+			gratuityAmount: args.tipAmount,
+		});
+
+		try {
+			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
+				{
+					amount: totalAmount,
+					currency,
+					application_fee_amount: applicationFeeAmount,
+					transfer_data: {
+						destination: restaurant.stripeAccountId,
+					},
+					metadata: {
+						sessionId: args.sessionId,
+						restaurantId: tab.restaurantId,
+						paymentId,
+						gratuityAmount: String(args.tipAmount),
+					},
+				},
+				{
+					idempotencyKey: `tab-payment:${paymentId}`,
+				}
+			);
+
+			await ctx.runMutation(internal.sessions.markTabPaymentProcessing, {
+				sessionId: args.sessionId,
+				paymentId,
+				stripePaymentIntentId: paymentIntent.id,
+			});
+
+			return {
+				clientSecret: paymentIntent.client_secret,
+				paymentId,
+			};
+		} catch (error) {
+			await ctx.runMutation(internal.sessions.failTabPayment, {
+				paymentId,
+				failureMessage:
+					error instanceof Error ? error.message : "Failed to create tab payment intent",
 			});
 			throw error;
 		}

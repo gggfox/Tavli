@@ -11,13 +11,12 @@ function Page() {
 
 	return (
 		<CustomerMenuPage
+			slug={slug}
 			lang={lang}
-			onNavigateToCheckout={(orderId) =>
-				navigate({
-					to: "/r/$slug/$lang/checkout",
-					params: { slug, lang },
-					search: { orderId },
-				})
+			onOrderSubmitted={() =>
+				// Orders go straight to the kitchen; the tab view shows the running
+				// balance and the pay CTA (TAVLI-6).
+				navigate({ to: "/r/$slug/$lang/orders", params: { slug, lang } })
 			}
 		/>
 	);

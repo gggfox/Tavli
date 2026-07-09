@@ -9,6 +9,7 @@ import {
 	LayoutDashboard,
 	ListOrdered,
 	Mail,
+	Receipt,
 	Settings,
 	Store,
 	Users,
@@ -48,6 +49,12 @@ export const sidebarItems: SidebarItem[] = [
 		translationKey: SidebarKeys.PAYMENTS,
 		icon: <DollarSign size={18} className="shrink-0" />,
 		to: "/admin/payments",
+	},
+	{
+		type: "link",
+		translationKey: SidebarKeys.TABS,
+		icon: <Receipt size={18} className="shrink-0" />,
+		to: "/admin/tabs",
 	},
 	{
 		type: "link",

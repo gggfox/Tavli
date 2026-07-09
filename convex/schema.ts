@@ -14,6 +14,7 @@ import {
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
 	RESTAURANT_MEMBER_ROLE,
+	SESSION_PAYMENT_STATE,
 	SHIFT_STATUS,
 	TABLE,
 	TIP_DISTRIBUTION_RULE,
@@ -188,6 +189,17 @@ export default defineSchema({
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),
 		stripeOnboardingComplete: v.optional(v.boolean()),
+		/**
+		 * Geofence for customer ordering (TAVLI-6). When latitude/longitude are
+		 * unset the geofence is skipped entirely. This is a soft UX gate — browser
+		 * geolocation is spoofable; unpaid tabs are settled by staff in person.
+		 */
+		latitude: v.optional(v.number()),
+		longitude: v.optional(v.number()),
+		/** Meters; falls back to DEFAULT_GEOFENCE_RADIUS_METERS when unset. */
+		geofenceRadiusMeters: v.optional(v.number()),
+		/** Staff-shared code that bypasses the geofence when location is denied/unavailable. */
+		geofenceBypassCode: v.optional(v.string()),
 		isActive: v.boolean(),
 		/** Clerk subject of the per-restaurant shared employee session. See ADR 006. */
 		sharedEmployeeClerkSubject: v.optional(v.string()),
@@ -353,19 +365,46 @@ export default defineSchema({
 		.index("by_restaurant", ["restaurantId"])
 		.index("by_hard_delete_after", ["hardDeleteAfterAt"]),
 
+	// A Session doubles as the group's shared tab (TAVLI-6): orders accumulate
+	// unpaid and one Stripe payment settles the whole tab (subtotal + tip).
 	[TABLE.SESSIONS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		tableId: v.optional(v.id(TABLE.TABLES)),
-		/** Clerk subject of the diner who owns this session (required for ordering). */
+		/** Clerk subject of the diner who opened this session/tab (required for ordering). */
 		userId: v.optional(v.string()),
 		status: v.union(v.literal("active"), v.literal("closed")),
 		startedAt: v.number(),
 		closedAt: v.optional(v.number()),
 		/** Fallback server attribution when shift table assignment does not cover the table. */
 		serverMemberId: v.optional(v.id(TABLE.RESTAURANT_MEMBERS)),
+		/** Short shareable code friends use to join this tab. */
+		joinCode: v.optional(v.string()),
+		/** Clerk subjects of diners who joined via joinCode (the opener is `userId`). */
+		memberUserIds: v.optional(v.array(v.string())),
+		/** Set while a tab payment is in flight; blocks new/edited orders until cleared. */
+		lockedForPaymentAt: v.optional(v.number()),
+		paymentState: v.optional(
+			v.union(
+				v.literal(SESSION_PAYMENT_STATE.UNPAID),
+				v.literal(SESSION_PAYMENT_STATE.PENDING),
+				v.literal(SESSION_PAYMENT_STATE.PROCESSING),
+				v.literal(SESSION_PAYMENT_STATE.PAID),
+				v.literal(SESSION_PAYMENT_STATE.FAILED)
+			)
+		),
+		activePaymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		/** Tip in smallest currency unit, recorded when the tab payment succeeds. */
+		tipAmount: v.optional(v.number()),
+		paidAt: v.optional(v.number()),
+		/** How the tab was settled: "stripe" (in-app) or "staff" (in person). */
+		settledBy: v.optional(v.union(v.literal("stripe"), v.literal("staff"))),
+		/** Stamped by the stale-tab sweep when the tab lingers with an unpaid balance. */
+		flaggedStaleAt: v.optional(v.number()),
 	})
 		.index("by_table_status", ["tableId", "status"])
 		.index("by_restaurant", ["restaurantId"])
+		.index("by_restaurant_status", ["restaurantId", "status"])
+		.index("by_restaurant_join_code", ["restaurantId", "joinCode"])
 		.index("by_user", ["userId"]),
 
 	[TABLE.ORDERS]: defineTable({
@@ -454,7 +493,10 @@ export default defineSchema({
 
 	[TABLE.PAYMENTS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
-		orderId: v.id(TABLE.ORDERS),
+		/** Set for legacy per-order payments. Tab payments set `sessionId` instead (XOR). */
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		/** Set for tab (session-level) payments covering every payable order in the session. */
+		sessionId: v.optional(v.id(TABLE.SESSIONS)),
 		amount: v.number(),
 		currency: v.string(),
 		status: v.union(
@@ -490,6 +532,7 @@ export default defineSchema({
 		updatedBy: v.optional(v.string()),
 	})
 		.index("by_order", ["orderId"])
+		.index("by_session", ["sessionId"])
 		.index("by_restaurant", ["restaurantId"])
 		.index("by_payment_intent", ["stripePaymentIntentId"]),
 
