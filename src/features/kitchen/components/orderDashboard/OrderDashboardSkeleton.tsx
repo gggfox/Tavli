@@ -16,7 +16,7 @@ export function OrderDashboardSkeleton() {
 			{Array.from({ length: PLACEHOLDER_CARDS }, (_, cardIndex) => (
 				<div
 					key={`order-skeleton-${cardIndex}`}
-					className="rounded-xl overflow-hidden flex flex-col aspect-video border border-border bg-muted"
+					className="rounded-xl overflow-hidden flex flex-col border border-border bg-muted"
 				>
 					<div className="px-4 py-3 flex items-start justify-between gap-2 border-b border-border">
 						<div className="flex items-center gap-2 min-w-0 flex-1">
@@ -29,7 +29,7 @@ export function OrderDashboardSkeleton() {
 						</div>
 					</div>
 
-					<div className="p-4 space-y-2 flex-1">
+					<div className="p-4 space-y-2 flex-1 max-h-72">
 						{Array.from({ length: PLACEHOLDER_ROWS_PER_CARD }, (_, rowIndex) => (
 							<Skeleton
 								key={`order-skeleton-${cardIndex}-row-${rowIndex}`}

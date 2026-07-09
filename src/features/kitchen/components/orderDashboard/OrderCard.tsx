@@ -90,7 +90,7 @@ export function OrderCard({
 	}, [activeStationFilters, orderStations, stationStamps]);
 
 	return (
-		<Surface tone="secondary" rounded="xl" className="overflow-hidden flex flex-col aspect-video">
+		<Surface tone="secondary" rounded="xl" className="overflow-hidden flex flex-col">
 			<div className="px-4 py-3 shrink-0 border-b border-border">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
@@ -177,7 +177,7 @@ export function OrderCard({
 				</div>
 			</div>
 
-			<div className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto">
+			<div className="p-4 space-y-2 flex-1 min-h-0 max-h-72 overflow-y-auto">
 				{visibleItems.map((item) => (
 					<OrderItemRow key={item._id} item={item} activeStationFilters={activeStationFilters} />
 				))}
