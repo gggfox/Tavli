@@ -12,6 +12,12 @@ jobs:
     name: Fast-forward production from staging
     runs-on: ubuntu-latest
     steps:
+      - name: Ensure dispatched from staging
+        if: github.ref_name != 'staging'
+        run: |
+          echo "::error::'Promote to Production' must be run from the 'staging' branch (got '${{ github.ref_name }}'). Re-run and pick 'staging' in the 'Use workflow from' dropdown."
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.PROMOTE_TOKEN }}
