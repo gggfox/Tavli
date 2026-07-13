@@ -1,0 +1,21 @@
+name: Test Infisical Connectivity
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Probe infisical.gggfox.com from GitHub Actions
+    runs-on: ubuntu-latest
+    steps:
+      - name: DNS lookup
+        run: |
+          getent ahosts infisical.gggfox.com || true
+          dig +short infisical.gggfox.com A AAAA || true
+
+      - name: HTTPS reachability
+        run: |
+          curl -v --max-time 30 https://infisical.gggfox.com/api/v1/auth/universal-auth/login \
+            -X POST -H 'Content-Type: application/json' -d '{}' \
+            -o /tmp/infisical-body.txt -w '\nhttp_code=%{http_code} time=%{time_total}s\n'
+          head -c 200 /tmp/infisical-body.txt; echo
