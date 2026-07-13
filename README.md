@@ -54,6 +54,60 @@ stripe listen --thin-events "v2.core.account[requirements].updated,v2.core.accou
 
 Production rollout steps live in [`documentation/runbooks/stripe-go-live.md`](documentation/runbooks/stripe-go-live.md).
 
+## Dokploy Runtime Secrets (Infisical)
+
+The production container (built from [`Dockerfile`](./Dockerfile)) doesn't have secrets baked
+in — [`docker-entrypoint.sh`](./docker-entrypoint.sh) fetches them from Infisical at startup via
+a machine identity, so Dokploy only needs to hold the Infisical bootstrap credentials instead of
+every individual secret (currently just `CLERK_SECRET_KEY`, since `VITE_*` values are baked in at
+build time by CI and everything else is a Convex-side secret set via `npx convex env set`).
+
+Set on the Dokploy application (Environment Settings):
+
+- `INFISICAL_MACHINE_CLIENT_ID` / `INFISICAL_MACHINE_CLIENT_SECRET` — Universal Auth credentials
+  for a machine identity scoped to read-only access on the Infisical `prod` environment.
+- `INFISICAL_PROJECT_ID`, `INFISICAL_ENV`, `INFISICAL_API_URL` — optional; default to the Tavli
+  project, `prod`, and `https://infisical.gggfox.com` respectively.
+
+If the machine-identity credentials aren't set, the entrypoint falls back to starting the app
+with whatever environment variables Dokploy injected directly — so this is backwards compatible
+with the previous "set everything manually" setup.
+
+## Staging and production deployment
+
+Branch flow:
+
+1. Merge to `main` → CI runs (lint, audit, typecheck, build, unit, e2e).
+2. On green, CI fast-forwards `staging` → **Deploy Staging** builds `:staging`, deploys Convex
+   (`aromatic-dog-762`), and pings Dokploy staging (`staging.tavliai.com`).
+3. Manual **Promote to Production** workflow fast-forwards `production` from `staging` →
+   **Deploy Production** builds `:production`, deploys Convex (`polite-antelope-545`), and
+   pings Dokploy production (`tavliai.com`).
+
+Secrets live in Infisical (`dev` / `staging` / `prod`). GitHub Actions only stores the Infisical
+machine-identity credentials plus `PROMOTE_TOKEN` (PAT with bypass on protected branches).
+
+One-time bootstrap (after creating a machine identity with read access to `staging` and `prod`):
+
+```bash
+export INFISICAL_MACHINE_CLIENT_ID=...
+export INFISICAL_MACHINE_CLIENT_SECRET=...
+export PROMOTE_TOKEN=ghp_...          # contents:write + bypass on staging/production
+export CLERK_SECRET_KEY=sk_test_...   # SSR runtime; use live key for prod cutover
+./scripts/bootstrap-deployment-secrets.sh
+```
+
+Dokploy (per environment) should only set:
+
+- `INFISICAL_MACHINE_CLIENT_ID` / `INFISICAL_MACHINE_CLIENT_SECRET`
+- `INFISICAL_ENV` — `staging` or `prod` (defaults to `prod` in `docker-entrypoint.sh`)
+
+DNS: point `tavliai.com` and `staging.tavliai.com` A records at the Dokploy server. Traefik
+domains are configured in each Dokploy application’s **Domains** tab.
+
+Production cutover (Clerk live + Stripe live + prod Convex secrets) is deferred — see
+[`documentation/runbooks/stripe-go-live.md`](documentation/runbooks/stripe-go-live.md).
+
 # Building For Production
 
 ```bash

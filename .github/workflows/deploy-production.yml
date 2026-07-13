@@ -1,0 +1,13 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [production]
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      infisical_env: prod
+      image_tag: production

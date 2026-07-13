@@ -13,7 +13,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    exclude: [...configDefaults.exclude, "e2e/**/*"],
+    exclude: [...configDefaults.exclude, "e2e/**/*", "**/e2e/**", "**/.worktrees/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "json-summary"],

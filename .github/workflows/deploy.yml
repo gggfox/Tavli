@@ -1,0 +1,121 @@
+name: Deploy (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      infisical_env:
+        required: true
+        type: string
+        description: Infisical environment slug (staging or prod)
+      image_tag:
+        required: true
+        type: string
+        description: GHCR image tag (staging or production)
+
+concurrency:
+  group: deploy-${{ inputs.infisical_env }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/tavli
+  INFISICAL_PROJECT_ID: da9416bf-a247-4f41-b4c0-14b22f0aaff0
+  INFISICAL_API_URL: https://infisical.gggfox.com
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.infisical_env }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Infisical CLI
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update && sudo apt-get install -y infisical
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to Infisical
+        id: infisical
+        env:
+          INFISICAL_MACHINE_CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_CLIENT_ID }}
+          INFISICAL_MACHINE_CLIENT_SECRET: ${{ secrets.INFISICAL_MACHINE_CLIENT_SECRET }}
+        run: |
+          TOKEN=$(infisical login \
+            --method=universal-auth \
+            --client-id="$INFISICAL_MACHINE_CLIENT_ID" \
+            --client-secret="$INFISICAL_MACHINE_CLIENT_SECRET" \
+            --domain="$INFISICAL_API_URL" \
+            --plain --silent)
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Patch react-dom for Nitro build
+        run: |
+          for dir in node_modules/.pnpm/react-dom@*/node_modules/react-dom/cjs; do
+            cp "$dir/react-dom-client.production.js" \
+               "$dir/react-dom-client.development.js" 2>/dev/null || true
+          done
+
+      - name: Build app
+        env:
+          INFISICAL_TOKEN: ${{ steps.infisical.outputs.token }}
+        run: |
+          infisical run \
+            --token="$INFISICAL_TOKEN" \
+            --projectId="$INFISICAL_PROJECT_ID" \
+            --env="${{ inputs.infisical_env }}" \
+            --domain="$INFISICAL_API_URL" \
+            --silent \
+            -- env NODE_ENV=production pnpm build
+
+      - name: Deploy Convex
+        env:
+          INFISICAL_TOKEN: ${{ steps.infisical.outputs.token }}
+        run: |
+          infisical run \
+            --token="$INFISICAL_TOKEN" \
+            --projectId="$INFISICAL_PROJECT_ID" \
+            --env="${{ inputs.infisical_env }}" \
+            --domain="$INFISICAL_API_URL" \
+            --silent \
+            -- npx convex deploy --yes
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Trigger Dokploy webhook
+        env:
+          INFISICAL_TOKEN: ${{ steps.infisical.outputs.token }}
+        run: |
+          infisical run \
+            --token="$INFISICAL_TOKEN" \
+            --projectId="$INFISICAL_PROJECT_ID" \
+            --env="${{ inputs.infisical_env }}" \
+            --domain="$INFISICAL_API_URL" \
+            --silent \
+            -- bash -c 'HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DOKPLOY_WEBHOOK_URL"); echo "Dokploy responded with HTTP $HTTP_CODE"; if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then echo "::error::Dokploy webhook failed with HTTP $HTTP_CODE"; exit 1; fi'

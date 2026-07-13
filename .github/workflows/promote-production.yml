@@ -1,0 +1,27 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: promote-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Fast-forward production from staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PROMOTE_TOKEN }}
+          fetch-depth: 0
+
+      - name: Fast-forward production to staging
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin staging production
+          git checkout production
+          git merge --ff-only origin/staging
+          git push origin production
