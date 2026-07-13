@@ -8,6 +8,9 @@ jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
     secrets: inherit
+    permissions:
+      contents: read
+      packages: write
     with:
       infisical_env: staging
       image_tag: staging
