@@ -99,6 +99,17 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
+		// Legacy dev-role-switcher fields on older deployment data; safe to strip later.
+		devSavedMembershipRoles: v.optional(
+			v.array(
+				v.object({
+					restaurantId: v.string(),
+					role: v.string(),
+					synthetic: v.optional(v.boolean()),
+				})
+			)
+		),
+		devSimulateEmployeeTier: v.optional(v.boolean()),
 	})
 		.index("by_user", ["userId"])
 		.index("by_organizationId", ["organizationId"]),

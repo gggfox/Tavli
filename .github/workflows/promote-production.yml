@@ -2,6 +2,13 @@ name: Promote to Production
 
 on:
   workflow_dispatch:
+    inputs:
+      source_branch:
+        type: choice
+        description: Branch to promote from
+        options:
+          - staging
+        required: true
 
 concurrency:
   group: promote-production
@@ -12,22 +19,17 @@ jobs:
     name: Fast-forward production from staging
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure dispatched from staging
-        if: github.ref_name != 'staging'
-        run: |
-          echo "::error::'Promote to Production' must be run from the 'staging' branch (got '${{ github.ref_name }}'). Re-run and pick 'staging' in the 'Use workflow from' dropdown."
-          exit 1
-
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.PROMOTE_TOKEN }}
+          ref: ${{ github.event.inputs.source_branch }}
           fetch-depth: 0
 
       - name: Fast-forward production to staging
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin staging production
+          git fetch origin ${{ github.event.inputs.source_branch }} production
           git checkout production
-          git merge --ff-only origin/staging
+          git merge --ff-only origin/${{ github.event.inputs.source_branch }}
           git push origin production
