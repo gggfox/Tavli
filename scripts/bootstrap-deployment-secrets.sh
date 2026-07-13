@@ -37,14 +37,22 @@ require_var CLERK_SECRET_KEY
 
 STAGING_CLERK="$CLERK_SECRET_KEY"
 PROD_CLERK="${CLERK_SECRET_KEY_PROD:-$CLERK_SECRET_KEY}"
+INFISICAL_PROJECT_ID="${INFISICAL_PROJECT_ID:-da9416bf-a247-4f41-b4c0-14b22f0aaff0}"
+INFISICAL_API_URL="${INFISICAL_API_URL:-https://infisical.gggfox.com}"
 
 echo "Setting Infisical staging runtime secrets..."
-infisical secrets set --env=staging \
+infisical secrets set \
+	--projectId="$INFISICAL_PROJECT_ID" \
+	--domain="$INFISICAL_API_URL" \
+	--env=staging \
 	"CLERK_SECRET_KEY=${STAGING_CLERK}" \
 	--silent
 
 echo "Setting Infisical prod runtime secrets..."
-infisical secrets set --env=prod \
+infisical secrets set \
+	--projectId="$INFISICAL_PROJECT_ID" \
+	--domain="$INFISICAL_API_URL" \
+	--env=prod \
 	"CLERK_SECRET_KEY=${PROD_CLERK}" \
 	--silent
 
