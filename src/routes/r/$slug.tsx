@@ -1,8 +1,8 @@
-import { restoreSession, useSessionStore } from "@/features/ordering";
+import { useCustomerSession } from "@/features/ordering";
 import { CustomerKeys, OrderingKeys } from "@/global/i18n";
 import { SignInButton, SignUpButton, useAuth } from "@clerk/tanstack-react-start";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
 	Link,
 	Outlet,
@@ -14,22 +14,7 @@ import {
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { CalendarClock, LogIn, Receipt, UserPlus, UtensilsCrossed } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-
-function getSessionErrorKey(err: unknown): string {
-	let raw = "";
-	if (err instanceof Error) raw = err.message;
-	else if (typeof err === "string") raw = err;
-
-	if (raw.includes("Restaurant not found")) {
-		return OrderingKeys.SESSION_ERROR_NOT_FOUND;
-	}
-	if (raw.includes("NOT_AUTHENTICATED")) {
-		return OrderingKeys.SESSION_SIGN_IN_REQUIRED;
-	}
-	return OrderingKeys.SESSION_ERROR_GENERIC;
-}
 
 export const Route = createFileRoute("/r/$slug")({
 	component: CustomerLayout,
@@ -38,86 +23,7 @@ export const Route = createFileRoute("/r/$slug")({
 function CustomerLayout() {
 	const { t } = useTranslation();
 	const { slug } = Route.useParams();
-	const { isLoaded, isSignedIn } = useAuth();
-	const { sessionId, setSession, clearSession } = useSessionStore();
-	const [errorKey, setErrorKey] = useState<string | null>(null);
-	const [creatingSession, setCreatingSession] = useState(false);
-
-	const createSession = useMutation({
-		mutationFn: useConvexMutation(api.sessions.create),
-	});
-
-	const restoredFromStorage = useMemo(
-		() => (!sessionId && isSignedIn ? restoreSession() : null),
-		[sessionId, isSignedIn]
-	);
-
-	const { data: restoredSession, isPending: validatingRestore } = useQuery({
-		...convexQuery(
-			api.sessions.getActive,
-			restoredFromStorage?.sessionId
-				? { sessionId: restoredFromStorage.sessionId as Id<"sessions"> }
-				: "skip"
-		),
-		enabled: isLoaded && isSignedIn && !sessionId && !!restoredFromStorage?.sessionId,
-	});
-
-	useEffect(() => {
-		if (!isLoaded) return;
-
-		if (!isSignedIn) {
-			clearSession();
-			setErrorKey(null);
-			return;
-		}
-
-		if (sessionId) return;
-
-		if (restoredFromStorage && validatingRestore) return;
-
-		if (restoredFromStorage && restoredSession) {
-			setSession({
-				sessionId: restoredSession._id,
-				restaurantId: restoredSession.restaurantId,
-			});
-			return;
-		}
-
-		if (restoredFromStorage && restoredSession === null) {
-			clearSession();
-		}
-
-		if (creatingSession) return;
-
-		setCreatingSession(true);
-		setErrorKey(null);
-		createSession
-			.mutateAsync({ restaurantSlug: slug })
-			.then((result) => {
-				setSession({
-					sessionId: result.sessionId,
-					restaurantId: result.restaurantId,
-				});
-			})
-			.catch((err: unknown) => {
-				setErrorKey(getSessionErrorKey(err));
-			})
-			.finally(() => {
-				setCreatingSession(false);
-			});
-	}, [
-		isLoaded,
-		isSignedIn,
-		slug,
-		sessionId,
-		restoredFromStorage,
-		restoredSession,
-		validatingRestore,
-		creatingSession,
-		setSession,
-		clearSession,
-		createSession,
-	]);
+	const { isLoaded, isSignedIn, sessionId, errorKey } = useCustomerSession(slug);
 
 	if (!isLoaded) {
 		return (
