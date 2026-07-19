@@ -20,6 +20,13 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { USER_ROLES } from "../constants";
 import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
+import { redactExternalId } from "../_shared/integrationLogging";
+import {
+	computeDisputeFacts,
+	computeRefundFacts,
+	DISPUTE_PHASE,
+	type DisputePhase,
+} from "../stripeWebhookHelpers";
 import { getCurrentUserId } from "./auth";
 
 /**
@@ -236,4 +243,128 @@ export async function handlePaymentIntentFailure(
 		failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
 	});
 	return payment._id;
+}
+
+/**
+ * Handles a `charge.refunded` event. Resolves the in-app payment from the
+ * charge's PaymentIntent, then persists the refund facts (amount refunded,
+ * full vs partial, latest refund id + timestamp). Returns the payment id (or
+ * `undefined` when the charge is not one we created — e.g. events from shared
+ * test keys). Also surfaces refunds issued manually from the Stripe dashboard.
+ *
+ * Idempotent: duplicate deliveries are short-circuited upstream by the
+ * `stripeWebhookEvents` dedup in `fulfillPayment`, and re-applying the same
+ * facts is itself a no-op.
+ */
+export async function handleChargeRefunded(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	charge: any,
+	eventId?: string
+): Promise<Id<"payments"> | undefined> {
+	const facts = computeRefundFacts(charge);
+	if (!facts.paymentIntentId) return undefined;
+
+	const payment: Doc<"payments"> | null = await ctx.runQuery(
+		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
+		{ stripePaymentIntentId: facts.paymentIntentId }
+	);
+	if (!payment) return undefined;
+
+	await ctx.runMutation(internal.stripeHelpers.recordChargeRefund, {
+		paymentId: payment._id,
+		amountRefunded: facts.amountRefunded,
+		amountCaptured: facts.amountCaptured,
+		isFullyRefunded: facts.isFullyRefunded,
+		stripeRefundId: facts.latestRefundId,
+		refundedAtMs: facts.refundedAtMs,
+		latestStripeEventId: eventId,
+	});
+
+	return payment._id;
+}
+
+/**
+ * Shared implementation for `charge.dispute.created` / `charge.dispute.closed`.
+ * Resolves the payment (best-effort, via the dispute's PaymentIntent), logs the
+ * dispute loudly for dashboard visibility (structured error tracking lands in
+ * TAVLI-9), then upserts the dispute facts. Returns the payment id when known.
+ */
+async function handleChargeDispute(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	dispute: any,
+	phase: DisputePhase,
+	eventId?: string,
+	eventCreatedMs?: number
+): Promise<Id<"payments"> | undefined> {
+	const facts = computeDisputeFacts(dispute);
+
+	let payment: Doc<"payments"> | null = null;
+	if (facts.paymentIntentId) {
+		payment = await ctx.runQuery(internal.stripeHelpers.getPaymentByPaymentIntentIdInternal, {
+			stripePaymentIntentId: facts.paymentIntentId,
+		});
+	}
+
+	// Loud, structured log so a chargeback is impossible to miss in the Convex
+	// logs until dedicated error tracking exists (TAVLI-9). External ids are
+	// redacted per the integration-logging convention.
+	console.error("[stripe.fulfillPayment] CHARGE DISPUTE", {
+		phase,
+		disputeId: redactExternalId(facts.disputeId),
+		reason: facts.reason,
+		status: facts.status,
+		amount: facts.amount,
+		currency: facts.currency,
+		isLost: facts.isLost,
+		chargeId: redactExternalId(facts.chargeId),
+		paymentId: payment?._id,
+		restaurantId: payment?.restaurantId,
+	});
+
+	await ctx.runMutation(internal.stripeHelpers.recordChargeDispute, {
+		stripeDisputeId: facts.disputeId,
+		phase,
+		reason: facts.reason,
+		status: facts.status,
+		amount: facts.amount,
+		currency: facts.currency,
+		eventTimeMs: eventCreatedMs ?? facts.createdAtMs ?? Date.now(),
+		restaurantId: payment?.restaurantId,
+		paymentId: payment?._id,
+		orderId: payment?.orderId,
+		sessionId: payment?.sessionId,
+		stripeChargeId: facts.chargeId,
+		stripePaymentIntentId: facts.paymentIntentId,
+		latestStripeEventId: eventId,
+	});
+
+	return payment?._id;
+}
+
+/** Handles `charge.dispute.created`: a chargeback was opened. */
+export async function handleChargeDisputeCreated(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	dispute: any,
+	eventId?: string,
+	eventCreatedMs?: number
+): Promise<Id<"payments"> | undefined> {
+	return handleChargeDispute(ctx, dispute, DISPUTE_PHASE.CREATED, eventId, eventCreatedMs);
+}
+
+/** Handles `charge.dispute.closed`: a chargeback was resolved (won or lost). */
+export async function handleChargeDisputeClosed(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	dispute: any,
+	eventId?: string,
+	eventCreatedMs?: number
+): Promise<Id<"payments"> | undefined> {
+	return handleChargeDispute(ctx, dispute, DISPUTE_PHASE.CLOSED, eventId, eventCreatedMs);
 }
