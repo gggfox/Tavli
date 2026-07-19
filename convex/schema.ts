@@ -1013,6 +1013,24 @@ export default defineSchema({
 		.index("by_organization", ["organizationId"]),
 
 	// ============================================================================
+	// Rate limiting
+	// ============================================================================
+	//
+	// Fixed-window counters for abuse control on public, anonymous surfaces
+	// (currently the reservation create paths). One row per `key`; the key
+	// scopes the counter (e.g. per restaurant + contact identity). `windowStart`
+	// marks the start of the active window and `count` is the number of hits
+	// recorded in it. See `_util/rateLimit.ts` for the pure decision logic and
+	// the read/increment helper. Not a substitute for edge-level protection --
+	// it bounds work reachable through cheap authenticated-by-nothing calls.
+	[TABLE.RATE_LIMITS]: defineTable({
+		key: v.string(),
+		windowStart: v.number(),
+		count: v.number(),
+		updatedAt: v.number(),
+	}).index("by_key", ["key"]),
+
+	// ============================================================================
 	// Unified Event Store
 	// ============================================================================
 	[TABLE.ALL_EVENTS]: defineTable({
