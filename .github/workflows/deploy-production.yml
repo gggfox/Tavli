@@ -14,3 +14,4 @@ jobs:
     with:
       infisical_env: prod
       image_tag: production
+      health_url: https://tavliai.com
