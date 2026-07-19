@@ -27,7 +27,9 @@
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations",
 			"adminFeatureFlags": "Feature flags",
-			"tabs": "Open tabs"
+			"tabs": "Open tabs",
+			"openNav": "Open navigation",
+			"closeNav": "Close navigation"
 		},
 		"theme": {
 			"darkMode": "Dark mode",

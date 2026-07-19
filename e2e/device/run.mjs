@@ -63,7 +63,10 @@ for (let i = 0; i < 30; i++) {
 	await new Promise((r) => setTimeout(r, 2000));
 }
 
-const test = spawn(process.execPath, [new URL("./landing.mjs", import.meta.url).pathname], {
+// Which script to run: `pnpm test:e2e:device -- dashboard-audit.mjs`
+// (default: landing.mjs).
+const script = process.argv.slice(2).filter((a) => a !== "--")[0] ?? "landing.mjs";
+const test = spawn(process.execPath, [new URL(`./${script}`, import.meta.url).pathname], {
 	stdio: "inherit",
 	env: { ...process.env, DEVICE_APP_URL: `${tunnelUrl}/` },
 });

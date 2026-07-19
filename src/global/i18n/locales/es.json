@@ -27,7 +27,9 @@
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
 			"adminFeatureFlags": "Feature flags",
-			"tabs": "Cuentas abiertas"
+			"tabs": "Cuentas abiertas",
+			"openNav": "Abrir navegación",
+			"closeNav": "Cerrar navegación"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",

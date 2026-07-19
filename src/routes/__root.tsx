@@ -9,7 +9,9 @@ import {
 } from "@tanstack/react-router";
 import { useConvexAuth } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AuthDebugPanel } from "@/features";
@@ -17,6 +19,7 @@ import { useNewReservationListener } from "@/features/reservations";
 import { RestaurantAdminProvider, useRestaurant } from "@/features/restaurants";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import { ErrorBoundary, NotificationCenter, Sidebar } from "@/global/components";
+import { SidebarKeys } from "@/global/i18n";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
 import { config } from "@/global/utils/config";
@@ -126,18 +129,61 @@ function StaffLayout() {
 	const pathname = useRouterState({ select: (s) => s.location.pathname });
 	const { restaurant } = useRestaurant();
 	const { isAuthenticated, isLoading } = useConvexAuth();
+	const { t } = useTranslation();
 	useNewReservationListener(restaurant?._id);
 
 	const hideSidebar = pathname === "/" && !isLoading && !isAuthenticated;
 
+	// Below md the sidebar is an off-canvas drawer: on a phone the expanded
+	// desktop sidebar consumed over half the viewport and crushed every admin
+	// surface into a sliver (TAVLI-4 device audit). Closed on navigation.
+	const [mobileNavOpen, setMobileNavOpen] = useState(false);
+	useEffect(() => {
+		setMobileNavOpen(false);
+	}, [pathname]);
+
 	return (
-		<div className="h-dvh flex overflow-hidden bg-background">
-			{!hideSidebar && <Sidebar pathname={pathname} />}
-			<main className="flex-1 min-h-0 overflow-auto bg-background">
-				<ErrorBoundary>
-					<Outlet />
-				</ErrorBoundary>
-			</main>
+		<div className="h-dvh flex flex-col overflow-hidden bg-background">
+			{!hideSidebar && (
+				<header className="md:hidden flex items-center gap-3 h-12 shrink-0 px-3 border-b border-border bg-muted">
+					<button
+						type="button"
+						aria-label={t(SidebarKeys.OPEN_NAV)}
+						aria-expanded={mobileNavOpen}
+						onClick={() => setMobileNavOpen(true)}
+						className="p-2 -m-2 rounded-lg text-muted-foreground"
+					>
+						<Menu size={22} />
+					</button>
+					<span className="font-semibold text-foreground">{t(SidebarKeys.BRAND_NAME)}</span>
+				</header>
+			)}
+			<div className="flex flex-1 min-h-0 overflow-hidden">
+				{!hideSidebar && (
+					<>
+						{mobileNavOpen && (
+							<button
+								type="button"
+								aria-label={t(SidebarKeys.CLOSE_NAV)}
+								onClick={() => setMobileNavOpen(false)}
+								className="fixed inset-0 z-40 bg-black/40 md:hidden"
+							/>
+						)}
+						<div
+							className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 md:static md:z-auto md:transition-none ${
+								mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+							} md:translate-x-0`}
+						>
+							<Sidebar pathname={pathname} />
+						</div>
+					</>
+				)}
+				<main className="flex-1 min-h-0 overflow-auto bg-background">
+					<ErrorBoundary>
+						<Outlet />
+					</ErrorBoundary>
+				</main>
+			</div>
 			<NotificationCenter />
 		</div>
 	);
