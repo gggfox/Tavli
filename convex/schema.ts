@@ -416,6 +416,10 @@ export default defineSchema({
 		.index("by_restaurant", ["restaurantId"])
 		.index("by_restaurant_status", ["restaurantId", "status"])
 		.index("by_restaurant_join_code", ["restaurantId", "joinCode"])
+		// Bounds the stuck-tab reconciliation scan to tabs currently locked for
+		// payment (unlocked tabs have `lockedForPaymentAt` undefined, which sorts
+		// below every timestamp and is excluded by the `gt(0)` lower bound).
+		.index("by_locked_for_payment", ["lockedForPaymentAt"])
 		.index("by_user", ["userId"]),
 
 	[TABLE.ORDERS]: defineTable({
