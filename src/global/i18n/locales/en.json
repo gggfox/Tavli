@@ -826,7 +826,7 @@
 			"partialRequirements": "Payments are enabled but additional requirements need attention.",
 			"redirecting": "Redirecting...",
 			"continueSetup": "Continue Stripe Setup",
-			"intro": "Set up Stripe to accept credit card payments from customers. A 12% platform fee applies on top of Stripe's standard processing fees.",
+			"intro": "Set up Stripe to accept credit card payments from customers. A {{rate}}% platform fee applies on top of Stripe's standard processing fees.",
 			"settingUp": "Setting up...",
 			"onboard": "Onboard to collect payments",
 			"resetButton": "Reset Stripe Setup",
