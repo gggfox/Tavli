@@ -1,6 +1,7 @@
 import { Drawer } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
+import { extractErrorCode } from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -16,9 +17,10 @@ const ERROR_TO_KEY: Record<string, string> = {
 	ERROR_NO_TABLES_AVAILABLE: ReservationsKeys.REASON_NO_TABLES,
 };
 
-function mapCreateError(message: string, t: (key: string) => string): string {
-	const key = ERROR_TO_KEY[message];
-	return key ? t(key) : t(ReservationsKeys.FORM_GENERIC_ERROR);
+function mapCreateError(error: unknown, t: (key: string) => string): string {
+	const code = extractErrorCode(error);
+	const key = code && ERROR_TO_KEY[code] ? ERROR_TO_KEY[code] : ReservationsKeys.FORM_GENERIC_ERROR;
+	return t(key);
 }
 
 interface TimelineCreateDrawerProps {
@@ -85,8 +87,7 @@ export function TimelineCreateDrawer({
 
 				onClose();
 			} catch (err) {
-				const msg = err instanceof Error ? err.message : "";
-				setError(mapCreateError(msg, t));
+				setError(mapCreateError(err, t));
 			}
 		},
 		[

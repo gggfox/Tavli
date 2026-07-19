@@ -14,6 +14,7 @@ import {
 } from "@/global/components";
 import { useConvexMutate } from "@/global/hooks";
 import { ReservationSettingsKeys, ReservationsKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -89,7 +90,7 @@ export function ReservationSettingsPanel({
 			);
 			setSaved(true);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(ReservationSettingsKeys.MSG_SAVE_FAILED));
+			setError(getErrorMessage(err, t, ReservationSettingsKeys.MSG_SAVE_FAILED));
 		}
 	};
 
