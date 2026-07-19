@@ -47,7 +47,8 @@ import {
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import {
-	ACTIVE_RESERVATION_STATUSES,
+	NO_SHOW_SWEEP_BATCH_SIZE,
+	NO_SHOW_SWEEP_LOOKBACK_MS,
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
 	ReservationStatus,
@@ -1015,41 +1016,63 @@ export const get = query({
 // No-show sweep
 // ============================================================================
 
+/** The only statuses the no-show sweep can flip. Each gets its own index pass. */
+const NO_SHOW_SWEEPABLE_STATUSES = [
+	RESERVATION_STATUS.PENDING,
+	RESERVATION_STATUS.CONFIRMED,
+] as const;
+
 /**
  * Cron-triggered. Flips any pending/confirmed reservation that's past
  * `startsAt + noShowGraceMinutes` to `no_show`. Idempotent: rows that have
  * already moved on are left alone.
+ *
+ * Bounded on both ends. The previous version queried `by_restaurant_time` with
+ * only an upper bound, so every 15-minute run re-read each restaurant's entire
+ * reservation history and filtered status in JS. Now each restaurant gets one
+ * `by_restaurant_status_time` pass per sweepable status, windowed to
+ * `(now - NO_SHOW_SWEEP_LOOKBACK_MS, cutoff)` and capped at
+ * NO_SHOW_SWEEP_BATCH_SIZE. A flipped row leaves the pending/confirmed ranges,
+ * so a backlog drains across runs instead of being skipped.
  */
 export const sweepNoShows = internalMutation({
 	args: {},
 	handler: async (ctx) => {
 		const now = Date.now();
+		const lookbackFloor = now - NO_SHOW_SWEEP_LOOKBACK_MS;
 
-		// Pull all restaurants once so we can apply each restaurant's grace.
+		// Restaurants are read in full because the grace period is per-restaurant
+		// and there is no index for "not soft-deleted". This table is bounded by
+		// tenant count, not by traffic, so it is not the scan that mattered here.
 		const restaurants = await ctx.db.query(TABLE.RESTAURANTS).collect();
 		let flipped = 0;
 
 		for (const restaurant of restaurants) {
+			if (restaurant.deletedAt !== undefined) continue;
+
 			const settings = await loadEffectiveSettings(ctx, restaurant._id);
 			const cutoff = now - settings.noShowGraceMinutes * 60_000;
+			if (cutoff <= lookbackFloor) continue;
 
-			const candidates = await ctx.db
-				.query(TABLE.RESERVATIONS)
-				.withIndex("by_restaurant_time", (q) =>
-					q.eq("restaurantId", restaurant._id).lt("startsAt", cutoff)
-				)
-				.collect();
+			for (const status of NO_SHOW_SWEEPABLE_STATUSES) {
+				const candidates = await ctx.db
+					.query(TABLE.RESERVATIONS)
+					.withIndex("by_restaurant_status_time", (q) =>
+						q
+							.eq("restaurantId", restaurant._id)
+							.eq("status", status)
+							.gt("startsAt", lookbackFloor)
+							.lt("startsAt", cutoff)
+					)
+					.take(NO_SHOW_SWEEP_BATCH_SIZE);
 
-			for (const r of candidates) {
-				if (r.status !== RESERVATION_STATUS.PENDING && r.status !== RESERVATION_STATUS.CONFIRMED) {
-					continue;
+				for (const r of candidates) {
+					await ctx.db.patch(r._id, {
+						status: RESERVATION_STATUS.NO_SHOW,
+						updatedAt: now,
+					});
+					flipped++;
 				}
-				if (!ACTIVE_RESERVATION_STATUSES.includes(r.status)) continue;
-				await ctx.db.patch(r._id, {
-					status: RESERVATION_STATUS.NO_SHOW,
-					updatedAt: now,
-				});
-				flipped++;
 			}
 		}
 

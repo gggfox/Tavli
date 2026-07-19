@@ -6,6 +6,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { STALE_TAB_SWEEP_BATCH_SIZE, STALE_TAB_SWEEP_LOOKBACK_MS } from "../constants";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
@@ -363,6 +364,82 @@ describe("session tabs", () => {
 				const unpaid = await ctx.db.get(sessionId);
 				expect(unpaid!.status).toBe("active");
 				expect(unpaid!.flaggedStaleAt).toBeDefined();
+			});
+		});
+
+		it("ignores tabs younger than the 24h cutoff", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId } = await seedRestaurant(t);
+
+			let freshId: Id<"sessions">;
+			await t.run(async (ctx) => {
+				freshId = await ctx.db.insert("sessions", {
+					restaurantId,
+					userId: "diner-fresh",
+					status: "active",
+					startedAt: Date.now() - 2 * 60 * 60 * 1000,
+				});
+			});
+
+			const result = await t.mutation(internal.sessions.sweepStaleOpenTabs, {});
+
+			expect(result.scanned).toBe(0);
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(freshId!))!.status).toBe("active");
+			});
+		});
+
+		it("does not read tabs older than the lookback window", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId } = await seedRestaurant(t);
+
+			let ancientId: Id<"sessions">;
+			await t.run(async (ctx) => {
+				ancientId = await ctx.db.insert("sessions", {
+					restaurantId,
+					userId: "diner-ancient",
+					status: "active",
+					startedAt: Date.now() - STALE_TAB_SWEEP_LOOKBACK_MS - 60 * 60 * 1000,
+				});
+			});
+
+			const result = await t.mutation(internal.sessions.sweepStaleOpenTabs, {});
+
+			// Deliberate: an unsettled tab this old was flagged weeks ago and is a
+			// staff conversation. The sweep no longer re-reads it every hour.
+			expect(result.scanned).toBe(0);
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(ancientId!))!.status).toBe("active");
+			});
+		});
+
+		it("caps the rows it touches per run, newest-first", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId } = await seedRestaurant(t);
+			const overflow = 3;
+			const base = Date.now() - 26 * 60 * 60 * 1000;
+
+			let newestId: Id<"sessions">;
+			await t.run(async (ctx) => {
+				for (let i = 0; i < STALE_TAB_SWEEP_BATCH_SIZE + overflow; i++) {
+					// i = 0 is the oldest; the last insert is the newest stale tab.
+					const id = await ctx.db.insert("sessions", {
+						restaurantId,
+						userId: `diner-${i}`,
+						status: "active",
+						startedAt: base - (STALE_TAB_SWEEP_BATCH_SIZE + overflow - i) * 1000,
+					});
+					newestId = id;
+				}
+			});
+
+			const result = await t.mutation(internal.sessions.sweepStaleOpenTabs, {});
+
+			expect(result.scanned).toBe(STALE_TAB_SWEEP_BATCH_SIZE);
+			// Newest-first: the tab that most recently went stale is always reached,
+			// never starved by a backlog of older already-flagged ones.
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(newestId!))!.status).toBe("closed");
 			});
 		});
 	});

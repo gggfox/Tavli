@@ -27,6 +27,8 @@ import {
 	SESSION_PAYMENT_STATE,
 	SESSION_STATUS,
 	STALE_TAB_MAX_AGE_MS,
+	STALE_TAB_SWEEP_BATCH_SIZE,
+	STALE_TAB_SWEEP_LOOKBACK_MS,
 	TABLE,
 } from "./constants";
 import {
@@ -570,17 +572,33 @@ export const closeTabAsStaff = mutation({
  * End-of-day hygiene: active tabs older than STALE_TAB_MAX_AGE_MS are closed
  * when they have no unpaid balance, and flagged (surfaced in the staff open
  * tabs view) when they still owe money. Never auto-charges anything.
+ *
+ * The scan is bounded on both ends by the `by_status_started` index range —
+ * active tabs whose `startedAt` falls in
+ * `(now - STALE_TAB_SWEEP_LOOKBACK_MS, now - STALE_TAB_MAX_AGE_MS)` — and
+ * capped at STALE_TAB_SWEEP_BATCH_SIZE rows, newest-first. It used to
+ * `.collect()` the entire sessions table every hour and filter in JS, so cost
+ * grew with lifetime session count rather than with the work to be done.
  */
 export const sweepStaleOpenTabs = internalMutation({
 	args: {},
 	handler: async (ctx) => {
-		const cutoff = Date.now() - STALE_TAB_MAX_AGE_MS;
-		const sessions = await ctx.db.query(TABLE.SESSIONS).collect();
+		const now = Date.now();
+		const cutoff = now - STALE_TAB_MAX_AGE_MS;
+		const lookbackFloor = now - STALE_TAB_SWEEP_LOOKBACK_MS;
 
-		for (const session of sessions) {
-			if (session.status !== SESSION_STATUS.ACTIVE) continue;
-			if (session.startedAt > cutoff) continue;
+		const staleTabs = await ctx.db
+			.query(TABLE.SESSIONS)
+			.withIndex("by_status_started", (q) =>
+				q.eq("status", SESSION_STATUS.ACTIVE).gt("startedAt", lookbackFloor).lt("startedAt", cutoff)
+			)
+			.order("desc")
+			.take(STALE_TAB_SWEEP_BATCH_SIZE);
 
+		let closed = 0;
+		let flagged = 0;
+
+		for (const session of staleTabs) {
 			const payableOrders = await getPayableOrders(ctx, session._id);
 			const unpaidTotal = sumOrderTotals(payableOrders);
 
@@ -590,10 +608,14 @@ export const sweepStaleOpenTabs = internalMutation({
 					closedAt: Date.now(),
 					lockedForPaymentAt: undefined,
 				});
+				closed++;
 			} else if (session.flaggedStaleAt === undefined) {
 				await ctx.db.patch(session._id, { flaggedStaleAt: Date.now() });
+				flagged++;
 			}
 		}
+
+		return { scanned: staleTabs.length, closed, flagged };
 	},
 });
 
