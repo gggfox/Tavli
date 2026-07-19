@@ -527,6 +527,7 @@ export default defineSchema({
 			v.literal(PAYMENT_REFUND_STATUS.NONE),
 			v.literal(PAYMENT_REFUND_STATUS.REQUESTED),
 			v.literal(PAYMENT_REFUND_STATUS.SUCCEEDED),
+			v.literal(PAYMENT_REFUND_STATUS.PARTIAL),
 			v.literal(PAYMENT_REFUND_STATUS.FAILED)
 		),
 		attemptNumber: v.number(),
@@ -541,6 +542,13 @@ export default defineSchema({
 		failedAt: v.optional(v.number()),
 		refundRequestedAt: v.optional(v.number()),
 		refundedAt: v.optional(v.number()),
+		/**
+		 * Total amount refunded so far, in the smallest currency unit. Set by the
+		 * `charge.refunded` webhook (covers both app-initiated refunds and manual
+		 * Stripe-dashboard refunds). Equals the captured amount for a full refund;
+		 * less than it for a partial refund.
+		 */
+		amountRefunded: v.optional(v.number()),
 		/** Tip portion in smallest currency unit (e.g. cents). */
 		gratuityAmount: v.optional(v.number()),
 		createdAt: v.number(),
@@ -561,6 +569,40 @@ export default defineSchema({
 	})
 		.index("by_event_id", ["eventId"])
 		.index("by_payment", ["paymentId"]),
+
+	// Chargeback / dispute facts recorded from `charge.dispute.*` webhooks.
+	// The platform is the `losses_collector` (destination charges live on the
+	// platform account), so these events arrive on the standard webhook and are
+	// persisted here so disputes are visible in-app instead of silently hitting
+	// the Stripe balance. One row per Stripe dispute id (upserted: inserted on
+	// `.created`, patched on `.closed`).
+	[TABLE.STRIPE_DISPUTES]: defineTable({
+		stripeDisputeId: v.string(),
+		// Best-effort links back to our records, resolved via the charge's
+		// PaymentIntent. Absent when the charge is not one we created.
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		sessionId: v.optional(v.id(TABLE.SESSIONS)),
+		stripeChargeId: v.optional(v.string()),
+		stripePaymentIntentId: v.optional(v.string()),
+		// Raw Stripe dispute reason and status strings (not narrowed to a union:
+		// Stripe evolves these and we only surface them for staff visibility).
+		reason: v.string(),
+		status: v.string(),
+		/** Disputed amount in the smallest currency unit. */
+		amount: v.number(),
+		currency: v.string(),
+		/** Event timestamp of the `charge.dispute.created` delivery (ms). */
+		openedAt: v.optional(v.number()),
+		/** Event timestamp of the `charge.dispute.closed` delivery (ms). */
+		closedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_dispute_id", ["stripeDisputeId"])
+		.index("by_payment", ["paymentId"])
+		.index("by_restaurant", ["restaurantId"]),
 
 	// ============================================================================
 	// Reservations

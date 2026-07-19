@@ -1,6 +1,15 @@
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { ORDER_PAYMENT_STATE, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, TABLE } from "./constants";
+import {
+	AUDIT_SYSTEM_USER_ID,
+	ORDER_PAYMENT_STATE,
+	PAYMENT_REFUND_STATUS,
+	PAYMENT_STATUS,
+	TABLE,
+} from "./constants";
+import { appendAuditEvent } from "./_util/audit";
+import { DISPUTE_PHASE } from "./stripeWebhookHelpers";
 
 const paymentStatusValidator = v.union(
 	v.literal(PAYMENT_STATUS.PENDING),
@@ -15,6 +24,7 @@ const paymentRefundStatusValidator = v.union(
 	v.literal(PAYMENT_REFUND_STATUS.NONE),
 	v.literal(PAYMENT_REFUND_STATUS.REQUESTED),
 	v.literal(PAYMENT_REFUND_STATUS.SUCCEEDED),
+	v.literal(PAYMENT_REFUND_STATUS.PARTIAL),
 	v.literal(PAYMENT_REFUND_STATUS.FAILED)
 );
 
@@ -336,5 +346,169 @@ export const recordStripeWebhookEvent = internalMutation({
 			processedAt: now,
 			createdAt: now,
 		});
+	},
+});
+
+// =============================================================================
+// Refund & Dispute webhook persistence (charge.refunded / charge.dispute.*)
+// =============================================================================
+// See `convex/stripeWebhookHelpers.ts` for the routing rationale (these events
+// land on the STANDARD webhook because the platform is the losses_collector on
+// destination charges). The node-side handlers in `convex/_util/stripe.ts`
+// resolve the payment from the charge's PaymentIntent, then call these.
+
+/**
+ * Records refund facts derived from a `charge.refunded` event onto the payment.
+ * Idempotent: re-applying the same facts is a harmless no-op, and duplicate
+ * webhook deliveries are already short-circuited upstream via
+ * `stripeWebhookEvents`. Full refunds also flip the linked order to "refunded"
+ * (session/tab payments have no dedicated refunded state, so only the payment
+ * record is updated there). Also surfaces manual Stripe-dashboard refunds.
+ */
+export const recordChargeRefund = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		amountRefunded: v.number(),
+		amountCaptured: v.number(),
+		isFullyRefunded: v.boolean(),
+		stripeRefundId: v.optional(v.string()),
+		refundedAtMs: v.optional(v.number()),
+		latestStripeEventId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		const now = Date.now();
+		const refundStatus = args.isFullyRefunded
+			? PAYMENT_REFUND_STATUS.SUCCEEDED
+			: PAYMENT_REFUND_STATUS.PARTIAL;
+
+		await ctx.db.patch(args.paymentId, {
+			refundStatus,
+			amountRefunded: args.amountRefunded,
+			...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
+			...(args.latestStripeEventId !== undefined && {
+				latestStripeEventId: args.latestStripeEventId,
+			}),
+			...(args.isFullyRefunded && { refundedAt: args.refundedAtMs ?? now }),
+			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+		});
+
+		if (args.isFullyRefunded && payment.orderId) {
+			const order = await ctx.db.get(payment.orderId);
+			if (order) {
+				await ctx.db.patch(order._id, {
+					paymentState: ORDER_PAYMENT_STATE.REFUNDED,
+					updatedAt: now,
+					updatedBy: AUDIT_SYSTEM_USER_ID,
+				});
+			}
+		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.PAYMENTS,
+			aggregateId: args.paymentId,
+			eventType: "payments.refundRecorded",
+			payload: {
+				amountRefunded: args.amountRefunded,
+				amountCaptured: args.amountCaptured,
+				isFullyRefunded: args.isFullyRefunded,
+				refundStatus,
+				stripeRefundId: args.stripeRefundId,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: args.latestStripeEventId
+				? `charge.refunded:${args.latestStripeEventId}`
+				: undefined,
+		});
+	},
+});
+
+/**
+ * Upserts dispute facts from a `charge.dispute.created` / `charge.dispute.closed`
+ * event into `stripeDisputes` (one row per Stripe dispute id) and appends an
+ * audit event next to the resolved payment. Inserts on `created`, patches on
+ * `closed`; re-delivery of either phase is idempotent.
+ */
+export const recordChargeDispute = internalMutation({
+	args: {
+		stripeDisputeId: v.string(),
+		phase: v.union(v.literal(DISPUTE_PHASE.CREATED), v.literal(DISPUTE_PHASE.CLOSED)),
+		reason: v.string(),
+		status: v.string(),
+		amount: v.number(),
+		currency: v.string(),
+		eventTimeMs: v.number(),
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		sessionId: v.optional(v.id(TABLE.SESSIONS)),
+		stripeChargeId: v.optional(v.string()),
+		stripePaymentIntentId: v.optional(v.string()),
+		latestStripeEventId: v.optional(v.string()),
+	},
+	handler: async (ctx, args): Promise<Id<"stripeDisputes">> => {
+		const now = Date.now();
+		const existing = await ctx.db
+			.query(TABLE.STRIPE_DISPUTES)
+			.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", args.stripeDisputeId))
+			.first();
+
+		let disputeId: Id<"stripeDisputes">;
+		if (existing) {
+			await ctx.db.patch(existing._id, {
+				reason: args.reason,
+				status: args.status,
+				amount: args.amount,
+				currency: args.currency,
+				...(args.phase === DISPUTE_PHASE.CREATED && existing.openedAt === undefined
+					? { openedAt: args.eventTimeMs }
+					: {}),
+				...(args.phase === DISPUTE_PHASE.CLOSED ? { closedAt: args.eventTimeMs } : {}),
+				updatedAt: now,
+			});
+			disputeId = existing._id;
+		} else {
+			disputeId = await ctx.db.insert(TABLE.STRIPE_DISPUTES, {
+				stripeDisputeId: args.stripeDisputeId,
+				restaurantId: args.restaurantId,
+				paymentId: args.paymentId,
+				orderId: args.orderId,
+				sessionId: args.sessionId,
+				stripeChargeId: args.stripeChargeId,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+				reason: args.reason,
+				status: args.status,
+				amount: args.amount,
+				currency: args.currency,
+				...(args.phase === DISPUTE_PHASE.CREATED
+					? { openedAt: args.eventTimeMs }
+					: { closedAt: args.eventTimeMs }),
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: args.paymentId ? TABLE.PAYMENTS : TABLE.STRIPE_DISPUTES,
+			aggregateId: args.paymentId ?? disputeId,
+			eventType:
+				args.phase === DISPUTE_PHASE.CREATED ? "payments.disputeOpened" : "payments.disputeClosed",
+			payload: {
+				stripeDisputeId: args.stripeDisputeId,
+				reason: args.reason,
+				status: args.status,
+				amount: args.amount,
+				currency: args.currency,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: args.latestStripeEventId
+				? `charge.dispute.${args.phase}:${args.latestStripeEventId}`
+				: undefined,
+		});
+
+		return disputeId;
 	},
 });
