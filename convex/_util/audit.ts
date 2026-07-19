@@ -2,11 +2,20 @@
  * Append-only audit events + stamp helpers for updatedAt / updatedBy.
  */
 import type { Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { DatabaseWriter } from "../_generated/server";
 import { AUDIT_SYSTEM_USER_ID, TABLE, type TableName } from "../constants";
 
+/**
+ * Only the writer is needed, not a full `MutationCtx`. Typing it this way lets
+ * pure helpers that take `{ db: DatabaseWriter }` -- e.g.
+ * `createReservationCore` in `reservationHelpers.ts` -- append events without
+ * every caller having to thread a mutation context through. `MutationCtx`
+ * satisfies this, so existing call sites are unaffected.
+ */
+type AuditCtx = { db: DatabaseWriter };
+
 export async function appendAuditEvent(
-	ctx: MutationCtx,
+	ctx: AuditCtx,
 	args: {
 		aggregateType: TableName;
 		aggregateId: string;
