@@ -851,7 +851,9 @@
 			"tableTitle": "Table Ordering",
 			"tableDesc": "Customers order from their table via a unique link or QR code.",
 			"authTitle": "Secure Auth",
-			"authDesc": "Manage staff roles with secure authentication via Clerk."
+			"authDesc": "Manage staff roles with secure authentication via Clerk.",
+			"reservationsTitle": "Reservations",
+			"reservationsDesc": "Take bookings and manage your dining room from one shared calendar."
 		},
 		"getStarted": "Get Started"
 	},
