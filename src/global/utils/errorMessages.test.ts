@@ -1,6 +1,10 @@
 import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
-import { fromErrorObject, UserInputValidationError } from "convex/_shared/errors";
+import {
+	AppUrlNotConfiguredError,
+	fromErrorObject,
+	UserInputValidationError,
+} from "convex/_shared/errors";
 import en from "@/global/i18n/locales/en.json";
 import { ErrorKeys } from "@/global/i18n/keys/errors";
 import { extractErrorCode, getErrorMessage, getErrorMessageKey } from "./errorMessages";
@@ -136,6 +140,16 @@ describe("extractErrorCode — real returned error shapes (fromErrorObject)", ()
 	it("returns null when neither a specific code nor a known category is present", () => {
 		const err = fromErrorObject({ name: "MYSTERY_CATEGORY", message: "ERROR_NOT_A_REAL_CODE" });
 		expect(extractErrorCode(err)).toBeNull();
+	});
+
+	it("resolves APP_URL_NOT_CONFIGURED (a standalone code with prose on .message)", () => {
+		// getAppUrl() throws this directly (not via a returned tuple), but it is
+		// registered in BACKEND_ERROR_CODES for consistency — verify it still
+		// resolves correctly if ever caught and passed through the mapper.
+		const err = new AppUrlNotConfiguredError(
+			'PUBLIC_APP_URL (or VITE_APP_URL) must be set when CONVEX_ENV is "production"; refusing to fall back to localhost.'
+		);
+		expect(extractErrorCode(err)).toBe("APP_URL_NOT_CONFIGURED");
 	});
 });
 

@@ -10,6 +10,7 @@ export const ERROR_NAMES = {
 	VALIDATION_ERROR: "VALIDATION_ERROR",
 	IDEMPOTENCY_KEY_CONFLICT: "IDEMPOTENCY_KEY_CONFLICT",
 	INVALID_AUCTION_STATE: "INVALID_AUCTION_STATE",
+	APP_URL_NOT_CONFIGURED: "APP_URL_NOT_CONFIGURED",
 	RATE_LIMITED: "RATE_LIMITED",
 } as const;
 
@@ -25,6 +26,7 @@ export const DEFAULT_ERROR_MESSAGES = {
 	[ERROR_NAMES.VALIDATION_ERROR]: "Validation error",
 	[ERROR_NAMES.IDEMPOTENCY_KEY_CONFLICT]: "Idempotency key conflict",
 	[ERROR_NAMES.INVALID_AUCTION_STATE]: "Invalid auction state",
+	[ERROR_NAMES.APP_URL_NOT_CONFIGURED]: "App URL not configured",
 	[ERROR_NAMES.RATE_LIMITED]: "Too many requests, please try again later",
 } as const;
 
@@ -54,6 +56,9 @@ export type ConflictErrorObject = CustomErrorObject & {
 };
 export type InvalidAuctionStateErrorObject = CustomErrorObject & {
 	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.INVALID_AUCTION_STATE}`];
+};
+export type AppUrlNotConfiguredErrorObject = CustomErrorObject & {
+	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.APP_URL_NOT_CONFIGURED}`];
 };
 export type RateLimitedErrorObject = CustomErrorObject & {
 	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.RATE_LIMITED}`];
@@ -206,6 +211,21 @@ export class InvalidAuctionStateError extends CustomError {
 	}
 }
 
+export class AppUrlNotConfiguredError extends CustomError {
+	constructor(message?: string) {
+		super({
+			message: message ?? DEFAULT_ERROR_MESSAGES[ERROR_NAMES.APP_URL_NOT_CONFIGURED],
+			name: ERROR_NAMES.APP_URL_NOT_CONFIGURED,
+		});
+	}
+
+	override toObject(): AppUrlNotConfiguredErrorObject {
+		return {
+			name: ERROR_NAMES.APP_URL_NOT_CONFIGURED,
+			message: this.message,
+		};
+	}
+}
 export class RateLimitedError extends CustomError {
 	constructor(message?: string) {
 		super({

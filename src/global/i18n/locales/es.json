@@ -499,6 +499,7 @@
 		"VALIDATION_ERROR": "Parte de la información no es válida. Revísala e inténtalo de nuevo.",
 		"IDEMPOTENCY_KEY_CONFLICT": "Esta acción ya se envió. Actualiza antes de volver a intentarlo.",
 		"INVALID_AUCTION_STATE": "Esa acción no está permitida en el estado actual.",
+		"APP_URL_NOT_CONFIGURED": "Algo está mal configurado de nuestro lado. Inténtalo de nuevo más tarde.",
 		"ERROR_ADMIN_ROLE_REQUIRED": "Necesitas permisos de administrador para hacer eso.",
 		"ERROR_OWNER_ROLE_REQUIRED": "Necesitas permisos de propietario para hacer eso.",
 		"ERROR_MANAGER_ROLE_REQUIRED": "Necesitas permisos de gerente para hacer eso.",
