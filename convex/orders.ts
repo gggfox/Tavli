@@ -582,13 +582,21 @@ export const getActiveOrdersByRestaurant = query({
 				? Array.from(new Set(args.statuses))
 				: [...DEFAULT_DASHBOARD_STATUSES];
 
-		const allOrders = await ctx.db
-			.query(TABLE.ORDERS)
-			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
-			.collect();
-
-		const allowed = new Set<string>(requestedStatuses);
-		const filteredOrders = allOrders.filter((o) => allowed.has(o.status));
+		// One indexed range per requested status — avoids collecting the
+		// restaurant's entire (unbounded) order history just to keep the
+		// handful of active tickets. `requestedStatuses` is deduped above,
+		// so the per-status results are disjoint.
+		const ordersPerStatus = await Promise.all(
+			requestedStatuses.map((status) =>
+				ctx.db
+					.query(TABLE.ORDERS)
+					.withIndex("by_restaurant_status", (q) =>
+						q.eq("restaurantId", args.restaurantId).eq("status", status)
+					)
+					.collect()
+			)
+		);
+		const filteredOrders = ordersPerStatus.flat();
 
 		const ordersWithItems = await Promise.all(
 			filteredOrders.map(async (order) => {
