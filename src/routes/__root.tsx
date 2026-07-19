@@ -149,7 +149,12 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 	return (
 		<ClerkProvider>
 			<ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
-				<html lang={i18n.language}>
+				{/* suppressHydrationWarning: initScript (above) mutates <html> before
+				    React hydrates — it adds the `dark` class and the sidebar dataset
+				    from localStorage, which the server can't know. React 19 reports
+				    the attribute diff as a hydration mismatch; suppressing here is
+				    scoped to this element's attributes only, not its subtree. */}
+				<html lang={i18n.language} suppressHydrationWarning>
 					<head>
 						<script dangerouslySetInnerHTML={{ __html: initScript }} />
 						<HeadContent />
