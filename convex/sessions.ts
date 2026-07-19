@@ -598,6 +598,55 @@ export const sweepStaleOpenTabs = internalMutation({
 });
 
 /**
+ * Candidate tabs for Stripe reconciliation: active sessions that have been
+ * locked for payment since before `lockedBefore`, still point at a non-settled
+ * payment, and carry a stored PaymentIntent id to reconcile against.
+ *
+ * The scan is bounded by the `by_locked_for_payment` index range — only tabs
+ * currently locked within the (0, lockedBefore) window are read, never the
+ * whole sessions table.
+ */
+export const listStuckLockedTabs = internalQuery({
+	args: { lockedBefore: v.number() },
+	handler: async (ctx, args) => {
+		const sessions = await ctx.db
+			.query(TABLE.SESSIONS)
+			.withIndex("by_locked_for_payment", (q) =>
+				q.gt("lockedForPaymentAt", 0).lt("lockedForPaymentAt", args.lockedBefore)
+			)
+			.collect();
+
+		const rows: Array<{
+			sessionId: Id<typeof TABLE.SESSIONS>;
+			paymentId: Id<typeof TABLE.PAYMENTS>;
+			stripePaymentIntentId: string;
+			lockedForPaymentAt: number;
+		}> = [];
+
+		for (const session of sessions) {
+			if (session.status !== SESSION_STATUS.ACTIVE) continue;
+			if (session.lockedForPaymentAt === undefined) continue;
+			if (!session.activePaymentId) continue;
+
+			const payment = await ctx.db.get(session.activePaymentId);
+			if (!payment?.stripePaymentIntentId) continue;
+			// Already settled — the lock will be cleared by confirmTabPayment; no
+			// need to hit Stripe again.
+			if (payment.status === PAYMENT_STATUS.SUCCEEDED) continue;
+
+			rows.push({
+				sessionId: session._id,
+				paymentId: payment._id,
+				stripePaymentIntentId: payment.stripePaymentIntentId,
+				lockedForPaymentAt: session.lockedForPaymentAt,
+			});
+		}
+
+		return rows;
+	},
+});
+
+/**
  * Helper used by `reservations.markSeated`. Creates an active session pinned
  * to a table at "now", in the same Convex transaction as the reservation
  * status flip, so the existing ordering flow is reachable the moment the

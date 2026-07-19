@@ -49,10 +49,13 @@ import {
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PLATFORM_APPLICATION_FEE_RATE,
+	TAB_RECONCILE_ALERT_AGE_MS,
+	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
 } from "./constants";
 import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
+import { decideTabReconciliation } from "./sessionHelpers";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getStripeClient,
@@ -937,6 +940,94 @@ export const createTabPaymentIntent = action({
 					error instanceof Error ? error.message : "Failed to create tab payment intent",
 			});
 			throw error;
+		}
+	},
+});
+
+// =============================================================================
+// 9. Stuck Tab Reconciliation (TAVLI-45 — recover from dropped payment webhooks)
+// =============================================================================
+
+/**
+ * Reconciles tabs stuck locked-for-payment against Stripe.
+ *
+ * A tab settles entirely on the `payment_intent.succeeded` webhook; if that
+ * event is dropped or delayed the tab stays locked forever (customers can't
+ * pay, staff can't close it). This cron (see `convex/crons.ts`) is the backstop:
+ * for every tab locked longer than `TAB_RECONCILE_MIN_AGE_MS` it pulls the
+ * PaymentIntent directly and, based on its status:
+ *
+ * - `succeeded` → runs {@link handlePaymentIntentSuccess}, the exact same
+ *   idempotent fulfillment path the webhook uses (`confirmTabPayment` no-ops if
+ *   the tab was already settled, so re-running is safe).
+ * - terminal/abandoned → unlocks via `failTabPayment` so the group can retry.
+ * - still `processing` → leaves the lock, escalating to a `console.error` once
+ *   it outlives `TAB_RECONCILE_ALERT_AGE_MS` so staff can chase it.
+ *
+ * Per-candidate failures are logged and skipped so one bad PaymentIntent can't
+ * stall the rest of the batch.
+ */
+export const reconcileStuckTabPayments = internalAction({
+	args: {},
+	handler: async (ctx): Promise<void> => {
+		const now = Date.now();
+		const candidates = await ctx.runQuery(internal.sessions.listStuckLockedTabs, {
+			lockedBefore: now - TAB_RECONCILE_MIN_AGE_MS,
+		});
+		if (candidates.length === 0) return;
+
+		const stripeClient = getStripeClient();
+
+		for (const candidate of candidates) {
+			try {
+				const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+					candidate.stripePaymentIntentId
+				);
+
+				const decision = decideTabReconciliation({
+					paymentIntentStatus: paymentIntent.status,
+					lockAgeMs: now - candidate.lockedForPaymentAt,
+					alertAgeMs: TAB_RECONCILE_ALERT_AGE_MS,
+				});
+
+				switch (decision) {
+					case "settle": {
+						// Identical to the webhook path — routes tab payments to the
+						// idempotent `confirmTabPayment` mutation.
+						await handlePaymentIntentSuccess(ctx, paymentIntent);
+						break;
+					}
+					case "unlock": {
+						await ctx.runMutation(internal.sessions.failTabPayment, {
+							paymentId: candidate.paymentId,
+							stripePaymentIntentId: candidate.stripePaymentIntentId,
+							failureCode: `reconcile_${paymentIntent.status}`,
+							failureMessage: `Tab lock reconciled: PaymentIntent status is ${paymentIntent.status}`,
+						});
+						break;
+					}
+					case "alert": {
+						const lockedMinutes = Math.round((now - candidate.lockedForPaymentAt) / 60000);
+						console.error(
+							`[stripe.reconcileStuckTabPayments] session ${candidate.sessionId} still locked ` +
+								`after ${lockedMinutes}m — PaymentIntent ${candidate.stripePaymentIntentId} is ` +
+								`${paymentIntent.status}. Needs staff attention.`
+						);
+						break;
+					}
+					case "wait":
+						break;
+				}
+			} catch (error) {
+				console.error(
+					"[stripe.reconcileStuckTabPayments]",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "reconcileStuckTab",
+						eventId: candidate.stripePaymentIntentId,
+					})
+				);
+			}
 		}
 	},
 });

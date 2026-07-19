@@ -135,6 +135,71 @@ async function seedDraftOrder(
 	return { orderId: orderId!, diner: t.withIdentity({ subject: dinerId }) };
 }
 
+/**
+ * Seeds an active session locked for payment with a submitted (payable) order
+ * and a processing tab payment carrying `stripePaymentIntentId`. Mirrors the
+ * mid-flight state a dropped `payment_intent.succeeded` webhook leaves behind.
+ */
+async function seedLockedTab(
+	t: ReturnType<typeof convexTest>,
+	args: {
+		restaurantId: Id<"restaurants">;
+		lockedForPaymentAt: number;
+		stripePaymentIntentId: string;
+		amount: number;
+		gratuityAmount?: number;
+	}
+) {
+	let sessionId: Id<"sessions">;
+	let orderId: Id<"orders">;
+	let paymentId: Id<"payments">;
+
+	await t.run(async (ctx) => {
+		const tableId = await ctx.db.insert("tables", {
+			restaurantId: args.restaurantId,
+			tableNumber: 7,
+			isActive: true,
+			createdAt: Date.now(),
+		});
+		sessionId = await ctx.db.insert("sessions", {
+			restaurantId: args.restaurantId,
+			tableId,
+			userId: "diner-locked",
+			status: "active",
+			startedAt: args.lockedForPaymentAt - 60 * 60 * 1000,
+			lockedForPaymentAt: args.lockedForPaymentAt,
+			paymentState: "processing",
+		});
+		orderId = await ctx.db.insert("orders", {
+			sessionId,
+			restaurantId: args.restaurantId,
+			tableId,
+			status: "submitted",
+			totalAmount: args.amount - (args.gratuityAmount ?? 0),
+			paymentState: "unpaid",
+			submittedAt: Date.now(),
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		paymentId = await ctx.db.insert("payments", {
+			restaurantId: args.restaurantId,
+			sessionId,
+			amount: args.amount,
+			currency: "usd",
+			status: "processing",
+			refundStatus: "none",
+			attemptNumber: 1,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+			gratuityAmount: args.gratuityAmount ?? 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		await ctx.db.patch(sessionId, { activePaymentId: paymentId });
+	});
+
+	return { sessionId: sessionId!, orderId: orderId!, paymentId: paymentId! };
+}
+
 async function seedUserRole(
 	t: ReturnType<typeof convexTest>,
 	args: {
@@ -547,5 +612,152 @@ describe("stripe actions", () => {
 
 		const events = await t.run(async (ctx) => ctx.db.query("stripeWebhookEvents").collect());
 		expect(events).toHaveLength(0);
+	});
+
+	describe("reconcileStuckTabPayments (TAVLI-45)", () => {
+		it("settles a stuck tab whose PaymentIntent already succeeded", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { sessionId, orderId, paymentId } = await seedLockedTab(t, {
+				restaurantId,
+				lockedForPaymentAt: Date.now() - 15 * 60 * 1000,
+				stripePaymentIntentId: "pi_stuck_success",
+				amount: 1980,
+				gratuityAmount: 180,
+			});
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_stuck_success",
+				status: "succeeded",
+				latest_charge: "ch_stuck",
+				metadata: { gratuityAmount: "180" },
+			});
+
+			await t.action(internal.stripe.reconcileStuckTabPayments, {});
+
+			await t.run(async (ctx) => {
+				const session = await ctx.db.get(sessionId);
+				expect(session!.status).toBe("closed");
+				expect(session!.paymentState).toBe("paid");
+				expect(session!.lockedForPaymentAt).toBeUndefined();
+				expect(session!.settledBy).toBe("stripe");
+				expect(session!.tipAmount).toBe(180);
+
+				const order = await ctx.db.get(orderId);
+				expect(order!.paymentState).toBe("paid");
+
+				const payment = await ctx.db.get(paymentId);
+				expect(payment!.status).toBe("succeeded");
+				expect(payment!.stripeChargeId).toBe("ch_stuck");
+			});
+		});
+
+		it("unlocks a stuck tab whose PaymentIntent was canceled", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { sessionId, orderId, paymentId } = await seedLockedTab(t, {
+				restaurantId,
+				lockedForPaymentAt: Date.now() - 20 * 60 * 1000,
+				stripePaymentIntentId: "pi_stuck_canceled",
+				amount: 1800,
+			});
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_stuck_canceled",
+				status: "canceled",
+			});
+
+			await t.action(internal.stripe.reconcileStuckTabPayments, {});
+
+			await t.run(async (ctx) => {
+				const session = await ctx.db.get(sessionId);
+				// Unlocked but not closed — the group can retry or staff can settle.
+				expect(session!.status).toBe("active");
+				expect(session!.lockedForPaymentAt).toBeUndefined();
+				expect(session!.paymentState).toBe("failed");
+
+				const order = await ctx.db.get(orderId);
+				expect(order!.paymentState).toBe("unpaid");
+
+				const payment = await ctx.db.get(paymentId);
+				expect(payment!.status).toBe("failed");
+				expect(payment!.failureCode).toBe("reconcile_canceled");
+			});
+		});
+
+		it("leaves a still-processing tab locked", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const lockedForPaymentAt = Date.now() - 15 * 60 * 1000;
+			const { sessionId, paymentId } = await seedLockedTab(t, {
+				restaurantId,
+				lockedForPaymentAt,
+				stripePaymentIntentId: "pi_stuck_processing",
+				amount: 1800,
+			});
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_stuck_processing",
+				status: "processing",
+			});
+
+			await t.action(internal.stripe.reconcileStuckTabPayments, {});
+
+			await t.run(async (ctx) => {
+				const session = await ctx.db.get(sessionId);
+				expect(session!.status).toBe("active");
+				expect(session!.lockedForPaymentAt).toBe(lockedForPaymentAt);
+				expect(session!.paymentState).toBe("processing");
+
+				const payment = await ctx.db.get(paymentId);
+				expect(payment!.status).toBe("processing");
+			});
+		});
+
+		it("ignores tabs locked more recently than the reconcile window", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const lockedForPaymentAt = Date.now() - 2 * 60 * 1000;
+			const { sessionId } = await seedLockedTab(t, {
+				restaurantId,
+				lockedForPaymentAt,
+				stripePaymentIntentId: "pi_fresh_lock",
+				amount: 1800,
+			});
+
+			await t.action(internal.stripe.reconcileStuckTabPayments, {});
+
+			// The freshly-locked tab is outside the (0, now-10m) index window, so
+			// Stripe is never consulted and the lock stands.
+			expect(mockStripeClient.paymentIntents.retrieve).not.toHaveBeenCalled();
+			await t.run(async (ctx) => {
+				const session = await ctx.db.get(sessionId);
+				expect(session!.lockedForPaymentAt).toBe(lockedForPaymentAt);
+			});
+		});
 	});
 });
