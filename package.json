@@ -4,7 +4,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "concurrently -k -n convex,vite -c blue,green \"convex dev\" \"vite dev --port 3000\"",
-		"dev:device": "DEVICE_TESTING=1 infisical run --projectId=da9416bf-a247-4f41-b4c0-14b22f0aaff0 --env=dev --silent -- pnpm dev",
+		"dev:device": "node scripts/ensure-dev-cert.mjs && DEVICE_TESTING=1 infisical run --projectId=da9416bf-a247-4f41-b4c0-14b22f0aaff0 --env=dev --silent -- pnpm dev",
+		"test:e2e:device": "infisical run --projectId=da9416bf-a247-4f41-b4c0-14b22f0aaff0 --env=dev --silent -- node e2e/device/run.mjs",
 		"build": "vite build",
 		"serve": "vite preview",
 		"clean": "rm -rf node_modules/.vite .nitro .output",
@@ -93,6 +94,7 @@
 		"lint-staged": "^17.0.6",
 		"prettier": "^3.4.0",
 		"react-email": "^6.5.0",
+		"selenium-webdriver": "^4.46.0",
 		"typescript": "^5.7.2",
 		"vite": "^7.3.5",
 		"vitest": "^3.0.5",
