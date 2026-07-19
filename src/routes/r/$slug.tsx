@@ -318,10 +318,7 @@ function MyOrdersLink({ sessionId, slug }: Readonly<{ sessionId: Id<"sessions">;
 			<Receipt size={14} className="text-muted-foreground" />
 			<span>{t(OrderingKeys.SESSION_MY_ORDERS)}</span>
 			{activeCount > 0 && (
-				<span
-					className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary"
-					style={{ color: "white" }}
-				>
+				<span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary text-primary-foreground">
 					{activeCount}
 				</span>
 			)}

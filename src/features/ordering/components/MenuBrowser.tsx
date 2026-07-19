@@ -178,7 +178,8 @@ export function MenuBrowser({
 							style={{
 								backgroundColor:
 									currentMenuId === menu._id ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-								color: currentMenuId === menu._id ? "white" : "var(--text-secondary)",
+								color:
+									currentMenuId === menu._id ? "var(--btn-primary-text)" : "var(--text-secondary)",
 							}}
 						>
 							{getTranslatedField(menu, lang)}
@@ -222,8 +223,7 @@ export function MenuBrowser({
 			)}
 			{!orderingBlocked && paymentsEnabled === false && itemCount > 0 && (
 				<div
-					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning ${bottomBarSafePadding}`}
-					style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
+					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning bg-warning-subtle ${bottomBarSafePadding}`}
 				>
 					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
@@ -258,7 +258,7 @@ export function MenuBrowser({
 									htmlFor="table-select"
 									className="block text-xs font-semibold mb-1 text-muted-foreground"
 								>
-									{t(OrderingKeys.MENU_TABLE_NUMBER)} <span style={{ color: "#dc2626" }}>*</span>
+									{t(OrderingKeys.MENU_TABLE_NUMBER)} <span className="text-destructive">*</span>
 								</label>
 								<select
 									id="table-select"
@@ -268,7 +268,11 @@ export function MenuBrowser({
 									}
 									className="w-full px-3 py-2 rounded-lg text-sm bg-muted text-foreground"
 									style={{
-										border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`,
+										border: `1px solid ${
+											!selectedTableId && showPayFlow
+												? "var(--accent-danger)"
+												: "var(--border-default)"
+										}`,
 									}}
 								>
 									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
@@ -282,7 +286,7 @@ export function MenuBrowser({
 										))}
 								</select>
 								{!selectedTableId && (
-									<p className="text-[11px] mt-1" style={{ color: "#dc2626" }}>
+									<p className="text-[11px] mt-1 text-destructive">
 										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
 								)}
@@ -476,11 +480,11 @@ function CategoryItems({
 						>
 							{isSelected && (
 								<span className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary">
-									<Check size={14} className="text-white" />
+									<Check size={14} className="text-primary-foreground" />
 								</span>
 							)}
 							{isSelected && selection && selection.quantity > 1 && (
-								<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white bg-primary">
+								<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-primary-foreground bg-primary">
 									{selection.quantity}
 								</span>
 							)}

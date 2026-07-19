@@ -67,10 +67,7 @@ export function OpenTabsPanel({ restaurantId }: Readonly<OpenTabsPanelProps>) {
 			<h2 className="text-lg font-bold text-foreground">{t(TabsKeys.HEADER)}</h2>
 
 			{error && (
-				<div
-					className="px-4 py-3 rounded-lg text-sm text-destructive"
-					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
-				>
+				<div className="px-4 py-3 rounded-lg text-sm text-destructive bg-destructive-subtle">
 					{error}
 				</div>
 			)}
@@ -122,7 +119,10 @@ function TabCard({
 					{tab.flaggedStaleAt != null && (
 						<span
 							className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
-							style={{ backgroundColor: "rgba(217, 119, 6, 0.12)", color: "var(--accent-warning)" }}
+							style={{
+								backgroundColor: "var(--accent-warning-light)",
+								color: "var(--accent-warning)",
+							}}
 						>
 							<AlertTriangle size={11} />
 							{t(TabsKeys.STALE_BADGE)}
@@ -132,8 +132,8 @@ function TabCard({
 						<span
 							className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
 							style={{
-								backgroundColor: "rgba(35, 131, 226, 0.12)",
-								color: "var(--btn-primary-bg)",
+								backgroundColor: "var(--accent-info-light)",
+								color: "var(--accent-info)",
 							}}
 						>
 							<CreditCard size={11} />

@@ -29,9 +29,9 @@ describe("VirtualGrid", () => {
 	it("renders nothing for an empty list", () => {
 		const { container } = render(
 			<VirtualGrid
-				items={[]}
-				getKey={(item: { id: string }) => item.id}
-				renderItem={(item: { label: string }) => <span>{item.label}</span>}
+				items={[] as typeof items}
+				getKey={(item) => item.id}
+				renderItem={(item) => <span>{item.label}</span>}
 			/>
 		);
 
