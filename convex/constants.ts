@@ -185,6 +185,20 @@ export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 /** Active tabs older than this are swept: closed when settled, flagged when unpaid. */
 export const STALE_TAB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * A tab locked for payment longer than this is reconciled against Stripe: the
+ * `payment_intent.succeeded` webhook was likely dropped/delayed, so the cron
+ * pulls the PaymentIntent directly and settles/unlocks accordingly.
+ */
+export const TAB_RECONCILE_MIN_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * A tab whose PaymentIntent is still `processing` after this long is logged
+ * (console.error) so staff can chase it — Stripe is genuinely mid-flight, so
+ * the cron leaves the lock in place rather than guessing.
+ */
+export const TAB_RECONCILE_ALERT_AGE_MS = 30 * 60 * 1000;
+
 export const SELECTION_TYPE = {
 	SINGLE: "single",
 	MULTI: "multi",
