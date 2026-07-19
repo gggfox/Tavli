@@ -592,7 +592,8 @@ export const createRefund = internalAction({
  * Creates a PaymentIntent for the in-app order checkout flow using
  * Stripe Elements. Customers pay within the app (not via hosted checkout).
  *
- * Uses destination charges with a 6% application fee.
+ * Uses destination charges with the platform application fee
+ * ({@link PLATFORM_APPLICATION_FEE_RATE}).
  *
  * @deprecated TAVLI-6 moved payment to the end of the visit: the customer
  * flow now uses {@link createTabPaymentIntent} to settle the whole session
@@ -635,7 +636,7 @@ export const createPaymentIntent = action({
 			throw new Error("Restaurant is not set up for payments");
 		}
 
-		const applicationFeeAmount = Math.round(order.totalAmount * 0.06);
+		const applicationFeeAmount = Math.round(order.totalAmount * PLATFORM_APPLICATION_FEE_RATE);
 		const currency = restaurant.currency.toLowerCase();
 
 		const stripeClient = getStripeClient();
@@ -768,8 +769,9 @@ export const createPaymentIntent = action({
  * optional tip. Any tab member can pay. The tab locks (no new/edited orders)
  * while the payment is in flight; a failed or abandoned payment unlocks it.
  *
- * Fee policy (ticket TAVLI-6): the 6% platform application fee applies to the
- * tab subtotal only — the full tip lands in the restaurant's connected account.
+ * Fee policy (ticket TAVLI-6): the 12% platform application fee
+ * ({@link PLATFORM_APPLICATION_FEE_RATE}) applies to the tab subtotal only —
+ * the full tip lands in the restaurant's connected account.
  */
 export const createTabPaymentIntent = action({
 	args: {
