@@ -11,11 +11,14 @@
  */
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { DatabaseWriter } from "./_generated/server";
 import {
 	ConflictError,
 	ConflictErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
+	RateLimitedError,
+	RateLimitedErrorObject,
 	UserInputValidationError,
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
@@ -30,6 +33,7 @@ import {
 	isWithinHorizon,
 	requiredCapacityCovered,
 } from "./_util/availability";
+import { consumeRateLimit, type RateLimitConfig } from "./_util/rateLimit";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import { RESERVATION_SOURCE, RESERVATION_STATUS, ReservationStatus, TABLE } from "./constants";
 
@@ -49,6 +53,91 @@ export const BASIC_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Max reservations per phone number per restaurant within the window. */
 export const RESERVATION_RATE_LIMIT_MAX = 5;
 export const RESERVATION_RATE_LIMIT_WINDOW_MS = 60 * 60_000;
+
+// Attempt-based sliding-window limits for the create surface. Unlike
+// `assertReservationCreateNotRateLimited` -- which caps how many rows a single
+// phone can actually *book* -- these bound how many create *attempts* (including
+// ones that fail availability) an identity can make, so a flood of cheap
+// requests can't drive the expensive per-table availability scans. Keyed per
+// restaurant + contact identity (phone, and email when present).
+export const RESERVATION_CREATE_ATTEMPT_LIMIT: RateLimitConfig = {
+	windowMs: 60 * 60_000,
+	max: 10,
+};
+/** Bot (WhatsApp) creates are token-guarded and trusted, so give them headroom. */
+export const RESERVATION_CREATE_ATTEMPT_LIMIT_BOT: RateLimitConfig = {
+	windowMs: 60 * 60_000,
+	max: 200,
+};
+
+/**
+ * Rate-limit config for a create attempt by source. Staff creates are
+ * authenticated and never throttled (returns `null`).
+ */
+export function attemptLimitForSource(source: CreateCoreArgs["source"]): RateLimitConfig | null {
+	switch (source) {
+		case RESERVATION_SOURCE.WHATSAPP:
+			return RESERVATION_CREATE_ATTEMPT_LIMIT_BOT;
+		case RESERVATION_SOURCE.UI:
+			return RESERVATION_CREATE_ATTEMPT_LIMIT;
+		default:
+			return null;
+	}
+}
+
+/**
+ * Rate-limit keys for a create attempt: one per contact identity, each scoped to
+ * the restaurant. Phone is always present; email is added only when supplied.
+ */
+export function reservationCreateRateLimitKeys(
+	restaurantId: Id<typeof TABLE.RESTAURANTS>,
+	contact: { phone: string; email?: string }
+): string[] {
+	const keys: string[] = [];
+	const phone = contact.phone.trim();
+	if (phone) keys.push(`reservation_create:${restaurantId}:phone:${phone}`);
+	const email = contact.email?.trim().toLowerCase();
+	if (email) keys.push(`reservation_create:${restaurantId}:email:${email}`);
+	return keys;
+}
+
+// ----------------------------------------------------------------------------
+// Availability query bounds (anonymous, unthrottled read surface)
+// ----------------------------------------------------------------------------
+
+const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * True when `partySize` could ever be seated: a positive integer within the
+ * public party-size cap. Lets the anonymous availability queries short-circuit
+ * out-of-range inputs before running any table/reservation/lock scan -- a party
+ * of 0 or 5000 has no tables by definition, so the result is unchanged.
+ */
+export function isBookablePartySize(partySize: number): boolean {
+	return Number.isInteger(partySize) && partySize >= 1 && partySize <= MAX_PARTY_SIZE;
+}
+
+/**
+ * True when the local calendar window `[fromMs, toMs)` could contain at least
+ * one slot inside the booking horizon `[now + minAdvance, now + maxAdvance]`.
+ * When false, every candidate slot is out of horizon, so the slot loop can be
+ * skipped entirely. Conservative: it uses `toMs` (an upper bound on any slot
+ * start) so it never skips a window that might still hold a valid slot -- the
+ * returned slots are therefore unchanged.
+ */
+export function windowIntersectsHorizon(params: {
+	fromMs: number;
+	toMs: number;
+	now: number;
+	minAdvanceMinutes: number;
+	maxAdvanceDays: number;
+}): boolean {
+	const { fromMs, toMs, now, minAdvanceMinutes, maxAdvanceDays } = params;
+	const earliest = now + minAdvanceMinutes * MS_PER_MINUTE;
+	const latest = now + maxAdvanceDays * MS_PER_DAY;
+	return toMs >= earliest && fromMs <= latest;
+}
 
 export function validateReservationWindow(
 	startsAt: number,
@@ -95,7 +184,8 @@ export function resolveRescheduleWindow(
 export type CreateErrors =
 	| NotFoundErrorObject
 	| UserInputValidationErrorObject
-	| ConflictErrorObject;
+	| ConflictErrorObject
+	| RateLimitedErrorObject;
 
 export type CreateCoreArgs = {
 	restaurantId: Id<typeof TABLE.RESTAURANTS>;
@@ -108,13 +198,10 @@ export type CreateCoreArgs = {
 	idempotencyKey?: string;
 };
 
+// Create runs inside a mutation: it inserts the reservation row and (via the
+// rate limiter) reads/writes the `rateLimits` table, so it needs a full writer.
 type CreateCoreCtx = {
-	db: Parameters<typeof loadEffectiveSettings>[0]["db"] & {
-		insert: (
-			table: typeof TABLE.RESERVATIONS,
-			doc: Omit<ReservationDoc, "_id" | "_creationTime">
-		) => Promise<Id<typeof TABLE.RESERVATIONS>>;
-	};
+	db: DatabaseWriter;
 };
 
 export const contactValidator = v.object({
@@ -249,6 +336,26 @@ async function assertReservationCreateNotRateLimited(
 	return null;
 }
 
+/**
+ * Sliding-window attempt limiter for the create surface. Consumes budget for
+ * each contact identity (per restaurant). Trips on the first over-cap identity.
+ * Staff creates are exempt (config is `null`).
+ */
+async function assertReservationCreateWithinAttemptLimit(
+	ctx: CreateCoreCtx,
+	args: CreateCoreArgs
+): Promise<RateLimitedErrorObject | null> {
+	const config = attemptLimitForSource(args.source);
+	if (!config) return null;
+	const now = Date.now();
+	const keys = reservationCreateRateLimitKeys(args.restaurantId, args.contact);
+	for (const key of keys) {
+		const decision = await consumeRateLimit(ctx, key, config, now);
+		if (!decision.allowed) return new RateLimitedError().toObject();
+	}
+	return null;
+}
+
 export async function checkAvailabilityForCreate(
 	ctx: CreateCoreCtx,
 	restaurantId: Id<typeof TABLE.RESTAURANTS>,
@@ -311,6 +418,11 @@ export async function createReservationCore(
 			.first();
 		if (existing) return [existing._id, null];
 	}
+
+	// Attempt limiter -- gate the expensive availability scans below. Runs after
+	// the idempotency short-circuit so safe retries don't burn budget.
+	const attemptLimitError = await assertReservationCreateWithinAttemptLimit(ctx, args);
+	if (attemptLimitError) return [null, attemptLimitError];
 
 	const settings = await loadEffectiveSettings(ctx, args.restaurantId);
 	if (!settings.acceptingReservations) {

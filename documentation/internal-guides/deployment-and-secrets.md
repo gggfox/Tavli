@@ -84,6 +84,59 @@ the Convex dashboard), independent of Dokploy/Infisical. Notably `convex/auth.co
 reads `CLERK_JWT_ISSUER_DOMAIN` — it must match the Clerk instance that issues the
 frontend's session tokens (e.g. `https://clerk.tavliai.com` for prod).
 
+## First-admin bootstrap
+
+**Symptom:** a fresh production database has no privileged user, so
+`/admin/restaurants` (and every other admin surface) shows **"Access Denied"**
+for _everyone_ — including you. Every privileged mutation requires an
+already-privileged caller, no Clerk webhook seeds roles, and `devSetOwnRoles`
+is correctly blocked outside development. There is exactly one supported way to
+mint the very first owner/admin: the guarded `admin.bootstrapFirstAdmin`
+`internalMutation` (ticket TAVLI-51).
+
+Because it is an **`internalMutation`** it is unreachable from the browser — the
+only surfaces are `npx convex run` and the Convex dashboard, i.e. an operator
+who already holds deployment access. It fails closed on three guards:
+
+1. `ALLOW_ADMIN_BOOTSTRAP` must be truthy on the Convex deployment (inert by
+   default in every environment).
+2. It refuses if **any** `userRoles` row already has `owner` or `admin` —
+   strictly the _first_ admin.
+3. It refuses if the target user does not already exist; it never creates
+   users. The person must have **signed in via Clerk at least once** (or been
+   invited) so their `userRoles` row exists. Pass **exactly one** of `email` or
+   `clerkSubject`.
+
+### Procedure (production)
+
+```sh
+# 1. Confirm the target has signed in (their row must already exist):
+npx convex run --prod admin:getCurrentUserRoles   # or inspect the userRoles table in the dashboard
+
+# 2. Arm the bootstrap (opt-in flag; inert until set):
+npx convex env set ALLOW_ADMIN_BOOTSTRAP true --prod
+
+# 3. Promote the first admin — pick ONE selector:
+npx convex run --prod admin:bootstrapFirstAdmin '{"email":"founder@tavliai.com"}'
+#   or by Clerk subject:
+# npx convex run --prod admin:bootstrapFirstAdmin '{"clerkSubject":"user_abc123"}'
+# → { ok: true, userRoleId: "...", roles: ["...","owner","admin"] }
+
+# 4. DISARM immediately — leave no standing escalation path:
+npx convex env remove ALLOW_ADMIN_BOOTSTRAP --prod
+```
+
+### Verify
+
+Sign in as that user and load **`/admin/restaurants`** — it should render the
+admin dashboard instead of "Access Denied". A `userRoles.bootstrap_first_admin`
+row is written to `allEvents` for the audit trail. Re-running the mutation now
+refuses with `ERROR_ADMIN_BOOTSTRAP_ALREADY_INITIALIZED`; every further role
+change goes through the normal admin UI. If step 3 returns
+`ERROR_ADMIN_BOOTSTRAP_DISABLED` the flag isn't set (or the deployment wasn't
+reloaded); `ERROR_ADMIN_BOOTSTRAP_USER_NOT_FOUND` means the person hasn't signed
+in yet.
+
 ## Taking an integration live (staging → prod)
 
 The repeatable shape (Clerk did all of these; Stripe/Resend will too):
