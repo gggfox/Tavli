@@ -64,6 +64,7 @@ import {
 	ensureReschedulable,
 	ensureTerminalRecoverable,
 	findSuggestedTimes,
+	isBookablePartySize,
 	isPartyBookableAt,
 	isTerminalRecoverable,
 	loadAndValidateTables,
@@ -71,6 +72,7 @@ import {
 	sourceValidator,
 	validateReservationWindow,
 	validateTableSelection,
+	windowIntersectsHorizon,
 } from "./reservationHelpers";
 import { createSessionForReservation } from "./sessions";
 
@@ -106,6 +108,17 @@ export const getAvailability = query({
 			return {
 				available: false,
 				reason: "ERROR_NOT_ACCEPTING_RESERVATIONS" as const,
+				turnMinutes,
+				endsAt,
+				suggestedTimes: [] as number[],
+			};
+		}
+		// Out-of-range party sizes can never be seated; short-circuit before the
+		// table/reservation/lock scan rather than scanning to conclude the same.
+		if (!isBookablePartySize(args.partySize)) {
+			return {
+				available: false,
+				reason: "ERROR_NO_TABLES_AVAILABLE" as const,
 				turnMinutes,
 				endsAt,
 				suggestedTimes: [] as number[],
@@ -172,8 +185,14 @@ export const getAvailability = query({
 });
 
 const SLOT_STEP_MS = 15 * 60_000;
-const MAX_DAY_SPAN_MS = 28 * 60 * 60 * 1000;
+// A single local calendar day, with DST slack (a "fall back" day is 25h).
+// Callers pass one day; anything wider is out of range and returns no slots.
+const MAX_DAY_SPAN_MS = 26 * 60 * 60 * 1000;
 const MAX_SLOTS_RETURNED = 64;
+// Hard cap on availability probes per call. A real service day at 15-minute
+// steps is well under 64 slots, so this bounds the worst-case table/reservation/
+// lock scans regardless of how many slots turn out to be unavailable.
+const MAX_SLOTS_EVALUATED = 64;
 
 /**
  * Public: bookable start times for a local calendar window (typically one day).
@@ -198,17 +217,38 @@ export const listReservationSlotsForDay = query({
 		if (!acceptingReservations) {
 			return { slots: [] as number[], turnMinutes };
 		}
+		// Out-of-range party sizes have no slots; skip the scan entirely.
+		if (!isBookablePartySize(args.partySize)) {
+			return { slots: [] as number[], turnMinutes };
+		}
+		// If no candidate slot in the window can fall inside the booking horizon
+		// (fully past or fully beyond maxAdvance), skip the loop rather than
+		// iterating the whole day only to reject every slot.
+		if (
+			!windowIntersectsHorizon({
+				fromMs: args.fromMs,
+				toMs: args.toMs,
+				now,
+				minAdvanceMinutes,
+				maxAdvanceDays,
+			})
+		) {
+			return { slots: [] as number[], turnMinutes };
+		}
 		const maxStart = args.toMs - turnMinutes * 60_000;
 		const slots: number[] = [];
+		let evaluated = 0;
 		for (
 			let t = args.fromMs;
-			t <= maxStart && slots.length < MAX_SLOTS_RETURNED;
+			t <= maxStart && slots.length < MAX_SLOTS_RETURNED && evaluated < MAX_SLOTS_EVALUATED;
 			t += SLOT_STEP_MS
 		) {
 			const endsAt = computeEndsAt(t, turnMinutes);
 			if (endsAt > args.toMs) break;
 			if (!isWithinHorizon({ minAdvanceMinutes, maxAdvanceDays, startsAt: t, now })) continue;
 			if (intersectsBlackout(settings, t, endsAt)) continue;
+			// Count each availability probe; this is the expensive per-slot work.
+			evaluated++;
 			const ok = await isPartyBookableAt(ctx, args.restaurantId, args.partySize, t, endsAt);
 			if (ok) slots.push(t);
 		}
