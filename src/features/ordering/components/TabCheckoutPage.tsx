@@ -1,6 +1,7 @@
 import { OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { formatCents } from "@/global/utils/money";
+import { usePostHog } from "posthog-js/react";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type Appearance } from "@stripe/stripe-js";
@@ -78,6 +79,7 @@ interface TabCheckoutPageProps {
  */
 export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPageProps>) {
 	const { t } = useTranslation();
+	const posthog = usePostHog();
 	const { sessionId, clearSession } = useSessionStore();
 	const createTabPaymentIntent = useConvexAction(api.stripe.createTabPaymentIntent);
 	const cancelTabPayment = useMutation({
@@ -130,6 +132,12 @@ export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPag
 		if (!sessionId) return;
 		setInitializing(true);
 		setError(null);
+		posthog.capture("checkout_started", {
+			session_id: sessionId,
+			subtotal_cents: subtotal,
+			tip_amount_cents: tipAmount,
+			total_cents: total,
+		});
 		try {
 			const result = await createTabPaymentIntent({
 				sessionId: sessionId as Id<"sessions">,
@@ -376,6 +384,7 @@ function TabPaymentForm({
 	onSuccess: () => void;
 }>) {
 	const { t } = useTranslation();
+	const posthog = usePostHog();
 	const stripe = useStripe();
 	const elements = useElements();
 	const [processing, setProcessing] = useState(false);
@@ -404,6 +413,9 @@ function TabPaymentForm({
 
 		setProcessing(true);
 		setError(null);
+		posthog.capture("payment_submitted", {
+			session_id: sessionId,
+		});
 
 		const { error: submitError } = await elements.submit();
 		if (submitError) {

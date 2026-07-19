@@ -1,4 +1,5 @@
-import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
+import { ClerkProvider, useAuth, useUser } from "@clerk/tanstack-react-start";
+import { PostHogProvider, usePostHog } from "posthog-js/react";
 import { QueryClient } from "@tanstack/react-query";
 import {
 	HeadContent,
@@ -9,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { useConvexAuth } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AuthDebugPanel } from "@/features";
@@ -40,6 +41,23 @@ import appCss from "../styles.css?url";
 // `tavli-theme` key on first visit, so users who saved a preference under
 // the old name don't lose it.
 const initScript = `(function(){try{var k=${JSON.stringify(LOCAL_STORAGE_THEME_KEY)};var t=localStorage.getItem(k);if(t===null){var legacy=localStorage.getItem('fierro-viejo-theme');if(legacy!==null){localStorage.setItem(k,legacy);localStorage.removeItem('fierro-viejo-theme');t=legacy;}}var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');var sk=${JSON.stringify(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED)};var st=localStorage.getItem(sk);if(st==='false')document.documentElement.dataset.sidebarExpanded='false';}catch(e){}})();`;
+
+function PostHogIdentify() {
+	const { user, isLoaded } = useUser();
+	const posthog = usePostHog();
+
+	useEffect(() => {
+		if (!isLoaded) return;
+		if (user) {
+			posthog.identify(user.id, {
+				email: user.primaryEmailAddress?.emailAddress,
+				name: user.fullName ?? undefined,
+			});
+		}
+	}, [isLoaded, user, posthog]);
+
+	return null;
+}
 
 function RootNotFound() {
 	return (
@@ -155,26 +173,38 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 						<HeadContent />
 					</head>
 					<body>
-						{children}
-						{config.isDev ? (
-							<ClientOnlyDevtools
-								config={{
-									position: "bottom-right",
-								}}
-								plugins={[
-									{
-										id: "auth",
-										name: "Auth",
-										render: <AuthDebugPanel />,
-									},
-									{
-										id: "router",
-										name: "Router",
-										render: <SafeRouterDevtoolsPanel />,
-									},
-								]}
-							/>
-						) : null}
+						<PostHogProvider
+							apiKey={import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN!}
+							options={{
+								api_host: "/ingest",
+								ui_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST || "https://us.posthog.com",
+								defaults: "2025-05-24",
+								capture_exceptions: true,
+								debug: import.meta.env.DEV,
+							}}
+						>
+							<PostHogIdentify />
+							{children}
+							{config.isDev ? (
+								<ClientOnlyDevtools
+									config={{
+										position: "bottom-right",
+									}}
+									plugins={[
+										{
+											id: "auth",
+											name: "Auth",
+											render: <AuthDebugPanel />,
+										},
+										{
+											id: "router",
+											name: "Router",
+											render: <SafeRouterDevtoolsPanel />,
+										},
+									]}
+								/>
+							) : null}
+						</PostHogProvider>
 						<Scripts />
 					</body>
 				</html>
