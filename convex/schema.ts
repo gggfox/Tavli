@@ -468,7 +468,8 @@ export default defineSchema({
 		updatedBy: v.optional(v.string()),
 	})
 		.index("by_session", ["sessionId"])
-		.index("by_restaurant", ["restaurantId"]),
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_restaurant_status", ["restaurantId", "status"]),
 
 	// One counter row per restaurant. `serviceDateKey` is a generic period key
 	// derived from `restaurants.orderNumberResetFrequency` — for daily resets
