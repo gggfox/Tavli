@@ -24,6 +24,7 @@ describe("TABLE constants", () => {
 			"orderItems",
 			"payments",
 			"stripeWebhookEvents",
+			"stripeDisputes",
 			"reservations",
 			"tableLocks",
 			"reservationSettings",
