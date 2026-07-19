@@ -886,7 +886,7 @@
 			"partialRequirements": "Los pagos están habilitados, pero hay requisitos adicionales pendientes.",
 			"redirecting": "Redirigiendo...",
 			"continueSetup": "Continuar configuración de Stripe",
-			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Aplica una comisión de plataforma del 6 % además de las comisiones estándar de procesamiento de Stripe.",
+			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Aplica una comisión de plataforma del {{rate}} % además de las comisiones estándar de procesamiento de Stripe.",
 			"settingUp": "Configurando...",
 			"onboard": "Iniciar configuración para cobrar pagos",
 			"resetButton": "Restablecer configuración de Stripe",
