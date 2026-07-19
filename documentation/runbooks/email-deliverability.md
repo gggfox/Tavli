@@ -8,7 +8,7 @@ Symptom this runbook addresses: **an email shows "Delivered" in the Resend dashb
 
 ## Background
 
-Email is sent through [Resend](https://resend.com) from a Tavli-owned domain (currently `gggfox.com`, eventually `tavliai.com`). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
+Email is sent through [Resend](https://resend.com) from a Tavli-owned domain — `gggfox.com` for dev/testing, `tavliai.com` for production (verified in Resend: DKIM, SPF, and DMARC all green as of 2026-07-13). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
 
 - Sender domain reputation (history of sending from the domain)
 - DNS authentication (SPF, DKIM, DMARC)
@@ -18,13 +18,35 @@ Email is sent through [Resend](https://resend.com) from a Tavli-owned domain (cu
 
 A brand-new sending domain with a sparse template will land in spam by default. This is normal.
 
-## Required Environment Variables (Convex)
+## Where each value lives
 
-- `RESEND_API_KEY` — Resend API key
-- `RESEND_FROM_ADDRESS` — sender, e.g. `Tavli <invites@gggfox.com>` or `Tavli <invites@tavliai.com>`
-- `PUBLIC_APP_URL` — base URL used to build accept links inside the email (e.g. `http://localhost:3000` in dev, `https://tavliai.com` in prod, `https://staging.tavliai.com` in staging). **Required when `CONVEX_ENV` is `staging` or `production`**: the send action throws `APP_URL_NOT_CONFIGURED` instead of falling back to localhost.
+Resend config is entirely **Convex-side** — unlike Clerk/Stripe there's no `VITE_*`
+public key baked into the frontend bundle, so **Infisical holds none of it**. See
+[`deployment-and-secrets.md`](../internal-guides/deployment-and-secrets.md) for the full
+model (and the
+[env-and-dokploy skill](../../.claude/skills/env-and-dokploy/SKILL.md) for the
+operational playbook).
 
-Set with: `npx convex env set <NAME> <VALUE>`. Verify with: `npx convex env list`.
+| Value                 | Where it's set                                 | Consumed                                                                                                   |
+| --------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `RESEND_API_KEY`      | **Convex deployment** env, set per environment | `convex/inviteActions.ts` — the Resend API call                                                            |
+| `RESEND_FROM_ADDRESS` | **Convex deployment** env, set per environment | Sender header, e.g. `Tavli <invites@gggfox.com>` (dev) or `Tavli <invites@tavliai.com>` (prod)             |
+| `PUBLIC_APP_URL`      | **Convex deployment** env, set per environment | `convex/_util/env.ts` (`getAppUrl`) — builds the invite accept link; falls back to `VITE_APP_URL` if unset |
+
+Each of the three Convex deployments needs its own values — dev `blessed-weasel-428`,
+staging `aromatic-dog-762`, prod `polite-antelope-545` (see `deployment-and-secrets.md` →
+Convex environments). `PUBLIC_APP_URL` is **required** once `CONVEX_ENV` is `staging` or
+`production`: the send action throws `APP_URL_NOT_CONFIGURED` instead of silently
+falling back to `localhost:3000` (TAVLI-57).
+
+```bash
+npx convex env set RESEND_API_KEY <key>          # local dev deployment
+npx convex env set --prod RESEND_API_KEY <key>   # production deployment
+```
+
+Staging (`aromatic-dog-762`) has no CLI flag for this — set it via the Convex dashboard
+(switch to the staging deployment), or point your local CLI at it directly. Verify with
+`npx convex env list` (add `--prod` for production).
 
 ## Required DNS Records (in Hostinger / wherever DNS is hosted)
 
