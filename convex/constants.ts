@@ -467,5 +467,50 @@ export const PIN_LOCKOUT = {
 /** System actor for migrations and webhooks when no Clerk user applies. */
 export const AUDIT_SYSTEM_USER_ID = "system";
 
+/**
+ * Event names for `appendAuditEvent`. The `allEvents.eventType` column is a bare
+ * `v.string()`, so nothing stops a typo from creating a silent second event
+ * stream — this map is the guard.
+ *
+ * Naming follows the convention the existing call sites already use:
+ * `<module>.<pastTenseVerb>`.
+ *
+ * Older modules (menus, shifts, restaurantMembers, …) still pass inline strings.
+ * Retrofitting those is a separate, mechanical change; use this map for anything
+ * new. Adding a name here is the cheap part — the expensive part is that every
+ * event is append-only and permanent, so name it for what happened in the
+ * domain, not for the function that emitted it.
+ */
+export const AUDIT_EVENT = {
+	// -- Orders -------------------------------------------------------------
+	ORDER_SUBMITTED: "orders.submitted",
+	ORDER_STATUS_CHANGED: "orders.statusChanged",
+	ORDER_PAYMENT_CONFIRMED: "orders.paymentConfirmed",
+	ORDER_PAYMENT_FAILED: "orders.paymentFailed",
+
+	// -- Sessions (tabs) ----------------------------------------------------
+	SESSION_OPENED: "sessions.opened",
+	SESSION_JOINED: "sessions.joined",
+	SESSION_CLOSED: "sessions.closed",
+	SESSION_PAYMENT_LOCKED: "sessions.paymentLocked",
+	SESSION_PAYMENT_SUCCEEDED: "sessions.paymentSucceeded",
+	SESSION_PAYMENT_FAILED: "sessions.paymentFailed",
+	SESSION_PAYMENT_CANCELLED: "sessions.paymentCancelled",
+	SESSION_STALE_CLOSED: "sessions.staleClosed",
+	SESSION_STALE_FLAGGED: "sessions.staleFlagged",
+
+	// -- Reservations -------------------------------------------------------
+	RESERVATION_CREATED: "reservations.created",
+	RESERVATION_CONFIRMED: "reservations.confirmed",
+	RESERVATION_RESCHEDULED: "reservations.rescheduled",
+	RESERVATION_RECONFIRMED: "reservations.reconfirmed",
+	RESERVATION_CANCELLED: "reservations.cancelled",
+	RESERVATION_SEATED: "reservations.seated",
+	RESERVATION_COMPLETED: "reservations.completed",
+	RESERVATION_NO_SHOW: "reservations.noShow",
+} as const;
+
+export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
+
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

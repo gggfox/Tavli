@@ -33,6 +33,7 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
+import { appendAuditEvent } from "./_util/audit";
 import {
 	getCurrentUserId,
 	requireRestaurantManagerOrAbove,
@@ -47,6 +48,8 @@ import {
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import {
+	AUDIT_EVENT,
+	AUDIT_SYSTEM_USER_ID,
 	NO_SHOW_SWEEP_BATCH_SIZE,
 	NO_SHOW_SWEEP_LOOKBACK_MS,
 	RESERVATION_SOURCE,
@@ -402,6 +405,20 @@ export const confirm = mutation({
 			updatedAt: now,
 		});
 
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_CONFIRMED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				tableIds: args.tableIds,
+				startsAt: reservation.startsAt,
+				partySize: reservation.partySize,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -562,6 +579,26 @@ export const reschedule = mutation({
 			updatedAt: now,
 		});
 
+		// Both before and after: a reschedule is the transition a guest is most
+		// likely to dispute ("nobody told me you moved us to 9pm").
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_RESCHEDULED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				fromStartsAt: reservation.startsAt,
+				fromEndsAt: reservation.endsAt,
+				fromTableIds: reservation.tableIds,
+				toStartsAt: startsAt,
+				toEndsAt: endsAt,
+				toTableIds: newTableIds,
+				reopened: reopening,
+			},
+			userId,
+		});
+
 		if (reservation.sessionId && hasTableChange) {
 			const session = await ctx.db.get(reservation.sessionId);
 			if (session && newTableIds.length > 0) {
@@ -661,6 +698,21 @@ export const reconfirm = mutation({
 			...(args.tableIds !== undefined && { tableIds }),
 		});
 
+		// Reopening a cancelled / no-show row. Worth its own name: it is the only
+		// path that walks a reservation back out of a terminal status.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_RECONFIRMED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				tableIds,
+				startsAt: reservation.startsAt,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -711,6 +763,21 @@ export const cancel = mutation({
 			cancelReason: args.reason,
 			updatedAt: now,
 		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_CANCELLED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				startsAt: reservation.startsAt,
+				partySize: reservation.partySize,
+				reason: args.reason,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -816,6 +883,23 @@ export const markSeated = mutation({
 			}),
 		});
 
+		// Seating opens a session, which is where money starts accruing -- so this
+		// event is the join between the reservation and the tab.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_SEATED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				sessionId,
+				tableId,
+				partySize: reservation.partySize,
+				fromTerminal,
+			},
+			userId,
+		});
+
 		return [{ reservationId: reservation._id, sessionId }, null];
 	},
 });
@@ -854,6 +938,20 @@ export const markCompleted = mutation({
 			completedAt: now,
 			updatedAt: now,
 		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_COMPLETED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				sessionId: reservation.sessionId,
+				seatedAt: reservation.seatedAt,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -1072,6 +1170,23 @@ export const sweepNoShows = internalMutation({
 						updatedAt: now,
 					});
 					flipped++;
+
+					// System-flipped, not staff-flipped. Guests dispute no-shows, and
+					// without this the row's only trace is a status with no actor and
+					// no reason.
+					await appendAuditEvent(ctx, {
+						aggregateType: TABLE.RESERVATIONS,
+						aggregateId: r._id,
+						eventType: AUDIT_EVENT.RESERVATION_NO_SHOW,
+						payload: {
+							restaurantId: restaurant._id,
+							fromStatus: status,
+							startsAt: r.startsAt,
+							partySize: r.partySize,
+							graceMinutes: settings.noShowGraceMinutes,
+						},
+						userId: AUDIT_SYSTEM_USER_ID,
+					});
 				}
 			}
 		}
