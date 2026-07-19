@@ -4,7 +4,7 @@ import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { restoreSession, useSessionStore } from "./useSession";
 
 export function getSessionErrorKey(err: unknown): string {
@@ -28,6 +28,15 @@ interface CustomerSession {
 	sessionId: Id<"sessions"> | null;
 	/** i18n key for a failed bootstrap, or null. */
 	errorKey: string | null;
+	/**
+	 * Clear the failure and let the bootstrap effect run once more.
+	 *
+	 * Deliberately explicit rather than automatic: the effect below refuses to
+	 * re-fire while `errorKey` is set, which is what stops a failed handshake
+	 * from re-issuing the mutation on every render. A diner pressing "try again"
+	 * is a real input, so it is allowed to lift that guard exactly once.
+	 */
+	retry: () => void;
 }
 
 /**
@@ -124,5 +133,7 @@ export function useCustomerSession(slug: string): CustomerSession {
 		createSession,
 	]);
 
-	return { isLoaded, isSignedIn: !!isSignedIn, sessionId, errorKey };
+	const retry = useCallback(() => setErrorKey(null), []);
+
+	return { isLoaded, isSignedIn: !!isSignedIn, sessionId, errorKey, retry };
 }

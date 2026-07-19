@@ -9,7 +9,13 @@ export * from "./DashboardShell";
 export * from "./Dialog";
 export * from "./Drawer";
 export { EmptyState } from "./EmptyState";
-export { ErrorBoundary } from "./ErrorBoundary";
+export {
+	ErrorBoundary,
+	ErrorFallback,
+	RouteErrorComponent,
+	type ErrorFallbackProps,
+	type RouteErrorComponentProps,
+} from "./ErrorBoundary";
 export { FeatureCard } from "./FeatureCard";
 export * from "./Form";
 export { InlineEditInput } from "./InlineEditInput";
