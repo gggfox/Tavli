@@ -22,11 +22,11 @@ export type ActiveOrdersResult = {
 
 type Errors = AnalyticsAccessErrors;
 
-const ACTIVE_ORDER_STATUSES: ReadonlySet<string> = new Set([
+const ACTIVE_ORDER_STATUSES = [
 	ORDER_STATUS.SUBMITTED,
 	ORDER_STATUS.PREPARING,
 	ORDER_STATUS.READY,
-]);
+] as const;
 
 export const compute = query({
 	args: {
@@ -39,21 +39,30 @@ export const compute = query({
 		});
 		if (accessErr) return [null, accessErr];
 
-		const sessions = await ctx.db
+		// Indexed reads only — this widget polls live, so it must not scan the
+		// restaurant's full (unbounded) session/order history.
+		const activeSessions = await ctx.db
 			.query(TABLE.SESSIONS)
-			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+			.withIndex("by_restaurant_status", (q) =>
+				q.eq("restaurantId", args.restaurantId).eq("status", SESSION_STATUS.ACTIVE)
+			)
 			.collect();
-		const seatedTables = sessions.filter((s) => s.status === SESSION_STATUS.ACTIVE).length;
+		const seatedTables = activeSessions.length;
 
-		const orders = await ctx.db
-			.query(TABLE.ORDERS)
-			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
-			.collect();
+		const ordersPerStatus = await Promise.all(
+			ACTIVE_ORDER_STATUSES.map((status) =>
+				ctx.db
+					.query(TABLE.ORDERS)
+					.withIndex("by_restaurant_status", (q) =>
+						q.eq("restaurantId", args.restaurantId).eq("status", status)
+					)
+					.collect()
+			)
+		);
 
 		let activeOrderCount = 0;
 		let activeOrderValue = 0;
-		for (const o of orders) {
-			if (!ACTIVE_ORDER_STATUSES.has(o.status)) continue;
+		for (const o of ordersPerStatus.flat()) {
 			activeOrderCount += 1;
 			activeOrderValue += o.totalAmount;
 		}
