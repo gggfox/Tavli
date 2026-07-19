@@ -420,6 +420,10 @@ export default defineSchema({
 		// payment (unlocked tabs have `lockedForPaymentAt` undefined, which sorts
 		// below every timestamp and is excluded by the `gt(0)` lower bound).
 		.index("by_locked_for_payment", ["lockedForPaymentAt"])
+		// Bounds the hourly stale-tab sweep to active tabs inside a fixed
+		// `startedAt` window. Without this the sweep collected every session row
+		// ever written and filtered status/age in JS.
+		.index("by_status_started", ["status", "startedAt"])
 		.index("by_user", ["userId"]),
 
 	[TABLE.ORDERS]: defineTable({
