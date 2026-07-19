@@ -20,8 +20,9 @@
  */
 import { AppDatePicker, DialogHeader, Drawer } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
-import { AdminStaffKeys } from "@/global/i18n";
+import { AdminStaffKeys, ErrorKeys } from "@/global/i18n";
 import { todayLocalYmd } from "@/global/utils/calendarMonth";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -403,7 +404,7 @@ function RequestTimeOffForm({
 			);
 			onSubmitted();
 		} catch (e) {
-			setFormError(e instanceof Error ? e.message : String(e));
+			setFormError(getErrorMessage(e, t, ErrorKeys.GENERIC));
 		}
 	};
 
@@ -523,7 +524,7 @@ function PendingApprovalBanner({ absences, onDecided }: Readonly<PendingApproval
 			setConfirming(null);
 			onDecided();
 		} catch (e) {
-			setError(e instanceof Error ? e.message : String(e));
+			setError(getErrorMessage(e, t, ErrorKeys.GENERIC));
 		} finally {
 			setBusy(false);
 		}
