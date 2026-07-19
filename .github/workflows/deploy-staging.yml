@@ -14,3 +14,4 @@ jobs:
     with:
       infisical_env: staging
       image_tag: staging
+      health_url: https://staging.tavliai.com
