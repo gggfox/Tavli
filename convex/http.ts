@@ -6,9 +6,11 @@
 // There are two separate endpoints because they handle different event formats:
 //
 // 1. POST /stripe/webhook
-//    Standard webhook for payment events (checkout.session.completed,
-//    payment_intent.succeeded, account.updated). These are "fat" events
-//    containing the full event payload.
+//    Standard webhook for payment events (payment_intent.succeeded,
+//    payment_intent.payment_failed, charge.refunded, charge.dispute.created,
+//    charge.dispute.closed, account.updated). These are "fat" events containing
+//    the full event payload. Refund/dispute events land here (not the connect
+//    endpoint) because destination charges settle on the platform account.
 //
 // 2. POST /stripe/connect-webhook
 //    V2 thin-event webhook for connected account changes (requirements
@@ -253,7 +255,8 @@ http.route({
 			idempotencyKey,
 		});
 		if (error) {
-			return jsonResponse({ error }, error.name === "NOT_FOUND" ? 404 : 409);
+			const status = error.name === "NOT_FOUND" ? 404 : error.name === "RATE_LIMITED" ? 429 : 409;
+			return jsonResponse({ error }, status);
 		}
 		return jsonResponse({ reservationId }, 201);
 	}),

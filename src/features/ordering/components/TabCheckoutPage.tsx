@@ -1,4 +1,5 @@
 import { OrderingKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -136,7 +137,7 @@ export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPag
 			});
 			setClientSecret(result?.clientSecret ?? null);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(OrderingKeys.CHECKOUT_INIT_FAILED));
+			setError(getErrorMessage(err, t, OrderingKeys.CHECKOUT_INIT_FAILED));
 			setClientSecret(null);
 		} finally {
 			setInitializing(false);

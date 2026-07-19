@@ -49,14 +49,20 @@ import {
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PLATFORM_APPLICATION_FEE_RATE,
+	TAB_RECONCILE_ALERT_AGE_MS,
+	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
 } from "./constants";
 import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
+import { decideTabReconciliation } from "./sessionHelpers";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getStripeClient,
 	handleAccountStatusChange,
+	handleChargeDisputeClosed,
+	handleChargeDisputeCreated,
+	handleChargeRefunded,
 	handlePaymentIntentFailure,
 	handlePaymentIntentSuccess,
 	inferV2AccountStatus,
@@ -395,7 +401,16 @@ export const handleThinEvent = internalAction({
  * Listens for:
  * - `payment_intent.succeeded` — a payment intent was confirmed
  * - `payment_intent.payment_failed` — a payment intent failed
+ * - `charge.refunded` — a charge was fully or partially refunded (app- or
+ *   dashboard-initiated); records refund facts on the payment
+ * - `charge.dispute.created` — a chargeback was opened; records dispute facts
+ * - `charge.dispute.closed` — a chargeback was resolved; updates dispute facts
  * - `account.updated` — legacy V1 account status updates
+ *
+ * These event types must be enabled on the standard webhook destination in the
+ * Stripe Dashboard (ties into TAVLI-46). Because our checkout uses destination
+ * charges with the platform as losses_collector, refund/dispute events are
+ * platform-account events delivered here rather than to the V2 connect endpoint.
  *
  * Each event is recorded in `stripeWebhookEvents` so duplicate deliveries
  * are no-ops.
@@ -458,6 +473,35 @@ export const fulfillPayment = internalAction({
 
 				case "payment_intent.payment_failed": {
 					paymentId = await handlePaymentIntentFailure(ctx, event.data.object);
+					break;
+				}
+
+				// Destination charges live on the platform account and the platform is
+				// the losses_collector, so refunds and disputes settle against the
+				// platform balance and their events arrive HERE (not the V2 connect
+				// thin-event endpoint). See convex/stripeWebhookHelpers.ts.
+				case "charge.refunded": {
+					paymentId = await handleChargeRefunded(ctx, event.data.object, event.id);
+					break;
+				}
+
+				case "charge.dispute.created": {
+					paymentId = await handleChargeDisputeCreated(
+						ctx,
+						event.data.object,
+						event.id,
+						event.created * 1000
+					);
+					break;
+				}
+
+				case "charge.dispute.closed": {
+					paymentId = await handleChargeDisputeClosed(
+						ctx,
+						event.data.object,
+						event.id,
+						event.created * 1000
+					);
 					break;
 				}
 
@@ -592,7 +636,8 @@ export const createRefund = internalAction({
  * Creates a PaymentIntent for the in-app order checkout flow using
  * Stripe Elements. Customers pay within the app (not via hosted checkout).
  *
- * Uses destination charges with a 6% application fee.
+ * Uses destination charges with the platform application fee
+ * ({@link PLATFORM_APPLICATION_FEE_RATE}).
  *
  * @deprecated TAVLI-6 moved payment to the end of the visit: the customer
  * flow now uses {@link createTabPaymentIntent} to settle the whole session
@@ -635,7 +680,7 @@ export const createPaymentIntent = action({
 			throw new Error("Restaurant is not set up for payments");
 		}
 
-		const applicationFeeAmount = Math.round(order.totalAmount * 0.06);
+		const applicationFeeAmount = Math.round(order.totalAmount * PLATFORM_APPLICATION_FEE_RATE);
 		const currency = restaurant.currency.toLowerCase();
 
 		const stripeClient = getStripeClient();
@@ -768,8 +813,9 @@ export const createPaymentIntent = action({
  * optional tip. Any tab member can pay. The tab locks (no new/edited orders)
  * while the payment is in flight; a failed or abandoned payment unlocks it.
  *
- * Fee policy (ticket TAVLI-6): the 6% platform application fee applies to the
- * tab subtotal only — the full tip lands in the restaurant's connected account.
+ * Fee policy (ticket TAVLI-6): the 12% platform application fee
+ * ({@link PLATFORM_APPLICATION_FEE_RATE}) applies to the tab subtotal only —
+ * the full tip lands in the restaurant's connected account.
  */
 export const createTabPaymentIntent = action({
 	args: {
@@ -894,6 +940,94 @@ export const createTabPaymentIntent = action({
 					error instanceof Error ? error.message : "Failed to create tab payment intent",
 			});
 			throw error;
+		}
+	},
+});
+
+// =============================================================================
+// 9. Stuck Tab Reconciliation (TAVLI-45 — recover from dropped payment webhooks)
+// =============================================================================
+
+/**
+ * Reconciles tabs stuck locked-for-payment against Stripe.
+ *
+ * A tab settles entirely on the `payment_intent.succeeded` webhook; if that
+ * event is dropped or delayed the tab stays locked forever (customers can't
+ * pay, staff can't close it). This cron (see `convex/crons.ts`) is the backstop:
+ * for every tab locked longer than `TAB_RECONCILE_MIN_AGE_MS` it pulls the
+ * PaymentIntent directly and, based on its status:
+ *
+ * - `succeeded` → runs {@link handlePaymentIntentSuccess}, the exact same
+ *   idempotent fulfillment path the webhook uses (`confirmTabPayment` no-ops if
+ *   the tab was already settled, so re-running is safe).
+ * - terminal/abandoned → unlocks via `failTabPayment` so the group can retry.
+ * - still `processing` → leaves the lock, escalating to a `console.error` once
+ *   it outlives `TAB_RECONCILE_ALERT_AGE_MS` so staff can chase it.
+ *
+ * Per-candidate failures are logged and skipped so one bad PaymentIntent can't
+ * stall the rest of the batch.
+ */
+export const reconcileStuckTabPayments = internalAction({
+	args: {},
+	handler: async (ctx): Promise<void> => {
+		const now = Date.now();
+		const candidates = await ctx.runQuery(internal.sessions.listStuckLockedTabs, {
+			lockedBefore: now - TAB_RECONCILE_MIN_AGE_MS,
+		});
+		if (candidates.length === 0) return;
+
+		const stripeClient = getStripeClient();
+
+		for (const candidate of candidates) {
+			try {
+				const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+					candidate.stripePaymentIntentId
+				);
+
+				const decision = decideTabReconciliation({
+					paymentIntentStatus: paymentIntent.status,
+					lockAgeMs: now - candidate.lockedForPaymentAt,
+					alertAgeMs: TAB_RECONCILE_ALERT_AGE_MS,
+				});
+
+				switch (decision) {
+					case "settle": {
+						// Identical to the webhook path — routes tab payments to the
+						// idempotent `confirmTabPayment` mutation.
+						await handlePaymentIntentSuccess(ctx, paymentIntent);
+						break;
+					}
+					case "unlock": {
+						await ctx.runMutation(internal.sessions.failTabPayment, {
+							paymentId: candidate.paymentId,
+							stripePaymentIntentId: candidate.stripePaymentIntentId,
+							failureCode: `reconcile_${paymentIntent.status}`,
+							failureMessage: `Tab lock reconciled: PaymentIntent status is ${paymentIntent.status}`,
+						});
+						break;
+					}
+					case "alert": {
+						const lockedMinutes = Math.round((now - candidate.lockedForPaymentAt) / 60000);
+						console.error(
+							`[stripe.reconcileStuckTabPayments] session ${candidate.sessionId} still locked ` +
+								`after ${lockedMinutes}m — PaymentIntent ${candidate.stripePaymentIntentId} is ` +
+								`${paymentIntent.status}. Needs staff attention.`
+						);
+						break;
+					}
+					case "wait":
+						break;
+				}
+			} catch (error) {
+				console.error(
+					"[stripe.reconcileStuckTabPayments]",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "reconcileStuckTab",
+						eventId: candidate.stripePaymentIntentId,
+					})
+				);
+			}
 		}
 	},
 });

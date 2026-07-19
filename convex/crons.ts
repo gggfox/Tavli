@@ -30,6 +30,16 @@ crons.interval(
 // so staff see lingering walkout candidates in the open-tabs view.
 crons.interval("stale open tab sweep", { hours: 1 }, internal.sessions.sweepStaleOpenTabs);
 
+// Stuck-tab reconciliation (TAVLI-45): tab settlement rides on the
+// `payment_intent.succeeded` webhook; if that event is dropped/delayed the tab
+// stays locked forever. Every 5 minutes, reconcile tabs locked > 10 min against
+// Stripe — settle succeeded ones, unlock dead ones, alert on stragglers.
+crons.interval(
+	"stuck tab payment reconciliation",
+	{ minutes: 5 },
+	internal.stripe.reconcileStuckTabPayments
+);
+
 crons.interval(
 	"restaurant soft-delete hard purge",
 	{ hours: 24 },

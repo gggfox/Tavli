@@ -24,6 +24,7 @@ describe("TABLE constants", () => {
 			"orderItems",
 			"payments",
 			"stripeWebhookEvents",
+			"stripeDisputes",
 			"reservations",
 			"tableLocks",
 			"reservationSettings",
@@ -42,6 +43,7 @@ describe("TABLE constants", () => {
 			"dashboardLayouts",
 			"dashboardTemplates",
 			"employeeAccounts",
+			"rateLimits",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});

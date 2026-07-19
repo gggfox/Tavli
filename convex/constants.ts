@@ -20,6 +20,7 @@ export const TABLE = {
 	ORDER_ITEMS: "orderItems",
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
+	STRIPE_DISPUTES: "stripeDisputes",
 	RESERVATIONS: "reservations",
 	TABLE_LOCKS: "tableLocks",
 	RESERVATION_SETTINGS: "reservationSettings",
@@ -39,6 +40,7 @@ export const TABLE = {
 	DASHBOARD_LAYOUTS: "dashboardLayouts",
 	DASHBOARD_TEMPLATES: "dashboardTemplates",
 	EMPLOYEE_ACCOUNTS: "employeeAccounts",
+	RATE_LIMITS: "rateLimits",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -131,7 +133,10 @@ export type PaymentStatus = (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS]
 export const PAYMENT_REFUND_STATUS = {
 	NONE: "none",
 	REQUESTED: "requested",
+	/** The full captured amount has been refunded. */
 	SUCCEEDED: "succeeded",
+	/** Only part of the captured amount has been refunded (e.g. a manual partial refund). */
+	PARTIAL: "partial",
 	FAILED: "failed",
 } as const;
 
@@ -172,7 +177,7 @@ export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;
 
 /** Platform application fee, applied to the tab subtotal only (never the tip). */
-export const PLATFORM_APPLICATION_FEE_RATE = 0.06;
+export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
 /** Tip selector presets (percent of tab subtotal). Ticket TAVLI-6: default 10%. */
 export const TIP_PERCENT_PRESETS = [0, 10, 15, 20] as const;
@@ -183,6 +188,20 @@ export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 
 /** Active tabs older than this are swept: closed when settled, flagged when unpaid. */
 export const STALE_TAB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A tab locked for payment longer than this is reconciled against Stripe: the
+ * `payment_intent.succeeded` webhook was likely dropped/delayed, so the cron
+ * pulls the PaymentIntent directly and settles/unlocks accordingly.
+ */
+export const TAB_RECONCILE_MIN_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * A tab whose PaymentIntent is still `processing` after this long is logged
+ * (console.error) so staff can chase it — Stripe is genuinely mid-flight, so
+ * the cron leaves the lock in place rather than guessing.
+ */
+export const TAB_RECONCILE_ALERT_AGE_MS = 30 * 60 * 1000;
 
 export const SELECTION_TYPE = {
 	SINGLE: "single",

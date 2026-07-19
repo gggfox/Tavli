@@ -9,6 +9,7 @@ import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global
 import { useIsTabletPortraitViewport } from "@/global/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
 import { sanitizeSlug, unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -164,7 +165,7 @@ export function AdminRestaurantsList({
 	return (
 		<div className="space-y-4">
 			{queryError && (
-				<InlineError message={queryError.message ?? t(RestaurantsKeys.LIST_LOAD_FAILED)} />
+				<InlineError message={getErrorMessage(queryError, t, RestaurantsKeys.LIST_LOAD_FAILED)} />
 			)}
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 
@@ -232,11 +233,7 @@ export function AdminRestaurantsList({
 											try {
 												unwrapResult(await restoreMutation.mutateAsync({ restaurantId: dr._id }));
 											} catch (err) {
-												setError(
-													err instanceof Error
-														? err.message
-														: t(RestaurantsKeys.LIST_RESTORE_FAILED)
-												);
+												setError(getErrorMessage(err, t, RestaurantsKeys.LIST_RESTORE_FAILED));
 											}
 										}}
 										disabled={restoreMutation.isPending}
@@ -338,9 +335,7 @@ export function AdminRestaurantsList({
 													})
 												);
 											} catch (err) {
-												setError(
-													err instanceof Error ? err.message : t(RestaurantsKeys.LIST_TOGGLE_FAILED)
-												);
+												setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
 											}
 										}}
 										className="p-1.5 rounded-md hover:bg-hover text-success"
@@ -424,9 +419,7 @@ export function AdminRestaurantsList({
 									);
 									closeModal();
 								} catch (err) {
-									setError(
-										err instanceof Error ? err.message : t(RestaurantsKeys.FORM_UPDATE_FAILED)
-									);
+									setError(getErrorMessage(err, t, RestaurantsKeys.FORM_UPDATE_FAILED));
 								}
 							}}
 							onToggleActive={
@@ -435,9 +428,7 @@ export function AdminRestaurantsList({
 											try {
 												unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
 											} catch (err) {
-												setError(
-													err instanceof Error ? err.message : t(RestaurantsKeys.LIST_TOGGLE_FAILED)
-												);
+												setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
 											}
 										}
 									: undefined
@@ -502,9 +493,7 @@ export function AdminRestaurantsList({
 										);
 										closeModal();
 									} catch (err) {
-										setError(
-											err instanceof Error ? err.message : t(RestaurantsKeys.LIST_DELETE_FAILED)
-										);
+										setError(getErrorMessage(err, t, RestaurantsKeys.LIST_DELETE_FAILED));
 									}
 								}}
 								disabled={softDeleteMutation.isPending}
@@ -600,7 +589,7 @@ function CreateRestaurantForm({
 				);
 				onCreated(id!);
 			} catch (err) {
-				onError(err instanceof Error ? err.message : t(RestaurantsKeys.FORM_CREATE_FAILED));
+				onError(getErrorMessage(err, t, RestaurantsKeys.FORM_CREATE_FAILED));
 			}
 		},
 	});
