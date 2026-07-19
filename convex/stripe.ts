@@ -57,6 +57,9 @@ import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getStripeClient,
 	handleAccountStatusChange,
+	handleChargeDisputeClosed,
+	handleChargeDisputeCreated,
+	handleChargeRefunded,
 	handlePaymentIntentFailure,
 	handlePaymentIntentSuccess,
 	inferV2AccountStatus,
@@ -395,7 +398,16 @@ export const handleThinEvent = internalAction({
  * Listens for:
  * - `payment_intent.succeeded` — a payment intent was confirmed
  * - `payment_intent.payment_failed` — a payment intent failed
+ * - `charge.refunded` — a charge was fully or partially refunded (app- or
+ *   dashboard-initiated); records refund facts on the payment
+ * - `charge.dispute.created` — a chargeback was opened; records dispute facts
+ * - `charge.dispute.closed` — a chargeback was resolved; updates dispute facts
  * - `account.updated` — legacy V1 account status updates
+ *
+ * These event types must be enabled on the standard webhook destination in the
+ * Stripe Dashboard (ties into TAVLI-46). Because our checkout uses destination
+ * charges with the platform as losses_collector, refund/dispute events are
+ * platform-account events delivered here rather than to the V2 connect endpoint.
  *
  * Each event is recorded in `stripeWebhookEvents` so duplicate deliveries
  * are no-ops.
@@ -458,6 +470,35 @@ export const fulfillPayment = internalAction({
 
 				case "payment_intent.payment_failed": {
 					paymentId = await handlePaymentIntentFailure(ctx, event.data.object);
+					break;
+				}
+
+				// Destination charges live on the platform account and the platform is
+				// the losses_collector, so refunds and disputes settle against the
+				// platform balance and their events arrive HERE (not the V2 connect
+				// thin-event endpoint). See convex/stripeWebhookHelpers.ts.
+				case "charge.refunded": {
+					paymentId = await handleChargeRefunded(ctx, event.data.object, event.id);
+					break;
+				}
+
+				case "charge.dispute.created": {
+					paymentId = await handleChargeDisputeCreated(
+						ctx,
+						event.data.object,
+						event.id,
+						event.created * 1000
+					);
+					break;
+				}
+
+				case "charge.dispute.closed": {
+					paymentId = await handleChargeDisputeClosed(
+						ctx,
+						event.data.object,
+						event.id,
+						event.created * 1000
+					);
 					break;
 				}
 

@@ -20,6 +20,7 @@ export const TABLE = {
 	ORDER_ITEMS: "orderItems",
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
+	STRIPE_DISPUTES: "stripeDisputes",
 	RESERVATIONS: "reservations",
 	TABLE_LOCKS: "tableLocks",
 	RESERVATION_SETTINGS: "reservationSettings",
@@ -131,7 +132,10 @@ export type PaymentStatus = (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS]
 export const PAYMENT_REFUND_STATUS = {
 	NONE: "none",
 	REQUESTED: "requested",
+	/** The full captured amount has been refunded. */
 	SUCCEEDED: "succeeded",
+	/** Only part of the captured amount has been refunded (e.g. a manual partial refund). */
+	PARTIAL: "partial",
 	FAILED: "failed",
 } as const;
 
