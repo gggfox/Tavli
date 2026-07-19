@@ -8,6 +8,31 @@ and the observability work (TAVLI-9) roll up into.
 
 Legend: 🔴 blocker · 🟠 high · 🟡 medium · ✅ done · ⚙️ config/manual verify
 
+## Progress since audit (2026-07-19)
+
+The verdict and table below are the original 2026-07-18 snapshot — left as-is for the
+historical record. Status changes are tracked in the checklist items themselves (checked
+= merged into `main`) and summarized here:
+
+**Merged:**
+
+- ✅ Commission rate fixed to 12% → [#50](https://github.com/gggfox/Tavli/pull/50) (TAVLI-49)
+- ✅ First-admin bootstrap for the empty prod DB → [#54](https://github.com/gggfox/Tavli/pull/54) (TAVLI-51)
+- ✅ `orders` hot-path index → [#51](https://github.com/gggfox/Tavli/pull/51) (TAVLI-54)
+- ✅ Anonymous reservation endpoints bounded + rate-limited → [#57](https://github.com/gggfox/Tavli/pull/57) (TAVLI-56)
+
+**Open for review (implemented, not yet merged):**
+
+- 🔍 Invite emails: no localhost fallback in prod → [#52](https://github.com/gggfox/Tavli/pull/52) (TAVLI-57)
+- 🔍 Reconcile tabs stuck locked-for-payment → [#53](https://github.com/gggfox/Tavli/pull/53) (TAVLI-45)
+- 🔍 Refund + dispute webhook handling → [#56](https://github.com/gggfox/Tavli/pull/56) (TAVLI-53)
+- 🔍 Post-deploy health gate + deploy-failure alerting → [#55](https://github.com/gggfox/Tavli/pull/55) (TAVLI-52)
+- 🔍 Error → i18n mapping, stop leaking raw backend errors → [#58](https://github.com/gggfox/Tavli/pull/58) (TAVLI-55)
+
+**Still open, no PR yet:** refund story for tab payments (TAVLI-50, needs an implement-vs-SOP
+decision), error tracking / Sentry (TAVLI-9), Convex backup + restore runbook (TAVLI-58),
+staff/tablet responsive coverage (TAVLI-59).
+
 ## Overall verdict
 
 **Not yet production-ready — but the hard parts are strong.** Authentication/authorization
@@ -32,24 +57,24 @@ and **data bootstrap** (no way to create the first admin in the empty prod DB �
 
 ## 🔴 Go / No-Go blockers (resolve before taking real traffic)
 
-- [ ] **Confirm the platform commission rate.** Code charges **6%** (`PLATFORM_APPLICATION_FEE_RATE = 0.06`, `convex/constants.ts:175`; used at `convex/stripe.ts:815`), but TAVLI-1 says **12%**. If 12% is intended, every live charge under-collects revenue by half. **Revenue-critical decision.**
-- [ ] **Decide the refund story for tab payments.** `createRefund` throws for the tab flow — the only live path (`convex/stripe.ts:523-528`). Today there is _no_ automated refund in production and no in-app reconciliation of manual dashboard refunds. Either implement, or write + adopt a manual-refund SOP with monitoring.
-- [ ] **First-admin bootstrap for the empty prod DB.** Every privileged mutation requires an already-privileged caller (`organizations.ts:60`, `admin.ts:215`, `restaurants.ts:218`); no Clerk `user.created` webhook seeds roles; `devSetOwnRoles` is (correctly) blocked in prod. The only path today is a manual Convex-dashboard row insert — undocumented. Provide a guarded seed script or a documented procedure. _(This is the concrete cause of the `/admin/restaurants` "Access Denied" on prod.)_
+- [x] **Confirm the platform commission rate.** ~~Code charges **6%**~~ Fixed: `PLATFORM_APPLICATION_FEE_RATE` is now `0.12` across both Stripe payment paths, matching TAVLI-1's decision. → merged in [#50](https://github.com/gggfox/Tavli/pull/50) (TAVLI-49)
+- [ ] **Decide the refund story for tab payments.** `createRefund` throws for the tab flow — the only live path (`convex/stripe.ts:523-528`). Today there is _no_ automated refund in production and no in-app reconciliation of manual dashboard refunds. Either implement, or write + adopt a manual-refund SOP with monitoring. → **TAVLI-50**, needs an implement-vs-SOP decision before work can start
+- [x] **First-admin bootstrap for the empty prod DB.** Added a guarded `internalMutation` (only invokable via `npx convex run`/dashboard) that promotes an existing user to owner+admin, gated by an explicit env opt-in and refusing if any owner/admin already exists; documented operator procedure in `deployment-and-secrets.md`. → merged in [#54](https://github.com/gggfox/Tavli/pull/54) (TAVLI-51). _Still needed: actually run it once against prod to create the first admin and confirm `/admin/restaurants` loads — the code shipping doesn't mean prod has been bootstrapped yet._
 - [ ] **Error tracking (frontend + Convex).** None exists — no Sentry/Rollbar/etc. (`package.json` clean). Production exceptions are invisible unless someone is watching the Convex dashboard. Wire a capture sink into the existing `ErrorBoundary` `onError` prop. → **TAVLI-9**
-- [ ] **Post-deploy health gate + deploy-failure alerting.** `deploy.yml` fires the Dokploy webhook and stops — nothing verifies the site actually serves after redeploy, and no workflow notifies on failure. This is the exact class of failure behind the 4-day staging outage. → **TAVLI-9**, postmortem action items #4–#5
+- [ ] **Post-deploy health gate + deploy-failure alerting.** `deploy.yml` fires the Dokploy webhook and stops — nothing verifies the site actually serves after redeploy, and no workflow notifies on failure. This is the exact class of failure behind the 4-day staging outage. → **TAVLI-9**, postmortem action items #4–#5. A real `/health` endpoint + CI health gate + failure alerting is implemented in [#55](https://github.com/gggfox/Tavli/pull/55) (TAVLI-52), open for review
 
 ---
 
 ## 🟠 High priority (before launch, or immediately after)
 
-- [ ] **Payment reconciliation for stuck "processing" tabs.** Settlement depends entirely on the `payment_intent.succeeded` webhook (`TabCheckoutPage.tsx:426`); a dropped/delayed webhook locks the tab forever (`lockedForPaymentAt`) with no sweep that reconciles against Stripe (`sweepStaleOpenTabs`, `sessions.ts:574` only closes zero-balance tabs). Add a cron that polls PaymentIntent status and/or a client `retrievePaymentIntent` fallback. → **TAVLI-45**
-- [ ] **Refund + dispute webhook handling.** Only `payment_intent.succeeded/​payment_failed` + `account.updated` are handled (`stripe.ts:453-478`). No `charge.refunded` / `charge.dispute.created`. Since the platform is `losses_collector` (`stripe.ts:107`), disputes/chargebacks hit the platform **silently**. Handle them or formally accept dashboard-only + monitoring.
-- [ ] **`orders` hot-path index.** The live kitchen dashboard `.collect()`s _every_ order for a restaurant and filters status in memory (`orders.ts:585-591`); `orders` has no `by_restaurant_status` index (`schema.ts:470`). Add the index + query by it — this is the hottest, most-polled read and grows unbounded.
-- [ ] **Error localization is broken end-to-end.** `src/global/utils/errorMessages.ts` maps 3 codes, **all mismatched** vs the real codes in `convex/_util/auth.ts:37-42`, and has **zero callers**. The ErrorBoundary and the shared `DashboardShell` (`DashboardShell.tsx:39,89`) hardcode English and render raw `error.message` (a user can see `[CONVEX M(...)] … ERROR_TABLE_LOCKED`). Fix the code→i18n map and stop leaking raw strings.
-- [ ] **Rate limit anonymous public endpoints.** `getAvailability` / `listReservationSlotsForDay` (up to 64 iterations of table+reservation+lock scans, `reservations.ts:182-217`) are anonymous and unthrottled — a cheap-request/expensive-work DoS surface. `reservations.create` UI mutation is likewise open. Consider `@convex-dev/rate-limiter`.
-- [ ] **Staff/tablet responsive coverage.** Only ~34 breakpoint prefixes across 196 components; polish is concentrated in customer ordering. Staff surfaces (schedule grid, reservation timeline, data tables) are desktop-first. Restaurants run these on tablets. Needs device testing to scope. → **TAVLI-3, TAVLI-4**
-- [ ] **Invite emails fall back to `localhost:3000`.** `inviteActions.ts:23-24` defaults `acceptUrl` to localhost if `PUBLIC_APP_URL`/`VITE_APP_URL` are unset — silent onboarding failure in prod. Require the app URL (throw/skip) in production.
-- [ ] **Convex backup + restore procedure.** No configured/documented backup, export job, or restore runbook (relies on unconfigured platform defaults). Confirm Convex's backup posture and write a restore runbook.
+- [ ] **Payment reconciliation for stuck "processing" tabs.** Settlement depends entirely on the `payment_intent.succeeded` webhook (`TabCheckoutPage.tsx:426`); a dropped/delayed webhook locks the tab forever (`lockedForPaymentAt`) with no sweep that reconciles against Stripe (`sweepStaleOpenTabs`, `sessions.ts:574` only closes zero-balance tabs). Add a cron that polls PaymentIntent status and/or a client `retrievePaymentIntent` fallback. → **TAVLI-45** — implemented in [#53](https://github.com/gggfox/Tavli/pull/53), open for review (not yet run against live Stripe test-mode events)
+- [ ] **Refund + dispute webhook handling.** Only `payment_intent.succeeded/​payment_failed` + `account.updated` are handled (`stripe.ts:453-478`). No `charge.refunded` / `charge.dispute.created`. Since the platform is `losses_collector` (`stripe.ts:107`), disputes/chargebacks hit the platform **silently**. Handle them or formally accept dashboard-only + monitoring. → **TAVLI-53** — implemented in [#56](https://github.com/gggfox/Tavli/pull/56), open for review (not yet run against live Stripe test-mode events)
+- [x] **`orders` hot-path index.** New `by_restaurant_status` index on `orders`; the kitchen dashboard and analytics widget now query per-status instead of collecting the full restaurant order history. → merged in [#51](https://github.com/gggfox/Tavli/pull/51) (TAVLI-54)
+- [ ] **Error localization is broken end-to-end.** `src/global/utils/errorMessages.ts` maps 3 codes, **all mismatched** vs the real codes in `convex/_util/auth.ts:37-42`, and has **zero callers**. The ErrorBoundary and the shared `DashboardShell` (`DashboardShell.tsx:39,89`) hardcode English and render raw `error.message` (a user can see `[CONVEX M(...)] … ERROR_TABLE_LOCKED`). Fix the code→i18n map and stop leaking raw strings. → **TAVLI-55** — implemented in [#58](https://github.com/gggfox/Tavli/pull/58), open for review (adversarially verified against the real returned-tuple error shape; a handful of low-traffic admin/debug surfaces still render raw errors, tracked as follow-up)
+- [x] **Rate limit anonymous public endpoints.** Availability queries now bound the work (tightened date-range validators, capped iterations); `reservations.create` is sliding-window rate-limited per restaurant/contact. → merged in [#57](https://github.com/gggfox/Tavli/pull/57) (TAVLI-56). _Residual: Convex queries can't hold state for true rate limiting, so the availability reads are bounded per-call, not throttled in aggregate — reduced DoS surface, not eliminated._
+- [ ] **Staff/tablet responsive coverage.** Only ~34 breakpoint prefixes across 196 components; polish is concentrated in customer ordering. Staff surfaces (schedule grid, reservation timeline, data tables) are desktop-first. Restaurants run these on tablets. Needs device testing to scope. → **TAVLI-3, TAVLI-4** (now tracked as **TAVLI-59**)
+- [ ] **Invite emails fall back to `localhost:3000`.** `inviteActions.ts:23-24` defaults `acceptUrl` to localhost if `PUBLIC_APP_URL`/`VITE_APP_URL` are unset — silent onboarding failure in prod. Require the app URL (throw/skip) in production. → **TAVLI-57** — implemented in [#52](https://github.com/gggfox/Tavli/pull/52), open for review
+- [ ] **Convex backup + restore procedure.** No configured/documented backup, export job, or restore runbook (relies on unconfigured platform defaults). Confirm Convex's backup posture and write a restore runbook. → **TAVLI-58**
 
 ---
 
@@ -61,7 +86,7 @@ and **data bootstrap** (no way to create the first admin in the empty prod DB �
 - [ ] **Language hydration mismatch.** SSR renders `en` (no server-side locale detection) but a returning Spanish user hydrates `es` — `<html lang>` + all SSR chrome mismatch on first paint (`__root.tsx:152`).
 - [ ] **Pin the Stripe API version.** `new Stripe(key)` with no `apiVersion` (`_util/stripe.ts:32`); the integration uses version-sensitive V2 APIs. Pin it explicitly.
 - [ ] **Align timezone defaults.** `resolveRestaurantTimezone` → `America/Mexico_City` vs `orderServiceDate.resolveTimeZone` → `UTC` (up to 6h service-date skew for un-backfilled rows).
-- [ ] **Observability depth:** real `/health` endpoint (not `/` with `<500` = healthy), external uptime monitor, structured logging / Convex log-streaming, CI `.dockerignore` guard (postmortem #3).
+- [ ] **Observability depth:** real `/health` endpoint (not `/` with `<500` = healthy), external uptime monitor, structured logging / Convex log-streaming, CI `.dockerignore` guard (postmortem #3). Real `/health` endpoint + CI health gate implemented in [#55](https://github.com/gggfox/Tavli/pull/55) (TAVLI-52), open for review — external uptime monitor and structured logging still open.
 - [ ] **Frontend perf:** virtualize kitchen/reservation/table lists (no virtualization today); collapse per-category menu query fan-out (`MenuBrowser.tsx:390`); add `loading="lazy"` + dimensions to menu images.
 - [ ] **Gate `getAllFeatureFlags`** (`featureFlags.ts:116-147`) — currently world-readable, leaks feature descriptions.
 - [ ] **Design-token cleanup:** inline hex colors bypass theme tokens (`MenuBrowser.tsx`, `InlineError`); contrast unverified. → TDR-0005 area
