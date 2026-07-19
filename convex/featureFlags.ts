@@ -30,35 +30,11 @@ type DeleteFeatureFlagErrors =
 // Feature Flag Keys
 // ============================================================================
 
-/**
- * Available feature flag keys.
- * Add new feature flags here as constants for type safety.
- *
- * When adding a flag, also add a matching entry to FEATURE_FLAG_METADATA so the
- * admin UI has a description to render.
- */
-export const FEATURE_FLAGS = {
-	/**
-	 * Numeric retention window (in days) for soft-deleted sections and tables.
-	 * When `enabled === true`, the cron purge sweep treats `numericValue` as the
-	 * delay between soft-delete time and hard-purge. Otherwise we fall back to
-	 * `DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS`.
-	 */
-	SOFT_DELETE_PURGE_DELAY_DAYS: "softDeletePurgeDelayDays",
-} as const;
-
-export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
-
-/**
- * Human-readable metadata for each registered flag.
- * The admin UI reads descriptions from here so code stays the source of truth.
- */
-export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string }> = {
-	[FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS]: {
-		description:
-			"Retention window (in days) before soft-deleted sections and tables are permanently hard-deleted by the cron sweep. Set numericValue on the flag and enable it to override; otherwise the system default applies.",
-	},
-};
+// Flag keys + metadata moved to convex/constants.ts so the frontend can import
+// them without dragging this function module (and convex/server) into the
+// browser bundle. Re-exported here so backend call sites are unchanged.
+export { FEATURE_FLAGS, FEATURE_FLAG_METADATA, type FeatureFlagKey } from "./constants";
+import { FEATURE_FLAGS, type FeatureFlagKey } from "./constants";
 
 /**
  * Default retention window for soft-deleted sections/tables when the

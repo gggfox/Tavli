@@ -408,3 +408,42 @@ export const AUDIT_SYSTEM_USER_ID = "system";
 
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+// ============================================================================
+// Feature Flags
+// ============================================================================
+// Registered flag keys + admin-UI metadata. These live here (not in
+// convex/featureFlags.ts) because the frontend renders them too: importing a
+// Convex *function module* into the browser bundle drags convex/server along
+// and Convex warns it will become a hard error. featureFlags.ts re-exports
+// them so backend call sites are unchanged.
+
+/**
+ * Available feature flag keys.
+ * Add new feature flags here as constants for type safety.
+ *
+ * When adding a flag, also add a matching entry to FEATURE_FLAG_METADATA so the
+ * admin UI has a description to render.
+ */
+export const FEATURE_FLAGS = {
+	/**
+	 * Numeric retention window (in days) for soft-deleted sections and tables.
+	 * When `enabled === true`, the cron purge sweep treats `numericValue` as the
+	 * delay between soft-delete time and hard-purge. Otherwise we fall back to
+	 * `DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS`.
+	 */
+	SOFT_DELETE_PURGE_DELAY_DAYS: "softDeletePurgeDelayDays",
+} as const;
+
+export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
+
+/**
+ * Human-readable metadata for each registered flag.
+ * The admin UI reads descriptions from here so code stays the source of truth.
+ */
+export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string }> = {
+	[FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS]: {
+		description:
+			"Retention window (in days) before soft-deleted sections and tables are permanently hard-deleted by the cron sweep. Set numericValue on the flag and enable it to override; otherwise the system default applies.",
+	},
+};
