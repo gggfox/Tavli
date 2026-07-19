@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_RESTAURANT_TIMEZONE } from "./constants";
 import {
 	DEFAULT_ORDER_DAY_START_MINUTES,
 	getOrderResetPeriodKey,
@@ -29,9 +30,15 @@ describe("getOrderServiceDateKey", () => {
 		expect(getOrderServiceDateKey(ms, "UTC", undefined)).toBe("2024-06-14");
 	});
 
-	it("uses UTC when timezone missing", () => {
-		const ms = Date.UTC(2024, 5, 15, 10, 0, 0, 0);
-		expect(getOrderServiceDateKey(ms, undefined, 0)).toBe("2024-06-15");
+	it("falls back to the default restaurant timezone when timezone missing", () => {
+		// 2024-06-15 03:00 UTC = 2024-06-14 21:00 in America/Mexico_City (UTC-6,
+		// no DST since 2022). With a midnight cutoff the two zones disagree, which
+		// is the point: this used to resolve to UTC and bucket a full day late.
+		const ms = Date.UTC(2024, 5, 15, 3, 0, 0, 0);
+		expect(getOrderServiceDateKey(ms, undefined, 0)).toBe("2024-06-14");
+		expect(getOrderServiceDateKey(ms, DEFAULT_RESTAURANT_TIMEZONE, 0)).toBe(
+			getOrderServiceDateKey(ms, undefined, 0)
+		);
 	});
 
 	it("respects custom cutoff minute boundary", () => {
@@ -50,9 +57,9 @@ describe("getOrderServiceDateKey", () => {
 		);
 	});
 
-	it("falls back to UTC on invalid timezone string", () => {
-		const ms = Date.UTC(2024, 5, 15, 10, 0, 0, 0);
-		expect(getOrderServiceDateKey(ms, "Not/A_Real_Zone", 0)).toBe("2024-06-15");
+	it("falls back to the default restaurant timezone on an invalid timezone string", () => {
+		const ms = Date.UTC(2024, 5, 15, 3, 0, 0, 0);
+		expect(getOrderServiceDateKey(ms, "Not/A_Real_Zone", 0)).toBe("2024-06-14");
 	});
 });
 

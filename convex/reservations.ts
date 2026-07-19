@@ -85,6 +85,30 @@ type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
 // ============================================================================
+// Id normalization (HTTP boundary)
+// ============================================================================
+
+/**
+ * Resolve an untrusted string into a real restaurant id, or `null`.
+ *
+ * `httpAction` has no `ctx.db`, so the bot routes in `http.ts` cannot call
+ * `normalizeId` themselves. Without this they would cast the raw string with
+ * `as Id<...>` and let Convex's arg validator throw -- surfacing as a 500 with
+ * an internal validator message. Going through here turns a malformed or
+ * unknown id into a clean 404 instead.
+ */
+export const normalizeRestaurantId = internalQuery({
+	args: { candidateId: v.string() },
+	handler: async (ctx, args): Promise<Id<typeof TABLE.RESTAURANTS> | null> => {
+		const restaurantId = ctx.db.normalizeId(TABLE.RESTAURANTS, args.candidateId);
+		if (!restaurantId) return null;
+		const restaurant = await ctx.db.get(restaurantId);
+		if (!restaurant || restaurant.deletedAt !== undefined) return null;
+		return restaurantId;
+	},
+});
+
+// ============================================================================
 // Public availability query
 // ============================================================================
 
