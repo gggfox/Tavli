@@ -22,7 +22,7 @@ A brand-new sending domain with a sparse template will land in spam by default. 
 
 - `RESEND_API_KEY` — Resend API key
 - `RESEND_FROM_ADDRESS` — sender, e.g. `Tavli <invites@gggfox.com>` or `Tavli <invites@tavli.com>`
-- `PUBLIC_APP_URL` — base URL used to build accept links inside the email (e.g. `http://localhost:3000` in dev, `https://app.tavli.com` in prod)
+- `PUBLIC_APP_URL` — base URL used to build accept links inside the email (e.g. `http://localhost:3000` in dev, `https://app.tavli.com` in prod). **Required when `CONVEX_ENV` is `staging` or `production`**: the send action throws `APP_URL_NOT_CONFIGURED` instead of falling back to localhost.
 
 Set with: `npx convex env set <NAME> <VALUE>`. Verify with: `npx convex env list`.
 
