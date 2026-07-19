@@ -1,4 +1,5 @@
 import { RestaurantsKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexAction } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -43,7 +44,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 			const result = await checkStatus({ restaurantId });
 			setStatus(result);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(RestaurantsKeys.STRIPE_STATUS_FAILED));
+			setError(getErrorMessage(err, t, RestaurantsKeys.STRIPE_STATUS_FAILED));
 		} finally {
 			setLoading(false);
 		}
@@ -85,7 +86,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 
 			globalThis.location.href = linkResult.url;
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(RestaurantsKeys.STRIPE_SETUP_FAILED));
+			setError(getErrorMessage(err, t, RestaurantsKeys.STRIPE_SETUP_FAILED));
 			setActionLoading(false);
 		}
 	};
@@ -106,7 +107,7 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 			);
 			await refreshStatus();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(RestaurantsKeys.STRIPE_RESET_FAILED));
+			setError(getErrorMessage(err, t, RestaurantsKeys.STRIPE_RESET_FAILED));
 		} finally {
 			setResetLoading(false);
 		}

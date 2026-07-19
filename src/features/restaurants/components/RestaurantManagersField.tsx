@@ -1,6 +1,7 @@
 import { useClickOutside, useEscapeKey } from "@/global/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -126,7 +127,7 @@ export function RestaurantManagersField({
 				);
 			}
 		} catch (e) {
-			onError?.(e instanceof Error ? e.message : t(RestaurantsKeys.MANAGERS_MUTATION_FAILED));
+			onError?.(getErrorMessage(e, t, RestaurantsKeys.MANAGERS_MUTATION_FAILED));
 		}
 	};
 

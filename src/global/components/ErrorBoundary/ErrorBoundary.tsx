@@ -4,6 +4,8 @@
  * Catches JavaScript errors anywhere in its child component tree and
  * displays a fallback UI instead of crashing the entire app.
  */
+import { ErrorKeys, i18n } from "@/global/i18n";
+import { extractErrorCode, getErrorMessage } from "@/global/utils/errorMessages";
 import { Component, type ReactNode } from "react";
 
 interface ErrorBoundaryProps {
@@ -51,7 +53,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 				return this.props.fallback;
 			}
 
-			const isAuthError = this.state.error?.message?.toLowerCase().includes("authenticated");
+			// Localized via the shared i18n singleton — this class component can't
+			// use the `useTranslation` hook, and error boundaries must be classes.
+			const t = i18n.t.bind(i18n);
+			const error = this.state.error;
+			const isAuthError =
+				extractErrorCode(error) === "NOT_AUTHENTICATED" ||
+				!!error?.message?.toLowerCase().includes("authenticated");
+			// Never render a raw backend message — map known codes, otherwise the
+			// generic boundary copy.
+			const description = getErrorMessage(error, t, ErrorKeys.BOUNDARY_DESCRIPTION);
 
 			return (
 				<div className="min-h-[400px] flex items-center justify-center p-8">
@@ -77,13 +88,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 						</div>
 
 						<h2 className="text-xl font-semibold mb-2 text-foreground">
-							{isAuthError ? "Session Expired" : "Something went wrong"}
+							{isAuthError ? t(ErrorKeys.BOUNDARY_SESSION_TITLE) : t(ErrorKeys.BOUNDARY_TITLE)}
 						</h2>
 
 						<p className="mb-6 text-muted-foreground">
-							{isAuthError
-								? "Your session has expired. Please sign in again to continue."
-								: this.state.error?.message || "An unexpected error occurred. Please try again."}
+							{isAuthError ? t(ErrorKeys.BOUNDARY_SESSION_DESCRIPTION) : description}
 						</p>
 
 						<div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -93,7 +102,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 									onClick={this.handleSignIn}
 									className="px-6 py-2.5 font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 hover-btn-primary"
 								>
-									Sign In
+									{t(ErrorKeys.BOUNDARY_SIGN_IN)}
 								</button>
 							) : (
 								<>
@@ -102,14 +111,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 										onClick={this.handleRetry}
 										className="px-6 py-2.5 font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 hover-btn-primary"
 									>
-										Try Again
+										{t(ErrorKeys.BOUNDARY_RETRY)}
 									</button>
 									<button
 										type="button"
 										onClick={() => globalThis.location.reload()}
 										className="px-6 py-2.5 font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 hover-btn-secondary"
 									>
-										Reload Page
+										{t(ErrorKeys.BOUNDARY_RELOAD)}
 									</button>
 								</>
 							)}
