@@ -40,6 +40,7 @@ export const TABLE = {
 	DASHBOARD_LAYOUTS: "dashboardLayouts",
 	DASHBOARD_TEMPLATES: "dashboardTemplates",
 	EMPLOYEE_ACCOUNTS: "employeeAccounts",
+	RATE_LIMITS: "rateLimits",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -176,7 +177,7 @@ export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;
 
 /** Platform application fee, applied to the tab subtotal only (never the tip). */
-export const PLATFORM_APPLICATION_FEE_RATE = 0.06;
+export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
 /** Tip selector presets (percent of tab subtotal). Ticket TAVLI-6: default 10%. */
 export const TIP_PERCENT_PRESETS = [0, 10, 15, 20] as const;

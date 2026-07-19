@@ -1,7 +1,10 @@
 import { RestaurantsKeys } from "@/global/i18n";
 import { AlertCircle, Clock, ExternalLink, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
 import { ResetStripeControl } from "./ResetStripeControl";
+
+const PLATFORM_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
 
 /**
  * V2 account status shape returned by the getAccountStatus action.
@@ -166,7 +169,9 @@ export function StripeStatusSection({
 
 	return (
 		<div className="space-y-3">
-			<p className="text-xs text-muted-foreground">{t(RestaurantsKeys.STRIPE_INTRO)}</p>
+			<p className="text-xs text-muted-foreground">
+				{t(RestaurantsKeys.STRIPE_INTRO, { rate: PLATFORM_FEE_PERCENT })}
+			</p>
 			<button
 				onClick={onSetup}
 				disabled={actionLoading}

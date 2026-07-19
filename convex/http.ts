@@ -255,7 +255,8 @@ http.route({
 			idempotencyKey,
 		});
 		if (error) {
-			return jsonResponse({ error }, error.name === "NOT_FOUND" ? 404 : 409);
+			const status = error.name === "NOT_FOUND" ? 404 : error.name === "RATE_LIMITED" ? 429 : 409;
+			return jsonResponse({ error }, status);
 		}
 		return jsonResponse({ reservationId }, 201);
 	}),

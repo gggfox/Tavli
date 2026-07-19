@@ -2,7 +2,7 @@
  * Admin-only queries and mutations for user management.
  */
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import {
 	ERROR_NAMES,
 	IdempotencyKeyConflictErrorObject,
@@ -17,10 +17,15 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
-import { isDevRoleSwitcherEnabled } from "./_util/env";
+import { isAdminBootstrapEnabled, isDevRoleSwitcherEnabled } from "./_util/env";
 import { findExistingEventByKey, findExistingEventByKeyAndType } from "./_util/idempotency";
+import {
+	ADMIN_BOOTSTRAP_REFUSAL,
+	decideAdminBootstrap,
+	normalizeBootstrapEmail,
+} from "./adminHelpers";
 import type { UserRoleDoc } from "./constants";
-import { TABLE } from "./constants";
+import { AUDIT_SYSTEM_USER_ID, TABLE } from "./constants";
 
 export const DEV_ONLY_ERROR_MESSAGE = "ERROR_DEV_ENVIRONMENT_ONLY";
 
@@ -430,5 +435,104 @@ export const devSetOwnRoles = mutation({
 		});
 
 		return [roleRecordId, null];
+	},
+});
+
+/**
+ * Guarded first-admin bootstrap (operator-only, ticket TAVLI-51).
+ *
+ * On a fresh production database there is no privileged caller to grant the
+ * first org-level owner/admin, so every admin mutation refuses and
+ * `/admin/restaurants` shows "Access Denied". This is the supported one-time
+ * bootstrap: it promotes an EXISTING `userRoles` row — matched by email or
+ * Clerk subject — to `owner` + `admin`, preserving any roles it already had.
+ *
+ * It is an `internalMutation`, so it is unreachable from the client/browser;
+ * the only surfaces are `npx convex run` and the Convex dashboard, i.e. an
+ * operator who already has deployment access. It fails closed via
+ * `decideAdminBootstrap`:
+ *   - `ALLOW_ADMIN_BOOTSTRAP` must be truthy (inert by default; unset it again
+ *     right after use);
+ *   - refuses if ANY owner/admin already exists (strictly first-admin);
+ *   - refuses if the target user row does not exist (never creates users).
+ *
+ * See `documentation/internal-guides/deployment-and-secrets.md` →
+ * "First-admin bootstrap" for the operator procedure.
+ */
+export const bootstrapFirstAdmin = internalMutation({
+	args: {
+		email: v.optional(v.string()),
+		clerkSubject: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const email = args.email?.trim();
+		const clerkSubject = args.clerkSubject?.trim();
+		const hasEmail = email != null && email !== "";
+		const hasSubject = clerkSubject != null && clerkSubject !== "";
+
+		// Require exactly one selector so the lookup is unambiguous.
+		if (hasEmail === hasSubject) {
+			throw new UserInputValidationError({
+				fields: [
+					{
+						field: "email/clerkSubject",
+						message: "Provide exactly one of `email` or `clerkSubject`",
+					},
+				],
+			});
+		}
+
+		const existingRoleRows = await ctx.db.query(TABLE.USER_ROLES).collect();
+
+		let targetRow: (typeof existingRoleRows)[number] | null = null;
+		if (hasSubject) {
+			targetRow = existingRoleRows.find((row) => row.userId === clerkSubject) ?? null;
+		} else if (hasEmail) {
+			const normalized = normalizeBootstrapEmail(email);
+			targetRow =
+				existingRoleRows.find(
+					(row) => row.email != null && normalizeBootstrapEmail(row.email) === normalized
+				) ?? null;
+		}
+
+		const decision = decideAdminBootstrap({
+			allowBootstrap: isAdminBootstrapEnabled(),
+			existingRoleRows,
+			targetRow,
+		});
+
+		if (!decision.ok) {
+			if (decision.reason === ADMIN_BOOTSTRAP_REFUSAL.USER_NOT_FOUND) {
+				throw new NotFoundError(decision.reason);
+			}
+			throw new NotAuthorizedError(decision.reason);
+		}
+
+		// `decision.ok` guarantees `targetRow` was non-null; re-narrow for the
+		// type-checker while staying fail-closed if that ever regresses.
+		if (!targetRow) {
+			throw new NotFoundError(ADMIN_BOOTSTRAP_REFUSAL.USER_NOT_FOUND);
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(targetRow._id, {
+			roles: decision.nextRoles,
+			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.USER_ROLES,
+			aggregateId: targetRow._id,
+			eventType: "userRoles.bootstrap_first_admin",
+			payload: {
+				roles: decision.nextRoles,
+				previousRoles: decision.previousRoles,
+				matchedBy: hasSubject ? "clerkSubject" : "email",
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+		});
+
+		return { ok: true as const, userRoleId: targetRow._id, roles: decision.nextRoles };
 	},
 });

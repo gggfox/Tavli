@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as HealthRouteImport } from './routes/health'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DemoRouteRouteImport } from './routes/demo/route'
@@ -45,6 +46,11 @@ import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
 import { Route as RSlugLangOrderOrderIdRouteImport } from './routes/r/$slug/$lang/order/$orderId'
 
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -226,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/demo': typeof DemoRouteRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/health': typeof HealthRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -263,6 +270,7 @@ export interface FileRoutesByTo {
   '/demo': typeof DemoRouteRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/health': typeof HealthRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -301,6 +309,7 @@ export interface FileRoutesById {
   '/demo': typeof DemoRouteRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/health': typeof HealthRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -340,6 +349,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/admin'
     | '/dashboard'
+    | '/health'
     | '/admin/feature-flags'
     | '/admin/orders'
     | '/admin/organizations'
@@ -377,6 +387,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/admin'
     | '/dashboard'
+    | '/health'
     | '/admin/feature-flags'
     | '/admin/orders'
     | '/admin/organizations'
@@ -414,6 +425,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/admin'
     | '/dashboard'
+    | '/health'
     | '/admin/feature-flags'
     | '/admin/orders'
     | '/admin/organizations'
@@ -452,12 +464,20 @@ export interface RootRouteChildren {
   DemoRouteRoute: typeof DemoRouteRouteWithChildren
   AdminRoute: typeof AdminRouteWithChildren
   DashboardRoute: typeof DashboardRoute
+  HealthRoute: typeof HealthRoute
   InvitesTokenRoute: typeof InvitesTokenRoute
   RSlugRoute: typeof RSlugRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -805,6 +825,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoRouteRoute: DemoRouteRouteWithChildren,
   AdminRoute: AdminRouteWithChildren,
   DashboardRoute: DashboardRoute,
+  HealthRoute: HealthRoute,
   InvitesTokenRoute: InvitesTokenRoute,
   RSlugRoute: RSlugRouteWithChildren,
 }
