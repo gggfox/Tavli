@@ -1,6 +1,7 @@
 import { SegmentedControl } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
 import { parseDollarsToCents } from "@/global/utils/money";
+import { usePostHog } from "posthog-js/react";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
 import { ClipboardPaste, ImagePlus, X } from "lucide-react";
@@ -34,6 +35,7 @@ export function AddItemForm({
 	onCancel,
 }: Readonly<AddItemFormProps>) {
 	const { t } = useTranslation();
+	const posthog = usePostHog();
 	const [selectedImage, setSelectedImage] = useState<File | null>(null);
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
 	const [prepStation, setPrepStation] = useState<PrepStation>("kitchen");
@@ -83,6 +85,14 @@ export function AddItemForm({
 				basePrice: price,
 				imageStorageId,
 				prepStation,
+			});
+			posthog.capture("menu_item_created", {
+				category_id: categoryId,
+				restaurant_id: restaurantId,
+				base_price_cents: price,
+				prep_station: prepStation,
+				has_image: !!imageStorageId,
+				has_description: !!value.description,
 			});
 
 			form.reset();

@@ -3,6 +3,7 @@ import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getTranslatedField } from "@/global/utils/translations";
+import { usePostHog } from "posthog-js/react";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -52,6 +53,7 @@ export function MenuBrowser({
 	blockedNotice,
 }: Readonly<MenuBrowserProps>) {
 	const { t } = useTranslation();
+	const posthog = usePostHog();
 	const { data: paymentsEnabled } = useQuery(
 		convexQuery(api.restaurants.getPaymentsEnabled, { restaurantId })
 	);
@@ -117,8 +119,14 @@ export function MenuBrowser({
 				return next;
 			});
 			setDetailItem(null);
+			posthog.capture("item_added_to_cart", {
+				menu_item_id: data.menuItemId,
+				quantity: data.quantity,
+				base_price_cents: data.basePrice,
+				restaurant_id: restaurantId,
+			});
 		},
-		[]
+		[posthog, restaurantId]
 	);
 
 	const handleRemoveItem = useCallback((itemId: Id<"menuItems">) => {
@@ -150,6 +158,13 @@ export function MenuBrowser({
 			quantity: sel.quantity,
 			selectedOptions: Array.from(sel.selectedOptions.values()).flat(),
 		}));
+		posthog.capture("order_placed", {
+			item_count: items.length,
+			total_quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+			order_total_cents: orderTotal,
+			restaurant_id: restaurantId,
+			table_id: selectedTableId,
+		});
 		onSubmitOrder({
 			items,
 			specialInstructions: comment || undefined,

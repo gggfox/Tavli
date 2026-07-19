@@ -12,6 +12,7 @@ import { DateTimeField } from "@/global/components/Form";
 import { useCalendarVariant } from "@/global/hooks/useCalendarVariant";
 import { unwrapResult } from "@/global/utils";
 import { isValidYmd, todayLocalYmd } from "@/global/utils/calendarMonth";
+import { usePostHog } from "posthog-js/react";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -42,6 +43,7 @@ export function CustomerReservationForm({
 	restaurantName,
 }: Readonly<CustomerReservationFormProps>) {
 	const { t, i18n } = useTranslation();
+	const posthog = usePostHog();
 	const calendarVariant = useCalendarVariant();
 	const defaultStartMs = useMemo(() => {
 		const d = new Date();
@@ -128,6 +130,12 @@ export function CustomerReservationForm({
 					notes: notes.trim() || undefined,
 				})
 			);
+			posthog.capture("reservation_submitted", {
+				reservation_id: id,
+				party_size: partySize,
+				starts_at_ms: startsAtMs,
+				restaurant_id: restaurantId,
+			});
 			setCreatedId(id);
 		} catch (err) {
 			setError(getErrorMessage(err, t, ReservationsKeys.FORM_GENERIC_ERROR));
