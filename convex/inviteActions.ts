@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { renderTeamInviteEmail } from "./emails/renderTeamInviteEmail";
 import { parseResendErrorSummary, redactExternalId } from "./_shared/integrationLogging";
+import { getAppUrl } from "./_util/env";
 import { TABLE } from "./constants";
 
 /**
@@ -20,8 +21,6 @@ export const sendInviteEmail = internalAction({
 
 		const apiKey = process.env.RESEND_API_KEY;
 		const from = process.env.RESEND_FROM_ADDRESS ?? process.env.RESEND_FROM;
-		const appUrl =
-			process.env.PUBLIC_APP_URL ?? process.env.VITE_APP_URL ?? "http://localhost:3000";
 
 		if (!apiKey || !from) {
 			console.warn(
@@ -30,7 +29,11 @@ export const sendInviteEmail = internalAction({
 			return;
 		}
 
-		const acceptUrl = `${appUrl.replace(/\/$/, "")}/invites/${context.token}`;
+		// Throws APP_URL_NOT_CONFIGURED in staging/production when unset —
+		// never email a localhost accept link to a real invitee.
+		const appUrl = getAppUrl();
+
+		const acceptUrl = `${appUrl}/invites/${context.token}`;
 		const { subject, html, text } = await renderTeamInviteEmail({
 			locale: context.locale,
 			inviteeEmail: context.email,

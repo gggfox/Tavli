@@ -499,6 +499,7 @@
 		"VALIDATION_ERROR": "Some of the information provided isn't valid. Please review and try again.",
 		"IDEMPOTENCY_KEY_CONFLICT": "This action was already submitted. Please refresh before trying again.",
 		"INVALID_AUCTION_STATE": "That action isn't allowed in the current state.",
+		"APP_URL_NOT_CONFIGURED": "Something's misconfigured on our end. Please try again later.",
 		"ERROR_ADMIN_ROLE_REQUIRED": "You need administrator permissions to do that.",
 		"ERROR_OWNER_ROLE_REQUIRED": "You need owner permissions to do that.",
 		"ERROR_MANAGER_ROLE_REQUIRED": "You need manager permissions to do that.",
