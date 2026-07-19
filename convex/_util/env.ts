@@ -60,3 +60,21 @@ function isTruthyEnv(value: string | undefined): boolean {
 export function isDevRoleSwitcherEnabled(): boolean {
 	return isDevEnv() && isTruthyEnv(process.env[ENABLE_DEV_ROLE_SWITCHER_ENV]);
 }
+
+/** Convex env var that must be set (truthy) to arm the first-admin bootstrap. */
+export const ALLOW_ADMIN_BOOTSTRAP_ENV = "ALLOW_ADMIN_BOOTSTRAP";
+
+/**
+ * Whether the guarded first-admin bootstrap (`admin.bootstrapFirstAdmin`) is
+ * armed. Requires an explicit `ALLOW_ADMIN_BOOTSTRAP` opt-in so the mutation is
+ * inert by default in every environment.
+ *
+ * Unlike the dev role switcher this is deliberately NOT gated on `CONVEX_ENV`:
+ * seeding the very first owner/admin is a legitimate production operation. The
+ * "first-admin only" and "user must already exist" guards live in
+ * `decideAdminBootstrap`; this flag is the operator's arm/disarm switch, meant
+ * to be set immediately before the run and unset immediately after.
+ */
+export function isAdminBootstrapEnabled(): boolean {
+	return isTruthyEnv(process.env[ALLOW_ADMIN_BOOTSTRAP_ENV]);
+}

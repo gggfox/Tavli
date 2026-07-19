@@ -39,6 +39,7 @@ export const TABLE = {
 	DASHBOARD_LAYOUTS: "dashboardLayouts",
 	DASHBOARD_TEMPLATES: "dashboardTemplates",
 	EMPLOYEE_ACCOUNTS: "employeeAccounts",
+	RATE_LIMITS: "rateLimits",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
