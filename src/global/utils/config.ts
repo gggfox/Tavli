@@ -25,6 +25,15 @@ export interface ConfigValues {
 	readonly isProd: boolean;
 	readonly convexUrl: string;
 	readonly hasAuthConfig: boolean;
+	/**
+	 * Git commit SHA of the running build. Baked in at build time from
+	 * `VITE_GIT_SHA` (set to `github.sha` by `.github/workflows/deploy.yml`),
+	 * inlined by Vite like every other `VITE_*` value. Falls back to
+	 * `"unknown"` for local dev builds where it is not injected. Reported by
+	 * the `/health` route so a deploy can confirm the just-pushed build is the
+	 * one actually serving.
+	 */
+	readonly gitSha: string;
 }
 
 function parseEnvironment(env: string): Environment {
@@ -40,6 +49,7 @@ function parseEnvironment(env: string): Environment {
 
 const nodeEnv = parseEnvironment(import.meta.env.MODE ?? ENVIRONMENTS.DEVELOPMENT);
 const convexUrl = import.meta.env.VITE_CONVEX_URL ?? "";
+const gitSha = import.meta.env.VITE_GIT_SHA ?? "unknown";
 
 export const config: ConfigValues = Object.freeze({
 	nodeEnv,
@@ -47,6 +57,7 @@ export const config: ConfigValues = Object.freeze({
 	isProd: nodeEnv === ENVIRONMENTS.PRODUCTION,
 	convexUrl,
 	hasAuthConfig: Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY),
+	gitSha,
 });
 
 if (!config.convexUrl) {

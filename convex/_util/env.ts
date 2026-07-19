@@ -10,6 +10,8 @@
  * `CONVEX_ENV` is locked down rather than exposed.
  */
 
+import { AppUrlNotConfiguredError } from "../_shared/errors";
+
 export const CONVEX_ENV = {
 	DEVELOPMENT: "development",
 	STAGING: "staging",
@@ -59,6 +61,33 @@ function isTruthyEnv(value: string | undefined): boolean {
  */
 export function isDevRoleSwitcherEnabled(): boolean {
 	return isDevEnv() && isTruthyEnv(process.env[ENABLE_DEV_ROLE_SWITCHER_ENV]);
+}
+
+/** Fallback app base URL used only when `CONVEX_ENV` is development. */
+export const DEV_APP_URL = "http://localhost:3000";
+
+/**
+ * Resolve the public app base URL used to build user-facing links from the
+ * backend (e.g. the accept link inside invite emails). Reads
+ * `PUBLIC_APP_URL`, falling back to `VITE_APP_URL`; blank values count as
+ * unset. Trailing slashes are stripped so callers can safely append paths.
+ *
+ * In development a missing URL falls back to `http://localhost:3000`. In
+ * staging and production a missing URL throws `AppUrlNotConfiguredError`
+ * (stable code `APP_URL_NOT_CONFIGURED`) — failing loud beats silently
+ * emailing real users a dead localhost link.
+ */
+export function getAppUrl(): string {
+	const configured = (process.env.PUBLIC_APP_URL ?? process.env.VITE_APP_URL)?.trim();
+	if (configured) {
+		return configured.replace(/\/+$/, "");
+	}
+	if (isDevEnv()) {
+		return DEV_APP_URL;
+	}
+	throw new AppUrlNotConfiguredError(
+		`PUBLIC_APP_URL (or VITE_APP_URL) must be set when CONVEX_ENV is "${getConvexEnv()}"; refusing to fall back to localhost.`
+	);
 }
 
 /** Convex env var that must be set (truthy) to arm the first-admin bootstrap. */

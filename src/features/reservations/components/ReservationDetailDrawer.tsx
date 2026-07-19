@@ -12,6 +12,7 @@ import {
 	toneByValue,
 } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
+import { extractErrorCode, getErrorMessage } from "@/global/utils/errorMessages";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	CheckCircle2,
@@ -42,9 +43,11 @@ const ERROR_TO_KEY: Record<string, string> = {
 	ERROR_TABLE_UNAVAILABLE: ReservationsKeys.REASON_NO_TABLES,
 };
 
-function mapRescheduleError(message: string, t: (key: string) => string): string {
-	const key = ERROR_TO_KEY[message];
-	return key ? t(key) : message;
+function mapRescheduleError(error: unknown, t: (key: string) => string): string {
+	const code = extractErrorCode(error);
+	const key =
+		code && ERROR_TO_KEY[code] ? ERROR_TO_KEY[code] : ReservationsKeys.ERROR_ACTION_FAILED;
+	return t(key);
 }
 
 function tableIdsEqual(a: Id<"tables">[], b: Id<"tables">[]): boolean {
@@ -122,7 +125,7 @@ export function ReservationDetailDrawer({
 			reset();
 			onClose();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(ReservationsKeys.ERROR_ACTION_FAILED));
+			setError(getErrorMessage(err, t, ReservationsKeys.ERROR_ACTION_FAILED));
 			setBusy(false);
 		}
 	};
@@ -186,8 +189,7 @@ export function ReservationDetailDrawer({
 			});
 			setSaveSuccess(true);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : "";
-			setError(mapRescheduleError(msg, t) || t(ReservationsKeys.ERROR_ACTION_FAILED));
+			setError(mapRescheduleError(err, t));
 		} finally {
 			setSaveBusy(false);
 		}

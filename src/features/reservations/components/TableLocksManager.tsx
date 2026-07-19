@@ -9,6 +9,7 @@
 import { InlineError } from "@/global/components";
 import { formInputClasses, formInputStyle } from "@/global/components/Form/styles";
 import { ReservationsKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -84,7 +85,7 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 			);
 			setReason("");
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(ReservationsKeys.LOCKS_CREATE_ERROR));
+			setError(getErrorMessage(err, t, ReservationsKeys.LOCKS_CREATE_ERROR));
 		}
 	};
 
@@ -93,7 +94,7 @@ export function TableLocksManager({ restaurantId }: Readonly<TableLocksManagerPr
 		try {
 			unwrapResult(await removeLock.mutateAsync({ lockId }));
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(ReservationsKeys.LOCKS_REMOVE_ERROR));
+			setError(getErrorMessage(err, t, ReservationsKeys.LOCKS_REMOVE_ERROR));
 		}
 	};
 

@@ -1,9 +1,11 @@
 /**
  * DashboardShell — collapses the loading-error-content triad that the
  * order, payments, and reservations dashboards each implemented from
- * scratch. The error copy ("Could not load X." / "Please check your
- * permissions and try again.") matches the previous bespoke text exactly,
- * so swapping in the shell is a behavior-preserving change.
+ * scratch. The error copy is localized: the title uses
+ * `errors.dashboardShell.loadFailed` ("Could not load {{entity}}.") and the
+ * description runs the caught error through `getErrorMessage`, so a known
+ * backend code maps to a localized message and anything else falls back to
+ * `errors.dashboardShell.loadHint` — a raw backend message never reaches the UI.
  *
  * Renders:
  *   1. `header` always (filter pills, range chips, page actions, etc.).
@@ -13,8 +15,11 @@
  *   4. `children` otherwise.
  */
 import { useAdminPageChromeContext } from "@/global/hooks/useAdminPageToolbar";
+import { ErrorKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { EmptyState } from "../EmptyState";
 
 interface DashboardShellError {
@@ -36,8 +41,6 @@ export interface DashboardShellProps {
 	readonly className?: string;
 }
 
-const DEFAULT_ERROR_DESCRIPTION = "Please check your permissions and try again.";
-
 const GAP_CLASSES = {
 	"2": "gap-2",
 	"3": "gap-3",
@@ -57,6 +60,7 @@ export function DashboardShell({
 	gap = "4",
 	className = "",
 }: DashboardShellProps) {
+	const { t } = useTranslation();
 	const chromeContext = useAdminPageChromeContext();
 
 	useEffect(() => {
@@ -86,8 +90,8 @@ export function DashboardShell({
 				{inlineHeader}
 				<EmptyState
 					icon={AlertTriangle}
-					title={`Could not load ${entityName}.`}
-					description={error.message ?? DEFAULT_ERROR_DESCRIPTION}
+					title={t(ErrorKeys.DASHBOARD_LOAD_FAILED, { entity: entityName })}
+					description={getErrorMessage(error, t, ErrorKeys.DASHBOARD_LOAD_HINT)}
 					fill
 				/>
 			</div>

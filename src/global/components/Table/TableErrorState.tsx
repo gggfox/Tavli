@@ -1,3 +1,7 @@
+import { ErrorKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
+import { useTranslation } from "react-i18next";
+
 interface TableErrorStateProps {
 	readonly error: Error;
 	readonly entityName?: string;
@@ -16,20 +20,25 @@ export function TableErrorState({
 	onRetry,
 	fill = false,
 }: TableErrorStateProps) {
+	const { t } = useTranslation();
 	const sizing = fill ? "flex-1 self-stretch min-h-0 py-12" : "py-12";
 	return (
 		<div
 			className={`flex flex-col items-center justify-center rounded-lg ${sizing}`}
 			style={{ backgroundColor: "var(--accent-danger-bg, rgba(239, 68, 68, 0.1))" }}
 		>
-			<p className="text-lg font-medium text-destructive">Error loading {entityName}</p>
-			<p className="text-sm mt-1 text-center max-w-md text-muted-foreground">{error.message}</p>
+			<p className="text-lg font-medium text-destructive">
+				{t(ErrorKeys.DASHBOARD_LOAD_FAILED, { entity: entityName })}
+			</p>
+			<p className="text-sm mt-1 text-center max-w-md text-muted-foreground">
+				{getErrorMessage(error, t, ErrorKeys.GENERIC)}
+			</p>
 			{onRetry && (
 				<button
 					onClick={onRetry}
 					className="mt-4 px-4 py-2 rounded-lg text-sm transition-colors bg-muted text-foreground border border-border"
 				>
-					Retry
+					{t(ErrorKeys.BOUNDARY_RETRY)}
 				</button>
 			)}
 		</div>
