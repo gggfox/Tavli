@@ -4,7 +4,8 @@
  * surfaced inline.
  */
 import { Modal } from "@/global/components";
-import { DashboardKeys } from "@/global/i18n";
+import { DashboardKeys, ErrorKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -41,7 +42,7 @@ export function PublishTemplateDialog({
 			setDescription("");
 			onClose();
 		} catch (e) {
-			setError(e instanceof Error ? e.message : String(e));
+			setError(getErrorMessage(e, t, ErrorKeys.GENERIC));
 		} finally {
 			setSubmitting(false);
 		}

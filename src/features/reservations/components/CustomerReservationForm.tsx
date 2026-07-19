@@ -6,6 +6,7 @@
  * before submitting, then calls the public `reservations.create` mutation.
  */
 import { ReservationsKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { AppDatePicker } from "@/global/components";
 import { DateTimeField } from "@/global/components/Form";
 import { useCalendarVariant } from "@/global/hooks/useCalendarVariant";
@@ -129,7 +130,7 @@ export function CustomerReservationForm({
 			);
 			setCreatedId(id);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : t(ReservationsKeys.FORM_GENERIC_ERROR));
+			setError(getErrorMessage(err, t, ReservationsKeys.FORM_GENERIC_ERROR));
 		} finally {
 			setSubmitting(false);
 		}

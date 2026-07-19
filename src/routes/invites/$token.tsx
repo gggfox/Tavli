@@ -1,3 +1,5 @@
+import { ErrorKeys, i18n } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -31,7 +33,7 @@ function InviteAcceptPage() {
 			unwrapResult(await accept.mutateAsync({ token }));
 			setAccepted(true);
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Could not accept invitation");
+			setError(getErrorMessage(e, i18n.t.bind(i18n), ErrorKeys.GENERIC));
 		}
 	};
 
