@@ -5,12 +5,24 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
+// Real-device testing (BrowserStack Live) reaches the dev server through the
+// BrowserStackLocal tunnel, which resolves bs-local.com to 127.0.0.1 and sends
+// that Host header. Vite's defaults break both halves: it binds [::1] only, so
+// the IPv4 connection is refused, and its host check 403s bs-local.com. Opt in
+// via `pnpm dev:device` rather than always — a plain `pnpm dev` should stay on
+// loopback instead of being exposed to whatever network you're on.
+const deviceTesting = process.env.DEVICE_TESTING === "1";
+
 const config = defineConfig({
   // fsevents on macOS intermittently fails to deliver change notifications to
   // chokidar inside this dev stack (concurrently → vite under TanStack Start +
   // Nitro), so HMR silently dies even though the server is up. Polling is
   // ~10x more reliable in practice and the CPU cost on this repo is negligible.
   server: {
+    ...(deviceTesting && {
+      host: true,
+      allowedHosts: ["bs-local.com"],
+    }),
     watch: {
       usePolling: true,
       interval: 300,
