@@ -49,18 +49,32 @@ describe("ErrorBoundary", () => {
 			expect(screen.getByText("Custom Error UI")).toBeDefined();
 		});
 
-		it("renders default error UI when error occurs without fallback", () => {
+		it("renders default error UI without leaking the raw error message", () => {
 			render(
 				<ErrorBoundary>
 					<ThrowingComponent error={new Error("Database connection failed")} />
 				</ErrorBoundary>
 			);
 
-			// The heading shows generic text, the paragraph shows the actual error message
+			// The heading shows generic text; the raw message is replaced by the
+			// localized boundary description (never surfaced to the user).
 			expect(screen.getByRole("heading", { name: "Something went wrong" })).toBeDefined();
-			expect(screen.getByText("Database connection failed")).toBeDefined();
+			expect(screen.getByText("An unexpected error occurred. Please try again.")).toBeDefined();
+			expect(screen.queryByText("Database connection failed")).toBeNull();
 			expect(screen.getByRole("button", { name: "Try Again" })).toBeDefined();
 			expect(screen.getByRole("button", { name: "Reload Page" })).toBeDefined();
+		});
+
+		it("maps a known backend error code to its localized message", () => {
+			render(
+				<ErrorBoundary>
+					<ThrowingComponent error={new Error("ERROR_MANAGER_ROLE_REQUIRED")} />
+				</ErrorBoundary>
+			);
+
+			expect(screen.getByRole("heading", { name: "Something went wrong" })).toBeDefined();
+			expect(screen.getByText("You need manager permissions to do that.")).toBeDefined();
+			expect(screen.queryByText("ERROR_MANAGER_ROLE_REQUIRED")).toBeNull();
 		});
 	});
 
@@ -72,7 +86,7 @@ describe("ErrorBoundary", () => {
 				</ErrorBoundary>
 			);
 
-			expect(screen.getByText("Session Expired")).toBeDefined();
+			expect(screen.getByText("Session expired")).toBeDefined();
 			expect(
 				screen.getByText("Your session has expired. Please sign in again to continue.")
 			).toBeDefined();
@@ -86,7 +100,7 @@ describe("ErrorBoundary", () => {
 				</ErrorBoundary>
 			);
 
-			expect(screen.getByText("Session Expired")).toBeDefined();
+			expect(screen.getByText("Session expired")).toBeDefined();
 		});
 
 		it("shows Sign In button for auth errors instead of Try Again/Reload", () => {
@@ -238,7 +252,8 @@ describe("ErrorBoundary", () => {
 				</ErrorBoundary>
 			);
 
-			expect(screen.getByText("Nested error")).toBeDefined();
+			expect(screen.getByText("An unexpected error occurred. Please try again.")).toBeDefined();
+			expect(screen.queryByText("Nested error")).toBeNull();
 		});
 	});
 });

@@ -53,6 +53,7 @@ import {
 } from "@/global/components";
 import { ReservationsKeys } from "@/global/i18n";
 import { type UnwrappedValue, unwrapResult } from "@/global/utils";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { resolveRestaurantTimezone, utcMsToYmdInTimezone } from "@/global/utils/timezone";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -146,8 +147,7 @@ export function ReservationsDashboard() {
 					title: t(ReservationsKeys.TIMELINE_RESCHEDULE_SUCCESS),
 				});
 			} catch (err) {
-				const message =
-					err instanceof Error ? err.message : t(ReservationsKeys.TIMELINE_RESCHEDULE_ERROR);
+				const message = getErrorMessage(err, t, ReservationsKeys.TIMELINE_RESCHEDULE_ERROR);
 				pushToast({
 					id: `reschedule-error-${intent.reservationId}-${Date.now()}`,
 					kind: "error",

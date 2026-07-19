@@ -10,6 +10,7 @@ export const ERROR_NAMES = {
 	VALIDATION_ERROR: "VALIDATION_ERROR",
 	IDEMPOTENCY_KEY_CONFLICT: "IDEMPOTENCY_KEY_CONFLICT",
 	INVALID_AUCTION_STATE: "INVALID_AUCTION_STATE",
+	RATE_LIMITED: "RATE_LIMITED",
 } as const;
 
 export const DEFAULT_ERROR_MESSAGES = {
@@ -24,6 +25,7 @@ export const DEFAULT_ERROR_MESSAGES = {
 	[ERROR_NAMES.VALIDATION_ERROR]: "Validation error",
 	[ERROR_NAMES.IDEMPOTENCY_KEY_CONFLICT]: "Idempotency key conflict",
 	[ERROR_NAMES.INVALID_AUCTION_STATE]: "Invalid auction state",
+	[ERROR_NAMES.RATE_LIMITED]: "Too many requests, please try again later",
 } as const;
 
 export interface CustomErrorObject {
@@ -52,6 +54,9 @@ export type ConflictErrorObject = CustomErrorObject & {
 };
 export type InvalidAuctionStateErrorObject = CustomErrorObject & {
 	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.INVALID_AUCTION_STATE}`];
+};
+export type RateLimitedErrorObject = CustomErrorObject & {
+	name: (typeof ERROR_NAMES)[`${typeof ERROR_NAMES.RATE_LIMITED}`];
 };
 
 export function fromErrorObject(obj: CustomErrorObject): Error {
@@ -196,6 +201,22 @@ export class InvalidAuctionStateError extends CustomError {
 	override toObject(): InvalidAuctionStateErrorObject {
 		return {
 			name: ERROR_NAMES.INVALID_AUCTION_STATE,
+			message: this.message,
+		};
+	}
+}
+
+export class RateLimitedError extends CustomError {
+	constructor(message?: string) {
+		super({
+			message: message ?? DEFAULT_ERROR_MESSAGES[ERROR_NAMES.RATE_LIMITED],
+			name: ERROR_NAMES.RATE_LIMITED,
+		});
+	}
+
+	override toObject(): RateLimitedErrorObject {
+		return {
+			name: ERROR_NAMES.RATE_LIMITED,
 			message: this.message,
 		};
 	}

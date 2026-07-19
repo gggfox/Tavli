@@ -10,11 +10,7 @@ export function useTableMutationError() {
 
 	const setMutationError = useCallback(
 		(err: unknown, fallbackKey: string) => {
-			if (err instanceof Error) {
-				setError(mapTableError(err.message, t, fallbackKey));
-			} else {
-				setError(t(fallbackKey));
-			}
+			setError(mapTableError(err, t, fallbackKey));
 		},
 		[t]
 	);
