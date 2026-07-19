@@ -145,9 +145,8 @@ export const joinByCode = mutation({
 		}
 
 		if (!isSessionMember(session, userId)) {
-			await ctx.db.patch(session._id, {
-				memberUserIds: [...(session.memberUserIds ?? []), userId],
-			});
+			const memberUserIds = [...(session.memberUserIds ?? []), userId];
+			await ctx.db.patch(session._id, { memberUserIds });
 
 			// Only a genuine join is logged; re-entering a tab you already belong to
 			// is navigation, not a membership change.
@@ -157,7 +156,10 @@ export const joinByCode = mutation({
 				eventType: AUDIT_EVENT.SESSION_JOINED,
 				payload: {
 					restaurantId: restaurant._id,
-					memberCount: 1 + (session.memberUserIds?.length ?? 0) + 1,
+					// Opener + everyone who has joined. `memberUserIds` excludes the
+					// opener, and is the post-join list, so this matches what
+					// `getTabSummary` reports to the tab view.
+					memberCount: 1 + memberUserIds.length,
 				},
 				userId,
 			});

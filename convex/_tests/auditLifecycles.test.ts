@@ -142,6 +142,29 @@ describe("audit: session lifecycle", () => {
 		const events = await eventsFor(t, AUDIT_EVENT.SESSION_JOINED);
 		expect(events).toHaveLength(1);
 		expect(events[0].userId).toBe("friend1");
+		// Opener + the one joiner. `memberUserIds` never contains the opener, so
+		// this is off by one from the array length in the row.
+		expect(events[0].payload).toMatchObject({ memberCount: 2 });
+	});
+
+	it("counts each additional joiner, matching what the tab view reports", async () => {
+		const t = convexTest(schema, modules);
+		const { sessionId, authed } = await seedTabWithOrder(t);
+		const tab = await authed.query(api.sessions.getTabSummary, { sessionId });
+
+		for (const subject of ["friend1", "friend2"]) {
+			await t.withIdentity({ subject }).mutation(api.sessions.joinByCode, {
+				restaurantSlug: "audit-r",
+				joinCode: tab!.joinCode!,
+			});
+		}
+
+		const events = await eventsFor(t, AUDIT_EVENT.SESSION_JOINED);
+		expect(events.map((e) => (e.payload as { memberCount: number }).memberCount)).toEqual([2, 3]);
+
+		// The last event must agree with what the tab view shows the diners.
+		const finalTab = await authed.query(api.sessions.getTabSummary, { sessionId });
+		expect(finalTab!.memberCount).toBe(3);
 	});
 
 	it("attributes a submitted order to the member who submitted it, not the tab opener", async () => {
