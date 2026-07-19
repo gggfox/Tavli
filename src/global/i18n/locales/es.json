@@ -27,7 +27,9 @@
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
 			"adminFeatureFlags": "Feature flags",
-			"tabs": "Cuentas abiertas"
+			"tabs": "Cuentas abiertas",
+			"openNav": "Abrir navegación",
+			"closeNav": "Cerrar navegación"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -912,7 +914,9 @@
 			"tableTitle": "Pedidos en mesa",
 			"tableDesc": "Los clientes piden desde su mesa con un enlace único o un código QR.",
 			"authTitle": "Autenticación segura",
-			"authDesc": "Gestiona los roles del personal con autenticación segura vía Clerk."
+			"authDesc": "Gestiona los roles del personal con autenticación segura vía Clerk.",
+			"reservationsTitle": "Reservaciones",
+			"reservationsDesc": "Recibe reservaciones y gestiona tu comedor desde un calendario compartido."
 		},
 		"getStarted": "Empezar"
 	},
