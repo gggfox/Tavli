@@ -139,10 +139,25 @@ export const isFeatureEnabled = query({
 });
 
 /**
- * Get all feature flags.
+ * Get all feature flags (admin only).
+ *
+ * Admin-gated because it enumerates the whole registry -- including each flag's
+ * `description`, which names unreleased work. `getFeatureFlag` and
+ * `isFeatureEnabled` above stay anonymous on purpose: the app evaluates flags on
+ * every render, and a keyed lookup tells a caller nothing it did not already
+ * name. Only the admin flags table calls this.
  */
 export const getAllFeatureFlags = query({
 	handler: async (ctx) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		const [_, error2] = await requireAdminRole(ctx, userId);
+		if (error2) {
+			throw error2;
+		}
+
 		return await ctx.db.query("featureFlags").collect();
 	},
 });
