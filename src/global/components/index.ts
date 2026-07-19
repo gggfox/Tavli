@@ -53,4 +53,5 @@ export type {
 export { AdminTable, Pagination, SortIcon, TableErrorState, TableSkeleton } from "./Table";
 export { TextInput } from "./TextInput";
 export * from "./Tooltip";
+export { VirtualGrid, type VirtualGridProps } from "./VirtualGrid";
 export { WelcomeSection } from "./WelcomeSection";
