@@ -33,6 +33,7 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
+import { appendAuditEvent } from "./_util/audit";
 import {
 	getCurrentUserId,
 	requireRestaurantManagerOrAbove,
@@ -47,7 +48,10 @@ import {
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import {
-	ACTIVE_RESERVATION_STATUSES,
+	AUDIT_EVENT,
+	AUDIT_SYSTEM_USER_ID,
+	NO_SHOW_SWEEP_BATCH_SIZE,
+	NO_SHOW_SWEEP_LOOKBACK_MS,
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
 	ReservationStatus,
@@ -79,6 +83,30 @@ import { createSessionForReservation } from "./sessions";
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
+
+// ============================================================================
+// Id normalization (HTTP boundary)
+// ============================================================================
+
+/**
+ * Resolve an untrusted string into a real restaurant id, or `null`.
+ *
+ * `httpAction` has no `ctx.db`, so the bot routes in `http.ts` cannot call
+ * `normalizeId` themselves. Without this they would cast the raw string with
+ * `as Id<...>` and let Convex's arg validator throw -- surfacing as a 500 with
+ * an internal validator message. Going through here turns a malformed or
+ * unknown id into a clean 404 instead.
+ */
+export const normalizeRestaurantId = internalQuery({
+	args: { candidateId: v.string() },
+	handler: async (ctx, args): Promise<Id<typeof TABLE.RESTAURANTS> | null> => {
+		const restaurantId = ctx.db.normalizeId(TABLE.RESTAURANTS, args.candidateId);
+		if (!restaurantId) return null;
+		const restaurant = await ctx.db.get(restaurantId);
+		if (!restaurant || restaurant.deletedAt !== undefined) return null;
+		return restaurantId;
+	},
+});
 
 // ============================================================================
 // Public availability query
@@ -401,6 +429,20 @@ export const confirm = mutation({
 			updatedAt: now,
 		});
 
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_CONFIRMED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				tableIds: args.tableIds,
+				startsAt: reservation.startsAt,
+				partySize: reservation.partySize,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -561,6 +603,26 @@ export const reschedule = mutation({
 			updatedAt: now,
 		});
 
+		// Both before and after: a reschedule is the transition a guest is most
+		// likely to dispute ("nobody told me you moved us to 9pm").
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_RESCHEDULED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				fromStartsAt: reservation.startsAt,
+				fromEndsAt: reservation.endsAt,
+				fromTableIds: reservation.tableIds,
+				toStartsAt: startsAt,
+				toEndsAt: endsAt,
+				toTableIds: newTableIds,
+				reopened: reopening,
+			},
+			userId,
+		});
+
 		if (reservation.sessionId && hasTableChange) {
 			const session = await ctx.db.get(reservation.sessionId);
 			if (session && newTableIds.length > 0) {
@@ -660,6 +722,21 @@ export const reconfirm = mutation({
 			...(args.tableIds !== undefined && { tableIds }),
 		});
 
+		// Reopening a cancelled / no-show row. Worth its own name: it is the only
+		// path that walks a reservation back out of a terminal status.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_RECONFIRMED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				tableIds,
+				startsAt: reservation.startsAt,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -710,6 +787,21 @@ export const cancel = mutation({
 			cancelReason: args.reason,
 			updatedAt: now,
 		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_CANCELLED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				startsAt: reservation.startsAt,
+				partySize: reservation.partySize,
+				reason: args.reason,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -815,6 +907,23 @@ export const markSeated = mutation({
 			}),
 		});
 
+		// Seating opens a session, which is where money starts accruing -- so this
+		// event is the join between the reservation and the tab.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_SEATED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				sessionId,
+				tableId,
+				partySize: reservation.partySize,
+				fromTerminal,
+			},
+			userId,
+		});
+
 		return [{ reservationId: reservation._id, sessionId }, null];
 	},
 });
@@ -853,6 +962,20 @@ export const markCompleted = mutation({
 			completedAt: now,
 			updatedAt: now,
 		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.RESERVATIONS,
+			aggregateId: reservation._id,
+			eventType: AUDIT_EVENT.RESERVATION_COMPLETED,
+			payload: {
+				restaurantId: reservation.restaurantId,
+				fromStatus: reservation.status,
+				sessionId: reservation.sessionId,
+				seatedAt: reservation.seatedAt,
+			},
+			userId,
+		});
+
 		return [reservation._id, null];
 	},
 });
@@ -1015,41 +1138,80 @@ export const get = query({
 // No-show sweep
 // ============================================================================
 
+/** The only statuses the no-show sweep can flip. Each gets its own index pass. */
+const NO_SHOW_SWEEPABLE_STATUSES = [
+	RESERVATION_STATUS.PENDING,
+	RESERVATION_STATUS.CONFIRMED,
+] as const;
+
 /**
  * Cron-triggered. Flips any pending/confirmed reservation that's past
  * `startsAt + noShowGraceMinutes` to `no_show`. Idempotent: rows that have
  * already moved on are left alone.
+ *
+ * Bounded on both ends. The previous version queried `by_restaurant_time` with
+ * only an upper bound, so every 15-minute run re-read each restaurant's entire
+ * reservation history and filtered status in JS. Now each restaurant gets one
+ * `by_restaurant_status_time` pass per sweepable status, windowed to
+ * `(now - NO_SHOW_SWEEP_LOOKBACK_MS, cutoff)` and capped at
+ * NO_SHOW_SWEEP_BATCH_SIZE. A flipped row leaves the pending/confirmed ranges,
+ * so a backlog drains across runs instead of being skipped.
  */
 export const sweepNoShows = internalMutation({
 	args: {},
 	handler: async (ctx) => {
 		const now = Date.now();
+		const lookbackFloor = now - NO_SHOW_SWEEP_LOOKBACK_MS;
 
-		// Pull all restaurants once so we can apply each restaurant's grace.
+		// Restaurants are read in full because the grace period is per-restaurant
+		// and there is no index for "not soft-deleted". This table is bounded by
+		// tenant count, not by traffic, so it is not the scan that mattered here.
 		const restaurants = await ctx.db.query(TABLE.RESTAURANTS).collect();
 		let flipped = 0;
 
 		for (const restaurant of restaurants) {
+			if (restaurant.deletedAt !== undefined) continue;
+
 			const settings = await loadEffectiveSettings(ctx, restaurant._id);
 			const cutoff = now - settings.noShowGraceMinutes * 60_000;
+			if (cutoff <= lookbackFloor) continue;
 
-			const candidates = await ctx.db
-				.query(TABLE.RESERVATIONS)
-				.withIndex("by_restaurant_time", (q) =>
-					q.eq("restaurantId", restaurant._id).lt("startsAt", cutoff)
-				)
-				.collect();
+			for (const status of NO_SHOW_SWEEPABLE_STATUSES) {
+				const candidates = await ctx.db
+					.query(TABLE.RESERVATIONS)
+					.withIndex("by_restaurant_status_time", (q) =>
+						q
+							.eq("restaurantId", restaurant._id)
+							.eq("status", status)
+							.gt("startsAt", lookbackFloor)
+							.lt("startsAt", cutoff)
+					)
+					.take(NO_SHOW_SWEEP_BATCH_SIZE);
 
-			for (const r of candidates) {
-				if (r.status !== RESERVATION_STATUS.PENDING && r.status !== RESERVATION_STATUS.CONFIRMED) {
-					continue;
+				for (const r of candidates) {
+					await ctx.db.patch(r._id, {
+						status: RESERVATION_STATUS.NO_SHOW,
+						updatedAt: now,
+					});
+					flipped++;
+
+					// System-flipped, not staff-flipped. Guests dispute no-shows, and
+					// without this the row's only trace is a status with no actor and
+					// no reason.
+					await appendAuditEvent(ctx, {
+						aggregateType: TABLE.RESERVATIONS,
+						aggregateId: r._id,
+						eventType: AUDIT_EVENT.RESERVATION_NO_SHOW,
+						payload: {
+							restaurantId: restaurant._id,
+							fromStatus: status,
+							startsAt: r.startsAt,
+							partySize: r.partySize,
+							graceMinutes: settings.noShowGraceMinutes,
+						},
+						userId: AUDIT_SYSTEM_USER_ID,
+					});
 				}
-				if (!ACTIVE_RESERVATION_STATUSES.includes(r.status)) continue;
-				await ctx.db.patch(r._id, {
-					status: RESERVATION_STATUS.NO_SHOW,
-					updatedAt: now,
-				});
-				flipped++;
 			}
 		}
 

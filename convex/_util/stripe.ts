@@ -30,9 +30,22 @@ import {
 import { getCurrentUserId } from "./auth";
 
 /**
+ * The Stripe API version this codebase is written against.
+ *
+ * Pinned deliberately. Left unset, the SDK falls back to whatever version it
+ * ships with, so a `^22.0.0` minor bump would silently move the API version out
+ * from under the version-sensitive V2 Accounts calls in `convex/stripe.ts`.
+ * This value matches the default in `stripe@22.2.2`, so pinning it changed no
+ * behaviour at the time it was introduced.
+ *
+ * To change it, use the `upgrade-stripe` skill -- it walks the breaking changes
+ * between versions rather than just bumping the string.
+ */
+const STRIPE_API_VERSION = "2026-05-27.dahlia";
+
+/**
  * Creates and returns a Stripe client instance configured with the platform's
- * secret key. The SDK automatically uses the latest API version (2026-03-25.dahlia)
- * so we do not need to set it explicitly.
+ * secret key, pinned to `STRIPE_API_VERSION`.
  *
  * All Stripe API calls in `convex/stripe.ts` go through this client.
  */
@@ -47,7 +60,13 @@ export function getStripeClient(): Stripe {
 				"You can find your secret key at https://dashboard.stripe.com/apikeys"
 		);
 	}
-	return new Stripe(key);
+	return new Stripe(key, {
+		apiVersion: STRIPE_API_VERSION,
+		// Convex actions already retry, but a network blip mid-charge is worth
+		// absorbing here: Stripe's own retries reuse the idempotency key.
+		maxNetworkRetries: 2,
+		appInfo: { name: "Tavli" },
+	});
 }
 
 /**

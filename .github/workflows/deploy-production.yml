@@ -8,9 +8,14 @@ jobs:
   deploy:
     uses: ./.github/workflows/deploy.yml
     secrets: inherit
+    # A called workflow can only narrow these, never widen them: if deploy.yml's
+    # job asks for a scope missing here, the whole run is rejected at startup
+    # (startup_failure, zero jobs) instead of failing a step. issues:write is
+    # required by its "Alert on deploy failure" step.
     permissions:
       contents: read
       packages: write
+      issues: write
     with:
       infisical_env: prod
       image_tag: production
