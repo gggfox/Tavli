@@ -171,6 +171,7 @@ describe("session tabs", () => {
 			await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
 				restaurantId,
+				userId: "diner1",
 				amount: 1800 + 180,
 				currency: "usd",
 				gratuityAmount: 180,
@@ -193,6 +194,7 @@ describe("session tabs", () => {
 				t.mutation(internal.sessions.beginTabPayment, {
 					sessionId,
 					restaurantId,
+					userId: "diner1",
 					amount: 999,
 					currency: "usd",
 					gratuityAmount: 0,
@@ -207,6 +209,7 @@ describe("session tabs", () => {
 			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
 				restaurantId,
+				userId: "diner1",
 				amount: 1800 + 180,
 				currency: "usd",
 				gratuityAmount: 180,
@@ -252,6 +255,7 @@ describe("session tabs", () => {
 			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
 				restaurantId,
+				userId: "diner1",
 				amount: 1800,
 				currency: "usd",
 				gratuityAmount: 0,
@@ -277,6 +281,7 @@ describe("session tabs", () => {
 			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
 				restaurantId,
+				userId: "diner1",
 				amount: 1800,
 				currency: "usd",
 				gratuityAmount: 0,
