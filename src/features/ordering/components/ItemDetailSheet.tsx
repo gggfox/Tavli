@@ -127,6 +127,7 @@ export function ItemDetailSheet({
 						<img
 							src={item.imageUrl}
 							alt={getTranslatedField(item, lang)}
+							decoding="async"
 							className="w-full h-48 sm:h-56 object-cover"
 						/>
 					) : (
