@@ -16,5 +16,13 @@ COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000
+
+# Hit the app's /health route (curl is already installed above and kept in the
+# image). --start-period gives Nitro time to boot before failures count; a
+# failing healthcheck marks the container unhealthy so a bad redeploy is a
+# signal instead of a silent 502.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+	CMD curl -fsS http://127.0.0.1:3000/health || exit 1
+
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", ".output/server/index.mjs"]
