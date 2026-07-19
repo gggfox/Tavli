@@ -8,7 +8,7 @@ Symptom this runbook addresses: **an email shows "Delivered" in the Resend dashb
 
 ## Background
 
-Email is sent through [Resend](https://resend.com) from a Tavli-owned domain (currently `gggfox.com`, eventually `tavli.com`). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
+Email is sent through [Resend](https://resend.com) from a Tavli-owned domain (currently `gggfox.com`, eventually `tavliai.com`). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
 
 - Sender domain reputation (history of sending from the domain)
 - DNS authentication (SPF, DKIM, DMARC)
@@ -21,8 +21,8 @@ A brand-new sending domain with a sparse template will land in spam by default. 
 ## Required Environment Variables (Convex)
 
 - `RESEND_API_KEY` — Resend API key
-- `RESEND_FROM_ADDRESS` — sender, e.g. `Tavli <invites@gggfox.com>` or `Tavli <invites@tavli.com>`
-- `PUBLIC_APP_URL` — base URL used to build accept links inside the email (e.g. `http://localhost:3000` in dev, `https://app.tavli.com` in prod). **Required when `CONVEX_ENV` is `staging` or `production`**: the send action throws `APP_URL_NOT_CONFIGURED` instead of falling back to localhost.
+- `RESEND_FROM_ADDRESS` — sender, e.g. `Tavli <invites@gggfox.com>` or `Tavli <invites@tavliai.com>`
+- `PUBLIC_APP_URL` — base URL used to build accept links inside the email (e.g. `http://localhost:3000` in dev, `https://tavliai.com` in prod, `https://staging.tavliai.com` in staging). **Required when `CONVEX_ENV` is `staging` or `production`**: the send action throws `APP_URL_NOT_CONFIGURED` instead of falling back to localhost.
 
 Set with: `npx convex env set <NAME> <VALUE>`. Verify with: `npx convex env list`.
 
@@ -117,7 +117,7 @@ If recipients consistently open and reply to your messages, reputation builds. I
 
 Before relying on email for any user-facing flow in production:
 
-- [ ] Custom sending domain verified in Resend (e.g. `tavli.com`)
+- [ ] Custom sending domain verified in Resend (e.g. `tavliai.com`)
 - [ ] DKIM, SPF, DMARC records all green in Resend domain page
 - [ ] DMARC policy at minimum `p=none` with `rua=` reporting to a real mailbox
 - [ ] All transactional templates have:
@@ -128,7 +128,7 @@ Before relying on email for any user-facing flow in production:
 - [ ] Domain registered at [postmaster.google.com](https://postmaster.google.com) for visibility
 - [ ] Resend webhooks configured for `email.bounced` and `email.complained` so we surface delivery failures in the app or in logs
 - [ ] Warm-up plan: gradually ramp send volume over 2–4 weeks rather than launching at full volume
-- [ ] Production `RESEND_FROM_ADDRESS` uses a brand-coherent local part (`invites@tavli.com`, `noreply@tavli.com`, etc.)
+- [ ] Production `RESEND_FROM_ADDRESS` uses a brand-coherent local part (`invites@tavliai.com`, `noreply@tavliai.com`, etc.)
 - [ ] Production `PUBLIC_APP_URL` points at the production domain so accept links work
 
 ## Quick Fixes During Testing

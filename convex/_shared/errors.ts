@@ -222,9 +222,9 @@ export class AppUrlNotConfiguredError extends CustomError {
 	override toObject(): AppUrlNotConfiguredErrorObject {
 		return {
 			name: ERROR_NAMES.APP_URL_NOT_CONFIGURED,
-      message: this.message,
+			message: this.message,
 		};
- 	}
+	}
 }
 export class RateLimitedError extends CustomError {
 	constructor(message?: string) {
