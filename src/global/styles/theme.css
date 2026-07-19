@@ -30,10 +30,14 @@
 	--bg-active: rgba(55, 53, 47, 0.16);
 	--bg-elevated: #ffffff;
 
-	/* Text Colors */
+	/* Text Colors.
+	 * secondary/tertiary are tuned to WCAG AA (>=4.5:1) on BOTH white and
+	 * bg-secondary (#f7f6f3) — cards render body text on the latter. The
+	 * original Notion grays measured 4.48 and 2.60 there (BrowserStack a11y
+	 * scan, TAVLI-4). Keep tertiary lighter than secondary. */
 	--text-primary: #37352f;
-	--text-secondary: #787774;
-	--text-tertiary: #9b9a97;
+	--text-secondary: #6a6966; /* was #787774 (4.48 on white) — now 5.49 / 5.08 */
+	--text-tertiary: #706f6c; /* was #9b9a97 (2.60 on cards) — now 5.02 / 4.65 */
 	--text-muted: #b4b4b3;
 	--text-inverse: #ffffff;
 
@@ -79,7 +83,7 @@
 	--input-bg: #ffffff;
 	--input-border: rgba(55, 53, 47, 0.16);
 	--input-border-focus: #2383e2;
-	--input-placeholder: #9b9a97;
+	--input-placeholder: #706f6c; /* was #9b9a97 — 2.81 on white; now 5.02 */
 
 	/* Shadows */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -100,9 +104,12 @@
 	--bg-active: rgba(255, 255, 255, 0.1);
 	--bg-elevated: #252525;
 
+	/* Dark text: secondary already clears AA (5.8+ on #202020). tertiary was
+	 * #787774 = 3.64 on cards — lightened to 5.24/#202020, 5.65/#191919.
+	 * (Known gap: ~4.3 on the rarer #2f2f2f hover surface.) */
 	--text-primary: #ffffffcf;
 	--text-secondary: #9b9a97;
-	--text-tertiary: #787774;
+	--text-tertiary: #93928f;
 	--text-muted: #5a5a5a;
 	--text-inverse: #191919;
 
@@ -140,7 +147,7 @@
 	--input-bg: #252525;
 	--input-border: rgba(255, 255, 255, 0.13);
 	--input-border-focus: #2383e2;
-	--input-placeholder: #5a5a5a;
+	--input-placeholder: #93928f; /* was #5a5a5a — ~1.9 on #252525; now ~4.9 */
 
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
