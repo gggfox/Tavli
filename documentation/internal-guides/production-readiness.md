@@ -8,11 +8,13 @@ and the observability work (TAVLI-9) roll up into.
 
 Legend: 🔴 blocker · 🟠 high · 🟡 medium · ✅ done · ⚙️ config/manual verify
 
-## Status — 2026-07-19 (evening)
+## Status — 2026-07-20
 
-**Every code-level finding from the 2026-07-18 audit is now merged into `main`, including
-the 🟡 medium backend hardening** — the last open code item is the frontend slice
-(TAVLI-64), in review on [#71](https://github.com/gggfox/Tavli/pull/71). The verdict and
+**Every code-level finding from the 2026-07-18 audit is now merged into `main`** — the
+🔴 blockers, the 🟠 high items, and the whole 🟡 medium hardening rollup including the
+frontend slice ([#71](https://github.com/gggfox/Tavli/pull/71), merged 2026-07-20). What
+is left is operational, a product decision, and the two dimensions the audit could not
+close from code: error tracking and staff-tablet responsive coverage. The verdict and
 dimension table below have been updated to match; the per-item evidence (`file:line`,
 severity, original wording) is preserved throughout so the audit trail stays intact.
 
@@ -33,12 +35,12 @@ severity, original wording) is preserved throughout so the audit trail stays int
 
 **Merged since — 🟡 medium hardening (the TAVLI-60 rollup):**
 
-| Finding                                                                                                 | PR                                                           | Ticket   |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------- |
-| Bounded `sweepNoShows` / `sweepStaleOpenTabs` cron scans                                                | [#66](https://github.com/gggfox/Tavli/pull/66)               | TAVLI-62 |
-| Audit-logged the order / session / reservation lifecycles                                               | [#68](https://github.com/gggfox/Tavli/pull/68)               | TAVLI-63 |
-| Bot HTTP boundary, `getAllFeatureFlags` gate, Stripe `apiVersion`, timezone defaults, TDR-0001 archived | [#65](https://github.com/gggfox/Tavli/pull/65)               | TAVLI-61 |
-| Frontend: language hydration, error boundaries, list perf, tokens                                       | [#71](https://github.com/gggfox/Tavli/pull/71) — _in review_ | TAVLI-64 |
+| Finding                                                                                                 | PR                                             | Ticket   |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------- |
+| Bounded `sweepNoShows` / `sweepStaleOpenTabs` cron scans                                                | [#66](https://github.com/gggfox/Tavli/pull/66) | TAVLI-62 |
+| Audit-logged the order / session / reservation lifecycles                                               | [#68](https://github.com/gggfox/Tavli/pull/68) | TAVLI-63 |
+| Bot HTTP boundary, `getAllFeatureFlags` gate, Stripe `apiVersion`, timezone defaults, TDR-0001 archived | [#65](https://github.com/gggfox/Tavli/pull/65) | TAVLI-61 |
+| Frontend: language hydration, error boundaries, list perf, tokens                                       | [#71](https://github.com/gggfox/Tavli/pull/71) | TAVLI-64 |
 
 **What is genuinely left before real traffic:**
 
@@ -56,10 +58,11 @@ severity, original wording) is preserved throughout so the audit trail stays int
 Auth/authorization and the deploy/secrets pipeline are solid (the ~28-finding security
 remediation plus, now, an empirically-verified Clerk JWT claim). The three clusters that
 blocked launch in the original audit — payments edge-cases, observability, and data
-bootstrap — have all landed in `main`. What stands between here and real traffic is no
-longer mostly engineering: it is **error tracking**, the **Stripe live cutover**, a
-handful of **one-time prod operations**, and **validating the new Stripe paths against
-live test-mode events**.
+bootstrap — have all landed in `main`, as has the full medium hardening rollup. What
+stands between here and real traffic is no longer mostly engineering: it is **error
+tracking**, the **Stripe live cutover**, a handful of **one-time prod operations**, and
+**validating the new Stripe paths against live test-mode events**. The one genuinely
+open engineering item is **staff-tablet responsive coverage** (TAVLI-59).
 
 | Dimension           | Status             | Headline                                                                                              |
 | ------------------- | ------------------ | ----------------------------------------------------------------------------------------------------- |
@@ -69,7 +72,7 @@ live test-mode events**.
 | Payments            | 🟠 **Conditional** | Commission, reconciliation, refund/dispute webhooks all merged — but unexercised against live Stripe  |
 | Observability & ops | 🟠 **Conditional** | Health gate + deploy alerting merged; **error tracking still missing** (TAVLI-9)                      |
 | Data & config       | 🟠 **Conditional** | Bootstrap + index shipped; prod still needs the bootstrap actually run and env values confirmed       |
-| Frontend / UX       | 🟠 **Conditional** | Error localization fixed; hydration/boundaries/perf in review (#71); staff-tablet responsive open     |
+| Frontend / UX       | 🟠 **Conditional** | Localization, hydration, boundaries, list perf and tokens all merged; staff-tablet responsive open    |
 
 ---
 
@@ -98,8 +101,8 @@ live test-mode events**.
 
 ## 🟡 Medium (hardening — soon after launch)
 
-Rolled up as **TAVLI-60** and scheduled 2026-07-19 into four sub-issues. All of the
-backend work is merged; only the frontend slice is still in review.
+Rolled up as **TAVLI-60** and scheduled 2026-07-19 into four sub-issues — **all four are
+now merged.** Observability depth is the only item on the rollup with no work started.
 
 - [x] **Audit-log the money & reservation lifecycles.** ~~`appendAuditEvent` count is **0**~~ Two corrections to the original finding: the table is `allEvents` (not `auditLogs`), and the count was not strictly zero — `stripeHelpers.ts` and `tips.ts` already wrote. The real gap was orders, sessions, reservations and the payment paths, which now emit events through a typed `AUDIT_EVENT` registry with accurate actor attribution (any tab member can act, so the session opener is _not_ the actor; crons and webhooks record a system user). → merged in [#68](https://github.com/gggfox/Tavli/pull/68) (TAVLI-63). _Residual: ~40 inline event-name strings in menus/shifts/restaurantMembers still bypass the registry._
 - [x] **Harden the reservations-bot HTTP boundary.** Bot routes now type-validate the body (`partySize: "5"` used to pass), resolve `restaurantId` through a `normalizeRestaurantId` internalQuery instead of a blind cast (unknown/soft-deleted → 404), wrap `runQuery`/`runMutation` in try/catch behind an opaque 500, and return only the stable error code. New `convex/_tests/http.test.ts` — there was no HTTP test file. → merged in [#65](https://github.com/gggfox/Tavli/pull/65) (TAVLI-61)
@@ -107,15 +110,24 @@ backend work is merged; only the frontend slice is still in review.
 - [x] **Pin the Stripe API version.** Pinned to `2026-05-27.dahlia` — what `stripe@22.2.2` already resolved to, so behaviour-preserving — plus `maxNetworkRetries` and `appInfo`. The in-code comment claiming `2026-03-25.dahlia` was stale and is fixed. → merged in [#65](https://github.com/gggfox/Tavli/pull/65) (TAVLI-61)
 - [x] **Align timezone defaults.** `orderServiceDate` now delegates to `resolveRestaurantTimezone` instead of falling back to UTC — the 6h skew across the 04:00 rollover only ever affected legacy rows with no `timezone`. → merged in [#65](https://github.com/gggfox/Tavli/pull/65) (TAVLI-61). _Already-stored `orderServiceDateKey` values are not recomputed._
 - [x] **Gate `getAllFeatureFlags`.** Now admin-only, matching `setFeatureFlag`; `getFeatureFlag`/`isFeatureEnabled` stay anonymous on purpose (keyed lookups evaluated on every render). → merged in [#65](https://github.com/gggfox/Tavli/pull/65) (TAVLI-61)
-- [ ] **Frontend hardening** — language hydration mismatch (`__root.tsx:152` renders SSR `en` for a user who hydrates `es`), per-route error boundaries (only 2 of 37 routes have one; solved with a router `defaultErrorComponent` rather than 35 hand-written ones), list virtualization + the `MenuBrowser` per-category query fan-out, and the inline-hex design-token cleanup. → **TAVLI-64**, in review on [#71](https://github.com/gggfox/Tavli/pull/71). _Found en route: `--bg-danger` was never declared, so `InlineError` always fell through to a dark-only hex — a latent light-mode bug._
+- [x] **Frontend hardening.** Four findings, all fixed in [#71](https://github.com/gggfox/Tavli/pull/71) (TAVLI-64):
+  - **Language hydration** — a cookie now leads the i18next detector chain and is read in the root `beforeLoad`, so `<html lang>` comes from router context instead of `i18n.language`; `/r/:slug/:lang/*` reads the URL segment during SSR and the post-hydration `useEffect` is gone. Normalization (`en-US` → `en`) consolidated in `src/global/i18n/language.ts`.
+  - **Error boundaries** — a router `defaultErrorComponent` covers all 37 routes rather than 35 hand-written boundaries; the fallback UI was extracted into a presentational `ErrorFallback` so the class boundary (render errors) and the router's function `errorComponent` (loader/`beforeLoad` errors) render the same panel. `/admin` and `/r/$slug` override it where recovery differs — the latter's ad-hoc dead-end error UI now offers a real retry. `componentDidCatch` still only `console.error`s: telemetry is TAVLI-9.
+  - **Perf** — new batched `menuItems.getByMenu` replaces one live subscription per category; the duplicate `getCategoriesByMenu` subscription is gone; the per-render `new Date()` and unmemoized availability filter that defeated the `visibleItems` memo are fixed; avatars and menu images carry intrinsic dimensions + `loading`/`decoding` hints; `@tanstack/react-virtual` now backs a shared `VirtualGrid` (reusing the ancestor scroll container via `useScrollParent` rather than nesting a second scrollbar) plus row virtualization in `ReservationsTable`.
+  - **Design tokens** — 29 inline literals replaced. Two new tokens were genuinely needed: `--text-on-accent` (not `--text-inverse`, which flips with the theme and would have turned pill labels dark on a saturated fill) and `--overlay-scrim`. `TabCheckoutPage` keeps literals — Stripe Elements is a cross-origin iframe that cannot read CSS vars — but derives them from one exported token map. **`--bg-danger` was never declared**, so `InlineError` always used its dark-only hex fallback: a latent light-mode bug, not a style nit.
+
+  _Also rewrote `design-system.md` (see doc cleanup below). `ReservationTimeline` was deliberately left unvirtualized — it needs its own ticket._
+
 - [ ] **Observability depth:** real `/health` endpoint ✅ + CI health gate ✅ (merged, [#55](https://github.com/gggfox/Tavli/pull/55) / TAVLI-52) — **external uptime monitor, structured logging / Convex log-streaming, and the CI `.dockerignore` guard (postmortem #3) are still open.** Deliberately parked on TAVLI-60 rather than split out, because it overlaps **TAVLI-9**.
 
 **Spun out of this work** (tracked on TAVLI-60, none blocking): virtualize
 `ReservationTimeline` (1212 lines, eager O(sections × tables × hours) grid); finish the
 repo-wide design-token sweep; retrofit `AUDIT_EVENT` over the ~40 legacy inline strings;
 pin the Node version (no `engines.node`/`.nvmrc` — `pnpm build` fails on Node 26 while CI
-uses 22); per-request i18n instance (TAVLI-64's root `beforeLoad` mutates the shared
-module singleton — safe only while SSR renders stay synchronous with respect to it).
+uses 22); **per-request i18n instance** — now live in `main`: TAVLI-64's root `beforeLoad`
+mutates the shared `i18n` module singleton across concurrent SSR requests. Safe today only
+because those renders are synchronous with respect to it; an `await` introduced between
+`beforeLoad` and render turns it into a cross-request language bleed. Worth a ticket.
 
 ---
 
@@ -147,5 +159,5 @@ module singleton — safe only while SSR renders stay synchronous with respect t
 
 - [x] **Archive/rewrite TDR-0001** (`tech-debt/0001-missing-backend-authentication.md`) — ~~describes WorkOS + `convex/tasks.ts` that no longer exist~~ rewritten as an archived record; the gap is closed by Clerk + the RBAC guards in `convex/_util/auth.ts`. The tech-debt index was also wrong — it linked a TDR-0004 that was never written and omitted the TDR-0005 that exists. → merged in [#65](https://github.com/gggfox/Tavli/pull/65) (TAVLI-61)
 - [ ] **Refresh `stripe-go-live.md`** to the Infisical model — still open (zero mentions of Infisical in the runbook today). Fold into **TAVLI-46**, since that is the ticket whose operator will follow it. `email-deliverability.md` was refreshed in [#59](https://github.com/gggfox/Tavli/pull/59) ✅
-- [ ] **Rewrite `design-system.md`** — dark-only, still says "Fierro Viejo", and teaches the `bg-[#0f0f0f]` arbitrary-value antipattern that `theme.css` forbids, while `internal-guides/README.md:14` still points contributors at it. → carried on **TAVLI-64**
-- [x] `TAVLI-48` (Clerk) → **Done**; `TAVLI-47` (Resend) → **Done**; `TAVLI-49` (commission) → **Done**; `TAVLI-61`/`62`/`63` (medium hardening) → **Done**. TAVLI-1 is down to **TAVLI-46 (Stripe)** as its last open integration.
+- [x] **Rewrite `design-system.md`** — ~~dark-only, still says "Fierro Viejo", teaches the `bg-[#0f0f0f]` arbitrary-value antipattern that `theme.css` forbids~~ rewritten against the real Tailwind v4 `@theme` token system. The internal-guides index was also wrong — it pointed at a `component-examples.md` that does not exist. → merged in [#71](https://github.com/gggfox/Tavli/pull/71) (TAVLI-64)
+- [x] `TAVLI-48` (Clerk) → **Done**; `TAVLI-47` (Resend) → **Done**; `TAVLI-49` (commission) → **Done**; `TAVLI-61`/`62`/`63`/`64` (the whole medium hardening rollup) → **Done**. TAVLI-1 is down to **TAVLI-46 (Stripe)** as its last open integration.
