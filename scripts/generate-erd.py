@@ -45,8 +45,9 @@ FIELDS = {
  "orders":[">sessionId",">tableId","status","totalAmount","*attributedMemberId"],
  "orderItems":[">orderId",">menuItemId","qty","unitPrice"],
  "orderDayCounters":[">restaurantId","serviceDateKey"],
- "payments":[">restaurantId","*orderId","*sessionId","amount","status"],
+ "payments":[">restaurantId","*orderId","*sessionId","amount","status","amountRefunded"],
  "stripeWebhookEvents":["#eventId","*paymentId"],
+ "stripeDisputes":["#stripeDisputeId","*paymentId","reason","status","amount"],
  "organizations":["#name","#slug","isActive"],
  "restaurants":["ownerId",">organizationId","#slug","currency","stripeAccountId"],
  "restaurantMembers":["*userId","*employeeAccountId",">restaurantId","role","isActive"],
@@ -67,22 +68,40 @@ FIELDS = {
  "tipPoolShares":[">poolId",">memberId","amountCents"],
  "tipEntries":[">restaurantId","*memberId","*shiftId","amountCents"],
  "featureFlags":["#key","enabled"],
+ "rateLimits":["#key","windowStart","count"],
  "dashboardLayouts":["userId","*restaurantId","name"],
  "dashboardTemplates":[">restaurantId","publishedBy"],
  "allEvents":["eventType","aggregateType","aggregateId"],
 }
 
+
+# ---- schema coverage guard --------------------------------------------------
+# Fails the build if convex/constants.ts declares a table with no card here, so
+# a new table can never silently go missing from the diagram.
+import re as _re
+_const = Path(__file__).resolve().parent.parent / "convex" / "constants.ts"
+if _const.exists():
+    _block = _const.read_text().split("export const TABLE = {")[1].split("} as const;")[0]
+    _declared = set(_re.findall(r'^\t[A-Z_]+:\s*"([a-zA-Z]+)",', _block, _re.M))
+    _missing = _declared - set(FIELDS)
+    _extra = set(FIELDS) - _declared
+    if _missing or _extra:
+        print("SCHEMA COVERAGE DRIFT")
+        if _missing: print("  in constants.ts but not in this diagram:", sorted(_missing))
+        if _extra:   print("  in this diagram but not in constants.ts:", sorted(_extra))
+        sys.exit(1)
+
 # columns ordered so related tables are same-column or adjacent-column --------
 COLS = [
  [("menu",k) for k in ["menus","menuCategories","menuItems","menuItemOptionGroups","optionGroups","options"]],
- [("ordering",k) for k in ["orderItems","orders","sessions","payments","stripeWebhookEvents","orderDayCounters"]],
+ [("ordering",k) for k in ["orderItems","orders","sessions","payments","stripeWebhookEvents","stripeDisputes","orderDayCounters"]],
  [("floor",k) for k in ["sections","tables","tableLocks"]] +
    [("reservations",k) for k in ["reservations","reservationSettings"]],
  [("scheduling",k) for k in ["shiftTableAssignments","shifts","shiftTemplates","shiftSectionAssignments"]],
  [("attendance",k) for k in ["clockEvents","shiftAttendance","absences"]] +
    [("tips",k) for k in ["tipPools","tipPoolShares","tipEntries"]],
  [("identity",k) for k in ["organizations","restaurants","restaurantMembers","employeeAccounts","invitations","userRoles","userSettings"]],
- [("system",k) for k in ["featureFlags","dashboardLayouts","dashboardTemplates","allEvents"]],
+ [("system",k) for k in ["featureFlags","rateLimits","dashboardLayouts","dashboardTemplates","allEvents"]],
 ]
 
 W=260; STEP=380; NCOL=len(COLS)
@@ -179,6 +198,7 @@ ARROWS=[
  ("options","optionGroups","v",None),
  ("orderItems","orders","v",None),("orders","sessions","v",None),
  ("payments","sessions","v",None),("stripeWebhookEvents","payments","v",None),
+ ("stripeDisputes","payments","u","left"),
  ("tables","sections","v",None),("tableLocks","tables","v",None),
  ("shiftTableAssignments","shifts","v",None),("shifts","shiftTemplates","v",None),
  ("tipPoolShares","tipPools","v",None),
@@ -197,7 +217,8 @@ ARROWS=[
 ]
 # dashed where the FK is optional / XOR in schema.ts
 OPTIONAL={("sessions","tables"),("payments","orders"),("payments","sessions"),
- ("stripeWebhookEvents","payments"),("reservations","sessions"),("reservations","tables"),
+ ("stripeWebhookEvents","payments"),("stripeDisputes","payments"),
+ ("reservations","sessions"),("reservations","tables"),
  ("shifts","shiftTemplates"),("clockEvents","shifts"),("tipEntries","shifts"),
  ("restaurantMembers","employeeAccounts"),("sessions","restaurantMembers"),
  ("orders","restaurantMembers"),("tables","sections"),
@@ -273,7 +294,7 @@ E({"id":"doc_title","type":"text","x":60,"y":40,"width":900,"height":38,
    "strokeColor":TXT_TITLE,"backgroundColor":"transparent","fontSize":30,"fontFamily":2,
    "text":"Tavli — Entity Relationship Diagram","textAlign":"left","verticalAlign":"top",
    "containerId":None,"originalText":"Tavli — Entity Relationship Diagram","lineHeight":1.2,"baseline":24})
-sub="38 Convex tables · arrows point at the referenced table · restaurant/org scoping arrows omitted (see legend)"
+sub=f"{len(FIELDS)} Convex tables · arrows point at the referenced table · restaurant/org scoping arrows omitted (see legend)"
 E({"id":"doc_sub","type":"text","x":60,"y":84,"width":1100,"height":20,
    "strokeColor":TXT_MUTED,"backgroundColor":"transparent","fontSize":14,"fontFamily":3,
    "text":sub,"textAlign":"left","verticalAlign":"top","containerId":None,
