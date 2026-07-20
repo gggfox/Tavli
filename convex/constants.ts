@@ -190,6 +190,48 @@ export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 export const STALE_TAB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * How far back the stale-tab sweep looks. Together with STALE_TAB_MAX_AGE_MS
+ * this makes the scan a fixed window instead of the whole sessions table: only
+ * tabs that went stale within the last 30 days are examined.
+ *
+ * A tab still active after 30 days was flagged weeks ago and is a staff
+ * conversation, not a cron one — the sweep has no further action to take on it.
+ */
+export const STALE_TAB_SWEEP_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Rows the stale-tab sweep will touch per run, newest-first.
+ *
+ * Newest-first matters: the actionable work is flagging tabs that *just* crossed
+ * the 24h line. Already-flagged tabs sit at the old end of the window and their
+ * only remaining sweep work is the close-if-settled safety net, which is rarely
+ * load-bearing — both `confirmTabPayment` and `closeTabAsStaff` close the
+ * session directly. Oldest-first would let a backlog of flagged tabs starve the
+ * flagging of new ones.
+ */
+export const STALE_TAB_SWEEP_BATCH_SIZE = 200;
+
+/**
+ * How far back the no-show sweep looks for un-flipped reservations. Must
+ * comfortably exceed the largest `noShowGraceMinutes` any restaurant can set;
+ * 7 days also absorbs a multi-day cron outage.
+ *
+ * Reservations older than this keep their last status. Previously the scan had
+ * no lower bound at all, so every run re-read the restaurant's entire
+ * reservation history.
+ */
+export const NO_SHOW_SWEEP_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Reservations the no-show sweep will flip per status, per restaurant, per run.
+ *
+ * Safe to cap: a flipped row moves to `no_show`, which drops it out of the
+ * pending/confirmed index ranges, so a backlog drains over successive runs
+ * rather than being skipped.
+ */
+export const NO_SHOW_SWEEP_BATCH_SIZE = 200;
+
+/**
  * A tab locked for payment longer than this is reconciled against Stripe: the
  * `payment_intent.succeeded` webhook was likely dropped/delayed, so the cron
  * pulls the PaymentIntent directly and settles/unlocks accordingly.
@@ -424,6 +466,51 @@ export const PIN_LOCKOUT = {
 
 /** System actor for migrations and webhooks when no Clerk user applies. */
 export const AUDIT_SYSTEM_USER_ID = "system";
+
+/**
+ * Event names for `appendAuditEvent`. The `allEvents.eventType` column is a bare
+ * `v.string()`, so nothing stops a typo from creating a silent second event
+ * stream — this map is the guard.
+ *
+ * Naming follows the convention the existing call sites already use:
+ * `<module>.<pastTenseVerb>`.
+ *
+ * Older modules (menus, shifts, restaurantMembers, …) still pass inline strings.
+ * Retrofitting those is a separate, mechanical change; use this map for anything
+ * new. Adding a name here is the cheap part — the expensive part is that every
+ * event is append-only and permanent, so name it for what happened in the
+ * domain, not for the function that emitted it.
+ */
+export const AUDIT_EVENT = {
+	// -- Orders -------------------------------------------------------------
+	ORDER_SUBMITTED: "orders.submitted",
+	ORDER_STATUS_CHANGED: "orders.statusChanged",
+	ORDER_PAYMENT_CONFIRMED: "orders.paymentConfirmed",
+	ORDER_PAYMENT_FAILED: "orders.paymentFailed",
+
+	// -- Sessions (tabs) ----------------------------------------------------
+	SESSION_OPENED: "sessions.opened",
+	SESSION_JOINED: "sessions.joined",
+	SESSION_CLOSED: "sessions.closed",
+	SESSION_PAYMENT_LOCKED: "sessions.paymentLocked",
+	SESSION_PAYMENT_SUCCEEDED: "sessions.paymentSucceeded",
+	SESSION_PAYMENT_FAILED: "sessions.paymentFailed",
+	SESSION_PAYMENT_CANCELLED: "sessions.paymentCancelled",
+	SESSION_STALE_CLOSED: "sessions.staleClosed",
+	SESSION_STALE_FLAGGED: "sessions.staleFlagged",
+
+	// -- Reservations -------------------------------------------------------
+	RESERVATION_CREATED: "reservations.created",
+	RESERVATION_CONFIRMED: "reservations.confirmed",
+	RESERVATION_RESCHEDULED: "reservations.rescheduled",
+	RESERVATION_RECONFIRMED: "reservations.reconfirmed",
+	RESERVATION_CANCELLED: "reservations.cancelled",
+	RESERVATION_SEATED: "reservations.seated",
+	RESERVATION_COMPLETED: "reservations.completed",
+	RESERVATION_NO_SHOW: "reservations.noShow",
+} as const;
+
+export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
 
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

@@ -1,14 +1,46 @@
 import { useCurrentUserRoles } from "@/features/users/hooks";
-import { EmptyState, LoadingState } from "@/global/components";
-import { createFileRoute, Outlet, useMatches } from "@tanstack/react-router";
+import { EmptyState, LoadingState, RouteErrorComponent } from "@/global/components";
+import {
+	createFileRoute,
+	Link,
+	Outlet,
+	useMatches,
+	type ErrorComponentProps,
+} from "@tanstack/react-router";
+import { SidebarKeys } from "@/global/i18n";
 import { STAFF_ROLES } from "convex/constants";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 const STAFF_ROLE_SET = new Set<string>(STAFF_ROLES);
 
 export const Route = createFileRoute("/admin")({
 	component: AdminLayout,
+	errorComponent: AdminErrorComponent,
 });
+
+/**
+ * Admin recovery differs from the app default: a staff member whose admin
+ * sub-page failed is almost always better served by stepping back into the
+ * admin dashboard than by reloading a page that will fail again. Reload is
+ * still offered by the shared panel.
+ */
+function AdminErrorComponent(props: Readonly<ErrorComponentProps>) {
+	const { t } = useTranslation();
+	return (
+		<RouteErrorComponent
+			{...props}
+			actions={
+				<Link
+					to="/admin"
+					className="px-6 py-2.5 font-medium rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-offset-2 hover-btn-secondary"
+				>
+					{t(SidebarKeys.ADMIN)}
+				</Link>
+			}
+		/>
+	);
+}
 
 function AdminLayout() {
 	const matches = useMatches();

@@ -1,3 +1,4 @@
+import { VirtualGrid } from "@/global/components";
 import { useConvexMutate } from "@/global/hooks";
 import { TabsKeys } from "@/global/i18n";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
@@ -8,7 +9,7 @@ import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { AlertTriangle, CreditCard, Loader2, Receipt, Users } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type OpenTabs = UnwrappedValue<FunctionReturnType<typeof api.sessions.getOpenTabsByRestaurant>>;
@@ -33,15 +34,25 @@ export function OpenTabsPanel({ restaurantId }: Readonly<OpenTabsPanelProps>) {
 
 	const closeTab = useConvexMutate(api.sessions.closeTabAsStaff);
 
-	const handleClose = async (sessionId: Id<"sessions">) => {
-		if (!globalThis.confirm(t(TabsKeys.CLOSE_TAB_CONFIRM))) return;
-		setError(null);
-		try {
-			unwrapResult(await closeTab.mutateAsync({ sessionId }));
-		} catch {
-			setError(t(TabsKeys.CLOSE_FAILED));
-		}
-	};
+	const handleClose = useCallback(
+		async (sessionId: Id<"sessions">) => {
+			if (!globalThis.confirm(t(TabsKeys.CLOSE_TAB_CONFIRM))) return;
+			setError(null);
+			try {
+				unwrapResult(await closeTab.mutateAsync({ sessionId }));
+			} catch {
+				setError(t(TabsKeys.CLOSE_FAILED));
+			}
+		},
+		[closeTab, t]
+	);
+
+	const renderTabCard = useCallback(
+		(tab: OpenTab) => (
+			<TabCard tab={tab} onClose={() => handleClose(tab.sessionId)} closing={closeTab.isPending} />
+		),
+		[handleClose, closeTab.isPending]
+	);
 
 	if (isLoading) {
 		return (
@@ -56,10 +67,7 @@ export function OpenTabsPanel({ restaurantId }: Readonly<OpenTabsPanelProps>) {
 			<h2 className="text-lg font-bold text-foreground">{t(TabsKeys.HEADER)}</h2>
 
 			{error && (
-				<div
-					className="px-4 py-3 rounded-lg text-sm text-destructive"
-					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
-				>
+				<div className="px-4 py-3 rounded-lg text-sm text-destructive bg-destructive-subtle">
 					{error}
 				</div>
 			)}
@@ -71,16 +79,15 @@ export function OpenTabsPanel({ restaurantId }: Readonly<OpenTabsPanelProps>) {
 				</div>
 			)}
 
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-				{(tabs ?? []).map((tab) => (
-					<TabCard
-						key={tab.sessionId}
-						tab={tab}
-						onClose={() => handleClose(tab.sessionId)}
-						closing={closeTab.isPending}
-					/>
-				))}
-			</div>
+			{/* Virtualized: open tabs accumulate across a service and each card
+			    holds a live subscription's worth of derived state. */}
+			<VirtualGrid
+				items={tabs ?? []}
+				getKey={(tab) => tab.sessionId}
+				renderItem={renderTabCard}
+				gap={12}
+				estimateRowHeight={190}
+			/>
 		</div>
 	);
 }
@@ -112,7 +119,10 @@ function TabCard({
 					{tab.flaggedStaleAt != null && (
 						<span
 							className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
-							style={{ backgroundColor: "rgba(217, 119, 6, 0.12)", color: "var(--accent-warning)" }}
+							style={{
+								backgroundColor: "var(--accent-warning-light)",
+								color: "var(--accent-warning)",
+							}}
 						>
 							<AlertTriangle size={11} />
 							{t(TabsKeys.STALE_BADGE)}
@@ -122,8 +132,8 @@ function TabCard({
 						<span
 							className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
 							style={{
-								backgroundColor: "rgba(35, 131, 226, 0.12)",
-								color: "var(--btn-primary-bg)",
+								backgroundColor: "var(--accent-info-light)",
+								color: "var(--accent-info)",
 							}}
 						>
 							<CreditCard size={11} />

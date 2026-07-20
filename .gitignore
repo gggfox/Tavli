@@ -17,7 +17,9 @@ coverage/
 tmp/
 
 # clerk configuration (can include secrets)
-.clerk
+# Keep this exact form: Clerk's keyless mode appends its own "/.clerk/" line
+# unless .gitignore already contains that literal string.
+/.clerk/
 
 # Handoff docs — keep the folders, ignore their (potentially sensitive) contents
 .claude/handoffs/*

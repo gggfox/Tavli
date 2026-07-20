@@ -13,6 +13,17 @@ export {
 } from "./keys/errors";
 export { ExportsKeys, type ExportsKey } from "./keys/exports";
 export { Languages, type Language } from "./keys/languages";
+export {
+	LANGUAGE_COOKIE_MINUTES,
+	LANGUAGE_COOKIE_NAME,
+	isSupportedLanguage,
+	languageFromPathname,
+	normalizeLanguage,
+	parseLanguageCookie,
+	readLanguageCookie,
+	resolveLanguage,
+	writeLanguageCookie,
+} from "./language";
 export { MenusKeys, type MenusKey } from "./keys/menus";
 export { OptionsKeys, type OptionsKey } from "./keys/options";
 export { OrderingKeys, type OrderingKey } from "./keys/ordering";

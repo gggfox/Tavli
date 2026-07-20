@@ -1,112 +1,46 @@
 # TDR-0001: Missing Backend Authentication & Authorization
 
-## Context
+## Status
 
-WorkOS AuthKit is configured for client-side authentication (signin, signup, signout, callback routes) and the `authkitMiddleware()` is applied to TanStack Start. However, neither Convex functions nor TanStack server functions validate user identity before executing operations. This creates a gap where the frontend shows authentication UI, but backend operations are completely unprotected.
+**Archived** — 2026-07-19. The gap this record described is closed, and the
+record's own content had gone stale enough to be misleading. Kept as a stub for
+the historical link; do not use it as a description of the system.
 
-## Impact
+## What this originally said
 
-- **Critical Security Gap**: Any user (authenticated or not) can call Convex queries/mutations directly
-- **Data Exposure**: All tasks are publicly readable via `api.tasks.get`
-- **Data Manipulation**: Anyone can create, delete, or toggle any task via mutations
-- **No Multi-tenancy**: Even if auth were added, there's no user-scoping on data
-- **Server Functions Exposed**: Demo server functions (`getTodos`, `addTodo`, `getPunkSongs`) have no auth checks
+Written 2024-12-21 against the scaffold: WorkOS AuthKit handled client-side
+sign-in while Convex functions ran no identity check, so `convex/tasks.ts` was
+world-readable and world-writable. It recommended wiring WorkOS JWTs into Convex
+and adding `userId` scoping, and was marked Resolved a day later with a
+`WORKOS_CLIENT_ID` setup note.
 
-## Affected Files
+## Why it is archived rather than updated
 
-| File                                     | Issue                                        |
-| ---------------------------------------- | -------------------------------------------- |
-| `convex/tasks.ts`                        | No `ctx.auth.getUserIdentity()` checks       |
-| `src/routes/demo/start.server-funcs.tsx` | No `getUser()` validation                    |
-| `src/data/demo.punk-songs.ts`            | No auth on server function                   |
-| `src/router.tsx`                         | Convex client initialized without auth token |
-| `convex/schema.ts`                       | No `userId` field for multi-tenancy          |
+Every concrete thing it names is gone:
 
-## Options
+- **WorkOS was replaced by Clerk** (`@clerk/tanstack-react-start`). ADR 002 still
+  says WorkOS and is likewise out of date — the code is the source of truth.
+- **`convex/tasks.ts` no longer exists.** It was scaffold demo data; there is no
+  `tasks` table in `convex/schema.ts`.
+- **The `WORKOS_CLIENT_ID` setup instructions are wrong** for this deployment.
+  See [`documentation/internal-guides/deployment-and-secrets.md`](../internal-guides/deployment-and-secrets.md)
+  for the current environment model.
 
-### Option 1: Integrate WorkOS with Convex (Recommended)
+## Where authorization actually lives now
 
-1. Configure Convex to accept WorkOS JWT tokens
-2. Set up `ConvexProviderWithAuth` to pass tokens from WorkOS session
-3. Add `ctx.auth.getUserIdentity()` checks to all Convex functions
-4. Add `userId` field to schema for data isolation
+- **Authentication**: Clerk, bridged to Convex via `convex/auth.config.ts`.
+- **Authorization**: role guards in [`convex/_util/auth.ts`](../../convex/_util/auth.ts) —
+  `getCurrentUserId`, `requireAdminRole`, `requireManagerRole`,
+  `requireStaffRole`, `requireRestaurantManagerOrAbove`,
+  `requireRestaurantStaffAccess`, and friends. Guards return an
+  `AsyncReturn<T, E>` tuple rather than throwing, and errors are **stable codes**
+  (`ERROR_ADMIN_ROLE_REQUIRED`, `NOT_AUTHORIZED`) that the frontend maps to i18n
+  keys.
+- **Two-tier roles**: org-level (`owner`, `admin`) in `userRoles`; per-restaurant
+  (`manager`, `employee`) in `restaurantMembers`. A `RestaurantMember` is backed
+  by either a `User` or an `EmployeeAccount`, never both — see ADR 006.
 
-**Pros**: Full integration, proper multi-tenancy, industry standard  
-**Cons**: Requires Convex auth configuration, schema migration
-
-### Option 2: Server-Side Proxy Pattern
-
-1. Keep Convex functions internal (no direct client access)
-2. Route all data operations through TanStack server functions
-3. Validate WorkOS session in server functions before calling Convex
-
-**Pros**: Simpler Convex setup, centralized auth  
-**Cons**: Loses Convex real-time benefits, adds latency, more code
-
-### Option 3: Minimal Fix for Server Functions Only
-
-1. Add `getUser()` checks to TanStack server functions
-2. Leave Convex as-is for demo/internal use only
-3. Document Convex endpoints as public/dev-only
-
-**Pros**: Quick fix for server functions  
-**Cons**: Convex remains insecure, not production-ready
-
-## Recommended Implementation (Option 1)
-
-### Step 1: Update Convex Schema
-
-```ts
-// convex/schema.ts
-export default defineSchema({
-	tasks: defineTable({
-		text: v.string(),
-		isCompleted: v.optional(v.boolean()),
-		userId: v.string(), // NEW: Owner of the task
-	}).index("by_user", ["userId"]),
-});
-```
-
-### Step 2: Add Auth to Convex Functions
-
-```ts
-// convex/tasks.ts
-export const get = query({
-	args: {},
-	handler: async (ctx) => {
-		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) {
-			throw new Error("Not authenticated");
-		}
-		return await ctx.db
-			.query("tasks")
-			.withIndex("by_user", (q) => q.eq("userId", identity.subject))
-			.collect();
-	},
-});
-```
-
-### Step 3: Configure Convex Auth Provider
-
-```tsx
-// src/router.tsx - Pass auth token to Convex
-<ConvexProviderWithAuth
-  client={convexQueryClient.convexClient}
-  useAuth={useWorkOSAuth} // Custom hook to bridge WorkOS → Convex
->
-```
-
-### Step 4: Add Auth to Server Functions
-
-```ts
-import { getUser } from "@workos/authkit-tanstack-react-start";
-
-const getTodos = createServerFn({ method: "GET" }).handler(async ({ request }) => {
-	const { user } = await getUser({ ensureSignedIn: true });
-	if (!user) throw new Error("Unauthorized");
-	return await readTodos();
-});
-```
+`CONTEXT.md` is the canonical glossary for these terms.
 
 ## Owner
 
@@ -116,39 +50,6 @@ Development Team
 
 2024-12-21
 
-## Severity
+## Archived
 
-**High** - Security vulnerability allowing unauthorized data access and manipulation
-
-## Status
-
-**Resolved** - Implemented 2024-12-22
-
-## Resolution
-
-Implemented Option 1 (WorkOS + Convex integration):
-
-1. Created `convex/auth.config.ts` with WorkOS JWT validation
-2. Updated `convex/schema.ts` with `userId` field and `by_user` index
-3. Updated `convex/tasks.ts` with authentication checks and user-scoped queries
-
-### Setup Required
-
-After deploying, you must set the `WORKOS_CLIENT_ID` environment variable in your Convex deployment:
-
-**Via Convex Dashboard:**
-
-1. Go to [dashboard.convex.dev](https://dashboard.convex.dev)
-2. Select your project and deployment (dev/prod)
-3. Navigate to Settings > Environment Variables
-4. Add `WORKOS_CLIENT_ID` with your WorkOS client ID (e.g., `client_01XXXXXXXX`)
-
-**Via CLI:**
-
-```bash
-npx convex env set WORKOS_CLIENT_ID your_client_id_here
-```
-
-### Data Migration
-
-Existing tasks without a `userId` will not be accessible. Clear test data or run a migration to assign them to a user.
+2026-07-19 (TAVLI-61, under the TAVLI-60 post-launch hardening rollup)

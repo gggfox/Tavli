@@ -1,8 +1,9 @@
-import { restoreSession, useSessionStore } from "@/features/ordering";
+import { useCustomerSession } from "@/features/ordering";
+import { ErrorFallback, RouteErrorComponent } from "@/global/components";
 import { CustomerKeys, OrderingKeys } from "@/global/i18n";
 import { SignInButton, SignUpButton, useAuth } from "@clerk/tanstack-react-start";
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
 	Link,
 	Outlet,
@@ -10,114 +11,46 @@ import {
 	useNavigate,
 	useParams,
 	useRouterState,
+	type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { CalendarClock, LogIn, Receipt, UserPlus, UtensilsCrossed } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-
-function getSessionErrorKey(err: unknown): string {
-	let raw = "";
-	if (err instanceof Error) raw = err.message;
-	else if (typeof err === "string") raw = err;
-
-	if (raw.includes("Restaurant not found")) {
-		return OrderingKeys.SESSION_ERROR_NOT_FOUND;
-	}
-	if (raw.includes("NOT_AUTHENTICATED")) {
-		return OrderingKeys.SESSION_SIGN_IN_REQUIRED;
-	}
-	return OrderingKeys.SESSION_ERROR_GENERIC;
-}
 
 export const Route = createFileRoute("/r/$slug")({
 	component: CustomerLayout,
+	errorComponent: CustomerErrorComponent,
 });
+
+/**
+ * Customer-facing recovery differs from the staff default: a diner who hits
+ * an error mid-order should be able to get back to the menu of the
+ * restaurant they are sitting in, not just reload.
+ */
+function CustomerErrorComponent(props: Readonly<ErrorComponentProps>) {
+	const { t } = useTranslation();
+	const { slug } = Route.useParams();
+	return (
+		<RouteErrorComponent
+			{...props}
+			actions={
+				<Link
+					to="/r/$slug/menu"
+					params={{ slug }}
+					className="px-6 py-2.5 font-medium rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-offset-2 hover-btn-secondary"
+				>
+					{t(CustomerKeys.MENU)}
+				</Link>
+			}
+		/>
+	);
+}
 
 function CustomerLayout() {
 	const { t } = useTranslation();
 	const { slug } = Route.useParams();
-	const { isLoaded, isSignedIn } = useAuth();
-	const { sessionId, setSession, clearSession } = useSessionStore();
-	const [errorKey, setErrorKey] = useState<string | null>(null);
-	const [creatingSession, setCreatingSession] = useState(false);
-
-	const createSession = useMutation({
-		mutationFn: useConvexMutation(api.sessions.create),
-	});
-
-	const restoredFromStorage = useMemo(
-		() => (!sessionId && isSignedIn ? restoreSession() : null),
-		[sessionId, isSignedIn]
-	);
-
-	const { data: restoredSession, isPending: validatingRestore } = useQuery({
-		...convexQuery(
-			api.sessions.getActive,
-			restoredFromStorage?.sessionId
-				? { sessionId: restoredFromStorage.sessionId as Id<"sessions"> }
-				: "skip"
-		),
-		enabled: isLoaded && isSignedIn && !sessionId && !!restoredFromStorage?.sessionId,
-	});
-
-	useEffect(() => {
-		if (!isLoaded) return;
-
-		if (!isSignedIn) {
-			clearSession();
-			setErrorKey(null);
-			return;
-		}
-
-		if (sessionId) return;
-
-		if (restoredFromStorage && validatingRestore) return;
-
-		if (restoredFromStorage && restoredSession) {
-			setSession({
-				sessionId: restoredSession._id,
-				restaurantId: restoredSession.restaurantId,
-			});
-			return;
-		}
-
-		if (restoredFromStorage && restoredSession === null) {
-			clearSession();
-		}
-
-		if (creatingSession) return;
-
-		setCreatingSession(true);
-		setErrorKey(null);
-		createSession
-			.mutateAsync({ restaurantSlug: slug })
-			.then((result) => {
-				setSession({
-					sessionId: result.sessionId,
-					restaurantId: result.restaurantId,
-				});
-			})
-			.catch((err: unknown) => {
-				setErrorKey(getSessionErrorKey(err));
-			})
-			.finally(() => {
-				setCreatingSession(false);
-			});
-	}, [
-		isLoaded,
-		isSignedIn,
-		slug,
-		sessionId,
-		restoredFromStorage,
-		restoredSession,
-		validatingRestore,
-		creatingSession,
-		setSession,
-		clearSession,
-		createSession,
-	]);
+	const { isLoaded, isSignedIn, sessionId, errorKey, retry } = useCustomerSession(slug);
 
 	if (!isLoaded) {
 		return (
@@ -168,16 +101,19 @@ function CustomerLayout() {
 		);
 	}
 
+	// A failed session handshake is caught, not thrown, so it never reaches
+	// the route's `errorComponent`. Render it through the same panel anyway so
+	// the diner gets a consistent surface — and, unlike the old dead-end
+	// message, a way out. `retry` re-runs the bootstrap exactly once; the hook
+	// still refuses to retry on its own (see #69).
 	if (errorKey) {
 		return (
-			<div className="flex-1 flex items-center justify-center p-6">
-				<div className="text-center max-w-sm">
-					<h1 className="text-xl font-semibold mb-2 text-foreground">
-						{t(OrderingKeys.SESSION_OOPS)}
-					</h1>
-					<p className="text-sm text-muted-foreground">{t(errorKey)}</p>
-				</div>
-			</div>
+			<ErrorFallback
+				error={undefined}
+				title={t(OrderingKeys.SESSION_OOPS)}
+				description={t(errorKey)}
+				onRetry={retry}
+			/>
 		);
 	}
 
@@ -382,10 +318,7 @@ function MyOrdersLink({ sessionId, slug }: Readonly<{ sessionId: Id<"sessions">;
 			<Receipt size={14} className="text-muted-foreground" />
 			<span>{t(OrderingKeys.SESSION_MY_ORDERS)}</span>
 			{activeCount > 0 && (
-				<span
-					className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary"
-					style={{ color: "white" }}
-				>
+				<span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary text-primary-foreground">
 					{activeCount}
 				</span>
 			)}

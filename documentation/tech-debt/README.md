@@ -56,12 +56,15 @@ Examples: `0001-auth-session-coupling.md`, `0002-sync-job-no-retries.md`
 
 ## Tech Debt Index
 
-| ID       | Area                | Severity | Status   | Link                                                                                     |
-| -------- | ------------------- | -------- | -------- | ---------------------------------------------------------------------------------------- |
-| TDR-0001 | Security/Auth       | High     | Resolved | [0001-missing-backend-authentication.md](./0001-missing-backend-authentication.md)       |
-| TDR-0002 | Error Handling      | Medium   | Resolved | [0002-missing-error-handling.md](./0002-missing-error-handling.md)                       |
-| TDR-0003 | Code Quality/DX     | Low      | Resolved | [0003-styling-patterns-refactoring.md](./0003-styling-patterns-refactoring.md)           |
-| TDR-0004 | Security/Validation | High     | Open     | [0004-client-side-validation-bypassable.md](./0004-client-side-validation-bypassable.md) |
+| ID       | Area            | Severity | Status   | Link                                                                               |
+| -------- | --------------- | -------- | -------- | ---------------------------------------------------------------------------------- |
+| TDR-0001 | Security/Auth   | High     | Archived | [0001-missing-backend-authentication.md](./0001-missing-backend-authentication.md) |
+| TDR-0002 | Error Handling  | Medium   | Resolved | [0002-missing-error-handling.md](./0002-missing-error-handling.md)                 |
+| TDR-0003 | Code Quality/DX | Low      | Resolved | [0003-styling-patterns-refactoring.md](./0003-styling-patterns-refactoring.md)     |
+| TDR-0005 | Design Tokens   | Low      | Open     | [0005-remaining-var-tokens.md](./0005-remaining-var-tokens.md)                     |
 
 **Severity:** High / Medium / Low  
-**Status:** Open / In Progress / Resolved
+**Status:** Open / In Progress / Resolved / Archived
+
+`Archived` means the record describes a system that no longer exists. TDR-0004
+was never written; the number is retired rather than reused.

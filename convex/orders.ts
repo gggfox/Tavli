@@ -9,18 +9,21 @@ import {
 	UserInputValidationError,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
+import { appendAuditEvent } from "./_util/audit";
 import {
 	getCurrentUserId,
 	requireRestaurantManagerOrAbove,
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
 import {
+	requireAuthenticatedDiner,
 	requireOwnedActiveSession,
 	requireOwnedOrder,
 	requireUnlockedOwnedSession,
 	toDinerVisiblePayment,
 } from "./_util/dinerSession";
 import {
+	AUDIT_EVENT,
 	AUDIT_SYSTEM_USER_ID,
 	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
 	DEFAULT_PREP_STATION,
@@ -252,6 +255,24 @@ export const submitOrder = mutation({
 			}),
 			updatedAt: now,
 		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: args.orderId,
+			eventType: AUDIT_EVENT.ORDER_SUBMITTED,
+			payload: {
+				sessionId: order.sessionId,
+				restaurantId: order.restaurantId,
+				tableId: order.tableId,
+				itemCount: items.length,
+				totalAmount: order.totalAmount,
+				dailyOrderNumber,
+				orderServiceDateKey,
+			},
+			// Any tab member can submit against a shared tab, so the session opener
+			// is not necessarily the actor.
+			userId: await requireAuthenticatedDiner(ctx),
+		});
 	},
 });
 
@@ -369,6 +390,26 @@ export const confirmPayment = internalMutation({
 			...(orderServiceDateKey !== undefined && { orderServiceDateKey }),
 			...(attributedMemberId !== undefined && { attributedMemberId }),
 		});
+
+		// Webhook-originated, so the actor is the system rather than the diner.
+		// Every early `return` above is a no-op path (already succeeded, stale
+		// snapshot, amount drift) and deliberately writes no event.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: order._id,
+			eventType: AUDIT_EVENT.ORDER_PAYMENT_CONFIRMED,
+			payload: {
+				paymentId: payment._id,
+				restaurantId: order.restaurantId,
+				sessionId: order.sessionId,
+				amount: payment.amount,
+				gratuityAmount: args.gratuityAmount,
+				fromStatus: order.status,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: args.stripePaymentIntentId,
+		});
 	},
 });
 
@@ -401,6 +442,23 @@ export const failPayment = internalMutation({
 				updatedAt: now,
 			});
 		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: payment.orderId,
+			eventType: AUDIT_EVENT.ORDER_PAYMENT_FAILED,
+			payload: {
+				paymentId: payment._id,
+				amount: payment.amount,
+				failureCode: args.failureCode,
+				// Stripe's decline messages are customer-safe and are the whole
+				// point of the record; without them a failure trail says nothing.
+				failureMessage: args.failureMessage,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: args.stripePaymentIntentId,
+		});
 	},
 });
 
@@ -550,6 +608,22 @@ export const updateStatus = mutation({
 				paymentId: order.activePaymentId,
 			});
 		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: args.orderId,
+			eventType: AUDIT_EVENT.ORDER_STATUS_CHANGED,
+			payload: {
+				restaurantId: order.restaurantId,
+				fromStatus: order.status,
+				toStatus: args.newStatus,
+				// A cancel on a paid order schedules a refund; record that the money
+				// path was triggered from here, not just that a status moved.
+				refundScheduled: args.newStatus === "cancelled" && order.activePaymentId !== undefined,
+				totalAmount: order.totalAmount,
+			},
+			userId,
+		});
 
 		return [args.orderId, null];
 	},

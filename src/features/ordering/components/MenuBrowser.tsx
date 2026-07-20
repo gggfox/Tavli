@@ -87,8 +87,15 @@ export function MenuBrowser({
 		setFilterVisibility({});
 	}, [deferredSearchQuery, currentMenuId]);
 
+	// One subscription for the categories and one for *all* items on the menu.
+	// Both are passed down rather than re-queried per level: `MenuCategories`
+	// used to re-run this same categories query, and `CategoryItems` opened one
+	// live item subscription per category (N categories -> N subscriptions).
 	const { data: categories } = useQuery(
 		convexQuery(api.menus.getCategoriesByMenu, currentMenuId ? { menuId: currentMenuId } : "skip")
+	);
+	const { data: menuItems } = useQuery(
+		convexQuery(api.menuItems.getByMenu, currentMenuId ? { menuId: currentMenuId } : "skip")
 	);
 	const categoryCount = categories?.length ?? 0;
 	const reportedCount = Object.keys(filterVisibility).length;
@@ -171,7 +178,8 @@ export function MenuBrowser({
 							style={{
 								backgroundColor:
 									currentMenuId === menu._id ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-								color: currentMenuId === menu._id ? "white" : "var(--text-secondary)",
+								color:
+									currentMenuId === menu._id ? "var(--btn-primary-text)" : "var(--text-secondary)",
 							}}
 						>
 							{getTranslatedField(menu, lang)}
@@ -194,7 +202,8 @@ export function MenuBrowser({
 				) : null}
 				{currentMenuId && (
 					<MenuCategories
-						menuId={currentMenuId}
+						categories={categories}
+						items={menuItems}
 						lang={lang}
 						selections={selections}
 						onOpenDetail={handleOpenDetail}
@@ -214,8 +223,7 @@ export function MenuBrowser({
 			)}
 			{!orderingBlocked && paymentsEnabled === false && itemCount > 0 && (
 				<div
-					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning ${bottomBarSafePadding}`}
-					style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
+					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning bg-warning-subtle ${bottomBarSafePadding}`}
 				>
 					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
@@ -250,7 +258,7 @@ export function MenuBrowser({
 									htmlFor="table-select"
 									className="block text-xs font-semibold mb-1 text-muted-foreground"
 								>
-									{t(OrderingKeys.MENU_TABLE_NUMBER)} <span style={{ color: "#dc2626" }}>*</span>
+									{t(OrderingKeys.MENU_TABLE_NUMBER)} <span className="text-destructive">*</span>
 								</label>
 								<select
 									id="table-select"
@@ -260,7 +268,11 @@ export function MenuBrowser({
 									}
 									className="w-full px-3 py-2 rounded-lg text-sm bg-muted text-foreground"
 									style={{
-										border: `1px solid ${!selectedTableId && showPayFlow ? "#fca5a5" : "var(--border-default)"}`,
+										border: `1px solid ${
+											!selectedTableId && showPayFlow
+												? "var(--accent-danger)"
+												: "var(--border-default)"
+										}`,
 									}}
 								>
 									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
@@ -274,7 +286,7 @@ export function MenuBrowser({
 										))}
 								</select>
 								{!selectedTableId && (
-									<p className="text-[11px] mt-1" style={{ color: "#dc2626" }}>
+									<p className="text-[11px] mt-1 text-destructive">
 										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
 								)}
@@ -337,22 +349,42 @@ export function MenuBrowser({
 }
 
 function MenuCategories({
-	menuId,
+	categories,
+	items,
 	lang,
 	selections,
 	onOpenDetail,
 	searchQuery,
 	onFilterVisibility,
 }: Readonly<{
-	menuId: Id<"menus">;
+	categories: readonly Doc<"menuCategories">[] | undefined;
+	items: readonly MenuItemWithImage[] | undefined;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
 	onOpenDetail: (item: MenuItemWithImage) => void;
 	searchQuery: string;
 	onFilterVisibility?: (categoryId: string, visible: boolean) => void;
 }>) {
-	const { data: categories } = useQuery(convexQuery(api.menus.getCategoriesByMenu, { menuId }));
-	const sorted = [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder);
+	const sorted = useMemo(
+		() => [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder),
+		[categories]
+	);
+
+	// The batched query returns the whole menu; bucket it once instead of
+	// letting each category filter the full list on every render.
+	const itemsByCategory = useMemo(() => {
+		const grouped = new Map<string, MenuItemWithImage[]>();
+		for (const item of items ?? []) {
+			const bucket = grouped.get(item.categoryId);
+			if (bucket) bucket.push(item);
+			else grouped.set(item.categoryId, [item]);
+		}
+		return grouped;
+	}, [items]);
+
+	// Availability windows are day-granular, so one read of the clock per menu
+	// render is enough — this used to be a `new Date()` per category per render.
+	const dayOfWeek = useMemo(() => new Date().getDay(), []);
 
 	return (
 		<>
@@ -360,6 +392,8 @@ function MenuCategories({
 				<CategoryItems
 					key={cat._id}
 					category={cat}
+					items={itemsByCategory.get(cat._id)}
+					dayOfWeek={dayOfWeek}
 					lang={lang}
 					selections={selections}
 					onOpenDetail={onOpenDetail}
@@ -373,6 +407,8 @@ function MenuCategories({
 
 function CategoryItems({
 	category,
+	items,
+	dayOfWeek,
 	lang,
 	selections,
 	onOpenDetail,
@@ -380,6 +416,8 @@ function CategoryItems({
 	onFilterVisibility,
 }: Readonly<{
 	category: Doc<"menuCategories">;
+	items: readonly MenuItemWithImage[] | undefined;
+	dayOfWeek: number;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
 	onOpenDetail: (item: MenuItemWithImage) => void;
@@ -387,22 +425,22 @@ function CategoryItems({
 	onFilterVisibility?: (visible: boolean) => void;
 }>) {
 	const { matches, isActive: isFilterActive } = useFuzzyMatch(searchQuery);
-	const { data: items } = useQuery(
-		convexQuery(api.menuItems.getByCategory, { categoryId: category._id })
+
+	// Memoized so its identity is stable: an unmemoized array here defeated the
+	// `visibleItems` memo below, which listed it as a dependency.
+	const availabilityFiltered = useMemo(
+		() =>
+			(items ?? [])
+				.filter((item) => {
+					if (!item.isAvailable) return false;
+					if (item.availableDays && item.availableDays.length > 0) {
+						return item.availableDays.includes(dayOfWeek);
+					}
+					return true;
+				})
+				.sort((a, b) => a.displayOrder - b.displayOrder),
+		[items, dayOfWeek]
 	);
-
-	const now = new Date();
-	const dayOfWeek = now.getDay();
-
-	const availabilityFiltered = (items ?? [])
-		.filter((item) => {
-			if (!item.isAvailable) return false;
-			if (item.availableDays && item.availableDays.length > 0) {
-				return item.availableDays.includes(dayOfWeek);
-			}
-			return true;
-		})
-		.sort((a, b) => a.displayOrder - b.displayOrder);
 
 	const categoryNameForFilter = getTranslatedField(category, lang);
 	const categoryNameMatches = matches(categoryNameForFilter);
@@ -442,11 +480,11 @@ function CategoryItems({
 						>
 							{isSelected && (
 								<span className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary">
-									<Check size={14} className="text-white" />
+									<Check size={14} className="text-primary-foreground" />
 								</span>
 							)}
 							{isSelected && selection && selection.quantity > 1 && (
-								<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white bg-primary">
+								<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-primary-foreground bg-primary">
 									{selection.quantity}
 								</span>
 							)}
@@ -454,6 +492,8 @@ function CategoryItems({
 								<img
 									src={item.imageUrl}
 									alt={getTranslatedField(item, lang)}
+									loading="lazy"
+									decoding="async"
 									className="w-full h-36 sm:h-40 object-cover"
 								/>
 							) : (

@@ -36,6 +36,11 @@
 	--text-tertiary: #9b9a97;
 	--text-muted: #b4b4b3;
 	--text-inverse: #ffffff;
+	/* Text/icons sitting on a saturated accent fill (status pills, station
+	 * chips, count badges). Deliberately NOT `--text-inverse`: that one flips
+	 * with the theme, whereas these fills stay saturated in both themes and
+	 * therefore always want white on top. */
+	--text-on-accent: #ffffff;
 
 	/* Border Colors */
 	--border-default: rgba(55, 53, 47, 0.09);
@@ -86,6 +91,10 @@
 	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
 	--shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
 
+	/* Scrim behind controls that float over imagery (e.g. the close button on
+	 * a menu-item photo), where neither theme's surfaces apply. */
+	--overlay-scrim: rgba(0, 0, 0, 0.5);
+
 	/* Scrollbar */
 	--scrollbar-thumb: rgba(55, 53, 47, 0.16);
 	--scrollbar-thumb-hover: rgba(55, 53, 47, 0.32);
@@ -105,6 +114,8 @@
 	--text-tertiary: #787774;
 	--text-muted: #5a5a5a;
 	--text-inverse: #191919;
+	/* Unchanged across themes on purpose — see the :root note. */
+	--text-on-accent: #ffffff;
 
 	--border-default: rgba(255, 255, 255, 0.094);
 	--border-strong: rgba(255, 255, 255, 0.16);
@@ -146,6 +157,8 @@
 	--shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
 	--shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4), 0 4px 6px rgba(0, 0, 0, 0.3);
 
+	--overlay-scrim: rgba(0, 0, 0, 0.5);
+
 	--scrollbar-thumb: rgba(255, 255, 255, 0.13);
 	--scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
 }
@@ -174,6 +187,7 @@
 	--color-soft-foreground: var(--text-tertiary);
 	--color-faint-foreground: var(--text-muted);
 	--color-inverse-foreground: var(--text-inverse);
+	--color-on-accent: var(--text-on-accent);
 
 	/* Borders */
 	--color-border: var(--border-default);
