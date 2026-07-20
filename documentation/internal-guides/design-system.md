@@ -1,490 +1,317 @@
 # Design System Guide
 
-This document outlines the design standards and patterns used throughout Fierro Viejo. Follow these guidelines when creating new components to maintain visual consistency.
+How to colour, space and compose UI in Tavli. The source of truth is
+[`src/global/styles/`](../../src/global/styles) — this document explains it;
+where the two disagree, the CSS wins.
+
+> **This guide was rewritten.** The previous version described a dark-only,
+> hard-coded palette (`bg-[#0f0f0f]`, `white/5`, `amber-500`) from before the
+> theme system existed. None of that applies any more. If you find code that
+> still looks like it, it predates the token system and should be migrated.
 
 ## Table of Contents
 
-- [Philosophy](#philosophy)
-- [Color Palette](#color-palette)
+- [How theming works](#how-theming-works)
+- [Colour tokens](#colour-tokens)
+- [Using colour in components](#using-colour-in-components)
+- [Escape hatches](#escape-hatches)
 - [Typography](#typography)
-- [Spacing & Layout](#spacing--layout)
-- [Components](#components)
-- [Animations & Transitions](#animations--transitions)
+- [Spacing, radius and layout](#spacing-radius-and-layout)
+- [Interaction utilities](#interaction-utilities)
 - [Icons](#icons)
-- [Patterns](#patterns)
+- [Shared components](#shared-components)
 - [Accessibility](#accessibility)
+- [Checklist for a new component](#checklist-for-a-new-component)
 
 ---
 
-## Philosophy
+## How theming works
 
-The design follows a **Notion-inspired, minimal dark theme** with these principles:
+Tailwind v4, no `tailwind.config.js`. Everything is declared in CSS:
 
-1. **Subtle over flashy** – Use low-opacity whites (`white/5`, `white/10`) instead of solid colors for backgrounds
-2. **Reveal on interaction** – Hide secondary actions until hover (e.g., delete buttons)
-3. **Adaptive layouts** – Components should gracefully collapse/expand (like the sidebar)
-4. **Consistent depth** – Use opacity layers to create hierarchy, not shadows
-
----
-
-## Color Palette
-
-### Background Colors
-
-| Token          | Value                    | Usage                         |
-| -------------- | ------------------------ | ----------------------------- |
-| `bg-[#0f0f0f]` | `#0f0f0f`                | Page/main content background  |
-| `bg-[#191919]` | `#191919`                | Sidebar, elevated surfaces    |
-| `bg-white/5`   | `rgba(255,255,255,0.05)` | Subtle hover states, cards    |
-| `bg-white/10`  | `rgba(255,255,255,0.10)` | Active states, selected items |
-
-### Border Colors
-
-| Token                 | Usage                                |
-| --------------------- | ------------------------------------ |
-| `border-white/5`      | Subtle dividers, card borders        |
-| `border-white/10`     | More visible dividers, input borders |
-| `border-amber-500/20` | Accent borders (badges, highlights)  |
-
-### Text Colors
-
-| Token           | Usage                                |
-| --------------- | ------------------------------------ |
-| `text-white`    | Primary text, headings, active items |
-| `text-gray-300` | Secondary text (sidebar default)     |
-| `text-gray-400` | Tertiary text, inactive navigation   |
-| `text-gray-500` | Muted text, labels, descriptions     |
-| `text-gray-600` | Very muted (placeholder-like)        |
-
-### Accent Colors
-
-| Color       | Token                    | Usage                                  |
-| ----------- | ------------------------ | -------------------------------------- |
-| **Amber**   | `amber-500`, `amber-600` | Primary accent, CTAs, brand highlights |
-| **Emerald** | `emerald-500`            | Success states, completed items        |
-| **Blue**    | `blue-500`               | Information, links                     |
-| **Red**     | `red-400`                | Destructive actions (delete)           |
-| **Orange**  | `orange-600`             | Gradients (user avatars)               |
-
-### Gradients
-
-```css
-/* User avatar fallback */
-bg-gradient-to-br from-amber-500 to-orange-600
 ```
+src/global/styles/index.css      @import "tailwindcss" + the three files below
+src/global/styles/theme.css      the tokens (this is the one you care about)
+src/global/styles/base.css       document defaults, scrollbars, theme transition
+src/global/styles/utilities.css  hover/animation helper classes
+```
+
+Colour is declared in **two layers**:
+
+1. **CSS custom properties** on `:root` (light) and `.dark` (dark). A single
+   class flip on `<html>` restyles the whole tree — no JS re-render, no
+   per-component theme branching. The `.dark` class is applied before first
+   paint by an inline script in `src/routes/__root.tsx`.
+2. **A Tailwind `@theme` block** that aliases each custom property under the
+   `--color-*` namespace. That is what generates the utilities you actually
+   write: `--color-background` produces `bg-background`, `text-background`,
+   `border-background`, and so on.
+
+Because the `@theme` values are `var(...)` references, Tailwind generates each
+utility exactly once and the cascade does the light/dark switching.
+
+**Light mode is the default.** Dark mode is opt-in via the `.dark` class.
+
+---
+
+## Colour tokens
+
+Names are hybrid: shadcn/ui canonical names where a surface maps cleanly,
+custom flat names where the palette is richer than shadcn's.
+
+### Surfaces
+
+| Utility         | Token            | Use                                |
+| --------------- | ---------------- | ---------------------------------- |
+| `bg-background` | `--bg-primary`   | Page and main content background   |
+| `bg-card`       | `--bg-elevated`  | Cards, modals, popovers            |
+| `bg-muted`      | `--bg-secondary` | Panels, table chrome, inset areas  |
+| `bg-tertiary`   | `--bg-tertiary`  | Third-level fills                  |
+| `bg-hover`      | `--bg-hover`     | Hover fill (translucent)           |
+| `bg-active`     | `--bg-active`    | Selected/active fill (translucent) |
+
+### Text
+
+| Utility                   | Token              | Use                                                        |
+| ------------------------- | ------------------ | ---------------------------------------------------------- |
+| `text-foreground`         | `--text-primary`   | Primary copy, headings                                     |
+| `text-muted-foreground`   | `--text-secondary` | Secondary copy, labels                                     |
+| `text-soft-foreground`    | `--text-tertiary`  | Tertiary copy                                              |
+| `text-faint-foreground`   | `--text-muted`     | Placeholders, disabled-looking meta text                   |
+| `text-inverse-foreground` | `--text-inverse`   | Text on an inverted **surface** — flips with the theme     |
+| `text-on-accent`          | `--text-on-accent` | Text on a saturated **accent fill** — white in both themes |
+
+`--text-inverse` and `--text-on-accent` are not interchangeable. A status pill
+filled with `--accent-info` stays saturated in dark mode, so its label wants
+`text-on-accent` (always white); `text-inverse-foreground` would turn it dark
+and destroy the contrast.
+
+### Borders
+
+| Utility                | Token              |
+| ---------------------- | ------------------ |
+| `border-border`        | `--border-default` |
+| `border-border-strong` | `--border-strong`  |
+
+### Interactive
+
+| Utility                     | Token                  |
+| --------------------------- | ---------------------- |
+| `bg-primary`                | `--btn-primary-bg`     |
+| `text-primary-foreground`   | `--btn-primary-text`   |
+| `bg-secondary`              | `--btn-secondary-bg`   |
+| `text-secondary-foreground` | `--btn-secondary-text` |
+| `bg-disabled`               | `--btn-disabled-bg`    |
+| `text-disabled-foreground`  | `--btn-disabled-text`  |
+
+Inputs: `bg-input`, `border-input-border`, `border-input-border-focus`,
+`text-input-placeholder`.
+
+### Status
+
+Every status tone comes as a saturated colour plus a `-subtle` tint for
+backgrounds:
+
+| Tone        | Foreground              | Subtle background       |
+| ----------- | ----------------------- | ----------------------- |
+| Success     | `text-success`          | `bg-success-subtle`     |
+| Warning     | `text-warning`          | `bg-warning-subtle`     |
+| Destructive | `text-destructive`      | `bg-destructive-subtle` |
+| Info        | `text-info`             | `bg-info-subtle`        |
+| Neutral     | `text-muted-foreground` | `bg-neutral-subtle`     |
+
+Prep-station tones (`--station-kitchen*`, `--station-bar*`) are intentionally
+distinct from the status tones so the two filter rows on the OrderDashboard
+read as orthogonal concerns — see ADR 005.
+
+### Other
+
+`--shadow-sm/md/lg`, `--scrollbar-thumb`, `--overlay-scrim` (scrim behind
+controls floating over imagery, where neither theme's surfaces apply).
+
+---
+
+## Using colour in components
+
+**Reach for a utility class.**
+
+```tsx
+<div className="bg-card border border-border rounded-xl p-4">
+	<h3 className="text-foreground font-semibold">Title</h3>
+	<p className="text-muted-foreground text-sm">Body</p>
+</div>
+```
+
+Do **not** write raw hex, `rgba()`, or Tailwind's stock palette
+(`bg-gray-800`, `text-red-500`, `amber-500`). Those do not follow the theme,
+and a colour that looks fine in dark mode is usually unreadable in light.
+
+```tsx
+// ✗ wrong — none of these respond to the theme
+<div className="bg-[#191919]" />
+<p style={{ color: "#dc2626" }} />
+<span style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }} />
+
+// ✓ right
+<div className="bg-card" />
+<p className="text-destructive" />
+<span className="bg-warning-subtle" />
+```
+
+---
+
+## Escape hatches
+
+There are exactly two legitimate reasons to leave the utility classes.
+
+**1. A value computed at runtime.** Palette maps that pick a colour from data
+(`STATUS_TONE_PALETTE`, `STATION_CONFIG`) hold `var(--…)` strings and are
+applied via inline `style`. The value is still a token — only the _choice_ is
+dynamic:
+
+```ts
+solidBg: "var(--accent-info)",
+solidFg: "var(--text-on-accent)",
+```
+
+**2. A surface that cannot read our CSS.** Stripe Elements renders in a
+cross-origin iframe, so `var(--bg-elevated)` resolves to nothing inside it and
+Stripe's `Appearance.variables` only accepts literal colours. That single case
+lives in `src/features/ordering/stripeAppearanceTokens.ts` — one map, keyed by
+the token each value mirrors, rather than hexes scattered through the checkout
+component.
+
+Anything else is a bug.
 
 ---
 
 ## Typography
 
-### Font Families
+The body font stack is set once on `html, body` in `base.css` (system UI
+stack); `code` gets a monospace stack. Components should not set
+`font-family`.
 
-```css
-/* Body text */
-font-family:
-	"Inter",
-	-apple-system,
-	BlinkMacSystemFont,
-	"Segoe UI",
-	"Roboto",
-	sans-serif;
+| Class                         | Use                                     |
+| ----------------------------- | --------------------------------------- |
+| `text-[10px]` / `text-[11px]` | Dense badge/meta text                   |
+| `text-xs`                     | Labels, badges, meta                    |
+| `text-sm`                     | Navigation, form labels, most body text |
+| `text-base`                   | Emphasised body                         |
+| `text-lg`                     | Card and section headings               |
+| `text-xl`                     | Page headings                           |
+| `text-2xl`                    | Route-level titles                      |
 
-/* Code/monospace */
-font-family: "JetBrains Mono", source-code-pro, Menlo, Monaco, Consolas, monospace;
-```
-
-### Font Sizes
-
-| Class                  | Usage                                    |
-| ---------------------- | ---------------------------------------- |
-| `text-xs`              | Labels, badges, meta text                |
-| `text-sm`              | Navigation items, form labels, body text |
-| `text-base`            | Default body text                        |
-| `text-lg`              | Subheadings, emphasized text             |
-| `text-xl`              | Section headings                         |
-| `text-4xl md:text-5xl` | Hero headings                            |
-
-### Font Weights
-
-| Class           | Usage                         |
-| --------------- | ----------------------------- |
-| `font-medium`   | Navigation items, card titles |
-| `font-semibold` | Section headings, brand name  |
-| `font-bold`     | Hero headings                 |
-
-### Tracking (Letter Spacing)
-
-| Class            | Usage                |
-| ---------------- | -------------------- |
-| `tracking-tight` | Headings, brand name |
-| `tracking-wider` | Uppercase labels     |
+Weights: `font-medium` (nav items, card titles), `font-semibold` (headings),
+`font-bold` (numbers, totals, page heroes). Use `tabular-nums` for anything
+numeric that sits in a column.
 
 ---
 
-## Spacing & Layout
+## Spacing, radius and layout
 
-### Sidebar Dimensions
+Standard paddings: `px-3 py-2` (nav/list rows), `px-4 py-3` (table cells,
+notices), `p-4` (cards), `p-6` (page shells). Gaps: `gap-2` tight, `gap-3`
+normal, `gap-4` spacious.
 
-| State         | Width          |
-| ------------- | -------------- |
-| Expanded      | `w-60` (240px) |
-| Collapsed     | `w-14` (56px)  |
-| Header height | `h-12` (48px)  |
+Radius: `rounded-md` (icon buttons), `rounded-lg` (rows, inputs, notices),
+`rounded-xl` (cards, primary buttons), `rounded-full` (avatars, pills).
 
-### Common Spacing Patterns
+**Scrolling.** The app shell is `h-dvh` with `overflow-hidden`; scrolling
+happens in one designated container per page (`AdminPageLayout`'s inner
+`overflow-y-auto` column, or the root `<main>`). Do not add a second
+`overflow-auto` inside it — nested scrollbars break sticky chrome. Long lists
+should virtualize instead: use `VirtualGrid`, which reuses the ancestor
+scroller.
 
-```tsx
-// Navigation items
-className = "px-3 py-2";
-
-// Section padding
-className = "p-2"; // Sidebar sections
-className = "px-6 py-4"; // Content areas
-
-// Gaps
-className = "gap-2"; // Tight (buttons, small groups)
-className = "gap-3"; // Normal (nav items, list items)
-className = "gap-4"; // Spacious (cards, sections)
-```
-
-### Border Radius
-
-| Class          | Usage                         |
-| -------------- | ----------------------------- |
-| `rounded-md`   | Small elements (icon buttons) |
-| `rounded-lg`   | Navigation items, list items  |
-| `rounded-xl`   | Cards, inputs, buttons        |
-| `rounded-full` | Avatars, badges, pills        |
+Flex columns that need to scroll need `min-h-0 flex-1` on every level, or the
+child will grow past its parent instead of scrolling.
 
 ---
 
-## Components
+## Interaction utilities
 
-### Navigation Link
+`utilities.css` provides composite hover classes so components do not
+re-implement hover colours (and never with JS handlers):
 
-```tsx
-const navLinkClass = (isActive: boolean) =>
-	`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${
-		isActive ? "bg-white/10 text-white" : "text-gray-400 hover:text-white hover:bg-white/5"
-	}`;
-```
+| Class                 | Behaviour                                     |
+| --------------------- | --------------------------------------------- |
+| `hover-icon`          | Tertiary → primary text, hover fill           |
+| `hover-secondary`     | Secondary → primary text, hover fill          |
+| `hover-bg`            | Transparent → hover fill                      |
+| `hover-btn-primary`   | Filled primary button, incl. its hover colour |
+| `hover-btn-secondary` | Filled secondary button                       |
+| `hover-btn-danger`    | Filled destructive button                     |
+| `hover-btn-ghost`     | Transparent until hover                       |
+| `hover-danger`        | Muted → destructive (delete affordances)      |
+| `hover-opacity`       | Fade to 70 % (dismiss buttons)                |
+| `animate-slide-up`    | Bottom-sheet entry                            |
 
-### Icon Button
+A primary button is just `className="px-6 py-2.5 rounded-lg font-medium hover-btn-primary"` —
+the class already carries background _and_ foreground.
 
-```tsx
-<button className="p-1.5 rounded-md hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
-	<Icon size={18} />
-</button>
-```
-
-### Primary Button (CTA)
-
-```tsx
-<button className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-colors">
-	Label
-</button>
-```
-
-### Secondary Button
-
-```tsx
-<button className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-white">
-	Label
-</button>
-```
-
-### Text Input
-
-```tsx
-<input className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.07] transition-all" />
-```
-
-### Card
-
-```tsx
-<div className="p-4 bg-white/5 rounded-xl border border-white/5">{/* content */}</div>
-```
-
-### Badge/Pill
-
-```tsx
-<div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-500 text-sm">
-	<Icon size={14} />
-	<span>Label</span>
-</div>
-```
-
-### List Item (with hover reveal)
-
-```tsx
-<div className="group px-3 py-2.5 rounded-lg flex items-center justify-between hover:bg-white/5 transition-all">
-	<span>Content</span>
-	<button className="opacity-0 group-hover:opacity-100 transition-all">
-		<Icon size={16} />
-	</button>
-</div>
-```
-
-### User Avatar
-
-```tsx
-// With image
-<img className="w-8 h-8 rounded-full object-cover ring-2 ring-white/10" />
-
-// Fallback (initials)
-<div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center text-sm font-semibold text-white">
-  {initial}
-</div>
-```
-
-### Section Divider
-
-```tsx
-<div className="h-px bg-white/5 my-2" />
-```
-
-### Section Label
-
-```tsx
-<p className="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">Section Name</p>
-```
-
----
-
-## Animations & Transitions
-
-### Standard Transitions
-
-| Class                | Usage                        |
-| -------------------- | ---------------------------- |
-| `transition-colors`  | Color changes (hover states) |
-| `transition-all`     | Multiple properties changing |
-| `transition-opacity` | Fade in/out                  |
-
-### Durations
-
-| Class          | Usage                         |
-| -------------- | ----------------------------- |
-| `duration-200` | Quick interactions (hover)    |
-| `duration-300` | Standard animations (sidebar) |
-
-### Easing
-
-```tsx
-ease-in-out  // Default for most animations
-```
-
-### Sidebar Animation
-
-```tsx
-className={`transition-all duration-300 ease-in-out ${isExpanded ? 'w-60' : 'w-14'}`}
-```
-
-### Reveal on Hover
-
-```tsx
-// Parent
-className = "group";
-
-// Child to reveal
-className = "opacity-0 group-hover:opacity-100 transition-all";
-```
-
-### Progress Bar
-
-```tsx
-<div className="h-1 bg-white/5 rounded-full overflow-hidden">
-	<div
-		className="h-full bg-emerald-500 transition-all duration-300"
-		style={{ width: `${percent}%` }}
-	/>
-</div>
-```
+Transitions: `transition-colors` for colour changes, `transition-all` when
+several properties move, `duration-200`/`duration-300`. Reveal-on-hover uses
+`group` on the parent and `opacity-0 group-hover:opacity-100` on the child.
 
 ---
 
 ## Icons
 
-### Library
-
-We use **Lucide React** for all icons.
-
-```tsx
-import { Home, Settings, ChevronRight } from "lucide-react";
-```
-
-### Sizes
-
-| Size | Usage                                   |
-| ---- | --------------------------------------- |
-| `14` | Inline icons, chevrons in compact areas |
-| `16` | Small buttons, list item actions        |
-| `18` | Navigation items, standard buttons      |
-| `20` | Larger buttons, prominent actions       |
-| `24` | Feature icons, empty states             |
-| `48` | Hero illustrations, large empty states  |
-
-### Common Icons
-
-| Icon                              | Usage                     |
-| --------------------------------- | ------------------------- |
-| `Home`                            | Home/dashboard navigation |
-| `ChevronRight`, `ChevronDown`     | Expandable sections       |
-| `PanelLeftClose`, `PanelLeftOpen` | Sidebar toggle            |
-| `LogIn`, `LogOut`                 | Authentication            |
-| `UserPlus`                        | Sign up                   |
-| `Circle`, `CheckCircle2`          | Task states               |
-| `Trash2`                          | Delete action             |
-| `Plus`                            | Add/create action         |
-| `Zap`                             | Features, highlights      |
-| `Shield`                          | Security features         |
-
-### Icon Button Pattern
-
-Always use `shrink-0` to prevent icons from shrinking in flex containers:
-
-```tsx
-<Icon size={18} className="shrink-0" />
-```
+[Lucide React](https://lucide.dev). Sizes: `12`–`14` inline/badges, `16` list
+actions, `18` standard buttons and nav, `20` prominent actions, `24`–`48`
+empty states and hero illustrations. Always `shrink-0` inside a flex row.
+Icons inherit `currentColor`, so colour them with a text utility
+(`text-muted-foreground`), never a `color` style.
 
 ---
 
-## Patterns
+## Shared components
 
-### Collapsed/Expanded State
+Prefer these over rebuilding the pattern (all from `@/global/components`):
 
-Components should adapt to collapsed states gracefully:
-
-```tsx
-// Show/hide text based on state
-{isExpanded && <span className="text-sm truncate">Label</span>}
-
-// Add tooltips when collapsed
-title={isExpanded ? undefined : 'Label'}
-
-// Center content when collapsed
-className={isExpanded ? '' : 'justify-center'}
-```
-
-### Hydration Safety
-
-For components using browser APIs or auth state, wait for client hydration:
-
-```tsx
-const [isMounted, setIsMounted] = useState(false);
-
-useEffect(() => {
-	setIsMounted(true);
-}, []);
-
-if (!isMounted) {
-	return <LoadingSkeleton />;
-}
-```
-
-### LocalStorage Persistence
-
-For UI state that should persist (like sidebar expanded state):
-
-```tsx
-useEffect(() => {
-	const saved = localStorage.getItem("key");
-	if (saved !== null) {
-		setState(saved === "true");
-	}
-}, []);
-
-const toggle = () => {
-	const newState = !state;
-	setState(newState);
-	localStorage.setItem("key", String(newState));
-};
-```
-
-### Empty States
-
-```tsx
-<div className="text-center py-12">
-	<Icon size={48} className="mx-auto text-gray-600 mb-4" />
-	<p className="text-gray-500">Empty state message</p>
-</div>
-```
-
-### Loading States
-
-```tsx
-// Skeleton placeholder
-<div className="w-8 h-8 rounded-full bg-gray-600 animate-pulse" />
-
-// For content areas
-<div className="space-y-2">
-  <div className="h-4 bg-white/5 rounded animate-pulse" />
-  <div className="h-4 bg-white/5 rounded animate-pulse w-3/4" />
-</div>
-```
+| Component                              | For                                                       |
+| -------------------------------------- | --------------------------------------------------------- |
+| `AdminPageLayout`                      | Admin page shell: sticky breadcrumb/actions/toolbar row   |
+| `DashboardShell`                       | loading → error → content triad with localized error copy |
+| `EmptyState`                           | Empty and "nothing matched" states                        |
+| `ErrorBoundary`                        | Render-error boundary                                     |
+| `RouteErrorComponent`                  | Router error boundary (wired as `defaultErrorComponent`)  |
+| `InlineError`                          | Inline, dismissible error notice                          |
+| `Modal` / `Dialog`                     | Overlays                                                  |
+| `AdminTable`, `Pagination`, `SortIcon` | Data tables                                               |
+| `StatusBadge`, `StatusFilterChips`     | Status pills and filter rows                              |
+| `SearchInput`                          | Debounced search field                                    |
+| `Skeleton`                             | Loading placeholders                                      |
+| `VirtualGrid`                          | Long card grids (virtualized)                             |
+| `Avatar`                               | User avatars, with initials fallback                      |
 
 ---
 
 ## Accessibility
 
-### Focus States
-
-Inputs should have visible focus states:
-
-```tsx
-focus:outline-none focus:border-amber-500/50
-```
-
-### ARIA Labels
-
-Always add aria-labels for icon-only buttons:
-
-```tsx
-<button aria-label="Delete task">
-	<Trash2 size={16} />
-</button>
-```
-
-### Keyboard Navigation
-
-Interactive elements should be focusable and have hover states that also apply to focus:
-
-```tsx
-className = "hover:bg-white/5 focus:bg-white/5";
-```
-
-### Screen Reader Text
-
-For actions that rely on visual context, ensure screen readers get full context:
-
-```tsx
-<button
-  aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
->
-```
+- Icon-only buttons need `aria-label`; label them with a translated string,
+  not English prose.
+- Focus must be visible: `focus:outline-none focus:ring-2 focus:ring-offset-2`
+  (or `focus-visible:` variants), never `outline-none` alone.
+- Toggle buttons need `aria-pressed`; the current nav item needs
+  `aria-current="page"`.
+- Filter groups are a `<fieldset>` with an `sr-only` `<legend>`.
+- Purely decorative SVG gets `aria-hidden="true"`.
+- Every user-facing string goes through i18next (`t(SomeKeys.X)`) — the app is
+  bilingual. Never hard-code English in a component.
 
 ---
 
-## Quick Reference
+## Checklist for a new component
 
-### Creating a New Component Checklist
-
-- [ ] Use `#0f0f0f` or `#191919` for backgrounds
-- [ ] Use `white/5` for hover states, `white/10` for active
-- [ ] Use `text-gray-400` for default, `text-white` for active/hover
-- [ ] Use `amber-500/600` for primary accents
-- [ ] Add `transition-colors` or `transition-all` for interactions
-- [ ] Use `rounded-lg` for containers, `rounded-xl` for cards
-- [ ] Use Lucide icons at size 18 for standard buttons
-- [ ] Hide secondary actions with `opacity-0 group-hover:opacity-100`
-- [ ] Add proper aria-labels for icon buttons
-- [ ] Handle hydration with `isMounted` state if using browser APIs
-
-### Color at a Glance
-
-```bash
-Backgrounds:    #0f0f0f (page) → #191919 (sidebar) → white/5 (cards)
-Text:           white → gray-300 → gray-400 → gray-500
-Accent:         amber-500/600 (primary), emerald-500 (success), red-400 (danger)
-Borders:        white/5 (subtle) → white/10 (visible)
-```
+- [ ] Colour comes from token utilities only — no hex, no `rgba()`, no
+      `gray-*`/`amber-*`.
+- [ ] Verified in **both** light and dark mode.
+- [ ] Hover/active states use a `hover-*` utility rather than bespoke classes.
+- [ ] Radius and spacing match the scales above.
+- [ ] Lucide icons at a standard size, with `shrink-0`.
+- [ ] All copy routed through i18next keys.
+- [ ] `aria-label` on icon-only buttons; visible focus ring.
+- [ ] No new nested scroll container; long lists virtualized.
+- [ ] Placed in the right layer (`global/` if shared, `features/<name>/` if
+      not) — the ESLint `boundaries` plugin enforces this.

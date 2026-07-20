@@ -16,7 +16,8 @@ import {
 	type ColumnDef,
 	type SortingState,
 } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	getReservationStatusConfig,
@@ -29,6 +30,9 @@ import { formatTimeOnly } from "../utils";
 export type ReservationTableRow = Doc<"reservations"> & {
 	readonly restaurantName?: string;
 };
+
+/** px — one line of text plus `py-3`; real heights are measured after mount. */
+const ESTIMATED_ROW_HEIGHT = 49;
 
 const STATUS_SORT_INDEX = Object.fromEntries(
 	RESERVATION_STATUS_CONFIG.map((s, i) => [s.value, i])
@@ -256,8 +260,28 @@ export function ReservationsTable({
 
 	const filteredCount = table.getFilteredRowModel().rows.length;
 
+	// Virtualized rows. The scroll container is bounded (`min-h-0 flex-1`)
+	// rather than growing with its content, which is also what makes the
+	// existing `sticky top-0` header actually stick.
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const { rows } = table.getRowModel();
+	const rowVirtualizer = useVirtualizer({
+		count: rows.length,
+		getScrollElement: () => scrollContainerRef.current,
+		estimateSize: () => ESTIMATED_ROW_HEIGHT,
+		overscan: 8,
+	});
+	const virtualRows = rowVirtualizer.getVirtualItems();
+	// Spacer rows stand in for the rows that are not mounted, so the scrollbar
+	// and the row offsets stay honest inside a real <table>.
+	const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+	const paddingBottom =
+		virtualRows.length > 0
+			? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+			: 0;
+
 	return (
-		<div className="flex flex-col gap-4">
+		<div className="flex min-h-0 flex-1 flex-col gap-4">
 			<div className="flex flex-wrap gap-4 items-center">
 				<SearchInput
 					placeholder={t(ReservationsKeys.TABLE_SEARCH_PLACEHOLDER)}
@@ -269,7 +293,10 @@ export function ReservationsTable({
 				</div>
 			</div>
 
-			<div className="overflow-auto rounded-lg bg-muted border border-border">
+			<div
+				ref={scrollContainerRef}
+				className="min-h-0 flex-1 overflow-auto rounded-lg bg-muted border border-border"
+			>
 				<table className="w-full border-collapse min-w-[56rem]">
 					<thead>
 						{table.getHeaderGroups().map((headerGroup) => (
@@ -277,7 +304,7 @@ export function ReservationsTable({
 								{headerGroup.headers.map((header) => (
 									<th
 										key={header.id}
-										className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border"
+										className="px-4 py-3 text-left text-sm font-medium sticky top-0 z-10 bg-muted text-muted-foreground border-b border-border"
 									>
 										{header.isPlaceholder
 											? null
@@ -288,19 +315,34 @@ export function ReservationsTable({
 						))}
 					</thead>
 					<tbody>
-						{table.getRowModel().rows.map((row) => (
-							<tr
-								key={row.id}
-								className="border-b border-border transition-colors cursor-pointer hover:bg-background/50"
-								onClick={() => onOpen(row.original._id)}
-							>
-								{row.getVisibleCells().map((cell) => (
-									<td key={cell.id} className="px-4 py-3 align-middle">
-										{flexRender(cell.column.columnDef.cell, cell.getContext())}
-									</td>
-								))}
+						{paddingTop > 0 && (
+							<tr aria-hidden="true">
+								<td style={{ height: paddingTop }} colSpan={columns.length} />
 							</tr>
-						))}
+						)}
+						{virtualRows.map((virtualRow) => {
+							const row = rows[virtualRow.index];
+							return (
+								<tr
+									key={row.id}
+									data-index={virtualRow.index}
+									ref={rowVirtualizer.measureElement}
+									className="border-b border-border transition-colors cursor-pointer hover:bg-background/50"
+									onClick={() => onOpen(row.original._id)}
+								>
+									{row.getVisibleCells().map((cell) => (
+										<td key={cell.id} className="px-4 py-3 align-middle">
+											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+										</td>
+									))}
+								</tr>
+							);
+						})}
+						{paddingBottom > 0 && (
+							<tr aria-hidden="true">
+								<td style={{ height: paddingBottom }} colSpan={columns.length} />
+							</tr>
+						)}
 					</tbody>
 				</table>
 			</div>

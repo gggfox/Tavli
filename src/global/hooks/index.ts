@@ -13,3 +13,4 @@ export * from "./useLongPress";
 export * from "./useFuzzyMatch";
 export * from "./useMediaQuery";
 export * from "./useOptimisticUserSetting";
+export * from "./useScrollParent";

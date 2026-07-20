@@ -28,7 +28,7 @@ import {
 } from "@/features/users/components/UserSettingsService";
 import { i18n } from "@/global";
 import type { Language } from "@/global/i18n";
-import { Languages } from "@/global/i18n";
+import { Languages, normalizeLanguage, writeLanguageCookie } from "@/global/i18n";
 import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -175,11 +175,8 @@ export function useUserSettings(): UseUserSettingsReturn {
 
 	// Extract language with default
 	// Use i18n's current language as fallback to ensure UI reflects actual language
-	// Normalize i18n language to supported codes (e.g., "en-US" -> "en", "es-ES" -> "es")
-	const getNormalizedLanguage = useCallback((lang: string): Language => {
-		return lang.startsWith("es") ? Languages.ES : Languages.EN;
-	}, []);
-
+	// Normalization ("en-US" -> "en", "es-ES" -> "es") is shared with the SSR
+	// language resolver — see `src/global/i18n/language.ts`.
 	const languageFromSettings = useMemo<Language | null>(
 		() => settings?.language ?? null,
 		[settings]
@@ -187,17 +184,17 @@ export function useUserSettings(): UseUserSettingsReturn {
 
 	// Track current i18n language to keep UI in sync
 	const [currentI18nLanguage, setCurrentI18nLanguage] = useState<Language>(() =>
-		getNormalizedLanguage(i18n.language || "en")
+		normalizeLanguage(i18n.language)
 	);
 
 	// Update current language when i18n changes
 	useEffect(() => {
 		const handleLanguageChange = (lng: string) => {
-			setCurrentI18nLanguage(getNormalizedLanguage(lng));
+			setCurrentI18nLanguage(normalizeLanguage(lng));
 		};
 
 		// Set initial value
-		setCurrentI18nLanguage(getNormalizedLanguage(i18n.language || "en"));
+		setCurrentI18nLanguage(normalizeLanguage(i18n.language));
 
 		// Listen for i18n language changes
 		i18n.on("languageChanged", handleLanguageChange);
@@ -205,7 +202,7 @@ export function useUserSettings(): UseUserSettingsReturn {
 		return () => {
 			i18n.off("languageChanged", handleLanguageChange);
 		};
-	}, [getNormalizedLanguage]);
+	}, []);
 
 	// Use settings language if available, otherwise use current i18n language
 	const language = useMemo<Language>(
@@ -227,6 +224,7 @@ export function useUserSettings(): UseUserSettingsReturn {
 		async (newLanguage: Language) => {
 			const result = await updateLanguageService(client, newLanguage);
 			i18n.changeLanguage(newLanguage);
+			writeLanguageCookie(newLanguage);
 			return result;
 		},
 		[client]
@@ -249,10 +247,13 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
-	// Sync i18n language when settings change (for initial load and real-time updates)
+	// Sync i18n language when settings change (for initial load and real-time
+	// updates). Mirror it into the cookie so the next SSR pass starts from the
+	// account's language instead of the pre-login one.
 	useEffect(() => {
 		if (settings?.language && i18n.language !== settings.language) {
 			i18n.changeLanguage(settings.language);
+			writeLanguageCookie(settings.language);
 		}
 	}, [settings?.language]);
 
@@ -266,11 +267,9 @@ export function useUserSettings(): UseUserSettingsReturn {
 		// 3. We haven't already attempted initialization
 		// 4. i18n has detected a language
 		if (isAuthenticated && settings === null && !hasInitializedLanguage.current && i18n.language) {
-			// Get the detected language from i18n (already detected from browser)
-			const detectedLanguage = i18n.language;
-
-			// Normalize to supported language codes (handle cases like "en-US" -> "en", "es-ES" -> "es")
-			const normalizedLanguage = detectedLanguage.startsWith("es") ? Languages.ES : Languages.EN;
+			// Normalize the language i18n detected from the browser/cookie to a
+			// supported code ("en-US" -> "en", "es-ES" -> "es").
+			const normalizedLanguage = normalizeLanguage(i18n.language);
 
 			// Only save if it's Spanish (different from the default "en")
 			// This avoids unnecessary writes when browser language is already "en"

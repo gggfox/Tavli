@@ -46,7 +46,7 @@ export const STATION_CONFIG: Record<DashboardPrepStation, StationConfig> = {
 		icon: ChefHat,
 		visual: {
 			solidBg: "var(--station-kitchen)",
-			solidFg: "#ffffff",
+			solidFg: "var(--text-on-accent)",
 			tintedBg: "var(--station-kitchen-light)",
 			fg: "var(--station-kitchen)",
 			accentBorder: "var(--station-kitchen)",
@@ -58,7 +58,7 @@ export const STATION_CONFIG: Record<DashboardPrepStation, StationConfig> = {
 		icon: Wine,
 		visual: {
 			solidBg: "var(--station-bar)",
-			solidFg: "#ffffff",
+			solidFg: "var(--text-on-accent)",
 			tintedBg: "var(--station-bar-light)",
 			fg: "var(--station-bar)",
 			accentBorder: "var(--station-bar)",

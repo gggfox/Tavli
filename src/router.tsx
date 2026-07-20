@@ -1,3 +1,4 @@
+import { RouteErrorComponent } from "@/global/components";
 import { ConvexQueryClient } from "@convex-dev/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
@@ -25,6 +26,11 @@ export function getRouter() {
 			context: { queryClient },
 			scrollRestoration: true,
 			defaultPreloadStaleTime: 0,
+			// Every route gets a boundary for free. Routes only declare their
+			// own `errorComponent` where recovery genuinely differs (see
+			// `routes/admin.tsx` and `routes/r/$slug.tsx`); without this the
+			// default was TanStack's bare stack-trace panel.
+			defaultErrorComponent: RouteErrorComponent,
 		}),
 		queryClient
 	);
