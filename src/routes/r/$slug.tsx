@@ -1,4 +1,5 @@
 import { useCustomerSession } from "@/features/ordering";
+import { ErrorFallback, RouteErrorComponent } from "@/global/components";
 import { CustomerKeys, OrderingKeys } from "@/global/i18n";
 import { SignInButton, SignUpButton, useAuth } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
@@ -10,6 +11,7 @@ import {
 	useNavigate,
 	useParams,
 	useRouterState,
+	type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -18,12 +20,37 @@ import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/r/$slug")({
 	component: CustomerLayout,
+	errorComponent: CustomerErrorComponent,
 });
+
+/**
+ * Customer-facing recovery differs from the staff default: a diner who hits
+ * an error mid-order should be able to get back to the menu of the
+ * restaurant they are sitting in, not just reload.
+ */
+function CustomerErrorComponent(props: Readonly<ErrorComponentProps>) {
+	const { t } = useTranslation();
+	const { slug } = Route.useParams();
+	return (
+		<RouteErrorComponent
+			{...props}
+			actions={
+				<Link
+					to="/r/$slug/menu"
+					params={{ slug }}
+					className="px-6 py-2.5 font-medium rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-offset-2 hover-btn-secondary"
+				>
+					{t(CustomerKeys.MENU)}
+				</Link>
+			}
+		/>
+	);
+}
 
 function CustomerLayout() {
 	const { t } = useTranslation();
 	const { slug } = Route.useParams();
-	const { isLoaded, isSignedIn, sessionId, errorKey } = useCustomerSession(slug);
+	const { isLoaded, isSignedIn, sessionId, errorKey, retry } = useCustomerSession(slug);
 
 	if (!isLoaded) {
 		return (
@@ -74,16 +101,19 @@ function CustomerLayout() {
 		);
 	}
 
+	// A failed session handshake is caught, not thrown, so it never reaches
+	// the route's `errorComponent`. Render it through the same panel anyway so
+	// the diner gets a consistent surface — and, unlike the old dead-end
+	// message, a way out. `retry` re-runs the bootstrap exactly once; the hook
+	// still refuses to retry on its own (see #69).
 	if (errorKey) {
 		return (
-			<div className="flex-1 flex items-center justify-center p-6">
-				<div className="text-center max-w-sm">
-					<h1 className="text-xl font-semibold mb-2 text-foreground">
-						{t(OrderingKeys.SESSION_OOPS)}
-					</h1>
-					<p className="text-sm text-muted-foreground">{t(errorKey)}</p>
-				</div>
-			</div>
+			<ErrorFallback
+				error={undefined}
+				title={t(OrderingKeys.SESSION_OOPS)}
+				description={t(errorKey)}
+				onRetry={retry}
+			/>
 		);
 	}
 
@@ -288,10 +318,7 @@ function MyOrdersLink({ sessionId, slug }: Readonly<{ sessionId: Id<"sessions">;
 			<Receipt size={14} className="text-muted-foreground" />
 			<span>{t(OrderingKeys.SESSION_MY_ORDERS)}</span>
 			{activeCount > 0 && (
-				<span
-					className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary"
-					style={{ color: "white" }}
-				>
+				<span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center bg-primary text-primary-foreground">
 					{activeCount}
 				</span>
 			)}

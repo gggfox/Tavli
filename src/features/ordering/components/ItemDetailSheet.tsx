@@ -17,7 +17,7 @@ export type MenuItemWithImage = Doc<"menuItems"> & { imageUrl: string | null };
 
 function optionBorderColor(isSelected: boolean, hasError: boolean): string {
 	if (isSelected) return "var(--btn-primary-bg)";
-	if (hasError) return "#fca5a5";
+	if (hasError) return "var(--accent-danger)";
 	return "var(--border-default)";
 }
 
@@ -127,6 +127,7 @@ export function ItemDetailSheet({
 						<img
 							src={item.imageUrl}
 							alt={getTranslatedField(item, lang)}
+							decoding="async"
 							className="w-full h-48 sm:h-56 object-cover"
 						/>
 					) : (
@@ -137,9 +138,9 @@ export function ItemDetailSheet({
 					<button
 						onClick={onClose}
 						className="absolute top-3 right-3 p-1.5 rounded-full backdrop-blur-sm"
-						style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+						style={{ backgroundColor: "var(--overlay-scrim)" }}
 					>
-						<X size={20} className="text-white" />
+						<X size={20} className="text-on-accent" />
 					</button>
 				</div>
 
@@ -167,8 +168,10 @@ export function ItemDetailSheet({
 									</span>
 									{group.isRequired && (
 										<StatusBadge
-											bgColor={hasError ? "#fef2f2" : "var(--accent-warning-light)"}
-											textColor={hasError ? "#dc2626" : "var(--accent-warning)"}
+											bgColor={
+												hasError ? "var(--accent-danger-light)" : "var(--accent-warning-light)"
+											}
+											textColor={hasError ? "var(--accent-danger)" : "var(--accent-warning)"}
 											label={t(OrderingKeys.ITEM_REQUIRED)}
 											className="text-[10px]"
 										/>
@@ -180,7 +183,7 @@ export function ItemDetailSheet({
 									)}
 								</div>
 								{hasError && (
-									<p className="text-xs mb-2" style={{ color: "#dc2626" }}>
+									<p className="text-xs mb-2 text-destructive">
 										{t(OrderingKeys.ITEM_PLEASE_SELECT)}
 									</p>
 								)}
@@ -213,7 +216,9 @@ export function ItemDetailSheet({
 																: "transparent",
 														}}
 													>
-														{isOptSelected && <Check size={12} className="text-white" />}
+														{isOptSelected && (
+															<Check size={12} className="text-primary-foreground" />
+														)}
 													</span>
 													<span className="flex-1 text-left">{getTranslatedField(opt, lang)}</span>
 													{opt.priceModifier > 0 && (
@@ -262,8 +267,7 @@ export function ItemDetailSheet({
 					{isEditing && onRemove && (
 						<button
 							onClick={onRemove}
-							className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-colors"
-							style={{ color: "#dc2626" }}
+							className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-colors text-destructive"
 						>
 							<Trash2 size={14} />
 							{t(OrderingKeys.ITEM_REMOVE_FROM_ORDER)}
