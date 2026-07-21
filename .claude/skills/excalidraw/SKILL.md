@@ -71,6 +71,7 @@ The key insight: the agent can **see its own canvas** via screenshots. This crea
 ### Variation Strategies
 
 When creating 3 options, vary these dimensions:
+
 1. **Layout direction** -- vertical stack vs horizontal flow vs grid
 2. **Shape variety** -- all rectangles vs mixed (circles, diamonds, rectangles)
 3. **Information density** -- minimal (just labels) vs detailed (labels + descriptions + examples)
@@ -85,6 +86,7 @@ When creating 3 options, vary these dimensions:
 **Always use `"backgroundColor": "transparent"` on shapes.** This is the single biggest design improvement. Filled rectangles look flat and amateurish. Transparent boxes with colored strokes look professional, especially on dark canvases where the background shows through.
 
 The only exceptions:
+
 - **Badge circles** (numbered steps) -- these get solid fills so the number is readable
 - **Glow effect layers** -- these use low-opacity fills behind the main shape
 - **Scatter plot dots** -- small data points that need to be visible
@@ -92,9 +94,17 @@ The only exceptions:
 Everything else: transparent background, colored stroke only.
 
 ```json
-{"type": "rectangle", "x": 100, "y": 100, "width": 200, "height": 60,
- "backgroundColor": "transparent", "strokeColor": "#3b82f6", "roughness": 0,
- "text": "My Service"}
+{
+	"type": "rectangle",
+	"x": 100,
+	"y": 100,
+	"width": 200,
+	"height": 60,
+	"backgroundColor": "transparent",
+	"strokeColor": "#3b82f6",
+	"roughness": 0,
+	"text": "My Service"
+}
 ```
 
 ### Dark Canvas First
@@ -102,6 +112,7 @@ Everything else: transparent background, colored stroke only.
 Design for dark mode. Use bright stroke colors (`#3b82f6`, `#22c55e`, `#a78bfa`) against the dark canvas. Light gray text (`#cbd5e1`, `#e2e8f0`) for body copy. Muted gray (`#64748b`, `#94a3b8`) for secondary text and subtitles. Gold (`#fbbf24`) for footer taglines.
 
 ### Language
+
 - **Always use plain language** -- no technical jargon unless explicitly asked
 - Write labels as if explaining to someone who's never coded
 - Descriptions should be conversational, not clinical
@@ -110,18 +121,18 @@ Design for dark mode. Use bright stroke colors (`#3b82f6`, `#22c55e`, `#a78bfa`)
 
 Each color has a stroke (for borders/outlines) and a fill (only for badges/dots). Use stroke colors on shapes with transparent backgrounds.
 
-| Color | Stroke | Fill (badges only) |
-|-------|--------|-------------------|
-| **Blue** | `#3b82f6` | `#3b82f6` |
-| **Purple** | `#8b5cf6` | `#8b5cf6` |
-| **Green** | `#22c55e` | `#22c55e` |
-| **Orange/Amber** | `#f59e0b` | `#f59e0b` |
-| **Red** | `#ef4444` | `#ef4444` |
-| **Cyan** | `#06b6d4` | `#06b6d4` |
-| **Pink** | `#ec4899` | `#ec4899` |
-| **Lime** | `#a3e635` | `#a3e635` |
-| **Gray (structure)** | `#475569` | -- |
-| **Gray (subtle)** | `#334155` | -- |
+| Color                | Stroke    | Fill (badges only) |
+| -------------------- | --------- | ------------------ |
+| **Blue**             | `#3b82f6` | `#3b82f6`          |
+| **Purple**           | `#8b5cf6` | `#8b5cf6`          |
+| **Green**            | `#22c55e` | `#22c55e`          |
+| **Orange/Amber**     | `#f59e0b` | `#f59e0b`          |
+| **Red**              | `#ef4444` | `#ef4444`          |
+| **Cyan**             | `#06b6d4` | `#06b6d4`          |
+| **Pink**             | `#ec4899` | `#ec4899`          |
+| **Lime**             | `#a3e635` | `#a3e635`          |
+| **Gray (structure)** | `#475569` | --                 |
+| **Gray (subtle)**    | `#334155` | --                 |
 
 **Text colors:**
 | Role | Hex |
@@ -146,6 +157,7 @@ Instead of text bullet characters (`•`), use small filled ellipses next to fre
 Use a different color for each bullet to add visual variety. Keep dots at 10-12px diameter.
 
 ### Visual Elements
+
 - **Emojis as icons** -- use relevant emojis in labels (e.g., "🧠 Think", "⚡ Act")
 - **Numbered badge circles** -- solid-filled circles with numbers for step sequences
   - Use `roughness: 0` for clean badge circles
@@ -155,22 +167,24 @@ Use a different color for each bullet to add visual variety. Keep dots at 10-12p
 - **Separator lines inside cards** -- thin solid lines below the title area to separate header from content
 
 ### Font Rules
+
 - **Helvetica** (`"helvetica"`) -- titles, headings, and labels (clean and professional)
 - **Excalifont** (`"excalifont"`) -- descriptions, bullets, secondary text (friendly hand-drawn feel)
 - **Monospace** (`3`) -- code snippets, terminal prompts, file names
 - Do NOT use Lilita One (too cartoony) or Comic Shanns
 
-| Element | Font | Size |
-|---------|------|------|
-| Diagram title | Helvetica | 24-44px |
-| Section heading | Helvetica | 20-28px |
-| Element label | Helvetica | 14-16px |
+| Element               | Font       | Size    |
+| --------------------- | ---------- | ------- |
+| Diagram title         | Helvetica  | 24-44px |
+| Section heading       | Helvetica  | 20-28px |
+| Element label         | Helvetica  | 14-16px |
 | Description / bullets | Excalifont | 13-16px |
-| Subtitle | Excalifont | 13-15px |
-| Footer tagline | Excalifont | 12-13px |
-| Code text | Monospace | 11-14px |
+| Subtitle              | Excalifont | 13-15px |
+| Footer tagline        | Excalifont | 12-13px |
+| Code text             | Monospace  | 11-14px |
 
 ### Text Handling (CRITICAL -- prevent overflow)
+
 - **Always pre-wrap text** with manual `\n` line breaks -- never rely on auto-wrap
 - **Max ~40 characters per line** for description text at 14px font
 - **Max ~35 characters per line** for heading text at 22px font
@@ -184,6 +198,7 @@ For complex diagrams, build one section at a time using `batch_create_elements`.
 ### Multi-Diagram Layouts
 
 When placing multiple diagrams on one canvas, use a grid layout:
+
 - **2 diagrams:** side by side, ~530px apart
 - **3 diagrams:** row of 3, ~530px column spacing
 - **6 diagrams (3x2):** columns at x=50, x=560, x=1080. Rows at y=20, y=460. Each cell ~480px wide, ~420px tall.
@@ -258,6 +273,7 @@ Classic flowchart branching with Yes/No paths.
 ### 6. Mixed Shape Types
 
 Use shape type to encode meaning:
+
 - **Ellipse** = actors, users, external systems
 - **Rectangle** = services, processes, components
 - **Diamond** = decisions, conditions
@@ -267,9 +283,20 @@ Use shape type to encode meaning:
 Solid-filled circles with white numbers for step sequences:
 
 ```json
-{"id": "badge-1", "type": "ellipse", "x": 100, "y": 100, "width": 50, "height": 50,
- "backgroundColor": "#1971c2", "strokeColor": "#1971c2", "roughness": 0,
- "text": "1", "fontSize": 24, "textAlign": "center"}
+{
+	"id": "badge-1",
+	"type": "ellipse",
+	"x": 100,
+	"y": 100,
+	"width": 50,
+	"height": 50,
+	"backgroundColor": "#1971c2",
+	"strokeColor": "#1971c2",
+	"roughness": 0,
+	"text": "1",
+	"fontSize": 24,
+	"textAlign": "center"
+}
 ```
 
 ### 8. Emoji Icons in Labels
@@ -277,9 +304,17 @@ Solid-filled circles with white numbers for step sequences:
 Emojis render beautifully at any size. Use them to make labels scannable:
 
 ```json
-{"type": "rectangle", "x": 100, "y": 100, "width": 200, "height": 60,
- "backgroundColor": "transparent", "strokeColor": "#3b82f6", "roughness": 0,
- "text": "🧠 Claude thinks"}
+{
+	"type": "rectangle",
+	"x": 100,
+	"y": 100,
+	"width": 200,
+	"height": 60,
+	"backgroundColor": "transparent",
+	"strokeColor": "#3b82f6",
+	"roughness": 0,
+	"text": "🧠 Claude thinks"
+}
 ```
 
 ### 9. Mermaid Conversion
@@ -309,6 +344,7 @@ Never skip the screenshot step. Always verify before moving on.
 These prevent the most common diagram problems.
 
 ### Spacing
+
 - **Between shapes:** 30-40px gap between connected cards/zones
 - **Vertical tiers:** 80-120px between rows (enough room for arrow labels)
 - **Shape width:** `max(600, labelCharCount * 9)` for boxes with heading + description; `max(160, labelCharCount * 9)` for simple label boxes
@@ -316,23 +352,48 @@ These prevent the most common diagram problems.
 - **Zone padding:** 50px on all sides around contained elements
 
 ### Alignment
+
 - All same-role elements should share the same x or y coordinate
 - Center titles and footers relative to the card stack width
 - Badges aligned at the same x offset within their cards
 
 ### Arrows
+
 - Always use `startElementId` / `endElementId` to bind arrows to shapes (auto-routes to edges)
 - Keep arrow labels under 12 characters
 - If an arrow crosses through an unrelated shape, add a waypoint to route around it
 
 **Curved arrows** (smooth arc over obstacles):
+
 ```json
-{"type": "arrow", "x": 100, "y": 100, "points": [[0, 0], [50, -40], [200, 0]], "roundness": {"type": 2}}
+{
+	"type": "arrow",
+	"x": 100,
+	"y": 100,
+	"points": [
+		[0, 0],
+		[50, -40],
+		[200, 0]
+	],
+	"roundness": { "type": 2 }
+}
 ```
 
 **Elbowed arrows** (right-angle routing):
+
 ```json
-{"type": "arrow", "x": 100, "y": 100, "points": [[0, 0], [0, -50], [200, -50], [200, 0]], "elbowed": true}
+{
+	"type": "arrow",
+	"x": 100,
+	"y": 100,
+	"points": [
+		[0, 0],
+		[0, -50],
+		[200, -50],
+		[200, 0]
+	],
+	"elbowed": true
+}
 ```
 
 ### Zone Labels (Critical)
@@ -349,17 +410,17 @@ Always assign custom `id` values (e.g., `"id": "auth-svc"`) so arrows can refere
 
 ## Sizing Defaults
 
-| Element | Width | Height |
-|---------|-------|--------|
-| Step card (vertical) | 340-460px | 40-55px |
+| Element                | Width     | Height  |
+| ---------------------- | --------- | ------- |
+| Step card (vertical)   | 340-460px | 40-55px |
 | Step card (horizontal) | 110-220px | 38-55px |
-| Badge circle | 40px | 40px |
-| Bullet dot | 10-12px | 10-12px |
-| Hub node (ellipse) | 140px | 65px |
-| Satellite node | 100-130px | 38-45px |
-| Code block | 240-700px | 50px |
-| Layer row | 460-600px | 45px |
-| Inner service box | 90-100px | 28-32px |
+| Badge circle           | 40px      | 40px    |
+| Bullet dot             | 10-12px   | 10-12px |
+| Hub node (ellipse)     | 140px     | 65px    |
+| Satellite node         | 100-130px | 38-45px |
+| Code block             | 240-700px | 50px    |
+| Layer row              | 460-600px | 45px    |
+| Inner service box      | 90-100px  | 28-32px |
 
 ---
 
@@ -490,8 +551,9 @@ on the text, or the text listed in the shape's `boundElements`) — bound
 container text is vertically CENTERED over the shape, overlapping the other
 content. Restore does not create such bindings spatially, but any you author
 survive. Render a card as ONE top-anchored multi-line text block (title line
-+ blank line + body lines) with `containerId: null`. Set text `height` to
-`fontSize * lineHeight * lineCount` exactly so no renderer re-anchors it.
+
+- blank line + body lines) with `containerId: null`. Set text `height` to
+  `fontSize * lineHeight * lineCount` exactly so no renderer re-anchors it.
 
 ### 2. Orthogonal routing — no diagonals across content
 
