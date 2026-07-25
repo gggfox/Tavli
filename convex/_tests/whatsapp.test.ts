@@ -4,6 +4,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import { toWhatsappText } from "../whatsapp/format";
 import { matchDishByName, type BotMenuItem } from "../whatsapp/menu";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -134,6 +135,82 @@ describe("whatsapp matchDishByName", () => {
 		expect(matchDishByName(items, "jamaica")?.name).toBe("Agua de Jamaica");
 		expect(matchDishByName(items, "sushi")).toBeUndefined();
 		expect(matchDishByName(items, "")).toBeUndefined();
+	});
+});
+
+describe("whatsapp toWhatsappText", () => {
+	it("converts Markdown emphasis to WhatsApp syntax", () => {
+		expect(toWhatsappText("**1000.00 MXN**")).toBe("*1000.00 MXN*");
+		expect(toWhatsappText("__bold__")).toBe("*bold*");
+		expect(toWhatsappText("***both***")).toBe("*_both_*");
+		expect(toWhatsappText("~~sold out~~")).toBe("~sold out~");
+	});
+
+	it("leaves a lone `*text*` alone — already valid WhatsApp bold", () => {
+		// Rewriting this to `_text_` would demote the bold the prompt asked for.
+		expect(toWhatsappText("*Arrachera*")).toBe("*Arrachera*");
+		expect(toWhatsappText("_Arrachera_")).toBe("_Arrachera_");
+	});
+
+	it("does not degrade bold to italic when collapsing `**` to `*`", () => {
+		// The ordering trap: `**x**` → `*x*` must not then match the italic rule.
+		expect(toWhatsappText("**Rib eye** y **Picaña**")).toBe("*Rib eye* y *Picaña*");
+	});
+
+	it("turns headings into bold lines and drops horizontal rules", () => {
+		expect(toWhatsappText("### Carnes")).toBe("*Carnes*");
+		expect(toWhatsappText("# **Entradas**")).toBe("*Entradas*");
+		expect(toWhatsappText("Carnes\n\n---\n\nTacos")).toBe("Carnes\n\nTacos");
+	});
+
+	it("normalizes both list markers to a literal bullet, keeping indentation", () => {
+		expect(toWhatsappText("- Birria\n* Chorizo\n+ Pastor")).toBe("• Birria\n• Chorizo\n• Pastor");
+		expect(toWhatsappText("- Birria\n  - Con queso")).toBe("• Birria\n  • Con queso");
+		expect(toWhatsappText("1. Birria")).toBe("1. Birria");
+	});
+
+	it("flattens links and inline code that WhatsApp cannot render", () => {
+		expect(toWhatsappText("[Our menu](https://tavli.test/m)")).toBe(
+			"Our menu: https://tavli.test/m"
+		);
+		expect(toWhatsappText("[https://tavli.test](https://tavli.test)")).toBe("https://tavli.test");
+		expect(toWhatsappText("![Tacos](https://cdn.test/t.jpg)")).toBe("Tacos");
+		expect(toWhatsappText("Ask for `pastor`")).toBe("Ask for pastor");
+	});
+
+	it("preserves ``` blocks and collapses long blank runs", () => {
+		expect(toWhatsappText("```\n**raw** text\n```")).toBe("```\n**raw** text\n```");
+		expect(toWhatsappText("Carnes\n\n\n\nTacos")).toBe("Carnes\n\nTacos");
+	});
+
+	it("leaves plain text and already-converted text untouched", () => {
+		expect(toWhatsappText("¡Hola! ¿En qué puedo ayudarte hoy?")).toBe(
+			"¡Hola! ¿En qué puedo ayudarte hoy?"
+		);
+		expect(toWhatsappText("")).toBe("");
+		const converted = toWhatsappText("### Carnes\n- **Rib eye** - **1000.00 MXN**");
+		expect(toWhatsappText(converted)).toBe(converted);
+	});
+
+	it("cleans up the real menu reply that leaked Markdown to the customer", () => {
+		const raw = [
+			'Aquí tienes el menú de "vernaculo" nuevamente:',
+			"",
+			"### Carnes",
+			"- **Rib eye**: un delicioso corte de lomo de res - **1000.00 MXN**",
+			"- **Arrachera** - **700.00 MXN**",
+		].join("\n");
+
+		expect(toWhatsappText(raw)).toBe(
+			[
+				'Aquí tienes el menú de "vernaculo" nuevamente:',
+				"",
+				"*Carnes*",
+				"• *Rib eye*: un delicioso corte de lomo de res - *1000.00 MXN*",
+				"• *Arrachera* - *700.00 MXN*",
+			].join("\n")
+		);
+		expect(toWhatsappText(raw)).not.toMatch(/\*\*|###/);
 	});
 });
 
