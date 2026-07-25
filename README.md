@@ -2,7 +2,39 @@ Welcome to Tavli.
 
 # Getting Started
 
-Install dependencies and start the app:
+## Devbox (recommended)
+
+[Devbox](https://www.jetify.com/devbox/) pins the system tools this repo expects so you do not
+need to install Node, pnpm, or the Stripe CLI separately.
+
+1. [Install Devbox](https://www.jetify.com/docs/devbox/installing-devbox/) (it will install Nix on
+   first use if needed).
+2. Enter the environment and install JS dependencies:
+
+```bash
+devbox shell
+devbox run install
+devbox run dev
+```
+
+Included packages (see [`devbox.json`](./devbox.json)):
+
+| Tool                | Why                                                 |
+| ------------------- | --------------------------------------------------- |
+| Node.js 22          | Matches CI (`.github/workflows/ci.yml`)             |
+| pnpm (via Corepack) | Version pinned in `package.json` → `packageManager` |
+| Git                 | Husky pre-commit hooks                              |
+| GitHub CLI (`gh`)   | PRs and GitHub automation                           |
+| Stripe CLI          | Local webhook forwarding (see Stripe section below) |
+
+Optional: with [direnv](https://direnv.net/) installed, run `direnv allow` once — the checked-in
+[`.envrc`](./.envrc) activates Devbox when you `cd` into the repo.
+
+After changing `devbox.json`, run `devbox install` and commit the updated `devbox.lock`.
+
+## Manual setup
+
+If you prefer to manage tools yourself, install Node 22 and pnpm 10, then:
 
 ```bash
 pnpm install
