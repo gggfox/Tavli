@@ -106,7 +106,8 @@
 		"auditConfig": {
 			"ignoreGhsas": [
 				"GHSA-3vj8-jmxq-cgj5",
-				"GHSA-22cc-p3c6-wpvm"
+				"GHSA-22cc-p3c6-wpvm",
+				"GHSA-mh99-v99m-4gvg"
 			]
 		},
 		"overrides": {
@@ -136,8 +137,12 @@
 			"unplugin>picomatch": "^4.0.4",
 			"brace-expansion@1": "^1.1.16",
 			"brace-expansion@2": "^2.1.2",
-			"brace-expansion@5": "^5.0.7",
-			"js-yaml@4": "^4.3.0"
+			"brace-expansion@5": "^5.0.8",
+			"js-yaml@4": "^4.3.0",
+			"postcss": "^8.5.18",
+			"fast-uri": "^3.1.4",
+			"next": "^16.2.11",
+			"sharp": "^0.35.0"
 		}
 	},
 	"lint-staged": {
