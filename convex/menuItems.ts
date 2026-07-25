@@ -447,6 +447,44 @@ export const getByCategory = query({
 	},
 });
 
+/**
+ * Public read: every available item on an active menu, in one round trip.
+ *
+ * The customer-facing MenuBrowser used to issue one `getByCategory` query per
+ * category, which meant N live Convex subscriptions for a menu with N
+ * categories — all of them re-validating on any menu write. This collapses
+ * that to a single subscription. Callers group by `categoryId` client-side.
+ *
+ * Same visibility rules as `getByCategory`: nothing is returned for an
+ * inactive menu, and unavailable items are filtered out.
+ */
+export const getByMenu = query({
+	args: { menuId: v.id(TABLE.MENUS) },
+	handler: async (ctx, args) => {
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu?.isActive) return [];
+
+		const categories = await ctx.db
+			.query(TABLE.MENU_CATEGORIES)
+			.withIndex("by_menu", (q) => q.eq("menuId", args.menuId))
+			.collect();
+
+		const itemsPerCategory = await Promise.all(
+			categories.map((category) =>
+				ctx.db
+					.query(TABLE.MENU_ITEMS)
+					.withIndex("by_category", (q) => q.eq("categoryId", category._id))
+					.collect()
+			)
+		);
+
+		return resolveImageUrls(
+			ctx,
+			itemsPerCategory.flat().filter((item) => item.isAvailable)
+		);
+	},
+});
+
 /** Public read: available items on active menus only. */
 export const getByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },

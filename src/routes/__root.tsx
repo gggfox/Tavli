@@ -22,6 +22,7 @@ import { ErrorBoundary, NotificationCenter, Sidebar } from "@/global/components"
 import { SidebarKeys } from "@/global/i18n";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
+import { i18n, normalizeLanguage, resolveLanguage } from "@/global/i18n";
 import { config } from "@/global/utils/config";
 import {
 	LOCAL_STORAGE_THEME_KEY,
@@ -59,6 +60,25 @@ export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
 }>()({
 	notFoundComponent: RootNotFound,
+	/**
+	 * Resolve the request's language before anything renders, so the SSR pass
+	 * and the first client render agree. Without this the server always fell
+	 * back to `en` (the i18next detector only looks at localStorage/navigator)
+	 * while a returning Spanish user hydrated to `es` — a guaranteed
+	 * `<html lang>` + copy mismatch on first paint.
+	 *
+	 * Note: `i18n` is a module singleton, so on the server this mutates state
+	 * shared by concurrent requests. Renders are synchronous with respect to
+	 * this assignment, but if we ever add awaits between here and render, this
+	 * needs to move to a per-request instance.
+	 */
+	beforeLoad: async ({ location }) => {
+		const language = await resolveLanguage(location.pathname);
+		if (normalizeLanguage(i18n.language) !== language) {
+			await i18n.changeLanguage(language);
+		}
+		return { language };
+	},
 	head: () => ({
 		meta: [
 			{
@@ -190,7 +210,9 @@ function StaffLayout() {
 }
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
-	const { i18n } = useTranslation();
+	// Router context, not `i18n.language`: the context value is computed in
+	// `beforeLoad` and is therefore identical on the server and on hydration.
+	const { language } = Route.useRouteContext();
 
 	return (
 		<ClerkProvider>
@@ -200,7 +222,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 				    from localStorage, which the server can't know. React 19 reports
 				    the attribute diff as a hydration mismatch; suppressing here is
 				    scoped to this element's attributes only, not its subtree. */}
-				<html lang={i18n.language} suppressHydrationWarning>
+				<html lang={language} suppressHydrationWarning>
 					<head>
 						<script dangerouslySetInnerHTML={{ __html: initScript }} />
 						<HeadContent />

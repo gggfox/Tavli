@@ -900,6 +900,7 @@ export const createTabPaymentIntent = action({
 			amount: totalAmount,
 			currency,
 			gratuityAmount: args.tipAmount,
+			userId: identity.subject,
 		});
 
 		try {

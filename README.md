@@ -14,6 +14,7 @@ need to install Node, pnpm, or the Stripe CLI separately.
 ```bash
 devbox shell
 devbox run install
+infisical login          # once per machine
 devbox run dev
 ```
 
@@ -26,6 +27,7 @@ Included packages (see [`devbox.json`](./devbox.json)):
 | Git                 | Husky pre-commit hooks                              |
 | GitHub CLI (`gh`)   | PRs and GitHub automation                           |
 | Stripe CLI          | Local webhook forwarding (see Stripe section below) |
+| Infisical CLI       | `pnpm dev` runs under `infisical run` (see below)   |
 
 Optional: with [direnv](https://direnv.net/) installed, run `direnv allow` once — the checked-in
 [`.envrc`](./.envrc) activates Devbox when you `cd` into the repo.
@@ -34,12 +36,26 @@ After changing `devbox.json`, run `devbox install` and commit the updated `devbo
 
 ## Manual setup
 
-If you prefer to manage tools yourself, install Node 22 and pnpm 10, then:
+If you prefer to manage tools yourself, install Node 22 and pnpm 10, then install
+dependencies, authenticate with Infisical once, and start the app:
 
 ```bash
 pnpm install
+infisical login          # once per machine
 pnpm dev
 ```
+
+`pnpm dev` runs Convex + Vite under `infisical run --env=dev`, which injects the
+frontend secrets that are **not** in `.env.local` — most importantly
+`VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`.
+
+Do not start the dev server with a bare `vite dev`. Without a Clerk publishable
+key, Clerk falls back to a throwaway "keyless" instance: sign-in appears to
+work, but the tokens it issues are signed by a different issuer than the one
+the Convex deployment trusts (`CLERK_JWT_ISSUER_DOMAIN`), so Convex never
+authenticates you and every signed-in page renders as signed out. Keyless is
+disabled for dev servers (`vite.config.ts`) so this fails loudly with
+`Clerk: no secret key provided` instead of silently.
 
 ## Convex environment
 

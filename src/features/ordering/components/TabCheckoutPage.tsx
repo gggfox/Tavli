@@ -12,34 +12,39 @@ import { ArrowLeft, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucid
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionStore } from "../hooks/useSession";
+import {
+	STRIPE_BORDER_RADIUS,
+	STRIPE_DARK_TOKENS,
+	STRIPE_LIGHT_TOKENS,
+	type StripeThemeTokens,
+} from "../stripeAppearanceTokens";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
-const LIGHT_APPEARANCE: Appearance = {
-	theme: "stripe",
-	variables: {
-		colorPrimary: "#2383e2",
-		colorBackground: "#ffffff",
-		colorText: "#37352f",
-		colorTextSecondary: "#787774",
-		colorTextPlaceholder: "#9b9a97",
-		colorDanger: "#e03e3e",
-		borderRadius: "8px",
-	},
-};
+/**
+ * Stripe Elements renders in a cross-origin iframe and therefore cannot read
+ * our CSS custom properties, so this is the one surface that has to be handed
+ * literal colours. They come from a single token map rather than being
+ * hand-copied out of theme.css at each call site — see
+ * `../stripeAppearanceTokens`.
+ */
+function toAppearance(theme: Appearance["theme"], tokens: StripeThemeTokens): Appearance {
+	return {
+		theme,
+		variables: {
+			colorPrimary: tokens.primary,
+			colorBackground: tokens.background,
+			colorText: tokens.text,
+			colorTextSecondary: tokens.textSecondary,
+			colorTextPlaceholder: tokens.textPlaceholder,
+			colorDanger: tokens.danger,
+			borderRadius: STRIPE_BORDER_RADIUS,
+		},
+	};
+}
 
-const DARK_APPEARANCE: Appearance = {
-	theme: "night",
-	variables: {
-		colorPrimary: "#2383e2",
-		colorBackground: "#252525",
-		colorText: "#ffffffcf",
-		colorTextSecondary: "#9b9a97",
-		colorTextPlaceholder: "#5a5a5a",
-		colorDanger: "#eb5757",
-		borderRadius: "8px",
-	},
-};
+const LIGHT_APPEARANCE: Appearance = toAppearance("stripe", STRIPE_LIGHT_TOKENS);
+const DARK_APPEARANCE: Appearance = toAppearance("night", STRIPE_DARK_TOKENS);
 
 function useIsDarkTheme(): boolean {
 	const [isDark, setIsDark] = useState(() => {
@@ -290,10 +295,7 @@ export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPag
 				)}
 
 				{error && (
-					<div
-						className="px-4 py-3 rounded-lg text-sm text-destructive"
-						style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
-					>
+					<div className="px-4 py-3 rounded-lg text-sm text-destructive bg-destructive-subtle">
 						{error}
 					</div>
 				)}
@@ -433,10 +435,7 @@ function TabPaymentForm({
 			<PaymentElement />
 
 			{error && (
-				<div
-					className="px-4 py-3 rounded-lg text-sm text-destructive"
-					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
-				>
+				<div className="px-4 py-3 rounded-lg text-sm text-destructive bg-destructive-subtle">
 					{error}
 				</div>
 			)}
@@ -466,10 +465,7 @@ function TabPaidScreen({ onDone }: Readonly<{ onDone: () => void }>) {
 	const { t } = useTranslation();
 	return (
 		<div className="flex flex-col items-center justify-center h-full p-8 gap-4 text-center">
-			<div
-				className="w-16 h-16 rounded-full flex items-center justify-center"
-				style={{ backgroundColor: "rgba(5, 150, 105, 0.12)" }}
-			>
+			<div className="w-16 h-16 rounded-full flex items-center justify-center bg-success-subtle">
 				<CheckCircle2 size={32} style={{ color: "var(--accent-success)" }} />
 			</div>
 			<h2 className="text-lg font-bold text-foreground">{t(OrderingKeys.TAB_PAID_TITLE)}</h2>

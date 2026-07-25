@@ -4,13 +4,14 @@ import {
 	DashboardShell,
 	EmptyState,
 	StatusFilterChips,
+	VirtualGrid,
 	type StatusFilterOption,
 } from "@/global/components";
 import { useOptimisticUserSetting } from "@/global/hooks";
 import { OrdersKeys } from "@/global/i18n";
 import type { Id } from "convex/_generated/dataModel";
 import { ChefHat } from "lucide-react";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOrders } from "../../hooks/useOrders";
 import { OrderCard } from "./OrderCard";
@@ -129,14 +130,35 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 	const typedOrders = orders as ReadonlyArray<DashboardOrder>;
 
-	const sorted = typedOrders
-		.filter((o) => isDashboardStatus(o.status))
-		.slice()
-		.sort((a, b) => {
-			const aPriority = STATUS_SORT_PRIORITY[a.status as OrderDashboardStatusFilter];
-			const bPriority = STATUS_SORT_PRIORITY[b.status as OrderDashboardStatusFilter];
-			return aPriority - bPriority || a.createdAt - b.createdAt;
-		});
+	const sorted = useMemo(
+		() =>
+			typedOrders
+				.filter((o) => isDashboardStatus(o.status))
+				.slice()
+				.sort((a, b) => {
+					const aPriority = STATUS_SORT_PRIORITY[a.status as OrderDashboardStatusFilter];
+					const bPriority = STATUS_SORT_PRIORITY[b.status as OrderDashboardStatusFilter];
+					return aPriority - bPriority || a.createdAt - b.createdAt;
+				}),
+		[typedOrders]
+	);
+
+	const renderOrderCard = useCallback(
+		(order: DashboardOrder) => (
+			<OrderCard
+				order={order}
+				now={now}
+				cancelConfirm={cancelConfirm}
+				activeStationFilters={activeStationFilterSet}
+				onSelectFullOrder={setFullOrder}
+				onRequestCancel={setCancelConfirm}
+				onDismissCancel={() => setCancelConfirm(null)}
+				onUpdateStatus={updateStatus}
+				onMarkStationReady={markStationReady}
+			/>
+		),
+		[now, cancelConfirm, activeStationFilterSet, updateStatus, markStationReady]
+	);
 
 	return (
 		<DashboardShell
@@ -157,22 +179,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					fill
 				/>
 			) : (
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-					{sorted.map((order) => (
-						<OrderCard
-							key={order._id}
-							order={order}
-							now={now}
-							cancelConfirm={cancelConfirm}
-							activeStationFilters={activeStationFilterSet}
-							onSelectFullOrder={setFullOrder}
-							onRequestCancel={setCancelConfirm}
-							onDismissCancel={() => setCancelConfirm(null)}
-							onUpdateStatus={updateStatus}
-							onMarkStationReady={markStationReady}
-						/>
-					))}
-				</div>
+				// Virtualized: a busy service can hold hundreds of live orders,
+				// and every one of them used to re-render on each Convex push.
+				<VirtualGrid
+					items={sorted}
+					getKey={(order) => order._id}
+					renderItem={renderOrderCard}
+					gap={16}
+					estimateRowHeight={260}
+				/>
 			)}
 
 			<OrderDetailModal fullOrder={fullOrder} now={now} onClose={() => setFullOrder(null)} />

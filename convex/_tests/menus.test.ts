@@ -176,6 +176,75 @@ describe("public menu item reads", () => {
 		expect(items![0].name).toBe("Available");
 	});
 
+	it("getByMenu returns every available item across all categories of the menu", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, menuId } = await seedMenuContext(t);
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			const starters = await ctx.db.insert("menuCategories", {
+				menuId,
+				restaurantId,
+				name: "Starters",
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const mains = await ctx.db.insert("menuCategories", {
+				menuId,
+				restaurantId,
+				name: "Mains",
+				displayOrder: 1,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("menuItems", {
+				categoryId: starters,
+				restaurantId,
+				name: "Bruschetta",
+				basePrice: 900,
+				isAvailable: true,
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("menuItems", {
+				categoryId: mains,
+				restaurantId,
+				name: "Risotto",
+				basePrice: 1800,
+				isAvailable: true,
+				displayOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("menuItems", {
+				categoryId: mains,
+				restaurantId,
+				name: "Sold Out",
+				basePrice: 1500,
+				isAvailable: false,
+				displayOrder: 1,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		const items = await t.query(api.menuItems.getByMenu, { menuId });
+		expect(items!.map((i) => i.name).sort()).toEqual(["Bruschetta", "Risotto"]);
+		// The client groups by categoryId, so it has to come back on each row.
+		expect(items!.every((i) => typeof i.categoryId === "string")).toBe(true);
+		expect(items!.every((i) => "imageUrl" in i)).toBe(true);
+	});
+
+	it("getByMenu returns empty for an inactive menu", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const { inactiveMenuId } = await seedInactiveMenuWithCategory(t, restaurantId);
+
+		const items = await t.query(api.menuItems.getByMenu, { menuId: inactiveMenuId });
+		expect(items).toEqual([]);
+	});
+
 	it("listByCategoryForStaff includes unavailable items for managers", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, menuId } = await seedMenuContext(t);

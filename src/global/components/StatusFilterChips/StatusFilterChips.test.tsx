@@ -126,7 +126,10 @@ describe("StatusFilterChips", () => {
 
 		const confirmed = screen.getByRole("button", { name: "Confirmed" });
 		expect(confirmed.style.backgroundColor).toBe("var(--accent-info)");
-		expect(confirmed.style.color).toBe("rgb(255, 255, 255)");
+		// Token, not a literal — the fill stays saturated in both themes, so the
+		// foreground is `--text-on-accent` rather than the theme-flipping
+		// `--text-inverse`.
+		expect(confirmed.style.color).toBe("var(--text-on-accent)");
 
 		const pending = screen.getByRole("button", { name: "Pending" });
 		expect(pending.style.backgroundColor).toBe("var(--accent-warning-light)");

@@ -1,6 +1,6 @@
 import { useCurrentUserRoles, useUserSettings } from "@/features/users/hooks";
 import { i18n, Modal, useTheme } from "@/global";
-import { Languages, SidebarKeys } from "@/global/i18n";
+import { Languages, SidebarKeys, writeLanguageCookie } from "@/global/i18n";
 import { config } from "@/global/utils/config";
 import { useClerk } from "@clerk/tanstack-react-start";
 import { api } from "convex/_generated/api";
@@ -35,6 +35,10 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 
 			// Update i18n immediately for responsive UI
 			i18n.changeLanguage(newLanguage);
+			// Persist to the cookie so the *next* SSR pass renders in this
+			// language instead of falling back to English and mismatching on
+			// hydration. See `src/global/i18n/language.ts`.
+			writeLanguageCookie(newLanguage);
 
 			if (isAuthenticated) {
 				try {
@@ -43,6 +47,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 					console.error("Failed to update language:", error);
 					// Revert i18n if Convex update failed
 					i18n.changeLanguage(currentLanguage);
+					writeLanguageCookie(currentLanguage);
 				}
 			}
 		},

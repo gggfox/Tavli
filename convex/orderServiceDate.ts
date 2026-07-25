@@ -1,17 +1,19 @@
+import { resolveRestaurantTimezone } from "./_util/timezone";
 import { DEFAULT_ORDER_NUMBER_RESET_FREQUENCY, type OrderNumberResetFrequency } from "./constants";
 
 /** Default 04:00 local = start of business “order day” for numbering. */
 export const DEFAULT_ORDER_DAY_START_MINUTES = 240;
 
+/**
+ * Service-date bucketing must resolve timezones the same way everything else
+ * does. This used to fall back to UTC while `resolveRestaurantTimezone` fell
+ * back to `America/Mexico_City` -- six hours of skew straddling the 04:00
+ * rollover, so a restaurant with no `timezone` set filed orders under the wrong
+ * service date. Only legacy rows are affected: `restaurants.create` has resolved
+ * the timezone at write time since it was added.
+ */
 function resolveTimeZone(timeZone: string | undefined): string {
-	const raw = timeZone?.trim();
-	const tz = raw && raw.length > 0 ? raw : "UTC";
-	try {
-		new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(0);
-		return tz;
-	} catch {
-		return "UTC";
-	}
+	return resolveRestaurantTimezone(timeZone);
 }
 
 /**

@@ -2,7 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.5/.schema/devbox.schema.json",
 	"name": "tavli",
 	"description": "Tavli dev environment — Node 22, pnpm, Convex/Vite tooling",
-	"packages": ["nodejs@22", "corepack@latest", "git", "gh", "stripe-cli"],
+	"packages": ["nodejs@22", "corepack@latest", "git", "gh", "stripe-cli", "infisical"],
 	"env": {
 		"DEVBOX_COREPACK_ENABLED": "true"
 	},

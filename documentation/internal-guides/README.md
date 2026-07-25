@@ -1,17 +1,18 @@
 # Internal Guides
 
-This folder contains internal documentation for developers working on Fierro Viejo.
+This folder contains internal documentation for developers working on Tavli.
 
 ## Contents
 
-| Document                                         | Description                                                                  |
-| ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| [design-system.md](./design-system.md)           | Color palette, typography, spacing, component patterns, and visual standards |
-| [component-examples.md](./component-examples.md) | Copy-paste ready component templates                                         |
+| Document                                                 | Description                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [design-system.md](./design-system.md)                   | Theme tokens, typography, spacing, interaction utilities, and visual standards  |
+| [deployment-and-secrets.md](./deployment-and-secrets.md) | Environments, secrets management, and how a deploy reaches staging / production |
 
 ## Quick Links
 
-- **Need colors?** → [Color Palette](./design-system.md#color-palette)
-- **Building a button?** → [Components](./design-system.md#components)
-- **Adding animations?** → [Animations](./design-system.md#animations--transitions)
-- **Full component template?** → [Component Examples](./component-examples.md)
+- **Need colours?** → [Colour tokens](./design-system.md#colour-tokens)
+- **Wondering why you can't just use a hex?** → [Escape hatches](./design-system.md#escape-hatches)
+- **Building a button?** → [Interaction utilities](./design-system.md#interaction-utilities)
+- **Is there already a component for this?** → [Shared components](./design-system.md#shared-components)
+- **Shipping something new?** → [Checklist for a new component](./design-system.md#checklist-for-a-new-component)

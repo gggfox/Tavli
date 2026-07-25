@@ -8,11 +8,18 @@ interface SessionState {
 	clearSession: () => void;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
 	sessionId: null,
 	restaurantId: null,
 	setSession: (data) => {
-		set(data);
+		// Zustand compares the *merged* object with Object.is, so a fresh object
+		// literal always looks like a change and notifies every subscriber. Skip
+		// the write when nothing actually changed, or callers that run on every
+		// render can drive an unbounded re-render loop.
+		const { sessionId, restaurantId } = get();
+		if (sessionId !== data.sessionId || restaurantId !== data.restaurantId) {
+			set(data);
+		}
 		try {
 			sessionStorage.setItem("tavli_session", JSON.stringify(data));
 		} catch {
@@ -20,7 +27,12 @@ export const useSessionStore = create<SessionState>((set) => ({
 		}
 	},
 	clearSession: () => {
-		set({ sessionId: null, restaurantId: null });
+		const { sessionId, restaurantId } = get();
+		if (sessionId !== null || restaurantId !== null) {
+			set({ sessionId: null, restaurantId: null });
+		}
+		// Always drop the stored session, even when the in-memory state was
+		// already empty — storage can hold a stale entry from a previous visit.
 		try {
 			sessionStorage.removeItem("tavli_session");
 		} catch {

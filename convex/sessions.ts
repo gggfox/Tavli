@@ -11,6 +11,7 @@ import {
 	fromErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
+import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId, requireRestaurantStaffAccess } from "./_util/auth";
 import {
 	DINER_SESSION_ERRORS,
@@ -20,6 +21,7 @@ import {
 	toDinerVisiblePayment,
 } from "./_util/dinerSession";
 import {
+	AUDIT_EVENT,
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
 	PAYMENT_REFUND_STATUS,
@@ -27,6 +29,8 @@ import {
 	SESSION_PAYMENT_STATE,
 	SESSION_STATUS,
 	STALE_TAB_MAX_AGE_MS,
+	STALE_TAB_SWEEP_BATCH_SIZE,
+	STALE_TAB_SWEEP_LOOKBACK_MS,
 	TABLE,
 } from "./constants";
 import {
@@ -96,6 +100,14 @@ export const create = mutation({
 			userId,
 		});
 
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: sessionId,
+			eventType: AUDIT_EVENT.SESSION_OPENED,
+			payload: { restaurantId: restaurant._id },
+			userId,
+		});
+
 		return { sessionId, restaurantId: restaurant._id };
 	},
 });
@@ -133,8 +145,23 @@ export const joinByCode = mutation({
 		}
 
 		if (!isSessionMember(session, userId)) {
-			await ctx.db.patch(session._id, {
-				memberUserIds: [...(session.memberUserIds ?? []), userId],
+			const memberUserIds = [...(session.memberUserIds ?? []), userId];
+			await ctx.db.patch(session._id, { memberUserIds });
+
+			// Only a genuine join is logged; re-entering a tab you already belong to
+			// is navigation, not a membership change.
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.SESSIONS,
+				aggregateId: session._id,
+				eventType: AUDIT_EVENT.SESSION_JOINED,
+				payload: {
+					restaurantId: restaurant._id,
+					// Opener + everyone who has joined. `memberUserIds` excludes the
+					// opener, and is the post-join list, so this matches what
+					// `getTabSummary` reports to the tab view.
+					memberCount: 1 + memberUserIds.length,
+				},
+				userId,
 			});
 		}
 
@@ -205,6 +232,19 @@ export const close = mutation({
 			status: SESSION_STATUS.CLOSED,
 			closedAt: Date.now(),
 		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: args.sessionId,
+			eventType: AUDIT_EVENT.SESSION_CLOSED,
+			payload: {
+				restaurantId: session.restaurantId,
+				closedBy: "diner",
+				openedBy: session.userId,
+			},
+			// Any tab member can close, so the opener is not necessarily the actor.
+			userId: await requireAuthenticatedDiner(ctx),
+		});
 	},
 });
 
@@ -248,6 +288,12 @@ export const beginTabPayment = internalMutation({
 		amount: v.number(),
 		currency: v.string(),
 		gratuityAmount: v.number(),
+		/**
+		 * The diner who started checkout, for the audit trail. Any tab member can
+		 * pay, so `session.userId` (the opener) is not the actor. The calling
+		 * action has already verified membership via `verifyTabForPaymentInternal`.
+		 */
+		userId: v.string(),
 	},
 	handler: async (ctx, args): Promise<Id<typeof TABLE.PAYMENTS>> => {
 		const session = await ctx.db.get(args.sessionId);
@@ -299,6 +345,24 @@ export const beginTabPayment = internalMutation({
 			lockedForPaymentAt: now,
 			paymentState: SESSION_PAYMENT_STATE.PENDING,
 			activePaymentId: paymentId,
+		});
+
+		// The lock is what freezes ordering on the tab, so it is the transition
+		// worth a record — `attemptNumber` is how a support case reconstructs a
+		// diner retrying with a different tip.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: args.sessionId,
+			eventType: AUDIT_EVENT.SESSION_PAYMENT_LOCKED,
+			payload: {
+				restaurantId: args.restaurantId,
+				paymentId,
+				amount: args.amount,
+				currency: args.currency,
+				gratuityAmount: args.gratuityAmount,
+				attemptNumber,
+			},
+			userId: args.userId,
 		});
 
 		return paymentId;
@@ -382,6 +446,26 @@ export const confirmTabPayment = internalMutation({
 			paidAt: now,
 			settledBy: "stripe",
 		});
+
+		// The single most important row in the table: money moved and the tab
+		// closed. Keyed on the PaymentIntent so a replayed webhook is traceable.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: session._id,
+			eventType: AUDIT_EVENT.SESSION_PAYMENT_SUCCEEDED,
+			payload: {
+				restaurantId: session.restaurantId,
+				paymentId: payment._id,
+				amount: payment.amount,
+				currency: payment.currency,
+				gratuityAmount: tip,
+				paidOrderIds: payableOrders.map((o) => o._id),
+				stripePaymentIntentId: args.stripePaymentIntentId,
+				settledBy: "stripe",
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: args.stripePaymentIntentId,
+		});
 	},
 });
 
@@ -418,6 +502,25 @@ export const failTabPayment = internalMutation({
 				paymentState: SESSION_PAYMENT_STATE.FAILED,
 			});
 		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: payment.sessionId,
+			eventType: AUDIT_EVENT.SESSION_PAYMENT_FAILED,
+			payload: {
+				restaurantId: payment.restaurantId,
+				paymentId: payment._id,
+				amount: payment.amount,
+				failureCode: args.failureCode,
+				failureMessage: args.failureMessage,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+				// False when a superseding attempt already took over the tab; the
+				// payment still failed, but the lock was not this one's to release.
+				unlockedTab: session?.activePaymentId === payment._id,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: args.stripePaymentIntentId,
+		});
 	},
 });
 
@@ -448,6 +551,19 @@ export const cancelTabPayment = mutation({
 		await ctx.db.patch(args.sessionId, {
 			lockedForPaymentAt: undefined,
 			paymentState: SESSION_PAYMENT_STATE.UNPAID,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: args.sessionId,
+			eventType: AUDIT_EVENT.SESSION_PAYMENT_CANCELLED,
+			payload: {
+				restaurantId: session.restaurantId,
+				paymentId: session.activePaymentId,
+				lockedForPaymentAt: session.lockedForPaymentAt,
+			},
+			// Any tab member can abandon checkout, not just the opener.
+			userId: await requireAuthenticatedDiner(ctx),
 		});
 	},
 });
@@ -558,6 +674,22 @@ export const closeTabAsStaff = mutation({
 			settledBy: "staff",
 		});
 
+		// Settled in person. This is the one close where money may have changed
+		// hands entirely outside Stripe, so the actor matters most.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.SESSIONS,
+			aggregateId: args.sessionId,
+			eventType: AUDIT_EVENT.SESSION_CLOSED,
+			payload: {
+				restaurantId: session.restaurantId,
+				closedBy: "staff",
+				settledBy: "staff",
+				cancelledPaymentId: session.activePaymentId,
+				flaggedStaleAt: session.flaggedStaleAt,
+			},
+			userId,
+		});
+
 		return [args.sessionId, null];
 	},
 });
@@ -570,17 +702,33 @@ export const closeTabAsStaff = mutation({
  * End-of-day hygiene: active tabs older than STALE_TAB_MAX_AGE_MS are closed
  * when they have no unpaid balance, and flagged (surfaced in the staff open
  * tabs view) when they still owe money. Never auto-charges anything.
+ *
+ * The scan is bounded on both ends by the `by_status_started` index range —
+ * active tabs whose `startedAt` falls in
+ * `(now - STALE_TAB_SWEEP_LOOKBACK_MS, now - STALE_TAB_MAX_AGE_MS)` — and
+ * capped at STALE_TAB_SWEEP_BATCH_SIZE rows, newest-first. It used to
+ * `.collect()` the entire sessions table every hour and filter in JS, so cost
+ * grew with lifetime session count rather than with the work to be done.
  */
 export const sweepStaleOpenTabs = internalMutation({
 	args: {},
 	handler: async (ctx) => {
-		const cutoff = Date.now() - STALE_TAB_MAX_AGE_MS;
-		const sessions = await ctx.db.query(TABLE.SESSIONS).collect();
+		const now = Date.now();
+		const cutoff = now - STALE_TAB_MAX_AGE_MS;
+		const lookbackFloor = now - STALE_TAB_SWEEP_LOOKBACK_MS;
 
-		for (const session of sessions) {
-			if (session.status !== SESSION_STATUS.ACTIVE) continue;
-			if (session.startedAt > cutoff) continue;
+		const staleTabs = await ctx.db
+			.query(TABLE.SESSIONS)
+			.withIndex("by_status_started", (q) =>
+				q.eq("status", SESSION_STATUS.ACTIVE).gt("startedAt", lookbackFloor).lt("startedAt", cutoff)
+			)
+			.order("desc")
+			.take(STALE_TAB_SWEEP_BATCH_SIZE);
 
+		let closed = 0;
+		let flagged = 0;
+
+		for (const session of staleTabs) {
 			const payableOrders = await getPayableOrders(ctx, session._id);
 			const unpaidTotal = sumOrderTotals(payableOrders);
 
@@ -590,10 +738,39 @@ export const sweepStaleOpenTabs = internalMutation({
 					closedAt: Date.now(),
 					lockedForPaymentAt: undefined,
 				});
+				closed++;
+				await appendAuditEvent(ctx, {
+					aggregateType: TABLE.SESSIONS,
+					aggregateId: session._id,
+					eventType: AUDIT_EVENT.SESSION_STALE_CLOSED,
+					payload: {
+						restaurantId: session.restaurantId,
+						startedAt: session.startedAt,
+						ageMs: now - session.startedAt,
+					},
+					userId: AUDIT_SYSTEM_USER_ID,
+				});
 			} else if (session.flaggedStaleAt === undefined) {
 				await ctx.db.patch(session._id, { flaggedStaleAt: Date.now() });
+				flagged++;
+				// A walkout candidate. Flagged once, never auto-charged -- the event
+				// is the only durable record that the system noticed.
+				await appendAuditEvent(ctx, {
+					aggregateType: TABLE.SESSIONS,
+					aggregateId: session._id,
+					eventType: AUDIT_EVENT.SESSION_STALE_FLAGGED,
+					payload: {
+						restaurantId: session.restaurantId,
+						startedAt: session.startedAt,
+						ageMs: now - session.startedAt,
+						unpaidTotal,
+					},
+					userId: AUDIT_SYSTEM_USER_ID,
+				});
 			}
 		}
+
+		return { scanned: staleTabs.length, closed, flagged };
 	},
 });
 

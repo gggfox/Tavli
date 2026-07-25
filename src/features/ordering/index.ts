@@ -12,6 +12,7 @@ export { SessionOrdersListSkeleton } from "./components/SessionOrdersListSkeleto
 export { TabCheckoutPage } from "./components/TabCheckoutPage";
 export { GeofenceNotice } from "./components/GeofenceNotice";
 export { useCart } from "./hooks/useCart";
+export { useCustomerSession } from "./hooks/useCustomerSession";
 export { grantGeofenceBypass, hasGeofenceBypass, useGeofence } from "./hooks/useGeofence";
 export { restoreSession, useSessionStore } from "./hooks/useSession";
 export type { SelectedOption } from "./types";

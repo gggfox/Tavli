@@ -33,9 +33,17 @@ import {
 	isWithinHorizon,
 	requiredCapacityCovered,
 } from "./_util/availability";
+import { appendAuditEvent } from "./_util/audit";
 import { consumeRateLimit, type RateLimitConfig } from "./_util/rateLimit";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
-import { RESERVATION_SOURCE, RESERVATION_STATUS, ReservationStatus, TABLE } from "./constants";
+import {
+	AUDIT_EVENT,
+	AUDIT_SYSTEM_USER_ID,
+	RESERVATION_SOURCE,
+	RESERVATION_STATUS,
+	ReservationStatus,
+	TABLE,
+} from "./constants";
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 
@@ -472,6 +480,26 @@ export async function createReservationCore(
 		idempotencyKey: args.idempotencyKey,
 		createdAt: now,
 		updatedAt: now,
+	});
+
+	// Deliberately here rather than in the three callers (UI `create`, staff
+	// `createAsStaff`, bot `internalCreate`): this is the single point where a
+	// reservation row actually comes into existence, and the idempotency
+	// short-circuit above returns before it, so a replayed bot request does not
+	// log a second creation.
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.RESERVATIONS,
+		aggregateId: id,
+		eventType: AUDIT_EVENT.RESERVATION_CREATED,
+		payload: {
+			restaurantId: args.restaurantId,
+			partySize: args.partySize,
+			startsAt: args.startsAt,
+			endsAt,
+			source: args.source,
+		},
+		userId: args.userId ?? AUDIT_SYSTEM_USER_ID,
+		idempotencyKey: args.idempotencyKey,
 	});
 
 	return [id, null];

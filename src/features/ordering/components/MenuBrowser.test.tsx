@@ -1,6 +1,7 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useQuery } from "@tanstack/react-query";
+import { getFunctionName } from "convex/server";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { MenuBrowser } from "./MenuBrowser";
 
@@ -33,65 +34,73 @@ vi.mock("./ItemDetailSheet", () => ({
 }));
 
 describe("MenuBrowser", () => {
+	// Keyed on the Convex function *name* rather than call order, so the mock
+	// survives the component changing how many queries it issues. That matters
+	// here: the per-category `menuItems.getByCategory` fan-out was replaced by
+	// a single batched `menuItems.getByMenu` subscription. (`api` is a proxy —
+	// `api.x.y !== api.x.y` — so references cannot be compared by identity.)
+	const QUERY_DATA: Record<string, unknown> = {
+		"restaurants:getPaymentsEnabled": false,
+		"menus:getMenusByRestaurant": [
+			{ _id: "menus:test", name: "Main", isActive: true, displayOrder: 0 },
+		],
+		"tables:getActiveByRestaurant": [{ _id: "tables:test", tableNumber: 1 }],
+		"menus:getCategoriesByMenu": [
+			{ _id: "menuCategories:test", name: "Starters", displayOrder: 0 },
+		],
+		"menuItems:getByMenu": [
+			{
+				_id: "menuItems:test",
+				categoryId: "menuCategories:test",
+				restaurantId: "restaurants:test",
+				name: "Bruschetta",
+				basePrice: 1200,
+				isAvailable: true,
+				displayOrder: 0,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+		],
+	};
+
+	function queriedFunctionNames(): string[] {
+		return vi
+			.mocked(useQuery)
+			.mock.calls.map(([options]: any[]) => options?.ref)
+			.filter(Boolean)
+			.map((ref: any) => getFunctionName(ref));
+	}
+
 	beforeEach(() => {
 		vi.clearAllMocks();
-		let callCount = 0;
-		vi.mocked(useQuery).mockImplementation(() => {
-			callCount += 1;
-			const phase = (callCount - 1) % 6;
-			if (phase === 0) {
-				return { data: false } as any;
-			}
-			if (phase === 1) {
-				return {
-					data: [
-						{
-							_id: "menus:test",
-							name: "Main",
-							isActive: true,
-							displayOrder: 0,
-						},
-					],
-				} as any;
-			}
-			if (phase === 2) {
-				return {
-					data: [
-						{
-							_id: "tables:test",
-							tableNumber: 1,
-						},
-					],
-				} as any;
-			}
-			if (phase === 3 || phase === 4) {
-				return {
-					data: [
-						{
-							_id: "menuCategories:test",
-							name: "Starters",
-							displayOrder: 0,
-						},
-					],
-				} as any;
-			}
-
-			return {
-				data: [
-					{
-						_id: "menuItems:test",
-						categoryId: "menuCategories:test",
-						restaurantId: "restaurants:test",
-						name: "Bruschetta",
-						basePrice: 1200,
-						isAvailable: true,
-						displayOrder: 0,
-						createdAt: Date.now(),
-						updatedAt: Date.now(),
-					},
-				],
-			} as any;
+		vi.mocked(useQuery).mockImplementation((options: any) => {
+			const name = options?.ref ? getFunctionName(options.ref) : "";
+			return { data: QUERY_DATA[name] } as any;
 		});
+	});
+
+	it("issues exactly one item subscription for the whole menu", () => {
+		render(
+			<MenuBrowser
+				restaurantId={"restaurants:test" as any}
+				onSubmitOrder={() => {}}
+				isSubmitting={false}
+			/>
+		);
+
+		// Counted per render pass (React may render more than once), so the
+		// assertions are on ratios rather than absolute call counts.
+		const names = queriedFunctionNames();
+		const count = (name: string) => names.filter((n) => n === name).length;
+
+		// The per-category fan-out is gone: items come from one batched query.
+		expect(names).not.toContain("menuItems:getByCategory");
+		expect(count("menuItems:getByMenu")).toBeGreaterThan(0);
+		// Exactly one items subscription per render, no matter how many
+		// categories the menu has.
+		expect(count("menuItems:getByMenu")).toBe(count("menus:getMenusByRestaurant"));
+		// And the parent no longer duplicates the child's categories query.
+		expect(count("menus:getCategoriesByMenu")).toBe(count("menus:getMenusByRestaurant"));
 	});
 
 	it("blocks the payment CTA when restaurant payments are disabled", async () => {

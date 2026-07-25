@@ -23,10 +23,10 @@
 
 import { httpRouter } from "convex/server";
 import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
+import { ERROR_NAMES } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
-import { TABLE, RESERVATION_SOURCE } from "./constants";
+import { RESERVATION_SOURCE } from "./constants";
 
 const http = httpRouter();
 
@@ -133,9 +133,12 @@ http.route({
 //
 // Three POST routes guarded by `RESERVATIONS_BOT_TOKEN`. The bot sends:
 //   Authorization: Bearer <token>
-// Routes are kept minimal: parse, validate the token, delegate to the same
-// internal mutations the UI uses. Idempotency is supported on create via the
-// `Idempotency-Key` header.
+// Each route runs the same four steps: check the token, parse and type-validate
+// the body, resolve the restaurant id through `normalizeRestaurantId`, then
+// delegate to the same internal mutations the UI uses. Everything past the token
+// check is attacker-controlled, so failures come back as 4xx with a stable code
+// and thrown errors are logged and answered with an opaque 500 -- never echoed.
+// Idempotency is supported on create via the `Idempotency-Key` header.
 //
 // Local dev: set RESERVATIONS_BOT_TOKEN with `npx convex env set
 // RESERVATIONS_BOT_TOKEN <some-secret>`.
@@ -150,6 +153,24 @@ function unauthorizedResponse(): Response {
 function badRequestResponse(message: string): Response {
 	return new Response(JSON.stringify({ error: message }), {
 		status: 400,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+function notFoundResponse(message: string): Response {
+	return new Response(JSON.stringify({ error: message }), {
+		status: 404,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+/**
+ * Opaque 500. Bot routes must never echo a thrown error: Convex validator
+ * failures carry the full argument shape, which is internal detail.
+ */
+function serverErrorResponse(): Response {
+	return new Response(JSON.stringify({ error: ERROR_NAMES.INTERNAL_SERVER_ERROR }), {
+		status: 500,
 		headers: { "Content-Type": "application/json" },
 	});
 }
@@ -184,30 +205,134 @@ async function isAuthorizedBotRequest(request: Request): Promise<boolean> {
 	return mismatch === 0;
 }
 
+// -----------------------------------------------------------------------------
+// Input validation
+// -----------------------------------------------------------------------------
+//
+// Everything past the token check is attacker-controlled. Presence checks are
+// not enough: `partySize: "5"` is truthy, and a `restaurantId` of `"nope"` cast
+// with `as Id<...>` reaches the arg validator and throws a 500 whose message
+// spells out the internal argument shape. Validate types here, resolve ids via
+// `reservations.normalizeRestaurantId`, and keep failures as clean 4xx.
+
+const BOT_INTEGRATION = "reservations-bot";
+
+type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+/** Epoch-ms timestamp: finite, and an integer so `Date` math stays exact. */
+function isTimestamp(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && Number.isFinite(value);
+}
+
+type BookingFields = { restaurantId: string; partySize: number; startsAt: number };
+
+function parseBookingFields(body: unknown): ParseResult<BookingFields> {
+	if (!isJsonObject(body)) return { ok: false, message: "Body must be a JSON object" };
+	if (!isNonEmptyString(body.restaurantId)) {
+		return { ok: false, message: "restaurantId must be a non-empty string" };
+	}
+	if (!isPositiveInteger(body.partySize)) {
+		return { ok: false, message: "partySize must be a positive integer" };
+	}
+	if (!isTimestamp(body.startsAt)) {
+		return { ok: false, message: "startsAt must be an epoch-ms integer" };
+	}
+	return {
+		ok: true,
+		value: { restaurantId: body.restaurantId, partySize: body.partySize, startsAt: body.startsAt },
+	};
+}
+
+type CreateFields = BookingFields & {
+	contact: { name: string; phone: string; email?: string };
+	notes?: string;
+};
+
+function parseCreateBody(body: unknown): ParseResult<CreateFields> {
+	const booking = parseBookingFields(body);
+	if (!booking.ok) return booking;
+	// `parseBookingFields` already proved this is a JSON object.
+	const raw = body as Record<string, unknown>;
+
+	if (!isJsonObject(raw.contact)) return { ok: false, message: "contact must be a JSON object" };
+	const { name, phone, email } = raw.contact;
+	if (!isNonEmptyString(name)) {
+		return { ok: false, message: "contact.name must be a non-empty string" };
+	}
+	if (!isNonEmptyString(phone)) {
+		return { ok: false, message: "contact.phone must be a non-empty string" };
+	}
+	if (email !== undefined && typeof email !== "string") {
+		return { ok: false, message: "contact.email must be a string when present" };
+	}
+	if (raw.notes !== undefined && typeof raw.notes !== "string") {
+		return { ok: false, message: "notes must be a string when present" };
+	}
+
+	return {
+		ok: true,
+		value: {
+			...booking.value,
+			contact: { name, phone, email: email === undefined ? undefined : email },
+			notes: raw.notes as string | undefined,
+		},
+	};
+}
+
+async function readJsonBody(request: Request): Promise<ParseResult<unknown>> {
+	try {
+		return { ok: true, value: await request.json() };
+	} catch {
+		return { ok: false, message: "Invalid JSON body" };
+	}
+}
+
+function logBotError(operation: string, error: unknown): void {
+	console.error(
+		`[http.${operation}]`,
+		buildIntegrationErrorLog(error, { integration: BOT_INTEGRATION, operation })
+	);
+}
+
 http.route({
 	path: "/api/v1/reservations/availability",
 	method: "POST",
 	handler: httpAction(async (ctx, request) => {
 		if (!(await isAuthorizedBotRequest(request))) return unauthorizedResponse();
-		let body: {
-			restaurantId?: string;
-			partySize?: number;
-			startsAt?: number;
-		};
+
+		const body = await readJsonBody(request);
+		if (!body.ok) return badRequestResponse(body.message);
+		const parsed = parseBookingFields(body.value);
+		if (!parsed.ok) return badRequestResponse(parsed.message);
+
 		try {
-			body = await request.json();
-		} catch {
-			return badRequestResponse("Invalid JSON body");
+			const restaurantId = await ctx.runQuery(internal.reservations.normalizeRestaurantId, {
+				candidateId: parsed.value.restaurantId,
+			});
+			if (!restaurantId) return notFoundResponse(ERROR_NAMES.NOT_FOUND);
+
+			const result = await ctx.runQuery(api.reservations.getAvailability, {
+				restaurantId,
+				partySize: parsed.value.partySize,
+				startsAt: parsed.value.startsAt,
+			});
+			return jsonResponse(result);
+		} catch (error) {
+			logBotError("POST /api/v1/reservations/availability", error);
+			return serverErrorResponse();
 		}
-		if (!body.restaurantId || !body.partySize || !body.startsAt) {
-			return badRequestResponse("restaurantId, partySize, and startsAt are required");
-		}
-		const result = await ctx.runQuery(api.reservations.getAvailability, {
-			restaurantId: body.restaurantId as Id<typeof TABLE.RESTAURANTS>,
-			partySize: body.partySize,
-			startsAt: body.startsAt,
-		});
-		return jsonResponse(result);
 	}),
 });
 
@@ -216,49 +341,44 @@ http.route({
 	method: "POST",
 	handler: httpAction(async (ctx, request) => {
 		if (!(await isAuthorizedBotRequest(request))) return unauthorizedResponse();
-		let body: {
-			restaurantId?: string;
-			partySize?: number;
-			startsAt?: number;
-			contact?: { name?: string; phone?: string; email?: string };
-			notes?: string;
-			userId?: string;
-		};
-		try {
-			body = await request.json();
-		} catch {
-			return badRequestResponse("Invalid JSON body");
-		}
-		if (
-			!body.restaurantId ||
-			!body.partySize ||
-			!body.startsAt ||
-			!body.contact?.name ||
-			!body.contact?.phone
-		) {
-			return badRequestResponse(
-				"restaurantId, partySize, startsAt, and contact.{name,phone} are required"
-			);
-		}
+
+		const body = await readJsonBody(request);
+		if (!body.ok) return badRequestResponse(body.message);
+		const parsed = parseCreateBody(body.value);
+		if (!parsed.ok) return badRequestResponse(parsed.message);
+
 		const idempotencyKey = request.headers.get("idempotency-key") ?? undefined;
-		const [reservationId, error] = await ctx.runMutation(internal.reservations.internalCreate, {
-			restaurantId: body.restaurantId as Id<typeof TABLE.RESTAURANTS>,
-			partySize: body.partySize,
-			startsAt: body.startsAt,
-			contact: {
-				name: body.contact.name,
-				phone: body.contact.phone,
-				email: body.contact.email,
-			},
-			source: RESERVATION_SOURCE.WHATSAPP,
-			notes: body.notes,
-			idempotencyKey,
-		});
-		if (error) {
-			const status = error.name === "NOT_FOUND" ? 404 : error.name === "RATE_LIMITED" ? 429 : 409;
-			return jsonResponse({ error }, status);
+		try {
+			const restaurantId = await ctx.runQuery(internal.reservations.normalizeRestaurantId, {
+				candidateId: parsed.value.restaurantId,
+			});
+			if (!restaurantId) return notFoundResponse(ERROR_NAMES.NOT_FOUND);
+
+			const [reservationId, error] = await ctx.runMutation(internal.reservations.internalCreate, {
+				restaurantId,
+				partySize: parsed.value.partySize,
+				startsAt: parsed.value.startsAt,
+				contact: parsed.value.contact,
+				source: RESERVATION_SOURCE.WHATSAPP,
+				notes: parsed.value.notes,
+				idempotencyKey,
+			});
+			if (error) {
+				const status =
+					error.name === ERROR_NAMES.NOT_FOUND
+						? 404
+						: error.name === ERROR_NAMES.RATE_LIMITED
+							? 429
+							: 409;
+				// Rebuild rather than echo: these objects can carry extra fields
+				// (e.g. validation `fields`), and the bot contract is the code.
+				return jsonResponse({ error: { name: error.name, message: error.message } }, status);
+			}
+			return jsonResponse({ reservationId }, 201);
+		} catch (error) {
+			logBotError("POST /api/v1/reservations", error);
+			return serverErrorResponse();
 		}
-		return jsonResponse({ reservationId }, 201);
 	}),
 });
 
