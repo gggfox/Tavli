@@ -8,7 +8,7 @@ Symptom this runbook addresses: **an email shows "Delivered" in the Resend dashb
 
 ## Background
 
-Email is sent through [Resend](https://resend.com) from a Tavli-owned domain — `gggfox.com` for dev/testing, `tavliai.com` for production (verified in Resend: DKIM, SPF, and DMARC all green as of 2026-07-13). Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
+Email is sent through [Resend](https://resend.com) from a Tavli-owned domain. **`tavliai.com` is the only verified sending domain in the Resend account** (DKIM, SPF, and DMARC all green; re-confirmed 2026-07-25) and it is used for every environment, dev included — `gggfox.com` is _not_ a domain in that account, despite hosting some of our infra. Any `RESEND_FROM_ADDRESS` outside `tavliai.com` will be rejected. Resend reports "Delivered" when the recipient's mail server (e.g. Gmail's MX) accepts the message — that is _not_ the same as "landed in the inbox". Inbox vs. spam placement is decided by the recipient mail provider after acceptance, based on signals like:
 
 - Sender domain reputation (history of sending from the domain)
 - DNS authentication (SPF, DKIM, DMARC)
@@ -30,7 +30,7 @@ operational playbook).
 | Value                 | Where it's set                                 | Consumed                                                                                                   |
 | --------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `RESEND_API_KEY`      | **Convex deployment** env, set per environment | `convex/inviteActions.ts` — the Resend API call                                                            |
-| `RESEND_FROM_ADDRESS` | **Convex deployment** env, set per environment | Sender header, e.g. `Tavli <invites@gggfox.com>` (dev) or `Tavli <invites@tavliai.com>` (prod)             |
+| `RESEND_FROM_ADDRESS` | **Convex deployment** env, set per environment | Sender header. Must be on `tavliai.com` — dev `blessed-weasel-428` uses `support@tavliai.com`              |
 | `PUBLIC_APP_URL`      | **Convex deployment** env, set per environment | `convex/_util/env.ts` (`getAppUrl`) — builds the invite accept link; falls back to `VITE_APP_URL` if unset |
 
 Each of the three Convex deployments needs its own values — dev `blessed-weasel-428`,
@@ -165,14 +165,40 @@ This is fine for unblocking dev work, but **does not fix the underlying issue** 
 
 ## Common Pitfalls
 
-| Pitfall                                                    | Symptom                                                                                            | Fix                                                                                                                |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Env vars set in `.env.local` instead of Convex             | Convex logs show `RESEND_API_KEY missing`, no API call ever made                                   | `npx convex env set RESEND_API_KEY <key>`                                                                          |
-| Sending to non-owner email before domain verification      | Convex logs show 403 from Resend with "you can only send testing emails to your own email address" | Verify a domain in Resend, switch `RESEND_FROM_ADDRESS` to that domain                                             |
-| Gmail `+aliases` in test-mode Resend                       | Same 403 as above                                                                                  | Either invite the canonical owner email, or verify a domain                                                        |
-| Forgot to add `_dmarc` record                              | Email lands in spam, headers show `DMARC: BESTGUESSPASS` instead of `PASS`                         | Add TXT `_dmarc` with `v=DMARC1; p=none;`                                                                          |
-| DKIM record truncated by DNS provider's 255-char TXT limit | DKIM `dig` lookup returns nothing or partial value, Resend won't verify                            | Hostinger usually handles this, but if not, split the value into 255-char chunks each in quotes                    |
-| DNS edits in Hostinger but nameservers point elsewhere     | DNS records not visible via `dig`, Resend stays "Pending"                                          | Confirm `dig +short NS <domain>` returns Hostinger nameservers; if not, edit DNS at the actual nameserver provider |
+| Pitfall                                                    | Symptom                                                                                                                                                          | Fix                                                                                                                                                        |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Env vars set in `.env.local` instead of Convex             | Convex logs show `RESEND_API_KEY missing`, no API call ever made                                                                                                 | `npx convex env set RESEND_API_KEY <key>`                                                                                                                  |
+| Sending to non-owner email before domain verification      | Convex logs show 403 from Resend with "you can only send testing emails to your own email address"                                                               | Verify a domain in Resend, switch `RESEND_FROM_ADDRESS` to that domain                                                                                     |
+| Gmail `+aliases` in test-mode Resend                       | Same 403 as above                                                                                                                                                | Either invite the canonical owner email, or verify a domain                                                                                                |
+| A **non-Convex** sender left on `onboarding@resend.dev`    | Nothing at all app-side — the sending app reports success, the recipient never gets mail. Only evidence is `403 Testing domain restriction` in **Resend → Logs** | Point its `SMTP_FROM_ADDRESS` / from-header at `tavliai.com`. Bit self-hosted Infisical (`infisical.gggfox.com`) for 8 days — see the Infisical note below |
+| Forgot to add `_dmarc` record                              | Email lands in spam, headers show `DMARC: BESTGUESSPASS` instead of `PASS`                                                                                       | Add TXT `_dmarc` with `v=DMARC1; p=none;`                                                                                                                  |
+| DKIM record truncated by DNS provider's 255-char TXT limit | DKIM `dig` lookup returns nothing or partial value, Resend won't verify                                                                                          | Hostinger usually handles this, but if not, split the value into 255-char chunks each in quotes                                                            |
+| DNS edits in Hostinger but nameservers point elsewhere     | DNS records not visible via `dig`, Resend stays "Pending"                                                                                                        | Confirm `dig +short NS <domain>` returns Hostinger nameservers; if not, edit DNS at the actual nameserver provider                                         |
+
+## Other senders on this Resend account
+
+Tavli's Convex deployments are not the only thing sending through this Resend account, so a
+domain or API-key change here affects more than the app.
+
+**Self-hosted Infisical** (`infisical.gggfox.com`) sends its organization-invite emails via
+Resend **SMTP** (not the HTTP API). Its config lives in Dokploy → project **Infisical** →
+compose service `infisical` → **Environment** — the compose file declares the vars as bare
+pass-throughs, so the values come from that tab, and a **Deploy** is required for a change to
+take effect (Save alone does not restart the containers).
+
+| Var                 | Value                                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| `SMTP_HOST`         | `smtp.resend.com`                                                    |
+| `SMTP_PORT`         | `465` (implicit TLS, matches `SMTP_SECURE=true` in the compose file) |
+| `SMTP_USERNAME`     | `resend` (literal — this is not an account name)                     |
+| `SMTP_PASSWORD`     | a Resend API key                                                     |
+| `SMTP_FROM_ADDRESS` | `infisical@tavliai.com` — **must** be on the verified domain         |
+| `SMTP_FROM_NAME`    | `Infisical`                                                          |
+
+Note that Infisical's UI reports "invite sent" whether or not Resend accepted the message, and
+writes nothing to its own logs on rejection. **Resend → Logs is the only place a failure shows
+up.** A stray `SMTP_NAME` var is also present in that env; it is not an Infisical variable and
+is not referenced by the compose file — it does nothing.
 
 ## References
 
