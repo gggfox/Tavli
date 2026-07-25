@@ -1,0 +1,23 @@
+{
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "dev",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": ["dev"],
+			"port": 3000
+		},
+		{
+			"name": "dev-device",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": ["dev:device"],
+			"port": 3000
+		},
+		{
+			"name": "email:dev",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": ["email:dev"],
+			"port": 3001
+		}
+	]
+}

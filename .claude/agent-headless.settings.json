@@ -1,0 +1,33 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-settings.json",
+	"disableClaudeAiConnectors": true,
+	"permissions": {
+		"disableBypassPermissionsMode": "disable",
+		"defaultMode": "acceptEdits",
+		"allow": ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "WebFetch(domain:code.claude.com)"],
+		"deny": [
+			"Bash(convex deploy:*)",
+			"Bash(npx convex deploy:*)",
+			"Bash(pnpm convex deploy:*)",
+			"Bash(pnpm exec convex deploy:*)",
+			"Bash(git push:*staging*)",
+			"Bash(git push:*production*)",
+			"Bash(git checkout staging*)",
+			"Bash(git checkout production*)",
+			"Bash(git switch staging*)",
+			"Bash(git switch production*)",
+			"Bash(git merge:*staging*)",
+			"Bash(git merge:*production*)",
+			"Bash(gh workflow run:*)",
+			"Bash(gh release:*)",
+			"Bash(gh api:*dispatches*)",
+			"Bash(gh api:*deployments*)",
+			"Bash(curl:*dokploy*)",
+			"Bash(wget:*dokploy*)",
+			"Bash(pmset:*)",
+			"Bash(sudo:*)",
+			"mcp__convex__*",
+			"mcp__stripe__*"
+		]
+	}
+}
