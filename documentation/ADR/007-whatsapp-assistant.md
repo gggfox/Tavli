@@ -139,6 +139,7 @@ Any failure between routing and delivery sends a fixed, localized apology from `
 
 ## Change Log
 
-| Date       | Author        | Description                                                                 |
-| ---------- | ------------- | --------------------------------------------------------------------------- |
-| 2026-07-25 | Jorge Almazan | Initial version, written retroactively to repay dangling in-code citations. |
+| Date       | Author        | Description                                                                                                                                                                |
+| ---------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-25 | Jorge Almazan | Initial version, written retroactively to repay dangling in-code citations.                                                                                                |
+| 2026-07-25 | Jorge Almazan | Read-only scope superseded by ADR-008: the assistant can now request and cancel reservations. The runtime split, domain objects and formatting decisions here still stand. |

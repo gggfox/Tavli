@@ -204,8 +204,43 @@ therefore an authorization input, not just contact data: an assistant tool never
 receives a reservation id, and a booking is always resolved server-side from
 `(Restaurant, contact phone)`. _Avoid_: customer id, guest id.
 
+### WhatsApp assistant
+
+**WhatsApp assistant**:
+The LLM first responder on a `Restaurant`'s WhatsApp number. Answers menu
+questions, checks availability, and requests or cancels bookings on behalf of
+the customer messaging it. _Avoid_: chatbot, agent. ("bot" survives as a
+code-internal synonym — `runBotTurn`, `RESERVATIONS_BOT_TOKEN`.)
+
+**Channel**:
+The mapping from one WhatsApp sender number to one `Restaurant`. Routes an
+inbound message to the right restaurant. _Avoid_: number, line, integration.
+
+**Conversation**:
+The message thread between one customer phone and one **Channel**.
+Deliberately **not** "Session" — that word means an open ordering tab at a
+table.
+
+**Confirmation code**:
+A short server-generated number the **WhatsApp assistant** sends when a
+customer asks to cancel. The cancellation happens only when the customer
+replies with the code, and that match is made before the model is consulted —
+so a destructive action always requires a fresh act from the phone's owner.
+Single-use, expires in 10 minutes. _Avoid_: OTP, PIN (that is the employee
+credential), token.
+
+**Awaiting confirmation**:
+A booking made by the **WhatsApp assistant** is `pending` with no `tableIds`
+until staff **confirm** it and assign tables. The assistant must never tell a
+customer a table is held. Note the guest name on such a booking is
+best-effort — the name the customer stated, else their WhatsApp profile name,
+else fixed copy — so staff should not treat it as verified.
+
 ## Relationships
 
+- A **Restaurant** has many **Channels**; a **Channel** has many
+  **Conversations**. A **Conversation** relates to **Reservations** only
+  through the shared **Contact phone**, never by a foreign key.
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,
   each with many **MenuItems**.
 - Every **MenuItem** has exactly one **PrepStation**.

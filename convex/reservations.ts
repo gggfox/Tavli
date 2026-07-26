@@ -897,28 +897,6 @@ export const internalCancelByPhone = internalMutation({
 /** Fixed `cancelReason` for the customer path. Never model-authored. */
 export const CUSTOMER_CANCEL_REASON = "customer_whatsapp";
 
-/**
- * A customer's own upcoming reservations, for the assistant's lookup tool.
- * Returns full docs — the caller is responsible for projecting to an
- * allowlisted shape before anything reaches a model or a customer.
- */
-export const internalListUpcomingByPhone = internalQuery({
-	args: {
-		restaurantId: v.id(TABLE.RESTAURANTS),
-		phone: v.string(),
-	},
-	handler: async (ctx, args): Promise<ReservationDoc[]> => {
-		const phone = args.phone.trim();
-		if (!phone) return [];
-		return await findUpcomingByPhone(ctx, {
-			restaurantId: args.restaurantId,
-			phone,
-			nowMs: Date.now(),
-			sources: [RESERVATION_SOURCE.WHATSAPP],
-		});
-	},
-});
-
 // ============================================================================
 // Mark seated / completed
 // ============================================================================

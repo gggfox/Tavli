@@ -22,6 +22,7 @@ import {
 	TIP_POOL_STATUS,
 	USER_ROLES,
 	WHATSAPP_CONVERSATION_STATUS,
+	WHATSAPP_PENDING_ACTION,
 	WHATSAPP_MESSAGE_DIRECTION,
 } from "./constants";
 
@@ -1087,7 +1088,7 @@ export default defineSchema({
 	// WhatsApp Chatbot (Twilio) — see ADR 007
 	// ============================================================================
 	//
-	// A read-only "first responder". `whatsappChannels` maps a restaurant's
+	// The assistant's tables. `whatsappChannels` maps a restaurant's
 	// WhatsApp sender number (the Twilio "To") to a restaurant so an inbound
 	// message can be routed. A `Conversation` is the thread with one customer
 	// phone on one channel; `whatsappMessages` is the append-only in/out log,
@@ -1156,6 +1157,33 @@ export default defineSchema({
 		.index("by_conversation", ["conversationId"])
 		.index("by_message_sid", ["messageSid"])
 		.index("by_created", ["createdAt"]),
+
+	// A destructive action the customer has been offered but has NOT yet
+	// authorized. `request_cancel` writes one of these and returns a code; the
+	// cancellation only happens when the *next* inbound message carries that code,
+	// matched deterministically in `processing.ts` before the model runs.
+	//
+	// This is what makes injected text unable to cancel a booking: a forwarded
+	// message, a poisoned menu description, or an instruction buried in
+	// conversation history can each influence one turn's tool calls, but none can
+	// produce a second inbound message containing an unguessable code.
+	[TABLE.WHATSAPP_PENDING_ACTIONS]: defineTable({
+		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Re-checked on consume so a code minted for one phone cannot be redeemed
+		// by another, even if the conversation row were somehow reused.
+		customerPhone: v.string(),
+		kind: v.literal(WHATSAPP_PENDING_ACTION.CANCEL_RESERVATION),
+		reservationId: v.id(TABLE.RESERVATIONS),
+		/** Short numeric code the customer echoes back. Single-use. */
+		code: v.string(),
+		expiresAt: v.number(),
+		consumedAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		.index("by_conversation_code", ["conversationId", "code"])
+		.index("by_conversation", ["conversationId"])
+		.index("by_expires", ["expiresAt"]),
 
 	// ============================================================================
 	// Unified Event Store

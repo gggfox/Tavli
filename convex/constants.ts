@@ -44,6 +44,7 @@ export const TABLE = {
 	WHATSAPP_CHANNELS: "whatsappChannels",
 	WHATSAPP_CONVERSATIONS: "whatsappConversations",
 	WHATSAPP_MESSAGES: "whatsappMessages",
+	WHATSAPP_PENDING_ACTIONS: "whatsappPendingActions",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -567,11 +568,12 @@ export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 // WhatsApp Chatbot (Twilio) — see ADR 007
 // ============================================================================
 //
-// A read-only "first responder": customers message a restaurant's WhatsApp
-// number and get automated menu / availability answers, a booking deep-link,
-// or a captured message for staff. A WhatsApp thread is a `Conversation`
-// (deliberately NOT reusing the ordering-domain word "Session"). Inbound
-// routing maps the Twilio "To" number to a `whatsappChannels` row.
+// A first responder: customers message a restaurant's WhatsApp number and get
+// automated menu / availability answers, and can request or cancel a booking on
+// their own behalf. A WhatsApp thread is a `Conversation` (deliberately NOT
+// reusing the ordering-domain word "Session"). Inbound routing maps the Twilio
+// "To" number to a `whatsappChannels` row. Writes are scoped to the sender's
+// verified phone number — see ADR 008.
 
 /** Direction of a stored WhatsApp message relative to the restaurant. */
 export const WHATSAPP_MESSAGE_DIRECTION = {
@@ -615,6 +617,41 @@ export const WHATSAPP_CONTEXT_MESSAGE_LIMIT = 12;
 
 /** Upper bound on tool-calling steps per turn (cost + latency guardrail). */
 export const WHATSAPP_MAX_LLM_STEPS = 5;
+
+/** Kinds of destructive action that require an out-of-band confirmation code. */
+export const WHATSAPP_PENDING_ACTION = {
+	CANCEL_RESERVATION: "cancel_reservation",
+} as const;
+
+export type WhatsappPendingAction =
+	(typeof WHATSAPP_PENDING_ACTION)[keyof typeof WHATSAPP_PENDING_ACTION];
+
+/**
+ * How long a cancellation code stays redeemable. Long enough for a customer to
+ * read the message and reply, short enough that a stale code left in a chat does
+ * not stay live.
+ */
+export const WHATSAPP_PENDING_ACTION_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Digits in a confirmation code. The security property is unguessability by
+ * *injected text*, which cannot see the code at all — brute force is not the
+ * threat model, since a code is single-use, expiring, and scoped to one
+ * conversation and phone. Six digits keeps it easy to retype on a phone.
+ */
+export const WHATSAPP_CONFIRMATION_CODE_DIGITS = 6;
+
+/**
+ * Writes the assistant may perform in a single turn.
+ *
+ * `WHATSAPP_MAX_LLM_STEPS` is NOT a write budget: one step can contain many
+ * parallel tool calls, so without this an injected loop could book or cancel
+ * repeatedly inside one message.
+ */
+export const WHATSAPP_MAX_WRITES_PER_TURN = 1;
+
+/** Assistant-driven reservation writes allowed per phone per hour. */
+export const WHATSAPP_WRITE_RATE_LIMIT = { windowMs: 60 * 60 * 1000, max: 8 } as const;
 
 /** Supported reply locales for the bot. */
 export const WHATSAPP_LOCALE = {

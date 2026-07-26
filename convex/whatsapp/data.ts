@@ -133,6 +133,8 @@ export const ingestInbound = internalMutation({
 		}
 
 		const locale = existingConversation?.locale ?? channel?.defaultLocale;
+		// Prefer the name captured on this message; fall back to one seen earlier.
+		const customerName = profileName ?? existingConversation?.customerName;
 
 		// Dedupe: a repeated MessageSid means Twilio retried an already-stored
 		// delivery. Do not append a second inbound row.
@@ -141,7 +143,7 @@ export const ingestInbound = internalMutation({
 			.withIndex("by_message_sid", (q) => q.eq("messageSid", args.messageSid))
 			.first();
 		if (alreadyStored) {
-			return { conversationId, locale, isDuplicate: true };
+			return { conversationId, locale, customerName, isDuplicate: true };
 		}
 
 		await ctx.db.insert(TABLE.WHATSAPP_MESSAGES, {
@@ -153,7 +155,7 @@ export const ingestInbound = internalMutation({
 			createdAt: now,
 		});
 
-		return { conversationId, locale, isDuplicate: false };
+		return { conversationId, locale, customerName, isDuplicate: false };
 	},
 });
 

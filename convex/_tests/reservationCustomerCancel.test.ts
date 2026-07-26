@@ -326,11 +326,12 @@ describe("internalCancelByPhone — scope and status rules", () => {
 		expect(error?.name).toBe(ERROR_NAMES.NOT_FOUND);
 		expect((await readRow(t, id))?.status).toBe(RESERVATION_STATUS.PENDING);
 
-		const listed = await t.query(internal.reservations.internalListUpcomingByPhone, {
+		// The assistant's own lookup must not surface it either.
+		const listed = await t.query(internal.whatsapp.reservations.internalListMyReservationsForBot, {
 			restaurantId,
 			phone: VICTIM,
 		});
-		expect(listed).toHaveLength(0);
+		expect(listed.reservations).toHaveLength(0);
 	});
 
 	it("does not touch staff- or web-created rows in phase 1", async () => {
