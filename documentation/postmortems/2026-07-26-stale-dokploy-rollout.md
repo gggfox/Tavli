@@ -1,6 +1,6 @@
 # Postmortem — Staging & production served stale builds, 2026-07-17 → 2026-07-26
 
-**Status:** Pipeline fix merged; Dokploy-side confirmation pending
+**Status:** Root cause confirmed; fix in [#77](https://github.com/gggfox/Tavli/pull/77)
 **Severity:** High (every deploy was a no-op; production ran a 9-day-old build)
 **Environments affected:** `staging.tavliai.com` and `tavliai.com`
 **Author:** Incident response, 2026-07-26
@@ -89,17 +89,36 @@ possible if the container predates 2026-07-19.
 
 This rules out two of the three original candidates: the deployment did **not** fail to
 start (it started and completed), and the new container did **not** crash and roll back
-(that takes far longer than 3s and would not report green). What remains is that **the
-image Dokploy resolves is not changing** — either the configured reference points at
-something CI never moves (e.g. a `:latest` tag that is never pushed, or a pinned `:<sha>`),
-or the pull for the mutable `:production` tag is satisfied from the local image cache.
+(that takes far longer than 3s and would not report green).
 
-Confirm which by reading the app's configured `dockerImage` (General tab, or the
-`project.all` call in the resolution steps below) and the deployment log for run 1.
+### Confirmed: the mutable tag is never re-resolved against the registry
 
-Either sub-cause is fixed by the same change: `application.saveDockerProvider`
-**overwrites** the image field on every deploy with the immutable `ghcr.io/gggfox/tavli:<sha>`,
-so a wrong reference is corrected and a cache hit is impossible.
+Querying `application.one` for both apps settled the last candidate — the configured
+image was correct all along:
+
+| Environment | Dokploy app             | `sourceType` | Configured `dockerImage`          |
+| ----------- | ----------------------- | ------------ | --------------------------------- |
+| staging     | `tavli-frontend-7bdzi6` | `docker`     | `ghcr.io/gggfox/tavli:staging`    |
+| prod        | `tavli-frontend-0wcgnf` | `docker`     | `ghcr.io/gggfox/tavli:production` |
+
+Both point at exactly the tags CI pushes, and GHCR's `:staging` was already shown to hold
+the newly-built digest. So the reference was right, the registry was right, and the
+container still ran a week-old image.
+
+**That leaves exactly one mechanism: the mutable tag is not re-resolved at deploy time.**
+Docker finds `ghcr.io/gggfox/tavli:staging` already present locally, skips the pull, and
+recreates the container from the cached image — which is why a "deployment" of a
+several-hundred-MB image completed in 3 seconds and reported success. The environment was
+pinned to whichever build happened to be pulled first, permanently.
+
+This is the deepest form of the bug, because **nothing was misconfigured**. Every
+individual piece — the tag, the registry, the webhook, the Dokploy app — was exactly as
+intended. The pipeline was still incapable of delivering a new build, because a mutable
+tag carries no information about whether it changed.
+
+Pinning the immutable `:<sha>` reference is a structural fix rather than a corrected
+setting: a per-commit tag cannot already exist in the local cache, so the pull is forced
+every time.
 
 ---
 
@@ -151,43 +170,27 @@ Pipeline changes (this PR):
 3. **Stop cancelling in-flight deploys.** `cancel-in-progress: false` — deploys queue
    rather than abort partway through.
 
-Still required, by hand (needs Dokploy access):
+Configuration, done 2026-07-26:
 
-4. Generate a Dokploy API key at **`/dashboard/settings/profile` → API/CLI**. This is the
-   **user profile** page — the organization settings sidebar (Audit Logs, SSH Keys, Git,
-   Registry, …) has no API entry, which is an easy five minutes to lose.
+4. `DOKPLOY_API_URL`, `DOKPLOY_API_KEY` and `DOKPLOY_APPLICATION_ID` are set in Infisical
+   `staging` and `prod`, which activates the API path above. (The API key is generated at
+   **`/dashboard/settings/profile` → API/CLI** — the **user profile** page. The
+   organization settings sidebar has no API entry, which is easy to lose five minutes to.)
 
-   Then read the application ids straight from the API rather than hunting the UI — the
-   same call also reports each app's currently configured `dockerImage`:
-
-   ```sh
-   DOKPLOY_API_URL=https://dokploy.gggfox.com
-   DOKPLOY_API_KEY=<key from the profile page>
-
-   curl -sS -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_API_URL/api/project.all" \
-     | jq -r '.. | objects | select(.applicationId? and .appName?)
-              | "\(.appName)\t\(.applicationId)\t\(.dockerImage // "<none>")"'
-   ```
-
-   Add all three to Infisical, per environment:
+   To re-derive the application ids, or to re-check what each app is configured to run:
 
    ```sh
-   for ENV in staging prod; do
-     infisical secrets set --projectId=da9416bf-a247-4f41-b4c0-14b22f0aaff0 \
-       --domain=https://infisical.gggfox.com --env="$ENV" \
-       "DOKPLOY_API_URL=$DOKPLOY_API_URL" \
-       "DOKPLOY_API_KEY=$DOKPLOY_API_KEY" \
-       "DOKPLOY_APPLICATION_ID=<the id for that environment's frontend app>"
-   done
+   curl -sS -H "x-api-key: $DOKPLOY_API_KEY" \
+     "$DOKPLOY_API_URL/api/application.one?applicationId=$DOKPLOY_APPLICATION_ID" \
+     | jq -r '"\(.appName)  source=\(.sourceType)  image=\(.dockerImage // "<none>")"'
    ```
 
-   Until they are set the deploy still works via the webhook fallback, but it warns and
-   remains unverifiable.
+Still required, by hand:
 
-5. Confirm in Dokploy → Deployments/Logs which of the three mechanisms above was the
-   actual cause, and record it here.
-6. Verify the **production** app has `INFISICAL_ENV=prod` + machine-identity creds —
-   still-open action item #6 from the previous postmortem, and candidate cause 2.
+5. Verify the **production** app has `INFISICAL_ENV=prod` + machine-identity creds —
+   still-open action item #6 from the previous postmortem. It was not the cause here, but
+   it is latent: the first genuinely-new container production has pulled since 2026-07-17
+   will be the first to expose it.
 
 ---
 
@@ -197,6 +200,11 @@ Still required, by hand (needs Dokploy access):
   observe the outcome it claims should not be the step that decides the job is green.
 - **Deploy by immutable reference.** A mutable tag makes "did the rollout happen?"
   unanswerable after the fact. The per-commit tag existed already and was simply unused.
+- **Nothing was misconfigured.** The tag, the registry, the webhook and both Dokploy apps
+  were all exactly as designed — and the pipeline still could not deliver a build for nine
+  days. Looking for the wrong setting would never have found this; the defect was in the
+  shape of the pipeline, not its values. Bugs of this class are invisible to review that
+  asks "is each piece correct?" instead of "can this arrangement fail silently?".
 - **A silent success is worse than a loud failure.** The 502 incident was fixed in 4 days
   because it was visible; this one lasted longer precisely because everything returned 200.
 - **A diagnostic that lumps two failure modes together costs more than no diagnostic.**
@@ -208,15 +216,15 @@ Still required, by hand (needs Dokploy access):
 
 ## Action items
 
-| #   | Action                                                                                         | Rationale                                           | Owner | Status                 |
-| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----- | ---------------------- |
-| 1   | Roll out the immutable `:<sha>` image via the Dokploy API instead of the webhook               | Makes a cached/stale rollout impossible             | —     | ✅ Done (this PR)      |
-| 2   | Classify health-gate failures and print expected-vs-serving SHA                                | Eight red runs read as one vague failure            | —     | ✅ Done (this PR)      |
-| 3   | `cancel-in-progress: false` on deploys                                                         | A cancelled deploy drops a rollout                  | —     | ✅ Done (this PR)      |
-| 4   | Add `DOKPLOY_API_URL` / `DOKPLOY_API_KEY` / `DOKPLOY_APPLICATION_ID` to Infisical staging+prod | Activates item 1; webhook fallback until then       | —     | ☐ Todo (needs Dokploy) |
-| 5   | Record the app's configured `dockerImage` to settle wrong-reference vs. cache hit              | Narrowed to two sub-causes; both fixed the same way | —     | ☐ Todo (needs Dokploy) |
-| 6   | Verify production Dokploy has `INFISICAL_ENV=prod` + machine creds                             | Latent since 2026-07-17; candidate cause 2          | —     | ☐ Todo (needs Dokploy) |
-| 7   | Route `deploy-failure` issues somewhere they get triaged                                       | Alerts fired for 7 days and were not read           | —     | ☐ Todo                 |
+| #   | Action                                                                                         | Rationale                                     | Owner | Status                 |
+| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------- | ----- | ---------------------- |
+| 1   | Roll out the immutable `:<sha>` image via the Dokploy API instead of the webhook               | Makes a cached/stale rollout impossible       | —     | ✅ Done (this PR)      |
+| 2   | Classify health-gate failures and print expected-vs-serving SHA                                | Eight red runs read as one vague failure      | —     | ✅ Done (this PR)      |
+| 3   | `cancel-in-progress: false` on deploys                                                         | A cancelled deploy drops a rollout            | —     | ✅ Done (this PR)      |
+| 4   | Add `DOKPLOY_API_URL` / `DOKPLOY_API_KEY` / `DOKPLOY_APPLICATION_ID` to Infisical staging+prod | Activates item 1; webhook fallback until then | —     | ✅ Done (2026-07-26)   |
+| 5   | Confirm the Dokploy-side mechanism                                                             | Was inferred; now proven — cached mutable tag | —     | ✅ Done (2026-07-26)   |
+| 6   | Verify production Dokploy has `INFISICAL_ENV=prod` + machine creds                             | Latent since 2026-07-17; candidate cause 2    | —     | ☐ Todo (needs Dokploy) |
+| 7   | Route `deploy-failure` issues somewhere they get triaged                                       | Alerts fired for 7 days and were not read     | —     | ☐ Todo                 |
 
 ---
 
