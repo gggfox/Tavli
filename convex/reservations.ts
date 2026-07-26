@@ -44,7 +44,9 @@ import {
 	computeTurnMinutes,
 	intersectsBlackout,
 	isWithinHorizon,
+	isWithinOperatingHours,
 	requiredCapacityCovered,
+	resolveServiceWindow,
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import {
@@ -177,6 +179,25 @@ export const getAvailability = query({
 				suggestedTimes: [] as number[],
 			};
 		}
+		// Operating hours bound the whole reservation, not just its start: with a
+		// 90-minute turn and a 23:00 close the last bookable slot is 21:30.
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (
+			restaurant &&
+			!isWithinOperatingHours({
+				startsAt: args.startsAt,
+				endsAt,
+				window: resolveServiceWindow(restaurant),
+			})
+		) {
+			return {
+				available: false,
+				reason: "ERROR_OUTSIDE_OPERATING_HOURS" as const,
+				turnMinutes,
+				endsAt,
+				suggestedTimes: [] as number[],
+			};
+		}
 
 		const bookable = await isPartyBookableAt(
 			ctx,
@@ -263,6 +284,8 @@ export const listReservationSlotsForDay = query({
 		) {
 			return { slots: [] as number[], turnMinutes };
 		}
+		const restaurant = await ctx.db.get(args.restaurantId);
+		const serviceWindow = restaurant ? resolveServiceWindow(restaurant) : null;
 		const maxStart = args.toMs - turnMinutes * 60_000;
 		const slots: number[] = [];
 		let evaluated = 0;
@@ -275,6 +298,14 @@ export const listReservationSlotsForDay = query({
 			if (endsAt > args.toMs) break;
 			if (!isWithinHorizon({ minAdvanceMinutes, maxAdvanceDays, startsAt: t, now })) continue;
 			if (intersectsBlackout(settings, t, endsAt)) continue;
+			// Checked before `evaluated++` so out-of-hours candidates cost nothing
+			// and don't consume the probe budget.
+			if (
+				serviceWindow &&
+				!isWithinOperatingHours({ startsAt: t, endsAt, window: serviceWindow })
+			) {
+				continue;
+			}
 			// Count each availability probe; this is the expensive per-slot work.
 			evaluated++;
 			const ok = await isPartyBookableAt(ctx, args.restaurantId, args.partySize, t, endsAt);

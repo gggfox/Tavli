@@ -109,6 +109,15 @@ export const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency =
 /** Default IANA timezone for restaurants when unset or invalid. */
 export const DEFAULT_RESTAURANT_TIMEZONE = "America/Mexico_City";
 
+/**
+ * Operating-hours fallbacks when a restaurant leaves `openTime`/`closeTime`
+ * unset. These bound the Timeline's rendered range *and* which start times are
+ * bookable, so a restaurant that never configured hours still cannot take a
+ * 03:00 reservation.
+ */
+export const DEFAULT_RESTAURANT_OPEN_TIME = "10:00";
+export const DEFAULT_RESTAURANT_CLOSE_TIME = "23:00";
+
 export const ORDER_PAYMENT_STATE = {
 	UNPAID: "unpaid",
 	PENDING: "pending",
@@ -330,6 +339,18 @@ export const DEFAULT_RESERVATION_SETTINGS = {
  * availability checks until the backfill mutation has run.
  */
 export const FALLBACK_TABLE_CAPACITY = 4;
+
+/**
+ * Ceiling on a reservation's turn time, clamped in `computeTurnMinutes`.
+ *
+ * This is load-bearing for the conflict read, not just a sanity bound.
+ * `findOverlappingReservations` needs a *lower* bound on its index range to
+ * avoid scanning a restaurant's entire reservation history, and the only rows
+ * that can overlap `[startsAt, endsAt)` from the past are those starting within
+ * one turn before it. That argument only holds if no turn can exceed this value,
+ * so the clamp and the scan bound must stay in sync.
+ */
+export const MAX_RESERVATION_TURN_MINUTES = 12 * 60;
 
 /** Per-restaurant roles (stored on restaurantMembers). Org-level owner/admin stay on userRoles. */
 export const RESTAURANT_MEMBER_ROLE = {

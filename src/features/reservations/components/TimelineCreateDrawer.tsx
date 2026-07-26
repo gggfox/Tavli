@@ -15,6 +15,7 @@ const ERROR_TO_KEY: Record<string, string> = {
 	ERROR_OUTSIDE_BOOKING_HORIZON: ReservationsKeys.REASON_OUTSIDE_BOOKING_HORIZON,
 	ERROR_BLACKOUT_WINDOW: ReservationsKeys.REASON_BLACKOUT_WINDOW,
 	ERROR_NO_TABLES_AVAILABLE: ReservationsKeys.REASON_NO_TABLES,
+	ERROR_OUTSIDE_OPERATING_HOURS: ReservationsKeys.REASON_OUTSIDE_OPERATING_HOURS,
 };
 
 function mapCreateError(error: unknown, t: (key: string) => string): string {

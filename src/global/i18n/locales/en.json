@@ -536,6 +536,7 @@
 		"ERROR_NOT_ACCEPTING_RESERVATIONS": "This restaurant isn't accepting reservations right now.",
 		"ERROR_OUTSIDE_BOOKING_HORIZON": "That date is outside the booking window.",
 		"ERROR_BLACKOUT_WINDOW": "Reservations aren't available during the selected time.",
+		"ERROR_OUTSIDE_OPERATING_HOURS": "The restaurant isn't open at that time.",
 		"ERROR_TABLE_UNAVAILABLE": "That table isn't available for the selected time.",
 		"ERROR_TABLE_LOCKED": "That table is unavailable during the selected time.",
 		"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND": "That shared staff session is already linked to another restaurant.",
@@ -1181,7 +1182,8 @@
 			"notAccepting": "This restaurant isn't taking reservations right now.",
 			"outsideBookingHorizon": "That time is outside the booking window. Try a closer or further-out time.",
 			"blackoutWindow": "The restaurant is closed during that window.",
-			"noTables": "No tables are free for that party at that time."
+			"noTables": "No tables are free for that party at that time.",
+			"outsideOperatingHours": "The restaurant isn't open then. Pick a time inside opening hours — remember the table needs to be free until closing."
 		},
 		"customerForm": {
 			"title": "Reserve at {{restaurantName}}",

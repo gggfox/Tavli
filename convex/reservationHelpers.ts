@@ -31,7 +31,9 @@ import {
 	findOverlappingReservations,
 	intersectsBlackout,
 	isWithinHorizon,
+	isWithinOperatingHours,
 	requiredCapacityCovered,
+	resolveServiceWindow,
 } from "./_util/availability";
 import { appendAuditEvent } from "./_util/audit";
 import { consumeRateLimit, type RateLimitConfig } from "./_util/rateLimit";
@@ -455,6 +457,19 @@ export async function createReservationCore(
 	}
 	if (intersectsBlackout(settings, args.startsAt, endsAt)) {
 		return [null, new ConflictError("ERROR_BLACKOUT_WINDOW").toObject()];
+	}
+	// Staff keep the override so they can take private-event and after-hours
+	// bookings; customers and the assistant cannot. Mirrors the source-aware
+	// `minAdvanceMinutes` decision above.
+	if (
+		args.source !== RESERVATION_SOURCE.STAFF &&
+		!isWithinOperatingHours({
+			startsAt: args.startsAt,
+			endsAt,
+			window: resolveServiceWindow(restaurant),
+		})
+	) {
+		return [null, new ConflictError("ERROR_OUTSIDE_OPERATING_HOURS").toObject()];
 	}
 
 	const availabilityError = await checkAvailabilityForCreate(

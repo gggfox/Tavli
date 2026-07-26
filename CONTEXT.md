@@ -150,7 +150,14 @@ selector.
 **Operating hours**:
 The `openTime` / `closeTime` pair on a `Restaurant` (HH:MM strings),
 expressed in the **Restaurant timezone**. Defines the visible time range
-rendered on the **Timeline**. Falls back to `10:00`–`23:00` when unset.
+rendered on the **Timeline**, and bounds which start times are **bookable**:
+a reservation must start at or after `openTime` and _end_ at or before
+`closeTime`. Because the whole reservation must fit, a 90-minute turn against
+a `23:00` close makes `21:30` the last bookable slot. Staff creates may book
+outside these hours (private events); customer and **WhatsApp assistant**
+creates may not. A close at or before the open (e.g. `18:00`–`02:00`) is an
+overnight window, and an after-midnight booking belongs to the previous
+service day. Falls back to `10:00`–`23:00` when unset.
 _Avoid_: business hours, service window.
 
 **Restaurant timezone**:

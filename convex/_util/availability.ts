@@ -13,10 +13,25 @@
  */
 import type { Doc, Id } from "../_generated/dataModel";
 import type { DatabaseReader } from "../_generated/server";
-import { ACTIVE_RESERVATION_STATUSES, FALLBACK_TABLE_CAPACITY, TABLE } from "../constants";
+import {
+	ACTIVE_RESERVATION_STATUSES,
+	DEFAULT_RESTAURANT_CLOSE_TIME,
+	DEFAULT_RESTAURANT_OPEN_TIME,
+	FALLBACK_TABLE_CAPACITY,
+	MAX_RESERVATION_TURN_MINUTES,
+	TABLE,
+} from "../constants";
+import {
+	addDaysToYmd,
+	parseHm,
+	resolveRestaurantTimezone,
+	utcMsToYmdInTimezone,
+	ymdHmToUtcMs,
+} from "./timezone";
 
 type ReservationDoc = Doc<typeof TABLE.RESERVATIONS>;
 type ReservationSettingsDoc = Doc<typeof TABLE.RESERVATION_SETTINGS>;
+type RestaurantDoc = Doc<typeof TABLE.RESTAURANTS>;
 type TableDoc = Doc<typeof TABLE.TABLES>;
 type TableLockDoc = Doc<typeof TABLE.TABLE_LOCKS>;
 
@@ -35,10 +50,20 @@ export function computeTurnMinutes(
 ): number {
 	for (const range of settings.turnMinutesByCapacity) {
 		if (partySize >= range.minPartySize && partySize <= range.maxPartySize) {
-			return range.turnMinutes;
+			return clampTurnMinutes(range.turnMinutes);
 		}
 	}
-	return settings.defaultTurnMinutes;
+	return clampTurnMinutes(settings.defaultTurnMinutes);
+}
+
+/**
+ * Clamp to `MAX_RESERVATION_TURN_MINUTES`. Not cosmetic: `findOverlappingReservations`
+ * bounds its index scan on the assumption that no turn exceeds this, so a
+ * mis-configured 3-day turn would otherwise make the conflict read miss rows.
+ */
+function clampTurnMinutes(turnMinutes: number): number {
+	if (!Number.isFinite(turnMinutes) || turnMinutes <= 0) return 1;
+	return Math.min(turnMinutes, MAX_RESERVATION_TURN_MINUTES);
 }
 
 /**
@@ -71,6 +96,67 @@ export function isWithinHorizon(params: IsWithinHorizonParams): boolean {
 	const earliest = now + minAdvanceMinutes * MS_PER_MINUTE;
 	const latest = now + maxAdvanceDays * MS_PER_DAY;
 	return startsAt >= earliest && startsAt <= latest;
+}
+
+export interface ServiceWindow {
+	openMinutes: number;
+	closeMinutes: number;
+	timezone: string;
+	/** True when the window crosses midnight (e.g. 18:00–02:00). */
+	isOvernight: boolean;
+}
+
+/**
+ * Resolve a restaurant's bookable service window from its `openTime`/`closeTime`
+ * pair, falling back to the documented defaults when either is unset or
+ * unparseable.
+ */
+export function resolveServiceWindow(
+	restaurant: Pick<RestaurantDoc, "openTime" | "closeTime" | "timezone">
+): ServiceWindow {
+	const openMinutes = parseHm(restaurant.openTime ?? "") ?? parseHm(DEFAULT_RESTAURANT_OPEN_TIME)!;
+	const closeMinutes =
+		parseHm(restaurant.closeTime ?? "") ?? parseHm(DEFAULT_RESTAURANT_CLOSE_TIME)!;
+	return {
+		openMinutes,
+		closeMinutes,
+		timezone: resolveRestaurantTimezone(restaurant.timezone),
+		isOvernight: closeMinutes <= openMinutes,
+	};
+}
+
+const MINUTES_PER_DAY = 1440;
+
+/**
+ * True iff [startsAt, endsAt) fits entirely inside the restaurant's service
+ * window on the local service day it belongs to.
+ *
+ * Note this bounds the whole reservation, not just its start: with a 90-minute
+ * turn and a 23:00 close, the last bookable start is 21:30.
+ *
+ * Overnight windows are checked against the *previous* local day as well — a
+ * 01:00 booking belongs to yesterday's 18:00–02:00 service, not to today's
+ * not-yet-open window.
+ */
+export function isWithinOperatingHours(params: {
+	startsAt: number;
+	endsAt: number;
+	window: ServiceWindow;
+}): boolean {
+	const { startsAt, endsAt, window } = params;
+	const { timezone, openMinutes, closeMinutes, isOvernight } = window;
+	const closeOffset = isOvernight ? closeMinutes + MINUTES_PER_DAY : closeMinutes;
+
+	const fitsOn = (ymd: string): boolean => {
+		const openMs = ymdHmToUtcMs(ymd, openMinutes, timezone);
+		const closeMs = ymdHmToUtcMs(ymd, closeOffset, timezone);
+		return startsAt >= openMs && endsAt <= closeMs;
+	};
+
+	const ymd = utcMsToYmdInTimezone(startsAt, timezone);
+	if (fitsOn(ymd)) return true;
+	// Only an overnight window can have a booking belong to the previous day.
+	return isOvernight && fitsOn(addDaysToYmd(ymd, -1));
 }
 
 /**
@@ -119,10 +205,25 @@ export async function findOverlappingReservations(
 	// Query reservations that start before endsAt for this restaurant via the
 	// time-ordered index, then filter on overlap + active status + tableId
 	// membership.
+	//
+	// The lower bound is what keeps this read bounded. Without it the scan starts
+	// at the beginning of the restaurant's history, and since this runs once per
+	// table (twice over, via the single-table then multi-table passes in
+	// `checkAvailabilityForCreate`), a few hundred stale rows are enough to blow
+	// the per-transaction read limit and break *all* booking for the restaurant —
+	// web form and staff included, permanently, because the rows persist.
+	//
+	// Correctness: a reservation starting earlier than one full turn before
+	// `startsAt` must already have ended, so it cannot overlap. That holds only
+	// because `computeTurnMinutes` clamps to MAX_RESERVATION_TURN_MINUTES.
+	const earliestOverlappingStart = startsAt - MAX_RESERVATION_TURN_MINUTES * MS_PER_MINUTE;
 	const candidates = await ctx.db
 		.query(TABLE.RESERVATIONS)
 		.withIndex("by_restaurant_time", (q) =>
-			q.eq("restaurantId", table.restaurantId).lt("startsAt", endsAt)
+			q
+				.eq("restaurantId", table.restaurantId)
+				.gte("startsAt", earliestOverlappingStart)
+				.lt("startsAt", endsAt)
 		)
 		.collect();
 
