@@ -11,7 +11,7 @@
  */
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { DatabaseWriter } from "./_generated/server";
+import type { DatabaseReader, DatabaseWriter } from "./_generated/server";
 import {
 	ConflictError,
 	ConflictErrorObject,
@@ -527,6 +527,132 @@ export function ensureConfirmable(
 	return new UserInputValidationError({
 		fields: [{ field: "status", message: `Cannot confirm a reservation in status ${status}` }],
 	}).toObject();
+}
+
+// ============================================================================
+// Cancellation
+// ============================================================================
+
+/**
+ * Statuses staff may not cancel out of. `completed` is truly terminal; the other
+ * two are already terminal-but-recoverable and are reopened via `reconfirm`.
+ */
+export const STAFF_NON_CANCELLABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+	RESERVATION_STATUS.COMPLETED,
+];
+
+/**
+ * Statuses a *customer* may cancel from, deliberately narrower than staff's
+ * rule. A `seated` guest is physically at the table, so releasing it from their
+ * phone would desync the floor from the system; staff handle that case.
+ */
+export const CUSTOMER_CANCELLABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.PENDING,
+	RESERVATION_STATUS.CONFIRMED,
+];
+
+export function ensureCancellable(
+	status: ReservationStatus,
+	allowedStatuses?: ReservationStatus[]
+): UserInputValidationErrorObject | null {
+	const permitted = allowedStatuses
+		? allowedStatuses.includes(status)
+		: !STAFF_NON_CANCELLABLE_STATUSES.includes(status);
+	if (permitted) return null;
+	return new UserInputValidationError({
+		fields: [{ field: "status", message: `Cannot cancel a reservation in status ${status}` }],
+	}).toObject();
+}
+
+/**
+ * Apply the cancellation and write its audit event.
+ *
+ * Shared by the staff mutation and the customer (WhatsApp) path so the state
+ * transition is written in exactly one place. Callers differ only in who they
+ * authorize and what they record as the actor — never in what they patch.
+ */
+export async function cancelReservationCore(
+	ctx: CreateCoreCtx,
+	args: {
+		reservation: ReservationDoc;
+		reason?: string;
+		userId: string;
+		eventType: string;
+		/** Extra audit payload fields (e.g. WhatsApp conversation pointers). */
+		auditPayload?: Record<string, unknown>;
+	}
+): Promise<Id<typeof TABLE.RESERVATIONS>> {
+	const now = Date.now();
+	await ctx.db.patch(args.reservation._id, {
+		status: RESERVATION_STATUS.CANCELLED,
+		cancelledAt: now,
+		cancelReason: args.reason,
+		updatedAt: now,
+		updatedBy: args.userId,
+	});
+
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.RESERVATIONS,
+		aggregateId: args.reservation._id,
+		eventType: args.eventType,
+		payload: {
+			restaurantId: args.reservation.restaurantId,
+			fromStatus: args.reservation.status,
+			startsAt: args.reservation.startsAt,
+			partySize: args.reservation.partySize,
+			reason: args.reason,
+			// Kept so a released table is traceable after the fact — cancelling a
+			// confirmed booking frees whatever staff had assigned.
+			releasedTableIds: args.reservation.tableIds,
+			...args.auditPayload,
+		},
+		userId: args.userId,
+	});
+
+	return args.reservation._id;
+}
+
+/** Upper bound on how many of a customer's own bookings we ever consider. */
+export const CUSTOMER_RESERVATION_LOOKUP_LIMIT = 5;
+
+/**
+ * A customer's own upcoming, cancellable reservations at one restaurant.
+ *
+ * This is THE ownership boundary for the customer-facing cancel path, and the
+ * reason it is a single named helper: the scope must be an index equality on
+ * `(restaurantId, contact.phone)`, never a post-hoc filter over a wider read.
+ * Modelled on `requireOwnedActiveSession` in `_util/dinerSession.ts`.
+ *
+ * `source` is restricted by the caller. Phone numbers are not a reliable
+ * identity on staff-entered rows (walk-in placeholders, hotel and concierge
+ * numbers used for many guests, "booked under my partner's number"), so
+ * widening beyond bot-created rows would turn phone equality into a
+ * multi-tenant key.
+ */
+export async function findUpcomingByPhone(
+	ctx: { db: DatabaseReader },
+	args: {
+		restaurantId: Id<typeof TABLE.RESTAURANTS>;
+		phone: string;
+		nowMs: number;
+		sources?: CreateCoreArgs["source"][];
+	}
+): Promise<ReservationDoc[]> {
+	const rows = await ctx.db
+		.query(TABLE.RESERVATIONS)
+		.withIndex("by_phone", (q) =>
+			q.eq("restaurantId", args.restaurantId).eq("contact.phone", args.phone)
+		)
+		.collect();
+
+	return rows
+		.filter((r) => CUSTOMER_CANCELLABLE_STATUSES.includes(r.status))
+		.filter((r) => r.startsAt > args.nowMs)
+		.filter((r) => !args.sources || args.sources.includes(r.source))
+		.sort((a, b) => a.startsAt - b.startsAt)
+		.slice(0, CUSTOMER_RESERVATION_LOOKUP_LIMIT);
 }
 
 const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [

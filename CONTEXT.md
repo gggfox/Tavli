@@ -179,14 +179,30 @@ A terminal reservation status applied when a booking is still `pending` or
 availability checks. _Avoid_: autocancel.
 
 **Cancellation**:
-A terminal reservation status set by staff (with an optional reason). Frees
-the table for availability checks.
+A terminal reservation status (with an optional reason) that frees the table
+for availability checks. Reachable two ways: by **staff** from the **Timeline**
+or the detail drawer, from any non-terminal status; or by the booking's own
+**Contact phone**, through the **WhatsApp assistant**, limited to `pending` and
+`confirmed` bookings that have not yet started — a `seated` guest is at the
+table and cannot cancel from their phone. The staff path records
+`reservations.cancelled`; the customer path records
+`reservations.cancelledByCustomer` and a fixed reason, so the two are
+distinguishable when a cancellation is disputed.
 
 **Reopen**:
 A staff action that moves a terminal reservation (`cancelled` or `no_show`)
 back into the active lifecycle — usually as `confirmed`, or directly as
 `seated` when the guest has arrived. Distinct from **Reschedule** on bookings
 that are already active.
+
+**Contact phone**:
+The phone number on a `Reservation`'s `contact`, in E.164. For a customer
+reaching the **WhatsApp assistant** there is no `User` and no account, so this
+number — taken from Twilio's signature-verified sender — is their entire
+identity, and the only scope for which bookings they may see or cancel. It is
+therefore an authorization input, not just contact data: an assistant tool never
+receives a reservation id, and a booking is always resolved server-side from
+`(Restaurant, contact phone)`. _Avoid_: customer id, guest id.
 
 ## Relationships
 

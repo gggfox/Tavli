@@ -492,6 +492,27 @@ export const PIN_LOCKOUT = {
 export const AUDIT_SYSTEM_USER_ID = "system";
 
 /**
+ * Non-Clerk audit actors, used as `allEvents.userId` when a real person acted
+ * but has no account.
+ *
+ * Kept distinct from `AUDIT_SYSTEM_USER_ID`: reusing "system" would make a
+ * customer-initiated cancellation indistinguishable from the no-show cron in
+ * `allEvents.by_user`, which is exactly the question asked when a cancellation
+ * is disputed.
+ *
+ * Deliberately NOT the customer's phone number. `allEvents` is append-only,
+ * indexed on `userId`, and has no purge path, so a phone there would be
+ * permanently queryable PII that a data-erasure request could not reach. The
+ * identifying details go in `payload` as `conversationId` / `messageSid`
+ * pointers into the purgeable WhatsApp tables instead.
+ */
+export const AUDIT_ACTOR = {
+	WHATSAPP_CUSTOMER: "whatsapp_customer",
+} as const;
+
+export type AuditActor = (typeof AUDIT_ACTOR)[keyof typeof AUDIT_ACTOR];
+
+/**
  * Event names for `appendAuditEvent`. The `allEvents.eventType` column is a bare
  * `v.string()`, so nothing stops a typo from creating a silent second event
  * stream — this map is the guard.
@@ -529,6 +550,9 @@ export const AUDIT_EVENT = {
 	RESERVATION_RESCHEDULED: "reservations.rescheduled",
 	RESERVATION_RECONFIRMED: "reservations.reconfirmed",
 	RESERVATION_CANCELLED: "reservations.cancelled",
+	// Distinct from the staff cancel so the two are separable in `allEvents`:
+	// same state transition, very different provenance and dispute story.
+	RESERVATION_CANCELLED_BY_CUSTOMER: "reservations.cancelledByCustomer",
 	RESERVATION_SEATED: "reservations.seated",
 	RESERVATION_COMPLETED: "reservations.completed",
 	RESERVATION_NO_SHOW: "reservations.noShow",

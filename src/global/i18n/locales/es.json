@@ -537,6 +537,7 @@
 		"ERROR_OUTSIDE_BOOKING_HORIZON": "Esa fecha está fuera del periodo de reservas.",
 		"ERROR_BLACKOUT_WINDOW": "No hay reservas disponibles durante el horario seleccionado.",
 		"ERROR_OUTSIDE_OPERATING_HOURS": "El restaurante no está abierto a esa hora.",
+		"ERROR_AMBIGUOUS_RESERVATION": "Hay más de una reservación próxima que coincide. Indica a qué hora te refieres.",
 		"ERROR_TABLE_UNAVAILABLE": "Esa mesa no está disponible para la hora seleccionada.",
 		"ERROR_TABLE_LOCKED": "Esa mesa no está disponible durante el horario seleccionado.",
 		"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND": "Esa sesión compartida del personal ya está vinculada a otro restaurante.",

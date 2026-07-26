@@ -383,35 +383,65 @@ http.route({
 	}),
 });
 
+// Cancellation is keyed on the customer's phone number, never on a reservation
+// id in the path. An id-in-path route would hand callers a capability they can
+// forge or enumerate — and the create route already leaks ids to anyone who
+// guesses an `Idempotency-Key`. Resolving server-side from `(restaurantId,
+// phone)` means there is nothing to forge. The previous `/cancel/<id>` prefix
+// route is gone; it only ever returned 501.
 http.route({
-	pathPrefix: "/api/v1/reservations/cancel/",
+	path: "/api/v1/reservations/cancel",
 	method: "POST",
-	handler: httpAction(async (_ctx, request) => {
+	handler: httpAction(async (ctx, request) => {
 		if (!(await isAuthorizedBotRequest(request))) return unauthorizedResponse();
-		// Path is /api/v1/reservations/cancel/<reservationId>
-		const url = new URL(request.url);
-		const reservationId = url.pathname.split("/").pop();
-		if (!reservationId) return badRequestResponse("Missing reservationId");
-		let body: { reason?: string } = {};
-		try {
-			body = await request.json();
-		} catch {
-			// Empty body is OK -- reason is optional.
+
+		const body = await readJsonBody(request);
+		if (!body.ok) return badRequestResponse(body.message);
+		const payload = body.value as Record<string, unknown>;
+
+		if (typeof payload.restaurantId !== "string" || !payload.restaurantId) {
+			return badRequestResponse("restaurantId is required");
 		}
-		// The bot acts on behalf of the customer, so we don't run the
-		// staff-auth path. Instead delegate to a dedicated internal cancel
-		// (planned: a future `internalCancel` mutation that bypasses staff
-		// auth for bot-originated rows). For now reject with 501 so the bot
-		// surfaces a clear "not yet supported" message rather than silently
-		// failing.
-		return jsonResponse(
-			{
-				error: "Bot-originated cancellation not yet wired",
-				reservationId,
-				reason: body.reason,
-			},
-			501
-		);
+		if (typeof payload.phone !== "string" || !payload.phone.trim()) {
+			return badRequestResponse("phone is required");
+		}
+		if (
+			payload.startsAt !== undefined &&
+			(typeof payload.startsAt !== "number" || !Number.isInteger(payload.startsAt))
+		) {
+			return badRequestResponse("startsAt must be an integer timestamp");
+		}
+
+		try {
+			const restaurantId = await ctx.runQuery(internal.reservations.normalizeRestaurantId, {
+				candidateId: payload.restaurantId,
+			});
+			if (!restaurantId) return notFoundResponse(ERROR_NAMES.NOT_FOUND);
+
+			const [reservation, error] = await ctx.runMutation(
+				internal.reservations.internalCancelByPhone,
+				{
+					restaurantId,
+					phone: payload.phone,
+					startsAt: payload.startsAt as number | undefined,
+				}
+			);
+			if (error) {
+				const status = error.name === ERROR_NAMES.NOT_FOUND ? 404 : 409;
+				// Rebuild rather than echo, as on the create route.
+				return jsonResponse({ error: { name: error.name, message: error.message } }, status);
+			}
+			// Echo only what the caller needs to confirm the right booking was
+			// withdrawn — no contact details, no id.
+			return jsonResponse({
+				cancelled: true,
+				startsAt: reservation.startsAt,
+				partySize: reservation.partySize,
+			});
+		} catch (error) {
+			logBotError("POST /api/v1/reservations/cancel", error);
+			return serverErrorResponse();
+		}
 	}),
 });
 
