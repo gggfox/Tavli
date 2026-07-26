@@ -18,7 +18,12 @@ on:
 
 concurrency:
   group: deploy-${{ inputs.infisical_env }}
-  cancel-in-progress: true
+  # Never abort a deploy that is already running. Cancelling between "image
+  # pushed" and "Dokploy told to roll it out" leaves the registry ahead of the
+  # running container with nothing left to reconcile them, so that commit's
+  # rollout simply never happens. Queueing instead makes a burst of merges
+  # deploy serially, and the last one still wins.
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -118,9 +123,17 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Trigger Dokploy webhook
+      # Pins the Dokploy application to the immutable :<sha> reference pushed
+      # above, then deploys it. The old webhook only said "redeploy" and left
+      # the image choice to Dokploy's stored config — a mutable :staging /
+      # :production tag that Docker can serve from its local cache, which is
+      # how both environments ran a 2026-07-19 build for a week with every
+      # workflow step green. See dokploy-rollout.sh for the fallback path.
+      - name: Roll out to Dokploy
         env:
           INFISICAL_TOKEN: ${{ steps.infisical.outputs.token }}
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          DEPLOY_TITLE: ${{ inputs.infisical_env }} @ ${{ github.sha }}
         run: |
           infisical run \
             --token="$INFISICAL_TOKEN" \
@@ -128,42 +141,20 @@ jobs:
             --env="${{ inputs.infisical_env }}" \
             --domain="$INFISICAL_API_URL" \
             --silent \
-            -- bash -c 'HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DOKPLOY_WEBHOOK_URL"); echo "Dokploy responded with HTTP $HTTP_CODE"; if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then echo "::error::Dokploy webhook failed with HTTP $HTTP_CODE"; exit 1; fi'
+            -- bash .github/scripts/dokploy-rollout.sh
 
-      # Firing the webhook only tells Dokploy to *start* pulling the new image.
-      # Poll /health until the deployed env serves 200 AND reports the SHA we
-      # just built, so a failed redeploy (stale/gone container) fails the job
-      # instead of going silently unnoticed — the class behind the 4-day
-      # staging outage (postmortem action #5).
+      # Accepting a rollout is not serving it. Poll /health until the deployed
+      # env reports the SHA we just built, so a rollout that silently did
+      # nothing fails the job instead of going unnoticed — the class behind both
+      # the 4-day staging outage and the week-long stale-rollout incident. The
+      # script classifies *how* it failed, because "serving an old build" and
+      # "serving nothing" have different remediations.
       - name: Post-deploy health gate
         env:
           HEALTH_BASE_URL: ${{ inputs.health_url }}
           EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          HEALTH_URL="${HEALTH_BASE_URL%/}/health"
-          TIMEOUT_SECONDS=300
-          INTERVAL_SECONDS=10
-          DEADLINE=$((SECONDS + TIMEOUT_SECONDS))
-          echo "Polling $HEALTH_URL for sha $EXPECTED_SHA (timeout ${TIMEOUT_SECONDS}s, interval ${INTERVAL_SECONDS}s)"
-          attempt=0
-          while [ "$SECONDS" -lt "$DEADLINE" ]; do
-            attempt=$((attempt + 1))
-            BODY=$(curl -fsS --max-time 10 "$HEALTH_URL" 2>/dev/null || true)
-            if [ -n "$BODY" ]; then
-              REPORTED_SHA=$(printf '%s' "$BODY" | jq -r '.sha // empty' 2>/dev/null || true)
-              if [ "$REPORTED_SHA" = "$EXPECTED_SHA" ]; then
-                echo "Health gate passed on attempt $attempt: $HEALTH_URL reports sha $REPORTED_SHA"
-                exit 0
-              fi
-              echo "Attempt $attempt: reported sha '${REPORTED_SHA:-<none>}' != expected '$EXPECTED_SHA' (still rolling out)"
-            else
-              echo "Attempt $attempt: $HEALTH_URL not responding yet"
-            fi
-            sleep "$INTERVAL_SECONDS"
-          done
-          echo "::error::Health gate timed out after ${TIMEOUT_SECONDS}s — $HEALTH_URL never reported sha $EXPECTED_SHA. The redeploy likely failed and the environment may be serving a stale build or nothing at all."
-          exit 1
+          EXPECTED_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: bash .github/scripts/health-gate.sh
 
       # No new secrets: uses the built-in GITHUB_TOKEN. Opens (or comments on an
       # existing) issue labeled deploy-failure so a red deploy is a visible,
@@ -176,10 +167,29 @@ jobs:
           ENV_NAME: ${{ inputs.infisical_env }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
+          HEALTH_BASE_URL: ${{ inputs.health_url }}
         run: |
           set -euo pipefail
           TITLE="Deploy failed: ${ENV_NAME}"
-          BODY=$(printf 'Deploy to **%s** failed.\n\n- Run: %s\n- Commit: %s\n- Workflow: %s\n\nA step failed (build, Convex deploy, image push, Dokploy webhook, or the post-deploy health gate). The environment may be serving a stale build or nothing — this is the failure class behind the 4-day staging outage. Investigate the run, then close this issue once the environment serves again.' "$ENV_NAME" "$RUN_URL" "$COMMIT_SHA" "$GITHUB_WORKFLOW")
+
+          # Ask the environment what it is actually serving and put the answer in
+          # the alert. Eight identical "deploy failed" comments accumulated on one
+          # issue during the 2026-07 stale-rollout incident precisely because the
+          # alert said nothing that distinguished them.
+          HEALTH_URL="${HEALTH_BASE_URL%/}/health"
+          HTTP_CODE=$(curl -sS --max-time 10 -o /tmp/health-body -w '%{http_code}' "$HEALTH_URL") || HTTP_CODE=000
+          SERVING=$(jq -r '.sha // empty' /tmp/health-body 2>/dev/null || true)
+          if [ "$HTTP_CODE" = "000" ]; then
+            STATE=$(printf 'nothing — %s is not answering. No healthy container; check Dokploy -> app -> Logs.' "$HEALTH_URL")
+          elif [ "$SERVING" = "$COMMIT_SHA" ]; then
+            STATE=$(printf 'the expected commit. The rollout may have landed just after the gate timed out — verify and close.')
+          elif [ -n "$SERVING" ]; then
+            STATE=$(printf '`%s`, but this run built `%s`. **The rollout did not replace the container.** Check Dokploy -> app -> Deployments, and confirm the app image is the immutable `:<sha>` reference rather than a mutable `:staging` / `:production` tag.' "$SERVING" "$COMMIT_SHA")
+          else
+            STATE=$(printf 'HTTP %s with no sha. The build may predate the /health route, or something other than the app is answering.' "$HTTP_CODE")
+          fi
+
+          BODY=$(printf 'Deploy to **%s** failed.\n\n- Run: %s\n- Commit: %s\n- Workflow: %s\n\n**%s is serving:** %s\n\nA step failed (build, Convex deploy, image push, Dokploy rollout, or the post-deploy health gate). Open the run and read the **Deploy diagnosis** group in the health-gate step — it names the failure class and its fix. Close this issue once the environment serves the expected commit.' "$ENV_NAME" "$RUN_URL" "$COMMIT_SHA" "$GITHUB_WORKFLOW" "$HEALTH_BASE_URL" "$STATE")
           # Ensure the label exists (no-op if it already does).
           gh label create deploy-failure --color B60205 --description "Automated deploy failure alert" 2>/dev/null || true
           # Reuse the open alert for this environment if one exists, else open one.

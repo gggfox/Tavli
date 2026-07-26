@@ -91,11 +91,15 @@ with the previous "set everything manually" setup.
 Branch flow:
 
 1. Merge to `main` → CI runs (lint, audit, typecheck, build, unit, e2e).
-2. On green, CI fast-forwards `staging` → **Deploy Staging** builds `:staging`, deploys Convex
-   (`aromatic-dog-762`), and pings Dokploy staging (`staging.tavliai.com`).
+2. On green, CI fast-forwards `staging` → **Deploy Staging** builds `:staging` + `:<sha>`, deploys
+   Convex (`aromatic-dog-762`), rolls the immutable `:<sha>` image out to Dokploy staging, and
+   gates on `staging.tavliai.com/health` reporting that commit.
 3. Manual **Promote to Production** workflow fast-forwards `production` from `staging` →
-   **Deploy Production** builds `:production`, deploys Convex (`polite-antelope-545`), and
-   pings Dokploy production (`tavliai.com`).
+   **Deploy Production** does the same against Convex (`polite-antelope-545`) and `tavliai.com`.
+
+The deploy is only green once `/health` serves the commit it just built — Dokploy accepting a
+rollout does not mean a new container is running. See
+[the 2026-07-26 postmortem](documentation/postmortems/2026-07-26-stale-dokploy-rollout.md).
 
 Secrets live in Infisical (`dev` / `staging` / `prod`). GitHub Actions only stores the Infisical
 machine-identity credentials plus `PROMOTE_TOKEN` (PAT with bypass on protected branches).
@@ -114,6 +118,16 @@ Dokploy (per environment) should only set:
 
 - `INFISICAL_MACHINE_CLIENT_ID` / `INFISICAL_MACHINE_CLIENT_SECRET`
 - `INFISICAL_ENV` — `staging` or `prod` (defaults to `prod` in `docker-entrypoint.sh`)
+
+Infisical (per environment) additionally holds the credentials CI uses to roll out:
+
+- `DOKPLOY_API_URL` — e.g. `https://dokploy.example.com`
+- `DOKPLOY_API_KEY` — Dokploy → Settings → API/CLI
+- `DOKPLOY_APPLICATION_ID` — the frontend application's id for that environment
+
+Without all three, the deploy falls back to the legacy `DOKPLOY_WEBHOOK_URL` and emits a
+workflow warning: that path redeploys a **mutable** tag, which can silently serve a cached
+image.
 
 DNS: point `tavliai.com` and `staging.tavliai.com` A records at the Dokploy server. Traefik
 domains are configured in each Dokploy application’s **Domains** tab.
