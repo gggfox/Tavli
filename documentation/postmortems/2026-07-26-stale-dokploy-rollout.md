@@ -70,22 +70,36 @@ Evidence collected on 2026-07-26 (run
 The registry was right and CI was right. The gap is entirely between "Dokploy said OK"
 and "a new container is serving".
 
-### Open question — the Dokploy-side mechanism is not yet confirmed
+### The rollouts ran, reported success, and did nothing
 
-We can prove the container was never replaced; we cannot yet prove **why**, because that
-requires the Dokploy UI. The candidates, in order of likelihood:
+Dokploy's **Deployments** tab for the production `frontend` app shows the webhook was
+received and acted on every time — and how long each took:
 
-1. **A mutable tag was satisfied from the server's local image cache.** Re-deploying
-   `:staging` when a `:staging` image already exists locally can reuse it, pinning the
-   environment to whichever build was pulled first, forever.
-2. **The new container failed its healthcheck and was rolled back**, leaving the previous
-   one serving. A missing `INFISICAL_MACHINE_CLIENT_ID/SECRET` would do this (it is the
-   known-latent misconfiguration from the previous postmortem, action item #6).
-3. **The deployment never started** despite the 200.
+| Dokploy deployment         | Duration | Corresponding workflow run                |
+| -------------------------- | -------- | ----------------------------------------- |
+| `NEW CHANGES` — Done       | **3s**   | Deploy Production `42b94dc`, 07-26 (red)  |
+| `NEW CHANGES` — Done       | **5s**   | Deploy Production `79925f5`, 07-19 (red)  |
+| `Manual deployment` — Done | **0s**   | manual redeploy during the 07-17 incident |
 
-Check **Dokploy → app → Deployments** and **→ Logs** to settle it. The fix below removes
-cause 1 outright and makes 2 and 3 fail loudly instead of silently, so it is correct
-regardless of which one it was.
+**The durations are the tell.** The image is `node:22-slim` plus the Infisical CLI plus
+the `.output` bundle — hundreds of MB. A deployment that genuinely pulls a new image and
+recreates the container cannot finish in 3 seconds. "Done" here means Dokploy ran its
+routine and found nothing to do, while `tavliai.com/health` kept 404ing — which is only
+possible if the container predates 2026-07-19.
+
+This rules out two of the three original candidates: the deployment did **not** fail to
+start (it started and completed), and the new container did **not** crash and roll back
+(that takes far longer than 3s and would not report green). What remains is that **the
+image Dokploy resolves is not changing** — either the configured reference points at
+something CI never moves (e.g. a `:latest` tag that is never pushed, or a pinned `:<sha>`),
+or the pull for the mutable `:production` tag is satisfied from the local image cache.
+
+Confirm which by reading the app's configured `dockerImage` (General tab, or the
+`project.all` call in the resolution steps below) and the deployment log for run 1.
+
+Either sub-cause is fixed by the same change: `application.saveDockerProvider`
+**overwrites** the image field on every deploy with the immutable `ghcr.io/gggfox/tavli:<sha>`,
+so a wrong reference is corrected and a cache hit is impossible.
 
 ---
 
@@ -139,17 +153,31 @@ Pipeline changes (this PR):
 
 Still required, by hand (needs Dokploy access):
 
-4. Generate a Dokploy API key (Settings → API/CLI) and add `DOKPLOY_API_URL`,
-   `DOKPLOY_API_KEY`, `DOKPLOY_APPLICATION_ID` to Infisical `staging` and `prod`. The
-   application id is the `applicationId` query param in the app's Dokploy URL.
+4. Generate a Dokploy API key at **`/dashboard/settings/profile` → API/CLI**. This is the
+   **user profile** page — the organization settings sidebar (Audit Logs, SSH Keys, Git,
+   Registry, …) has no API entry, which is an easy five minutes to lose.
+
+   Then read the application ids straight from the API rather than hunting the UI — the
+   same call also reports each app's currently configured `dockerImage`:
+
+   ```sh
+   DOKPLOY_API_URL=https://dokploy.gggfox.com
+   DOKPLOY_API_KEY=<key from the profile page>
+
+   curl -sS -H "x-api-key: $DOKPLOY_API_KEY" "$DOKPLOY_API_URL/api/project.all" \
+     | jq -r '.. | objects | select(.applicationId? and .appName?)
+              | "\(.appName)\t\(.applicationId)\t\(.dockerImage // "<none>")"'
+   ```
+
+   Add all three to Infisical, per environment:
 
    ```sh
    for ENV in staging prod; do
      infisical secrets set --projectId=da9416bf-a247-4f41-b4c0-14b22f0aaff0 \
        --domain=https://infisical.gggfox.com --env="$ENV" \
-       "DOKPLOY_API_URL=https://<your-dokploy-host>" \
-       "DOKPLOY_API_KEY=<key>" \
-       "DOKPLOY_APPLICATION_ID=<per-env application id>"
+       "DOKPLOY_API_URL=$DOKPLOY_API_URL" \
+       "DOKPLOY_API_KEY=$DOKPLOY_API_KEY" \
+       "DOKPLOY_APPLICATION_ID=<the id for that environment's frontend app>"
    done
    ```
 
@@ -180,15 +208,15 @@ Still required, by hand (needs Dokploy access):
 
 ## Action items
 
-| #   | Action                                                                                         | Rationale                                     | Owner | Status                 |
-| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------- | ----- | ---------------------- |
-| 1   | Roll out the immutable `:<sha>` image via the Dokploy API instead of the webhook               | Makes a cached/stale rollout impossible       | —     | ✅ Done (this PR)      |
-| 2   | Classify health-gate failures and print expected-vs-serving SHA                                | Eight red runs read as one vague failure      | —     | ✅ Done (this PR)      |
-| 3   | `cancel-in-progress: false` on deploys                                                         | A cancelled deploy drops a rollout            | —     | ✅ Done (this PR)      |
-| 4   | Add `DOKPLOY_API_URL` / `DOKPLOY_API_KEY` / `DOKPLOY_APPLICATION_ID` to Infisical staging+prod | Activates item 1; webhook fallback until then | —     | ☐ Todo (needs Dokploy) |
-| 5   | Confirm the Dokploy-side mechanism in Deployments/Logs and record it above                     | Root cause is inferred, not proven            | —     | ☐ Todo (needs Dokploy) |
-| 6   | Verify production Dokploy has `INFISICAL_ENV=prod` + machine creds                             | Latent since 2026-07-17; candidate cause 2    | —     | ☐ Todo (needs Dokploy) |
-| 7   | Route `deploy-failure` issues somewhere they get triaged                                       | Alerts fired for 7 days and were not read     | —     | ☐ Todo                 |
+| #   | Action                                                                                         | Rationale                                           | Owner | Status                 |
+| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----- | ---------------------- |
+| 1   | Roll out the immutable `:<sha>` image via the Dokploy API instead of the webhook               | Makes a cached/stale rollout impossible             | —     | ✅ Done (this PR)      |
+| 2   | Classify health-gate failures and print expected-vs-serving SHA                                | Eight red runs read as one vague failure            | —     | ✅ Done (this PR)      |
+| 3   | `cancel-in-progress: false` on deploys                                                         | A cancelled deploy drops a rollout                  | —     | ✅ Done (this PR)      |
+| 4   | Add `DOKPLOY_API_URL` / `DOKPLOY_API_KEY` / `DOKPLOY_APPLICATION_ID` to Infisical staging+prod | Activates item 1; webhook fallback until then       | —     | ☐ Todo (needs Dokploy) |
+| 5   | Record the app's configured `dockerImage` to settle wrong-reference vs. cache hit              | Narrowed to two sub-causes; both fixed the same way | —     | ☐ Todo (needs Dokploy) |
+| 6   | Verify production Dokploy has `INFISICAL_ENV=prod` + machine creds                             | Latent since 2026-07-17; candidate cause 2          | —     | ☐ Todo (needs Dokploy) |
+| 7   | Route `deploy-failure` issues somewhere they get triaged                                       | Alerts fired for 7 days and were not read           | —     | ☐ Todo                 |
 
 ---
 

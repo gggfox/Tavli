@@ -122,7 +122,8 @@ Dokploy (per environment) should only set:
 Infisical (per environment) additionally holds the credentials CI uses to roll out:
 
 - `DOKPLOY_API_URL` — e.g. `https://dokploy.example.com`
-- `DOKPLOY_API_KEY` — Dokploy → Settings → API/CLI
+- `DOKPLOY_API_KEY` — generated at `/dashboard/settings/profile` → **API/CLI**. This is the
+  **user profile** page, not the organization settings sidebar (which has no API entry).
 - `DOKPLOY_APPLICATION_ID` — the frontend application's id for that environment
 
 Without all three, the deploy falls back to the legacy `DOKPLOY_WEBHOOK_URL` and emits a
