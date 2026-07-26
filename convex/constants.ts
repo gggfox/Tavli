@@ -551,6 +551,13 @@ export type WhatsappConversationStatus =
 export const WHATSAPP_MAX_INBOUND_BODY_CHARS = 2000;
 
 /**
+ * Hard cap on an outbound reply body. Twilio rejects a WhatsApp body over 1600
+ * characters outright (error 21617) — the whole message fails and the customer
+ * gets nothing — so clamp below that with headroom rather than risk the send.
+ */
+export const WHATSAPP_MAX_OUTBOUND_BODY_CHARS = 1500;
+
+/**
  * OpenRouter model slug for the WhatsApp assistant. Overridable via the
  * `WHATSAPP_MODEL` env var; shares `OPENROUTER_API_KEY` with menu import. A
  * cheap default keeps per-message cost low (set e.g. "anthropic/claude-3.5-haiku"

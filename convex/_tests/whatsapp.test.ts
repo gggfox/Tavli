@@ -4,7 +4,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { toWhatsappText } from "../whatsapp/format";
+import { clampInboundBody, clampOutboundBody, toWhatsappText } from "../whatsapp/format";
 import { matchDishByName, type BotMenuItem } from "../whatsapp/menu";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -254,6 +254,53 @@ describe("whatsapp internalGetMenuForBot", () => {
 	});
 });
 
+describe("whatsapp body clamps", () => {
+	it("passes short inbound bodies through untouched", () => {
+		expect(clampInboundBody("hola")).toBe("hola");
+		expect(clampInboundBody("")).toBe("");
+		expect(clampInboundBody("x".repeat(2000))).toHaveLength(2000);
+	});
+
+	it("truncates an oversized inbound body to the declared cap", () => {
+		expect(clampInboundBody("x".repeat(5000))).toHaveLength(2000);
+	});
+
+	it("truncates by code point, never splitting an emoji into a lone surrogate", () => {
+		// 3000 emoji = 6000 UTF-16 code units, and 2000 is an odd cut point in code
+		// units. A naive .slice() would halve one and emit an unpaired surrogate,
+		// which Twilio rejects. A well-formed pair is itself in the D800-DFFF range,
+		// so assert every code point is the whole emoji rather than scanning units.
+		// Every code point being the whole emoji is proof no pair was split: a lone
+		// surrogate would iterate as a single unpaired unit that is not "🌮".
+		const clamped = clampInboundBody("🌮".repeat(3000));
+		expect(Array.from(clamped)).toHaveLength(2000);
+		expect(Array.from(clamped).every((c) => c === "🌮")).toBe(true);
+
+		const out = clampOutboundBody("🌮".repeat(3000));
+		expect(Array.from(out).every((c) => c === "🌮" || c === "…")).toBe(true);
+	});
+
+	it("passes short outbound bodies through untouched", () => {
+		expect(clampOutboundBody("Aquí tienes el menú")).toBe("Aquí tienes el menú");
+	});
+
+	it("truncates an oversized reply at a word boundary with an ellipsis", () => {
+		const long = `${"palabra ".repeat(400)}FINAL`;
+		const out = clampOutboundBody(long);
+		expect(Array.from(out).length).toBeLessThanOrEqual(1500);
+		expect(out.endsWith("…")).toBe(true);
+		expect(out).not.toContain("FINAL");
+		// Cut at whitespace, so the last word is whole.
+		expect(out).toMatch(/palabra…$/);
+	});
+
+	it("still clamps a single unbroken token that has no word boundary", () => {
+		const out = clampOutboundBody("x".repeat(3000));
+		expect(Array.from(out).length).toBeLessThanOrEqual(1500);
+		expect(out.endsWith("…")).toBe(true);
+	});
+});
+
 describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 	let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -394,6 +441,162 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		expect(inbound).toHaveLength(1);
 		expect(mockGenerateText).toHaveBeenCalledTimes(1);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects a non-whatsapp From so a spoofed SMS caller ID cannot impersonate", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		const res = await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			// Correctly signed, but arriving as SMS rather than WhatsApp. `normalizePhone`
+			// would strip the (absent) prefix and yield an identical identity string.
+			body: inboundBody({ From: CUSTOMER }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(res.status).toBe(400);
+		expect(mockGenerateText).not.toHaveBeenCalled();
+		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
+		expect(conversations).toHaveLength(0);
+	});
+
+	it("clamps an oversized inbound body before storing or replaying it", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "x".repeat(5000) }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const inbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "inbound"))
+				.collect()
+		);
+		expect(inbound[0].body).toHaveLength(2000);
+		const { messages } = mockGenerateText.mock.calls[0][0];
+		expect(messages[messages.length - 1].content).toHaveLength(2000);
+	});
+
+	it("clamps an oversized reply so Twilio does not reject the whole message", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		mockGenerateText.mockResolvedValue({ text: `${"palabra ".repeat(500)}`, toolCalls: [] });
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody(),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(Array.from(outbound[0].body).length).toBeLessThanOrEqual(1500);
+		// Stored row and delivered payload must match exactly.
+		const [, init] = fetchMock.mock.calls[0];
+		const sentBody = new URLSearchParams(String(init?.body)).get("Body");
+		expect(sentBody).toBe(outbound[0].body);
+	});
+
+	it("marks an undelivered reply instead of logging it as sent", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		// Twilio quota exhausted — the real 429 that surfaced this bug.
+		fetchMock.mockResolvedValue({
+			ok: false,
+			status: 429,
+			json: async () => ({ message: "exceeded the 5 daily messages limit" }),
+		});
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody(),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound).toHaveLength(1);
+		expect(outbound[0].messageSid).toBeUndefined();
+		expect(outbound[0].deliveryFailedAt).toBeTypeOf("number");
+	});
+
+	it("does not replay an undelivered reply as context on the next turn", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+
+		// Turn 1: the send fails, so the customer never sees this reply.
+		mockGenerateText.mockResolvedValue({ text: "Aquí está el menú en inglés", toolCalls: [] });
+		fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({}) });
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ MessageSid: "SM-turn1" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		// Turn 2: sends fine. The model must not be told it already replied.
+		fetchMock.mockResolvedValue({ ok: true, json: async () => ({ sid: "SMout2" }) });
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ MessageSid: "SM-turn2", Body: "el menú en inglés?" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const { messages } = mockGenerateText.mock.calls[1][0];
+		expect(messages.some((m: { content: string }) => m.content.includes("menú en inglés,"))).toBe(
+			false
+		);
+		expect(messages.every((m: { role: string }) => m.role === "user")).toBe(true);
+	});
+
+	it("captures the Twilio ProfileName as a display name, clamped", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ ProfileName: "Ada L." }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		let conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
+		expect(conversations[0].customerName).toBe("Ada L.");
+
+		// A later message with no ProfileName must not erase the captured name.
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ MessageSid: "SM-noname" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
+		expect(conversations[0].customerName).toBe("Ada L.");
+
+		// An absurd ProfileName is clamped to what a reservation contact accepts.
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ MessageSid: "SM-longname", ProfileName: "A".repeat(500) }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
+		expect(conversations[0].customerName).toHaveLength(120);
 	});
 
 	it("sends a localized apology if the LLM turn throws (never silent)", async () => {

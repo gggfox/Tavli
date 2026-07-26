@@ -19,6 +19,7 @@ import { internalAction } from "../_generated/server";
 import { buildIntegrationErrorLog } from "../_shared/integrationLogging";
 import { WHATSAPP_CONTEXT_MESSAGE_LIMIT } from "../constants";
 import { getBotCopy, resolveLocale } from "./copy";
+import { clampOutboundBody } from "./format";
 import { runBotTurn } from "./llm";
 import { sendWhatsappMessage } from "./outbound";
 import { normalizePhone } from "./phone";
@@ -29,6 +30,7 @@ export const handleInboundMessage = internalAction({
 		from: v.string(),
 		to: v.string(),
 		body: v.string(),
+		profileName: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
 		// Fast-path dedupe: Twilio retries deliver the same MessageSid.
@@ -55,6 +57,7 @@ export const handleInboundMessage = internalAction({
 			customerPhone,
 			body: args.body,
 			messageSid: args.messageSid,
+			profileName: args.profileName,
 		});
 		if (isDuplicate) return;
 
@@ -80,7 +83,9 @@ export const handleInboundMessage = internalAction({
 				history,
 			});
 
-			const text = result.text || getBotCopy(locale).genericError;
+			// Clamp before the send so the delivered message and the stored row are
+			// identical — Twilio rejects an over-long body outright.
+			const text = clampOutboundBody(result.text || getBotCopy(locale).genericError);
 			const sid = await sendWhatsappMessage({
 				to: customerPhone,
 				body: text,
@@ -92,6 +97,9 @@ export const handleInboundMessage = internalAction({
 				body: text,
 				mediaUrl: result.mediaUrl,
 				messageSid: sid,
+				// `sendWhatsappMessage` never throws; a missing SID is how it reports
+				// failure. Mark the row so it is kept for the log but not replayed.
+				deliveryFailedAt: sid ? undefined : Date.now(),
 			});
 		} catch (error) {
 			console.error(
@@ -109,6 +117,7 @@ export const handleInboundMessage = internalAction({
 				restaurantId: channel.restaurantId,
 				body: fallback,
 				messageSid: sid,
+				deliveryFailedAt: sid ? undefined : Date.now(),
 			});
 		}
 	},

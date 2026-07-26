@@ -27,6 +27,7 @@ import { httpAction } from "./_generated/server";
 import { ERROR_NAMES } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import { RESERVATION_SOURCE } from "./constants";
+import { clampInboundBody } from "./whatsapp/format";
 
 const http = httpRouter();
 
@@ -466,11 +467,21 @@ http.route({
 			return badRequestResponse("MessageSid, From, and To are required");
 		}
 
+		// Require the WhatsApp channel prefix. `normalizePhone` strips it, and the
+		// bare number downstream is the assistant's only proof of identity — so if
+		// this number's SMS webhook ever pointed here too, a spoofed SMS caller ID
+		// would normalize to the same string and impersonate a WhatsApp customer.
+		// A WhatsApp account is a credential; inbound SMS caller ID is not.
+		if (!/^whatsapp:/i.test(params.From)) {
+			return badRequestResponse("From must be a whatsapp: address");
+		}
+
 		await ctx.scheduler.runAfter(0, internal.whatsapp.processing.handleInboundMessage, {
 			messageSid: params.MessageSid,
 			from: params.From,
 			to: params.To,
-			body: params.Body ?? "",
+			body: clampInboundBody(params.Body ?? ""),
+			profileName: params.ProfileName,
 		});
 
 		return new Response("<Response></Response>", {

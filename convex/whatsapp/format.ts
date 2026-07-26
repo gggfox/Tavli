@@ -12,8 +12,54 @@
  * synchronous, so it unit-tests without a deployment.
  */
 
+import { WHATSAPP_MAX_INBOUND_BODY_CHARS, WHATSAPP_MAX_OUTBOUND_BODY_CHARS } from "../constants";
+
 /** Blank-line runs longer than this read as a gap in a chat bubble. */
 const MAX_CONSECUTIVE_NEWLINES = 2;
+
+/**
+ * Truncate to `maxChars` *code points*.
+ *
+ * `String.prototype.slice` counts UTF-16 code units, so slicing mid-surrogate
+ * splits an emoji into a lone surrogate — which Twilio rejects and which would
+ * corrupt the stored body. Menu replies are full of emoji, so iterate code
+ * points instead.
+ */
+function truncateCodePoints(text: string, maxChars: number): string {
+	const chars = Array.from(text);
+	if (chars.length <= maxChars) return text;
+	return chars.slice(0, maxChars).join("");
+}
+
+/**
+ * Defensive bound on inbound customer text before it is stored or replayed to
+ * the model. Enforces `WHATSAPP_MAX_INBOUND_BODY_CHARS`, which was declared but
+ * never applied — an unbounded body can dominate the prompt and push the system
+ * prompt out of the model's attention.
+ */
+export function clampInboundBody(raw: string): string {
+	return truncateCodePoints(raw, WHATSAPP_MAX_INBOUND_BODY_CHARS);
+}
+
+/**
+ * Bound an outbound reply to what Twilio will accept, breaking at the last
+ * whitespace inside the limit so a reply never ends mid-word, and marking the
+ * cut with an ellipsis. Applied before the send so the delivered message and
+ * the stored row are identical.
+ */
+export function clampOutboundBody(text: string): string {
+	const chars = Array.from(text);
+	if (chars.length <= WHATSAPP_MAX_OUTBOUND_BODY_CHARS) return text;
+
+	// Reserve one code point for the ellipsis.
+	const budget = WHATSAPP_MAX_OUTBOUND_BODY_CHARS - 1;
+	const clipped = chars.slice(0, budget).join("");
+	const lastBreak = clipped.search(/\s+\S*$/);
+	// Only honour a word boundary that keeps most of the budget; otherwise a
+	// single long token would collapse the reply to almost nothing.
+	const body = lastBreak > budget / 2 ? clipped.slice(0, lastBreak) : clipped;
+	return `${body.trimEnd()}…`;
+}
 
 /**
  * Convert model output to WhatsApp-safe text. Idempotent: already-converted

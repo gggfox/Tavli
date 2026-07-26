@@ -8,6 +8,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { TABLE, WHATSAPP_CONVERSATION_STATUS, WHATSAPP_MESSAGE_DIRECTION } from "../constants";
+import { MAX_CONTACT_NAME_LENGTH } from "../reservationHelpers";
 import { normalizePhone } from "./phone";
 
 /**
@@ -87,11 +88,16 @@ export const ingestInbound = internalMutation({
 		customerPhone: v.string(),
 		body: v.string(),
 		messageSid: v.string(),
+		profileName: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
 
 		const channel = await ctx.db.get(args.channelId);
+
+		// Clamp to what `validateCreateInputs` will accept, so a display name
+		// captured here can never be the reason a later booking is rejected.
+		const profileName = args.profileName?.trim().slice(0, MAX_CONTACT_NAME_LENGTH) || undefined;
 
 		const existingConversation = await ctx.db
 			.query(TABLE.WHATSAPP_CONVERSATIONS)
@@ -108,6 +114,7 @@ export const ingestInbound = internalMutation({
 				customerPhone: args.customerPhone,
 				status: WHATSAPP_CONVERSATION_STATUS.ACTIVE,
 				locale: channel?.defaultLocale,
+				customerName: profileName,
 				lastMessageAt: now,
 				lastInboundAt: now,
 				createdAt: now,
@@ -118,6 +125,10 @@ export const ingestInbound = internalMutation({
 				lastMessageAt: now,
 				lastInboundAt: now,
 				updatedAt: now,
+				// Only overwrite with a real name — Twilio omits ProfileName when the
+				// customer has no WhatsApp display name set, and a blank must not
+				// erase one we captured earlier.
+				...(profileName ? { customerName: profileName } : {}),
 			});
 		}
 
@@ -154,6 +165,7 @@ export const recordOutbound = internalMutation({
 		body: v.string(),
 		mediaUrl: v.optional(v.string()),
 		messageSid: v.optional(v.string()),
+		deliveryFailedAt: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
@@ -164,13 +176,24 @@ export const recordOutbound = internalMutation({
 			messageSid: args.messageSid,
 			body: args.body,
 			mediaUrl: args.mediaUrl,
+			deliveryFailedAt: args.deliveryFailedAt,
 			createdAt: now,
 		});
 		await ctx.db.patch(args.conversationId, { lastMessageAt: now, updatedAt: now });
 	},
 });
 
-/** Last N messages for a conversation, oldest-first, as LLM context. */
+/**
+ * Last N *delivered* messages for a conversation, oldest-first, as LLM context.
+ *
+ * Undelivered outbound rows are excluded: a failed send (Twilio quota, outage)
+ * is still logged for the message history, but replaying it would tell the model
+ * it already said something the customer never received — which is how the
+ * assistant ends up insisting it "already sent the menu".
+ *
+ * Overfetches to keep a full window of context when recent sends failed, while
+ * staying bounded.
+ */
 export const getConversationContext = internalQuery({
 	args: {
 		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
@@ -181,8 +204,12 @@ export const getConversationContext = internalQuery({
 			.query(TABLE.WHATSAPP_MESSAGES)
 			.withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
 			.order("desc")
-			.take(args.limit);
-		return recent.reverse().map((m) => ({ direction: m.direction, body: m.body }));
+			.take(args.limit * 2);
+		return recent
+			.filter((m) => m.deliveryFailedAt === undefined)
+			.slice(0, args.limit)
+			.reverse()
+			.map((m) => ({ direction: m.direction, body: m.body }));
 	},
 });
 

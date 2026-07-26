@@ -1121,6 +1121,10 @@ export default defineSchema({
 		),
 		// Sticky reply locale once detected for this customer.
 		locale: v.optional(v.string()),
+		// Twilio's `ProfileName` for this customer — a display name only, never an
+		// authorization input. Used so a reservation's required `contact.name` does
+		// not have to be invented by the model.
+		customerName: v.optional(v.string()),
 		// Drives the retention purge and context ordering.
 		lastMessageAt: v.number(),
 		// Last inbound timestamp — WhatsApp 24h freeform-reply window bookkeeping.
@@ -1143,6 +1147,10 @@ export default defineSchema({
 		messageSid: v.optional(v.string()),
 		body: v.string(),
 		mediaUrl: v.optional(v.string()),
+		// Set when the Twilio send failed, so the row is kept for the message log
+		// but excluded from the context replayed to the model — otherwise the
+		// assistant is told it said something the customer never received.
+		deliveryFailedAt: v.optional(v.number()),
 		createdAt: v.number(),
 	})
 		.index("by_conversation", ["conversationId"])
