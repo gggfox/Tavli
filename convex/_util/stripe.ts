@@ -26,6 +26,7 @@ import {
 	computeRefundFacts,
 	DISPUTE_PHASE,
 	type DisputePhase,
+	stripeSecondsToMs,
 } from "../stripeWebhookHelpers";
 import { getCurrentUserId } from "./auth";
 
@@ -291,13 +292,65 @@ export async function handleChargeRefunded(
 	);
 	if (!payment) return undefined;
 
+	// Stripe does NOT include `refunds` on the charge delivered with
+	// `charge.refunded` -- verified against a real test-mode delivery
+	// (evt_3TPVpgAdCrGPY0BG07oCiPg0, 2026-07-19), whose `data.object` has no
+	// `refunds` key at all. Stripe's own dashboard copy says as much: "Listen to
+	// refund.created for information about the refund." `computeRefundFacts`
+	// therefore yields an undefined refund id/timestamp in production even
+	// though the unit-test fixtures supply them. Look the refund up explicitly
+	// so `payments.stripeRefundId` -- our only link back to the Stripe refund --
+	// is not silently dropped.
+	//
+	// Filter by PaymentIntent rather than charge: we early-return above unless
+	// `paymentIntentId` is set, so it is always available here, and it is the
+	// filter Stripe treats as canonical for destination charges.
+	let { latestRefundId, refundedAtMs } = facts;
+	if (!latestRefundId) {
+		try {
+			const { data } = await getStripeClient().refunds.list({
+				payment_intent: facts.paymentIntentId,
+				limit: 1,
+			});
+			const latest = data[0];
+			if (latest) {
+				latestRefundId = latest.id;
+				refundedAtMs = stripeSecondsToMs(latest.created);
+			}
+		} catch (error) {
+			console.error("[stripe.fulfillPayment] REFUND LOOKUP FAILED", {
+				integration: "stripe-webhook",
+				operation: "refunds.list",
+				eventId,
+				chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
+				paymentIntentId: redactExternalId(facts.paymentIntentId),
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
+
+		// Never let this fail silently again: an unresolved refund id means the
+		// payment row has no link back to Stripe, which is exactly the defect
+		// this branch exists to prevent.
+		if (!latestRefundId) {
+			console.error("[stripe.fulfillPayment] REFUND ID UNRESOLVED", {
+				integration: "stripe-webhook",
+				operation: "handleChargeRefunded",
+				eventId,
+				chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
+				paymentIntentId: redactExternalId(facts.paymentIntentId),
+				chargeHadRefundsKey: charge.refunds !== undefined,
+				refundsListReturned: 0,
+			});
+		}
+	}
+
 	await ctx.runMutation(internal.stripeHelpers.recordChargeRefund, {
 		paymentId: payment._id,
 		amountRefunded: facts.amountRefunded,
 		amountCaptured: facts.amountCaptured,
 		isFullyRefunded: facts.isFullyRefunded,
-		stripeRefundId: facts.latestRefundId,
-		refundedAtMs: facts.refundedAtMs,
+		stripeRefundId: latestRefundId,
+		refundedAtMs,
 		latestStripeEventId: eventId,
 	});
 
