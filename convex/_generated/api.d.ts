@@ -93,12 +93,14 @@ import type * as tips from "../tips.js";
 import type * as userSettings from "../userSettings.js";
 import type * as whatsapp_copy from "../whatsapp/copy.js";
 import type * as whatsapp_data from "../whatsapp/data.js";
+import type * as whatsapp_datetime from "../whatsapp/datetime.js";
 import type * as whatsapp_format from "../whatsapp/format.js";
 import type * as whatsapp_llm from "../whatsapp/llm.js";
 import type * as whatsapp_menu from "../whatsapp/menu.js";
 import type * as whatsapp_outbound from "../whatsapp/outbound.js";
 import type * as whatsapp_phone from "../whatsapp/phone.js";
 import type * as whatsapp_processing from "../whatsapp/processing.js";
+import type * as whatsapp_reservations from "../whatsapp/reservations.js";
 import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 
 import type {
@@ -193,12 +195,14 @@ declare const fullApi: ApiFromModules<{
   userSettings: typeof userSettings;
   "whatsapp/copy": typeof whatsapp_copy;
   "whatsapp/data": typeof whatsapp_data;
+  "whatsapp/datetime": typeof whatsapp_datetime;
   "whatsapp/format": typeof whatsapp_format;
   "whatsapp/llm": typeof whatsapp_llm;
   "whatsapp/menu": typeof whatsapp_menu;
   "whatsapp/outbound": typeof whatsapp_outbound;
   "whatsapp/phone": typeof whatsapp_phone;
   "whatsapp/processing": typeof whatsapp_processing;
+  "whatsapp/reservations": typeof whatsapp_reservations;
   "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
 }>;
 

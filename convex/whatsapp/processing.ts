@@ -75,11 +75,24 @@ export const handleInboundMessage = internalAction({
 				conversationId,
 				limit: WHATSAPP_CONTEXT_MESSAGE_LIMIT,
 			});
+			const bookingContext = await ctx.runQuery(
+				internal.whatsapp.reservations.internalGetBookingContextForBot,
+				{ restaurantId: channel.restaurantId }
+			);
 
 			const result = await runBotTurn(ctx, {
-				restaurantId: channel.restaurantId,
+				// Built here, from the Twilio-verified webhook fields, and frozen. The
+				// assistant's identity must not be derivable from anything the model or
+				// the customer's text can influence.
+				actor: Object.freeze({
+					restaurantId: channel.restaurantId,
+					customerPhone,
+					conversationId,
+					messageSid: args.messageSid,
+				}),
 				restaurantName: restaurant?.name ?? "the restaurant",
 				locale,
+				bookingContext,
 				history,
 			});
 
