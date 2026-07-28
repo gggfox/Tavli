@@ -1,6 +1,6 @@
 # Postmortem — Every deploy was a no-op, 2026-07-17 → 2026-07-26
 
-**Status:** Root cause confirmed; pipeline guards in [#77](https://github.com/gggfox/Tavli/pull/77); credential fix outstanding
+**Status:** Resolved on staging 2026-07-27; production redeploy pending. Guards in [#77](https://github.com/gggfox/Tavli/pull/77)
 **Severity:** High (nine days of changes never reached production)
 **Environments affected:** `staging.tavliai.com` and `tavliai.com`
 **Author:** Incident response, 2026-07-26
@@ -42,8 +42,8 @@ entrypoint, and the app never started. CI was unaffected because it authenticate
 
 ## Root cause
 
-**The container and CI authenticate to Infisical with two different client secrets on the
-same identity. The container's stopped being accepted; CI's did not.**
+**The client secret stored in Dokploy referenced a Universal Auth client secret that no
+longer existed on the identity.**
 
 `docker-entrypoint.sh` runs, before anything else:
 
@@ -53,24 +53,15 @@ INFISICAL_TOKEN=$(infisical login --method=universal-auth \
   --client-secret="$INFISICAL_MACHINE_CLIENT_SECRET" ...)
 ```
 
-Those two values live in **Dokploy → app → Environment Settings**, and are a different
-copy from the one GitHub Actions holds. Dokploy's copy stopped being accepted around
-2026-07-19. An identity can hold several Universal Auth client secrets at once, which is
-why CI — authenticating with its own, still-valid copy — never noticed.
+Those two values live in **Dokploy → app → Environment Settings**. An identity can hold
+several Universal Auth client secrets at once, and the `github-dokploy-ci` identity's
+panel showed exactly **one** remaining — `bfb2***` ("github-actions-dokploy"), no expiry,
+no usage cap, last used successfully the same day by CI. So the value Dokploy held was a
+_different_ client secret that had since been deleted or replaced.
 
-**Why Dokploy's copy died is not established.** Infisical returns the same
-`401 Invalid credentials` for all of these, and none is distinguishable from outside:
-
-- it was **regenerated** for CI and the new value was never copied to Dokploy (the client
-  secret is one-time-view, so this is easy to do and impossible to notice), or
-- it **expired** — client secrets support a TTL, or
-- it **exhausted its max-uses limit** — each `infisical login`, from CI or a container
-  boot, consumes one.
-
-The distinction matters for the fix: if it was a TTL or a usage cap, **a replacement
-created with the same settings will fail again on the same schedule.** Check the
-identity's Universal Auth screen and set TTL `0` / max uses `0` unless there is a reason
-not to.
+That also rules out the two alternatives worth considering: the surviving secret has no
+TTL and no max-uses limit, so neither expiry nor exhaustion explains the failure. It was
+removed. CI kept working because it holds the one that remained.
 
 Verified 2026-07-26 by replaying the entrypoint's exact login with the credentials read
 back from each Dokploy app:
@@ -119,10 +110,10 @@ from the Dokploy API directly.
 
 ## Contributing factors
 
-1. **Two independent credentials, no link between them.** CI and the container each hold
-   their own client secret on the same identity, so one can lapse — by rotation, TTL, or
-   a usage cap — while the other keeps working. Nothing detects it until a container
-   tries to boot, and CI's continued success actively argues that nothing is wrong.
+1. **Deleting a client secret has no blast-radius signal.** Nothing links a client secret
+   to the systems holding it, so removing one silently breaks whichever consumer had it
+   while every other consumer keeps working. CI's continued success actively argued that
+   the credentials were fine.
 2. **A boot failure is invisible.** Dokploy's **Logs** tab showed "No logs found"; its
    deployment log ends at `✅ Pulling image completed`; the Swarm task API reports only
    `task: non-zero exit (1)`; there is no REST endpoint for container stderr. The one
@@ -159,8 +150,22 @@ is the gate working exactly as designed; the failure was in reading it.
    identity keep working, so CI is unaffected and no coordinated cutover is required.
 2. Set `INFISICAL_MACHINE_CLIENT_SECRET` on **both** Dokploy apps
    (`tavli-frontend-7bdzi6` staging, `tavli-frontend-0wcgnf` production) and Redeploy.
-3. Leave the GitHub Actions secret alone — CI authenticates with its own client secret,
-   which is still valid. Only touch it if you deliberately revoked that one.
+3. Leave the GitHub Actions secret alone — it holds the surviving client secret
+   (`bfb2***`) and is unaffected. Adding a client secret is non-destructive.
+
+**Trap encountered during remediation.** The identity page shows an **ID**
+(`6f51c471-b184-4b33-80cd-120fbcfafd22`) which is _not_ the Universal Auth **Client ID**
+(`9e521c33-bba4-464c-99fd-8d054de12f15`). Pasting the identity ID yields the same
+`401 Invalid credentials`, so it looks like a bad secret. Universal Auth — Client ID and
+Client Secrets both — lives at **Organization → Access Control → Identities → the
+identity → Authentication**, not on the project-level identity page. Take both values
+from that one screen.
+
+**Verified 2026-07-27:** `infisical login` + `infisical run` succeed for both
+environments (16 secrets injected). After redeploying staging, the new container came up
+`Up 43 seconds (healthy)` on `ghcr.io/gggfox/tavli:8d228d71…`, the previous task exited
+cleanly (`Exited (0)`), and `staging.tavliai.com/health` reported the deployed commit for
+the first time since 2026-07-19. Production still needs the same redeploy.
 
 Verify with `curl -s https://staging.tavliai.com/health` reporting the deployed commit.
 

@@ -74,5 +74,6 @@ Dokploy → app → **Logs** → select the running container: expect `Injecting
 - The Docker image is **public** → no secrets baked in; only the Infisical CLI is.
 - `.dockerignore` is a **whitelist** — a new `COPY <file>` needs a matching `!<file>` line.
 - `infisical run` doesn't override existing env vars → keep the container's base env clean so Infisical wins.
-- **Rotating the machine-identity client secret is a TWO-place change** — GitHub Actions **and** each Dokploy app's env. Miss the second and every new container 401s and exits(1) at boot in ~400ms while the old one keeps serving a stale build at HTTP 200. This cost 9 days in July.
+- **Machine-identity Client ID ≠ identity ID.** Universal Auth (Client ID `9e521c33-…` + Client Secrets) lives at **Organization → Access Control → Identities → the identity → Authentication**. The _project_ identity page shows a different **ID** (`6f51c471-…`) that is not an auth credential — pasting it gives the same `401 Invalid credentials` as a bad secret. Take both values from the Authentication screen.
+- **A client secret is shared by CI and the containers.** Deleting or replacing one silently breaks whichever consumer still holds it while the others keep working — CI staying green proves nothing. Adding a client secret is non-destructive; prefer adding to rotating.
 - **Dokploy returning 200 means "queued", not "deployed"** — only `/health` reporting the expected sha proves a rollout landed. A container that dies on boot leaves the previous task running, and nothing says so.
