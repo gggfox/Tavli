@@ -1,6 +1,6 @@
 # Postmortem — Every deploy was a no-op, 2026-07-17 → 2026-07-26
 
-**Status:** Root cause confirmed; pipeline guards in [#77](https://github.com/gggfox/Tavli/pull/77); credential rotation outstanding
+**Status:** Root cause confirmed; pipeline guards in [#77](https://github.com/gggfox/Tavli/pull/77); credential fix outstanding
 **Severity:** High (nine days of changes never reached production)
 **Environments affected:** `staging.tavliai.com` and `tavliai.com`
 **Author:** Incident response, 2026-07-26
@@ -16,10 +16,10 @@ orchestrator kept the previous healthy task, and both sites went on serving an o
 build while returning HTTP 200 to every request. No outage, no error page, no symptom.
 
 The container died because `docker-entrypoint.sh` logs into Infisical at boot with a
-machine-identity client secret **stored on the Dokploy app** — and that secret had been
-rotated. Infisical answered `401 Invalid credentials`, `set -eu` killed the entrypoint,
-and the app never started. CI was unaffected because GitHub Actions holds its own,
-current copy of the same credential.
+machine-identity client secret **stored on the Dokploy app** — and that secret is no
+longer accepted. Infisical answered `401 Invalid credentials`, `set -eu` killed the
+entrypoint, and the app never started. CI was unaffected because it authenticates with a
+**different client secret on the same identity**, which is still valid.
 
 - **staging** last adopted a new image **2026-07-19** (`79925f5`); 8 failed + 4 cancelled
   deploys followed, none of which changed what was serving.
@@ -42,8 +42,8 @@ current copy of the same credential.
 
 ## Root cause
 
-**The container's Infisical credentials and CI's Infisical credentials are two separate
-copies of the same secret, and only one of them was rotated.**
+**The container and CI authenticate to Infisical with two different client secrets on the
+same identity. The container's stopped being accepted; CI's did not.**
 
 `docker-entrypoint.sh` runs, before anything else:
 
@@ -119,9 +119,10 @@ from the Dokploy API directly.
 
 ## Contributing factors
 
-1. **The same credential is stored in two places with no link between them.** Rotating it
-   is a two-step operation that looks complete after step one, and nothing detects the
-   drift until a container tries to boot.
+1. **Two independent credentials, no link between them.** CI and the container each hold
+   their own client secret on the same identity, so one can lapse — by rotation, TTL, or
+   a usage cap — while the other keeps working. Nothing detects it until a container
+   tries to boot, and CI's continued success actively argues that nothing is wrong.
 2. **A boot failure is invisible.** Dokploy's **Logs** tab showed "No logs found"; its
    deployment log ends at `✅ Pulling image completed`; the Swarm task API reports only
    `task: non-zero exit (1)`; there is no REST endpoint for container stderr. The one
