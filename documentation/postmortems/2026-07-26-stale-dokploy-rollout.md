@@ -1,7 +1,7 @@
-# Postmortem — Staging & production served stale builds, 2026-07-17 → 2026-07-26
+# Postmortem — Every deploy was a no-op, 2026-07-17 → 2026-07-26
 
-**Status:** Root cause confirmed; fix in [#77](https://github.com/gggfox/Tavli/pull/77)
-**Severity:** High (every deploy was a no-op; production ran a 9-day-old build)
+**Status:** Resolved — staging 2026-07-27, production 2026-07-28. Both serve `8d228d71`. Guards in [#77](https://github.com/gggfox/Tavli/pull/77) and [#78](https://github.com/gggfox/Tavli/pull/78)
+**Severity:** High (nine days of changes never reached production)
 **Environments affected:** `staging.tavliai.com` and `tavliai.com`
 **Author:** Incident response, 2026-07-26
 
@@ -9,235 +9,240 @@
 
 ## Summary
 
-For over a week, **every deploy silently did nothing**. GitHub Actions built the app,
-deployed Convex, pushed the image to GHCR, and got an HTTP 200 back from the Dokploy
-webhook — but Dokploy never replaced the running container. Both environments kept
-serving an old build while returning 200 to every request, so there was no outage, no
-error page, and no user-visible symptom of any kind.
+For over a week **every deploy silently did nothing**. CI built the app, deployed
+Convex, pushed the image, and told Dokploy to roll it out — all green. Dokploy pulled
+the image and started a container. That container **exited(1) after ~420ms**, so the
+orchestrator kept the previous healthy task, and both sites went on serving an old
+build while returning HTTP 200 to every request. No outage, no error page, no symptom.
 
-- **staging** last adopted a new image on **2026-07-19** (`79925f5`). The 8 failed and 4
-  cancelled deploy runs after it changed nothing that was actually serving.
-- **production** last adopted a new image on **2026-07-17** (`a014b19`) — old enough
-  that it predates the `/health` route, which is why `tavliai.com/health` returned 404.
+The container died because `docker-entrypoint.sh` logs into Infisical at boot with a
+machine-identity client secret **stored on the Dokploy app** — and that secret is no
+longer accepted. Infisical answered `401 Invalid credentials`, `set -eu` killed the
+entrypoint, and the app never started. CI was unaffected because it authenticates with a
+**different client secret on the same identity**, which is still valid.
 
-This is the inverse of the [2026-07-13 → 07-17 outage](./2026-07-17-staging-bad-gateway.md): that
-one failed loudly (502, nothing running) and took 4 days to notice. This one never failed
-at all from the outside. The only reason it was caught is the post-deploy health gate
-added as action item #5 of that postmortem — its first real catch.
+- **staging** last adopted a new image **2026-07-19** (`79925f5`); 8 failed + 4 cancelled
+  deploys followed, none of which changed what was serving.
+- **production** last adopted a new image **2026-07-17** (`a014b19`) — old enough to
+  predate the `/health` route, which is why `tavliai.com/health` returned 404.
 
 ---
 
 ## Impact
 
-- **What:** Every merge to `staging`, and one **Promote to Production**, appeared to
-  deploy and did not. Nine days of backend/frontend changes — including the TAVLI-61/62/63
-  hardening work and a Stripe refund fix — were never actually running.
-- **Who:** Anyone testing on staging was testing a build from 2026-07-19. Anyone using
-  production was on a build from 2026-07-17.
+- **What:** Every merge to `staging` and one **Promote to Production** appeared to deploy
+  and did not. Nine days of work — the TAVLI-61/62/63 hardening, a Stripe refund fix —
+  never ran.
 - **Duration:** production ~9 days, staging ~7 days.
-- **Data:** None. Convex deploys **did** succeed throughout (they do not go through
-  Dokploy), so the backend moved ahead while the frontend container stayed behind — a
-  skew that had not yet caused a visible break, but could have.
+- **Data:** None. But Convex deploys **did** succeed throughout (they don't go through
+  Dokploy), so the backend advanced while the frontend stayed frozen. That skew hadn't
+  broken anything visible yet; it easily could have.
 
 ---
 
 ## Root cause
 
-**The pipeline had no way to say which image should run, and no way to learn whether the
-rollout happened.**
+**The client secret stored in Dokploy referenced a Universal Auth client secret that no
+longer existed on the identity.**
 
-The deploy's last step curled a Dokploy webhook. That webhook carries no image identity —
-it means only "redeploy the application you already have configured", and that
-configuration was a **mutable tag** (`ghcr.io/gggfox/tavli:staging` /
-`:production`). Dokploy answers **200 as soon as it has queued the request**, which says
-nothing about whether a new container ever replaced the old one.
+`docker-entrypoint.sh` runs, before anything else:
 
-So the pipeline's success condition was "Dokploy acknowledged a message", not "the new
-build is serving". Every possible Dokploy-side failure — a pull that resolved to a cached
-image, a container that crashed and got rolled back, a deployment that never started —
-produces exactly the same green step.
+```sh
+INFISICAL_TOKEN=$(infisical login --method=universal-auth \
+  --client-id="$INFISICAL_MACHINE_CLIENT_ID" \
+  --client-secret="$INFISICAL_MACHINE_CLIENT_SECRET" ...)
+```
 
-Evidence collected on 2026-07-26 (run
-[30214232953](https://github.com/gggfox/Tavli/actions/runs/30214232953)):
+Those two values live in **Dokploy → app → Environment Settings**. An identity can hold
+several Universal Auth client secrets at once, and the `github-dokploy-ci` identity's
+panel showed exactly **one** remaining — `bfb2***` ("github-actions-dokploy"), no expiry,
+no usage cap, last used successfully the same day by CI. So the value Dokploy held was a
+_different_ client secret that had since been deleted or replaced.
 
-| Fact                               | Value                                               |
-| ---------------------------------- | --------------------------------------------------- |
-| Image the run pushed               | `sha256:6eeb336…`                                   |
-| GHCR `:staging` resolves to        | `sha256:6eeb336…` — **registry was correct**        |
-| Digest actually serving on staging | `sha256:db2137d…` (the `79925f5` image, 7 days old) |
-| Dokploy webhook response           | HTTP 200                                            |
+That also rules out the two alternatives worth considering: the surviving secret has no
+TTL and no max-uses limit, so neither expiry nor exhaustion explains the failure. It was
+removed. CI kept working because it holds the one that remained.
 
-The registry was right and CI was right. The gap is entirely between "Dokploy said OK"
-and "a new container is serving".
+Verified 2026-07-26 by replaying the entrypoint's exact login with the credentials read
+back from each Dokploy app:
 
-### The rollouts ran, reported success, and did nothing
+| Environment | Stored client ID                           | `infisical login` result    |
+| ----------- | ------------------------------------------ | --------------------------- |
+| staging     | matches the documented `github-dokploy-ci` | **401 Invalid credentials** |
+| prod        | matches the documented `github-dokploy-ci` | **401 Invalid credentials** |
 
-Dokploy's **Deployments** tab for the production `frontend` app shows the webhook was
-received and acted on every time — and how long each took:
+The identity is right; only the secret is stale. Everything downstream follows:
 
-| Dokploy deployment         | Duration | Corresponding workflow run                |
-| -------------------------- | -------- | ----------------------------------------- |
-| `NEW CHANGES` — Done       | **3s**   | Deploy Production `42b94dc`, 07-26 (red)  |
-| `NEW CHANGES` — Done       | **5s**   | Deploy Production `79925f5`, 07-19 (red)  |
-| `Manual deployment` — Done | **0s**   | manual redeploy during the 07-17 incident |
+1. Swarm pulls the new image (confirmed — Dokploy's deployment log shows the full pull,
+   digest matching CI exactly).
+2. The container starts, `infisical login` 401s in ~400ms, `set -eu` exits 1.
+3. The rolling update fails, so the **previous healthy task keeps serving**.
+4. Dokploy reports the deployment `done`, because it only issued an async service update.
+5. The site returns 200 with a week-old build. Nothing anywhere says otherwise.
 
-**The durations are the tell.** The image is `node:22-slim` plus the Infisical CLI plus
-the `.output` bundle — hundreds of MB. A deployment that genuinely pulls a new image and
-recreates the container cannot finish in 3 seconds. "Done" here means Dokploy ran its
-routine and found nothing to do, while `tavliai.com/health` kept 404ing — which is only
-possible if the container predates 2026-07-19.
+Container evidence (`docker.getContainers`, 2026-07-26):
 
-This rules out two of the three original candidates: the deployment did **not** fail to
-start (it started and completed), and the new container did **not** crash and roll back
-(that takes far longer than 3s and would not report green).
+```
+tavli-frontend-7bdzi6.1.tysnl170…  ghcr.io/gggfox/tavli:8d228d71…  Exited (1) — ran 421ms
+tavli-frontend-7bdzi6.1.m0v5crhm…  ghcr.io/gggfox/tavli:staging    Exited (1)
+tavli-frontend-0wcgnf.1.jhy5zow7…  ghcr.io/gggfox/tavli:production Exited (1)
+tavli-frontend-7bdzi6.1.t2mn3dnr…  34894be87970 (untagged)         Up 7 days (healthy)
+```
 
-### Confirmed: the mutable tag is never re-resolved against the registry
+### Two wrong theories, and why they were wrong
 
-Querying `application.one` for both apps settled the last candidate — the configured
-image was correct all along:
+Worth recording, because both were _consistent with everything visible from CI_ — which
+is the actual lesson.
 
-| Environment | Dokploy app             | `sourceType` | Configured `dockerImage`          |
-| ----------- | ----------------------- | ------------ | --------------------------------- |
-| staging     | `tavli-frontend-7bdzi6` | `docker`     | `ghcr.io/gggfox/tavli:staging`    |
-| prod        | `tavli-frontend-0wcgnf` | `docker`     | `ghcr.io/gggfox/tavli:production` |
+1. **"A mutable tag is being served from the local image cache."** Fit every symptom.
+   Killed by pinning the immutable `:<sha>` tag and watching the rollout still fail: a
+   per-commit tag cannot be cached, and Dokploy's log showed a genuine download.
+2. **"The unpinned Infisical CLI in the Dockerfile drifted."** The CLI did drift
+   (0.43.110 → 0.43.114 — the Dockerfile pins no version). Killed by extracting the dpkg
+   database from both images: the last **working** build and the first **broken** build
+   both shipped 0.43.110.
 
-Both point at exactly the tags CI pushes, and GHCR's `:staging` was already shown to hold
-the newly-built digest. So the reference was right, the registry was right, and the
-container still ran a week-old image.
-
-**That leaves exactly one mechanism: the mutable tag is not re-resolved at deploy time.**
-Docker finds `ghcr.io/gggfox/tavli:staging` already present locally, skips the pull, and
-recreates the container from the cached image — which is why a "deployment" of a
-several-hundred-MB image completed in 3 seconds and reported success. The environment was
-pinned to whichever build happened to be pulled first, permanently.
-
-This is the deepest form of the bug, because **nothing was misconfigured**. Every
-individual piece — the tag, the registry, the webhook, the Dokploy app — was exactly as
-intended. The pipeline was still incapable of delivering a new build, because a mutable
-tag carries no information about whether it changed.
-
-Pinning the immutable `:<sha>` reference is a structural fix rather than a corrected
-setting: a per-commit tag cannot already exist in the local cache, so the pull is forced
-every time.
+Both survived as long as they did because **nothing in the pipeline could see the
+container**. Diagnosis only moved once the container list and its exit code were pulled
+from the Dokploy API directly.
 
 ---
 
 ## Contributing factors
 
-1. **Mutable image tags.** `:staging` / `:production` cannot distinguish "pulled the new
-   build" from "reused the old one". The pipeline already pushed an immutable `:<sha>`
-   tag alongside them — nothing consumed it.
-2. **The webhook is fire-and-forget.** It conveys neither which image to run nor whether
-   the rollout succeeded, yet its 200 was the pipeline's definition of a successful deploy.
-3. **Failing silently to the outside.** Unlike the 502 incident, both sites returned 200
-   the entire time. Nothing short of comparing the running commit to the expected one
-   could have caught this.
-4. **The health gate's message conflated two different failures.** It said "may be
-   serving a stale build **or nothing at all**" for both cases. Staging (stale build) and
-   production (404, no `/health` route at all) were the same sentence, so eight red runs
-   read as one vague "deploy is flaky" rather than "the rollout is a no-op".
-5. **`cancel-in-progress: true` on deploys.** Four runs were cancelled mid-deploy by a
-   following push. A cancellation between "image pushed" and "Dokploy notified" drops that
-   commit's rollout entirely, with no error anywhere.
-6. **Alerting worked and was not acted on.** Issues [#67](https://github.com/gggfox/Tavli/issues/67)
+1. **Deleting a client secret has no blast-radius signal.** Nothing links a client secret
+   to the systems holding it, so removing one silently breaks whichever consumer had it
+   while every other consumer keeps working. CI's continued success actively argued that
+   the credentials were fine.
+2. **A boot failure is invisible.** Dokploy's **Logs** tab showed "No logs found"; its
+   deployment log ends at `✅ Pulling image completed`; the Swarm task API reports only
+   `task: non-zero exit (1)`; there is no REST endpoint for container stderr. The one
+   line naming the cause existed only inside `docker logs`.
+3. **A failed rollout is indistinguishable from a successful one, from CI.** Dokploy
+   answers 200 for "queued", and the orchestrator's rollback is a silent success.
+4. **Failing safe looks identical to working.** Swarm keeping the last healthy task is
+   correct behaviour — and it is also what hid a nine-day outage behind HTTP 200.
+5. **`cancel-in-progress: true` on deploys.** Four runs were cancelled mid-deploy; a
+   cancellation between image push and rollout drops that commit entirely.
+6. **Alerting worked and was not read.** Issues [#67](https://github.com/gggfox/Tavli/issues/67)
    (7 comments) and [#63](https://github.com/gggfox/Tavli/issues/63) were open the whole
-   time. The detection gap from the last postmortem is closed; the **triage** gap is not.
+   time. The detection gap from the previous postmortem is closed; the **triage** gap is not.
 
 ---
 
 ## Detection
 
-Automated, by the post-deploy health gate — action item #5 of the previous postmortem,
-shipped in `17e1957` five days before this was diagnosed. It failed correctly on every
-single deploy from 2026-07-19 onward. This incident is the gate working exactly as
-designed; the failure was in reading it.
+Automated, by the post-deploy health gate — action item #5 of the
+[2026-07-17 postmortem](./2026-07-17-staging-bad-gateway.md), shipped in `17e1957` five
+days earlier. It failed correctly on every deploy from 2026-07-19 onward. This incident
+is the gate working exactly as designed; the failure was in reading it.
 
 ---
 
 ## Resolution
 
-Pipeline changes (this PR):
+**Manual, and required — the outage is not fixed until this is done:**
 
-1. **Roll out an immutable image.** The deploy now calls Dokploy's API —
-   `application.saveDockerProvider` to pin the app to `ghcr.io/gggfox/tavli:<sha>`, then
-   `application.deploy` — instead of firing a blind webhook. Because the reference is
-   different on every deploy, a cached image can never satisfy the pull. See
-   `.github/scripts/dokploy-rollout.sh`. Falls back to the old webhook (with a warning)
-   when the API credentials are absent, so no environment breaks before it is configured.
-2. **Classify health-gate failures.** `.github/scripts/health-gate.sh` now distinguishes
-   _stale build_ / _route missing_ / _unreachable_ / _HTTP error_ / _malformed_, prints
-   expected-vs-serving SHAs, and gives the remediation for that specific class.
-3. **Stop cancelling in-flight deploys.** `cancel-in-progress: false` — deploys queue
-   rather than abort partway through.
+1. If you still have the current client secret saved (password manager, notes), skip to
+   step 2 — no rotation needed. Otherwise: Infisical → Access Control → Identities →
+   `github-dokploy-ci` → Universal Auth → create a new client secret with **TTL `0` and
+   max uses `0`**. Creating one is non-destructive: existing client secrets on the
+   identity keep working, so CI is unaffected and no coordinated cutover is required.
+2. Set `INFISICAL_MACHINE_CLIENT_SECRET` on **both** Dokploy apps
+   (`tavli-frontend-7bdzi6` staging, `tavli-frontend-0wcgnf` production) and Redeploy.
+3. Leave the GitHub Actions secret alone — it holds the surviving client secret
+   (`bfb2***`) and is unaffected. Adding a client secret is non-destructive.
 
-Configuration, done 2026-07-26:
+**Trap encountered during remediation.** The identity page shows an **ID**
+(`6f51c471-b184-4b33-80cd-120fbcfafd22`) which is _not_ the Universal Auth **Client ID**
+(`9e521c33-bba4-464c-99fd-8d054de12f15`). Pasting the identity ID yields the same
+`401 Invalid credentials`, so it looks like a bad secret. Universal Auth — Client ID and
+Client Secrets both — lives at **Organization → Access Control → Identities → the
+identity → Authentication**, not on the project-level identity page. Take both values
+from that one screen.
 
-4. `DOKPLOY_API_URL`, `DOKPLOY_API_KEY` and `DOKPLOY_APPLICATION_ID` are set in Infisical
-   `staging` and `prod`, which activates the API path above. (The API key is generated at
-   **`/dashboard/settings/profile` → API/CLI** — the **user profile** page. The
-   organization settings sidebar has no API entry, which is easy to lose five minutes to.)
+**Verified:** `infisical login` + `infisical run` succeed for both environments (16
+secrets injected). Redeploying staging (2026-07-27) brought the new container up
+`Up 43 seconds (healthy)` on `ghcr.io/gggfox/tavli:8d228d71…` with the previous task
+exiting cleanly (`Exited (0)`). **Promote to Production** on 2026-07-28 then went green
+end-to-end — the first fully successful Deploy Production since 2026-07-17 — with the new
+gate classification visible in the log during handover:
 
-   To re-derive the application ids, or to re-check what each app is configured to run:
+```
+Attempt 1: HTTP 404 — the running build predates the /health route
+Attempt 2: HTTP 404 — the running build predates the /health route
+Health gate passed on attempt 3: reports sha 8d228d71…
+```
 
-   ```sh
-   curl -sS -H "x-api-key: $DOKPLOY_API_KEY" \
-     "$DOKPLOY_API_URL/api/application.one?applicationId=$DOKPLOY_APPLICATION_ID" \
-     | jq -r '"\(.appName)  source=\(.sourceType)  image=\(.dockerImage // "<none>")"'
-   ```
+Both environments now serve the deployed commit.
 
-Still required, by hand:
+Verify with `curl -s https://staging.tavliai.com/health` reporting the deployed commit.
 
-5. Verify the **production** app has `INFISICAL_ENV=prod` + machine-identity creds —
-   still-open action item #6 from the previous postmortem. It was not the cause here, but
-   it is latent: the first genuinely-new container production has pulled since 2026-07-17
-   will be the first to expose it.
+**Pipeline guards (this PR)** — none of these fix the outage; they stop it recurring
+silently:
+
+1. **Boot-credential preflight** (`.github/scripts/dokploy-rollout.sh`). Before rolling
+   out, CI reads the target app's stored machine-identity credentials and performs the
+   same `infisical login` the container will. If it 401s the deploy fails **in seconds**,
+   naming the cause and the fix, instead of shipping an image that cannot start.
+2. **The entrypoint names its own death** (`docker-entrypoint.sh`). Login failure is
+   handled explicitly instead of dying under `set -e`, printing a `FATAL` line plus the
+   remediation.
+3. **Immutable image rollout.** The deploy pins `ghcr.io/gggfox/tavli:<sha>` via
+   `application.saveDockerProvider` rather than firing a webhook at a mutable tag. This
+   did not fix the outage, but it is what made the dead container attributable to a
+   specific commit.
+4. **Classified health-gate failures** (`.github/scripts/health-gate.sh`) — stale build /
+   route missing / unreachable / HTTP error / malformed, each with its own remediation.
+5. **`cancel-in-progress: false`** so a deploy is never aborted mid-rollout.
+6. **Alerts carry the diagnosis** — the `deploy-failure` issue now reports what the
+   environment is actually serving.
 
 ---
 
 ## Lessons learned
 
-- **"The deploy tool accepted my request" is not a deploy.** A pipeline step that cannot
-  observe the outcome it claims should not be the step that decides the job is green.
-- **Deploy by immutable reference.** A mutable tag makes "did the rollout happen?"
-  unanswerable after the fact. The per-commit tag existed already and was simply unused.
-- **Nothing was misconfigured.** The tag, the registry, the webhook and both Dokploy apps
-  were all exactly as designed — and the pipeline still could not deliver a build for nine
-  days. Looking for the wrong setting would never have found this; the defect was in the
-  shape of the pipeline, not its values. Bugs of this class are invisible to review that
-  asks "is each piece correct?" instead of "can this arrangement fail silently?".
-- **A silent success is worse than a loud failure.** The 502 incident was fixed in 4 days
-  because it was visible; this one lasted longer precisely because everything returned 200.
-- **A diagnostic that lumps two failure modes together costs more than no diagnostic.**
-  The gate caught this on day one; the wording is what let eight red runs go unread.
-- **Detection without triage is not coverage.** The alert issues did their job. Nobody
-  opened them.
+- **A secret copied into two systems will drift, and the drift is invisible until
+  something boots.** Anything holding a second copy of a credential needs a check that
+  the copy still works — the rotation runbook cannot be the only guard.
+- **"The deploy tool accepted my request" is not a deploy.** A step that cannot observe
+  the outcome it claims should not be the step that decides the job is green.
+- **A pipeline that cannot see its own container cannot diagnose itself.** Two plausible,
+  self-consistent theories survived days because every signal CI had was equally
+  compatible with them. The first real progress came from querying the orchestrator for
+  container state and exit codes.
+- **Graceful degradation hides outages.** Keeping the last healthy task is right; doing it
+  without ever surfacing that the new one died is how a week disappears.
+- **Detection without triage is not coverage.** The alerts fired for seven days.
 
 ---
 
 ## Action items
 
-| #   | Action                                                                                         | Rationale                                     | Owner | Status                 |
-| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------- | ----- | ---------------------- |
-| 1   | Roll out the immutable `:<sha>` image via the Dokploy API instead of the webhook               | Makes a cached/stale rollout impossible       | —     | ✅ Done (this PR)      |
-| 2   | Classify health-gate failures and print expected-vs-serving SHA                                | Eight red runs read as one vague failure      | —     | ✅ Done (this PR)      |
-| 3   | `cancel-in-progress: false` on deploys                                                         | A cancelled deploy drops a rollout            | —     | ✅ Done (this PR)      |
-| 4   | Add `DOKPLOY_API_URL` / `DOKPLOY_API_KEY` / `DOKPLOY_APPLICATION_ID` to Infisical staging+prod | Activates item 1; webhook fallback until then | —     | ✅ Done (2026-07-26)   |
-| 5   | Confirm the Dokploy-side mechanism                                                             | Was inferred; now proven — cached mutable tag | —     | ✅ Done (2026-07-26)   |
-| 6   | Verify production Dokploy has `INFISICAL_ENV=prod` + machine creds                             | Latent since 2026-07-17; candidate cause 2    | —     | ☐ Todo (needs Dokploy) |
-| 7   | Route `deploy-failure` issues somewhere they get triaged                                       | Alerts fired for 7 days and were not read     | —     | ☐ Todo                 |
+| #   | Action                                                                           | Rationale                                                                                                        | Owner | Status                |
+| --- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----- | --------------------- |
+| 1   | Rotate the `github-dokploy-ci` client secret and set it on **both** Dokploy apps | The outage itself                                                                                                | —     | ☐ **Todo (blocking)** |
+| 2   | Preflight the container's Infisical credentials before rolling out               | Turns a 5-min silent timeout into a named error                                                                  | —     | ✅ Done (#77)         |
+| 3   | Entrypoint prints a FATAL line + remediation on login failure                    | The cause existed only in `docker logs`                                                                          | —     | ✅ Done (#77)         |
+| 4   | Roll out the immutable `:<sha>` image via the Dokploy API                        | Makes a failed container attributable                                                                            | —     | ✅ Done (#77)         |
+| 5   | Classify health-gate failures; alert with what is actually serving               | 8 red runs read as one vague failure                                                                             | —     | ✅ Done (#77)         |
+| 6   | `cancel-in-progress: false` on deploys                                           | A cancelled deploy drops a rollout                                                                               | —     | ✅ Done (#77)         |
+| 7   | Route `deploy-failure` issues somewhere they get triaged                         | Alerts fired for 7 days unread                                                                                   | —     | ☐ Todo                |
+| 8   | Pin the Infisical CLI version in the `Dockerfile`                                | Unpinned; drifted 0.43.110→0.43.114 unnoticed. Not this cause, but the same class as the `.dockerignore` footgun | —     | ☐ Todo                |
+| 9   | Surface container stderr somewhere without SSH                                   | Dokploy's UI showed "No logs found" throughout                                                                   | —     | ☐ Todo                |
 
 ---
 
 ## Timeline (UTC)
 
-| Time              | Event                                                                                                           |
-| ----------------- | --------------------------------------------------------------------------------------------------------------- |
-| 2026-07-17 17:00  | Last **successful** production deploy (`a014b19`). Production serves this build until further notice.           |
-| 2026-07-19 ~14:00 | `17e1957` adds the `/health` route + post-deploy health gate (previous postmortem, action #5).                  |
-| 2026-07-19 15:00  | Last **successful** staging deploy (`79925f5`). Staging serves this build until further notice.                 |
-| 2026-07-19 15:04  | Deploy Production fails the new gate — production's build predates `/health`, so it 404s.                       |
-| 2026-07-19 16:19  | First failing staging deploy (`aa404d8`, a Convex-only commit). The gate times out on a stale SHA.              |
-| 2026-07-19 → 26   | 8 failed + 4 cancelled staging deploys. Issues #67 and #63 accumulate comments. Both sites keep returning 200.  |
-| 2026-07-26 02:00  | Promote to Production → Deploy Production fails the gate again.                                                 |
-| 2026-07-26 18:12  | Latest staging deploy (`52153fd`) fails the gate.                                                               |
-| 2026-07-26 ~19:00 | Investigation: GHCR `:staging` digest matches the pushed image, the serving digest does not. Root cause scoped. |
+| Time              | Event                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| 2026-07-17 17:00  | Last successful production deploy (`a014b19`). Production serves this build for the next 9 days.     |
+| 2026-07-19 ~14:00 | `17e1957` adds `/health` + the post-deploy health gate.                                              |
+| 2026-07-19 15:00  | Last successful staging deploy (`79925f5`). Staging serves this build for the next 7 days.           |
+| 2026-07-19 ~15–16 | The `github-dokploy-ci` Universal Auth client secret is rotated; Dokploy's copies are not updated.   |
+| 2026-07-19 16:19  | First failing staging deploy (`aa404d8`). Every container from here on exits(1) at boot.             |
+| 2026-07-19 → 26   | 8 failed + 4 cancelled staging deploys; issues #67/#63 accumulate. Both sites keep returning 200.    |
+| 2026-07-26 02:00  | Promote to Production → Deploy Production fails the gate.                                            |
+| 2026-07-26 21:02  | First deploy on the immutable-tag path; still fails. Container `tysnl170…` exits(1) after 421ms.     |
+| 2026-07-26 ~21:30 | Dokploy API reveals the crashed containers; replaying the entrypoint's login returns 401. Confirmed. |

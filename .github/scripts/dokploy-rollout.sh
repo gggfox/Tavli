@@ -64,6 +64,49 @@ if [ -n "${DOKPLOY_API_KEY:-}" ] && [ -n "${DOKPLOY_APPLICATION_ID:-}" ] && [ -n
 		echo "Dokploy ${endpoint} → HTTP ${status}"
 	}
 
+	# Preflight the credentials the *container* will use.
+	#
+	# At boot, docker-entrypoint.sh logs into Infisical with the machine-identity
+	# credentials stored on the Dokploy app — a separate copy from the ones this
+	# workflow uses. When those drift (the Universal Auth client secret is
+	# one-time-view, so rotating it for CI silently leaves the Dokploy apps on the
+	# old value) every new container gets a 401 and exits(1) in ~400ms. The
+	# orchestrator then keeps the previous task, the site serves a stale build at
+	# HTTP 200, and the only signal is the health gate timing out five minutes
+	# later. That cost staging and production nine days
+	# (documentation/postmortems/2026-07-26-stale-dokploy-rollout.md).
+	#
+	# Checking here fails the deploy in seconds, naming the real cause, instead of
+	# shipping an image that cannot start.
+	app_env="$(
+		curl -sS --max-time 30 --config "$CURL_CONFIG" \
+			"${DOKPLOY_API_URL%/}/api/application.one?applicationId=${DOKPLOY_APPLICATION_ID}" |
+			jq -r '.env // ""'
+	)" || app_env=""
+
+	env_val() {
+		printf '%s\n' "$app_env" |
+			awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' |
+			sed -e 's/\r$//' -e 's/^"//' -e 's/"$//'
+	}
+	boot_id="$(env_val INFISICAL_MACHINE_CLIENT_ID)"
+	boot_secret="$(env_val INFISICAL_MACHINE_CLIENT_SECRET)"
+
+	if [ -z "$boot_id" ] || [ -z "$boot_secret" ]; then
+		echo "::warning::Could not read the Dokploy app's Infisical machine-identity credentials; skipping the boot-credential preflight. If the app relies on them, the container may fail to start."
+	else
+		echo "::add-mask::$boot_secret"
+		if infisical login --method=universal-auth \
+			--client-id="$boot_id" --client-secret="$boot_secret" \
+			--domain="${INFISICAL_API_URL:-https://infisical.gggfox.com}" \
+			--plain --silent >/dev/null 2>/tmp/preflight-login.err; then
+			echo "Preflight: the Dokploy app's Infisical credentials authenticate."
+		else
+			echo "::error::The Dokploy app's stored INFISICAL_MACHINE_CLIENT_SECRET does not authenticate: $(tr -d '\n' </tmp/preflight-login.err | head -c 300). Every container this app starts will exit(1) on boot and the previous build will keep serving. Generate a fresh Universal Auth client secret for this machine identity and update INFISICAL_MACHINE_CLIENT_SECRET on the Dokploy app, then re-run. Not rolling out."
+			exit 1
+		fi
+	fi
+
 	# username/password/registryUrl are declared `z.string()` (required, not
 	# nullable) by Dokploy's apiSaveDockerProvider schema. Empty strings mean
 	# "no registry auth", which is correct here: the image is public on GHCR by

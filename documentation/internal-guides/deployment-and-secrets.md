@@ -39,12 +39,18 @@ deploy, also see the **[env-and-dokploy skill](../../.claude/skills/env-and-dokp
 5. **Health gate** (`.github/scripts/health-gate.sh`) → poll `<host>/health` until it
    reports the SHA this run built, or fail with a classified diagnosis.
 
-**Deploy by immutable reference, never by mutable tag.** Steps 4–5 exist because Dokploy
-answering 200 does not mean a new container is serving. Pinning `:<sha>` means a pull can
-never be satisfied from a cached image, and the gate proves the result rather than
-assuming it. Both environments once served week-old builds behind HTTP 200 because the
-pipeline only fired a "redeploy" webhook at a mutable `:staging` tag — see
-[the 2026-07-26 postmortem](../postmortems/2026-07-26-stale-dokploy-rollout.md).
+**Rolling out is not serving.** Steps 4–5 exist because Dokploy answering 200 means only
+"queued": it pulls the image and issues an async service update, and if the new container
+dies on boot the orchestrator keeps the previous healthy task. The site then serves an old
+build at HTTP 200 with every check green. Both environments sat like that for over a week
+— see [the 2026-07-26 postmortem](../postmortems/2026-07-26-stale-dokploy-rollout.md).
+Only `/health` reporting the expected SHA proves a rollout landed.
+
+Step 4 also **preflights the container's own credentials**: it reads the Dokploy app's
+`INFISICAL_MACHINE_CLIENT_ID/SECRET` and performs the same `infisical login` the
+entrypoint will. A stale secret there means every container exits(1) on boot, so the
+deploy fails immediately instead of shipping an image that cannot start. Pinning the
+immutable `:<sha>` is what makes a failed container attributable to a specific commit.
 
 If `DOKPLOY_API_URL` / `DOKPLOY_API_KEY` / `DOKPLOY_APPLICATION_ID` are not all present
 for an environment, step 4 falls back to curling `$DOKPLOY_WEBHOOK_URL` and emits a
@@ -180,23 +186,23 @@ redeploy — doing either early breaks the currently-running site.
 7. **Saving env in Dokploy does not restart the container.** You must **Redeploy/Reload** for a new env to take effect (`Up 26 hours` = your edits aren't applied yet).
 8. **`infisical run` does not override existing env vars.** If a secret is also present in the container's base env (e.g. inherited from the shared project env), that value can win over Infisical's. Keep the base env clean.
 9. **Convex issuer is separate.** `CLERK_JWT_ISSUER_DOMAIN` lives in the Convex deployment; if it doesn't match the live Clerk instance, authenticated Convex calls 401.
-10. **A mutable tag can serve a cached image forever.** Redeploying `:staging` / `:production` may be satisfied from the server's local Docker cache, so the environment keeps running whichever build it pulled first — with every check green and the site returning 200. Always roll out the immutable `:<sha>` reference.
+10. **Machine-identity credentials are the deploy's quietest failure mode.** The Client ID (`9e521c33-…`, under **Organization → Access Control → Identities → Authentication**) is _not_ the identity ID shown on the project page (`6f51c471-…`); pasting the latter gives the same `401 Invalid credentials` as a bad secret. And a client secret is shared by CI and the containers — deleting one silently breaks whichever consumer held it while the rest keep working, so **CI staying green is not evidence the credentials are fine**. Adding a client secret is non-destructive; prefer adding to rotating.
 11. **Dokploy's 200 means "queued", not "deployed".** Neither the webhook nor `application.deploy` waits for the container. Only `/health` reporting the expected SHA proves a rollout landed.
 12. **Convex deploys are not gated by Dokploy.** Step 2 succeeds even when the container never updates, so a stuck frontend silently drifts behind a moving backend. Check `/health` before assuming the two are in sync.
 
 ## Diagnostic decision tree
 
-| Symptom                                       | Cause                                                         | Fix                                                                                                                                                      |
-| --------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Site 200 but `/health` reports an old sha** | Rollout was a no-op — Dokploy never replaced the container    | Dokploy → app → **Deployments** (did one run?) → **General → Docker image** (must be `:<sha>`, not `:staging`) → **Logs** (new container crash-looping?) |
-| **`/health` 404s**                            | Running build predates the `/health` route (2026-07-19)       | Same as above — this environment has not taken a new image in a long time                                                                                |
-| **502 Bad Gateway**                           | No healthy container behind Traefik                           | Check the CI build (image may have failed to build/push); then check the container booted (`Up …`)                                                       |
-| **500 / `{"unhandled":true}`**                | Container up, SSR throws                                      | Read container logs — usually a missing/mismatched runtime secret                                                                                        |
-| Logs: `Clerk: no secret key provided`         | No `CLERK_SECRET_KEY` at runtime                              | Ensure Infisical injects it (creds set) or it's present per-env                                                                                          |
-| Logs: `…starting without Infisical.`          | `INFISICAL_MACHINE_CLIENT_ID/SECRET` missing/wrong in Dokploy | Set them; Redeploy                                                                                                                                       |
-| **"Development mode" badge** on prod          | Bundle built with a `pk_test` key                             | Set `VITE_CLERK_PUBLISHABLE_KEY=pk_live` in Infisical `prod` and **rebuild**                                                                             |
-| `jwk-kid mismatch` / handshake redirect loop  | Frontend & backend keys from **different Clerk instances**    | Make `CLERK_SECRET_KEY` match the frontend `pk_*`'s instance                                                                                             |
-| Convex calls 401 for signed-in users          | `CLERK_JWT_ISSUER_DOMAIN` wrong on the Convex deployment      | Set it to the live instance's issuer; it applies immediately                                                                                             |
+| Symptom                                       | Cause                                                               | Fix                                                                                                                                                                                               |
+| --------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Site 200 but `/health` reports an old sha** | New container died on boot; the orchestrator kept the previous task | Test the Dokploy app's `INFISICAL_MACHINE_CLIENT_SECRET` — a 401 means it was rotated and only CI's copy was updated. Then `docker logs <exited container>`; Dokploy's Logs tab may show nothing. |
+| **`/health` 404s**                            | Running build predates the `/health` route (2026-07-19)             | Same as above — this environment has not taken a new image in a long time                                                                                                                         |
+| **502 Bad Gateway**                           | No healthy container behind Traefik                                 | Check the CI build (image may have failed to build/push); then check the container booted (`Up …`)                                                                                                |
+| **500 / `{"unhandled":true}`**                | Container up, SSR throws                                            | Read container logs — usually a missing/mismatched runtime secret                                                                                                                                 |
+| Logs: `Clerk: no secret key provided`         | No `CLERK_SECRET_KEY` at runtime                                    | Ensure Infisical injects it (creds set) or it's present per-env                                                                                                                                   |
+| Logs: `…starting without Infisical.`          | `INFISICAL_MACHINE_CLIENT_ID/SECRET` missing/wrong in Dokploy       | Set them; Redeploy                                                                                                                                                                                |
+| **"Development mode" badge** on prod          | Bundle built with a `pk_test` key                                   | Set `VITE_CLERK_PUBLISHABLE_KEY=pk_live` in Infisical `prod` and **rebuild**                                                                                                                      |
+| `jwk-kid mismatch` / handshake redirect loop  | Frontend & backend keys from **different Clerk instances**          | Make `CLERK_SECRET_KEY` match the frontend `pk_*`'s instance                                                                                                                                      |
+| Convex calls 401 for signed-in users          | `CLERK_JWT_ISSUER_DOMAIN` wrong on the Convex deployment            | Set it to the live instance's issuer; it applies immediately                                                                                                                                      |
 
 **Verification commands:**
 
