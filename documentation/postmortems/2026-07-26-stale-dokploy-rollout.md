@@ -1,6 +1,6 @@
 # Postmortem — Every deploy was a no-op, 2026-07-17 → 2026-07-26
 
-**Status:** Resolved on staging 2026-07-27; production redeploy pending. Guards in [#77](https://github.com/gggfox/Tavli/pull/77)
+**Status:** Resolved — staging 2026-07-27, production 2026-07-28. Both serve `8d228d71`. Guards in [#77](https://github.com/gggfox/Tavli/pull/77) and [#78](https://github.com/gggfox/Tavli/pull/78)
 **Severity:** High (nine days of changes never reached production)
 **Environments affected:** `staging.tavliai.com` and `tavliai.com`
 **Author:** Incident response, 2026-07-26
@@ -161,11 +161,20 @@ Client Secrets both — lives at **Organization → Access Control → Identitie
 identity → Authentication**, not on the project-level identity page. Take both values
 from that one screen.
 
-**Verified 2026-07-27:** `infisical login` + `infisical run` succeed for both
-environments (16 secrets injected). After redeploying staging, the new container came up
-`Up 43 seconds (healthy)` on `ghcr.io/gggfox/tavli:8d228d71…`, the previous task exited
-cleanly (`Exited (0)`), and `staging.tavliai.com/health` reported the deployed commit for
-the first time since 2026-07-19. Production still needs the same redeploy.
+**Verified:** `infisical login` + `infisical run` succeed for both environments (16
+secrets injected). Redeploying staging (2026-07-27) brought the new container up
+`Up 43 seconds (healthy)` on `ghcr.io/gggfox/tavli:8d228d71…` with the previous task
+exiting cleanly (`Exited (0)`). **Promote to Production** on 2026-07-28 then went green
+end-to-end — the first fully successful Deploy Production since 2026-07-17 — with the new
+gate classification visible in the log during handover:
+
+```
+Attempt 1: HTTP 404 — the running build predates the /health route
+Attempt 2: HTTP 404 — the running build predates the /health route
+Health gate passed on attempt 3: reports sha 8d228d71…
+```
+
+Both environments now serve the deployed commit.
 
 Verify with `curl -s https://staging.tavliai.com/health` reporting the deployed commit.
 
