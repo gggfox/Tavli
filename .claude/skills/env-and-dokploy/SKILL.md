@@ -57,22 +57,22 @@ Dokploy → app → **Logs** → select the running container: expect `Injecting
 
 ## Diagnose a broken deploy
 
-| Symptom                                               | Likely cause → fix                                                                                       |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Site 200 but `/health` sha is old                     | Rollout was a no-op → Dokploy → Deployments / Docker image (must be `:<sha>`) / Logs                     |
-| `/health` 404s                                        | Running build predates the route (2026-07-19) → same as above, this env is far behind                    |
-| Deploy job red, all steps green until the health gate | Read the gate's "Deploy diagnosis" group — it names the failure class and the fix                        |
-| 502 Bad Gateway                                       | No container → CI build failed (check Actions) or container crashed on boot                              |
-| 500 `{"unhandled":true}`                              | SSR error → read container logs for the missing/mismatched secret                                        |
-| `…starting without Infisical.`                        | `INFISICAL_MACHINE_CLIENT_ID/SECRET` missing in Dokploy → set + redeploy                                 |
-| "Development mode" badge on prod                      | Bundle built with `pk_test` → set `pk_live` in Infisical `prod` and **rebuild**                          |
-| `jwk-kid mismatch` / redirect loop                    | Frontend/backend keys from different Clerk instances → make `CLERK_SECRET_KEY` match the `pk_*` instance |
-| Convex 401 for signed-in users                        | `CLERK_JWT_ISSUER_DOMAIN` wrong on the Convex deployment                                                 |
+| Symptom                                               | Likely cause → fix                                                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site 200 but `/health` sha is old                     | New container died on boot; the old one still serves → test the app's `INFISICAL_MACHINE_CLIENT_SECRET` (401 = it was rotated), then `docker logs <exited container>` |
+| `/health` 404s                                        | Running build predates the route (2026-07-19) → same as above; this env is many builds behind                                                                         |
+| Deploy job red, all steps green until the health gate | Read the gate's "Deploy diagnosis" group — it names the failure class and the fix                                                                                     |
+| 502 Bad Gateway                                       | No container → CI build failed (check Actions) or container crashed on boot                                                                                           |
+| 500 `{"unhandled":true}`                              | SSR error → read container logs for the missing/mismatched secret                                                                                                     |
+| `…starting without Infisical.`                        | `INFISICAL_MACHINE_CLIENT_ID/SECRET` missing in Dokploy → set + redeploy                                                                                              |
+| "Development mode" badge on prod                      | Bundle built with `pk_test` → set `pk_live` in Infisical `prod` and **rebuild**                                                                                       |
+| `jwk-kid mismatch` / redirect loop                    | Frontend/backend keys from different Clerk instances → make `CLERK_SECRET_KEY` match the `pk_*` instance                                                              |
+| Convex 401 for signed-in users                        | `CLERK_JWT_ISSUER_DOMAIN` wrong on the Convex deployment                                                                                                              |
 
 ## Golden rules
 
 - The Docker image is **public** → no secrets baked in; only the Infisical CLI is.
 - `.dockerignore` is a **whitelist** — a new `COPY <file>` needs a matching `!<file>` line.
 - `infisical run` doesn't override existing env vars → keep the container's base env clean so Infisical wins.
-- **Deploy immutable `:<sha>`, never a mutable `:staging` / `:production` tag** — a mutable tag can be served from the box's local image cache indefinitely, with every check green.
-- **Dokploy returning 200 means "queued", not "deployed"** — only `/health` reporting the expected sha proves a rollout landed.
+- **Rotating the machine-identity client secret is a TWO-place change** — GitHub Actions **and** each Dokploy app's env. Miss the second and every new container 401s and exits(1) at boot in ~400ms while the old one keeps serving a stale build at HTTP 200. This cost 9 days in July.
+- **Dokploy returning 200 means "queued", not "deployed"** — only `/health` reporting the expected sha proves a rollout landed. A container that dies on boot leaves the previous task running, and nothing says so.
