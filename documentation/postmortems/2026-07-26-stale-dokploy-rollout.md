@@ -53,10 +53,24 @@ INFISICAL_TOKEN=$(infisical login --method=universal-auth \
   --client-secret="$INFISICAL_MACHINE_CLIENT_SECRET" ...)
 ```
 
-Those two values live in **Dokploy → app → Environment Settings**. The Universal Auth
-client secret is one-time-view; regenerating it for CI (around 2026-07-19, while the
-deploy pipeline was being worked on) updated the GitHub Actions secret and left both
-Dokploy apps holding the old value.
+Those two values live in **Dokploy → app → Environment Settings**, and are a different
+copy from the one GitHub Actions holds. Dokploy's copy stopped being accepted around
+2026-07-19. An identity can hold several Universal Auth client secrets at once, which is
+why CI — authenticating with its own, still-valid copy — never noticed.
+
+**Why Dokploy's copy died is not established.** Infisical returns the same
+`401 Invalid credentials` for all of these, and none is distinguishable from outside:
+
+- it was **regenerated** for CI and the new value was never copied to Dokploy (the client
+  secret is one-time-view, so this is easy to do and impossible to notice), or
+- it **expired** — client secrets support a TTL, or
+- it **exhausted its max-uses limit** — each `infisical login`, from CI or a container
+  boot, consumes one.
+
+The distinction matters for the fix: if it was a TTL or a usage cap, **a replacement
+created with the same settings will fail again on the same schedule.** Check the
+identity's Universal Auth screen and set TTL `0` / max uses `0` unless there is a reason
+not to.
 
 Verified 2026-07-26 by replaying the entrypoint's exact login with the credentials read
 back from each Dokploy app:
@@ -137,11 +151,15 @@ is the gate working exactly as designed; the failure was in reading it.
 
 **Manual, and required — the outage is not fixed until this is done:**
 
-1. Infisical → Access Control → Identities → `github-dokploy-ci` → Universal Auth →
-   generate a new client secret.
+1. If you still have the current client secret saved (password manager, notes), skip to
+   step 2 — no rotation needed. Otherwise: Infisical → Access Control → Identities →
+   `github-dokploy-ci` → Universal Auth → create a new client secret with **TTL `0` and
+   max uses `0`**. Creating one is non-destructive: existing client secrets on the
+   identity keep working, so CI is unaffected and no coordinated cutover is required.
 2. Set `INFISICAL_MACHINE_CLIENT_SECRET` on **both** Dokploy apps
    (`tavli-frontend-7bdzi6` staging, `tavli-frontend-0wcgnf` production) and Redeploy.
-3. Update the GitHub Actions secret too if the rotation invalidates CI's copy.
+3. Leave the GitHub Actions secret alone — CI authenticates with its own client secret,
+   which is still valid. Only touch it if you deliberately revoked that one.
 
 Verify with `curl -s https://staging.tavliai.com/health` reporting the deployed commit.
 
