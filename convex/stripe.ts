@@ -41,7 +41,7 @@
 
 import { v } from "convex/values";
 import type Stripe from "stripe";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import {
@@ -53,8 +53,19 @@ import {
 	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
 } from "./constants";
-import { fromErrorObject, NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
+import {
+	ConflictError,
+	type ConflictErrorObject,
+	fromErrorObject,
+	NotAuthenticatedError,
+	type NotAuthenticatedErrorObject,
+	NotAuthorizedError,
+	type NotAuthorizedErrorObject,
+	type NotFoundErrorObject,
+} from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
+import type { AsyncReturn } from "./_shared/types";
+import { ORDER_REFUND_BLOCK_REASON, type OrderRefundBlockReason } from "./orderRefundHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
@@ -547,14 +558,34 @@ export const fulfillPayment = internalAction({
 // =============================================================================
 
 /**
- * Creates a refund for a PaymentIntent. Called internally when a staff member
- * cancels a paid order.
+ * Refunds a PaymentIntent, in full or in part.
+ *
+ * A tab payment covers several orders, so cancelling one of them refunds only
+ * that order's share — hence the optional `amount` and the caller-supplied
+ * idempotency key. Legacy per-order payments call this with neither and get the
+ * original full-refund behaviour.
+ *
+ * `reverse_transfer` and `refund_application_fee` stay `true` for partials:
+ * Stripe reverses the transfer and refunds the application fee **proportionally
+ * to the refunded amount**, and requires the two together for destination
+ * charges. Note this proportional behaviour does *not* hold for multicapture
+ * PaymentIntents — we never set `capture_method: "manual"`, and enabling it
+ * would silently break partial refunds here.
  */
 export const createRefund = internalAction({
 	args: {
 		paymentId: v.id(TABLE.PAYMENTS),
+		/** Order whose share is refunded. Required for tab payments, which carry no `orderId`. */
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		/** Smallest currency unit. Omit for a full refund. */
+		amount: v.optional(v.number()),
+		/** Defaults to the legacy payment-scoped key. */
+		idempotencyKey: v.optional(v.string()),
 	},
-	handler: async (ctx, args): Promise<{ refundId: string; status: string | null }> => {
+	handler: async (
+		ctx,
+		args
+	): Promise<{ refundId: string; status: string | null; amount: number }> => {
 		const payment: Doc<"payments"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getPaymentInternal,
 			{
@@ -564,13 +595,16 @@ export const createRefund = internalAction({
 		if (!payment?.stripePaymentIntentId) {
 			throw new Error("Payment does not have a Stripe payment intent");
 		}
-		if (!payment.orderId) {
-			// Tab (session-level) payments are refunded manually via the Stripe
-			// dashboard in v1 — cancelling one order out of a paid tab has no
-			// clean automatic refund semantics.
-			throw new Error("Tab payments cannot be auto-refunded");
+		const targetOrderId = args.orderId ?? payment.orderId;
+		if (!targetOrderId) {
+			throw new Error("Refund requires an order: payment has no orderId and none was supplied");
 		}
-		const paymentOrderId = payment.orderId;
+
+		// A partial refund leaves money on the charge, so the payment is `partial`
+		// rather than `succeeded`. This matches what the `charge.refunded` webhook
+		// will independently derive via `computeRefundFacts` moments later — if
+		// the two disagreed the status would flap.
+		const isPartial = args.amount !== undefined && args.amount < payment.amount;
 
 		await ctx.runMutation(internal.stripeHelpers.updatePayment, {
 			paymentId: args.paymentId,
@@ -578,7 +612,7 @@ export const createRefund = internalAction({
 			refundRequestedAt: Date.now(),
 		});
 		await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-			orderId: paymentOrderId,
+			orderId: targetOrderId,
 			paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 		});
 
@@ -587,32 +621,44 @@ export const createRefund = internalAction({
 			const refund: Stripe.Refund = await stripeClient.refunds.create(
 				{
 					payment_intent: payment.stripePaymentIntentId,
+					// Omit the key entirely for a full refund — Stripe treats an
+					// explicit `undefined` differently from an absent field.
+					...(args.amount !== undefined && { amount: args.amount }),
 					reverse_transfer: true,
 					refund_application_fee: true,
 				},
 				{
-					idempotencyKey: `refund:${args.paymentId}`,
+					idempotencyKey: args.idempotencyKey ?? `refund:${args.paymentId}`,
 				}
 			);
 
+			const succeeded = refund.status === "succeeded";
 			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
 				paymentId: args.paymentId,
-				refundStatus:
-					refund.status === "succeeded"
-						? PAYMENT_REFUND_STATUS.SUCCEEDED
-						: PAYMENT_REFUND_STATUS.REQUESTED,
+				refundStatus: succeeded
+					? isPartial
+						? PAYMENT_REFUND_STATUS.PARTIAL
+						: PAYMENT_REFUND_STATUS.SUCCEEDED
+					: PAYMENT_REFUND_STATUS.REQUESTED,
 				stripeRefundId: refund.id,
-				...(refund.status === "succeeded" && { refundedAt: Date.now() }),
+				...(succeeded && { refundedAt: Date.now() }),
 			});
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: paymentOrderId,
-				paymentState:
-					refund.status === "succeeded"
-						? ORDER_PAYMENT_STATE.REFUNDED
-						: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+				orderId: targetOrderId,
+				paymentState: succeeded
+					? ORDER_PAYMENT_STATE.REFUNDED
+					: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 			});
 
-			return { refundId: refund.id, status: refund.status };
+			// Stripe always echoes `amount`, but fall back rather than return
+			// `undefined` — the caller records this figure through a validated
+			// mutation, and a validator error there would misreport a refund that
+			// has already moved money as a failure.
+			return {
+				refundId: refund.id,
+				status: refund.status,
+				amount: refund.amount ?? args.amount ?? payment.amount,
+			};
 		} catch (error) {
 			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
 				paymentId: args.paymentId,
@@ -620,11 +666,145 @@ export const createRefund = internalAction({
 				failureMessage: error instanceof Error ? error.message : "Refund failed",
 			});
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: paymentOrderId,
+				orderId: targetOrderId,
 				paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
 			});
 			throw error;
 		}
+	},
+});
+
+/**
+ * Cancels an order and refunds the diner that order's share, synchronously.
+ *
+ * Order of operations is **cancel first, then refund**. If Stripe fails the
+ * order is still cancelled and flagged `refund_failed`, so the kitchen stops
+ * cooking and the money is loudly surfaced for manual follow-up. Refunding
+ * first would risk returning money for a dish that keeps cooking.
+ *
+ * Double-cancel is impossible: `updateStatus` rejects a transition out of
+ * `cancelled` (no such key in `VALID_TRANSITIONS`), so two managers clicking at
+ * once cannot produce two refunds — before Stripe idempotency is even reached.
+ */
+export type CancelOrderAndRefundResult = {
+	orderId: Id<"orders">;
+	refunded: boolean;
+	/** Smallest currency unit. `0` when nothing was refunded. */
+	amountRefunded: number;
+	stripeRefundId: string | null;
+	/** Set when the order was cancelled but no refund was due. */
+	skippedReason: OrderRefundBlockReason | null;
+};
+
+type CancelOrderAndRefundErrors =
+	| NotAuthenticatedErrorObject
+	| NotAuthorizedErrorObject
+	| NotFoundErrorObject
+	| ConflictErrorObject;
+
+export const cancelOrderAndRefund = action({
+	args: { orderId: v.id(TABLE.ORDERS) },
+	handler: async (
+		ctx,
+		args
+	): AsyncReturn<CancelOrderAndRefundResult, CancelOrderAndRefundErrors> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			return [null, new NotAuthenticatedError().toObject()];
+		}
+		const userId = identity.subject;
+
+		// Cancel first. This also performs the manager check and the transition
+		// guard, so an unauthorised or invalid request never reaches Stripe.
+		const [, cancelError] = await ctx.runMutation(api.orders.updateStatus, {
+			orderId: args.orderId,
+			newStatus: "cancelled",
+		});
+		if (cancelError) return [null, cancelError];
+
+		const { plan, blocked } = await ctx.runQuery(
+			internal.orderRefundHelpers.resolveOrderRefundPlanInternal,
+			{ orderId: args.orderId }
+		);
+
+		if (!plan) {
+			// An unpaid order is the normal case here — cancelling is the whole
+			// job. The other reasons mean money may be owed, so they surface as
+			// errors rather than a silent success.
+			if (blocked === ORDER_REFUND_BLOCK_REASON.NOT_PAID) {
+				return [
+					{
+						orderId: args.orderId,
+						refunded: false,
+						amountRefunded: 0,
+						stripeRefundId: null,
+						skippedReason: blocked,
+					},
+					null,
+				];
+			}
+			return [
+				null,
+				new ConflictError(
+					blocked === ORDER_REFUND_BLOCK_REASON.NOTHING_REFUNDABLE
+						? "ERROR_REFUND_ALREADY_ISSUED"
+						: "ERROR_REFUND_PAYMENT_UNRESOLVED"
+				).toObject(),
+			];
+		}
+
+		// Only the Stripe call is guarded. Recording the outcome runs *after* the
+		// catch, because once money has moved, an error while writing our own
+		// records must not be reported as "refund failed" — that would send staff
+		// to re-issue a refund the diner already received.
+		let refund: { refundId: string; status: string | null; amount: number };
+		try {
+			refund = await ctx.runAction(internal.stripe.createRefund, {
+				paymentId: plan.paymentId,
+				orderId: plan.orderId,
+				// Omit `amount` when the order's share is the whole charge (the
+				// legacy per-order case) so the Stripe call is byte-identical to
+				// what shipped before partial refunds existed.
+				...(plan.isFullRefund ? {} : { amount: plan.amount }),
+				idempotencyKey: plan.idempotencyKey,
+			});
+		} catch (error) {
+			const failureMessage = error instanceof Error ? error.message : "Refund failed";
+			console.error(
+				"[stripe.cancelOrderAndRefund] REFUND FAILED",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe",
+					operation: "cancelOrderAndRefund",
+				})
+			);
+			await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
+				orderId: args.orderId,
+				succeeded: false,
+				amount: plan.amount,
+				failureMessage,
+				userId,
+			});
+			return [null, new ConflictError("ERROR_REFUND_FAILED").toObject()];
+		}
+
+		await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
+			orderId: args.orderId,
+			succeeded: true,
+			amount: refund.amount,
+			stripeRefundId: refund.refundId,
+			userId,
+		});
+
+		return [
+			{
+				orderId: args.orderId,
+				refunded: true,
+				amountRefunded: refund.amount,
+				stripeRefundId: refund.refundId,
+				skippedReason: null,
+			},
+			null,
+		];
 	},
 });
 

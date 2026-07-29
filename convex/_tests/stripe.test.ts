@@ -566,19 +566,18 @@ describe("stripe actions", () => {
 			mockStripeClient.refunds.create.mockResolvedValueOnce({
 				id: "re_refund",
 				status: "succeeded",
+				amount: 2400,
 			});
 
 			const owner = t.withIdentity({ subject: "owner-1" });
-			const [, error] = await owner.mutation(api.orders.updateStatus, {
+			const [result, error] = await owner.action(api.stripe.cancelOrderAndRefund, {
 				orderId,
-				newStatus: "cancelled",
 			});
 			expect(error).toBeNull();
+			expect(result?.refunded).toBe(true);
 
-			await t.finishAllScheduledFunctions(() => {
-				vi.runAllTimers();
-			});
-
+			// Legacy per-order payment: the order's share IS the whole charge, so
+			// `amount` is omitted and the call matches the pre-partial-refund shape.
 			expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
 				{
 					payment_intent: "pi_refund",
