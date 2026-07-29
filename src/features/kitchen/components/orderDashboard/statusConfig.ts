@@ -2,6 +2,7 @@ import type { OrderDashboardStatusFilter } from "@/features";
 import type { StatusTone } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import type { Urgency } from "@/global/utils/relativeTime";
+import type { OrderPaymentState } from "convex/constants";
 import type { Doc } from "convex/_generated/dataModel";
 
 type LiveNameTranslations = Record<string, { name?: string }>;
@@ -108,6 +109,23 @@ export const STATUS_SORT_PRIORITY: Record<OrderDashboardStatusFilter, number> = 
 	ready: 2,
 	served: 3,
 	cancelled: 4,
+};
+
+/**
+ * Money states worth showing on an order card.
+ *
+ * Deliberately partial: `unpaid`, `pending` and `processing` are the normal
+ * pre-payment lifecycle and would be noise on every open ticket. Only states a
+ * staff member might need to act on get a badge — and `refund_failed` is the
+ * one that must never be missed, because the diner is owed money.
+ */
+export const PAYMENT_STATE_BADGE: Partial<
+	Record<OrderPaymentState, { labelKey: string; tone: StatusTone }>
+> = {
+	paid: { labelKey: OrdersKeys.CARD_PAID, tone: "success" },
+	refund_requested: { labelKey: OrdersKeys.PAYMENT_REFUND_REQUESTED, tone: "warning" },
+	refunded: { labelKey: OrdersKeys.PAYMENT_REFUNDED, tone: "info" },
+	refund_failed: { labelKey: OrdersKeys.PAYMENT_REFUND_FAILED, tone: "danger" },
 };
 
 export const MAX_VISIBLE_ITEMS = 7;

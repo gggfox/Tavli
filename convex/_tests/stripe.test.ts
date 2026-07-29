@@ -596,6 +596,221 @@ describe("stripe actions", () => {
 		}
 	});
 
+	describe("cancelOrderAndRefund — tab payments (TAVLI-50)", () => {
+		/**
+		 * One succeeded tab payment covering two submitted orders, plus a manager.
+		 * Mirrors production: `payments.orderId` is unset (the tab carries
+		 * `sessionId`), and the payment total includes a tip.
+		 */
+		async function seedPaidTabWithTwoOrders(t: ReturnType<typeof convexTest>) {
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-tab",
+				organizationId,
+				stripeAccountId: "acct_tab",
+				stripeOnboardingComplete: true,
+			});
+
+			let firstOrderId: Id<"orders">;
+			let secondOrderId: Id<"orders">;
+			let paymentId: Id<"payments">;
+
+			await t.run(async (ctx) => {
+				const tableId = await ctx.db.insert("tables", {
+					restaurantId,
+					tableNumber: 7,
+					isActive: true,
+					createdAt: Date.now(),
+				});
+				const sessionId = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					userId: "diner-tab",
+					status: "closed",
+					startedAt: Date.now(),
+				});
+
+				const makeOrder = (totalAmount: number) =>
+					ctx.db.insert("orders", {
+						sessionId,
+						restaurantId,
+						tableId,
+						status: "submitted",
+						totalAmount,
+						paymentState: "paid",
+						paidAt: Date.now(),
+						submittedAt: Date.now(),
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+					});
+				firstOrderId = await makeOrder(6000);
+				secondOrderId = await makeOrder(4000);
+
+				// 10000 subtotal + 1000 tip. No `orderId` — this is a tab payment.
+				paymentId = await ctx.db.insert("payments", {
+					restaurantId,
+					sessionId,
+					amount: 11000,
+					gratuityAmount: 1000,
+					currency: "mxn",
+					status: "succeeded",
+					refundStatus: "none",
+					attemptNumber: 1,
+					orderUpdatedAtSnapshot: Date.now(),
+					stripePaymentIntentId: "pi_tab",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+
+				await ctx.db.patch(sessionId, { activePaymentId: paymentId });
+				await ctx.db.insert("userRoles", {
+					userId: "manager-tab",
+					roles: ["manager"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("restaurantMembers", {
+					userId: "manager-tab",
+					restaurantId,
+					organizationId,
+					role: "manager",
+					isActive: true,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					updatedBy: "system",
+				});
+			});
+
+			return {
+				firstOrderId: firstOrderId!,
+				secondOrderId: secondOrderId!,
+				paymentId: paymentId!,
+				manager: t.withIdentity({ subject: "manager-tab" }),
+			};
+		}
+
+		it("refunds only the cancelled order's share and leaves the rest of the tab alone", async () => {
+			const t = convexTest(schema, modules);
+			const { firstOrderId, secondOrderId, paymentId, manager } = await seedPaidTabWithTwoOrders(t);
+
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_first",
+				status: "succeeded",
+				amount: 6000,
+			});
+
+			const [result, error] = await manager.action(api.stripe.cancelOrderAndRefund, {
+				orderId: firstOrderId,
+			});
+
+			expect(error).toBeNull();
+			expect(result).toMatchObject({ refunded: true, amountRefunded: 6000 });
+
+			// The order's own total, not the whole 11000 charge — and not the tip.
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
+				{
+					payment_intent: "pi_tab",
+					amount: 6000,
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{ idempotencyKey: `refund:${paymentId}:${firstOrderId}` }
+			);
+
+			const [first, second, payment] = await t.run(async (ctx) => [
+				await ctx.db.get(firstOrderId),
+				await ctx.db.get(secondOrderId),
+				await ctx.db.get(paymentId),
+			]);
+
+			expect(first?.status).toBe("cancelled");
+			expect(first?.paymentState).toBe("refunded");
+			// The other order on the tab is untouched — the whole point of partial.
+			expect(second?.status).toBe("submitted");
+			expect(second?.paymentState).toBe("paid");
+			// Money is left on the charge, so the payment is `partial`, matching
+			// what the `charge.refunded` webhook independently derives.
+			expect(payment?.refundStatus).toBe("partial");
+		});
+
+		it("uses a distinct idempotency key for a second order on the same tab", async () => {
+			// With the old payment-scoped key Stripe would replay the first
+			// refund's response and the diner would never see this money.
+			const t = convexTest(schema, modules);
+			const { firstOrderId, secondOrderId, paymentId, manager } = await seedPaidTabWithTwoOrders(t);
+
+			mockStripeClient.refunds.create
+				.mockResolvedValueOnce({ id: "re_first", status: "succeeded", amount: 6000 })
+				.mockResolvedValueOnce({ id: "re_second", status: "succeeded", amount: 4000 });
+
+			await manager.action(api.stripe.cancelOrderAndRefund, { orderId: firstOrderId });
+			await manager.action(api.stripe.cancelOrderAndRefund, { orderId: secondOrderId });
+
+			const keys = mockStripeClient.refunds.create.mock.calls.map(
+				(call) => (call[1] as { idempotencyKey: string }).idempotencyKey
+			);
+			expect(keys).toEqual([
+				`refund:${paymentId}:${firstOrderId}`,
+				`refund:${paymentId}:${secondOrderId}`,
+			]);
+			expect(new Set(keys).size).toBe(2);
+		});
+
+		it("cancels the order and flags refund_failed when Stripe rejects the refund", async () => {
+			// Cancel-first: the kitchen must stop cooking even if the money fails,
+			// and the failure has to be visible rather than swallowed.
+			const t = convexTest(schema, modules);
+			const { firstOrderId, paymentId, manager } = await seedPaidTabWithTwoOrders(t);
+
+			mockStripeClient.refunds.create.mockRejectedValueOnce(new Error("card_error"));
+
+			const [result, error] = await manager.action(api.stripe.cancelOrderAndRefund, {
+				orderId: firstOrderId,
+			});
+
+			expect(result).toBeNull();
+			expect(error!.message).toBe("ERROR_REFUND_FAILED");
+
+			const [order, payment] = await t.run(async (ctx) => [
+				await ctx.db.get(firstOrderId),
+				await ctx.db.get(paymentId),
+			]);
+			expect(order?.status).toBe("cancelled");
+			expect(order?.paymentState).toBe("refund_failed");
+			expect(payment?.refundStatus).toBe("failed");
+		});
+
+		it("cancels an unpaid order without calling Stripe", async () => {
+			const t = convexTest(schema, modules);
+			const { firstOrderId, manager } = await seedPaidTabWithTwoOrders(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(firstOrderId, { paymentState: "unpaid", paidAt: undefined });
+			});
+
+			const [result, error] = await manager.action(api.stripe.cancelOrderAndRefund, {
+				orderId: firstOrderId,
+			});
+
+			expect(error).toBeNull();
+			expect(result).toMatchObject({ refunded: false, skippedReason: "not_paid" });
+			expect(mockStripeClient.refunds.create).not.toHaveBeenCalled();
+		});
+
+		it("refuses to let an employee cancel and refund", async () => {
+			const t = convexTest(schema, modules);
+			const { firstOrderId, manager: _manager } = await seedPaidTabWithTwoOrders(t);
+
+			const [result, error] = await t
+				.withIdentity({ subject: "nobody" })
+				.action(api.stripe.cancelOrderAndRefund, { orderId: firstOrderId });
+
+			expect(result).toBeNull();
+			expect(error!.name).toBe("NOT_AUTHORIZED");
+			expect(mockStripeClient.refunds.create).not.toHaveBeenCalled();
+		});
+	});
+
 	it("rejects invalid webhook signatures without mutating local state", async () => {
 		const t = convexTest(schema, modules);
 		mockStripeClient.webhooks.constructEvent.mockImplementationOnce(() => {

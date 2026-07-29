@@ -8,9 +8,10 @@ import {
 	type StatusFilterOption,
 } from "@/global/components";
 import { useOptimisticUserSetting } from "@/global/hooks";
+import { getErrorMessage } from "@/global/utils";
 import { OrdersKeys } from "@/global/i18n";
 import type { Id } from "convex/_generated/dataModel";
-import { ChefHat } from "lucide-react";
+import { ChefHat, X } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOrders } from "../../hooks/useOrders";
@@ -47,6 +48,14 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		updateOrderDashboardPrepStationFilters,
 	} = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
+	const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
+	// Deliberately a persistent banner, not a toast: a failed refund means the
+	// diner is owed money, and the cancelled order it belongs to is filtered out
+	// of the default dashboard view, so a message that disappears would be the
+	// only trace of it.
+	const [refundFailure, setRefundFailure] = useState<{ number: string; message: string } | null>(
+		null
+	);
 	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
 	const [now, setNow] = useState(() => Date.now());
 
@@ -69,10 +78,32 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	// presence check on the server side.
 	const queryStations = activeStationFilters.length > 0 ? activeStationFilters : undefined;
 
-	const { orders, isLoading, error, updateStatus, markStationReady } = useOrders(
-		restaurantId,
-		activeFilters,
-		queryStations
+	const { orders, isLoading, error, updateStatus, markStationReady, cancelOrderAndRefund } =
+		useOrders(restaurantId, activeFilters, queryStations);
+
+	const handleCancelOrder = useCallback(
+		async (orderId: DashboardOrder["_id"]) => {
+			const order = (orders as ReadonlyArray<DashboardOrder>).find((o) => o._id === orderId);
+			const orderLabel = order?.dailyOrderNumber?.toString() ?? orderId;
+			setCancelPendingId(orderId);
+			setRefundFailure(null);
+			try {
+				const [, cancelError] = await cancelOrderAndRefund({ orderId });
+				if (cancelError) {
+					setRefundFailure({
+						number: orderLabel,
+						message: getErrorMessage(cancelError, t),
+					});
+					return;
+				}
+				setCancelConfirm(null);
+			} catch (err) {
+				setRefundFailure({ number: orderLabel, message: getErrorMessage(err, t) });
+			} finally {
+				setCancelPendingId(null);
+			}
+		},
+		[orders, cancelOrderAndRefund, t]
 	);
 
 	useEffect(() => {
@@ -149,15 +180,25 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				order={order}
 				now={now}
 				cancelConfirm={cancelConfirm}
+				cancelPendingId={cancelPendingId}
 				activeStationFilters={activeStationFilterSet}
 				onSelectFullOrder={setFullOrder}
 				onRequestCancel={setCancelConfirm}
 				onDismissCancel={() => setCancelConfirm(null)}
+				onCancelOrder={handleCancelOrder}
 				onUpdateStatus={updateStatus}
 				onMarkStationReady={markStationReady}
 			/>
 		),
-		[now, cancelConfirm, activeStationFilterSet, updateStatus, markStationReady]
+		[
+			now,
+			cancelConfirm,
+			cancelPendingId,
+			activeStationFilterSet,
+			handleCancelOrder,
+			updateStatus,
+			markStationReady,
+		]
 	);
 
 	return (
@@ -168,6 +209,29 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			skeleton={<OrderDashboardSkeleton />}
 			header={filterPills}
 		>
+			{refundFailure && (
+				<div
+					role="alert"
+					className="mb-3 flex items-start gap-2 rounded-lg p-3 text-xs font-medium text-destructive"
+					style={{
+						backgroundColor: "rgba(220, 38, 38, 0.05)",
+						border: "1px solid rgba(220, 38, 38, 0.2)",
+					}}
+				>
+					<span className="flex-1">
+						{t(OrdersKeys.CANCEL_REFUND_FAILED_BANNER, { number: refundFailure.number })}{" "}
+						{refundFailure.message}
+					</span>
+					<button
+						onClick={() => setRefundFailure(null)}
+						className="shrink-0 text-muted-foreground"
+						aria-label={t(OrdersKeys.ACTION_KEEP_ORDER)}
+					>
+						<X size={14} />
+					</button>
+				</div>
+			)}
+
 			{sorted.length === 0 ? (
 				<EmptyState
 					icon={ChefHat}

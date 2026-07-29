@@ -3,10 +3,11 @@ import { getStatusToneStyle, StatusBadge, Surface } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
-import { CheckCircle2, ChefHat, Clock, CreditCard, UtensilsCrossed, XCircle } from "lucide-react";
+import { CheckCircle2, ChefHat, Clock, UtensilsCrossed, XCircle } from "lucide-react";
 import { type CSSProperties, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
+import { PaymentStateBadge } from "./PaymentStateBadge";
 import { STATION_CONFIG, type DashboardPrepStation } from "./stationConfig";
 import {
 	formatOrderDate,
@@ -30,9 +31,12 @@ interface OrderCardProps {
 	 * selected we fall back to the whole-order action.
 	 */
 	activeStationFilters: ReadonlySet<DashboardPrepStation>;
+	/** Order id whose cancel is in flight, if any. Disables the confirm button. */
+	cancelPendingId: string | null;
 	onSelectFullOrder: (order: DashboardOrder) => void;
 	onRequestCancel: (orderId: string) => void;
 	onDismissCancel: () => void;
+	onCancelOrder: (orderId: DashboardOrder["_id"]) => void;
 	onUpdateStatus: (args: { orderId: DashboardOrder["_id"]; newStatus: NextOrderStatus }) => void;
 	onMarkStationReady: (args: {
 		orderId: DashboardOrder["_id"];
@@ -45,9 +49,11 @@ export function OrderCard({
 	now,
 	cancelConfirm,
 	activeStationFilters,
+	cancelPendingId,
 	onSelectFullOrder,
 	onRequestCancel,
 	onDismissCancel,
+	onCancelOrder,
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
@@ -59,6 +65,11 @@ export function OrderCard({
 	const absoluteTimestamp = `${formatOrderDate(order.createdAt, i18n.language)}, ${formatOrderTime(order.createdAt, i18n.language)}`;
 	const hasNextAction = config.next !== null && config.nextLabelKey !== null;
 	const isCancelling = cancelConfirm === order._id;
+	const isCancelPending = cancelPendingId === order._id;
+	// `stripePaymentIntentId` is only ever set on legacy per-order payments — it
+	// is undefined for every tab-paid order, which is all of them in practice.
+	// `paymentState` is the field that actually tracks the money.
+	const isPaid = order.paymentState === "paid";
 	const moreItemsLabel =
 		hiddenCount > 0
 			? `${t(OrdersKeys.CARD_MORE_ITEMS, { count: hiddenCount })} · ${t(OrdersKeys.ACTION_VIEW_FULL_ORDER)}`
@@ -110,15 +121,7 @@ export function OrderCard({
 								{t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })}
 							</span>
 						)}
-						{order.paidAt && (
-							<span
-								className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-success"
-								style={{ color: "white" }}
-							>
-								<CreditCard size={10} />
-								{t(OrdersKeys.CARD_PAID)}
-							</span>
-						)}
+						<PaymentStateBadge paymentState={order.paymentState} />
 					</div>
 					<span className="text-sm font-semibold shrink-0 text-foreground">
 						${formatCents(order.totalAmount)}
@@ -201,29 +204,25 @@ export function OrderCard({
 						}}
 					>
 						<p className="text-xs font-medium text-destructive">
-							{order.stripePaymentIntentId
-								? t(OrdersKeys.CANCEL_PAID_PROMPT)
-								: t(OrdersKeys.CANCEL_PROMPT)}
+							{isPaid ? t(OrdersKeys.CANCEL_PAID_PROMPT) : t(OrdersKeys.CANCEL_PROMPT)}
 						</p>
 						<div className="flex gap-2">
 							<button
-								onClick={() => {
-									onUpdateStatus({
-										orderId: order._id,
-										newStatus: "cancelled",
-									});
-									onDismissCancel();
-								}}
-								className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-destructive"
+								onClick={() => onCancelOrder(order._id)}
+								disabled={isCancelPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-destructive disabled:opacity-60"
 								style={{ color: "white" }}
 							>
-								{order.stripePaymentIntentId
-									? t(OrdersKeys.ACTION_CANCEL_AND_REFUND)
-									: t(OrdersKeys.ACTION_CONFIRM_CANCEL)}
+								{isCancelPending
+									? t(OrdersKeys.CANCEL_REFUND_PENDING)
+									: isPaid
+										? t(OrdersKeys.ACTION_CANCEL_AND_REFUND)
+										: t(OrdersKeys.ACTION_CONFIRM_CANCEL)}
 							</button>
 							<button
 								onClick={onDismissCancel}
-								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground"
+								disabled={isCancelPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground disabled:opacity-60"
 							>
 								{t(OrdersKeys.ACTION_KEEP_ORDER)}
 							</button>

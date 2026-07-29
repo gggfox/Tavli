@@ -2,9 +2,10 @@ import { DialogHeader, getStatusToneStyle, Modal, StatusBadge, Surface } from "@
 import { CommonKeys, OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
-import { Clock, CreditCard } from "lucide-react";
+import { Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
+import { PaymentStateBadge } from "./PaymentStateBadge";
 import {
 	formatOrderDate,
 	formatOrderTime,
@@ -56,15 +57,7 @@ export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDeta
 										{t(OrdersKeys.CARD_DAY_NUMBER, { n: fullOrder.dailyOrderNumber })}
 									</span>
 								)}
-								{fullOrder.paidAt && (
-									<span
-										className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-success"
-										style={{ color: "white" }}
-									>
-										<CreditCard size={10} />
-										{t(OrdersKeys.CARD_PAID)}
-									</span>
-								)}
+								<PaymentStateBadge paymentState={fullOrder.paymentState} />
 							</div>
 						}
 						subtitle={

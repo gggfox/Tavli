@@ -396,7 +396,9 @@
 		},
 		"cancel": {
 			"prompt": "Cancel this order?",
-			"paidPrompt": "This order has been paid. Cancelling will issue a refund."
+			"paidPrompt": "This order has been paid. Cancelling refunds its amount to the diner. The tip is not refunded.",
+			"refundPending": "Cancelling and refunding…",
+			"refundFailedBanner": "Order #{{number}} was cancelled but the refund did not go through. Issue it from the Stripe dashboard."
 		},
 		"card": {
 			"table": "Table {{number}}",
@@ -414,6 +416,11 @@
 			"stationFilter": "Filter orders by prep station",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders"
+		},
+		"payment": {
+			"refundRequested": "Refund pending",
+			"refunded": "Refunded",
+			"refundFailed": "Refund failed"
 		}
 	},
 	"payments": {
