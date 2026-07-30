@@ -432,6 +432,11 @@ export const confirmTabPayment = internalMutation({
 			await ctx.db.patch(order._id, {
 				paymentState: ORDER_PAYMENT_STATE.PAID,
 				paidAt: now,
+				// Point each covered order at the tab payment so a later cancel can
+				// resolve it directly. Without this the refund path has to walk the
+				// session (see `orderRefundHelpers.resolveSucceededPaymentForOrder`,
+				// which still handles rows written before this).
+				activePaymentId: payment._id,
 				updatedAt: now,
 				updatedBy: AUDIT_SYSTEM_USER_ID,
 			});

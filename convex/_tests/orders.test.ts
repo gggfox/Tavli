@@ -635,6 +635,146 @@ describe("orders", () => {
 			expect(error!.name).toBe("NOT_AUTHENTICATED");
 		});
 
+		describe("cancel authorization (TAVLI-50)", () => {
+			/** Submitted, paid order plus an employee and a manager on the restaurant. */
+			async function seedCancellableOrder(t: ReturnType<typeof convexTest>) {
+				const {
+					organizationId,
+					sessionId,
+					restaurantId,
+					tableId,
+					authed: diner,
+				} = await seedRestaurantAndSession(t);
+				const menuItemId = await seedMenuItem(t, restaurantId);
+
+				await t.run(async (ctx) => {
+					for (const [userId, role] of [
+						["employee1", "employee"],
+						["manager1", "manager"],
+					] as const) {
+						await ctx.db.insert("userRoles", {
+							userId,
+							roles: [role],
+							organizationId,
+							createdAt: Date.now(),
+							updatedAt: Date.now(),
+						});
+						await ctx.db.insert("restaurantMembers", {
+							userId,
+							restaurantId,
+							organizationId,
+							role,
+							isActive: true,
+							createdAt: Date.now(),
+							updatedAt: Date.now(),
+							updatedBy: "system",
+						});
+					}
+				});
+
+				const orderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+				await diner.mutation(api.orders.addItem, {
+					orderId,
+					menuItemId,
+					quantity: 1,
+					selectedOptions: [],
+				});
+				await diner.mutation(api.orders.submitOrder, { orderId });
+				await simulatePaymentConfirmation(t, orderId);
+
+				return { orderId, restaurantId };
+			}
+
+			it("refuses to let an employee cancel a paid order", async () => {
+				// Cancelling moves money. Employees advance tickets; only managers
+				// cancel — otherwise any active staff member can refund a diner.
+				const t = convexTest(schema, modules);
+				const { orderId } = await seedCancellableOrder(t);
+
+				const [value, error] = await t
+					.withIdentity({ subject: "employee1" })
+					.mutation(api.orders.updateStatus, { orderId, newStatus: "cancelled" });
+
+				expect(value).toBeNull();
+				expect(error!.message).toBe("ERROR_MANAGER_ROLE_REQUIRED");
+
+				const order = await t.run(async (ctx) => ctx.db.get(orderId));
+				expect(order?.status).toBe("submitted");
+				expect(order?.paymentState).toBe("paid");
+			});
+
+			it("lets a manager cancel a paid order and flags the refund as pending", async () => {
+				const t = convexTest(schema, modules);
+				const { orderId } = await seedCancellableOrder(t);
+
+				const [, error] = await t
+					.withIdentity({ subject: "manager1" })
+					.mutation(api.orders.updateStatus, { orderId, newStatus: "cancelled" });
+				expect(error).toBeNull();
+
+				const order = await t.run(async (ctx) => ctx.db.get(orderId));
+				expect(order?.status).toBe("cancelled");
+				// The mutation alone never refunds — `stripe.cancelOrderAndRefund`
+				// does, and it calls this first.
+				expect(order?.paymentState).toBe("refund_requested");
+			});
+
+			it("still lets an employee advance a ticket through to served", async () => {
+				// Regression guard for the manager gate: it must apply only to
+				// `cancelled`, not to the kitchen's normal workflow.
+				const t = convexTest(schema, modules);
+				const { orderId } = await seedCancellableOrder(t);
+				const employee = t.withIdentity({ subject: "employee1" });
+
+				for (const newStatus of ["preparing", "ready", "served"] as const) {
+					const [, err] = await employee.mutation(api.orders.updateStatus, {
+						orderId,
+						newStatus,
+					});
+					expect(err).toBeNull();
+				}
+
+				const order = await t.run(async (ctx) => ctx.db.get(orderId));
+				expect(order?.status).toBe("served");
+			});
+
+			it("refuses to cancel a served order, with a stable error code", async () => {
+				// Food reached the table: refunding is a Stripe-dashboard decision.
+				const t = convexTest(schema, modules);
+				const { orderId } = await seedCancellableOrder(t);
+				const manager = t.withIdentity({ subject: "manager1" });
+
+				for (const newStatus of ["preparing", "ready", "served"] as const) {
+					await manager.mutation(api.orders.updateStatus, { orderId, newStatus });
+				}
+
+				await expect(
+					manager.mutation(api.orders.updateStatus, { orderId, newStatus: "cancelled" })
+				).rejects.toThrow(/ERROR_ORDER_NOT_CANCELLABLE/);
+
+				const order = await t.run(async (ctx) => ctx.db.get(orderId));
+				expect(order?.status).toBe("served");
+			});
+
+			it("cannot be cancelled twice", async () => {
+				// The dedup gate that makes a double-click safe before Stripe
+				// idempotency is even reached.
+				const t = convexTest(schema, modules);
+				const { orderId } = await seedCancellableOrder(t);
+				const manager = t.withIdentity({ subject: "manager1" });
+
+				const [, error] = await manager.mutation(api.orders.updateStatus, {
+					orderId,
+					newStatus: "cancelled",
+				});
+				expect(error).toBeNull();
+
+				await expect(
+					manager.mutation(api.orders.updateStatus, { orderId, newStatus: "cancelled" })
+				).rejects.toThrow(/ERROR_ORDER_NOT_CANCELLABLE/);
+			});
+		});
+
 		it("backfills dailyOrderNumber and orderServiceDateKey for a legacy order missing them", async () => {
 			vi.useFakeTimers();
 			vi.setSystemTime(new Date(Date.UTC(2024, 5, 15, 12, 0, 0)));

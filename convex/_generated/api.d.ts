@@ -66,6 +66,7 @@ import type * as migrations_backfillUpdatedBy from "../migrations/backfillUpdate
 import type * as optionGroups from "../optionGroups.js";
 import type * as orderDayCounters from "../orderDayCounters.js";
 import type * as orderHelpers from "../orderHelpers.js";
+import type * as orderRefundHelpers from "../orderRefundHelpers.js";
 import type * as orderServiceDate from "../orderServiceDate.js";
 import type * as orders from "../orders.js";
 import type * as organizations from "../organizations.js";
@@ -157,6 +158,7 @@ declare const fullApi: ApiFromModules<{
   optionGroups: typeof optionGroups;
   orderDayCounters: typeof orderDayCounters;
   orderHelpers: typeof orderHelpers;
+  orderRefundHelpers: typeof orderRefundHelpers;
   orderServiceDate: typeof orderServiceDate;
   orders: typeof orders;
   organizations: typeof organizations;

@@ -34,6 +34,12 @@ export const OrdersKeys = {
 
 	CANCEL_PROMPT: "orders.cancel.prompt",
 	CANCEL_PAID_PROMPT: "orders.cancel.paidPrompt",
+	CANCEL_REFUND_PENDING: "orders.cancel.refundPending",
+	CANCEL_REFUND_FAILED_BANNER: "orders.cancel.refundFailedBanner",
+
+	PAYMENT_REFUND_REQUESTED: "orders.payment.refundRequested",
+	PAYMENT_REFUNDED: "orders.payment.refunded",
+	PAYMENT_REFUND_FAILED: "orders.payment.refundFailed",
 
 	CARD_TABLE: "orders.card.table",
 	CARD_DAY_NUMBER: "orders.card.dayNumber",
