@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import { getCurrentUserId } from "./_util/auth";
+import { fromErrorObject } from "./_shared/errors";
+import { getCurrentUserId, requireOrgOwnerOrAdmin } from "./_util/auth";
 import { TABLE } from "./constants";
 import { stampUpdated } from "./_util/audit";
 
@@ -346,6 +347,13 @@ export const generateUserPhotoUploadUrl = mutation({
 	},
 });
 
+/**
+ * Set the custom photo on a user's org-level `userRoles` row.
+ *
+ * Self-service by default (no `targetUserId`). Targeting another user is
+ * restricted to admins and org owners of the target's organization (the
+ * team drawer path).
+ */
 export const setUserPhoto = mutation({
 	args: {
 		photoStorageId: v.id("_storage"),
@@ -361,6 +369,14 @@ export const setUserPhoto = mutation({
 			.query(TABLE.USER_ROLES)
 			.withIndex("by_user", (q) => q.eq("userId", targetId))
 			.first();
+
+		if (targetId !== actorId) {
+			// Authorize before the missing-row no-op so unauthorized callers
+			// can't probe which userIds have a `userRoles` row.
+			const [, authError] = await requireOrgOwnerOrAdmin(ctx, actorId, row?.organizationId);
+			if (authError) throw fromErrorObject(authError);
+		}
+
 		if (!row) return;
 
 		await ctx.db.patch(row._id, {
