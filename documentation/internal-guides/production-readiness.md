@@ -8,15 +8,24 @@ and the observability work (TAVLI-9) roll up into.
 
 Legend: 🔴 blocker · 🟠 high · 🟡 medium · ✅ done · ⚙️ config/manual verify
 
-## Status — 2026-07-20
+## Status — 2026-08-01
 
-**Every code-level finding from the 2026-07-18 audit is now merged into `main`** — the
-🔴 blockers, the 🟠 high items, and the whole 🟡 medium hardening rollup including the
-frontend slice ([#71](https://github.com/gggfox/Tavli/pull/71), merged 2026-07-20). What
-is left is operational, a product decision, and the two dimensions the audit could not
-close from code: error tracking and staff-tablet responsive coverage. The verdict and
-dimension table below have been updated to match; the per-item evidence (`file:line`,
-severity, original wording) is preserved throughout so the audit trail stays intact.
+**TAVLI-1 ("Prod configuration") is closed.** Every code-level finding from the
+2026-07-18 audit is merged into `main`, and since the last update the operational side
+has landed too: the **Stripe live-mode cutover is complete and verified against real
+live events** (TAVLI-46, closed 2026-08-01), **in-app refund initiation shipped**
+([#79](https://github.com/gggfox/Tavli/pull/79), TAVLI-50 — closing the last 🔴 product
+decision), the **first prod admin is bootstrapped** (prod `userRoles` populated, verified
+2026-08-01), and the go-live runbook was refreshed
+([#80](https://github.com/gggfox/Tavli/pull/80)/[#81](https://github.com/gggfox/Tavli/pull/81)).
+The deploy pipeline also hardened further: immutable-image rollout + failure
+classification ([#77](https://github.com/gggfox/Tavli/pull/77)) and container-credential
+preflight with a corrected postmortem root cause
+([#78](https://github.com/gggfox/Tavli/pull/78)).
+
+The verdict and dimension table below have been updated to match; the per-item evidence
+(`file:line`, severity, original wording) is preserved throughout so the audit trail
+stays intact.
 
 **Merged since the audit — blockers & high:**
 
@@ -42,54 +51,76 @@ severity, original wording) is preserved throughout so the audit trail stays int
 | Bot HTTP boundary, `getAllFeatureFlags` gate, Stripe `apiVersion`, timezone defaults, TDR-0001 archived | [#65](https://github.com/gggfox/Tavli/pull/65) | TAVLI-61 |
 | Frontend: language hydration, error boundaries, list perf, tokens                                       | [#71](https://github.com/gggfox/Tavli/pull/71) | TAVLI-64 |
 
+**Merged since — cutover & launch wave (2026-07-25 → 08-01):**
+
+| Finding                                                          | PR                                                                                            | Ticket   |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | -------- |
+| Resolve refund id when `charge.refunded` omits the refunds list  | [#75](https://github.com/gggfox/Tavli/pull/75)                                                | TAVLI-46 |
+| Immutable-image rollout + rollout-failure classification         | [#77](https://github.com/gggfox/Tavli/pull/77)                                                | —        |
+| Container-credential preflight + corrected postmortem root cause | [#78](https://github.com/gggfox/Tavli/pull/78)                                                | —        |
+| In-app refund initiation for tab payments                        | [#79](https://github.com/gggfox/Tavli/pull/79)                                                | TAVLI-50 |
+| `stripe-go-live.md` → Infisical model (+ Connect corrections)    | [#80](https://github.com/gggfox/Tavli/pull/80)/[#81](https://github.com/gggfox/Tavli/pull/81) | TAVLI-46 |
+
 **What is genuinely left before real traffic:**
 
-1. **Error tracking** — the only original blocker with no work started. → **TAVLI-9**
-2. **Stripe live-mode cutover** — dashboard/config work, not code. → **TAVLI-46**
-3. **Operational steps against prod** — run the first-admin bootstrap once; confirm the
-   masked `CONVEX_ENV` / `PUBLIC_APP_URL` values; set `RESERVATIONS_BOT_TOKEN`.
-4. **Code paths never exercised against live Stripe** — the refund/dispute handlers and
-   the stuck-tab reconciler are unit-tested against fixtures only. Replay real test-mode
-   events before trusting them. See the caveat under Payments below.
+1. **Error tracking** — the last open blocker, now **in progress**: PostHog integration
+   on [#64](https://github.com/gggfox/Tavli/pull/64). → **TAVLI-9**
+2. **Staff/tablet responsive coverage** → **TAVLI-59**; iPhone side on
+   [#60](https://github.com/gggfox/Tavli/pull/60) (TAVLI-4).
+3. **Convex backup posture + restore runbook** → **TAVLI-58** (untouched).
+4. **Two residual config confirmations** — `RESERVATIONS_BOT_TOKEN` (only gates the
+   not-yet-live bot API) and `VITE_DEV_ROLE_SWITCHER_ENABLED` off in Infisical `prod`.
+5. **Onboard the first real restaurant** — reframed from "re-onboard every restaurant":
+   prod has exactly one restaurant row and it is a test record.
+
+~~Stripe live-mode cutover~~ ✅ done & live-verified (TAVLI-46). ~~First-admin
+bootstrap~~ ✅ run (prod `userRoles` populated). ~~Replay test-mode events~~ ✅ done —
+and the `computeRefundFacts` suspicion **was correct**: live `charge.refunded` events
+carry no `refunds` list, fixed with a `refunds.list` lookup in
+[#75](https://github.com/gggfox/Tavli/pull/75), verified against a resent real event.
+
+**New follow-ups out of the cutover verification:** **TAVLI-65** — handle the other 13
+`v2.core.account*` thin-event types the live Connect destination subscribes to (only 2
+have handlers; the rest log `Unhandled thin event type`); **TAVLI-66** — restaurant
+purge misses 8 of 31 restaurant-scoped tables.
 
 ## Overall verdict
 
-**Materially closer — the code gaps are closed, the remaining risk is operational.**
-Auth/authorization and the deploy/secrets pipeline are solid (the ~28-finding security
-remediation plus, now, an empirically-verified Clerk JWT claim). The three clusters that
-blocked launch in the original audit — payments edge-cases, observability, and data
-bootstrap — have all landed in `main`, as has the full medium hardening rollup. What
-stands between here and real traffic is no longer mostly engineering: it is **error
-tracking**, the **Stripe live cutover**, a handful of **one-time prod operations**, and
-**validating the new Stripe paths against live test-mode events**. The one genuinely
-open engineering item is **staff-tablet responsive coverage** (TAVLI-59).
+**Production-ready pending error tracking.** Every code finding is merged, the Stripe
+live cutover is complete and **verified against real live events** (fee math excluding
+tips, settlement, partial refunds, the full dispute lifecycle, and the reconciler
+running on schedule in production), the first prod admin exists, and the deploy/secrets
+pipeline has been hardened twice over. What remains: **error tracking** (in progress,
+[#64](https://github.com/gggfox/Tavli/pull/64)), **staff-tablet responsive coverage**
+(TAVLI-59), the **backup/restore runbook** (TAVLI-58), and two residual config
+confirmations.
 
-| Dimension           | Status             | Headline                                                                                              |
-| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------------- |
-| Auth & RBAC         | ✅ **Ready**       | Clerk SSR + per-restaurant RBAC uniform; JWT `email_verified` claim empirically verified on prod      |
-| Deploy & secrets    | ✅ **Ready**       | Infisical model live & documented; Clerk prod instance; post-deploy health gate + failure alerting    |
-| Backend robustness  | ✅ **Ready**       | Every audit finding merged: hot-path index, rate limiting, bounded crons, audit logging, bot boundary |
-| Payments            | 🟠 **Conditional** | Commission, reconciliation, refund/dispute webhooks all merged — but unexercised against live Stripe  |
-| Observability & ops | 🟠 **Conditional** | Health gate + deploy alerting merged; **error tracking still missing** (TAVLI-9)                      |
-| Data & config       | 🟠 **Conditional** | Bootstrap + index shipped; prod still needs the bootstrap actually run and env values confirmed       |
-| Frontend / UX       | 🟠 **Conditional** | Localization, hydration, boundaries, list perf and tokens all merged; staff-tablet responsive open    |
+| Dimension           | Status             | Headline                                                                                                                       |
+| ------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Auth & RBAC         | ✅ **Ready**       | Clerk SSR + per-restaurant RBAC uniform; JWT `email_verified` claim empirically verified on prod                               |
+| Deploy & secrets    | ✅ **Ready**       | Infisical model live & documented; health gate + alerting; immutable images + credential preflight (#77/78)                    |
+| Backend robustness  | ✅ **Ready**       | Every audit finding merged: hot-path index, rate limiting, bounded crons, audit logging, bot boundary                          |
+| Payments            | ✅ **Ready**       | Live cutover complete; refunds (incl. in-app + partial), disputes, reconciler all verified on live Stripe                      |
+| Observability & ops | 🟠 **Conditional** | Health gate + deploy alerting merged; **error tracking in progress** ([#64](https://github.com/gggfox/Tavli/pull/64), TAVLI-9) |
+| Data & config       | ✅ **Ready**       | First admin bootstrapped; live Stripe secrets fingerprint-verified; two low-stakes confirmations left                          |
+| Frontend / UX       | 🟠 **Conditional** | Localization, hydration, boundaries, list perf and tokens all merged; staff-tablet responsive open                             |
 
 ---
 
 ## 🔴 Go / No-Go blockers (resolve before taking real traffic)
 
 - [x] **Confirm the platform commission rate.** ~~Code charges **6%**~~ Fixed: `PLATFORM_APPLICATION_FEE_RATE` is now `0.12` across both Stripe payment paths, matching TAVLI-1's decision. → merged in [#50](https://github.com/gggfox/Tavli/pull/50) (TAVLI-49)
-- [ ] **Decide the refund story for tab payments.** `createRefund` throws for the tab flow — the only live path (`convex/stripe.ts:523-528`). **Half of this is now closed:** [#56](https://github.com/gggfox/Tavli/pull/56) (TAVLI-53) records `charge.refunded` events, so a refund issued manually from the Stripe dashboard is now reflected in-app instead of silently diverging. What remains is the product decision: **build in-app refund initiation, or formally adopt a dashboard-only SOP** now that the recording side exists. → **TAVLI-50**, still needs that decision
-- [x] **First-admin bootstrap for the empty prod DB.** Added a guarded `internalMutation` (only invokable via `npx convex run`/dashboard) that promotes an existing user to owner+admin, gated by an explicit env opt-in and refusing if any owner/admin already exists; documented operator procedure in `deployment-and-secrets.md`. → merged in [#54](https://github.com/gggfox/Tavli/pull/54) (TAVLI-51). _Still needed: actually run it once against prod to create the first admin and confirm `/admin/restaurants` loads — the code shipping doesn't mean prod has been bootstrapped yet._
-- [ ] **Error tracking (frontend + Convex).** None exists — no Sentry/Rollbar/etc. (`package.json` clean). Production exceptions are invisible unless someone is watching the Convex dashboard. Wire a capture sink into the existing `ErrorBoundary` `onError` prop. → **TAVLI-9**
+- [x] **Decide the refund story for tab payments.** ~~`createRefund` throws for the tab flow~~ Decided **and built**: in-app refund initiation for tab payments shipped in [#79](https://github.com/gggfox/Tavli/pull/79) (TAVLI-50), on top of the `charge.refunded` recording from [#56](https://github.com/gggfox/Tavli/pull/56). Partial refunds were verified against live Stripe during the TAVLI-46 cutover.
+- [x] **First-admin bootstrap for the empty prod DB.** Added a guarded `internalMutation` (only invokable via `npx convex run`/dashboard) that promotes an existing user to owner+admin, gated by an explicit env opt-in and refusing if any owner/admin already exists; documented operator procedure in `deployment-and-secrets.md`. → merged in [#54](https://github.com/gggfox/Tavli/pull/54) (TAVLI-51). _~~Still needed: actually run it once against prod~~ **Run.** Verified 2026-08-01: prod `userRoles` now has a populated inferred schema (an empty table infers nothing), so the first admin exists._
+- [ ] **Error tracking (frontend + Convex).** None exists — no Sentry/Rollbar/etc. (`package.json` clean). Production exceptions are invisible unless someone is watching the Convex dashboard. Wire a capture sink into the existing `ErrorBoundary` `onError` prop. → **TAVLI-9**, now **in progress**: PostHog integration open on [#64](https://github.com/gggfox/Tavli/pull/64) — the last open blocker.
 - [x] **Post-deploy health gate + deploy-failure alerting.** ~~`deploy.yml` fires the Dokploy webhook and stops~~ Fixed: a real `/health` endpoint reports the running commit SHA, the deploy workflow polls it until it serves the just-deployed SHA (failing the job on timeout), and an `if: failure()` step files a `deploy-failure` GitHub issue. Addresses postmortem action items #4–#5 — the class of failure behind the 4-day staging outage. → merged in [#55](https://github.com/gggfox/Tavli/pull/55) (TAVLI-52). _Untuned against a real cold boot: the 5-min gate could false-fail if Nitro + Infisical startup ever exceeds it._
 
 ---
 
 ## 🟠 High priority (before launch, or immediately after)
 
-- [x] **Payment reconciliation for stuck "processing" tabs.** A cron now finds sessions locked past a threshold with a stored PaymentIntent, retrieves the PI from Stripe, and settles / unlocks / waits accordingly — so a dropped webhook no longer locks a tab forever. → merged in [#53](https://github.com/gggfox/Tavli/pull/53) (TAVLI-45). _Known gap: if the checkout action dies between setting the lock and creating the PaymentIntent, the tab has no PI id and the reconciler can't see it. Alerting is `console.error` only until TAVLI-9 lands._
-- [x] **Refund + dispute webhook handling.** `charge.refunded` and `charge.dispute.created/closed` are now handled idempotently, recorded against the payment/session records, audit-logged, and logged loudly. Since the platform is `losses_collector` (`stripe.ts:107`), this closes the silent-chargeback hole. → merged in [#56](https://github.com/gggfox/Tavli/pull/56) (TAVLI-53). ⚠️ **Verify before relying on it:** `computeRefundFacts` reads `charge.refunds.data[0]`, which Stripe does **not** expand by default in webhook payloads on SDK v22 — so `stripeRefundId` may come back unset in production even though the fixture-based tests pass. The new event types must also be added to the live webhook destinations (TAVLI-46).
+- [x] **Payment reconciliation for stuck "processing" tabs.** A cron now finds sessions locked past a threshold with a stored PaymentIntent, retrieves the PI from Stripe, and settles / unlocks / waits accordingly — so a dropped webhook no longer locks a tab forever. → merged in [#53](https://github.com/gggfox/Tavli/pull/53) (TAVLI-45). Since verified live during the TAVLI-46 cutover: the `unlock` branch fired correctly against a real `paymentIntents.retrieve`, and the cron is confirmed running on schedule in production. _Known gap: if the checkout action dies between setting the lock and creating the PaymentIntent, the tab has no PI id and the reconciler can't see it. Alerting is `console.error` only until TAVLI-9 lands._
+- [x] **Refund + dispute webhook handling.** `charge.refunded` and `charge.dispute.created/closed` are now handled idempotently, recorded against the payment/session records, audit-logged, and logged loudly. Since the platform is `losses_collector` (`stripe.ts:107`), this closes the silent-chargeback hole. → merged in [#56](https://github.com/gggfox/Tavli/pull/56) (TAVLI-53). ~~⚠️ Verify before relying on it: `computeRefundFacts` reads `charge.refunds.data[0]`, which Stripe does not expand by default…~~ **The suspicion was correct** — live `charge.refunded` payloads carry no `refunds` list, so `stripeRefundId` was never written and `refundedAt` fell back to processing time. Fixed with a `refunds.list` lookup in [#75](https://github.com/gggfox/Tavli/pull/75) and verified end-to-end against a resent real event. The event types are subscribed on the live destinations (TAVLI-46 ✅), plus `payment_intent.canceled`, `charge.dispute.updated`/`funds_reinstated` and `radar.early_fraud_warning.created` subscribed ahead of their handlers → **TAVLI-65**.
 - [x] **`orders` hot-path index.** New `by_restaurant_status` index on `orders`; the kitchen dashboard and analytics widget now query per-status instead of collecting the full restaurant order history. → merged in [#51](https://github.com/gggfox/Tavli/pull/51) (TAVLI-54)
 - [x] **Error localization is broken end-to-end.** Fixed: a registry (`src/global/i18n/keys/errors.ts`) maps every stable backend code to an `errors.<CODE>` key with EN/ES parity, and `extractErrorCode` resolves the **specific** code over the generic category — the actual shape this backend produces (`.name` = category, `.message` = specific code, via returned result tuples). Raw `error.message` no longer reaches user-facing surfaces. → merged in [#58](https://github.com/gggfox/Tavli/pull/58) (TAVLI-55). _~8 low-traffic admin/debug surfaces still render raw messages (`DashboardPage.tsx:193`, `useMenuImport.ts:62,96`, the org dialogs, `FeatureFlagsTable.tsx:65`, the auth-debug panels) — tracked as follow-up._
 - [x] **Rate limit anonymous public endpoints.** Availability queries now bound the work (tightened date-range validators, capped iterations); `reservations.create` is sliding-window rate-limited per restaurant/contact. → merged in [#57](https://github.com/gggfox/Tavli/pull/57) (TAVLI-56). _Residual: Convex queries can't hold state for true rate limiting, so the availability reads are bounded per-call, not throttled in aggregate — reduced DoS surface, not eliminated._
@@ -133,13 +164,13 @@ because those renders are synchronous with respect to it; an `await` introduced 
 
 ## ⚙️ Config & manual verification (not code — verify on the prod deployments)
 
-- [ ] **Prod Convex (`polite-antelope-545`) env.** Verified 2026-07-19: `CLERK_JWT_ISSUER_DOMAIN=https://clerk.tavliai.com` ✅, `OPENROUTER_API_KEY` ✅, `RESEND_*` ✅. **Still open:** `CONVEX_ENV` and `PUBLIC_APP_URL` are _present_ but their values are masked in the dashboard — confirm they read `production` and `https://tavliai.com` respectively (a wrong `CONVEX_ENV` re-enables dev gating; a wrong `PUBLIC_APP_URL` breaks every invite link). `RESERVATIONS_BOT_TOKEN` (≥32 chars) and the Stripe secrets are not set yet.
+- [x] **Prod Convex (`polite-antelope-545`) env.** Verified 2026-07-19: `CLERK_JWT_ISSUER_DOMAIN=https://clerk.tavliai.com` ✅, `OPENROUTER_API_KEY` ✅, `RESEND_*` ✅; `CONVEX_ENV` / `PUBLIC_APP_URL` ticked off on TAVLI-1 (closed 2026-08-01). The **Stripe live secrets are now set and fingerprint-verified** to the production account `acct_1TGR3u…` — a _different_ Stripe account from dev (`acct_1TGR41…`). _Last residual: `RESERVATIONS_BOT_TOKEN` (≥32 chars) is not set — it only gates the `/api/v1/reservations/*` bot API, which is not live yet._
 - [ ] **Both dev-role-switcher kill-switches off in prod.** Convex `ENABLE_DEV_ROLE_SWITCHER` is confirmed **unset** ✅ (2026-07-19 — the prod env list runs `CONVEX_ENV` → `OPENROUTER_API_KEY` with no `E*` entry between them). The frontend build's `VITE_DEV_ROLE_SWITCHER_ENABLED` lives in **Infisical `prod`** and is **still unconfirmed** — both must be off.
-- [ ] **Stripe live-mode cutover:** swap `sk_test→sk_live` (Convex) + `pk_test→pk_live` (Infisical, rebuild); create **live** webhook destinations at `https://<slug>.convex.site/stripe/webhook` and `/stripe/connect-webhook` (`.convex.site`, not `.cloud`) with fresh secrets — **including the new `charge.refunded` / `charge.dispute.*` event types** from [#56](https://github.com/gggfox/Tavli/pull/56); enable the live Connect platform profile; **re-onboard every restaurant** (test-mode account IDs are invalid in live). → **TAVLI-46**
+- [x] **Stripe live-mode cutover — complete and verified against live Stripe.** (TAVLI-46, closed 2026-08-01.) All of it done with evidence, not just configured: `sk_live`/`pk_live` fingerprint-verified to the prod account, `pk_live` confirmed baked into the served bundle after a rebuild; **live webhook destinations `tavli-prod-payments` (snapshot, 9 events) + `tavli-prod-connect-accounts` (thin, 15 events)** on `.convex.site`, both secrets **proven with real live deliveries returning 200**; live Connect platform profile enabled (three sequential undiscoverable gates) and verified by creating + closing a real live connected account; stale `checkout.session.*` subscriptions pruned and dead `account.updated` dropped. Beyond original scope, verified live: **12% fee reaches Stripe and excludes tips**, `payment_intent.succeeded` → settlement, full dispute lifecycle, partial refunds. _~~Re-onboard every restaurant~~ reframed: prod has exactly one restaurant row and it is a test record — onboard the first real restaurant at launch._
 - [x] **Shared-employee Clerk credential — N/A today; nothing is bound.** Verified 2026-07-19 against prod: `sharedEmployeeClerkSubject` does not appear in the `restaurants` table's inferred schema, and `employeeAccounts` / `restaurantMembers` are both empty — the kiosk tier is entirely unused in production, so there are no credentials to audit. The policy to apply **before the first binding** (dedicated per-restaurant Clerk user, generated 20+ char password in a password manager, never a personal credential, deliberate MFA choice, rotation when device-holders leave) is carried on **TAVLI-1**.
 - [x] **Clerk `emailVerified` claim.** Verified empirically 2026-07-19 by decoding the live `convex`-template token from a signed-in prod session: `email_verified: true`, `iss: https://clerk.tavliai.com`, `aud: convex`. Confirmed **dynamic, not hardcoded** — the same token carries `phone_number_verified: false` for a user with no phone, which a hardcoded-`true` template could not produce. `acceptInvitation` (`invites.ts:274`) reads `emailVerified ?? email_verified`, so it resolves either casing. → **TAVLI-48**
-- [ ] **Run additive backfills** after the first prod schema push (`convex/migrations/*`).
-- [ ] **Bootstrap the first prod admin.** The guarded `admin.bootstrapFirstAdmin` shipped in [#54](https://github.com/gggfox/Tavli/pull/54), but **prod has not been bootstrapped** — `/admin/restaurants` will still show "Access Denied" until it is run once. Procedure: `deployment-and-secrets.md` → First-admin bootstrap.
+- [x] **Run additive backfills** after the first prod schema push (`convex/migrations/*`) — ticked off on TAVLI-1 (closed 2026-08-01).
+- [x] **Bootstrap the first prod admin.** ~~prod has not been bootstrapped~~ **Run.** Verified 2026-08-01: prod `userRoles` has a populated inferred schema (an empty table infers nothing), so the first owner+admin exists.
 - [x] **Resend go-live.** Domain `tavliai.com` verified in Resend since 2026-07-13 — DKIM (`TXT resend._domainkey`), SPF (`MX send` + `TXT send`), and DMARC (`TXT _dmarc` → `v=DMARC1; p=none`) all confirmed; `RESEND_API_KEY` / `RESEND_FROM_ADDRESS` (`support@tavliai.com`) set on staging and prod. → **TAVLI-47**. _Remaining: one real end-to-end invite send on prod._
 
 ---
@@ -158,6 +189,6 @@ because those renders are synchronous with respect to it; an `await` introduced 
 ## 📋 Doc & tracking cleanup
 
 - [x] **Archive/rewrite TDR-0001** (`tech-debt/0001-missing-backend-authentication.md`) — ~~describes WorkOS + `convex/tasks.ts` that no longer exist~~ rewritten as an archived record; the gap is closed by Clerk + the RBAC guards in `convex/_util/auth.ts`. The tech-debt index was also wrong — it linked a TDR-0004 that was never written and omitted the TDR-0005 that exists. → merged in [#65](https://github.com/gggfox/Tavli/pull/65) (TAVLI-61)
-- [ ] **Refresh `stripe-go-live.md`** to the Infisical model — still open (zero mentions of Infisical in the runbook today). Fold into **TAVLI-46**, since that is the ticket whose operator will follow it. `email-deliverability.md` was refreshed in [#59](https://github.com/gggfox/Tavli/pull/59) ✅
+- [x] **Refresh `stripe-go-live.md`** to the Infisical model — ~~zero mentions of Infisical in the runbook~~ refreshed in [#80](https://github.com/gggfox/Tavli/pull/80), with Connect-secret and reset guidance corrected in [#81](https://github.com/gggfox/Tavli/pull/81). `email-deliverability.md` was refreshed in [#59](https://github.com/gggfox/Tavli/pull/59) ✅
 - [x] **Rewrite `design-system.md`** — ~~dark-only, still says "Fierro Viejo", teaches the `bg-[#0f0f0f]` arbitrary-value antipattern that `theme.css` forbids~~ rewritten against the real Tailwind v4 `@theme` token system. The internal-guides index was also wrong — it pointed at a `component-examples.md` that does not exist. → merged in [#71](https://github.com/gggfox/Tavli/pull/71) (TAVLI-64)
-- [x] `TAVLI-48` (Clerk) → **Done**; `TAVLI-47` (Resend) → **Done**; `TAVLI-49` (commission) → **Done**; `TAVLI-61`/`62`/`63`/`64` (the whole medium hardening rollup) → **Done**. TAVLI-1 is down to **TAVLI-46 (Stripe)** as its last open integration.
+- [x] **TAVLI-1 ("Prod configuration") → Done 2026-08-01**, with all four integrations: `TAVLI-48` (Clerk), `TAVLI-47` (Resend), `TAVLI-49` (commission), `TAVLI-46` (Stripe live cutover). `TAVLI-50` (refund story) and the whole `TAVLI-60` medium-hardening rollup (`61`/`62`/`63`/`64`) are also Done. Open: **TAVLI-9** (in progress), **TAVLI-58**, **TAVLI-59**, **TAVLI-4** (in progress), and the new **TAVLI-65**/**TAVLI-66**.
