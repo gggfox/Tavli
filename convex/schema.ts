@@ -1023,7 +1023,11 @@ export default defineSchema({
 		updatedAt: v.number(),
 	})
 		.index("by_user_restaurant", ["userId", "restaurantId"])
-		.index("by_user_scopeKind", ["userId", "scopeKind"]),
+		.index("by_user_scopeKind", ["userId", "scopeKind"])
+		// Restaurant hard-purge cascade: find every layout bound to a restaurant
+		// without scanning per user. Portfolio layouts (restaurantId unset) sort
+		// under `undefined` and are never matched by an eq() on a real id.
+		.index("by_restaurant", ["restaurantId"]),
 
 	// Restaurant-scoped dashboard templates published by managers and cloneable
 	// by any staff member with access to that restaurant. The cloned layout is
