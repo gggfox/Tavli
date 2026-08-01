@@ -176,9 +176,75 @@ A `400` on the POST means signature verification failed — the secret is wrong.
 > more after a row is inserted. Read the deployment logs instead. Two wrong
 > conclusions during the cutover traced to exactly this.
 
-The **Connect** secret cannot be proven this way — no thin event can be
-generated without a connected account. Its proof lands at the first real
-restaurant onboarding; watch the Convex logs live during it.
+The **Connect** secret needs a different trick, since no thin event fires
+without a connected account. You do not have to wait for a real restaurant:
+
+1. Sign in as an admin and click **Iniciar configuración para cobrar pagos** on
+   any restaurant. That calls `createConnectAccount`, which creates a live V2
+   connected account and fires several `v2.core.account*` events at the Connect
+   destination.
+2. Watch the Convex logs for `POST /stripe/connect-webhook → 200` and
+   `stripe:handleThinEvent success`. Lines reading
+   `Unhandled thin event type: …` are fine — reaching the handler at all proves
+   `parseEventNotification` accepted the signature.
+3. **Stop at the Stripe Express onboarding screen — do not complete it.** It
+   collects real KYC (government ID, tax ID, bank account). Completing it for a
+   test restaurant would create a live merchant account under false pretenses.
+4. Clean up with **Restablecer configuración de Stripe** in the same section.
+   `resetStripeConnection` calls `v2.core.accounts.close` with
+   `applied_configurations: ["merchant", "recipient"]` and then clears the
+   Convex link, so it closes the Stripe account too — you do not need to close
+   it by hand.
+
+> [!NOTE]
+> The close is **best-effort**. If Stripe rejects it, the Convex link is cleared
+> anyway and the action returns `closedStripeAccount: false`. Check the app's
+> confirmation message names the account id, and look for
+> `[stripe.resetStripeConnection]` with `operation: "closeAccount"` in the logs
+> if it did not.
+>
+> A closed account **still appears** in Connect → Cuentas conectadas. Stripe
+> retains closed connected accounts for history; the row remaining is not a
+> failed cleanup.
+
+### 3b. Activating Connect — and why the errors mislead
+
+Connect platform activation is a **separate gate** from account activation.
+`GET /v1/account` can report `charges_enabled: true`, `payouts_enabled: true`,
+`details_submitted: true` and no outstanding requirements while
+`v2.core.accounts.create` still fails. The Connect settings and overview pages
+also render normally with no activation prompt, so the dashboard is not evidence
+either.
+
+> [!TIP]
+> **When V2 is opaque, probe V1.** `v2.core.accounts.create` returns the same
+> unhelpful sentence for every underlying cause:
+>
+> ```
+> Your account must be activated in order to create accounts.
+> ```
+>
+> `POST /v1/accounts` names the actual gate and gives the exact URL:
+>
+> ```bash
+> curl -s https://api.stripe.com/v1/accounts -u "$STRIPE_LIVE_KEY:" \
+>   -d type=express -d country=MX | head -c 300
+> ```
+>
+> During the cutover this surfaced three sequential gates, each behind a
+> different URL and none discoverable by navigation:
+>
+> | V1 error                                                   | Where to fix                                                         |
+> | ---------------------------------------------------------- | -------------------------------------------------------------------- |
+> | "review the responsibilities of managing losses"           | `/settings/connect/platform-profile` — confirm both acknowledgements |
+> | "complete your platform profile… answer the questionnaire" | `/connect/accounts/overview` — questionnaire + identity documents    |
+> | (none — V1 succeeds)                                       | Connect is active; retry V2                                          |
+>
+> Delete anything V1 creates: `DELETE /v1/accounts/acct_...`.
+
+Loss responsibility must be declared as **platform-managed** in the platform
+profile. `createConnectAccount` sets `losses_collector: "application"` on every
+account; if the profile says otherwise, account creation fails.
 
 ### 4. Connected-account readiness
 
@@ -327,8 +393,10 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 - Start Connect onboarding from the restaurant's Stripe setup UI and return
 - Verify the UI refreshes and clears `stripe_return` / `accountId` params
 - Verify the restaurant is marked ready only when requirements and transfers are active
-- **Watch the Convex logs for the thin-event delivery** — this is the first and
-  only proof that `STRIPE_CONNECT_WEBHOOK_SECRET` is correct
+- **Watch the Convex logs for the thin-event delivery** — `POST
+/stripe/connect-webhook → 200` plus `stripe:handleThinEvent success`.
+  `updateOnboardingByAccountId` running means a _handled_ event type arrived and
+  the status write-back worked, not just signature verification.
 
 ### Tab checkout
 
