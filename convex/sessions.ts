@@ -220,12 +220,25 @@ export const getTabSummary = query({
 	},
 });
 
+/**
+ * Diner ends a tab that owes nothing (never ordered, or everything already
+ * settled). A tab with a payable balance can only leave the active state via
+ * payment (`confirmTabPayment`) or staff (`closeTabAsStaff`).
+ */
 export const close = mutation({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
 	handler: async (ctx, args) => {
 		const session = await requireOwnedActiveSession(ctx, args.sessionId);
 		if (session.lockedForPaymentAt !== undefined) {
 			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_LOCKED).toObject());
+		}
+
+		// An unpaid tab must stay active: the staff open-tabs view only lists
+		// active sessions, so a diner close here would hide a walkout from the
+		// dashboard. Even the stale sweep only flags unpaid tabs, never closes them.
+		const payableOrders = await getPayableOrders(ctx, args.sessionId);
+		if (sumOrderTotals(payableOrders) > 0) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_UNPAID).toObject());
 		}
 
 		await ctx.db.patch(args.sessionId, {
