@@ -1092,6 +1092,12 @@ export default defineSchema({
 		eventType: v.string(),
 		aggregateType: v.union(...Object.values(TABLE).map((table) => v.literal(table))),
 		aggregateId: v.string(),
+		// Restaurant the event belongs to; unset for org-level events (role
+		// bootstrap, multi-restaurant invitations) and for rows predating the
+		// column (backfilled best-effort by `migrations/backfillAllEventsRestaurantId`).
+		// Deliberately allowed to dangle after a restaurant purge: events are the
+		// surviving record, and this id is their correlation key.
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
 		payload: v.any(),
 		userId: v.string(),
 		timestamp: v.number(),
@@ -1102,5 +1108,8 @@ export default defineSchema({
 		.index("by_aggregate", ["aggregateType", "aggregateId"])
 		.index("by_timestamp", ["timestamp"])
 		.index("by_user", ["userId"])
-		.index("by_aggregate_type", ["aggregateType"]),
+		.index("by_aggregate_type", ["aggregateType"])
+		// "Everything that happened at restaurant X (in a time range)" — the
+		// forensic query that used to require payload scans.
+		.index("by_restaurant_time", ["restaurantId", "timestamp"]),
 });

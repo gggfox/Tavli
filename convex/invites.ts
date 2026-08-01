@@ -240,7 +240,10 @@ export const createInvitation = mutation({
 			aggregateType: TABLE.INVITATIONS,
 			aggregateId: id,
 			eventType: "invitations.created",
-			payload: { email: args.email, role: args.role },
+			// Invitations can span several restaurants; the full list lives in the
+			// payload rather than the single indexed column.
+			restaurantId: null,
+			payload: { email: args.email, role: args.role, restaurantIds: args.restaurantIds },
 			userId: actorId,
 		});
 
@@ -444,7 +447,8 @@ export const acceptInvitation = mutation({
 			aggregateType: TABLE.INVITATIONS,
 			aggregateId: invitation._id,
 			eventType: "invitations.accepted",
-			payload: { userId },
+			restaurantId: null,
+			payload: { userId, restaurantIds: invitation.restaurantIds },
 			userId,
 		});
 

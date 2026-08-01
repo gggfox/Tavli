@@ -207,6 +207,7 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
 			eventType: args.succeeded
 				? AUDIT_EVENT.ORDER_REFUND_SUCCEEDED
 				: AUDIT_EVENT.ORDER_REFUND_FAILED,
+			restaurantId: order.restaurantId,
 			payload: {
 				restaurantId: order.restaurantId,
 				amount: args.amount,

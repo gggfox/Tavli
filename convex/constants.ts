@@ -608,8 +608,9 @@ export type RestaurantPurgePatchedTable = (typeof RESTAURANT_PURGE_PATCHED_TABLE
  */
 export const RESTAURANT_PURGE_EXEMPT_TABLES: Partial<Record<TableName, string>> = {
 	[TABLE.ALL_EVENTS]:
-		"Append-only audit trail. `aggregateId` may hold restaurant ids as strings, " +
-		"but events must survive the purge — they are the only remaining record of it.",
+		"Append-only audit trail. Carries an indexed `restaurantId` for querying a " +
+		"restaurant's history, but events must survive the purge — they are the only " +
+		"remaining record of it. The id is deliberately left dangling afterwards.",
 	[TABLE.RATE_LIMITS]:
 		"Fixed-window abuse counters whose string keys may embed restaurant ids. " +
 		"Rows are ephemeral and expire with their window; not worth a scan to purge.",

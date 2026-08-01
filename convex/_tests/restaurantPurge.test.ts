@@ -652,15 +652,18 @@ describe("restaurant hard purge cascade", () => {
 			expect(invOnlyA!.revokedBy).toBe("system");
 		});
 
-		// The audit event survives the purge and records what was removed.
+		// The audit event survives the purge and records what was removed. It is
+		// reachable through the by_restaurant_time index even though the
+		// restaurant row is gone — the dangling id is the correlation key.
 		const events = await t.run(async (ctx) =>
 			ctx.db
 				.query("allEvents")
-				.filter((q) => q.eq(q.field("eventType"), "restaurants.hard_deleted"))
+				.withIndex("by_restaurant_time", (q) => q.eq("restaurantId", aId))
 				.collect()
 		);
-		const event = events.find((e) => e.aggregateId === String(aId));
+		const event = events.find((e) => e.eventType === "restaurants.hard_deleted");
 		expect(event).toBeDefined();
+		expect(event!.aggregateId).toBe(String(aId));
 		const payload = event!.payload as {
 			name: string;
 			slug: string;

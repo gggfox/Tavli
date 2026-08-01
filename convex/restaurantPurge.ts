@@ -415,6 +415,7 @@ async function executeHardPurge(
 		aggregateType: TABLE.RESTAURANTS,
 		aggregateId: String(restaurantId),
 		eventType: "restaurants.hard_deleted",
+		restaurantId,
 		payload: {
 			deletedBy: restaurant.deletedBy,
 			deletedAt: restaurant.deletedAt,

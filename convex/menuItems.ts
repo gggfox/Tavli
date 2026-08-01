@@ -79,6 +79,7 @@ export const create = mutation({
 			aggregateType: TABLE.MENU_ITEMS,
 			aggregateId: id,
 			eventType: "menuItems.created",
+			restaurantId: args.restaurantId,
 			payload: { name: args.name, prepStation: args.prepStation ?? DEFAULT_PREP_STATION },
 			userId,
 		});
@@ -129,6 +130,7 @@ export const update = mutation({
 			aggregateType: TABLE.MENU_ITEMS,
 			aggregateId: args.itemId,
 			eventType: "menuItems.updated",
+			restaurantId: item.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -164,6 +166,7 @@ export const remove = mutation({
 			aggregateType: TABLE.MENU_ITEMS,
 			aggregateId: args.itemId,
 			eventType: "menuItems.deleted",
+			restaurantId: item.restaurantId,
 			payload: {},
 			userId,
 		});
@@ -255,6 +258,7 @@ export const bulkRemove = mutation({
 				aggregateType: TABLE.MENU_ITEMS,
 				aggregateId: itemId,
 				eventType: "menuItems.deleted",
+				restaurantId: args.restaurantId,
 				payload: {},
 				userId,
 			});
@@ -294,6 +298,7 @@ export const bulkSetAvailability = mutation({
 				aggregateType: TABLE.MENU_ITEMS,
 				aggregateId: itemId,
 				eventType: "menuItems.updated",
+				restaurantId: args.restaurantId,
 				payload: { isAvailable: args.isAvailable },
 				userId,
 			});
@@ -337,6 +342,7 @@ export const bulkSetPrepStation = mutation({
 				aggregateType: TABLE.MENU_ITEMS,
 				aggregateId: itemId,
 				eventType: "menuItems.updated",
+				restaurantId: args.restaurantId,
 				payload: { prepStation: args.prepStation },
 				userId,
 			});
@@ -411,6 +417,7 @@ export const setTranslation = mutation({
 			aggregateType: TABLE.MENU_ITEMS,
 			aggregateId: args.itemId,
 			eventType: "menuItems.translation_set",
+			restaurantId: item.restaurantId,
 			payload: { lang: args.lang },
 			userId,
 		});

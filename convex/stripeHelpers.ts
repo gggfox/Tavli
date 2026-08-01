@@ -411,6 +411,7 @@ export const recordChargeRefund = internalMutation({
 			aggregateType: TABLE.PAYMENTS,
 			aggregateId: args.paymentId,
 			eventType: "payments.refundRecorded",
+			restaurantId: payment.restaurantId,
 			payload: {
 				amountRefunded: args.amountRefunded,
 				amountCaptured: args.amountCaptured,
@@ -496,6 +497,9 @@ export const recordChargeDispute = internalMutation({
 			aggregateId: args.paymentId ?? disputeId,
 			eventType:
 				args.phase === DISPUTE_PHASE.CREATED ? "payments.disputeOpened" : "payments.disputeClosed",
+			// Best-effort like the dispute row itself: absent when the charge could
+			// not be linked back to one of our restaurants.
+			restaurantId: args.restaurantId ?? null,
 			payload: {
 				stripeDisputeId: args.stripeDisputeId,
 				reason: args.reason,
