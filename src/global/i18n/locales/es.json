@@ -520,6 +520,7 @@
 		"ERROR_TAB_LOCKED": "Hay un pago en curso en esta cuenta. Espera a que termine.",
 		"ERROR_INVALID_JOIN_CODE": "Ese código no coincide con una cuenta abierta. Verifícalo e inténtalo de nuevo.",
 		"ERROR_TAB_EMPTY": "Todavía no hay nada por pagar en esta cuenta.",
+		"ERROR_TAB_UNPAID": "Esta cuenta todavía tiene pedidos sin pagar. Paga la cuenta o pide al personal que la cierre.",
 		"ERROR_DEV_ENVIRONMENT_ONLY": "Esta acción solo está disponible en entornos de desarrollo.",
 		"ERROR_DASHBOARD_RESTAURANT_REQUIRED": "Selecciona un restaurante para ver este panel.",
 		"ERROR_DASHBOARD_RANGE_TOO_LARGE": "El rango de fechas seleccionado es demasiado grande. Elige un rango más corto.",
