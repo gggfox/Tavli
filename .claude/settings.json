@@ -24,5 +24,20 @@
 			"Bash(npx convex:*)",
 			"Bash(pnpm exec playwright:*)"
 		]
+	},
+	"hooks": {
+		"PostToolUse": [
+			{
+				"matcher": "Write|Edit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/droast-dockerfile.sh\"",
+						"timeout": 30,
+						"statusMessage": "Roasting Dockerfile..."
+					}
+				]
+			}
+		]
 	}
 }

@@ -15,6 +15,7 @@ coverage/
 .worktrees/
 .idea
 tmp/
+.devbox/
 
 # clerk configuration (can include secrets)
 # Keep this exact form: Clerk's keyless mode appends its own "/.clerk/" line
@@ -26,3 +27,6 @@ tmp/
 !.claude/handoffs/.gitkeep
 .cursor/handoffs/*
 !.cursor/handoffs/.gitkeep
+
+# BrowserStack Local binary log (see documentation/ device-testing notes)
+local.log

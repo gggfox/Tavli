@@ -3,7 +3,7 @@ import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
-import { FEATURE_FLAG_METADATA, FEATURE_FLAGS } from "convex/featureFlags";
+import { FEATURE_FLAG_METADATA, FEATURE_FLAGS } from "convex/constants";
 import { Flag } from "lucide-react";
 import { useMemo, useState } from "react";
 

@@ -13,7 +13,17 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    exclude: [...configDefaults.exclude, "e2e/**/*", "**/e2e/**", "**/.worktrees/**"],
+    // Git worktrees are full duplicate checkouts — without excluding them vitest
+    // discovers every test twice, and the copies resolve `@/` aliases back to
+    // this checkout while reading their own stale fixtures, which surfaces as
+    // phantom failures. Agent worktrees land in .claude/worktrees/.
+    exclude: [
+      ...configDefaults.exclude,
+      "e2e/**/*",
+      "**/e2e/**",
+      "**/.worktrees/**",
+      "**/.claude/worktrees/**",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "json-summary"],

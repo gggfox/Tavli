@@ -1,0 +1,25 @@
+{
+	"$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.5/.schema/devbox.schema.json",
+	"name": "tavli",
+	"description": "Tavli dev environment — Node 22, pnpm, Convex/Vite tooling",
+	"packages": ["nodejs@22", "corepack@latest", "git", "gh", "stripe-cli", "infisical"],
+	"env": {
+		"DEVBOX_COREPACK_ENABLED": "true"
+	},
+	"shell": {
+		"init_hook": [
+			"echo \"Tavli devbox — node $(node -v)\"",
+			"command -v droast >/dev/null 2>&1 || echo 'droast not found (used by the Dockerfile-edit hook, not packaged in nixpkgs) — install: brew tap immanuwell/droast https://github.com/immanuwell/homebrew-droast.git && brew install immanuwell/droast/droast'"
+		],
+		"scripts": {
+			"install": ["pnpm install --frozen-lockfile"],
+			"dev": ["pnpm dev"],
+			"build": ["pnpm build"],
+			"test": ["pnpm test"],
+			"test:e2e": ["pnpm test:e2e"],
+			"lint": ["pnpm lint"],
+			"lint:docker": ["droast --skip DF021,DF005,DF011 Dockerfile"],
+			"playwright-install": ["pnpm exec playwright install chromium"]
+		}
+	}
+}

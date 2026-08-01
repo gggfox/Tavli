@@ -1,0 +1,19 @@
+# droast.toml — Dockerfile linter config (see https://github.com/immanuwell/dockerfile-roast)
+#
+# Rules skipped project-wide, with rationale:
+#
+# DF021 (curl | bash) — this is Infisical's own documented apt-repo bootstrap
+#   (https://infisical.com/docs/cli/overview). No vendor-published checksum or
+#   alternative install path exists to pin against instead.
+#
+# DF005 (pin apt package versions) — curl/gnupg are build-only tools purged in
+#   the same layer right after use, so pinning them buys nothing. Pinning
+#   `infisical` itself would need a version verified against the live apt
+#   mirror at build time; guessing a version string risks a hard build
+#   failure the moment it rotates out of the repo.
+#
+# DF011 (multi-stage build) — this Dockerfile has no compile step, it only
+#   packages a prebuilt `.output` directory. The transient install tools
+#   (curl/gnupg) are already purged in the same RUN layer, so a build stage
+#   would add complexity without reducing the shipped image.
+skip = ["DF021", "DF005", "DF011"]

@@ -12,6 +12,8 @@ export const WelcomeKeys = {
 	FEATURE_TABLE_DESC: "welcome.feature.tableDesc",
 	FEATURE_AUTH_TITLE: "welcome.feature.authTitle",
 	FEATURE_AUTH_DESC: "welcome.feature.authDesc",
+	FEATURE_RESERVATIONS_TITLE: "welcome.feature.reservationsTitle",
+	FEATURE_RESERVATIONS_DESC: "welcome.feature.reservationsDesc",
 	GET_STARTED: "welcome.getStarted",
 } as const;
 

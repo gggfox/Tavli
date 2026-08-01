@@ -10,6 +10,19 @@
 			"env": {
 				"STRIPE_SECRET_KEY": "${STRIPE_SECRET_KEY}"
 			}
+		},
+		"browserstack": {
+			"command": "infisical",
+			"args": [
+				"run",
+				"--projectId=da9416bf-a247-4f41-b4c0-14b22f0aaff0",
+				"--env=dev",
+				"--silent",
+				"--",
+				"npx",
+				"-y",
+				"@browserstack/mcp-server@latest"
+			]
 		}
 	}
 }

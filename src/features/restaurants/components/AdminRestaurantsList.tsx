@@ -265,7 +265,11 @@ export function AdminRestaurantsList({
 					return (
 						<div
 							key={r._id}
-							className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
+							// Stacked below sm: the identity block (fixed w-40) and the rigid
+							// action row together exceed a 390px phone, and with
+							// justify-between they collided instead of wrapping (TAVLI-4
+							// device audit).
+							className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 rounded-lg bg-muted border border-border"
 						>
 							<div className="flex items-center gap-4 min-w-0">
 								<div className="w-40 shrink-0 min-w-0">
@@ -286,7 +290,7 @@ export function AdminRestaurantsList({
 									<span className="text-xs text-faint-foreground">{r.currency}</span>
 								)}
 							</div>
-							<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2 flex-wrap">
 								{canEditSettingsFor(r) && (
 									<button
 										type="button"
