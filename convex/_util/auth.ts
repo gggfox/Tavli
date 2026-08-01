@@ -339,6 +339,36 @@ export async function requireRestaurantOwnerOrAdmin(
 }
 
 /**
+ * Admin, or org-level owner of the given organization.
+ *
+ * For actions that target another user's org-level `userRoles` row (e.g.
+ * setting their photo from the team drawer). When `organizationId` is
+ * undefined (target row missing or legacy row without an org), only admins
+ * pass — an org owner can never match an unknown org.
+ */
+export async function requireOrgOwnerOrAdmin(
+	ctx: RoleDbContext,
+	userId: string,
+	organizationId: string | undefined
+): AsyncReturn<null, NotAuthorizedErrorObject> {
+	const rows = await fetchUserRoleRecordsByUserId(ctx, userId);
+	if (someRowHasAdmin(rows)) {
+		return [null, null];
+	}
+
+	const isOrgOwner =
+		organizationId != null &&
+		rows.some(
+			(r) => (r.roles ?? []).includes(USER_ROLES.OWNER) && r.organizationId === organizationId
+		);
+	if (isOrgOwner) {
+		return [null, null];
+	}
+
+	return [null, new NotAuthorizedError(RoleErrorMessages.OWNER_REQUIRED).toObject()];
+}
+
+/**
  * Tier-aware authorization for actions targeting a `restaurantMembers` row
  * (creating / editing / cancelling shifts and shift templates for that
  * member).
