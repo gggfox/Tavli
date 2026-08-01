@@ -42,14 +42,23 @@ _Avoid_: type, kind, beverage category, meal category.
 ### Ordering
 
 **Session**:
-An open service period at a `Table`. Many `Orders` may be added to a
-single session before it closes.
+An open service period at a `Table`, doubling as the group's shared
+**tab** — the primary settlement unit. `Orders` accumulate unpaid on
+the session, and one payment settles the whole tab (subtotal + tip):
+either in-app via Stripe or in person by staff (`settledBy`). The
+session carries the tab's `paymentState` and is locked against new or
+edited orders while a tab payment is in flight.
+_Avoid_: check, bill (the payable whole is the **tab**).
 
 **Order**:
-The unit a diner pays for. Holds a `status` (`draft → submitted →
-preparing → ready → served`, or `cancelled`), a single `paymentState`,
-and per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
-_Avoid_: ticket, check, transaction.
+A round of items added to a `Session`'s tab. Holds a `status` (`draft →
+submitted → preparing → ready → served`, or `cancelled`) and
+per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
+Orders are normally settled together by their session's tab payment;
+an order's own payment fields (`paymentState`, `paidAt`) are the
+legacy per-order payment path.
+_Avoid_: ticket, check, transaction, "the unit a diner pays for" (that
+is the tab).
 
 **Order item**:
 A single line on an `Order`, denormalized at submission time with the
@@ -191,6 +200,9 @@ that are already active.
   `prepStation`, snapshot for everything else).
 - An **Order** is "ready" when every **PrepStation** that has at least one
   **OrderItem** in that order has its `*ReadyAt` timestamp set.
+- A **Payment** settles either one **Session** — the tab payment covering
+  every payable **Order** on it (primary flow) — or one **Order**
+  (legacy per-order flow). Exactly one of the two, never both.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one
   **ShiftRole**. Two of those roles (`bartender`, `kitchen`) share their
   literal value with the two **PrepStations**.
