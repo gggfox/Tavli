@@ -520,6 +520,7 @@
 		"ERROR_TAB_LOCKED": "A payment is in progress on this tab. Please wait until it finishes.",
 		"ERROR_INVALID_JOIN_CODE": "That join code didn't match an open tab. Please check it and try again.",
 		"ERROR_TAB_EMPTY": "There's nothing to pay for on this tab yet.",
+		"ERROR_TAB_UNPAID": "This tab still has unpaid orders. Pay the tab, or ask the staff to close it.",
 		"ERROR_DEV_ENVIRONMENT_ONLY": "This action is only available in development environments.",
 		"ERROR_DASHBOARD_RESTAURANT_REQUIRED": "Select a restaurant to view this dashboard.",
 		"ERROR_DASHBOARD_RANGE_TOO_LARGE": "The selected date range is too large. Please choose a shorter range.",
