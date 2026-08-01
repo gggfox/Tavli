@@ -1,7 +1,7 @@
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
+	ConflictError,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedErrorObject,
 	NotFoundError,
@@ -545,8 +545,27 @@ export const updateStatus = mutation({
 		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
 		if (restaurantError) return [null, restaurantError];
 
+		// Cancelling is the only transition that moves money — a paid order
+		// refunds the diner — and it voids a kitchen ticket. Employees advance
+		// tickets; only managers cancel. Checked before the transition test so an
+		// employee gets "manager required" rather than a confusing state error.
+		if (args.newStatus === "cancelled") {
+			const [, managerError] = await requireRestaurantManagerOrAbove(
+				ctx,
+				userId,
+				order.restaurantId
+			);
+			if (managerError) return [null, managerError];
+		}
+
 		const allowedNext = VALID_TRANSITIONS[order.status];
 		if (!allowedNext?.includes(args.newStatus)) {
+			// Cancelling a served order is now the most likely rejection here, and
+			// the frontend needs a stable code for it — a free-text validation
+			// message renders as the generic fallback string.
+			if (args.newStatus === "cancelled") {
+				throw new ConflictError("ERROR_ORDER_NOT_CANCELLABLE");
+			}
 			throw new UserInputValidationError({
 				fields: [
 					{
@@ -602,12 +621,12 @@ export const updateStatus = mutation({
 			updatedBy: userId,
 		});
 
-		if (args.newStatus === "cancelled" && order.activePaymentId) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- types regenerate on `convex dev`
-			await ctx.scheduler.runAfter(0, (internal as any).stripe.createRefund, {
-				paymentId: order.activePaymentId,
-			});
-		}
+		// No refund is issued from here. This mutation is the transactional half
+		// of a cancel (and the dedup gate — `VALID_TRANSITIONS` has no `cancelled`
+		// key, so a second cancel throws); the Stripe call lives in
+		// `stripe.cancelOrderAndRefund`, which calls this first and then refunds.
+		// A manager who calls this mutation directly leaves the order in
+		// `refund_requested`, which the orders tab surfaces as a pending refund.
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.ORDERS,
@@ -617,9 +636,10 @@ export const updateStatus = mutation({
 				restaurantId: order.restaurantId,
 				fromStatus: order.status,
 				toStatus: args.newStatus,
-				// A cancel on a paid order schedules a refund; record that the money
-				// path was triggered from here, not just that a status moved.
-				refundScheduled: args.newStatus === "cancelled" && order.activePaymentId !== undefined,
+				// Whether this cancel leaves money to be returned. The refund itself
+				// is audited separately by `recordOrderRefundOutcomeInternal`.
+				refundEligible:
+					args.newStatus === "cancelled" && order.paymentState === ORDER_PAYMENT_STATE.PAID,
 				totalAmount: order.totalAmount,
 			},
 			userId,

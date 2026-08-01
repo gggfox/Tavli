@@ -154,10 +154,15 @@ was no automated alert.
 | 1   | Fix `.dockerignore` (`!docker-entrypoint.sh`)                                                                                              | Restore staging                       | —     | ✅ Done (`a014b19`) |
 | 2   | Configure staging Dokploy env with Infisical machine identity                                                                              | Runtime secrets                       | —     | ✅ Done             |
 | 3   | Add a CI guard that fails if the `Dockerfile` `COPY`s a path not re-included in `.dockerignore` (or switch `.dockerignore` to a blacklist) | Prevent recurrence of the exact break | —     | ☐ Todo              |
-| 4   | Add failure alerting to the deploy workflows (notify on red)                                                                               | Cut 4-day detection gap               | —     | ☐ Todo              |
-| 5   | Add a post-deploy health gate (curl the domain for 200; fail/alert otherwise) and/or a container `HEALTHCHECK`                             | Turn silent 502 into a signal         | —     | ☐ Todo              |
+| 4   | Add failure alerting to the deploy workflows (notify on red)                                                                               | Cut 4-day detection gap               | —     | ✅ Done (`17e1957`) |
+| 5   | Add a post-deploy health gate (curl the domain for 200; fail/alert otherwise) and/or a container `HEALTHCHECK`                             | Turn silent 502 into a signal         | —     | ✅ Done (`17e1957`) |
 | 6   | Verify the **production** Dokploy app has `INFISICAL_MACHINE_CLIENT_ID/SECRET` + `INFISICAL_ENV=prod` before the next promotion            | Same latent misconfig would 500 prod  | —     | ☐ Todo              |
 | 7   | Document the per-app Dokploy runtime-secret setup in a runbook                                                                             | Make the manual step discoverable     | —     | ☐ Todo              |
+
+**Follow-up:** the health gate from item #5 made its first catch a week later — every
+deploy had become a silent no-op, with both environments serving stale builds behind
+HTTP 200. See [2026-07-26 — stale Dokploy rollout](./2026-07-26-stale-dokploy-rollout.md).
+Item #6 remains open and is a candidate cause there.
 
 ---
 

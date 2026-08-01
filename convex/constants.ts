@@ -106,6 +106,15 @@ export const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency =
 /** Default IANA timezone for restaurants when unset or invalid. */
 export const DEFAULT_RESTAURANT_TIMEZONE = "America/Mexico_City";
 
+/**
+ * Payment state of a single **order**.
+ *
+ * Note this is a different aggregate from `PAYMENT_REFUND_STATUS`, which
+ * describes the whole payment. An order covered by a tab can be `refunded`
+ * while the tab payment is only `partial` — the order's share came back, the
+ * rest of the tab did not. That combination is correct, not a bug: an order's
+ * share is either refunded or it isn't, so this enum needs no `partial` member.
+ */
 export const ORDER_PAYMENT_STATE = {
 	UNPAID: "unpaid",
 	PENDING: "pending",
@@ -487,6 +496,8 @@ export const AUDIT_EVENT = {
 	ORDER_STATUS_CHANGED: "orders.statusChanged",
 	ORDER_PAYMENT_CONFIRMED: "orders.paymentConfirmed",
 	ORDER_PAYMENT_FAILED: "orders.paymentFailed",
+	ORDER_REFUND_SUCCEEDED: "orders.refundSucceeded",
+	ORDER_REFUND_FAILED: "orders.refundFailed",
 
 	// -- Sessions (tabs) ----------------------------------------------------
 	SESSION_OPENED: "sessions.opened",

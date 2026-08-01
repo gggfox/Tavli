@@ -396,7 +396,9 @@
 		},
 		"cancel": {
 			"prompt": "¿Cancelar este pedido?",
-			"paidPrompt": "Este pedido ha sido pagado. Cancelarlo emitirá un reembolso."
+			"paidPrompt": "Este pedido ha sido pagado. Cancelarlo reembolsa su importe al comensal. La propina no se reembolsa.",
+			"refundPending": "Cancelando y reembolsando…",
+			"refundFailedBanner": "El pedido #{{number}} se canceló pero el reembolso no se completó. Emítelo desde el panel de Stripe."
 		},
 		"card": {
 			"table": "Mesa {{number}}",
@@ -414,6 +416,11 @@
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos"
+		},
+		"payment": {
+			"refundRequested": "Reembolso pendiente",
+			"refunded": "Reembolsado",
+			"refundFailed": "Reembolso fallido"
 		}
 	},
 	"payments": {
@@ -524,6 +531,10 @@
 		"ERROR_DASHBOARD_TOO_MANY_LAYOUTS": "Has alcanzado el número máximo de paneles guardados.",
 		"ERROR_DASHBOARD_PORTFOLIO_NO_MEMBERSHIP": "No tienes acceso a ningún restaurante en este portafolio.",
 		"ERROR_EMAIL_NOT_VERIFIED": "Verifica tu correo electrónico antes de continuar.",
+		"ERROR_ORDER_NOT_CANCELLABLE": "Este pedido ya no se puede cancelar. Los pedidos servidos deben reembolsarse desde el panel de Stripe.",
+		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
+		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
+		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "El nombre de la categoría es obligatorio.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "El nombre de la categoría es demasiado largo.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Ingresa al menos un nombre de categoría.",

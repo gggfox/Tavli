@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# Tell Dokploy which image to run, then deploy it.
+#
+# Preferred path (Dokploy API). Pins the application to the *immutable*
+# per-commit reference `ghcr.io/<owner>/tavli:<sha>` via
+# `application.saveDockerProvider`, then triggers `application.deploy`. Because
+# the reference is different on every deploy, Docker can never satisfy the pull
+# from a locally cached layer — a stale rollout becomes impossible rather than
+# merely unlikely.
+#
+# Fallback path (legacy webhook). Curls $DOKPLOY_WEBHOOK_URL, which asks Dokploy
+# to redeploy whatever image it is already configured with — a *mutable*
+# `:staging` / `:production` tag. Dokploy answers 200 whether or not it then
+# actually replaces the container, so this path cannot distinguish "rolled out"
+# from "reused the cached image". That is exactly how staging and production
+# both served a 2026-07-19 build for a week while every workflow step was green
+# (documentation/postmortems/2026-07-26-stale-dokploy-rollout.md). Kept only so
+# this workflow still deploys for an environment whose Infisical project has not
+# been given the API credentials yet.
+#
+# Injected by `infisical run` (per environment):
+#   Preferred  DOKPLOY_API_URL, DOKPLOY_API_KEY, DOKPLOY_APPLICATION_ID
+#   Fallback   DOKPLOY_WEBHOOK_URL
+# Passed by the workflow:
+#   IMAGE_REF     immutable ghcr.io reference to roll out
+#   DEPLOY_TITLE  label shown in Dokploy's deployment history
+set -euo pipefail
+
+: "${IMAGE_REF:?IMAGE_REF is required}"
+DEPLOY_TITLE="${DEPLOY_TITLE:-$IMAGE_REF}"
+
+# `curl --config` keeps the key out of the process table (and therefore out of
+# anything that shells out to `ps`); add-mask keeps it out of the run log even
+# if Dokploy echoes it back in an error body. Secrets reaching us via
+# `infisical run` are not registered as GitHub secrets, so they are not masked
+# automatically the way `secrets.*` values are.
+if [ -n "${DOKPLOY_API_KEY:-}" ] && [ -n "${DOKPLOY_APPLICATION_ID:-}" ] && [ -n "${DOKPLOY_API_URL:-}" ]; then
+	echo "::add-mask::$DOKPLOY_API_KEY"
+	echo "::add-mask::$DOKPLOY_APPLICATION_ID"
+
+	CURL_CONFIG="$(mktemp)"
+	trap 'rm -f "$CURL_CONFIG"' EXIT
+	chmod 600 "$CURL_CONFIG"
+	printf 'header = "x-api-key: %s"\n' "$DOKPLOY_API_KEY" >"$CURL_CONFIG"
+
+	api_post() {
+		local endpoint="$1" payload="$2" body status
+		body="$(mktemp)"
+		status="$(
+			curl -sS --max-time 30 --config "$CURL_CONFIG" \
+				-o "$body" -w '%{http_code}' \
+				-X POST "${DOKPLOY_API_URL%/}/api/${endpoint}" \
+				-H 'Content-Type: application/json' \
+				--data "$payload"
+		)" || status="000"
+
+		if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+			echo "::error::Dokploy ${endpoint} failed with HTTP ${status}: $(tr -d '\n' <"$body" | head -c 500)"
+			rm -f "$body"
+			return 1
+		fi
+		rm -f "$body"
+		echo "Dokploy ${endpoint} → HTTP ${status}"
+	}
+
+	# Preflight the credentials the *container* will use.
+	#
+	# At boot, docker-entrypoint.sh logs into Infisical with the machine-identity
+	# credentials stored on the Dokploy app — a separate copy from the ones this
+	# workflow uses. When those drift (the Universal Auth client secret is
+	# one-time-view, so rotating it for CI silently leaves the Dokploy apps on the
+	# old value) every new container gets a 401 and exits(1) in ~400ms. The
+	# orchestrator then keeps the previous task, the site serves a stale build at
+	# HTTP 200, and the only signal is the health gate timing out five minutes
+	# later. That cost staging and production nine days
+	# (documentation/postmortems/2026-07-26-stale-dokploy-rollout.md).
+	#
+	# Checking here fails the deploy in seconds, naming the real cause, instead of
+	# shipping an image that cannot start.
+	app_env="$(
+		curl -sS --max-time 30 --config "$CURL_CONFIG" \
+			"${DOKPLOY_API_URL%/}/api/application.one?applicationId=${DOKPLOY_APPLICATION_ID}" |
+			jq -r '.env // ""'
+	)" || app_env=""
+
+	env_val() {
+		printf '%s\n' "$app_env" |
+			awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' |
+			sed -e 's/\r$//' -e 's/^"//' -e 's/"$//'
+	}
+	boot_id="$(env_val INFISICAL_MACHINE_CLIENT_ID)"
+	boot_secret="$(env_val INFISICAL_MACHINE_CLIENT_SECRET)"
+
+	if [ -z "$boot_id" ] || [ -z "$boot_secret" ]; then
+		echo "::warning::Could not read the Dokploy app's Infisical machine-identity credentials; skipping the boot-credential preflight. If the app relies on them, the container may fail to start."
+	else
+		echo "::add-mask::$boot_secret"
+		if infisical login --method=universal-auth \
+			--client-id="$boot_id" --client-secret="$boot_secret" \
+			--domain="${INFISICAL_API_URL:-https://infisical.gggfox.com}" \
+			--plain --silent >/dev/null 2>/tmp/preflight-login.err; then
+			echo "Preflight: the Dokploy app's Infisical credentials authenticate."
+		else
+			echo "::error::The Dokploy app's stored INFISICAL_MACHINE_CLIENT_SECRET does not authenticate: $(tr -d '\n' </tmp/preflight-login.err | head -c 300). Every container this app starts will exit(1) on boot and the previous build will keep serving. Generate a fresh Universal Auth client secret for this machine identity and update INFISICAL_MACHINE_CLIENT_SECRET on the Dokploy app, then re-run. Not rolling out."
+			exit 1
+		fi
+	fi
+
+	# username/password/registryUrl are declared `z.string()` (required, not
+	# nullable) by Dokploy's apiSaveDockerProvider schema. Empty strings mean
+	# "no registry auth", which is correct here: the image is public on GHCR by
+	# design, because secrets are fetched at runtime rather than baked in.
+	echo "Pinning Dokploy application to $IMAGE_REF"
+	api_post application.saveDockerProvider "$(
+		jq -n \
+			--arg applicationId "$DOKPLOY_APPLICATION_ID" \
+			--arg dockerImage "$IMAGE_REF" \
+			'{
+				applicationId: $applicationId,
+				dockerImage: $dockerImage,
+				username: "",
+				password: "",
+				registryUrl: ""
+			}'
+	)"
+
+	api_post application.deploy "$(
+		jq -n \
+			--arg applicationId "$DOKPLOY_APPLICATION_ID" \
+			--arg title "$DEPLOY_TITLE" \
+			'{applicationId: $applicationId, title: $title}'
+	)"
+
+	echo "Dokploy accepted the rollout of $IMAGE_REF; the health gate verifies it actually serves."
+	exit 0
+fi
+
+if [ -z "${DOKPLOY_WEBHOOK_URL:-}" ]; then
+	echo "::error::No Dokploy rollout mechanism configured. Set DOKPLOY_API_URL, DOKPLOY_API_KEY and DOKPLOY_APPLICATION_ID (preferred) or DOKPLOY_WEBHOOK_URL in this environment's Infisical project."
+	exit 1
+fi
+
+echo "::warning::DOKPLOY_API_URL/DOKPLOY_API_KEY/DOKPLOY_APPLICATION_ID are not all set — falling back to the webhook, which redeploys a mutable tag and can silently reuse a cached image. See documentation/internal-guides/deployment-and-secrets.md."
+
+status="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$DOKPLOY_WEBHOOK_URL")" || status="000"
+echo "Dokploy webhook → HTTP $status"
+if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+	echo "::error::Dokploy webhook failed with HTTP $status"
+	exit 1
+fi

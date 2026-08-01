@@ -27,11 +27,19 @@ export const selectedOptionValidator = v.object({
 	priceModifier: v.number(),
 });
 
+/**
+ * `served` is terminal. Cancelling a paid order refunds the diner, and food
+ * that reached the table should not be refundable from inside the app — that
+ * decision belongs to a manager in the Stripe dashboard, with a reason.
+ *
+ * This closes an API-only hole: the dashboard already renders no Cancel button
+ * on served cards (`statusConfig.ts` sets `served.next = null`, and the button
+ * is gated on `hasNextAction`), so no staff-facing capability is lost.
+ */
 export const VALID_TRANSITIONS: Record<string, string[]> = {
 	submitted: ["preparing", "cancelled"],
 	preparing: ["ready", "cancelled"],
 	ready: ["served", "cancelled"],
-	served: ["cancelled"],
 };
 
 // Statuses the kitchen dashboard is allowed to surface. `draft` is excluded

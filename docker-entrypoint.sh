@@ -23,12 +23,25 @@ INFISICAL_ENV="${INFISICAL_ENV:-prod}"
 INFISICAL_API_URL="${INFISICAL_API_URL:-https://infisical.gggfox.com}"
 
 if [ -n "${INFISICAL_MACHINE_CLIENT_ID:-}" ] && [ -n "${INFISICAL_MACHINE_CLIENT_SECRET:-}" ]; then
-	INFISICAL_TOKEN=$(infisical login \
+	# Handle the login failure explicitly rather than letting `set -e` kill the
+	# script silently. A stale client secret makes this return 401 in ~400ms, so
+	# the container exits(1) almost instantly and the orchestrator quietly keeps
+	# the previous task running — the site then serves an old build, at HTTP 200,
+	# indefinitely. That is exactly how staging and production both sat on a
+	# 2026-07-19 build for a week: the secret had been rotated for CI and never
+	# copied to the Dokploy apps. Name the cause on the way out.
+	if ! INFISICAL_TOKEN=$(infisical login \
 		--method=universal-auth \
 		--client-id="$INFISICAL_MACHINE_CLIENT_ID" \
 		--client-secret="$INFISICAL_MACHINE_CLIENT_SECRET" \
 		--domain="$INFISICAL_API_URL" \
-		--plain --silent)
+		--plain --silent 2>/tmp/infisical-login.err); then
+		echo "docker-entrypoint: FATAL — Infisical machine-identity login failed; the container cannot start." >&2
+		sed 's/^/docker-entrypoint:   /' /tmp/infisical-login.err >&2 || true
+		echo "docker-entrypoint: if this is 'Invalid credentials', the Universal Auth client secret for this identity has been rotated." >&2
+		echo "docker-entrypoint: generate a fresh one in Infisical and update INFISICAL_MACHINE_CLIENT_SECRET on this Dokploy app." >&2
+		exit 1
+	fi
 	export INFISICAL_TOKEN
 
 	exec infisical run \
