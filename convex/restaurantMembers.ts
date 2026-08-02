@@ -663,6 +663,7 @@ export const addMember = mutation({
 				aggregateType: TABLE.RESTAURANT_MEMBERS,
 				aggregateId: existing._id,
 				eventType: "restaurantMembers.reactivated",
+				restaurantId: args.restaurantId,
 				payload: { restaurantId: args.restaurantId, userId: args.userId, role: args.role },
 				userId: actorId,
 			});
@@ -687,6 +688,7 @@ export const addMember = mutation({
 			aggregateType: TABLE.RESTAURANT_MEMBERS,
 			aggregateId: id,
 			eventType: "restaurantMembers.created",
+			restaurantId: args.restaurantId,
 			payload: { restaurantId: args.restaurantId, userId: args.userId, role: args.role },
 			userId: actorId,
 		});
@@ -730,6 +732,7 @@ export const updateRole = mutation({
 			aggregateType: TABLE.RESTAURANT_MEMBERS,
 			aggregateId: args.memberId,
 			eventType: "restaurantMembers.role_updated",
+			restaurantId: row.restaurantId,
 			payload: { role: args.role },
 			userId: actorId,
 		});
@@ -778,6 +781,7 @@ export const removeMember = mutation({
 			aggregateType: TABLE.RESTAURANT_MEMBERS,
 			aggregateId: args.memberId,
 			eventType: "restaurantMembers.removed",
+			restaurantId: row.restaurantId,
 			payload: { employeeAccountId: row.employeeAccountId ?? null },
 			userId: actorId,
 		});

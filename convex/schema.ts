@@ -1023,7 +1023,11 @@ export default defineSchema({
 		updatedAt: v.number(),
 	})
 		.index("by_user_restaurant", ["userId", "restaurantId"])
-		.index("by_user_scopeKind", ["userId", "scopeKind"]),
+		.index("by_user_scopeKind", ["userId", "scopeKind"])
+		// Restaurant hard-purge cascade: find every layout bound to a restaurant
+		// without scanning per user. Portfolio layouts (restaurantId unset) sort
+		// under `undefined` and are never matched by an eq() on a real id.
+		.index("by_restaurant", ["restaurantId"]),
 
 	// Restaurant-scoped dashboard templates published by managers and cloneable
 	// by any staff member with access to that restaurant. The cloned layout is
@@ -1088,6 +1092,12 @@ export default defineSchema({
 		eventType: v.string(),
 		aggregateType: v.union(...Object.values(TABLE).map((table) => v.literal(table))),
 		aggregateId: v.string(),
+		// Restaurant the event belongs to; unset for org-level events (role
+		// bootstrap, multi-restaurant invitations) and for rows predating the
+		// column (backfilled best-effort by `migrations/backfillAllEventsRestaurantId`).
+		// Deliberately allowed to dangle after a restaurant purge: events are the
+		// surviving record, and this id is their correlation key.
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
 		payload: v.any(),
 		userId: v.string(),
 		timestamp: v.number(),
@@ -1098,5 +1108,8 @@ export default defineSchema({
 		.index("by_aggregate", ["aggregateType", "aggregateId"])
 		.index("by_timestamp", ["timestamp"])
 		.index("by_user", ["userId"])
-		.index("by_aggregate_type", ["aggregateType"]),
+		.index("by_aggregate_type", ["aggregateType"])
+		// "Everything that happened at restaurant X (in a time range)" — the
+		// forensic query that used to require payload scans.
+		.index("by_restaurant_time", ["restaurantId", "timestamp"]),
 });

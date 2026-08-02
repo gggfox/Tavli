@@ -20,6 +20,14 @@ export async function appendAuditEvent(
 		aggregateType: TableName;
 		aggregateId: string;
 		eventType: string;
+		/**
+		 * Restaurant the event belongs to — indexed (`by_restaurant_time`) so a
+		 * restaurant's full history stays queryable, including after a purge.
+		 * Required so every call site decides explicitly: pass `null` only for
+		 * events that genuinely have no single restaurant (org-level role changes,
+		 * invitations spanning several restaurants).
+		 */
+		restaurantId: Id<"restaurants"> | null;
 		payload: unknown;
 		userId: string;
 		idempotencyKey?: string;
@@ -30,6 +38,7 @@ export async function appendAuditEvent(
 		eventType: args.eventType,
 		aggregateType: args.aggregateType,
 		aggregateId: args.aggregateId,
+		restaurantId: args.restaurantId ?? undefined,
 		payload: args.payload,
 		userId: args.userId,
 		timestamp: now,

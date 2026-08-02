@@ -242,6 +242,7 @@ export const finalizeTipPool = mutation({
 			aggregateType: TABLE.TIP_POOLS,
 			aggregateId: pool._id,
 			eventType: "tipPools.finalized",
+			restaurantId: pool.restaurantId,
 			payload: { businessDate: args.businessDate },
 			userId,
 		});

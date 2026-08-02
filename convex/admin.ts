@@ -430,6 +430,7 @@ export const devSetOwnRoles = mutation({
 			aggregateType: TABLE.USER_ROLES,
 			aggregateId: roleRecordId,
 			eventType: "userRoles.dev_set_own_roles",
+			restaurantId: null,
 			payload: { roles: args.roles, previousRoles },
 			userId,
 		});
@@ -554,6 +555,7 @@ export const bootstrapFirstAdmin = internalMutation({
 			aggregateType: TABLE.USER_ROLES,
 			aggregateId: targetRow._id,
 			eventType: "userRoles.bootstrap_first_admin",
+			restaurantId: null,
 			payload: {
 				roles: decision.nextRoles,
 				previousRoles: decision.previousRoles,
