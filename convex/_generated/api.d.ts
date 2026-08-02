@@ -58,6 +58,7 @@ import type * as menuImportMutation from "../menuImportMutation.js";
 import type * as menuImportPdfHelpers from "../menuImportPdfHelpers.js";
 import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
+import type * as migrations_backfillAllEventsRestaurantId from "../migrations/backfillAllEventsRestaurantId.js";
 import type * as migrations_backfillDailyOrderNumber from "../migrations/backfillDailyOrderNumber.js";
 import type * as migrations_backfillDefaultMenus from "../migrations/backfillDefaultMenus.js";
 import type * as migrations_backfillPrepStation from "../migrations/backfillPrepStation.js";
@@ -150,6 +151,7 @@ declare const fullApi: ApiFromModules<{
   menuImportPdfHelpers: typeof menuImportPdfHelpers;
   menuItems: typeof menuItems;
   menus: typeof menus;
+  "migrations/backfillAllEventsRestaurantId": typeof migrations_backfillAllEventsRestaurantId;
   "migrations/backfillDailyOrderNumber": typeof migrations_backfillDailyOrderNumber;
   "migrations/backfillDefaultMenus": typeof migrations_backfillDefaultMenus;
   "migrations/backfillPrepStation": typeof migrations_backfillPrepStation;
