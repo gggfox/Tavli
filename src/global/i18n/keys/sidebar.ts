@@ -61,6 +61,8 @@ export const SidebarKeys = {
 	NO_ROLES: "sidebar.settings.noRoles",
 	DEV_TOOLS: "sidebar.settings.devTools",
 	SWITCH_ROLES: "sidebar.settings.switchRoles",
+	ROLE_SWITCHER_UNAVAILABLE: "sidebar.settings.roleSwitcherUnavailable",
+	ROLE_SWITCH_FAILED: "sidebar.settings.roleSwitchFailed",
 	SELF_ASSIGN_ADMIN: "sidebar.settings.selfAssignAdmin",
 	ADMIN_ALREADY_ASSIGNED: "sidebar.settings.adminAlreadyAssigned",
 	ASSIGNING_ADMIN: "sidebar.settings.assigningAdmin",
