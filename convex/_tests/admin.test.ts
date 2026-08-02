@@ -243,3 +243,71 @@ describe("admin.devSetOwnRoles", () => {
 		});
 	});
 });
+
+describe("admin.getDevRoleSwitcherStatus", () => {
+	const originalEnv = process.env.CONVEX_ENV;
+	const originalRoleSwitcher = process.env.ENABLE_DEV_ROLE_SWITCHER;
+
+	function setEnv(name: string, value: string | undefined) {
+		if (value === undefined) {
+			delete process.env[name];
+		} else {
+			process.env[name] = value;
+		}
+	}
+
+	afterEach(() => {
+		setEnv("CONVEX_ENV", originalEnv);
+		setEnv("ENABLE_DEV_ROLE_SWITCHER", originalRoleSwitcher);
+	});
+
+	it("requires authentication", async () => {
+		const t = convexTest(schema, modules);
+
+		const [value, error] = await t.query(api.admin.getDevRoleSwitcherStatus, {});
+
+		expect(value).toBeNull();
+		expect(error?.name).toBe("NOT_AUTHENTICATED");
+	});
+
+	/**
+	 * The Settings modal renders the switcher buttons from this query, so a
+	 * disagreement between the two would put buttons on screen whose clicks the
+	 * mutation then refuses -- the original "role switcher does nothing" bug,
+	 * which happened on a dev deployment missing ENABLE_DEV_ROLE_SWITCHER.
+	 */
+	const environments = [
+		{ name: "dev deployment with the flag set", convexEnv: "development", flag: "true" },
+		{ name: "dev deployment missing the flag", convexEnv: "development", flag: undefined },
+		{ name: "dev deployment with a falsy flag", convexEnv: "development", flag: "false" },
+		{ name: "staging deployment with the flag set", convexEnv: "staging", flag: "true" },
+		{ name: "production deployment with the flag set", convexEnv: "production", flag: "true" },
+		{ name: "deployment with no CONVEX_ENV", convexEnv: undefined, flag: "true" },
+	];
+
+	it.each(environments)(
+		"reports the same verdict the mutation enforces: $name",
+		async ({ convexEnv, flag }) => {
+			setEnv("CONVEX_ENV", convexEnv);
+			setEnv("ENABLE_DEV_ROLE_SWITCHER", flag);
+
+			const t = convexTest(schema, modules);
+			await seedUserRole(t, { userId: "user-1", roles: ["customer"] });
+			const user = t.withIdentity({ subject: "user-1" });
+
+			const [status, statusError] = await user.query(api.admin.getDevRoleSwitcherStatus, {});
+			expect(statusError).toBeNull();
+
+			const [, mutationError] = await user.mutation(api.admin.devSetOwnRoles, {
+				roles: ["admin"],
+			});
+			const mutationAccepted = mutationError === null;
+
+			expect(status?.enabled).toBe(mutationAccepted);
+
+			// And the switch actually took effect exactly when it was reported usable.
+			const record = await readRoles(t, "user-1");
+			expect(record?.roles).toEqual(mutationAccepted ? ["admin"] : ["customer"]);
+		}
+	);
+});

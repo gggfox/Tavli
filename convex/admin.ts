@@ -439,6 +439,35 @@ export const devSetOwnRoles = mutation({
 });
 
 /**
+ * Whether the dev-only role switcher is usable on this deployment, i.e.
+ * `CONVEX_ENV=development` and `ENABLE_DEV_ROLE_SWITCHER` are both set (see
+ * `_util/env.ts`).
+ *
+ * The Settings modal shows the switcher buttons only when this returns
+ * `enabled: true`, so the frontend build flag (`VITE_DEV_ROLE_SWITCHER_ENABLED`)
+ * alone can never render a switcher that `devSetOwnRoles` will refuse — e.g.
+ * on a freshly provisioned dev deployment that is missing the env vars.
+ */
+type GetDevRoleSwitcherStatusErrors = NotAuthenticatedErrorObject;
+
+export type DevRoleSwitcherStatusPayload = {
+	enabled: boolean;
+};
+
+export const getDevRoleSwitcherStatus = query({
+	handler: async function (
+		ctx
+	): AsyncReturn<DevRoleSwitcherStatusPayload, GetDevRoleSwitcherStatusErrors> {
+		const [, error] = await getCurrentUserId(ctx);
+		if (error) {
+			return [null, error];
+		}
+
+		return [{ enabled: isDevRoleSwitcherEnabled() }, null];
+	},
+});
+
+/**
  * Guarded first-admin bootstrap (operator-only, ticket TAVLI-51).
  *
  * On a fresh production database there is no privileged caller to grant the
