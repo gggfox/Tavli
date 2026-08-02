@@ -48,6 +48,7 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_TAB_LOCKED",
 	"ERROR_INVALID_JOIN_CODE",
 	"ERROR_TAB_EMPTY",
+	"ERROR_TAB_UNPAID",
 	// Admin — convex/admin.ts
 	"ERROR_DEV_ENVIRONMENT_ONLY",
 	// Analytics / dashboards — convex/analytics/_shared.ts, convex/dashboard*.ts

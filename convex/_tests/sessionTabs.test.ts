@@ -299,6 +299,65 @@ describe("session tabs", () => {
 		});
 	});
 
+	describe("diner close", () => {
+		it("rejects closing a tab that still has an unpaid balance", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, authed } = await seedTabWithOrder(t);
+
+			await expect(authed.mutation(api.sessions.close, { sessionId })).rejects.toThrow(
+				/ERROR_TAB_UNPAID/
+			);
+
+			// The tab stays active, so the walkout is still on the staff dashboard.
+			const staff = t.withIdentity({ subject: "owner1" });
+			const [tabs, listError] = await staff.query(api.sessions.getOpenTabsByRestaurant, {
+				restaurantId,
+			});
+			expect(listError).toBeNull();
+			expect(tabs).toHaveLength(1);
+			expect(tabs![0].unpaidTotal).toBe(1800);
+		});
+
+		it("closes a tab that never ordered anything", async () => {
+			const t = convexTest(schema, modules);
+			await seedRestaurant(t);
+			const authed = t.withIdentity({ subject: "diner1" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+
+			await authed.mutation(api.sessions.close, { sessionId });
+
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(sessionId))!.status).toBe("closed");
+			});
+		});
+
+		it("closes a tab whose only order is an unsubmitted draft", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, tableId } = await seedRestaurant(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "diner1" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+
+			// Drafts were never sent to the kitchen, so nothing is owed.
+			await authed.mutation(api.sessions.close, { sessionId });
+
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(sessionId))!.status).toBe("closed");
+			});
+		});
+	});
+
 	describe("staff open tabs", () => {
 		it("lists open tabs with their unpaid balance and closes one manually", async () => {
 			const t = convexTest(schema, modules);

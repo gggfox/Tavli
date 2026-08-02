@@ -104,4 +104,6 @@ export const DINER_SESSION_ERRORS = {
 	INVALID_JOIN_CODE: "ERROR_INVALID_JOIN_CODE",
 	/** Tab has no payable balance to charge. */
 	TAB_EMPTY: "ERROR_TAB_EMPTY",
+	/** Tab still owes money — settle via checkout or have staff close it. */
+	TAB_UNPAID: "ERROR_TAB_UNPAID",
 } as const;
