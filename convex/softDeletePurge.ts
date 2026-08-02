@@ -30,6 +30,7 @@ export async function executeHardPurgeSection(
 		aggregateType: TABLE.SECTIONS,
 		aggregateId: String(sectionId),
 		eventType: "sections.hard_deleted",
+		restaurantId: section.restaurantId,
 		payload: {
 			restaurantId: section.restaurantId,
 			name: section.name,
@@ -58,6 +59,7 @@ export async function executeHardPurgeTable(
 		aggregateType: TABLE.TABLES,
 		aggregateId: String(tableId),
 		eventType: "tables.hard_deleted",
+		restaurantId: table.restaurantId,
 		payload: {
 			restaurantId: table.restaurantId,
 			tableNumber: table.tableNumber,

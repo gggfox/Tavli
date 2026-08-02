@@ -491,6 +491,7 @@ export async function createReservationCore(
 		aggregateType: TABLE.RESERVATIONS,
 		aggregateId: id,
 		eventType: AUDIT_EVENT.RESERVATION_CREATED,
+		restaurantId: args.restaurantId,
 		payload: {
 			restaurantId: args.restaurantId,
 			partySize: args.partySize,

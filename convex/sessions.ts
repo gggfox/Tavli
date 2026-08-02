@@ -104,6 +104,7 @@ export const create = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: sessionId,
 			eventType: AUDIT_EVENT.SESSION_OPENED,
+			restaurantId: restaurant._id,
 			payload: { restaurantId: restaurant._id },
 			userId,
 		});
@@ -154,6 +155,7 @@ export const joinByCode = mutation({
 				aggregateType: TABLE.SESSIONS,
 				aggregateId: session._id,
 				eventType: AUDIT_EVENT.SESSION_JOINED,
+				restaurantId: restaurant._id,
 				payload: {
 					restaurantId: restaurant._id,
 					// Opener + everyone who has joined. `memberUserIds` excludes the
@@ -250,6 +252,7 @@ export const close = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_CLOSED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				closedBy: "diner",
@@ -367,6 +370,7 @@ export const beginTabPayment = internalMutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_LOCKED,
+			restaurantId: args.restaurantId,
 			payload: {
 				restaurantId: args.restaurantId,
 				paymentId,
@@ -471,6 +475,7 @@ export const confirmTabPayment = internalMutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: session._id,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_SUCCEEDED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				paymentId: payment._id,
@@ -525,6 +530,7 @@ export const failTabPayment = internalMutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: payment.sessionId,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_FAILED,
+			restaurantId: payment.restaurantId,
 			payload: {
 				restaurantId: payment.restaurantId,
 				paymentId: payment._id,
@@ -575,6 +581,7 @@ export const cancelTabPayment = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_CANCELLED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				paymentId: session.activePaymentId,
@@ -698,6 +705,7 @@ export const closeTabAsStaff = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_CLOSED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				closedBy: "staff",
@@ -761,6 +769,7 @@ export const sweepStaleOpenTabs = internalMutation({
 					aggregateType: TABLE.SESSIONS,
 					aggregateId: session._id,
 					eventType: AUDIT_EVENT.SESSION_STALE_CLOSED,
+					restaurantId: session.restaurantId,
 					payload: {
 						restaurantId: session.restaurantId,
 						startedAt: session.startedAt,
@@ -777,6 +786,7 @@ export const sweepStaleOpenTabs = internalMutation({
 					aggregateType: TABLE.SESSIONS,
 					aggregateId: session._id,
 					eventType: AUDIT_EVENT.SESSION_STALE_FLAGGED,
+					restaurantId: session.restaurantId,
 					payload: {
 						restaurantId: session.restaurantId,
 						startedAt: session.startedAt,

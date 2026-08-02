@@ -136,6 +136,7 @@ export const softDelete = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.soft_deleted",
+			restaurantId: args.restaurantId,
 			payload: { slugBefore: restaurant.slug, slugAfter: newSlug },
 			userId,
 		});
@@ -192,6 +193,7 @@ export const restore = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.restored",
+			restaurantId: args.restaurantId,
 			payload: { slug: nextSlug },
 			userId,
 		});
@@ -435,6 +437,7 @@ export const update = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.updated",
+			restaurantId: args.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -752,6 +755,7 @@ export const setSharedEmployeeSubject = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.sharedEmployeeSubjectSet",
+			restaurantId: args.restaurantId,
 			payload: { clerkSubject },
 			userId,
 		});
