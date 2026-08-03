@@ -49,6 +49,7 @@ function baseTab(overrides: Record<string, any> = {}) {
 		paidAt: null,
 		subtotal: 2400,
 		payableOrderIds: ["orders:default"],
+		unservedOrderIds: [],
 		activePayment: null,
 		...overrides,
 	};
@@ -133,6 +134,33 @@ describe("SessionOrdersList", () => {
 
 		const payButton = screen.getByText(/Pay tab/).closest("button");
 		expect(payButton?.disabled).toBe(true);
+	});
+
+	it("disables the pay CTA while an order has not reached the table", () => {
+		// The tab is still billed for it — only settlement is held back.
+		mockQueries({
+			orders: [baseOrder({ _id: "orders:cooking", status: "preparing" })],
+			tab: baseTab({ unservedOrderIds: ["orders:cooking"] }),
+		});
+
+		renderList();
+
+		const payButton = screen.getByText(/Pay tab/).closest("button");
+		expect(payButton?.disabled).toBe(true);
+		expect(screen.getByText(/hasn't reached your table yet/)).toBeTruthy();
+	});
+
+	it("keeps the locked notice when a payment is in flight, even if orders are unserved", () => {
+		// Nothing the diner can do but wait, so "ask your server" would be wrong.
+		mockQueries({
+			orders: [baseOrder({ _id: "orders:cooking", status: "preparing" })],
+			tab: baseTab({ lockedForPayment: true, unservedOrderIds: ["orders:cooking"] }),
+		});
+
+		renderList();
+
+		expect(screen.getByText(/A payment is in progress/)).toBeTruthy();
+		expect(screen.queryByText(/hasn't reached your table yet/)).toBeNull();
 	});
 
 	it("routes submitted orders to the order status page", () => {
