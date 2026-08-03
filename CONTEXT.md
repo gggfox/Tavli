@@ -42,18 +42,34 @@ _Avoid_: type, kind, beverage category, meal category.
 ### Ordering
 
 **Session**:
-An open service period at a `Table`, also called a tab. Many `Orders`
-may be added to a single session before it closes, and the session is
-what gets settled — in-app via Stripe, or in person by staff.
-_Avoid_: bill (the amount owed is the session's balance, not a thing).
+An open service period at a `Table`, doubling as the group's shared
+**tab** — the primary settlement unit. `Orders` accumulate unpaid on
+the session, and one payment settles the whole tab (subtotal + tip):
+either in-app via Stripe or in person by staff (`settledBy`). The
+session carries the tab's `paymentState` and is locked against new or
+edited orders while a tab payment is in flight.
+A tab is **settleable** only once every order on it has been `served`.
+Un-served orders are still billed — they count toward the balance staff
+see — but they block checkout, and they leave the tab by **staff
+cancellation**, never by partial payment. That keeps the diner from
+paying for food that never arrives, which is the only thing that
+produces a Stripe refund here (refunds come out of the platform
+balance, not the restaurant's).
+_Avoid_: check, bill (the payable whole is the **tab**).
 
 **Order**:
-One round a diner sends to the stations. Holds a `status` (`draft →
-submitted → preparing → ready → served`, or `cancelled`) and per-station
-completion timestamps (`kitchenReadyAt`, `barReadyAt`). Its
-`totalAmount` contributes to the tab balance; the per-order payment
-fields are the legacy path from before tabs.
-_Avoid_: ticket, check, transaction.
+A round of items added to a `Session`'s tab. Holds a `status` (`draft →
+submitted → preparing → ready → served`, or `cancelled`) and
+per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
+Orders are normally settled together by their session's tab payment;
+an order's own payment fields (`paymentState`, `paidAt`) are the
+legacy per-order payment path. `served` is terminal — a served order
+cannot be cancelled — and it is the only status a tab payment may
+settle (see **Session**). Cancelling an un-served order removes it from
+the tab at no cost; it was never paid for — as does **86**'ing its last
+remaining line, which cancels the order.
+_Avoid_: ticket, check, transaction, "the unit a diner pays for" (that
+is the tab).
 
 **Order item**:
 A single line on an `Order`, denormalized at submission time with the
@@ -222,9 +238,11 @@ that are already active.
   `prepStation`, snapshot for everything else).
 - An **Order** is "ready" when every **PrepStation** that has at least one
   non-86'd **OrderItem** in that order has its `*ReadyAt` timestamp set.
-- A **Session** is what gets paid; an **Order**'s `totalAmount` is its
-  contribution to that balance, and an 86'd **OrderItem** contributes
-  nothing.
+- A **Payment** settles either one **Session** — the tab payment covering
+  every payable **Order** on it (primary flow) — or one **Order**
+  (legacy per-order flow). Exactly one of the two, never both.
+- An 86'd **OrderItem** contributes nothing to its **Order**'s
+  `totalAmount`, and so nothing to the tab balance.
 - A **Station ticket** is derived from one **Order** and one
   **PrepStation** — it is never stored.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one

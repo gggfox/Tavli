@@ -433,6 +433,7 @@ export const confirm = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_CONFIRMED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -609,6 +610,7 @@ export const reschedule = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_RESCHEDULED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -728,6 +730,7 @@ export const reconfirm = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_RECONFIRMED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -792,6 +795,7 @@ export const cancel = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_CANCELLED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -913,6 +917,7 @@ export const markSeated = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_SEATED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -967,6 +972,7 @@ export const markCompleted = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_COMPLETED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -1202,6 +1208,7 @@ export const sweepNoShows = internalMutation({
 						aggregateType: TABLE.RESERVATIONS,
 						aggregateId: r._id,
 						eventType: AUDIT_EVENT.RESERVATION_NO_SHOW,
+						restaurantId: restaurant._id,
 						payload: {
 							restaurantId: restaurant._id,
 							fromStatus: status,

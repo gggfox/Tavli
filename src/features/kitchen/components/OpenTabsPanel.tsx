@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
-import { AlertTriangle, CreditCard, Loader2, Receipt, Users } from "lucide-react";
+import { AlertTriangle, ChefHat, CreditCard, Loader2, Receipt, Users } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -138,6 +138,21 @@ function TabCard({
 						>
 							<CreditCard size={11} />
 							{t(TabsKeys.LOCKED_BADGE)}
+						</span>
+					)}
+					{/* This table cannot check out until these are served or
+					    cancelled, and the diner's only escalation is flagging
+					    someone down — so the floor has to be able to see it. */}
+					{tab.unservedOrderCount > 0 && (
+						<span
+							className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
+							style={{
+								backgroundColor: "var(--accent-warning-light)",
+								color: "var(--accent-warning)",
+							}}
+						>
+							<ChefHat size={11} />
+							{t(TabsKeys.UNSERVED_BADGE, { count: tab.unservedOrderCount })}
 						</span>
 					)}
 				</div>

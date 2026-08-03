@@ -181,6 +181,21 @@ export type SessionPaymentState =
  */
 export const TAB_PAYABLE_ORDER_STATUSES = ["submitted", "preparing", "ready", "served"] as const;
 
+/**
+ * Order statuses a tab payment is allowed to settle. Everything else on the
+ * tab is billed but blocks checkout until staff serve it or cancel it.
+ *
+ * Deliberately an **allowlist**. Settling food the diner never received is the
+ * only way a Stripe refund happens on the tab path (`served` is terminal in
+ * `VALID_TRANSITIONS`, so delivered food can never be cancelled), and refunds
+ * are fronted by the platform balance. A blocklist would silently permit a
+ * newly-added status to be settled — the money-losing direction. The
+ * `satisfies` clause makes "settleable but not payable" a compile error.
+ */
+export const TAB_SETTLEABLE_ORDER_STATUSES = [ORDER_STATUS.SERVED] as const satisfies ReadonlyArray<
+	(typeof TAB_PAYABLE_ORDER_STATUSES)[number]
+>;
+
 /** Alphabet for session join codes: no 0/O/1/I lookalikes. */
 export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;
@@ -525,3 +540,93 @@ export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
 
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Restaurant hard-purge coverage (TAVLI-66).
+ *
+ * Every table holding restaurant-scoped rows must appear in exactly one of the
+ * three lists below. `restaurantPurgeCoverage.test.ts` introspects `schema.ts`
+ * and fails when a table carrying a `restaurantId` field (or any
+ * `v.id("restaurants")` reference) is missing from all of them — so adding a
+ * restaurant-scoped table without deciding its purge behavior is a red build,
+ * not silent drift. (`stripeDisputes` was orphaned for months exactly this way:
+ * added after the purge was written, nothing failed.)
+ *
+ * `restaurantPurge.hardDeleteRestaurantDataTyped` types its per-table deletion
+ * counters as `Record<RestaurantPurgeDeletedTable, number>`, so a table added
+ * here without matching cascade code fails to typecheck.
+ */
+export const RESTAURANT_PURGE_DELETED_TABLES = [
+	// Membership & staff
+	TABLE.RESTAURANT_MEMBERS,
+	TABLE.EMPLOYEE_ACCOUNTS,
+	// Menu tree
+	TABLE.MENUS,
+	TABLE.MENU_CATEGORIES,
+	TABLE.MENU_ITEMS,
+	TABLE.OPTION_GROUPS,
+	TABLE.OPTIONS,
+	TABLE.MENU_ITEM_OPTION_GROUPS,
+	// Floor plan
+	TABLE.TABLES,
+	TABLE.SECTIONS,
+	// Dining & ordering
+	TABLE.SESSIONS,
+	TABLE.ORDERS,
+	TABLE.ORDER_ITEMS,
+	TABLE.ORDER_DAY_COUNTERS,
+	// Payments
+	TABLE.PAYMENTS,
+	TABLE.STRIPE_WEBHOOK_EVENTS,
+	TABLE.STRIPE_DISPUTES,
+	// Reservations
+	TABLE.RESERVATIONS,
+	TABLE.TABLE_LOCKS,
+	TABLE.RESERVATION_SETTINGS,
+	// Scheduling & attendance
+	TABLE.SHIFTS,
+	TABLE.SHIFT_TEMPLATES,
+	TABLE.SHIFT_TABLE_ASSIGNMENTS,
+	TABLE.SHIFT_SECTION_ASSIGNMENTS,
+	TABLE.SHIFT_ATTENDANCE,
+	TABLE.CLOCK_EVENTS,
+	TABLE.ABSENCES,
+	// Tips
+	TABLE.TIP_POOLS,
+	TABLE.TIP_POOL_SHARES,
+	TABLE.TIP_ENTRIES,
+	// Dashboards
+	TABLE.DASHBOARD_LAYOUTS,
+	TABLE.DASHBOARD_TEMPLATES,
+] as const;
+
+export type RestaurantPurgeDeletedTable = (typeof RESTAURANT_PURGE_DELETED_TABLES)[number];
+
+/**
+ * Tables the purge patches instead of deleting — their rows can span several
+ * restaurants, so only references to the purged restaurant are removed:
+ * - `invitations`: the `restaurantIds` array may cover other restaurants; the
+ *   purged id is filtered out and the invitation revoked only when none remain.
+ * - `userRoles`: org-scoped — a user's roles outlive any one restaurant, so
+ *   rows are never deleted. The single restaurant reference is the legacy
+ *   dev-role-switcher array `devSavedMembershipRoles`; entries pointing at the
+ *   purged restaurant are scrubbed.
+ */
+export const RESTAURANT_PURGE_PATCHED_TABLES = [TABLE.INVITATIONS, TABLE.USER_ROLES] as const;
+
+export type RestaurantPurgePatchedTable = (typeof RESTAURANT_PURGE_PATCHED_TABLES)[number];
+
+/**
+ * Restaurant-linked tables the purge intentionally leaves untouched, keyed by
+ * table name with the reason. Add entries deliberately — never to silence the
+ * coverage test.
+ */
+export const RESTAURANT_PURGE_EXEMPT_TABLES: Partial<Record<TableName, string>> = {
+	[TABLE.ALL_EVENTS]:
+		"Append-only audit trail. Carries an indexed `restaurantId` for querying a " +
+		"restaurant's history, but events must survive the purge — they are the only " +
+		"remaining record of it. The id is deliberately left dangling afterwards.",
+	[TABLE.RATE_LIMITS]:
+		"Fixed-window abuse counters whose string keys may embed restaurant ids. " +
+		"Rows are ephemeral and expire with their window; not worth a scan to purge.",
+};

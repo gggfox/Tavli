@@ -13,6 +13,7 @@ import {
 	JOIN_CODE_LENGTH,
 	SESSION_PAYMENT_STATE,
 	TAB_PAYABLE_ORDER_STATUSES,
+	TAB_SETTLEABLE_ORDER_STATUSES,
 	TABLE,
 } from "./constants";
 
@@ -33,9 +34,30 @@ export function generateJoinCode(): string {
 }
 
 const PAYABLE_STATUSES = new Set<string>(TAB_PAYABLE_ORDER_STATUSES);
+const SETTLEABLE_STATUSES = new Set<string>(TAB_SETTLEABLE_ORDER_STATUSES);
 
 export function isPayableOrder(order: Doc<typeof TABLE.ORDERS>): boolean {
 	return PAYABLE_STATUSES.has(order.status) && order.paymentState !== "paid";
+}
+
+/**
+ * True when this order is on the tab but the diner hasn't received it yet, so
+ * the tab cannot be settled. A **subset** of `isPayableOrder` — these orders
+ * are still billed, they just can't be paid for yet.
+ *
+ * Composing with `isPayableOrder` is load-bearing, not tidiness:
+ * - `draft` — an open cart must never block settlement.
+ * - `cancelled` — this is the escape valve. Staff cancel un-served food and it
+ *   leaves the tab in the same instant, costing nothing (an unpaid cancel makes
+ *   no Stripe call).
+ * - `paymentState: "paid"` — the legacy per-order path writes `submitted` +
+ *   `paid` (`orders.confirmPayment`). Without this such an order would block
+ *   its tab forever, and the only remedy — cancelling it — resolves to a real
+ *   Stripe refund. That is a deadlock whose sole exit is the refund this guard
+ *   exists to prevent.
+ */
+export function blocksTabSettlement(order: Doc<typeof TABLE.ORDERS>): boolean {
+	return isPayableOrder(order) && !SETTLEABLE_STATUSES.has(order.status);
 }
 
 /**

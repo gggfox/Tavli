@@ -217,6 +217,8 @@ function TabSummaryCard({
 }>) {
 	const { t } = useTranslation();
 	const [copied, setCopied] = useState(false);
+	// The tab still bills this food; it just can't be settled until it lands.
+	const blocked = tab.unservedOrderIds.length > 0;
 
 	const handleCopy = async () => {
 		if (!tab.joinCode) return;
@@ -261,17 +263,24 @@ function TabSummaryCard({
 			)}
 			{copied && <p className="text-xs text-success">{t(OrderingKeys.TAB_CODE_COPIED)}</p>}
 
+			{/* Locked wins: while a payment is in flight there is nothing the diner
+			    can do but wait, so telling them to fetch a server would be wrong. */}
 			{tab.lockedForPayment ? (
 				<div className="flex items-center gap-2 text-xs text-muted-foreground">
 					<Lock size={14} />
 					<span>{t(OrderingKeys.TAB_LOCKED_NOTICE)}</span>
+				</div>
+			) : blocked ? (
+				<div className="flex items-center gap-2 text-xs text-muted-foreground">
+					<ChefHat size={14} />
+					<span>{t(OrderingKeys.TAB_BLOCKED_NOTICE, { count: tab.unservedOrderIds.length })}</span>
 				</div>
 			) : null}
 
 			<button
 				type="button"
 				onClick={onPayTab}
-				disabled={tab.subtotal <= 0}
+				disabled={tab.subtotal <= 0 || blocked}
 				className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold hover-btn-primary disabled:opacity-50"
 			>
 				<CreditCard size={16} />

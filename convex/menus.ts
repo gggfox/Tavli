@@ -69,6 +69,7 @@ export async function insertMenuForRestaurant(
 		aggregateType: TABLE.MENUS,
 		aggregateId: id,
 		eventType: "menus.created",
+		restaurantId: args.restaurantId,
 		payload: { name: args.name },
 		userId: args.userId,
 	});
@@ -113,6 +114,7 @@ export const updateMenu = mutation({
 			aggregateType: TABLE.MENUS,
 			aggregateId: args.menuId,
 			eventType: "menus.updated",
+			restaurantId: menu.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -159,6 +161,7 @@ export const deleteMenu = mutation({
 			aggregateType: TABLE.MENUS,
 			aggregateId: args.menuId,
 			eventType: "menus.deleted",
+			restaurantId: menu.restaurantId,
 			payload: {},
 			userId,
 		});
@@ -194,6 +197,7 @@ export const setMenuTranslation = mutation({
 			aggregateType: TABLE.MENUS,
 			aggregateId: args.menuId,
 			eventType: "menus.translation_set",
+			restaurantId: menu.restaurantId,
 			payload: { lang: args.lang },
 			userId,
 		});
@@ -300,6 +304,7 @@ export const createCategory = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: id,
 			eventType: "menuCategories.created",
+			restaurantId: args.restaurantId,
 			payload: { name: trimmedName },
 			userId,
 		});
@@ -377,6 +382,7 @@ export const createCategories = mutation({
 				aggregateType: TABLE.MENU_CATEGORIES,
 				aggregateId: id,
 				eventType: "menuCategories.created",
+				restaurantId: args.restaurantId,
 				payload: { name },
 				userId,
 			});
@@ -415,6 +421,7 @@ export const updateCategory = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: args.categoryId,
 			eventType: "menuCategories.updated",
+			restaurantId: category.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -481,6 +488,7 @@ export const setCategoryTranslation = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: args.categoryId,
 			eventType: "menuCategories.translation_set",
+			restaurantId: category.restaurantId,
 			payload: { lang: args.lang },
 			userId,
 		});

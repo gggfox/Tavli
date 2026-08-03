@@ -108,6 +108,18 @@ async function seedTabWithOrder(t: ReturnType<typeof convexTest>, dinerId = "din
 	return { restaurantId, tableId, sessionId, orderId, authed, dinerId };
 }
 
+/**
+ * Walks an order to `served` — the only status a tab payment may settle. Steps
+ * one status at a time because `VALID_TRANSITIONS` forbids skipping.
+ */
+async function serveOrder(t: ReturnType<typeof convexTest>, orderId: Id<"orders">) {
+	const staff = t.withIdentity({ subject: "owner-audit" });
+	for (const newStatus of ["preparing", "ready", "served"] as const) {
+		const [, error] = await staff.mutation(api.orders.updateStatus, { orderId, newStatus });
+		expect(error).toBeNull();
+	}
+}
+
 describe("audit: session lifecycle", () => {
 	it("records opening a tab against the diner who opened it", async () => {
 		const t = convexTest(schema, modules);
@@ -196,6 +208,7 @@ describe("audit: session lifecycle", () => {
 	it("records the payment lock, the settlement, and the system as the settling actor", async () => {
 		const t = convexTest(schema, modules);
 		const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+		await serveOrder(t, orderId);
 
 		const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 			sessionId,
@@ -236,7 +249,8 @@ describe("audit: session lifecycle", () => {
 
 	it("writes no settlement event when the webhook replays after success", async () => {
 		const t = convexTest(schema, modules);
-		const { sessionId, restaurantId } = await seedTabWithOrder(t);
+		const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+		await serveOrder(t, orderId);
 		const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 			sessionId,
 			restaurantId,
@@ -260,7 +274,8 @@ describe("audit: session lifecycle", () => {
 
 	it("records a failed tab payment with the system as actor", async () => {
 		const t = convexTest(schema, modules);
-		const { sessionId, restaurantId } = await seedTabWithOrder(t);
+		const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+		await serveOrder(t, orderId);
 		const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 			sessionId,
 			restaurantId,

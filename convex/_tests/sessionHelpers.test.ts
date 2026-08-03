@@ -7,10 +7,16 @@
  * database involvement.
  */
 import { describe, expect, it } from "vitest";
-import { decideTabReconciliation } from "../sessionHelpers";
+import type { Doc } from "../_generated/dataModel";
+import { blocksTabSettlement, decideTabReconciliation } from "../sessionHelpers";
 
 const MINUTE = 60 * 1000;
 const ALERT_AGE_MS = 30 * MINUTE;
+
+/** Only the two fields `blocksTabSettlement` reads. */
+function orderLike(status: string, paymentState = "unpaid"): Doc<"orders"> {
+	return { status, paymentState } as unknown as Doc<"orders">;
+}
 
 describe("decideTabReconciliation", () => {
 	it("settles when the PaymentIntent has succeeded (dropped webhook)", () => {
@@ -99,5 +105,39 @@ describe("decideTabReconciliation", () => {
 				alertAgeMs: ALERT_AGE_MS,
 			})
 		).toBe("alert");
+	});
+});
+
+describe("blocksTabSettlement", () => {
+	it("does not block a served order — the only settleable status", () => {
+		expect(blocksTabSettlement(orderLike("served"))).toBe(false);
+	});
+
+	it("blocks every payable order the diner hasn't received yet", () => {
+		for (const status of ["submitted", "preparing", "ready"]) {
+			expect(blocksTabSettlement(orderLike(status))).toBe(true);
+		}
+	});
+
+	it("does not block a draft order", () => {
+		// An open cart was never sent to the kitchen, so it is neither billed nor
+		// a reason the diner can't settle what they have already eaten.
+		expect(blocksTabSettlement(orderLike("draft"))).toBe(false);
+	});
+
+	it("does not block a cancelled order — this is the escape valve", () => {
+		// Staff cancelling un-served food is how a blocked tab gets unblocked. The
+		// order leaves the tab in the same instant, and costs nothing: an unpaid
+		// cancel makes no Stripe call.
+		expect(blocksTabSettlement(orderLike("cancelled"))).toBe(false);
+	});
+
+	it("does not block an already-paid order left in a pre-served status", () => {
+		// The legacy per-order path writes exactly this shape
+		// (`orders.confirmPayment`: status `submitted`, paymentState `paid`).
+		// Blocking here would deadlock the tab, and the only way out — cancelling
+		// the order — resolves to a real Stripe refund, which is the outcome this
+		// whole guard exists to prevent.
+		expect(blocksTabSettlement(orderLike("submitted", "paid"))).toBe(false);
 	});
 });

@@ -91,6 +91,7 @@ export const batchInsertMenuCategories = mutation({
 				aggregateType: TABLE.MENUS,
 				aggregateId: menuId,
 				eventType: "menus.created",
+				restaurantId: args.restaurantId,
 				payload: { name: args.newMenuName, source: "menu_import" },
 				userId,
 			});
@@ -133,6 +134,7 @@ export const batchInsertMenuCategories = mutation({
 					aggregateType: TABLE.MENU_CATEGORIES,
 					aggregateId: categoryId,
 					eventType: "menuCategories.created",
+					restaurantId: args.restaurantId,
 					payload: { name: extractedCat.name, source: "menu_import" },
 					userId,
 				});
@@ -164,6 +166,7 @@ export const batchInsertMenuCategories = mutation({
 					aggregateType: TABLE.MENU_ITEMS,
 					aggregateId: itemId,
 					eventType: "menuItems.created",
+					restaurantId: args.restaurantId,
 					payload: {
 						name: extractedItem.name,
 						prepStation: DEFAULT_PREP_STATION,

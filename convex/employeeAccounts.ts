@@ -91,6 +91,7 @@ export const createEmployeeAccount = mutation({
 			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
 			aggregateId: employeeAccountId,
 			eventType: "employeeAccounts.created",
+			restaurantId: args.restaurantId,
 			payload: {
 				restaurantId: args.restaurantId,
 				memberId,
@@ -179,6 +180,7 @@ export const updateEmployeeAccount = mutation({
 			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
 			aggregateId: args.employeeAccountId,
 			eventType: "employeeAccounts.updated",
+			restaurantId: account.restaurantId,
 			payload: patch,
 			userId: actorId,
 		});
@@ -221,6 +223,7 @@ export const resetEmployeePin = mutation({
 			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
 			aggregateId: args.employeeAccountId,
 			eventType: "employeeAccounts.pinReset",
+			restaurantId: account.restaurantId,
 			payload: { resetCount: account.pinResetCount + 1 },
 			userId: actorId,
 		});
@@ -272,6 +275,7 @@ export const removeEmployeeAccount = mutation({
 			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
 			aggregateId: args.employeeAccountId,
 			eventType: "employeeAccounts.removed",
+			restaurantId: account.restaurantId,
 			payload: { memberId: memberRow?._id },
 			userId: actorId,
 		});

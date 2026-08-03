@@ -34,6 +34,7 @@ import {
 	TABLE,
 } from "./constants";
 import {
+	blocksTabSettlement,
 	generateJoinCode,
 	getPayableOrders,
 	isPayableOrder,
@@ -104,6 +105,7 @@ export const create = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: sessionId,
 			eventType: AUDIT_EVENT.SESSION_OPENED,
+			restaurantId: restaurant._id,
 			payload: { restaurantId: restaurant._id },
 			userId,
 		});
@@ -154,6 +156,7 @@ export const joinByCode = mutation({
 				aggregateType: TABLE.SESSIONS,
 				aggregateId: session._id,
 				eventType: AUDIT_EVENT.SESSION_JOINED,
+				restaurantId: restaurant._id,
 				payload: {
 					restaurantId: restaurant._id,
 					// Opener + everyone who has joined. `memberUserIds` excludes the
@@ -215,17 +218,35 @@ export const getTabSummary = query({
 			paidAt: session.paidAt ?? null,
 			subtotal: sumOrderTotals(payableOrders),
 			payableOrderIds: payableOrders.map((o) => o._id),
+			// A SUBSET of payableOrderIds, not a partition: this food is still
+			// billed, it just can't be settled until it reaches the table. Keep
+			// `subtotal` over the full payable set — the staff walkout figure and
+			// the diner's running total have to agree.
+			unservedOrderIds: payableOrders.filter(blocksTabSettlement).map((o) => o._id),
 			activePayment: toDinerVisiblePayment(activePaymentRaw),
 		};
 	},
 });
 
+/**
+ * Diner ends a tab that owes nothing (never ordered, or everything already
+ * settled). A tab with a payable balance can only leave the active state via
+ * payment (`confirmTabPayment`) or staff (`closeTabAsStaff`).
+ */
 export const close = mutation({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
 	handler: async (ctx, args) => {
 		const session = await requireOwnedActiveSession(ctx, args.sessionId);
 		if (session.lockedForPaymentAt !== undefined) {
 			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_LOCKED).toObject());
+		}
+
+		// An unpaid tab must stay active: the staff open-tabs view only lists
+		// active sessions, so a diner close here would hide a walkout from the
+		// dashboard. Even the stale sweep only flags unpaid tabs, never closes them.
+		const payableOrders = await getPayableOrders(ctx, args.sessionId);
+		if (sumOrderTotals(payableOrders) > 0) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_UNPAID).toObject());
 		}
 
 		await ctx.db.patch(args.sessionId, {
@@ -237,6 +258,7 @@ export const close = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_CLOSED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				closedBy: "diner",
@@ -271,6 +293,9 @@ export const verifyTabForPaymentInternal = internalQuery({
 		return {
 			restaurantId: session.restaurantId,
 			subtotal: sumOrderTotals(payableOrders),
+			// The action needs a decision, not identities — a tab with any
+			// un-served food cannot be charged at all.
+			unservedOrderCount: payableOrders.filter(blocksTabSettlement).length,
 			activePaymentId: session.activePaymentId ?? null,
 			lockedForPaymentAt: session.lockedForPaymentAt ?? null,
 		};
@@ -305,6 +330,20 @@ export const beginTabPayment = internalMutation({
 		// submission can't desync the charged amount from the tab.
 		const payableOrders = await getPayableOrders(ctx, args.sessionId);
 		const subtotal = sumOrderTotals(payableOrders);
+
+		// Backstop for the action-level guard in `createTabPaymentIntent`. This is
+		// the mutation that takes the lock, so enforcing it here makes "every
+		// order on a locked tab is served" a local invariant rather than one that
+		// only emerges from the lock, the amount re-check, and `served` being
+		// terminal all holding at once. The amount check below misses the one
+		// currently-reachable gap — a zero-total order submitted between the
+		// action's query and this mutation leaves the subtotal unchanged.
+		if (payableOrders.some(blocksTabSettlement)) {
+			throw fromErrorObject(
+				new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_HAS_UNSERVED_ORDERS).toObject()
+			);
+		}
+
 		if (subtotal + args.gratuityAmount !== args.amount) {
 			throw new Error("Tab balance changed, please retry");
 		}
@@ -354,6 +393,7 @@ export const beginTabPayment = internalMutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_LOCKED,
+			restaurantId: args.restaurantId,
 			payload: {
 				restaurantId: args.restaurantId,
 				paymentId,
@@ -458,6 +498,7 @@ export const confirmTabPayment = internalMutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: session._id,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_SUCCEEDED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				paymentId: payment._id,
@@ -512,6 +553,7 @@ export const failTabPayment = internalMutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: payment.sessionId,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_FAILED,
+			restaurantId: payment.restaurantId,
 			payload: {
 				restaurantId: payment.restaurantId,
 				paymentId: payment._id,
@@ -562,6 +604,7 @@ export const cancelTabPayment = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_PAYMENT_CANCELLED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				paymentId: session.activePaymentId,
@@ -584,7 +627,19 @@ export type OpenTabRow = {
 	memberCount: number;
 	tableNumber: number | null;
 	orderCount: number;
+	/**
+	 * Full payable balance — the walkout number. Deliberately NOT reduced by
+	 * `unservedOrderCount`: this is what the table owes, even if some of it can't
+	 * be settled in-app yet.
+	 */
 	unpaidTotal: number;
+	/**
+	 * Payable orders the kitchen still holds. Non-zero means the diner cannot
+	 * check out until staff serve or cancel them — without this the block is
+	 * invisible to the floor and the only escalation is the diner flagging
+	 * someone down.
+	 */
+	unservedOrderCount: number;
 	lockedForPayment: boolean;
 	paymentState: string;
 	flaggedStaleAt: number | null;
@@ -623,6 +678,7 @@ export const getOpenTabsByRestaurant = query({
 					tableNumber: table?.tableNumber ?? orderTable?.tableNumber ?? null,
 					orderCount: payableOrders.length,
 					unpaidTotal: sumOrderTotals(payableOrders),
+					unservedOrderCount: payableOrders.filter(blocksTabSettlement).length,
 					lockedForPayment: session.lockedForPaymentAt !== undefined,
 					paymentState: session.paymentState ?? SESSION_PAYMENT_STATE.UNPAID,
 					flaggedStaleAt: session.flaggedStaleAt ?? null,
@@ -685,6 +741,7 @@ export const closeTabAsStaff = mutation({
 			aggregateType: TABLE.SESSIONS,
 			aggregateId: args.sessionId,
 			eventType: AUDIT_EVENT.SESSION_CLOSED,
+			restaurantId: session.restaurantId,
 			payload: {
 				restaurantId: session.restaurantId,
 				closedBy: "staff",
@@ -748,6 +805,7 @@ export const sweepStaleOpenTabs = internalMutation({
 					aggregateType: TABLE.SESSIONS,
 					aggregateId: session._id,
 					eventType: AUDIT_EVENT.SESSION_STALE_CLOSED,
+					restaurantId: session.restaurantId,
 					payload: {
 						restaurantId: session.restaurantId,
 						startedAt: session.startedAt,
@@ -764,6 +822,7 @@ export const sweepStaleOpenTabs = internalMutation({
 					aggregateType: TABLE.SESSIONS,
 					aggregateId: session._id,
 					eventType: AUDIT_EVENT.SESSION_STALE_FLAGGED,
+					restaurantId: session.restaurantId,
 					payload: {
 						restaurantId: session.restaurantId,
 						startedAt: session.startedAt,

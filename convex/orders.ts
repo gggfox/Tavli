@@ -260,6 +260,7 @@ export const submitOrder = mutation({
 			aggregateType: TABLE.ORDERS,
 			aggregateId: args.orderId,
 			eventType: AUDIT_EVENT.ORDER_SUBMITTED,
+			restaurantId: order.restaurantId,
 			payload: {
 				sessionId: order.sessionId,
 				restaurantId: order.restaurantId,
@@ -398,6 +399,7 @@ export const confirmPayment = internalMutation({
 			aggregateType: TABLE.ORDERS,
 			aggregateId: order._id,
 			eventType: AUDIT_EVENT.ORDER_PAYMENT_CONFIRMED,
+			restaurantId: order.restaurantId,
 			payload: {
 				paymentId: payment._id,
 				restaurantId: order.restaurantId,
@@ -447,6 +449,7 @@ export const failPayment = internalMutation({
 			aggregateType: TABLE.ORDERS,
 			aggregateId: payment.orderId,
 			eventType: AUDIT_EVENT.ORDER_PAYMENT_FAILED,
+			restaurantId: payment.restaurantId,
 			payload: {
 				paymentId: payment._id,
 				amount: payment.amount,
@@ -632,6 +635,7 @@ export const updateStatus = mutation({
 			aggregateType: TABLE.ORDERS,
 			aggregateId: args.orderId,
 			eventType: AUDIT_EVENT.ORDER_STATUS_CHANGED,
+			restaurantId: order.restaurantId,
 			payload: {
 				restaurantId: order.restaurantId,
 				fromStatus: order.status,
@@ -992,6 +996,7 @@ export const cancelOrderItem = mutation({
 				aggregateType: TABLE.ORDERS,
 				aggregateId: item.orderId,
 				eventType: AUDIT_EVENT.ORDER_STATUS_CHANGED,
+				restaurantId: order.restaurantId,
 				payload: {
 					restaurantId: order.restaurantId,
 					fromStatus: order.status,

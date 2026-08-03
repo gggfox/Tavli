@@ -373,6 +373,7 @@ export const createShift = mutation({
 			aggregateType: TABLE.SHIFTS,
 			aggregateId: id,
 			eventType: "shifts.created",
+			restaurantId: args.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -454,6 +455,7 @@ export const updateShift = mutation({
 			aggregateType: TABLE.SHIFTS,
 			aggregateId: args.shiftId,
 			eventType: "shifts.updated",
+			restaurantId: shift.restaurantId,
 			payload: { ...args, detachedFromTemplate: wasLinked },
 			userId,
 		});
@@ -463,6 +465,7 @@ export const updateShift = mutation({
 				aggregateType: TABLE.SHIFTS,
 				aggregateId: args.shiftId,
 				eventType: "shifts.detached_from_template",
+				restaurantId: shift.restaurantId,
 				payload: { previousTemplateId: shift.templateId },
 				userId,
 			});
@@ -504,6 +507,7 @@ export const cancelShift = mutation({
 			aggregateType: TABLE.SHIFTS,
 			aggregateId: args.shiftId,
 			eventType: "shifts.cancelled",
+			restaurantId: shift.restaurantId,
 			payload: { previousTemplateId: shift.templateId },
 			userId,
 		});
@@ -513,6 +517,7 @@ export const cancelShift = mutation({
 				aggregateType: TABLE.SHIFTS,
 				aggregateId: args.shiftId,
 				eventType: "shifts.detached_from_template",
+				restaurantId: shift.restaurantId,
 				payload: { previousTemplateId: shift.templateId, viaCancellation: true },
 				userId,
 			});
@@ -566,6 +571,7 @@ export const publishWeek = mutation({
 			aggregateType: TABLE.SHIFTS,
 			aggregateId: args.restaurantId,
 			eventType: "shifts.published_week",
+			restaurantId: args.restaurantId,
 			payload: {
 				restaurantId: args.restaurantId,
 				weekStartMs: args.weekStartMs,
@@ -952,6 +958,7 @@ export const bulkClearMemberSchedules = mutation({
 			aggregateType: TABLE.SHIFTS,
 			aggregateId: args.restaurantId,
 			eventType: "shifts.bulk_cleared",
+			restaurantId: args.restaurantId,
 			payload: {
 				restaurantId: args.restaurantId,
 				memberIds: args.memberIds,

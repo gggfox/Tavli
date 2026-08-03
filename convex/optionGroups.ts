@@ -55,6 +55,7 @@ export const createGroup = mutation({
 			aggregateType: TABLE.OPTION_GROUPS,
 			aggregateId: id,
 			eventType: "optionGroups.created",
+			restaurantId: args.restaurantId,
 			payload: { name: args.name },
 			userId,
 		});
@@ -97,6 +98,7 @@ export const updateGroup = mutation({
 			aggregateType: TABLE.OPTION_GROUPS,
 			aggregateId: args.groupId,
 			eventType: "optionGroups.updated",
+			restaurantId: group.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -134,6 +136,7 @@ export const deleteGroup = mutation({
 			aggregateType: TABLE.OPTION_GROUPS,
 			aggregateId: args.groupId,
 			eventType: "optionGroups.deleted",
+			restaurantId: group.restaurantId,
 			payload: {},
 			userId,
 		});
@@ -217,6 +220,7 @@ export const createOption = mutation({
 			aggregateType: TABLE.OPTIONS,
 			aggregateId: id,
 			eventType: "options.created",
+			restaurantId: args.restaurantId,
 			payload: { name: args.name },
 			userId,
 		});
@@ -255,6 +259,7 @@ export const updateOption = mutation({
 			aggregateType: TABLE.OPTIONS,
 			aggregateId: args.optionId,
 			eventType: "options.updated",
+			restaurantId: option.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -280,6 +285,7 @@ export const deleteOption = mutation({
 			aggregateType: TABLE.OPTIONS,
 			aggregateId: args.optionId,
 			eventType: "options.deleted",
+			restaurantId: option.restaurantId,
 			payload: {},
 			userId,
 		});

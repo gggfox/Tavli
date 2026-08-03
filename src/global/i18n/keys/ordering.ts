@@ -100,6 +100,10 @@ export const OrderingKeys = {
 	TAB_SHARE_CODE_LABEL: "ordering.tab.shareCodeLabel",
 	TAB_CODE_COPIED: "ordering.tab.codeCopied",
 	TAB_LOCKED_NOTICE: "ordering.tab.lockedNotice",
+	// Settlement is blocked until every order has reached the table.
+	TAB_BLOCKED_NOTICE: "ordering.tab.blockedNotice",
+	TAB_BLOCKED_HEADING: "ordering.tab.blockedHeading",
+	TAB_BLOCKED_BODY: "ordering.tab.blockedBody",
 	TAB_PAY_CTA: "ordering.tab.payCta",
 	TAB_JOIN_HEADING: "ordering.tab.joinHeading",
 	TAB_JOIN_PLACEHOLDER: "ordering.tab.joinPlaceholder",

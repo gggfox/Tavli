@@ -221,6 +221,7 @@ async function cancelLinkedFutureScheduledShifts(
 			aggregateType: TABLE.SHIFTS,
 			aggregateId: s._id,
 			eventType: "shifts.cancelled",
+			restaurantId: s.restaurantId,
 			payload: { reason: args.reason, viaTemplateId: args.templateId },
 			userId: args.actorId,
 		});
@@ -318,6 +319,7 @@ export const createShiftTemplate = mutation({
 				aggregateType: TABLE.SHIFT_TEMPLATES,
 				aggregateId: id,
 				eventType: "shiftTemplates.created",
+				restaurantId: args.restaurantId,
 				payload: { ...args, eagerMaterializedCount: inserted },
 				userId,
 			});
@@ -406,6 +408,7 @@ export const updateShiftTemplate = mutation({
 			aggregateType: TABLE.SHIFT_TEMPLATES,
 			aggregateId: args.templateId,
 			eventType: "shiftTemplates.updated",
+			restaurantId: template.restaurantId,
 			payload: { ...args, cancelledCount: cancelled, rematerializedCount: inserted },
 			userId,
 		});
@@ -454,6 +457,7 @@ export const deactivateShiftTemplate = mutation({
 			aggregateType: TABLE.SHIFT_TEMPLATES,
 			aggregateId: args.templateId,
 			eventType: "shiftTemplates.deactivated",
+			restaurantId: template.restaurantId,
 			payload: { cancelledCount },
 			userId,
 		});
