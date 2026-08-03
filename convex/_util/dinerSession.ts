@@ -106,4 +106,9 @@ export const DINER_SESSION_ERRORS = {
 	TAB_EMPTY: "ERROR_TAB_EMPTY",
 	/** Tab still owes money — settle via checkout or have staff close it. */
 	TAB_UNPAID: "ERROR_TAB_UNPAID",
+	/**
+	 * Tab still holds food the kitchen hasn't delivered. Staff must serve it or
+	 * cancel it before the tab can be settled — see `blocksTabSettlement`.
+	 */
+	TAB_HAS_UNSERVED_ORDERS: "ERROR_TAB_HAS_UNSERVED_ORDERS",
 } as const;

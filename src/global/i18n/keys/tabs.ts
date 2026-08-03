@@ -15,6 +15,8 @@ export const TabsKeys = {
 	OPENED_AT: "tabs.openedAt",
 	STALE_BADGE: "tabs.staleBadge",
 	LOCKED_BADGE: "tabs.lockedBadge",
+	/** Why this table can't check out: the kitchen still holds N orders. */
+	UNSERVED_BADGE: "tabs.unservedBadge",
 	CLOSE_TAB: "tabs.closeTab",
 	CLOSE_TAB_CONFIRM: "tabs.closeTabConfirm",
 	CLOSE_FAILED: "tabs.closeFailed",

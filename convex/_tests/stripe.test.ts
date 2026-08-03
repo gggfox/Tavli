@@ -974,4 +974,114 @@ describe("stripe actions", () => {
 			});
 		});
 	});
+
+	describe("createTabPaymentIntent — settlement blocking", () => {
+		/** An open tab holding one order at `status`, ready for checkout. */
+		async function seedTabAtStatus(
+			t: ReturnType<typeof convexTest>,
+			args: { restaurantId: Id<"restaurants">; status: string; totalAmount: number }
+		) {
+			let sessionId: Id<"sessions">;
+			await t.run(async (ctx) => {
+				const tableId = await ctx.db.insert("tables", {
+					restaurantId: args.restaurantId,
+					tableNumber: 3,
+					isActive: true,
+					createdAt: Date.now(),
+				});
+				sessionId = await ctx.db.insert("sessions", {
+					restaurantId: args.restaurantId,
+					tableId,
+					userId: "diner-checkout",
+					status: "active",
+					startedAt: Date.now(),
+				});
+				await ctx.db.insert("orders", {
+					sessionId,
+					restaurantId: args.restaurantId,
+					tableId,
+					status: args.status,
+					totalAmount: args.totalAmount,
+					paymentState: "unpaid",
+					submittedAt: Date.now(),
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+			return {
+				sessionId: sessionId!,
+				diner: t.withIdentity({ subject: "diner-checkout" }),
+			};
+		}
+
+		async function seedPayableRestaurant(t: ReturnType<typeof convexTest>) {
+			const organizationId = await seedOrganization(t);
+			return seedRestaurant(t, {
+				ownerId: "owner-checkout",
+				organizationId,
+				stripeAccountId: "acct_checkout",
+				stripeOnboardingComplete: true,
+			});
+		}
+
+		it("refuses to charge a tab holding food the kitchen hasn't delivered", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedPayableRestaurant(t);
+			const { sessionId, diner } = await seedTabAtStatus(t, {
+				restaurantId,
+				status: "preparing",
+				totalAmount: 1800,
+			});
+
+			await expect(
+				diner.action(api.stripe.createTabPaymentIntent, { sessionId, tipAmount: 0 })
+			).rejects.toThrow(/ERROR_TAB_HAS_UNSERVED_ORDERS/);
+
+			// The point of the whole ticket: no charge exists, so there is nothing
+			// to refund when this order is cancelled.
+			expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+		});
+
+		it("creates the intent once every order has been served", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedPayableRestaurant(t);
+			const { sessionId, diner } = await seedTabAtStatus(t, {
+				restaurantId,
+				status: "served",
+				totalAmount: 1800,
+			});
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_served_tab",
+				client_secret: "cs_served_tab",
+			});
+
+			const result = await diner.action(api.stripe.createTabPaymentIntent, {
+				sessionId,
+				tipAmount: 200,
+			});
+
+			expect(result.clientSecret).toBe("cs_served_tab");
+			expect(mockStripeClient.paymentIntents.create).toHaveBeenCalledWith(
+				expect.objectContaining({ amount: 2000 }),
+				expect.anything()
+			);
+		});
+
+		it("still reports an empty tab as empty rather than blocked", async () => {
+			// Pins the check ordering: TAB_EMPTY wins at subtotal 0, matching the
+			// frontend, which short-circuits to its empty state on `subtotal <= 0`.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedPayableRestaurant(t);
+			const { sessionId, diner } = await seedTabAtStatus(t, {
+				restaurantId,
+				status: "preparing",
+				totalAmount: 0,
+			});
+
+			await expect(
+				diner.action(api.stripe.createTabPaymentIntent, { sessionId, tipAmount: 0 })
+			).rejects.toThrow(/ERROR_TAB_EMPTY/);
+			expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+		});
+	});
 });

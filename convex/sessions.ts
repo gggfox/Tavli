@@ -34,6 +34,7 @@ import {
 	TABLE,
 } from "./constants";
 import {
+	blocksTabSettlement,
 	generateJoinCode,
 	getPayableOrders,
 	isPayableOrder,
@@ -217,6 +218,11 @@ export const getTabSummary = query({
 			paidAt: session.paidAt ?? null,
 			subtotal: sumOrderTotals(payableOrders),
 			payableOrderIds: payableOrders.map((o) => o._id),
+			// A SUBSET of payableOrderIds, not a partition: this food is still
+			// billed, it just can't be settled until it reaches the table. Keep
+			// `subtotal` over the full payable set — the staff walkout figure and
+			// the diner's running total have to agree.
+			unservedOrderIds: payableOrders.filter(blocksTabSettlement).map((o) => o._id),
 			activePayment: toDinerVisiblePayment(activePaymentRaw),
 		};
 	},
@@ -287,6 +293,9 @@ export const verifyTabForPaymentInternal = internalQuery({
 		return {
 			restaurantId: session.restaurantId,
 			subtotal: sumOrderTotals(payableOrders),
+			// The action needs a decision, not identities — a tab with any
+			// un-served food cannot be charged at all.
+			unservedOrderCount: payableOrders.filter(blocksTabSettlement).length,
 			activePaymentId: session.activePaymentId ?? null,
 			lockedForPaymentAt: session.lockedForPaymentAt ?? null,
 		};
@@ -321,6 +330,20 @@ export const beginTabPayment = internalMutation({
 		// submission can't desync the charged amount from the tab.
 		const payableOrders = await getPayableOrders(ctx, args.sessionId);
 		const subtotal = sumOrderTotals(payableOrders);
+
+		// Backstop for the action-level guard in `createTabPaymentIntent`. This is
+		// the mutation that takes the lock, so enforcing it here makes "every
+		// order on a locked tab is served" a local invariant rather than one that
+		// only emerges from the lock, the amount re-check, and `served` being
+		// terminal all holding at once. The amount check below misses the one
+		// currently-reachable gap — a zero-total order submitted between the
+		// action's query and this mutation leaves the subtotal unchanged.
+		if (payableOrders.some(blocksTabSettlement)) {
+			throw fromErrorObject(
+				new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_HAS_UNSERVED_ORDERS).toObject()
+			);
+		}
+
 		if (subtotal + args.gratuityAmount !== args.amount) {
 			throw new Error("Tab balance changed, please retry");
 		}
@@ -604,7 +627,19 @@ export type OpenTabRow = {
 	memberCount: number;
 	tableNumber: number | null;
 	orderCount: number;
+	/**
+	 * Full payable balance — the walkout number. Deliberately NOT reduced by
+	 * `unservedOrderCount`: this is what the table owes, even if some of it can't
+	 * be settled in-app yet.
+	 */
 	unpaidTotal: number;
+	/**
+	 * Payable orders the kitchen still holds. Non-zero means the diner cannot
+	 * check out until staff serve or cancel them — without this the block is
+	 * invisible to the floor and the only escalation is the diner flagging
+	 * someone down.
+	 */
+	unservedOrderCount: number;
 	lockedForPayment: boolean;
 	paymentState: string;
 	flaggedStaleAt: number | null;
@@ -643,6 +678,7 @@ export const getOpenTabsByRestaurant = query({
 					tableNumber: table?.tableNumber ?? orderTable?.tableNumber ?? null,
 					orderCount: payableOrders.length,
 					unpaidTotal: sumOrderTotals(payableOrders),
+					unservedOrderCount: payableOrders.filter(blocksTabSettlement).length,
 					lockedForPayment: session.lockedForPaymentAt !== undefined,
 					paymentState: session.paymentState ?? SESSION_PAYMENT_STATE.UNPAID,
 					flaggedStaleAt: session.flaggedStaleAt ?? null,
