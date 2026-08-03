@@ -181,6 +181,21 @@ export type SessionPaymentState =
  */
 export const TAB_PAYABLE_ORDER_STATUSES = ["submitted", "preparing", "ready", "served"] as const;
 
+/**
+ * Order statuses a tab payment is allowed to settle. Everything else on the
+ * tab is billed but blocks checkout until staff serve it or cancel it.
+ *
+ * Deliberately an **allowlist**. Settling food the diner never received is the
+ * only way a Stripe refund happens on the tab path (`served` is terminal in
+ * `VALID_TRANSITIONS`, so delivered food can never be cancelled), and refunds
+ * are fronted by the platform balance. A blocklist would silently permit a
+ * newly-added status to be settled — the money-losing direction. The
+ * `satisfies` clause makes "settleable but not payable" a compile error.
+ */
+export const TAB_SETTLEABLE_ORDER_STATUSES = [ORDER_STATUS.SERVED] as const satisfies ReadonlyArray<
+	(typeof TAB_PAYABLE_ORDER_STATUSES)[number]
+>;
+
 /** Alphabet for session join codes: no 0/O/1/I lookalikes. */
 export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;

@@ -1027,6 +1027,23 @@ export const createTabPaymentIntent = action({
 			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_EMPTY).toObject());
 		}
 
+		// A tab may only be settled once every order on it has been served —
+		// paying for food that never arrives is the only thing that produces a
+		// Stripe refund here, and refunds come out of the platform balance. The
+		// remedy is for staff to serve the order or cancel it; a cancelled order
+		// leaves the tab for free.
+		//
+		// Placed after TAB_EMPTY so the two agree with the frontend, which
+		// short-circuits to the empty state on `subtotal <= 0`. Placed before the
+		// reuse-existing-intent branch below, which returns early — a guard after
+		// it would be bypassable by construction. Also means a blocked tab never
+		// constructs a Stripe client or makes a network call.
+		if (tab.unservedOrderCount > 0) {
+			throw fromErrorObject(
+				new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_HAS_UNSERVED_ORDERS).toObject()
+			);
+		}
+
 		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getRestaurantInternal,
 			{ restaurantId: tab.restaurantId }
