@@ -27,11 +27,15 @@ Proposed → Accepted → [Deprecated | Superseded]
 
 ## ADR Index
 
-| ADR                                   | Title                                                   | Status     | Date       |
-| ------------------------------------- | ------------------------------------------------------- | ---------- | ---------- |
-| [001](./001-effect-ts-integration.md) | Effect.ts Integration Between TanStack Start and Convex | Deprecated | 2025-12-14 |
-| [002](./002-workos-authentication.md) | WorkOS as Authentication Provider                       | Accepted   | 2025-12-21 |
-| [003](./003-convex-backend.md)        | Convex as Backend-as-a-Service                          | Accepted   | 2025-12-21 |
+| ADR                                                    | Title                                                              | Status     | Date       |
+| ------------------------------------------------------ | ------------------------------------------------------------------ | ---------- | ---------- |
+| [001](./001-effect-ts-integration.md)                  | Effect.ts Integration Between TanStack Start and Convex            | Deprecated | 2025-12-14 |
+| [002](./002-workos-authentication.md)                  | WorkOS as Authentication Provider                                  | Accepted   | 2025-12-21 |
+| [003](./003-convex-backend.md)                         | Convex as Backend-as-a-Service                                     | Accepted   | 2025-12-21 |
+| [004](./004-workos-convex-tanstack-integration.md)     | WorkOS + Convex + TanStack Start Integration                       | Accepted   | 2025-12-23 |
+| [005](./005-menu-item-prep-station.md)                 | Menu item prep station and per-station ready timestamps            | Accepted   | 2026-05-15 |
+| [006](./006-managed-employee-accounts.md)              | Managed employee accounts and shared session identity              | Accepted   | 2026-05-17 |
+| [007](./007-audit-events-survive-purge-without-pii.md) | Audit events survive the restaurant purge — personal data does not | Accepted   | 2026-08-01 |
 
 ## Conventions
 

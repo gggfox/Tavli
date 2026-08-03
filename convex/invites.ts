@@ -240,7 +240,8 @@ export const createInvitation = mutation({
 			aggregateType: TABLE.INVITATIONS,
 			aggregateId: id,
 			eventType: "invitations.created",
-			payload: { email: args.email, role: args.role },
+			// The email lives on the invitation row, not the event (ADR 007).
+			payload: { role: args.role },
 			userId: actorId,
 		});
 

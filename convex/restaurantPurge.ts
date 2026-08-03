@@ -1,13 +1,21 @@
 /**
  * Hard delete (cascade) for restaurants past soft-delete retention.
  * Invoked by cron; `purgeRestaurantInternal` is for tests (skips due-date check).
+ *
+ * `allEvents` is deliberately exempt: the audit trail survives the purge, but
+ * personal data inside it does not — see ADR 007 for the retention policy.
  */
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
-import { appendAuditEvent } from "./_util/audit";
-import { AUDIT_SYSTEM_USER_ID, INVITATION_STATUS, TABLE } from "./constants";
+import { appendAuditEvent, redactAuditEventPersonalData } from "./_util/audit";
+import {
+	AUDIT_SYSTEM_USER_ID,
+	EMPLOYEE_ACCOUNT_PII_PAYLOAD_FIELDS,
+	INVITATION_STATUS,
+	TABLE,
+} from "./constants";
 
 const PURGE_BATCH_SIZE = 2;
 
@@ -92,6 +100,24 @@ export async function hardDeleteRestaurantDataTyped(
 		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
 		.collect();
 	for (const m of members) await ctx.db.delete(m._id);
+
+	// Employee accounts are the restaurant's PII core: legal names, PIN hashes,
+	// face photos. Their historical audit events survive on purpose (allEvents
+	// is purge-exempt), so scrub the name fields legacy payloads carried before
+	// deleting the rows (ADR 007).
+	const employeeAccounts = await ctx.db
+		.query(TABLE.EMPLOYEE_ACCOUNTS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const account of employeeAccounts) {
+		await redactAuditEventPersonalData(ctx, {
+			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
+			aggregateId: account._id,
+			fields: EMPLOYEE_ACCOUNT_PII_PAYLOAD_FIELDS,
+		});
+		if (account.photoStorageId) await ctx.storage.delete(account.photoStorageId);
+		await ctx.db.delete(account._id);
+	}
 
 	const menus = await ctx.db
 		.query(TABLE.MENUS)

@@ -91,11 +91,10 @@ export const createEmployeeAccount = mutation({
 			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
 			aggregateId: employeeAccountId,
 			eventType: "employeeAccounts.created",
+			// No name fields: events outlive the restaurant purge (ADR 007).
 			payload: {
 				restaurantId: args.restaurantId,
 				memberId,
-				firstName: args.firstName.trim(),
-				paternalLastname: args.paternalLastname.trim(),
 			},
 			userId: actorId,
 		});
@@ -179,7 +178,8 @@ export const updateEmployeeAccount = mutation({
 			aggregateType: TABLE.EMPLOYEE_ACCOUNTS,
 			aggregateId: args.employeeAccountId,
 			eventType: "employeeAccounts.updated",
-			payload: patch,
+			// Field names only — the values are personal data (ADR 007).
+			payload: { updatedFields: Object.keys(patch) },
 			userId: actorId,
 		});
 

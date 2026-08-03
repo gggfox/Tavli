@@ -1093,6 +1093,9 @@ export default defineSchema({
 		timestamp: v.number(),
 		idempotencyKey: v.optional(v.string()),
 		createdAt: v.number(),
+		// Set when a purge scrubbed personal data out of `payload` (ADR 007).
+		// The one sanctioned break in this table's append-only discipline.
+		piiRedactedAt: v.optional(v.number()),
 	})
 		.index("by_event_type", ["eventType"])
 		.index("by_aggregate", ["aggregateType", "aggregateId"])

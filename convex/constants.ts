@@ -523,5 +523,25 @@ export const AUDIT_EVENT = {
 
 export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
 
+/**
+ * `allEvents` payloads must not carry direct personal data (names, emails,
+ * phone numbers) — reference the aggregate by id instead (ADR 007). The events
+ * table survives the restaurant hard purge, so anything personal written into
+ * a payload would outlive the row the purge deletes for data-retention reasons.
+ */
+
+/** Replaces personal values redacted out of legacy event payloads. */
+export const AUDIT_PAYLOAD_REDACTED = "[REDACTED]";
+
+/**
+ * Payload fields the restaurant purge scrubs from historical
+ * `employeeAccounts.*` events (written before ADR 007 stopped emitting them).
+ */
+export const EMPLOYEE_ACCOUNT_PII_PAYLOAD_FIELDS = [
+	"firstName",
+	"paternalLastname",
+	"maternalLastname",
+] as const;
+
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

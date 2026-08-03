@@ -120,6 +120,37 @@ describe("invites createInvitation", () => {
 		});
 	});
 
+	it("audits the creation without the invitee email in the payload (ADR 007)", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId } = await seedOrgAndRestaurants(t);
+		await seedUserRole(t, { userId: "admin1", roles: [USER_ROLES.ADMIN] });
+		const authed = t.withIdentity({ subject: "admin1" });
+
+		const [id, error] = await authed.mutation(api.invites.createInvitation, {
+			organizationId: orgId,
+			email: "audit-check@example.com",
+			role: USER_ROLES.OWNER,
+			restaurantIds: [],
+		});
+		expect(error).toBeNull();
+
+		const events = await t.run(async (ctx) =>
+			ctx.db
+				.query("allEvents")
+				.withIndex("by_aggregate", (q) =>
+					q.eq("aggregateType", "invitations").eq("aggregateId", String(id))
+				)
+				.collect()
+		);
+		expect(events).toHaveLength(1);
+		expect(events[0].payload).toEqual({ role: USER_ROLES.OWNER });
+		expect(JSON.stringify(events[0])).not.toContain("audit-check@example.com");
+
+		await t.finishAllScheduledFunctions(() => {
+			vi.runAllTimers();
+		});
+	});
+
 	it("denies org owner inviting another org owner", async () => {
 		const t = convexTest(schema, modules);
 		const { orgId } = await seedOrgAndRestaurants(t);
