@@ -66,7 +66,8 @@ an order's own payment fields (`paymentState`, `paidAt`) are the
 legacy per-order payment path. `served` is terminal — a served order
 cannot be cancelled — and it is the only status a tab payment may
 settle (see **Session**). Cancelling an un-served order removes it from
-the tab at no cost; it was never paid for.
+the tab at no cost; it was never paid for — as does **86**'ing its last
+remaining line, which cancels the order.
 _Avoid_: ticket, check, transaction, "the unit a diner pays for" (that
 is the tab).
 
@@ -78,10 +79,37 @@ from the source `MenuItem` at query time. See ADR 005.
 
 **Mark station ready**:
 The action a station's staff take to confirm their portion of an
-`Order` is done, stamping `kitchenReadyAt` or `barReadyAt`. When every
-applicable station has been stamped, the `Order`'s overall `status`
-flips to `ready`.
-_Avoid_: bump, complete.
+`Order` has left the station — those items go to the table immediately,
+without waiting for the other station. Stamps `kitchenReadyAt` or
+`barReadyAt`; when every applicable station has been stamped, the
+`Order`'s overall `status` flips to `ready`. On that station's own
+dashboard the `Station ticket` then bumps, with a short undo window.
+_Avoid_: complete. Say "mark bar ready" for the action — _bumping_ is
+what happens to the ticket afterwards, not another name for this.
+
+**Station ticket**:
+One station's portion of an `Order`, as shown on that station's
+dashboard when exactly one station is selected: only that station's
+live items, and only the actions it can take on them. A projection
+rendered at read time — there is no such document, and the `Order`
+remains the unit of payment, cancellation, and history. See ADR 007.
+_Avoid_: sub-order, chit, split order.
+
+**Bump**:
+What a `Station ticket` does when its station marks ready: it leaves
+that station's rail so the rail shows only work still to do. A short
+undo window can put it back.
+_Avoid_: clear, close (those suggest the `Order` itself ended).
+
+**86**:
+Staff cancelling a single `OrderItem` because it can't be made — the
+kitchen is out of an ingredient, the bar is out of a bottle. Stamps
+`cancelledAt` / `cancelledBy`; the line stays visible but leaves the
+`Order`'s `totalAmount`, so the diner is billed less at settle. When
+every line is 86'd, the `Order` becomes `cancelled`. Only possible
+while the round is unpaid — a paid order needs a whole-order cancel and
+refund instead.
+_Avoid_: void, remove, delete (the line is kept, not erased).
 
 ### Employee management
 
@@ -209,10 +237,14 @@ that are already active.
   an **OrderItem** references one **MenuItem** by id (live lookup for
   `prepStation`, snapshot for everything else).
 - An **Order** is "ready" when every **PrepStation** that has at least one
-  **OrderItem** in that order has its `*ReadyAt` timestamp set.
+  non-86'd **OrderItem** in that order has its `*ReadyAt` timestamp set.
 - A **Payment** settles either one **Session** — the tab payment covering
   every payable **Order** on it (primary flow) — or one **Order**
   (legacy per-order flow). Exactly one of the two, never both.
+- An 86'd **OrderItem** contributes nothing to its **Order**'s
+  `totalAmount`, and so nothing to the tab balance.
+- A **Station ticket** is derived from one **Order** and one
+  **PrepStation** — it is never stored.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one
   **ShiftRole**. Two of those roles (`bartender`, `kitchen`) share their
   literal value with the two **PrepStations**.

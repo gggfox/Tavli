@@ -252,7 +252,8 @@ export async function loadSessionsOverlapping(
  * Loads the `orderItems` of every non-cancelled order whose timestamp falls in
  * `[from, to)`. Used by the per-dish-value and items-by-category widgets, which
  * aggregate at the line-item level. Cancelled orders are excluded so they don't
- * inflate quantity / revenue.
+ * inflate quantity / revenue, and so are individually 86'd lines — they were
+ * never made and never billed.
  */
 export async function loadOrderItemsInRange(
 	ctx: AnalyticsCtx,
@@ -267,7 +268,7 @@ export async function loadOrderItemsInRange(
 			.query(TABLE.ORDER_ITEMS)
 			.withIndex("by_order", (q) => q.eq("orderId", order._id))
 			.collect();
-		out.push(...items);
+		out.push(...items.filter((item) => item.cancelledAt === undefined));
 	}
 	return out;
 }

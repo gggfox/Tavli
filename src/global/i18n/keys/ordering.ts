@@ -66,6 +66,7 @@ export const OrderingKeys = {
 	ORDER_STATUS_DAY_NUMBER: "ordering.orderStatus.dayNumber",
 	ORDER_STATUS_CANCELLED: "ordering.orderStatus.cancelled",
 	ORDER_STATUS_ITEMS: "ordering.orderStatus.items",
+	ORDER_ITEM_UNAVAILABLE: "ordering.orderStatus.itemUnavailable",
 	ORDER_STATUS_SUMMARY: "ordering.orderStatus.summary",
 	ORDER_STATUS_ORDER_MORE: "ordering.orderStatus.orderMore",
 	ORDER_STATUS_STEP_PLACED: "ordering.orderStatus.stepPlaced",

@@ -72,21 +72,30 @@ export function resolvePrepStation(
 	return menuItem?.prepStation ?? DEFAULT_PREP_STATION;
 }
 
+/** A line that has been 86'd is no longer prepared, billed, or counted. */
+export function isCancelledOrderItem(item: { cancelledAt?: number }): boolean {
+	return item.cancelledAt !== undefined;
+}
+
 /**
  * Compute the set of prep stations that are "applicable" to an order — i.e.
- * the distinct stations across all of its order items. Used by
+ * the distinct stations across its non-cancelled order items. Used by
  * `markStationReady` to decide when to flip `Order.status` to "ready"
  * (when every applicable station has a non-null `*ReadyAt`).
+ *
+ * Cancelled lines drop out so a station whose every item was 86'd stops
+ * blocking the order: the remaining stations alone can complete it.
  *
  * Items whose menuItem can no longer be loaded (soft-deleted) fall back to
  * the default station so they never silently block the order from completing.
  */
 export function getApplicableStations(
-	orderItems: ReadonlyArray<{ menuItemId: Id<"menuItems"> }>,
+	orderItems: ReadonlyArray<{ menuItemId: Id<"menuItems">; cancelledAt?: number }>,
 	menuItemStationMap: ReadonlyMap<Id<"menuItems"> | string, PrepStation>
 ): Set<PrepStation> {
 	const stations = new Set<PrepStation>();
 	for (const item of orderItems) {
+		if (isCancelledOrderItem(item)) continue;
 		stations.add(menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION);
 	}
 	return stations;
@@ -107,7 +116,13 @@ export async function recalculateTotal(ctx: { db: DatabaseWriter }, orderId: Id<
 		.withIndex("by_order", (q) => q.eq("orderId", orderId))
 		.collect();
 
-	const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
+	// 86'd lines stay on the order but leave the bill, so this is also the
+	// recompute `cancelOrderItem` runs. Draft orders never carry cancelled
+	// items, so the draft callers are unaffected.
+	const total = items.reduce(
+		(sum, item) => (isCancelledOrderItem(item) ? sum : sum + item.lineTotal),
+		0
+	);
 
 	await ctx.db.patch(orderId, { totalAmount: total, updatedAt: Date.now() });
 }

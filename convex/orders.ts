@@ -741,7 +741,11 @@ export const getActiveOrdersByRestaurant = query({
 			}))
 			.filter((order) => {
 				if (!stationFilter) return true;
-				return order.items.some((it) => stationFilter.has(it.prepStation));
+				// An order whose only items at this station were 86'd has nothing
+				// left for it to prepare, so it drops out of that station's queue.
+				return order.items.some(
+					(it) => it.cancelledAt === undefined && stationFilter.has(it.prepStation)
+				);
 			});
 
 		return [enrichedOrders, null];
@@ -845,6 +849,196 @@ export const markStationReady = mutation({
 		});
 
 		return [args.orderId, null];
+	},
+});
+
+/**
+ * Undo a `markStationReady` stamp. On the station's own dashboard, stamping
+ * bumps the station ticket off the rail, so a mistap makes work disappear —
+ * this is the escape hatch behind the dashboard's short undo window.
+ *
+ * Clears the station's `*ReadyAt` and, when that stamp had been the one to
+ * flip the whole order to "ready", walks the status back to "preparing".
+ * `VALID_TRANSITIONS` stays forward-only on purpose: this backwards step is
+ * encapsulated here, exactly like `markStationReady` encapsulates the forward
+ * flip. Like that mutation, it writes no audit event.
+ */
+export const unmarkStationReady = mutation({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		station: PREP_STATION_VALIDATOR,
+	},
+	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const order = await ctx.db.get(args.orderId);
+		if (!order) return [null, new NotFoundError("Order not found").toObject()];
+
+		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		if (restaurantError) return [null, restaurantError];
+
+		// Once served or cancelled the order has left the stations' hands, and a
+		// stamp on a still-`submitted` order is unreachable from the ticket UI.
+		if (order.status !== "preparing" && order.status !== "ready") {
+			throw new UserInputValidationError({
+				fields: [
+					{
+						field: "station",
+						message: `Cannot undo ${args.station} ready while order is ${order.status}`,
+					},
+				],
+			});
+		}
+
+		const stationStamp =
+			args.station === PREP_STATION.KITCHEN ? order.kitchenReadyAt : order.barReadyAt;
+		if (stationStamp === undefined) {
+			throw new UserInputValidationError({
+				fields: [{ field: "station", message: `Order is not marked ready at the ${args.station}` }],
+			});
+		}
+
+		const now = Date.now();
+		const clearedStamp =
+			args.station === PREP_STATION.KITCHEN
+				? { kitchenReadyAt: undefined }
+				: { barReadyAt: undefined };
+
+		await ctx.db.patch(args.orderId, {
+			...clearedStamp,
+			// The order can only be "ready" here because every applicable station
+			// was stamped; removing one stamp makes that false again.
+			...(order.status === "ready" && { status: "preparing" as const }),
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		return [args.orderId, null];
+	},
+});
+
+/**
+ * "86" a single line: the kitchen is out of an ingredient, the bar is out of a
+ * bottle. Cancelling the whole round because one station cannot make one item
+ * is the wrong blast radius — this drops just that line.
+ *
+ * Scope in this version is deliberately the tab flow, where nothing has been
+ * charged yet: the line leaves `Order.totalAmount`, so the diner is simply
+ * billed less when the tab settles. Once a payment is in flight or settled,
+ * returning money needs a partial refund, so 86 refuses and the whole-order
+ * cancel-and-refund path stays the tool for that.
+ *
+ * No station-level authorization exists in this codebase by design (ADR 005:
+ * the station filter is a UI convenience, not an access boundary), so any
+ * restaurant staff may 86 any line. `cancelledBy`/`cancelledAt` is the trail.
+ */
+export const cancelOrderItem = mutation({
+	args: { orderItemId: v.id(TABLE.ORDER_ITEMS) },
+	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const item = await ctx.db.get(args.orderItemId);
+		if (!item) return [null, new NotFoundError("Order item not found").toObject()];
+
+		const order = await ctx.db.get(item.orderId);
+		if (!order) return [null, new NotFoundError("Order not found").toObject()];
+
+		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		if (restaurantError) return [null, restaurantError];
+
+		if (item.cancelledAt !== undefined) {
+			throw new ConflictError("ERROR_ORDER_ITEM_NOT_CANCELLABLE");
+		}
+
+		// Drafts belong to the diner (`removeItem`), and once an order is ready
+		// the food is plated — comping that is a manager's whole-order call.
+		if (order.status !== "submitted" && order.status !== "preparing") {
+			throw new ConflictError("ERROR_ORDER_ITEM_NOT_CANCELLABLE");
+		}
+
+		const paymentState = order.paymentState;
+		const isUnpaid =
+			paymentState === undefined ||
+			paymentState === ORDER_PAYMENT_STATE.UNPAID ||
+			paymentState === ORDER_PAYMENT_STATE.FAILED;
+		if (!isUnpaid) {
+			throw new ConflictError("ERROR_ORDER_ITEM_CANCEL_PAID");
+		}
+
+		// A tab locked for payment has a balance snapshot in flight; shifting the
+		// total underneath it would charge the diner an amount nobody agreed to.
+		const session = await ctx.db.get(order.sessionId);
+		if (session?.lockedForPaymentAt !== undefined) {
+			throw new ConflictError("ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED");
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(args.orderItemId, { cancelledAt: now, cancelledBy: userId });
+		await recalculateTotal(ctx, item.orderId);
+
+		const remainingItems = (
+			await ctx.db
+				.query(TABLE.ORDER_ITEMS)
+				.withIndex("by_order", (q) => q.eq("orderId", item.orderId))
+				.collect()
+		).filter((it) => it.cancelledAt === undefined);
+
+		if (remainingItems.length === 0) {
+			await ctx.db.patch(item.orderId, {
+				status: "cancelled",
+				updatedAt: now,
+				updatedBy: userId,
+			});
+
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.ORDERS,
+				aggregateId: item.orderId,
+				eventType: AUDIT_EVENT.ORDER_STATUS_CHANGED,
+				restaurantId: order.restaurantId,
+				payload: {
+					restaurantId: order.restaurantId,
+					fromStatus: order.status,
+					toStatus: "cancelled",
+					// 86 is blocked on paid orders, so there is never money to return.
+					refundEligible: false,
+					totalAmount: 0,
+				},
+				userId,
+			});
+
+			return [args.orderItemId, null];
+		}
+
+		// 86'ing the last line of the one station that had not stamped yet leaves
+		// nobody to flip the order — the other stations are already done. Without
+		// this the order would sit in "preparing" forever.
+		if (order.status === "preparing") {
+			const menuItemIds = Array.from(new Set(remainingItems.map((it) => it.menuItemId)));
+			const menuItemDocs = await Promise.all(menuItemIds.map((id) => ctx.db.get(id)));
+			const menuItemStationMap = new Map<string, PrepStation>();
+			for (const doc of menuItemDocs) {
+				if (doc) menuItemStationMap.set(doc._id, resolvePrepStation(doc));
+			}
+
+			const applicable = getApplicableStations(remainingItems, menuItemStationMap);
+			const everyStationDone = Array.from(applicable).every((station) =>
+				station === PREP_STATION.KITCHEN
+					? order.kitchenReadyAt !== undefined
+					: order.barReadyAt !== undefined
+			);
+
+			if (everyStationDone) {
+				await ctx.db.patch(item.orderId, {
+					status: "ready",
+					updatedAt: now,
+					updatedBy: userId,
+				});
+			}
+		}
+
+		return [args.orderItemId, null];
 	},
 });
 
@@ -979,9 +1173,14 @@ export const internalListOrdersForExportYear = internalQuery({
 					.collect();
 
 				const ITEM_PREVIEW_LIMIT = 5;
+				// 86'd lines stay in the export, flagged: the diner ordered them and
+				// may ask about them, but `totalAmountCents` already excludes them.
 				const preview = items
 					.slice(0, ITEM_PREVIEW_LIMIT)
-					.map((it) => `${it.quantity}× ${it.menuItemName}`);
+					.map(
+						(it) =>
+							`${it.quantity}× ${it.menuItemName}${it.cancelledAt !== undefined ? " (cancelled)" : ""}`
+					);
 				const remaining = items.length - preview.length;
 				const itemsSummary =
 					remaining > 0 ? `${preview.join(", ")}, +${remaining} more` : preview.join(", ");

@@ -280,6 +280,61 @@ describe("analytics.itemsByCategory", () => {
 			expect.objectContaining({ categoryName: "Mains", revenue: 100 }),
 		]);
 	});
+
+	it("excludes 86'd lines from category revenue", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
+		const serverMemberId = await seedMembership(t, {
+			userId: "server1",
+			restaurantId,
+			orgId,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+		});
+		const { range } = await seedScenario(t, restaurantId, serverMemberId);
+
+		await t.run(async (ctx) => {
+			const soda = (await ctx.db.query("orderItems").collect()).find(
+				(it) => it.menuItemName === "Soda"
+			);
+			await ctx.db.patch(soda!._id, { cancelledAt: Date.now(), cancelledBy: "server1" });
+		});
+
+		const staff = t.withIdentity({ subject: "server1" });
+		const [rows] = await staff.query(api.analytics.itemsByCategory.compute, {
+			restaurantId,
+			range,
+		});
+		expect(rows).toEqual([expect.objectContaining({ categoryName: "Mains", revenue: 100 })]);
+	});
+});
+
+describe("analytics.topMenuItems", () => {
+	it("excludes 86'd lines from the ranking", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
+		const serverMemberId = await seedMembership(t, {
+			userId: "server1",
+			restaurantId,
+			orgId,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+		});
+		const { range } = await seedScenario(t, restaurantId, serverMemberId);
+
+		await t.run(async (ctx) => {
+			const soda = (await ctx.db.query("orderItems").collect()).find(
+				(it) => it.menuItemName === "Soda"
+			);
+			await ctx.db.patch(soda!._id, { cancelledAt: Date.now(), cancelledBy: "server1" });
+		});
+
+		const staff = t.withIdentity({ subject: "server1" });
+		const [rows] = await staff.query(api.analytics.topMenuItems.compute, {
+			restaurantId,
+			range,
+			limit: 10,
+		});
+		expect(rows).toEqual([expect.objectContaining({ menuItemName: "Burger", quantity: 2 })]);
+	});
 });
 
 describe("analytics.activeOrders", () => {

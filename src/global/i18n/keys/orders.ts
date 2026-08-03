@@ -46,11 +46,22 @@ export const OrdersKeys = {
 	CARD_PAID: "orders.card.paid",
 	CARD_MORE_ITEMS: "orders.card.moreItems",
 
+	TICKET_ORDER_NOTE: "orders.ticket.orderNote",
+	TICKET_ITEM_CANCELLED_BADGE: "orders.ticket.itemCancelledBadge",
+	ACTION_CANCEL_ITEM: "orders.ticket.cancelItem",
+	CANCEL_ITEM_PROMPT: "orders.ticket.cancelItemPrompt",
+	ACTION_CONFIRM_CANCEL_ITEM: "orders.ticket.confirmCancelItem",
+	ACTION_KEEP_ITEM: "orders.ticket.keepItem",
+	TICKET_UNDO_READY: "orders.ticket.undoReady",
+	TICKET_MARKED_READY: "orders.ticket.markedReady",
+	TICKET_EMPTY_ALL_DONE: "orders.ticket.emptyAllDone",
+
 	EMPTY_NO_FILTERS: "orders.empty.noFilters",
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
 
 	ARIA_FILTER: "orders.aria.filter",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",
+	ARIA_CANCEL_ITEM: "orders.aria.cancelItem",
 	ARIA_FULL_ORDER: "orders.aria.fullOrder",
 	ARIA_LOADING: "orders.aria.loading",
 } as const;

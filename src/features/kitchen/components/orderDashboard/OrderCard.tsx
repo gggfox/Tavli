@@ -178,6 +178,13 @@ export function OrderCard({
 						</span>
 					</span>
 				</div>
+
+				{order.specialInstructions && (
+					<p className="mt-1.5 text-xs italic text-warning">
+						<span className="font-medium not-italic">{t(OrdersKeys.TICKET_ORDER_NOTE)}: </span>
+						{order.specialInstructions}
+					</p>
+				)}
 			</div>
 
 			<div className="p-4 space-y-2 flex-1 min-h-0 max-h-72 overflow-y-auto">

@@ -227,6 +227,113 @@ async function seedOptionGroupAndOption(
 	return { optionGroupId: optionGroupId!, optionId: optionId! };
 }
 
+async function seedOwnerRole(
+	t: ReturnType<typeof convexTest>,
+	organizationId: Id<"organizations">
+) {
+	await t.run(async (ctx) => {
+		await ctx.db.insert("userRoles", {
+			userId: "owner1",
+			roles: ["owner"],
+			organizationId,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
+}
+
+/**
+ * Seeds a staff-authenticated context over a submitted round with one kitchen
+ * line and one bar line — the shape the station-ticket and 86 flows care about.
+ */
+async function seedMixedStationOrder(
+	t: ReturnType<typeof convexTest>,
+	overrides: {
+		status?: "submitted" | "preparing" | "ready" | "served" | "cancelled";
+		paymentState?: "unpaid" | "pending" | "processing" | "paid";
+		lockedForPaymentAt?: number;
+		kitchenReadyAt?: number;
+		barReadyAt?: number;
+	} = {}
+) {
+	const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
+	const kitchenMenuItemId = await seedMenuItemWithStation(t, restaurantId, {
+		name: "Tacos",
+		prepStation: "kitchen",
+		basePrice: 800,
+	});
+	const barMenuItemId = await seedMenuItemWithStation(t, restaurantId, {
+		name: "Margarita",
+		prepStation: "bar",
+		basePrice: 600,
+	});
+	await seedOwnerRole(t, organizationId);
+
+	let sessionId: Id<"sessions">;
+	let orderId: Id<"orders">;
+	let kitchenItemId: Id<"orderItems">;
+	let barItemId: Id<"orderItems">;
+
+	await t.run(async (ctx) => {
+		const now = Date.now();
+		sessionId = await ctx.db.insert("sessions", {
+			restaurantId,
+			tableId,
+			userId: "diner1",
+			status: "active",
+			startedAt: now,
+			...(overrides.lockedForPaymentAt !== undefined && {
+				lockedForPaymentAt: overrides.lockedForPaymentAt,
+			}),
+		});
+		orderId = await ctx.db.insert("orders", {
+			sessionId,
+			restaurantId,
+			tableId,
+			status: overrides.status ?? "preparing",
+			totalAmount: 1400,
+			...(overrides.paymentState !== undefined && { paymentState: overrides.paymentState }),
+			...(overrides.kitchenReadyAt !== undefined && { kitchenReadyAt: overrides.kitchenReadyAt }),
+			...(overrides.barReadyAt !== undefined && { barReadyAt: overrides.barReadyAt }),
+			createdAt: now,
+			updatedAt: now,
+		});
+		kitchenItemId = await ctx.db.insert("orderItems", {
+			orderId,
+			menuItemId: kitchenMenuItemId,
+			menuItemName: "Tacos",
+			quantity: 1,
+			unitPrice: 800,
+			selectedOptions: [],
+			lineTotal: 800,
+			createdAt: now,
+		});
+		barItemId = await ctx.db.insert("orderItems", {
+			orderId,
+			menuItemId: barMenuItemId,
+			menuItemName: "Margarita",
+			quantity: 1,
+			unitPrice: 600,
+			selectedOptions: [],
+			lineTotal: 600,
+			createdAt: now,
+		});
+	});
+
+	return {
+		organizationId,
+		restaurantId,
+		tableId,
+		sessionId: sessionId!,
+		orderId: orderId!,
+		kitchenItemId: kitchenItemId!,
+		barItemId: barItemId!,
+		kitchenMenuItemId,
+		barMenuItemId,
+		staff: t.withIdentity({ subject: "owner1" }),
+	};
+}
+
 describe("orders", () => {
 	describe("createDraft", () => {
 		it("creates a draft order for an active session", async () => {
@@ -1296,6 +1403,33 @@ describe("orders", () => {
 			expect(stations).toEqual(new Set(["kitchen", "bar"]));
 		});
 
+		it("drops an order from a station's queue once that station's only line is cancelled", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, orderId, barItemId, staff } = await seedMixedStationOrder(t, {
+				status: "submitted",
+			});
+
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId });
+
+			const [barOrders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				prepStations: ["bar"],
+			});
+			if (!Array.isArray(barOrders)) throw new Error("Expected array");
+			expect(barOrders).toHaveLength(0);
+
+			// The kitchen still has work, and the cancelled line rides along so the
+			// dashboard can show it struck through.
+			const [kitchenOrders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				prepStations: ["kitchen"],
+			});
+			if (!Array.isArray(kitchenOrders)) throw new Error("Expected array");
+			expect(kitchenOrders.map((o) => o._id)).toEqual([orderId]);
+			const cancelled = kitchenOrders[0]?.items.find((it) => it._id === barItemId);
+			expect(cancelled?.cancelledAt).toBeTypeOf("number");
+		});
+
 		it("falls back to kitchen for items whose menuItem has been deleted", async () => {
 			const t = convexTest(schema, modules);
 			const { organizationId, restaurantId, tableId } = await seedRestaurantAndSession(t);
@@ -1647,6 +1781,219 @@ describe("orders", () => {
 					station: "bar",
 				})
 			).rejects.toThrow(/Cannot mark bar ready while order is ready/);
+		});
+
+		it("ignores cancelled items when computing applicable stations", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, barItemId, staff } = await seedMixedStationOrder(t);
+
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId });
+
+			// The bar has nothing left to make, so it can no longer stamp...
+			await expect(
+				staff.mutation(api.orders.markStationReady, { orderId, station: "bar" })
+			).rejects.toThrow(/no items prepared at the bar/);
+
+			// ...and the kitchen alone now completes the order.
+			await staff.mutation(api.orders.markStationReady, { orderId, station: "kitchen" });
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("ready");
+		});
+	});
+
+	describe("unmarkStationReady", () => {
+		it("clears the station stamp while the order is still preparing", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedMixedStationOrder(t);
+
+			await staff.mutation(api.orders.markStationReady, { orderId, station: "bar" });
+			const [, error] = await staff.mutation(api.orders.unmarkStationReady, {
+				orderId,
+				station: "bar",
+			});
+			expect(error).toBeNull();
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.barReadyAt).toBeUndefined();
+			expect(order?.status).toBe("preparing");
+		});
+
+		it("reverts the order from ready back to preparing when the last stamp is undone", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedMixedStationOrder(t);
+
+			await staff.mutation(api.orders.markStationReady, { orderId, station: "bar" });
+			await staff.mutation(api.orders.markStationReady, { orderId, station: "kitchen" });
+			expect(await t.run(async (ctx) => (await ctx.db.get(orderId))?.status)).toBe("ready");
+
+			await staff.mutation(api.orders.unmarkStationReady, { orderId, station: "kitchen" });
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("preparing");
+			expect(order?.kitchenReadyAt).toBeUndefined();
+			// The other station's stamp survives — only one station undid its work.
+			expect(order?.barReadyAt).toBeTypeOf("number");
+		});
+
+		it("rejects when the station is not currently stamped", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedMixedStationOrder(t);
+
+			await expect(
+				staff.mutation(api.orders.unmarkStationReady, { orderId, station: "bar" })
+			).rejects.toThrow(/not marked ready at the bar/);
+		});
+
+		it("rejects once the order has been served", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedMixedStationOrder(t, {
+				status: "served",
+				barReadyAt: Date.now(),
+			});
+
+			await expect(
+				staff.mutation(api.orders.unmarkStationReady, { orderId, station: "bar" })
+			).rejects.toThrow(/Cannot undo bar ready while order is served/);
+		});
+
+		it("requires staff access", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId } = await seedMixedStationOrder(t, { barReadyAt: Date.now() });
+
+			const [, error] = await t
+				.withIdentity({ subject: "stranger" })
+				.mutation(api.orders.unmarkStationReady, { orderId, station: "bar" });
+			expect(error).not.toBeNull();
+		});
+	});
+
+	describe("cancelOrderItem", () => {
+		it("stamps the line, recomputes the order total, and leaves the round open", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, barItemId, staff } = await seedMixedStationOrder(t);
+
+			const [, error] = await staff.mutation(api.orders.cancelOrderItem, {
+				orderItemId: barItemId,
+			});
+			expect(error).toBeNull();
+
+			const { item, order } = await t.run(async (ctx) => ({
+				item: await ctx.db.get(barItemId),
+				order: await ctx.db.get(orderId),
+			}));
+			expect(item?.cancelledAt).toBeTypeOf("number");
+			expect(item?.cancelledBy).toBe("owner1");
+			// 1400 seeded minus the 600 margarita.
+			expect(order?.totalAmount).toBe(800);
+			expect(order?.status).toBe("preparing");
+		});
+
+		it("cancels the order and audits the transition when the last line is 86'd", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, kitchenItemId, barItemId, staff } = await seedMixedStationOrder(t);
+
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId });
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: kitchenItemId });
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("cancelled");
+			expect(order?.totalAmount).toBe(0);
+
+			const events = await t.run(async (ctx) =>
+				ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("aggregateId"), orderId))
+					.collect()
+			);
+			const statusEvent = events.find((e) => e.eventType === "orders.statusChanged");
+			expect(statusEvent).toBeDefined();
+			expect(statusEvent?.payload).toMatchObject({
+				toStatus: "cancelled",
+				refundEligible: false,
+				totalAmount: 0,
+			});
+		});
+
+		it("completes a preparing order when 86 removes the last unstamped station's line", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, kitchenItemId, staff } = await seedMixedStationOrder(t);
+
+			// Bar is done and its drinks already went to the table; the kitchen then
+			// runs out. Nothing else would ever flip this order.
+			await staff.mutation(api.orders.markStationReady, { orderId, station: "bar" });
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: kitchenItemId });
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("ready");
+			expect(order?.totalAmount).toBe(600);
+		});
+
+		it("rejects a line that was already cancelled", async () => {
+			const t = convexTest(schema, modules);
+			const { barItemId, staff } = await seedMixedStationOrder(t);
+
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId });
+			await expect(
+				staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_NOT_CANCELLABLE/);
+		});
+
+		it("rejects once the order is ready", async () => {
+			const t = convexTest(schema, modules);
+			const { barItemId, staff } = await seedMixedStationOrder(t, { status: "ready" });
+
+			await expect(
+				staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_NOT_CANCELLABLE/);
+		});
+
+		it("rejects when the order is paid or its payment is in flight", async () => {
+			const t = convexTest(schema, modules);
+			const paid = await seedMixedStationOrder(t, { paymentState: "paid" });
+			await expect(
+				paid.staff.mutation(api.orders.cancelOrderItem, { orderItemId: paid.barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+
+			const t2 = convexTest(schema, modules);
+			const pending = await seedMixedStationOrder(t2, { paymentState: "pending" });
+			await expect(
+				pending.staff.mutation(api.orders.cancelOrderItem, { orderItemId: pending.barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+		});
+
+		it("rejects while the tab is locked for payment", async () => {
+			const t = convexTest(schema, modules);
+			const { barItemId, staff } = await seedMixedStationOrder(t, {
+				lockedForPaymentAt: Date.now(),
+			});
+
+			await expect(
+				staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED/);
+		});
+
+		it("requires staff access", async () => {
+			const t = convexTest(schema, modules);
+			const { barItemId } = await seedMixedStationOrder(t);
+
+			const [, error] = await t
+				.withIdentity({ subject: "stranger" })
+				.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId });
+			expect(error).not.toBeNull();
+		});
+
+		it("drops the cancelled line from the tab balance", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, barItemId, staff } = await seedMixedStationOrder(t, {
+				status: "submitted",
+			});
+
+			await staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId });
+
+			const summary = await t
+				.withIdentity({ subject: "diner1" })
+				.query(api.sessions.getTabSummary, { sessionId });
+			expect(summary?.subtotal).toBe(800);
 		});
 	});
 

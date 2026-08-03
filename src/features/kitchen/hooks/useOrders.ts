@@ -30,6 +30,8 @@ export function useOrders(
 
 	const updateStatus = useConvexMutate(api.orders.updateStatus);
 	const markStationReady = useConvexMutate(api.orders.markStationReady);
+	const unmarkStationReady = useConvexMutate(api.orders.unmarkStationReady);
+	const cancelOrderItem = useConvexMutate(api.orders.cancelOrderItem);
 
 	// Cancelling is an *action*, not a mutation — it calls Stripe — so it can't
 	// go through `useConvexMutate`, which is typed for mutations.
@@ -43,6 +45,8 @@ export function useOrders(
 		error,
 		updateStatus: updateStatus.mutateAsync,
 		markStationReady: markStationReady.mutateAsync,
+		unmarkStationReady: unmarkStationReady.mutateAsync,
+		cancelOrderItem: cancelOrderItem.mutateAsync,
 		cancelOrderAndRefund: cancelOrder.mutateAsync,
 	};
 }
