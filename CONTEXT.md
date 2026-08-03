@@ -48,6 +48,13 @@ the session, and one payment settles the whole tab (subtotal + tip):
 either in-app via Stripe or in person by staff (`settledBy`). The
 session carries the tab's `paymentState` and is locked against new or
 edited orders while a tab payment is in flight.
+A tab is **settleable** only once every order on it has been `served`.
+Un-served orders are still billed — they count toward the balance staff
+see — but they block checkout, and they leave the tab by **staff
+cancellation**, never by partial payment. That keeps the diner from
+paying for food that never arrives, which is the only thing that
+produces a Stripe refund here (refunds come out of the platform
+balance, not the restaurant's).
 _Avoid_: check, bill (the payable whole is the **tab**).
 
 **Order**:
@@ -56,7 +63,10 @@ submitted → preparing → ready → served`, or `cancelled`) and
 per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
 Orders are normally settled together by their session's tab payment;
 an order's own payment fields (`paymentState`, `paidAt`) are the
-legacy per-order payment path.
+legacy per-order payment path. `served` is terminal — a served order
+cannot be cancelled — and it is the only status a tab payment may
+settle (see **Session**). Cancelling an un-served order removes it from
+the tab at no cost; it was never paid for.
 _Avoid_: ticket, check, transaction, "the unit a diner pays for" (that
 is the tab).
 
