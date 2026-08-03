@@ -21,7 +21,11 @@ export type PaymentsOrder = Doc<"orders"> & {
  */
 export function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOrder }>) {
 	const { t, i18n } = useTranslation();
-	const itemCount = order.items.reduce((n, item) => n + item.quantity, 0);
+	// A paid order can still carry lines that were 86'd while the tab was open.
+	// They were never charged, so listing them here would not add up to the
+	// total right below.
+	const chargedItems = order.items.filter((item) => item.cancelledAt === undefined);
+	const itemCount = chargedItems.reduce((n, item) => n + item.quantity, 0);
 	const label = t(CommonKeys.ITEMS_COUNT, { count: itemCount });
 
 	return (
@@ -29,7 +33,7 @@ export function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOr
 			content={
 				<div className="space-y-2">
 					<ul className="space-y-1 list-none p-0 m-0">
-						{order.items.map((item) => (
+						{chargedItems.map((item) => (
 							<li
 								key={item._id}
 								className="flex items-baseline justify-between gap-3 text-foreground"

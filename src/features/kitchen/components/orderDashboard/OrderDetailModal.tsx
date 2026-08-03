@@ -89,6 +89,13 @@ export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDeta
 						</span>
 					</div>
 
+					{fullOrder.specialInstructions && (
+						<p className="px-6 pt-3 text-xs italic text-warning">
+							<span className="font-medium not-italic">{t(OrdersKeys.TICKET_ORDER_NOTE)}: </span>
+							{fullOrder.specialInstructions}
+						</p>
+					)}
+
 					<div className="px-6 py-4 space-y-2 max-h-[60vh] overflow-y-auto">
 						{fullOrder.items.map((item) => (
 							<OrderItemRow key={item._id} item={item} />

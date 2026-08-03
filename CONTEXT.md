@@ -42,13 +42,17 @@ _Avoid_: type, kind, beverage category, meal category.
 ### Ordering
 
 **Session**:
-An open service period at a `Table`. Many `Orders` may be added to a
-single session before it closes.
+An open service period at a `Table`, also called a tab. Many `Orders`
+may be added to a single session before it closes, and the session is
+what gets settled — in-app via Stripe, or in person by staff.
+_Avoid_: bill (the amount owed is the session's balance, not a thing).
 
 **Order**:
-The unit a diner pays for. Holds a `status` (`draft → submitted →
-preparing → ready → served`, or `cancelled`), a single `paymentState`,
-and per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
+One round a diner sends to the stations. Holds a `status` (`draft →
+submitted → preparing → ready → served`, or `cancelled`) and per-station
+completion timestamps (`kitchenReadyAt`, `barReadyAt`). Its
+`totalAmount` contributes to the tab balance; the per-order payment
+fields are the legacy path from before tabs.
 _Avoid_: ticket, check, transaction.
 
 **Order item**:
@@ -59,10 +63,37 @@ from the source `MenuItem` at query time. See ADR 005.
 
 **Mark station ready**:
 The action a station's staff take to confirm their portion of an
-`Order` is done, stamping `kitchenReadyAt` or `barReadyAt`. When every
-applicable station has been stamped, the `Order`'s overall `status`
-flips to `ready`.
-_Avoid_: bump, complete.
+`Order` has left the station — those items go to the table immediately,
+without waiting for the other station. Stamps `kitchenReadyAt` or
+`barReadyAt`; when every applicable station has been stamped, the
+`Order`'s overall `status` flips to `ready`. On that station's own
+dashboard the `Station ticket` then bumps, with a short undo window.
+_Avoid_: complete. Say "mark bar ready" for the action — _bumping_ is
+what happens to the ticket afterwards, not another name for this.
+
+**Station ticket**:
+One station's portion of an `Order`, as shown on that station's
+dashboard when exactly one station is selected: only that station's
+live items, and only the actions it can take on them. A projection
+rendered at read time — there is no such document, and the `Order`
+remains the unit of payment, cancellation, and history. See ADR 007.
+_Avoid_: sub-order, chit, split order.
+
+**Bump**:
+What a `Station ticket` does when its station marks ready: it leaves
+that station's rail so the rail shows only work still to do. A short
+undo window can put it back.
+_Avoid_: clear, close (those suggest the `Order` itself ended).
+
+**86**:
+Staff cancelling a single `OrderItem` because it can't be made — the
+kitchen is out of an ingredient, the bar is out of a bottle. Stamps
+`cancelledAt` / `cancelledBy`; the line stays visible but leaves the
+`Order`'s `totalAmount`, so the diner is billed less at settle. When
+every line is 86'd, the `Order` becomes `cancelled`. Only possible
+while the round is unpaid — a paid order needs a whole-order cancel and
+refund instead.
+_Avoid_: void, remove, delete (the line is kept, not erased).
 
 ### Employee management
 
@@ -190,7 +221,12 @@ that are already active.
   an **OrderItem** references one **MenuItem** by id (live lookup for
   `prepStation`, snapshot for everything else).
 - An **Order** is "ready" when every **PrepStation** that has at least one
-  **OrderItem** in that order has its `*ReadyAt` timestamp set.
+  non-86'd **OrderItem** in that order has its `*ReadyAt` timestamp set.
+- A **Session** is what gets paid; an **Order**'s `totalAmount` is its
+  contribution to that balance, and an 86'd **OrderItem** contributes
+  nothing.
+- A **Station ticket** is derived from one **Order** and one
+  **PrepStation** — it is never stored.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one
   **ShiftRole**. Two of those roles (`bartender`, `kitchen`) share their
   literal value with the two **PrepStations**.

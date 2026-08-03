@@ -18,6 +18,8 @@ import { useOrders } from "../../hooks/useOrders";
 import { OrderCard } from "./OrderCard";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 import { OrderDetailModal } from "./OrderDetailModal";
+import { StationTicketCard } from "./StationTicketCard";
+import { deriveStationTickets, type StationTicket } from "./stationTickets";
 import { ALL_PREP_STATIONS, STATION_CONFIG } from "./stationConfig";
 import {
 	ALL_STATUSES,
@@ -26,6 +28,7 @@ import {
 	STATUS_CONFIG,
 	STATUS_SORT_PRIORITY,
 	type DashboardOrder,
+	type DashboardOrderItem,
 } from "./statusConfig";
 
 /**
@@ -34,6 +37,13 @@ import {
  * persisted user setting. See ADR 005.
  */
 const DEFAULT_PREP_STATION_FILTERS: OrderDashboardPrepStationFilter[] = [];
+
+/**
+ * How long the undo strip stays offering to put a bumped ticket back. Long
+ * enough to catch a mistap, short enough that it never lingers into the next
+ * ticket's work.
+ */
+const UNDO_WINDOW_MS = 10_000;
 
 interface OrderDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -58,6 +68,16 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	);
 	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
 	const [now, setNow] = useState(() => Date.now());
+	const [cancelItemPendingId, setCancelItemPendingId] = useState<string | null>(null);
+	const [cancelItemError, setCancelItemError] = useState<string | null>(null);
+	// Single slot: a second bump replaces the pending undo rather than stacking
+	// strips. The window is short and the latest bump is the one a mistap is
+	// most likely to belong to.
+	const [undoStamp, setUndoStamp] = useState<{
+		orderId: DashboardOrder["_id"];
+		station: OrderDashboardPrepStationFilter;
+		orderLabel: string;
+	} | null>(null);
 
 	const [activeFilters, setActiveFilters] = useOptimisticUserSetting<OrderDashboardStatusFilter[]>({
 		serverValue: orderDashboardStatusFilters,
@@ -78,8 +98,21 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	// presence check on the server side.
 	const queryStations = activeStationFilters.length > 0 ? activeStationFilters : undefined;
 
-	const { orders, isLoading, error, updateStatus, markStationReady, cancelOrderAndRefund } =
-		useOrders(restaurantId, activeFilters, queryStations);
+	const {
+		orders,
+		isLoading,
+		error,
+		updateStatus,
+		markStationReady,
+		unmarkStationReady,
+		cancelOrderItem,
+		cancelOrderAndRefund,
+	} = useOrders(restaurantId, activeFilters, queryStations);
+
+	// Exactly one station selected → that station gets its own tickets. With no
+	// filter or both stations selected the dashboard stays the whole-order
+	// overview, where money, cross-station progress, and cancel live.
+	const ticketStation = activeStationFilters.length === 1 ? activeStationFilters[0] : null;
 
 	const handleCancelOrder = useCallback(
 		async (orderId: DashboardOrder["_id"]) => {
@@ -106,10 +139,54 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		[orders, cancelOrderAndRefund, t]
 	);
 
+	const handleCancelItem = useCallback(
+		async (orderItemId: DashboardOrderItem["_id"]) => {
+			setCancelItemPendingId(orderItemId);
+			setCancelItemError(null);
+			try {
+				const [, itemError] = await cancelOrderItem({ orderItemId });
+				if (itemError) setCancelItemError(getErrorMessage(itemError, t));
+			} catch (err) {
+				setCancelItemError(getErrorMessage(err, t));
+			} finally {
+				setCancelItemPendingId(null);
+			}
+		},
+		[cancelOrderItem, t]
+	);
+
+	// Stamping bumps the ticket off this station's rail, so the strip is the
+	// only way back to a mistapped order without clearing the station filter.
+	const handleMarkStationReadyFromTicket = useCallback(
+		async (args: { orderId: DashboardOrder["_id"]; station: OrderDashboardPrepStationFilter }) => {
+			const order = (orders as ReadonlyArray<DashboardOrder>).find((o) => o._id === args.orderId);
+			await markStationReady(args);
+			setUndoStamp({
+				orderId: args.orderId,
+				station: args.station,
+				orderLabel: order?.dailyOrderNumber?.toString() ?? args.orderId.slice(-6),
+			});
+		},
+		[markStationReady, orders]
+	);
+
+	const handleUndoStationReady = useCallback(async () => {
+		if (!undoStamp) return;
+		const { orderId, station } = undoStamp;
+		setUndoStamp(null);
+		await unmarkStationReady({ orderId, station });
+	}, [undoStamp, unmarkStationReady]);
+
 	useEffect(() => {
 		const id = setInterval(() => setNow(Date.now()), 30_000);
 		return () => clearInterval(id);
 	}, []);
+
+	useEffect(() => {
+		if (!undoStamp) return;
+		const id = setTimeout(() => setUndoStamp(null), UNDO_WINDOW_MS);
+		return () => clearTimeout(id);
+	}, [undoStamp]);
 
 	const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
 	const activeStationFilterSet = useMemo<ReadonlySet<OrderDashboardPrepStationFilter>>(
@@ -201,6 +278,34 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		]
 	);
 
+	const stationTickets = useMemo(
+		() => (ticketStation ? deriveStationTickets(sorted, ticketStation) : []),
+		[sorted, ticketStation]
+	);
+
+	const renderStationTicket = useCallback(
+		(ticket: StationTicket) => (
+			<StationTicketCard
+				ticket={ticket}
+				now={now}
+				cancelItemPendingId={cancelItemPendingId}
+				cancelItemError={cancelItemError}
+				onSelectFullOrder={setFullOrder}
+				onUpdateStatus={updateStatus}
+				onMarkStationReady={handleMarkStationReadyFromTicket}
+				onCancelItem={handleCancelItem}
+			/>
+		),
+		[
+			now,
+			cancelItemPendingId,
+			cancelItemError,
+			updateStatus,
+			handleMarkStationReadyFromTicket,
+			handleCancelItem,
+		]
+	);
+
 	return (
 		<DashboardShell
 			isLoading={isLoading}
@@ -232,7 +337,48 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				</div>
 			)}
 
-			{sorted.length === 0 ? (
+			{undoStamp && (
+				<div className="mb-3 flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-xs">
+					<span className="flex-1 text-muted-foreground">
+						{t(OrdersKeys.TICKET_MARKED_READY, {
+							station: t(STATION_CONFIG[undoStamp.station].labelKey),
+							n: undoStamp.orderLabel,
+						})}
+					</span>
+					<button
+						onClick={handleUndoStationReady}
+						className="shrink-0 rounded-lg border border-border px-3 py-1 font-medium text-foreground"
+					>
+						{t(OrdersKeys.TICKET_UNDO_READY)}
+					</button>
+				</div>
+			)}
+
+			{ticketStation ? (
+				stationTickets.length === 0 ? (
+					<EmptyState
+						icon={STATION_CONFIG[ticketStation].icon}
+						title={
+							activeFilters.length === 0
+								? t(OrdersKeys.EMPTY_NO_FILTERS)
+								: t(OrdersKeys.TICKET_EMPTY_ALL_DONE, {
+										station: t(STATION_CONFIG[ticketStation].labelKey),
+									})
+						}
+						fill
+					/>
+				) : (
+					<VirtualGrid
+						items={stationTickets}
+						// One ticket per order in single-station mode, so the order id
+						// is still a unique key.
+						getKey={(ticket) => ticket.order._id}
+						renderItem={renderStationTicket}
+						gap={16}
+						estimateRowHeight={300}
+					/>
+				)
+			) : sorted.length === 0 ? (
 				<EmptyState
 					icon={ChefHat}
 					title={

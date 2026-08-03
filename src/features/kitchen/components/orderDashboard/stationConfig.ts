@@ -8,8 +8,7 @@
  */
 import type { OrderDashboardPrepStationFilter } from "@/features";
 import { OrdersKeys } from "@/global/i18n";
-import { ChefHat, Wine } from "lucide-react";
-import type { ComponentType } from "react";
+import { ChefHat, Wine, type LucideIcon } from "lucide-react";
 
 export type DashboardPrepStation = OrderDashboardPrepStationFilter;
 
@@ -29,7 +28,7 @@ export interface StationVisual {
 export interface StationConfig {
 	readonly labelKey: string;
 	readonly readyActionKey: string;
-	readonly icon: ComponentType<{ size?: number; className?: string }>;
+	readonly icon: LucideIcon;
 	readonly visual: StationVisual;
 }
 

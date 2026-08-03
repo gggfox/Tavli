@@ -508,6 +508,14 @@ export default defineSchema({
 		),
 		specialInstructions: v.optional(v.string()),
 		lineTotal: v.number(),
+		/**
+		 * Set by `orders.cancelOrderItem` (86). A cancelled line stays on the
+		 * order for history but is excluded from totals, station applicability,
+		 * and analytics. `undefined` means the line is live.
+		 */
+		cancelledAt: v.optional(v.number()),
+		/** Clerk subject of the staff member who 86'd the line. */
+		cancelledBy: v.optional(v.string()),
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
 

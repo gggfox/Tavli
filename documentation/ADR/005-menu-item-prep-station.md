@@ -297,6 +297,7 @@ Frontend:
 
 ## Change Log
 
-| Date       | Author     | Description     |
-| ---------- | ---------- | --------------- |
-| 2026-05-15 | Tavli team | Initial version |
+| Date       | Author     | Description                                                                                                                                                                                |
+| ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-05-15 | Tavli team | Initial version                                                                                                                                                                            |
+| 2026-08-02 | Tavli team | Single-station dashboard UX is extended by [ADR 007](./007-station-tickets-and-item-cancellation.md) — station tickets replace the tint/dim treatment when exactly one station is selected |

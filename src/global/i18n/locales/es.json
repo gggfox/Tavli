@@ -407,6 +407,17 @@
 			"moreItems_one": "+1 artículo más",
 			"moreItems_other": "+{{count}} artículos más"
 		},
+		"ticket": {
+			"orderNote": "Nota del pedido",
+			"itemCancelledBadge": "Dado de baja",
+			"cancelItem": "Dar de baja",
+			"cancelItemPrompt": "¿No se puede preparar {{name}}? Se quita de la cuenta del comensal de inmediato.",
+			"confirmCancelItem": "Confirmar baja",
+			"keepItem": "Mantener artículo",
+			"undoReady": "Deshacer",
+			"markedReady": "{{station}}: marcado listo · #{{n}}",
+			"emptyAllDone": "Todo al día — nada pendiente para {{station}}."
+		},
 		"empty": {
 			"noFilters": "Selecciona al menos un estado para ver pedidos.",
 			"noOrders": "Ningún pedido coincide con los filtros seleccionados."
@@ -415,7 +426,8 @@
 			"filter": "Filtrar pedidos por estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"fullOrder": "Detalles del pedido",
-			"loading": "Cargando pedidos"
+			"loading": "Cargando pedidos",
+			"cancelItem": "Cancelar artículo {{name}}"
 		},
 		"payment": {
 			"refundRequested": "Reembolso pendiente",
@@ -532,6 +544,9 @@
 		"ERROR_DASHBOARD_PORTFOLIO_NO_MEMBERSHIP": "No tienes acceso a ningún restaurante en este portafolio.",
 		"ERROR_EMAIL_NOT_VERIFIED": "Verifica tu correo electrónico antes de continuar.",
 		"ERROR_ORDER_NOT_CANCELLABLE": "Este pedido ya no se puede cancelar. Los pedidos servidos deben reembolsarse desde el panel de Stripe.",
+		"ERROR_ORDER_ITEM_NOT_CANCELLABLE": "Este artículo ya no se puede cancelar por separado. Usa la cancelación del pedido completo.",
+		"ERROR_ORDER_ITEM_CANCEL_PAID": "El pago de este pedido ya está en curso o completado. Cancela el pedido completo para emitir un reembolso.",
+		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "Hay un pago en curso en esta cuenta. Espera a que termine antes de quitar artículos.",
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
@@ -631,6 +646,7 @@
 			"dayNumber": "Pedido n.º {{n}}",
 			"cancelled": "Pedido cancelado",
 			"items": "Productos",
+			"itemUnavailable": "No disponible",
 			"summary": "${{total}} · {{count}} productos",
 			"orderMore": "Pedir más",
 			"stepPlaced": "Pedido realizado",

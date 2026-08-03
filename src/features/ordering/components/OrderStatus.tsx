@@ -34,6 +34,9 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	}
 
 	const currentIndex = STATUS_ORDER.indexOf(orderData.status);
+	// 86'd lines are still listed below, but the diner is neither charged for
+	// them nor waiting on them, so they do not count toward the order.
+	const liveItemCount = orderData.items.filter((item) => item.cancelledAt === undefined).length;
 
 	return (
 		<div className="flex flex-col h-full p-4 space-y-8">
@@ -49,7 +52,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 				<p className="text-sm mt-1 text-faint-foreground">
 					{t(OrderingKeys.ORDER_STATUS_SUMMARY, {
 						total: formatCents(orderData.totalAmount),
-						count: orderData.items.length,
+						count: liveItemCount,
 					})}
 				</p>
 			</div>
@@ -95,14 +98,30 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 				<h3 className="text-sm font-semibold text-foreground">
 					{t(OrderingKeys.ORDER_STATUS_ITEMS)}
 				</h3>
-				{orderData.items.map((item) => (
-					<div key={item._id} className="flex justify-between text-sm text-muted-foreground">
-						<span>
-							{item.quantity}x {item.menuItemName}
-						</span>
-						<span>${formatCents(item.lineTotal)}</span>
-					</div>
-				))}
+				{orderData.items.map((item) =>
+					// The kitchen or bar ran out. The line stays visible so the diner
+					// can see what happened to something they ordered, but it is no
+					// longer part of what they owe.
+					item.cancelledAt !== undefined ? (
+						<div
+							key={item._id}
+							className="flex justify-between text-sm text-faint-foreground"
+							style={{ opacity: 0.6 }}
+						>
+							<span className="line-through">
+								{item.quantity}x {item.menuItemName}
+							</span>
+							<span>{t(OrderingKeys.ORDER_ITEM_UNAVAILABLE)}</span>
+						</div>
+					) : (
+						<div key={item._id} className="flex justify-between text-sm text-muted-foreground">
+							<span>
+								{item.quantity}x {item.menuItemName}
+							</span>
+							<span>${formatCents(item.lineTotal)}</span>
+						</div>
+					)
+				)}
 			</div>
 
 			<button

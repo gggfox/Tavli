@@ -407,6 +407,17 @@
 			"moreItems_one": "+1 more item",
 			"moreItems_other": "+{{count}} more items"
 		},
+		"ticket": {
+			"orderNote": "Order note",
+			"itemCancelledBadge": "86'd",
+			"cancelItem": "86 item",
+			"cancelItemPrompt": "Can't make {{name}}? It comes off the diner's bill immediately.",
+			"confirmCancelItem": "Confirm 86",
+			"keepItem": "Keep item",
+			"undoReady": "Undo",
+			"markedReady": "{{station}} marked ready · #{{n}}",
+			"emptyAllDone": "All caught up — nothing waiting for the {{station}}."
+		},
 		"empty": {
 			"noFilters": "Select at least one status to view orders.",
 			"noOrders": "No orders match the selected filters."
@@ -415,7 +426,8 @@
 			"filter": "Filter orders by status",
 			"stationFilter": "Filter orders by prep station",
 			"fullOrder": "Full order details",
-			"loading": "Loading orders"
+			"loading": "Loading orders",
+			"cancelItem": "Cancel item {{name}}"
 		},
 		"payment": {
 			"refundRequested": "Refund pending",
@@ -532,6 +544,9 @@
 		"ERROR_DASHBOARD_PORTFOLIO_NO_MEMBERSHIP": "You don't have access to any restaurants in this portfolio.",
 		"ERROR_EMAIL_NOT_VERIFIED": "Please verify your email address before continuing.",
 		"ERROR_ORDER_NOT_CANCELLABLE": "This order can no longer be cancelled. Orders that have been served must be refunded from the Stripe dashboard.",
+		"ERROR_ORDER_ITEM_NOT_CANCELLABLE": "This item can no longer be cancelled on its own. Use the order-level cancel instead.",
+		"ERROR_ORDER_ITEM_CANCEL_PAID": "This order's payment is already in progress or settled. Cancel the whole order to issue a refund.",
+		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "A payment is in progress on this tab. Wait for it to finish before removing items.",
 		"ERROR_REFUND_FAILED": "The order was cancelled, but the refund did not go through. Issue it from the Stripe dashboard.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "The order was cancelled, but we could not find its payment to refund. Check the Stripe dashboard.",
 		"ERROR_REFUND_ALREADY_ISSUED": "This payment has already been fully refunded.",
@@ -631,6 +646,7 @@
 			"dayNumber": "Order #{{n}}",
 			"cancelled": "Order Cancelled",
 			"items": "Items",
+			"itemUnavailable": "Unavailable",
 			"summary": "${{total}} · {{count}} items",
 			"orderMore": "Order More",
 			"stepPlaced": "Order Placed",
