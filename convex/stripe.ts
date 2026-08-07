@@ -45,7 +45,10 @@ import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import {
+	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
+	ORDER_STATUS,
+	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PLATFORM_APPLICATION_FEE_RATE,
@@ -65,10 +68,16 @@ import {
 } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import type { AsyncReturn } from "./_shared/types";
-import { ORDER_REFUND_BLOCK_REASON, type OrderRefundBlockReason } from "./orderRefundHelpers";
+import {
+	buildLineRefundIdempotencyKey,
+	computeLineRefundAmount,
+	ORDER_REFUND_BLOCK_REASON,
+	type OrderRefundBlockReason,
+} from "./orderRefundHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
+	getOrCreateStripeCustomerId,
 	getStripeClient,
 	handleAccountStatusChange,
 	handleChargeDisputeClosed,
@@ -581,6 +590,14 @@ export const createRefund = internalAction({
 		amount: v.optional(v.number()),
 		/** Defaults to the legacy payment-scoped key. */
 		idempotencyKey: v.optional(v.string()),
+		/**
+		 * Leave `order.paymentState` alone (ADR 008 line refunds). A single 86'd
+		 * line refunds while the order keeps cooking, so flipping the order
+		 * through refund_requested → refunded here would be wrong; the caller
+		 * (`refundOrderItem`) records per-line outcome itself. Payment-level
+		 * refund fields are still maintained either way.
+		 */
+		skipOrderStatePatch: v.optional(v.boolean()),
 	},
 	handler: async (
 		ctx,
@@ -599,6 +616,7 @@ export const createRefund = internalAction({
 		if (!targetOrderId) {
 			throw new Error("Refund requires an order: payment has no orderId and none was supplied");
 		}
+		const patchOrderState = args.skipOrderStatePatch !== true;
 
 		// A partial refund leaves money on the charge, so the payment is `partial`
 		// rather than `succeeded`. This matches what the `charge.refunded` webhook
@@ -611,10 +629,12 @@ export const createRefund = internalAction({
 			refundStatus: PAYMENT_REFUND_STATUS.REQUESTED,
 			refundRequestedAt: Date.now(),
 		});
-		await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-			orderId: targetOrderId,
-			paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
-		});
+		if (patchOrderState) {
+			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId: targetOrderId,
+				paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+			});
+		}
 
 		const stripeClient = getStripeClient();
 		try {
@@ -643,12 +663,14 @@ export const createRefund = internalAction({
 				stripeRefundId: refund.id,
 				...(succeeded && { refundedAt: Date.now() }),
 			});
-			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: targetOrderId,
-				paymentState: succeeded
-					? ORDER_PAYMENT_STATE.REFUNDED
-					: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
-			});
+			if (patchOrderState) {
+				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+					orderId: targetOrderId,
+					paymentState: succeeded
+						? ORDER_PAYMENT_STATE.REFUNDED
+						: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+				});
+			}
 
 			// Stripe always echoes `amount`, but fall back rather than return
 			// `undefined` — the caller records this figure through a validated
@@ -665,10 +687,12 @@ export const createRefund = internalAction({
 				refundStatus: PAYMENT_REFUND_STATUS.FAILED,
 				failureMessage: error instanceof Error ? error.message : "Refund failed",
 			});
-			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: targetOrderId,
-				paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
-			});
+			if (patchOrderState) {
+				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+					orderId: targetOrderId,
+					paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
+				});
+			}
 			throw error;
 		}
 	},
@@ -808,20 +832,183 @@ export const cancelOrderAndRefund = action({
 	},
 });
 
+/**
+ * Refunds a single 86'd line of a **paid** order (ADR 008). Scheduled by
+ * `orders.cancelOrderItem` after it stamps the line, so the kitchen-facing
+ * cancel commits transactionally and the Stripe call happens out-of-band —
+ * mirroring the cancel-first ordering of {@link cancelOrderAndRefund}.
+ *
+ * Amount: `lineTotal + round(lineTotal × fee rate)` clamped to the payment's
+ * remaining balance; when the 86 cancelled the whole order (last live line)
+ * the **entire remaining balance** comes back instead, which structurally
+ * retires the per-order rounding residue (see `computeLineRefundAmount`).
+ * That math only holds for a fee-inclusive ADR 008 payment (kind "order",
+ * `subtotalAmount` set) covering exactly this order, so anything else — a tab
+ * payment whose balance is many orders plus the tip, a pre-fee per-order
+ * intent — is refused here even if a caller schedules it.
+ *
+ * `reverse_transfer` / `refund_application_fee` stay on via `createRefund` —
+ * correct by construction now: the fee share of every refund is genuinely the
+ * diner's money on a fee-inclusive charge.
+ *
+ * Idempotent: the order item's `refundedAt` short-circuits a replayed
+ * schedule before Stripe is reached, and the (payment, orderItem) idempotency
+ * key dedupes at Stripe below that.
+ *
+ * Order-state policy lives in `recordOrderItemRefundOutcomeInternal`: a
+ * cooking order stays `paid` (only the item + audit + payment record the
+ * refund); a last-live-line refund follows refund_requested → refunded; any
+ * failure surfaces as `refund_failed`, mirroring `cancelOrderAndRefund`.
+ */
+export const refundOrderItem = internalAction({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		orderItemId: v.id(TABLE.ORDER_ITEMS),
+		paymentId: v.id(TABLE.PAYMENTS),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		const order: Doc<"orders"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getOrderInternal,
+			{
+				orderId: args.orderId,
+			}
+		);
+		const item: Doc<"orderItems"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getOrderItemInternal,
+			{ orderItemId: args.orderItemId }
+		);
+		const payment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentInternal,
+			{ paymentId: args.paymentId }
+		);
+		if (!order || !item || !payment) {
+			console.error("[stripe.refundOrderItem] order/item/payment missing", {
+				orderId: args.orderId,
+				orderItemId: args.orderItemId,
+				paymentId: args.paymentId,
+			});
+			return;
+		}
+
+		// Idempotent no-op: this line's money already went back.
+		if (item.refundedAt !== undefined) return;
+
+		if (item.cancelledAt === undefined) {
+			console.error(
+				`[stripe.refundOrderItem] item ${args.orderItemId} is not cancelled — nothing to refund`
+			);
+			return;
+		}
+		if (payment.status !== PAYMENT_STATUS.SUCCEEDED) {
+			console.error(
+				`[stripe.refundOrderItem] payment ${args.paymentId} is ${payment.status}, not succeeded`
+			);
+			return;
+		}
+
+		// Vintage guard (defense in depth — `cancelOrderItem` refuses to schedule
+		// against legacy money): the line-refund math below is only correct for a
+		// fee-inclusive ADR 008 payment covering exactly this order. Against a
+		// legacy tab payment the fee top-up refunds money the diner never paid and
+		// the last-live-line sweep would refund every *other* order's subtotal
+		// plus the tip.
+		if (payment.kind !== PAYMENT_KIND.ORDER || payment.subtotalAmount === undefined) {
+			console.error(
+				`[stripe.refundOrderItem] payment ${args.paymentId} is not a fee-inclusive ` +
+					`order payment (kind ${payment.kind ?? "legacy"}) — refusing the line refund`
+			);
+			return;
+		}
+
+		// The scheduling mutation flips the order to "cancelled" in the same
+		// transaction when it 86'd the last live line, so the order's status is
+		// the reliable signal — no flag to drift on a replay.
+		const isLastLiveLine = order.status === "cancelled";
+
+		const amount = computeLineRefundAmount({
+			lineTotal: item.lineTotal,
+			feeRate: PLATFORM_APPLICATION_FEE_RATE,
+			paymentAmount: payment.amount,
+			paymentAmountRefunded: payment.amountRefunded,
+			isLastLiveLine,
+		});
+		if (amount <= 0) {
+			console.error(
+				`[stripe.refundOrderItem] payment ${args.paymentId} has no refundable balance ` +
+					`left for item ${args.orderItemId}`
+			);
+			return;
+		}
+
+		// The staff member who 86'd the line owns the money trail.
+		const actorUserId = item.cancelledBy ?? AUDIT_SYSTEM_USER_ID;
+
+		let refund: { refundId: string; status: string | null; amount: number };
+		try {
+			refund = await ctx.runAction(internal.stripe.createRefund, {
+				paymentId: args.paymentId,
+				orderId: args.orderId,
+				amount,
+				idempotencyKey: buildLineRefundIdempotencyKey(args.paymentId, args.orderItemId),
+				skipOrderStatePatch: true,
+			});
+		} catch (error) {
+			const failureMessage = error instanceof Error ? error.message : "Refund failed";
+			console.error(
+				"[stripe.refundOrderItem] REFUND FAILED",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe",
+					operation: "refundOrderItem",
+				})
+			);
+			await ctx.runMutation(internal.orderRefundHelpers.recordOrderItemRefundOutcomeInternal, {
+				orderId: args.orderId,
+				orderItemId: args.orderItemId,
+				succeeded: false,
+				amount,
+				isLastLiveLine,
+				userId: actorUserId,
+				failureMessage,
+			});
+			// Recorded as refund_failed — do not rethrow, or the scheduler retry
+			// would race the manual follow-up this state exists to trigger.
+			return;
+		}
+
+		await ctx.runMutation(internal.orderRefundHelpers.recordOrderItemRefundOutcomeInternal, {
+			orderId: args.orderId,
+			orderItemId: args.orderItemId,
+			succeeded: true,
+			amount: refund.amount,
+			isLastLiveLine,
+			userId: actorUserId,
+			paymentId: args.paymentId,
+			stripeRefundId: refund.refundId,
+		});
+	},
+});
+
 // =============================================================================
 // 7. Payment Intent (In-App Checkout Flow)
 // =============================================================================
 
 /**
- * Creates a PaymentIntent for the in-app order checkout flow using
- * Stripe Elements. Customers pay within the app (not via hosted checkout).
+ * Creates the pay-at-submit PaymentIntent for one order (ADR 008) — the
+ * primary payment path. The diner pays `subtotal + 12% service fee` in-app via
+ * Stripe Elements; the kitchen only sees the order once the webhook confirms
+ * the charge (`orders.confirmPayment`).
  *
- * Uses destination charges with the platform application fee
- * ({@link PLATFORM_APPLICATION_FEE_RATE}).
+ * Money model (destination charge):
+ * - `amount = order.totalAmount + round(totalAmount × PLATFORM_APPLICATION_FEE_RATE)`
+ * - `application_fee_amount` is exactly that fee — customer-borne, on top, so
+ *   the restaurant nets its full subtotal.
+ * - `on_behalf_of` the restaurant's connected account (merchant of record).
+ * - `setup_future_usage: "off_session"` saves the card on the diner's
+ *   platform-level Customer for later one-tap tips and substitution deltas.
  *
- * @deprecated TAVLI-6 moved payment to the end of the visit: the customer
- * flow now uses {@link createTabPaymentIntent} to settle the whole session
- * tab at once. Kept so in-flight per-order payments keep working.
+ * Accepts orders in `draft` (normal flow) and `awaiting_payment` (a diner who
+ * committed to cash and changed their mind). Any session member can pay for
+ * their own round — membership, not opener-ship, is the gate.
  */
 export const createPaymentIntent = action({
 	args: {
@@ -836,7 +1023,7 @@ export const createPaymentIntent = action({
 			throw fromErrorObject(new NotAuthenticatedError().toObject());
 		}
 
-		const ownedOrderId = await ctx.runQuery(internal.orders.verifyDraftOrderOwnerInternal, {
+		const ownedOrderId = await ctx.runQuery(internal.orders.verifyOrderForPaymentInternal, {
 			orderId: args.orderId,
 			userId: identity.subject,
 		});
@@ -849,7 +1036,9 @@ export const createPaymentIntent = action({
 			{ orderId: args.orderId }
 		);
 		if (!order) throw new Error("Order not found");
-		if (order.status !== "draft") throw new Error("Order is not in draft status");
+		if (order.status !== "draft" && order.status !== ORDER_STATUS.AWAITING_PAYMENT) {
+			throw new Error("Order is not payable");
+		}
 		if (order.totalAmount <= 0) throw new Error("Order total must be greater than zero");
 
 		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
@@ -860,10 +1049,17 @@ export const createPaymentIntent = action({
 			throw new Error("Restaurant is not set up for payments");
 		}
 
-		const applicationFeeAmount = Math.round(order.totalAmount * PLATFORM_APPLICATION_FEE_RATE);
+		// Integer cents throughout: the fee rounds half-up on the subtotal, and
+		// the diner's charge is the sum. `payments` rows record the split so
+		// revenue aggregates read `subtotalAmount`, never `amount` (ADR 008).
+		const subtotalAmount = order.totalAmount;
+		const feeAmount = Math.round(subtotalAmount * PLATFORM_APPLICATION_FEE_RATE);
+		const amount = subtotalAmount + feeAmount;
 		const currency = restaurant.currency.toLowerCase();
 
 		const stripeClient = getStripeClient();
+		const customerId = await getOrCreateStripeCustomerId(ctx, stripeClient, identity.subject);
+
 		const latestPayment: Doc<"payments"> | null = order.activePaymentId
 			? await ctx.runQuery(internal.stripeHelpers.getPaymentInternal, {
 					paymentId: order.activePaymentId,
@@ -871,10 +1067,13 @@ export const createPaymentIntent = action({
 			: await ctx.runQuery(internal.stripeHelpers.getLatestPaymentByOrderInternal, {
 					orderId: args.orderId,
 				});
+		// `subtotalAmount === order.totalAmount` (not `amount`): an edited order
+		// must supersede the intent, and comparing subtotals also retires any
+		// legacy fee-less processing row instead of reusing it.
 		const canReuseExistingIntent =
 			latestPayment?.status === PAYMENT_STATUS.PROCESSING &&
 			latestPayment.orderUpdatedAtSnapshot === order.updatedAt &&
-			latestPayment.amount === order.totalAmount &&
+			latestPayment.subtotalAmount === order.totalAmount &&
 			latestPayment.currency === currency &&
 			!!latestPayment.stripePaymentIntentId;
 
@@ -917,7 +1116,11 @@ export const createPaymentIntent = action({
 		const paymentId: Id<"payments"> = await ctx.runMutation(internal.stripeHelpers.createPayment, {
 			restaurantId: order.restaurantId,
 			orderId: args.orderId,
-			amount: order.totalAmount,
+			amount,
+			subtotalAmount,
+			feeAmount,
+			kind: PAYMENT_KIND.ORDER,
+			paidByUserId: identity.subject,
 			currency,
 			status: PAYMENT_STATUS.PENDING,
 			refundStatus: PAYMENT_REFUND_STATUS.NONE,
@@ -934,16 +1137,23 @@ export const createPaymentIntent = action({
 		try {
 			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
 				{
-					amount: order.totalAmount,
+					amount,
 					currency,
-					application_fee_amount: applicationFeeAmount,
+					customer: customerId,
+					setup_future_usage: "off_session",
+					application_fee_amount: feeAmount,
 					transfer_data: {
 						destination: restaurant.stripeAccountId,
 					},
+					on_behalf_of: restaurant.stripeAccountId,
 					metadata: {
 						orderId: args.orderId,
 						restaurantId: order.restaurantId,
+						sessionId: order.sessionId,
 						paymentId,
+						kind: PAYMENT_KIND.ORDER,
+						subtotalAmount: String(subtotalAmount),
+						feeAmount: String(feeAmount),
 					},
 				},
 				{

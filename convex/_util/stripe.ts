@@ -18,7 +18,7 @@
 import Stripe from "stripe";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { USER_ROLES } from "../constants";
+import { PAYMENT_KIND, USER_ROLES } from "../constants";
 import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
 import { redactExternalId } from "../_shared/integrationLogging";
 import {
@@ -110,6 +110,44 @@ export async function requireStripeRestaurantAccess(
 }
 
 /**
+ * Resolves the platform-level Stripe Customer for a Clerk user, creating it on
+ * first charge (ADR 008). The Customer is what `setup_future_usage:
+ * "off_session"` attaches the card to, enabling one-tap tips and substitution
+ * deltas later.
+ *
+ * Race-safe twice over: the `customer:${userId}` idempotency key makes two
+ * concurrent `customers.create` calls return the same Customer, and
+ * `stripeCustomers.upsertInternal` lets the first stored row win — callers
+ * must use the id this function returns, not one they created.
+ */
+export async function getOrCreateStripeCustomerId(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	stripeClient: Stripe,
+	userId: string
+): Promise<string> {
+	const existing: Doc<"stripeCustomers"> | null = await ctx.runQuery(
+		internal.stripeCustomers.getByUserInternal,
+		{ userId }
+	);
+	if (existing) return existing.stripeCustomerId;
+
+	const customer: Stripe.Customer = await stripeClient.customers.create(
+		{
+			metadata: { clerkUserId: userId },
+		},
+		{
+			idempotencyKey: `customer:${userId}`,
+		}
+	);
+
+	return await ctx.runMutation(internal.stripeCustomers.upsertInternal, {
+		userId,
+		stripeCustomerId: customer.id,
+	});
+}
+
+/**
  * Fetches a V2 connected account and infers its onboarding-status fields.
  *
  * The retrieve call and the field inspection are tightly coupled: the
@@ -178,6 +216,12 @@ export async function handleAccountStatusChange(
  * PaymentIntent. Returns the payment id (or `undefined` if no matching
  * payment exists -- Stripe occasionally delivers events for payments we did
  * not create, e.g. tests run by another developer against shared keys).
+ *
+ * Dispatch order (ADR 008): the payment row's `kind` decides first —
+ * `order` settles that order via `confirmPayment`; `tip`/`substitution`
+ * handlers land in Phase 3 and log loudly until then. Rows without a `kind`
+ * are legacy: `sessionId` marks a tab payment, otherwise a pre-pivot
+ * per-order payment, both on their original paths.
  */
 export async function handlePaymentIntentSuccess(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -198,6 +242,20 @@ export async function handlePaymentIntentSuccess(
 			? paymentIntent.latest_charge
 			: (paymentIntent.latest_charge?.id ?? undefined);
 
+	// Persist the saved card (`setup_future_usage: "off_session"`) so one-tap
+	// tips and substitution deltas can charge it later (ADR 008). Done for
+	// every success — legacy rows simply never read it.
+	const paymentMethodId =
+		typeof paymentIntent.payment_method === "string"
+			? paymentIntent.payment_method
+			: (paymentIntent.payment_method?.id ?? undefined);
+	if (paymentMethodId && payment.stripePaymentMethodId !== paymentMethodId) {
+		await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			paymentId: payment._id,
+			stripePaymentMethodId: paymentMethodId,
+		});
+	}
+
 	const gratuityRaw = paymentIntent.metadata?.gratuityAmount;
 	const gratuityAmount =
 		typeof gratuityRaw === "string"
@@ -206,8 +264,29 @@ export async function handlePaymentIntentSuccess(
 				? gratuityRaw
 				: 0;
 
-	// Tab (session-level) payments settle the whole session; legacy per-order
-	// payments keep the original order confirmation path.
+	if (payment.kind === PAYMENT_KIND.TIP || payment.kind === PAYMENT_KIND.SUBSTITUTION) {
+		// Cannot exist yet — createPaymentIntent only writes kind "order" in
+		// Phase 1. Do not throw: throwing would make the webhook retry an event
+		// no code can ever settle.
+		console.error(
+			`[stripe] unhandled payment kind "${payment.kind}" for payment ${payment._id} — ` +
+				"tip/substitution settlement lands in TAVLI-71 Phase 3"
+		);
+		return payment._id;
+	}
+
+	if (payment.kind === PAYMENT_KIND.ORDER) {
+		await ctx.runMutation(internal.orders.confirmPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			stripeChargeId: chargeId,
+			gratuityAmount: Number.isFinite(gratuityAmount) ? gratuityAmount : 0,
+		});
+		return payment._id;
+	}
+
+	// Legacy rows (no `kind`): tab (session-level) payments settle the whole
+	// session; per-order payments keep the original order confirmation path.
 	if (payment.sessionId) {
 		await ctx.runMutation(internal.sessions.confirmTabPayment, {
 			paymentId: payment._id,
@@ -231,6 +310,11 @@ export async function handlePaymentIntentSuccess(
  * Marks the matching payment record as failed when Stripe reports a failed
  * PaymentIntent. Returns the payment id (or `undefined` when no matching
  * record exists, see `handlePaymentIntentSuccess`).
+ *
+ * Kind `order` rows (ADR 008) carry an `orderId` and no `sessionId`, so they
+ * fall through to `failPayment` exactly like legacy per-order rows — the
+ * routing needs no `kind` branch. Tip/substitution rows are guarded the same
+ * way as on the success path so a Phase 3 intent can never unlock a tab.
  */
 export async function handlePaymentIntentFailure(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -245,6 +329,14 @@ export async function handlePaymentIntentFailure(
 		}
 	);
 	if (!payment) return undefined;
+
+	if (payment.kind === PAYMENT_KIND.TIP || payment.kind === PAYMENT_KIND.SUBSTITUTION) {
+		console.error(
+			`[stripe] unhandled payment kind "${payment.kind}" for failed payment ${payment._id} — ` +
+				"tip/substitution settlement lands in TAVLI-71 Phase 3"
+		);
+		return payment._id;
+	}
 
 	if (payment.sessionId) {
 		await ctx.runMutation(internal.sessions.failTabPayment, {

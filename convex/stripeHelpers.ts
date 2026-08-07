@@ -4,6 +4,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import {
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
+	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	TABLE,
@@ -26,6 +27,12 @@ const paymentRefundStatusValidator = v.union(
 	v.literal(PAYMENT_REFUND_STATUS.SUCCEEDED),
 	v.literal(PAYMENT_REFUND_STATUS.PARTIAL),
 	v.literal(PAYMENT_REFUND_STATUS.FAILED)
+);
+
+const paymentKindValidator = v.union(
+	v.literal(PAYMENT_KIND.ORDER),
+	v.literal(PAYMENT_KIND.TIP),
+	v.literal(PAYMENT_KIND.SUBSTITUTION)
 );
 
 const orderPaymentStateValidator = v.union(
@@ -75,6 +82,13 @@ export const getOrderInternal = internalQuery({
 	args: { orderId: v.id(TABLE.ORDERS) },
 	handler: async (ctx, args) => {
 		return await ctx.db.get(args.orderId);
+	},
+});
+
+export const getOrderItemInternal = internalQuery({
+	args: { orderItemId: v.id(TABLE.ORDER_ITEMS) },
+	handler: async (ctx, args) => {
+		return await ctx.db.get(args.orderItemId);
 	},
 });
 
@@ -233,6 +247,12 @@ export const createPayment = internalMutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		orderId: v.id(TABLE.ORDERS),
 		amount: v.number(),
+		// ADR 008 breakdown: new-model rows satisfy amount === subtotalAmount +
+		// feeAmount. Absent on legacy rows.
+		subtotalAmount: v.optional(v.number()),
+		feeAmount: v.optional(v.number()),
+		kind: v.optional(paymentKindValidator),
+		paidByUserId: v.optional(v.string()),
 		currency: v.string(),
 		status: paymentStatusValidator,
 		refundStatus: paymentRefundStatusValidator,
@@ -264,6 +284,8 @@ export const updatePayment = internalMutation({
 		paymentId: v.id(TABLE.PAYMENTS),
 		status: v.optional(paymentStatusValidator),
 		refundStatus: v.optional(paymentRefundStatusValidator),
+		/** Saved card persisted on success for later one-tap charges (ADR 008). */
+		stripePaymentMethodId: v.optional(v.string()),
 		stripePaymentIntentId: v.optional(v.string()),
 		stripeChargeId: v.optional(v.string()),
 		stripeRefundId: v.optional(v.string()),
@@ -282,6 +304,9 @@ export const updatePayment = internalMutation({
 		await ctx.db.patch(args.paymentId, {
 			...(args.status !== undefined && { status: args.status }),
 			...(args.refundStatus !== undefined && { refundStatus: args.refundStatus }),
+			...(args.stripePaymentMethodId !== undefined && {
+				stripePaymentMethodId: args.stripePaymentMethodId,
+			}),
 			...(args.stripePaymentIntentId !== undefined && {
 				stripePaymentIntentId: args.stripePaymentIntentId,
 			}),

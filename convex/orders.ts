@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	ConflictError,
@@ -16,6 +18,7 @@ import {
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
 import {
+	isSessionMember,
 	requireAuthenticatedDiner,
 	requireOwnedActiveSession,
 	requireOwnedOrder,
@@ -28,6 +31,8 @@ import {
 	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
 	DEFAULT_PREP_STATION,
 	ORDER_PAYMENT_STATE,
+	ORDER_STATUS,
+	PAYMENT_KIND,
 	PAYMENT_STATUS,
 	PREP_STATION,
 	type PrepStation,
@@ -49,6 +54,7 @@ import {
 	selectedOptionValidator,
 	VALID_TRANSITIONS,
 } from "./orderHelpers";
+import { resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -190,11 +196,14 @@ export const removeItem = mutation({
 });
 
 /**
- * Sends a draft order to the kitchen/bar immediately (TAVLI-6). Payment moved
- * to the end of the visit: the order joins the session's tab balance as
- * `unpaid` and the whole tab is settled with one Stripe payment (or by staff
- * in person). Allocates the daily order number and server attribution here,
- * where the order becomes real for the restaurant.
+ * LEGACY pre-ADR-008 path: sends a draft order to the kitchen/bar unpaid
+ * (TAVLI-6 tab model — the whole tab settles with one Stripe payment at the
+ * end of the visit). Kept fully functional for pre-pivot sessions and for the
+ * frontend until Phase 2A ships the pay-at-submit checkout, then removed with
+ * the rest of the tab machinery. New-model orders reach the kitchen through
+ * `confirmPayment` (card, via webhook) or `markOrderPaidInPerson` (cash).
+ * Allocates the daily order number and server attribution here, where the
+ * order becomes real for the restaurant.
  */
 export const submitOrder = mutation({
 	args: {
@@ -278,8 +287,108 @@ export const submitOrder = mutation({
 });
 
 /**
+ * The diner commits a draft for **in-person (cash) payment** (ADR 008): the
+ * order becomes `awaiting_payment`, a staff-only status that never reaches the
+ * kitchen rail. Staff collect the cash and release it via
+ * {@link markOrderPaidInPerson}, or cancel it.
+ *
+ * Mirrors `submitOrder`'s validation (owned unlocked session, non-empty
+ * order) and, like it, allocates the daily order number and server attribution
+ * here — staff need a callable number to collect against, and the order is now
+ * real for the restaurant even though the kitchen hasn't seen it.
+ */
+export const requestPayInPerson = mutation({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		specialInstructions: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		// `draftOnly` also routes through `requireUnlockedOwnedSession`, keeping
+		// the tab-lock guard for legacy sessions.
+		const order = await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
+
+		const items = await ctx.db
+			.query(TABLE.ORDER_ITEMS)
+			.withIndex("by_order", (q) => q.eq("orderId", args.orderId))
+			.collect();
+		const liveItems = items.filter((item) => item.cancelledAt === undefined);
+
+		if (liveItems.length === 0) {
+			throw new UserInputValidationError({
+				fields: [{ field: "items", message: "Order must have at least one item" }],
+			});
+		}
+
+		const restaurant = await ctx.db.get(order.restaurantId);
+		if (!restaurant) {
+			throw new NotFoundError("Restaurant not found");
+		}
+
+		const now = Date.now();
+
+		const orderServiceDateKey = getOrderServiceDateKey(
+			now,
+			restaurant.timezone,
+			restaurant.orderDayStartMinutesFromMidnight
+		);
+		const periodKey = getOrderResetPeriodKey(
+			now,
+			restaurant.timezone,
+			restaurant.orderDayStartMinutesFromMidnight,
+			restaurant.orderNumberResetFrequency ?? DEFAULT_ORDER_NUMBER_RESET_FREQUENCY
+		);
+		const dailyOrderNumber = await allocateNextOrderNumber(ctx, order.restaurantId, periodKey, now);
+
+		const session = await ctx.db.get(order.sessionId);
+		const attributedMemberId = await resolveAttributedMemberId(ctx, {
+			restaurantId: order.restaurantId,
+			tableId: order.tableId,
+			atMs: now,
+			sessionServerMemberId: session?.serverMemberId,
+		});
+
+		const dinerId = await requireAuthenticatedDiner(ctx);
+
+		await ctx.db.patch(args.orderId, {
+			status: ORDER_STATUS.AWAITING_PAYMENT,
+			awaitingPaymentAt: now,
+			dailyOrderNumber,
+			orderServiceDateKey,
+			...(attributedMemberId !== undefined && { attributedMemberId }),
+			...(args.specialInstructions !== undefined && {
+				specialInstructions: args.specialInstructions,
+			}),
+			updatedAt: now,
+			updatedBy: dinerId,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: args.orderId,
+			eventType: AUDIT_EVENT.ORDER_AWAITING_PAYMENT,
+			restaurantId: order.restaurantId,
+			payload: {
+				sessionId: order.sessionId,
+				restaurantId: order.restaurantId,
+				tableId: order.tableId,
+				itemCount: liveItems.length,
+				totalAmount: order.totalAmount,
+				dailyOrderNumber,
+				orderServiceDateKey,
+			},
+			// Any tab member can commit their own round, so the session opener is
+			// not necessarily the actor.
+			userId: dinerId,
+		});
+	},
+});
+
+/**
  * Called by the Stripe webhook handler after payment_intent.succeeded.
- * Transitions a draft order to submitted and records payment info.
+ * Releases a paid order to the kitchen: `draft` or `awaiting_payment` (a diner
+ * who switched from cash to card) flips to `submitted`, payment facts are
+ * recorded, and the ADR 008 settlement stamps (`settledBy: "stripe"`,
+ * `paidByUserId`) land on the order.
  */
 export const confirmPayment = internalMutation({
 	args: {
@@ -314,13 +423,22 @@ export const confirmPayment = internalMutation({
 			console.warn(`Order ${order._id} changed after payment intent ${payment._id}, skipping`);
 			return;
 		}
-		if (order.totalAmount !== payment.amount) {
+		// New-model payments charge subtotal + fee, so the order total matches the
+		// payment's `subtotalAmount`; legacy per-order intents carry no
+		// `subtotalAmount` and charged the order total directly — the `??` keeps
+		// them settling. A mismatch means the order was edited after the intent
+		// was created: no-op, a fresh intent will supersede this one.
+		if (order.totalAmount !== (payment.subtotalAmount ?? payment.amount)) {
 			console.warn(
 				`Order ${order._id} total ${order.totalAmount} no longer matches payment ${payment.amount}`
 			);
 			return;
 		}
-		if (order.status !== "draft" && order.status !== "submitted") {
+		if (
+			order.status !== "draft" &&
+			order.status !== "submitted" &&
+			order.status !== ORDER_STATUS.AWAITING_PAYMENT
+		) {
 			console.warn(
 				`Order ${order._id} is in status ${order.status}, skipping payment confirmation`
 			);
@@ -385,6 +503,8 @@ export const confirmPayment = internalMutation({
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			paidAt: now,
 			submittedAt: now,
+			settledBy: "stripe",
+			...(payment.paidByUserId !== undefined && { paidByUserId: payment.paidByUserId }),
 			updatedAt: now,
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 			...(dailyOrderNumber !== undefined && { dailyOrderNumber }),
@@ -405,6 +525,8 @@ export const confirmPayment = internalMutation({
 				restaurantId: order.restaurantId,
 				sessionId: order.sessionId,
 				amount: payment.amount,
+				subtotalAmount: payment.subtotalAmount,
+				feeAmount: payment.feeAmount,
 				gratuityAmount: args.gratuityAmount,
 				fromStatus: order.status,
 				stripePaymentIntentId: args.stripePaymentIntentId,
@@ -437,8 +559,14 @@ export const failPayment = internalMutation({
 			updatedAt: now,
 		});
 
+		// `awaiting_payment` joins draft here: a diner switching from cash to card
+		// keeps the order in `awaiting_payment` while the intent is in flight, and
+		// a decline must surface as `failed` rather than a stale `processing`.
 		const order = await ctx.db.get(payment.orderId);
-		if (order?.activePaymentId === payment._id && order.status === "draft") {
+		if (
+			order?.activePaymentId === payment._id &&
+			(order.status === "draft" || order.status === ORDER_STATUS.AWAITING_PAYMENT)
+		) {
 			await ctx.db.patch(order._id, {
 				paymentState: ORDER_PAYMENT_STATE.FAILED,
 				updatedAt: now,
@@ -507,8 +635,14 @@ export const getOrdersBySession = query({
 	},
 });
 
-/** Used by Stripe actions to enforce diner ownership before payment intent creation. */
-export const verifyDraftOrderOwnerInternal = internalQuery({
+/**
+ * Used by Stripe actions to enforce session membership before payment intent
+ * creation. Membership, not ownership: any tab member (opener or join-code
+ * joiner) pays for their **own** round under ADR 008, so the same predicate
+ * `verifyTabForPaymentInternal` uses gates here. Accepts `draft` (normal
+ * pay-at-submit) and `awaiting_payment` (a diner switching from cash to card).
+ */
+export const verifyOrderForPaymentInternal = internalQuery({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
 		userId: v.string(),
@@ -516,9 +650,10 @@ export const verifyDraftOrderOwnerInternal = internalQuery({
 	returns: v.union(v.id(TABLE.ORDERS), v.null()),
 	handler: async (ctx, args) => {
 		const order = await ctx.db.get(args.orderId);
-		if (!order || order.status !== "draft") return null;
+		if (!order) return null;
+		if (order.status !== "draft" && order.status !== ORDER_STATUS.AWAITING_PAYMENT) return null;
 		const session = await ctx.db.get(order.sessionId);
-		if (!session || session.status !== "active" || session.userId !== args.userId) {
+		if (!session || session.status !== "active" || !isSessionMember(session, args.userId)) {
 			return null;
 		}
 		return order._id;
@@ -645,6 +780,63 @@ export const updateStatus = mutation({
 				refundEligible:
 					args.newStatus === "cancelled" && order.paymentState === ORDER_PAYMENT_STATE.PAID,
 				totalAmount: order.totalAmount,
+			},
+			userId,
+		});
+
+		return [args.orderId, null];
+	},
+});
+
+/**
+ * Staff collected the cash for an `awaiting_payment` order (ADR 008): stamps
+ * it paid (`settledBy: "staff"`) and releases it to `submitted`, where the
+ * kitchen sees it for the first time.
+ *
+ * Deliberately writes **no `payments` row** — no Stripe money moved, and a
+ * synthetic row would poison every revenue aggregate that reads the payments
+ * table. Analytics and exports must therefore never assume paid ⇒ payments row
+ * exists; the durable record of the cash is the order itself plus the
+ * `orders.paidInPerson` audit event. `paidByUserId` stays unset for the same
+ * reason: it means "this member's saved card paid", and there is no card here.
+ */
+export const markOrderPaidInPerson = mutation({
+	args: { orderId: v.id(TABLE.ORDERS) },
+	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const order = await ctx.db.get(args.orderId);
+		if (!order) return [null, new NotFoundError("Order not found").toObject()];
+
+		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		if (restaurantError) return [null, restaurantError];
+
+		if (order.status !== ORDER_STATUS.AWAITING_PAYMENT) {
+			throw new ConflictError("ERROR_ORDER_NOT_AWAITING_PAYMENT");
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(args.orderId, {
+			status: "submitted",
+			paymentState: ORDER_PAYMENT_STATE.PAID,
+			paidAt: now,
+			submittedAt: now,
+			settledBy: "staff",
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: args.orderId,
+			eventType: AUDIT_EVENT.ORDER_PAID_IN_PERSON,
+			restaurantId: order.restaurantId,
+			payload: {
+				restaurantId: order.restaurantId,
+				sessionId: order.sessionId,
+				amount: order.totalAmount,
+				dailyOrderNumber: order.dailyOrderNumber,
 			},
 			userId,
 		});
@@ -923,11 +1115,26 @@ export const unmarkStationReady = mutation({
  * bottle. Cancelling the whole round because one station cannot make one item
  * is the wrong blast radius — this drops just that line.
  *
- * Scope in this version is deliberately the tab flow, where nothing has been
- * charged yet: the line leaves `Order.totalAmount`, so the diner is simply
- * billed less when the tab settles. Once a payment is in flight or settled,
- * returning money needs a partial refund, so 86 refuses and the whole-order
- * cancel-and-refund path stays the tool for that.
+ * Two payment worlds (ADR 008):
+ * - **Unpaid rounds** (legacy tab flow, and `awaiting_payment` cash orders):
+ *   the line simply leaves `Order.totalAmount` — the diner is billed less and
+ *   no Stripe call is made.
+ * - **Paid orders** (pay-at-submit): the line is refunded — its price plus its
+ *   share of the customer-borne service fee — via a scheduled
+ *   `stripe.refundOrderItem`. The order keeps cooking; only 86'ing the last
+ *   live line cancels it and refunds the payment's entire remaining balance.
+ *
+ * A payment or refund **in flight** (pending/processing/refund_*) still
+ * refuses: 86'ing under an open intent shifts the total nobody agreed to, and
+ * a double-86 while a refund is pending must not be able to double-refund.
+ * That includes an `awaiting_payment` order whose diner is mid cash→card
+ * switch — the open intent, not the status, decides.
+ *
+ * Orders paid by a **legacy** payment (a tab payment, or a pre-fee per-order
+ * intent — no `subtotalAmount`) also refuse: the line-refund math is
+ * fee-inclusive and its last-live-line sweep refunds the payment's entire
+ * remaining balance, which against a tab payment would be other orders' money.
+ * Legacy money keeps the pre-pivot rule — cancel the whole order instead.
  *
  * No station-level authorization exists in this codebase by design (ADR 005:
  * the station filter is a UI convenience, not an access boundary), so any
@@ -954,29 +1161,81 @@ export const cancelOrderItem = mutation({
 
 		// Drafts belong to the diner (`removeItem`), and once an order is ready
 		// the food is plated — comping that is a manager's whole-order call.
-		if (order.status !== "submitted" && order.status !== "preparing") {
+		// `awaiting_payment` is 86-able like any un-fired round: the cash hasn't
+		// been collected, so the line just leaves what staff will collect.
+		if (
+			order.status !== "submitted" &&
+			order.status !== "preparing" &&
+			order.status !== ORDER_STATUS.AWAITING_PAYMENT
+		) {
 			throw new ConflictError("ERROR_ORDER_ITEM_NOT_CANCELLABLE");
 		}
 
+		// "Unpaid" is decided by paymentState alone — `awaiting_payment` gets no
+		// shortcut. A diner switching cash→card holds an open intent while the
+		// status stays awaiting_payment (paymentState pending/processing);
+		// 86'ing under that intent would shift the total the payment sheet is
+		// about to charge, and the webhook would then no-op the settle on the
+		// snapshot mismatch — money moved, order stuck. requestPayInPerson
+		// leaves paymentState unpaid and failPayment stamps `failed`, so a cash
+		// order with no card attempt in flight still qualifies here.
 		const paymentState = order.paymentState;
 		const isUnpaid =
 			paymentState === undefined ||
 			paymentState === ORDER_PAYMENT_STATE.UNPAID ||
 			paymentState === ORDER_PAYMENT_STATE.FAILED;
-		if (!isUnpaid) {
+		const isPaid = !isUnpaid && paymentState === ORDER_PAYMENT_STATE.PAID;
+		if (!isUnpaid && !isPaid) {
+			// Payment or refund in flight — see the doc comment. Keeps the stable
+			// code the frontend already maps.
 			throw new ConflictError("ERROR_ORDER_ITEM_CANCEL_PAID");
 		}
 
 		// A tab locked for payment has a balance snapshot in flight; shifting the
 		// total underneath it would charge the diner an amount nobody agreed to.
+		// (Legacy sessions only — new-model sessions never lock.)
 		const session = await ctx.db.get(order.sessionId);
 		if (session?.lockedForPaymentAt !== undefined) {
 			throw new ConflictError("ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED");
 		}
 
+		// Resolve the money **before** stamping the line: a paid order whose
+		// succeeded payment cannot be found must not end up with a cancelled line
+		// and no refund on its way.
+		let paidPaymentId: Id<typeof TABLE.PAYMENTS> | null = null;
+		if (isPaid) {
+			const paidPayment = await resolveSucceededPaymentForOrder(ctx, order);
+			if (!paidPayment) {
+				throw new ConflictError("ERROR_REFUND_PAYMENT_UNRESOLVED");
+			}
+			// Line refunds only exist for fee-inclusive ADR 008 payments (kind
+			// "order", `subtotalAmount` set — the same vintage marker
+			// `computeOrderRefundAmount` branches on). A legacy payment here is a
+			// tab payment covering many orders (e.g. a residue order settled
+			// before tabs waited for service) or a pre-fee per-order intent:
+			// `refundOrderItem`'s fee top-up would refund money the diner never
+			// paid, and its last-live-line sweep would refund the *other* orders'
+			// subtotals and the tip. Restore the pre-pivot block for that money —
+			// the whole-order cancel path owns legacy refund math (per-order
+			// clamp, no fee).
+			if (paidPayment.kind !== PAYMENT_KIND.ORDER || paidPayment.subtotalAmount === undefined) {
+				throw new ConflictError("ERROR_ORDER_ITEM_CANCEL_PAID");
+			}
+			paidPaymentId = paidPayment._id;
+		}
+
 		const now = Date.now();
 		await ctx.db.patch(args.orderItemId, { cancelledAt: now, cancelledBy: userId });
 		await recalculateTotal(ctx, item.orderId);
+
+		const scheduleLineRefund = async () => {
+			if (paidPaymentId === null) return;
+			await ctx.scheduler.runAfter(0, internal.stripe.refundOrderItem, {
+				orderId: item.orderId,
+				orderItemId: args.orderItemId,
+				paymentId: paidPaymentId,
+			});
+		};
 
 		const remainingItems = (
 			await ctx.db
@@ -988,6 +1247,10 @@ export const cancelOrderItem = mutation({
 		if (remainingItems.length === 0) {
 			await ctx.db.patch(item.orderId, {
 				status: "cancelled",
+				// The last live line of a paid order settles like a whole-order
+				// cancel: refund_requested now, `refundOrderItem` refunds the entire
+				// remaining balance and flips it to refunded.
+				...(isPaid && { paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED }),
 				updatedAt: now,
 				updatedBy: userId,
 			});
@@ -1001,12 +1264,13 @@ export const cancelOrderItem = mutation({
 					restaurantId: order.restaurantId,
 					fromStatus: order.status,
 					toStatus: "cancelled",
-					// 86 is blocked on paid orders, so there is never money to return.
-					refundEligible: false,
+					refundEligible: isPaid,
 					totalAmount: 0,
 				},
 				userId,
 			});
+
+			await scheduleLineRefund();
 
 			return [args.orderItemId, null];
 		}
@@ -1037,6 +1301,9 @@ export const cancelOrderItem = mutation({
 				});
 			}
 		}
+
+		// Paid order keeps cooking; only the 86'd line's money goes back.
+		await scheduleLineRefund();
 
 		return [args.orderItemId, null];
 	},

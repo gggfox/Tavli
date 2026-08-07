@@ -638,6 +638,40 @@ describe("session tabs", () => {
 			});
 		});
 
+		it("flags — never closes — a stale session whose only debt is uncollected cash", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, tableId } = await seedRestaurant(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "diner-cash" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await authed.mutation(api.orders.requestPayInPerson, { orderId });
+
+			await t.run(async (ctx) => {
+				await ctx.db.patch(sessionId, { startedAt: Date.now() - 26 * 60 * 60 * 1000 });
+			});
+
+			const result = await t.mutation(internal.sessions.sweepStaleOpenTabs, {});
+
+			// awaiting_payment is not tab-payable, but it is still owed money — the
+			// sweep must not close over it and hide the walkout.
+			expect(result.flagged).toBe(1);
+			expect(result.awaitingPaymentOrdersSeen).toBe(1);
+			await t.run(async (ctx) => {
+				const session = await ctx.db.get(sessionId);
+				expect(session!.status).toBe("active");
+				expect(session!.flaggedStaleAt).toBeDefined();
+			});
+		});
+
 		it("caps the rows it touches per run, newest-first", async () => {
 			const t = convexTest(schema, modules);
 			const { restaurantId } = await seedRestaurant(t);
@@ -666,6 +700,127 @@ describe("session tabs", () => {
 			await t.run(async (ctx) => {
 				expect((await ctx.db.get(newestId!))!.status).toBe("closed");
 			});
+		});
+	});
+
+	// ADR 008 coexistence: pay-at-submit and cash (`awaiting_payment`) orders on
+	// a session that still runs the legacy tab machinery.
+	describe("awaiting_payment awareness (ADR 008)", () => {
+		/** Adds a second round committed for cash (900) next to the 1800 tab order. */
+		async function addAwaitingPaymentRound(
+			_t: ReturnType<typeof convexTest>,
+			args: {
+				sessionId: Id<"sessions">;
+				tableId: Id<"tables">;
+				menuItemId: Id<"menuItems">;
+				authed: ReturnType<ReturnType<typeof convexTest>["withIdentity"]>;
+			}
+		) {
+			const orderId = await args.authed.mutation(api.orders.createDraft, {
+				sessionId: args.sessionId,
+				tableId: args.tableId,
+			});
+			await args.authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId: args.menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await args.authed.mutation(api.orders.requestPayInPerson, { orderId });
+			return orderId;
+		}
+
+		it("keeps awaiting_payment orders out of the tab balance but visible to staff", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId, menuItemId, authed } = await seedTabWithOrder(t);
+			const cashOrderId = await addAwaitingPaymentRound(t, {
+				sessionId,
+				tableId,
+				menuItemId,
+				authed,
+			});
+
+			// Never tab-payable: the cash order is neither billed to the tab nor
+			// blocking settlement.
+			const tab = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(tab!.subtotal).toBe(1800);
+			expect(tab!.payableOrderIds).not.toContain(cashOrderId);
+			expect(tab!.unservedOrderIds).not.toContain(cashOrderId);
+
+			// Staff see the owed cash on the open-tabs row, separate from the tab.
+			const staff = t.withIdentity({ subject: "owner1" });
+			const [tabs] = await staff.query(api.sessions.getOpenTabsByRestaurant, { restaurantId });
+			expect(tabs![0]).toMatchObject({
+				unpaidTotal: 1800,
+				awaitingPaymentTotal: 900,
+				awaitingPaymentCount: 1,
+			});
+		});
+
+		it("reports a zero tab balance for a new-model session whose orders are paid", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, orderId, authed } = await seedTabWithOrder(t);
+			// Simulate pay-at-submit settlement (what confirmPayment stamps).
+			await t.run(async (ctx) => {
+				await ctx.db.patch(orderId, {
+					paymentState: "paid",
+					paidAt: Date.now(),
+					settledBy: "stripe",
+				});
+			});
+
+			const tab = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(tab!.subtotal).toBe(0);
+			expect(tab!.payableOrderIds).toHaveLength(0);
+		});
+
+		it("blocks the diner close while a cash order is uncollected", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, tableId } = await seedRestaurant(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "diner-cash" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+			await addAwaitingPaymentRound(t, { sessionId, tableId, menuItemId, authed });
+
+			// No tab balance at all — the cash order alone must hold the session open.
+			await expect(authed.mutation(api.sessions.close, { sessionId })).rejects.toThrow(
+				/ERROR_SESSION_AWAITING_PAYMENT_ORDERS/
+			);
+		});
+
+		it("blocks the staff close until the cash order is collected or cancelled", async () => {
+			const t = convexTest(schema, modules);
+			const {
+				sessionId,
+				restaurantId: _restaurantId,
+				tableId,
+				menuItemId,
+				authed,
+			} = await seedTabWithOrder(t);
+			const cashOrderId = await addAwaitingPaymentRound(t, {
+				sessionId,
+				tableId,
+				menuItemId,
+				authed,
+			});
+
+			const staff = t.withIdentity({ subject: "owner1" });
+			await expect(staff.mutation(api.sessions.closeTabAsStaff, { sessionId })).rejects.toThrow(
+				/ERROR_SESSION_AWAITING_PAYMENT_ORDERS/
+			);
+
+			// Collecting the cash clears the block; the close then settles the tab.
+			const [, collectError] = await staff.mutation(api.orders.markOrderPaidInPerson, {
+				orderId: cashOrderId,
+			});
+			expect(collectError).toBeNull();
+			const [closedId, closeError] = await staff.mutation(api.sessions.closeTabAsStaff, {
+				sessionId,
+			});
+			expect(closeError).toBeNull();
+			expect(closedId).toBe(sessionId);
 		});
 	});
 });

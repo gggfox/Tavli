@@ -11,6 +11,7 @@ import type { DatabaseReader } from "./_generated/server";
 import {
 	JOIN_CODE_ALPHABET,
 	JOIN_CODE_LENGTH,
+	ORDER_STATUS,
 	SESSION_PAYMENT_STATE,
 	TAB_PAYABLE_ORDER_STATUSES,
 	TAB_SETTLEABLE_ORDER_STATUSES,
@@ -38,6 +39,17 @@ const SETTLEABLE_STATUSES = new Set<string>(TAB_SETTLEABLE_ORDER_STATUSES);
 
 export function isPayableOrder(order: Doc<typeof TABLE.ORDERS>): boolean {
 	return PAYABLE_STATUSES.has(order.status) && order.paymentState !== "paid";
+}
+
+/**
+ * A cash order the diner committed but staff have not yet collected (ADR 008).
+ * Deliberately **outside** the tab-payable set — this money can only move in
+ * person (`orders.markOrderPaidInPerson`), never through a Stripe tab payment —
+ * yet it is still owed, so session close, staff close, and the stale sweep all
+ * have to account for it separately.
+ */
+export function isAwaitingPaymentOrder(order: Doc<typeof TABLE.ORDERS>): boolean {
+	return order.status === ORDER_STATUS.AWAITING_PAYMENT;
 }
 
 /**

@@ -18,7 +18,13 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { DatabaseReader } from "./_generated/server";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { AUDIT_EVENT, ORDER_PAYMENT_STATE, PAYMENT_STATUS, TABLE } from "./constants";
+import {
+	AUDIT_EVENT,
+	AUDIT_SYSTEM_USER_ID,
+	ORDER_PAYMENT_STATE,
+	PAYMENT_STATUS,
+	TABLE,
+} from "./constants";
 import { appendAuditEvent } from "./_util/audit";
 
 /** Why no refund was issued. Maps 1:1 to a stable error code in the caller. */
@@ -51,25 +57,86 @@ export function buildRefundIdempotencyKey(
 }
 
 /**
+ * Builds the Stripe idempotency key for refunding a single 86'd line of a paid
+ * order (ADR 008). Keyed on **(payment, orderItem)** for the same reason the
+ * whole-order key above is keyed on (payment, order): one payment can see
+ * several line refunds, and a payment-only key would silently replay the first
+ * one. The whole-order key stays in use for whole-order cancels — the two never
+ * collide because a Convex `orderItems` id is never an `orders` id.
+ */
+export function buildLineRefundIdempotencyKey(
+	paymentId: Id<"payments">,
+	orderItemId: Id<"orderItems">
+): string {
+	return `refund:${paymentId}:${orderItemId}`;
+}
+
+/**
+ * How much of `payment` to refund for one 86'd line of a paid order (ADR 008).
+ *
+ * The diner paid `lineTotal` plus the customer-borne service fee on it, so the
+ * line's refund is `lineTotal + round(lineTotal × feeRate)`, clamped to the
+ * payment's remaining balance (Stripe rejects a refund for more than is left).
+ *
+ * When the 86'd line is the order's **last live line** the whole order is
+ * cancelled and the refund is the payment's entire remaining balance instead.
+ * That makes per-order rounding residue structurally zero: however the earlier
+ * per-line `round()`s fell, the final line sweeps whatever is left, so the sum
+ * of a fully-86'd order's refunds is exactly `payment.amount`. (This replaces
+ * the ~1.09%-of-refund residue documented in the stripe-go-live runbook, which
+ * came from letting Stripe apportion fees proportionally.)
+ */
+export function computeLineRefundAmount(args: {
+	lineTotal: number;
+	feeRate: number;
+	paymentAmount: number;
+	paymentAmountRefunded: number | undefined;
+	isLastLiveLine: boolean;
+}): number {
+	const remaining = Math.max(0, args.paymentAmount - (args.paymentAmountRefunded ?? 0));
+	if (args.isLastLiveLine) {
+		return remaining;
+	}
+	return Math.min(args.lineTotal + Math.round(args.lineTotal * args.feeRate), remaining);
+}
+
+/**
  * Works out how much of `payment` to refund for a single order.
  *
- * Refunds the order's own total and **no share of the tip**: the platform takes
- * no fee on tips (`convex/stripe.ts` applies the commission to the tab subtotal
- * only) and tips are attributed to a specific server, so clawing one back takes
- * money from staff rather than from the kitchen that made the mistake.
+ * Two vintages of payment rows, two rules — branched on `subtotalAmount`
+ * presence, the ADR 008 marker:
  *
- * The clamp against the remaining balance is mandatory — Stripe rejects a
- * refund for more than is left on a charge.
+ * **Fee-inclusive (new model, `subtotalAmount` set):** the payment covers
+ * exactly one order and its charge is `subtotal + customer-borne fee`, so a
+ * whole-order cancel refunds the payment's entire remaining balance — the
+ * diner's fee comes back with their subtotal. Clamping to `orderTotalAmount`
+ * here would strand the fee on the charge forever.
+ *
+ * **Legacy (`subtotalAmount` absent):** a tab payment covers many orders, so
+ * the refund is the order's own total and **no share of the tip**: the platform
+ * takes no fee on tips and tips are attributed to a specific server, so clawing
+ * one back takes money from staff rather than from the kitchen that made the
+ * mistake. Refunding "remaining" here would hand one order the other orders'
+ * money — the per-order clamp is load-bearing and must stay exactly as shipped.
+ *
+ * The clamp against the remaining balance is mandatory in both branches —
+ * Stripe rejects a refund for more than is left on a charge.
  */
 export function computeOrderRefundAmount(args: {
 	orderTotalAmount: number;
 	paymentAmount: number;
 	paymentAmountRefunded: number | undefined;
+	/** `payments.subtotalAmount` — present only on fee-inclusive ADR 008 rows. */
+	paymentSubtotalAmount?: number;
 }): { amount: number; isFullRefund: boolean } {
 	const alreadyRefunded = args.paymentAmountRefunded ?? 0;
 	const remaining = Math.max(0, args.paymentAmount - alreadyRefunded);
-	const amount = Math.max(0, Math.min(args.orderTotalAmount, remaining));
 
+	if (args.paymentSubtotalAmount !== undefined) {
+		return { amount: remaining, isFullRefund: remaining > 0 };
+	}
+
+	const amount = Math.max(0, Math.min(args.orderTotalAmount, remaining));
 	return { amount, isFullRefund: amount > 0 && amount >= remaining };
 }
 
@@ -152,6 +219,7 @@ export const resolveOrderRefundPlanInternal = internalQuery({
 			orderTotalAmount: order.totalAmount,
 			paymentAmount: payment.amount,
 			paymentAmountRefunded: payment.amountRefunded,
+			paymentSubtotalAmount: payment.subtotalAmount,
 		});
 		if (amount <= 0) {
 			return { plan: null, blocked: ORDER_REFUND_BLOCK_REASON.NOTHING_REFUNDABLE };
@@ -211,6 +279,97 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
 			payload: {
 				restaurantId: order.restaurantId,
 				amount: args.amount,
+				...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
+				...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
+			},
+			userId: args.userId,
+		});
+	},
+});
+
+/**
+ * Records the terminal outcome of a single-line (86-on-paid) refund — the
+ * per-line sibling of {@link recordOrderRefundOutcomeInternal} (ADR 008).
+ *
+ * Order-state policy, decided here so every caller agrees:
+ * - A **partial** line refund leaves `order.paymentState` at `"paid"` — the
+ *   order keeps cooking and flipping it to `refunded` would pull a live ticket
+ *   off staff surfaces. The refund's durable record is the order item's
+ *   `refundedAt`/`refundAmount`, the audit trail, and the payment's
+ *   `amountRefunded`.
+ * - The **last live line** refund settles a now-cancelled order, so it follows
+ *   the whole-order flow: `refund_requested` (stamped by `cancelOrderItem`) →
+ *   `refunded` here.
+ * - A **failed** refund flips the order to `refund_failed` in both cases —
+ *   money is owed and staff must see it, cooking or not.
+ *
+ * On success this also accumulates `payments.amountRefunded` optimistically so
+ * the next line's refund math sees the reduced balance immediately; the
+ * `charge.refunded` webhook later overwrites it with Stripe's authoritative
+ * cumulative figure, which converges to the same number.
+ */
+export const recordOrderItemRefundOutcomeInternal = internalMutation({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		orderItemId: v.id(TABLE.ORDER_ITEMS),
+		succeeded: v.boolean(),
+		amount: v.number(),
+		/** Whether this refund settled the order's last live line (order cancelled). */
+		isLastLiveLine: v.boolean(),
+		/** The staff member who 86'd the line, for the audit trail. */
+		userId: v.string(),
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		stripeRefundId: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const order = await ctx.db.get(args.orderId);
+		if (!order) return;
+
+		const now = Date.now();
+		if (args.succeeded) {
+			await ctx.db.patch(args.orderItemId, {
+				refundedAt: now,
+				refundAmount: args.amount,
+				...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
+			});
+
+			if (args.paymentId !== undefined) {
+				const payment = await ctx.db.get(args.paymentId);
+				if (payment) {
+					await ctx.db.patch(args.paymentId, {
+						amountRefunded: (payment.amountRefunded ?? 0) + args.amount,
+						updatedAt: now,
+						updatedBy: AUDIT_SYSTEM_USER_ID,
+					});
+				}
+			}
+		}
+
+		if (args.succeeded && args.isLastLiveLine) {
+			await ctx.db.patch(args.orderId, {
+				paymentState: ORDER_PAYMENT_STATE.REFUNDED,
+				updatedAt: now,
+				updatedBy: args.userId,
+			});
+		} else if (!args.succeeded) {
+			await ctx.db.patch(args.orderId, {
+				paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
+				updatedAt: now,
+				updatedBy: args.userId,
+			});
+		}
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: args.orderId,
+			eventType: args.succeeded ? AUDIT_EVENT.ORDER_ITEM_REFUNDED : AUDIT_EVENT.ORDER_REFUND_FAILED,
+			restaurantId: order.restaurantId,
+			payload: {
+				restaurantId: order.restaurantId,
+				orderItemId: args.orderItemId,
+				amount: args.amount,
+				isLastLiveLine: args.isLastLiveLine,
 				...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
 				...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
 			},

@@ -557,6 +557,18 @@ export default defineSchema({
 		cancelledAt: v.optional(v.number()),
 		/** Clerk subject of the staff member who 86'd the line. */
 		cancelledBy: v.optional(v.string()),
+		/**
+		 * Set when 86'ing this line on a *paid* order produced a Stripe refund
+		 * (ADR 008). The tuple below is the per-line refund record — and the
+		 * idempotency marker `stripe.refundOrderItem` checks so a replayed
+		 * schedule can never refund the same line twice. `undefined` on lines
+		 * cancelled while unpaid (no money ever moved for them).
+		 */
+		refundedAt: v.optional(v.number()),
+		/** What came back to the diner for this line: lineTotal + its fee share, clamped/topped-up per `computeLineRefundAmount`. */
+		refundAmount: v.optional(v.number()),
+		/** Stripe refund id backing `refundAmount`. */
+		stripeRefundId: v.optional(v.string()),
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
 

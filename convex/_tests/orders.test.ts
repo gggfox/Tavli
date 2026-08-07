@@ -249,8 +249,8 @@ async function seedOwnerRole(
 async function seedMixedStationOrder(
 	t: ReturnType<typeof convexTest>,
 	overrides: {
-		status?: "submitted" | "preparing" | "ready" | "served" | "cancelled";
-		paymentState?: "unpaid" | "pending" | "processing" | "paid";
+		status?: "awaiting_payment" | "submitted" | "preparing" | "ready" | "served" | "cancelled";
+		paymentState?: "unpaid" | "pending" | "processing" | "failed" | "paid" | "refund_requested";
 		lockedForPaymentAt?: number;
 		kitchenReadyAt?: number;
 		barReadyAt?: number;
@@ -1947,18 +1947,129 @@ describe("orders", () => {
 			).rejects.toThrow(/ERROR_ORDER_ITEM_NOT_CANCELLABLE/);
 		});
 
-		it("rejects when the order is paid or its payment is in flight", async () => {
+		it("rejects while a payment or refund is in flight", async () => {
+			// Paid orders are now 86-able (ADR 008 — the line is refunded, see
+			// stripe.test.ts), but an open intent or pending refund still blocks:
+			// a double-86 while a refund is in flight must not double-refund.
 			const t = convexTest(schema, modules);
-			const paid = await seedMixedStationOrder(t, { paymentState: "paid" });
-			await expect(
-				paid.staff.mutation(api.orders.cancelOrderItem, { orderItemId: paid.barItemId })
-			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
-
-			const t2 = convexTest(schema, modules);
-			const pending = await seedMixedStationOrder(t2, { paymentState: "pending" });
+			const pending = await seedMixedStationOrder(t, { paymentState: "pending" });
 			await expect(
 				pending.staff.mutation(api.orders.cancelOrderItem, { orderItemId: pending.barItemId })
 			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+
+			const t2 = convexTest(schema, modules);
+			const refunding = await seedMixedStationOrder(t2, { paymentState: "refund_requested" });
+			await expect(
+				refunding.staff.mutation(api.orders.cancelOrderItem, { orderItemId: refunding.barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+		});
+
+		it("rejects a paid order whose succeeded payment cannot be resolved", async () => {
+			// Money is owed but there is nothing to refund against — stamping the
+			// line anyway would strand a cancelled line with no refund on its way.
+			const t = convexTest(schema, modules);
+			const { barItemId, staff } = await seedMixedStationOrder(t, { paymentState: "paid" });
+			await expect(
+				staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId })
+			).rejects.toThrow(/ERROR_REFUND_PAYMENT_UNRESOLVED/);
+		});
+
+		it("rejects an order settled by a legacy tab payment — the tab's balance is untouchable", async () => {
+			// Pre-pivot residue: tabs used to settle while orders were still
+			// cooking, stamping each covered order paid with `activePaymentId`
+			// pointing at the session-level tab payment (no `subtotalAmount`).
+			// Line-refund math against that payment would refund a fee share the
+			// diner never paid, and a last-live-line 86 would sweep the OTHER
+			// orders' money plus the tip. Legacy money keeps the pre-pivot block.
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, orderId, barItemId, kitchenItemId, staff } =
+				await seedMixedStationOrder(t, { status: "submitted", paymentState: "paid" });
+
+			const paymentId = await t.run(async (ctx) => {
+				const now = Date.now();
+				// Tab payment: sessionId set, orderId unset (the XOR), covering this
+				// order (1400), a sibling order, and a tip.
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					sessionId,
+					amount: 5000,
+					currency: "usd",
+					status: "succeeded",
+					refundStatus: "none",
+					attemptNumber: 1,
+					stripePaymentIntentId: "pi_legacy_tab",
+					succeededAt: now,
+					createdAt: now,
+					updatedAt: now,
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id });
+				return id;
+			});
+
+			await expect(
+				staff.mutation(api.orders.cancelOrderItem, { orderItemId: barItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+			// Last-live-line variant must refuse identically — the remaining-balance
+			// sweep is exactly the hazard.
+			await expect(
+				staff.mutation(api.orders.cancelOrderItem, { orderItemId: kitchenItemId })
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+
+			const { barItem, payment } = await t.run(async (ctx) => ({
+				barItem: await ctx.db.get(barItemId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			// The guard fires before the line is stamped: nothing cancelled, no
+			// refund scheduled, the tab payment's balance untouched.
+			expect(barItem?.cancelledAt).toBeUndefined();
+			expect(payment?.amountRefunded).toBeUndefined();
+			expect(payment?.refundStatus).toBe("none");
+		});
+
+		it("rejects an awaiting_payment order while a card attempt is in flight", async () => {
+			// A diner switching cash→card holds an open intent (paymentState
+			// pending/processing) while the status stays awaiting_payment. 86'ing
+			// then would shift the total under the payment sheet and the webhook
+			// would no-op the settle on the snapshot mismatch — money moved, order
+			// stuck. The status gives no shortcut past the in-flight guard.
+			const t = convexTest(schema, modules);
+			const processing = await seedMixedStationOrder(t, {
+				status: "awaiting_payment",
+				paymentState: "processing",
+			});
+			await expect(
+				processing.staff.mutation(api.orders.cancelOrderItem, {
+					orderItemId: processing.barItemId,
+				})
+			).rejects.toThrow(/ERROR_ORDER_ITEM_CANCEL_PAID/);
+
+			// A failed card attempt releases the block — the cash path is back.
+			const t2 = convexTest(schema, modules);
+			const failed = await seedMixedStationOrder(t2, {
+				status: "awaiting_payment",
+				paymentState: "failed",
+			});
+			const [, error] = await failed.staff.mutation(api.orders.cancelOrderItem, {
+				orderItemId: failed.barItemId,
+			});
+			expect(error).toBeNull();
+		});
+
+		it("86s a line on an awaiting_payment order without touching Stripe", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, barItemId, staff } = await seedMixedStationOrder(t, {
+				status: "awaiting_payment",
+			});
+
+			const [, error] = await staff.mutation(api.orders.cancelOrderItem, {
+				orderItemId: barItemId,
+			});
+			expect(error).toBeNull();
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			// Still awaiting cash collection, just for less money.
+			expect(order?.status).toBe("awaiting_payment");
+			expect(order?.totalAmount).toBe(800);
 		});
 
 		it("rejects while the tab is locked for payment", async () => {
@@ -1994,6 +2105,187 @@ describe("orders", () => {
 				.withIdentity({ subject: "diner1" })
 				.query(api.sessions.getTabSummary, { sessionId });
 			expect(summary?.subtotal).toBe(800);
+		});
+	});
+
+	describe("requestPayInPerson (ADR 008 cash path)", () => {
+		async function seedCommittableDraft(t: ReturnType<typeof convexTest>) {
+			const seeded = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, seeded.restaurantId);
+			const orderId = await seeded.authed.mutation(api.orders.createDraft, {
+				sessionId: seeded.sessionId,
+				tableId: seeded.tableId,
+			});
+			await seeded.authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 2,
+				selectedOptions: [],
+			});
+			return { ...seeded, menuItemId, orderId };
+		}
+
+		it("commits the draft to awaiting_payment with a callable order number", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, authed } = await seedCommittableDraft(t);
+
+			await authed.mutation(api.orders.requestPayInPerson, { orderId });
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("awaiting_payment");
+			expect(order?.awaitingPaymentAt).toBeTypeOf("number");
+			// Staff collect against a number, so it is allocated here, not at release.
+			expect(order?.dailyOrderNumber).toBe(1);
+			expect(order?.orderServiceDateKey).toBeTruthy();
+			// Not submitted: the kitchen has not seen this order.
+			expect(order?.submittedAt).toBeUndefined();
+
+			const events = await t.run(async (ctx) =>
+				ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("aggregateId"), orderId))
+					.collect()
+			);
+			expect(events.some((e) => e.eventType === "orders.awaitingPayment")).toBe(true);
+		});
+
+		it("rejects an empty draft", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, tableId, authed } = await seedRestaurantAndSession(t);
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+
+			await expect(authed.mutation(api.orders.requestPayInPerson, { orderId })).rejects.toThrow(
+				/at least one item/
+			);
+		});
+
+		it("keeps the legacy tab-lock guard", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, orderId, authed } = await seedCommittableDraft(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(sessionId, { lockedForPaymentAt: Date.now() });
+			});
+
+			await expect(authed.mutation(api.orders.requestPayInPerson, { orderId })).rejects.toThrow(
+				/ERROR_TAB_LOCKED/
+			);
+		});
+
+		it("never lands in the default staff dashboard set", async () => {
+			const t = convexTest(schema, modules);
+			const { organizationId, restaurantId, orderId, authed } = await seedCommittableDraft(t);
+			await seedOwnerRole(t, organizationId);
+			await authed.mutation(api.orders.requestPayInPerson, { orderId });
+
+			const staff = t.withIdentity({ subject: "owner1" });
+			const [defaultSet] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+			expect(defaultSet).toHaveLength(0);
+
+			// Explicitly requested, staff can see the owed-cash orders.
+			const [awaiting] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				statuses: ["awaiting_payment"],
+			});
+			expect(awaiting).toHaveLength(1);
+		});
+	});
+
+	describe("markOrderPaidInPerson (ADR 008 cash path)", () => {
+		async function seedAwaitingPaymentOrder(t: ReturnType<typeof convexTest>) {
+			const seeded = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, seeded.restaurantId);
+			await seedOwnerRole(t, seeded.organizationId);
+			const orderId = await seeded.authed.mutation(api.orders.createDraft, {
+				sessionId: seeded.sessionId,
+				tableId: seeded.tableId,
+			});
+			await seeded.authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 2,
+				selectedOptions: [],
+			});
+			await seeded.authed.mutation(api.orders.requestPayInPerson, { orderId });
+			return { ...seeded, orderId, staff: t.withIdentity({ subject: "owner1" }) };
+		}
+
+		it("releases the order to the kitchen paid and settled by staff — with no payments row", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedAwaitingPaymentOrder(t);
+
+			const [released, error] = await staff.mutation(api.orders.markOrderPaidInPerson, {
+				orderId,
+			});
+			expect(error).toBeNull();
+			expect(released).toBe(orderId);
+
+			const { order, payments, events } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payments: await ctx.db.query("payments").collect(),
+				events: await ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("aggregateId"), orderId))
+					.collect(),
+			}));
+			expect(order?.status).toBe("submitted");
+			expect(order?.paymentState).toBe("paid");
+			expect(order?.settledBy).toBe("staff");
+			expect(order?.paidAt).toBeTypeOf("number");
+			expect(order?.submittedAt).toBeTypeOf("number");
+			// No card was charged, so no diner is stamped as the payer.
+			expect(order?.paidByUserId).toBeUndefined();
+			// Cash never touches Stripe: paid ⇒ payments-row-exists must NOT hold.
+			expect(payments).toHaveLength(0);
+			expect(events.some((e) => e.eventType === "orders.paidInPerson")).toBe(true);
+		});
+
+		it("requires staff access", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId } = await seedAwaitingPaymentOrder(t);
+
+			const [, error] = await t
+				.withIdentity({ subject: "stranger" })
+				.mutation(api.orders.markOrderPaidInPerson, { orderId });
+			expect(error).not.toBeNull();
+		});
+
+		it("rejects orders that are not awaiting payment", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedAwaitingPaymentOrder(t);
+			await staff.mutation(api.orders.markOrderPaidInPerson, { orderId });
+
+			// Second collect: the order is already submitted.
+			await expect(staff.mutation(api.orders.markOrderPaidInPerson, { orderId })).rejects.toThrow(
+				/ERROR_ORDER_NOT_AWAITING_PAYMENT/
+			);
+		});
+
+		it("lets a manager cancel an awaiting_payment order via updateStatus", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedAwaitingPaymentOrder(t);
+
+			const [, error] = await staff.mutation(api.orders.updateStatus, {
+				orderId,
+				newStatus: "cancelled",
+			});
+			expect(error).toBeNull();
+
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("cancelled");
+			// Never paid, so nothing to refund.
+			expect(order?.paymentState).not.toBe("refund_requested");
+		});
+
+		it("forbids advancing an awaiting_payment order to preparing", async () => {
+			// The only exits are cancel, mark-paid-in-person, and the card webhook.
+			const t = convexTest(schema, modules);
+			const { orderId, staff } = await seedAwaitingPaymentOrder(t);
+
+			await expect(
+				staff.mutation(api.orders.updateStatus, { orderId, newStatus: "preparing" })
+			).rejects.toThrow(/Cannot transition/);
 		});
 	});
 
