@@ -50,6 +50,15 @@ function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 				iconColor: "var(--accent-warning)",
 				iconBg: "rgba(217, 119, 6, 0.12)",
 			};
+		// TODO(TAVLI-71 Phase 2B): dedicated diner-facing treatment for the
+		// in-person payment path; minimal compile-safe entry for now.
+		case "awaiting_payment":
+			return {
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_UNPAID),
+				icon: CreditCard,
+				iconColor: "var(--accent-warning)",
+				iconBg: "rgba(217, 119, 6, 0.12)",
+			};
 		case "submitted":
 			return {
 				label: t(OrderingKeys.ORDERS_LIFECYCLE_PLACED),

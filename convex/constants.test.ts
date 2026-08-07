@@ -25,6 +25,8 @@ describe("TABLE constants", () => {
 			"payments",
 			"stripeWebhookEvents",
 			"stripeDisputes",
+			"stripeCustomers",
+			"substitutionProposals",
 			"reservations",
 			"tableLocks",
 			"reservationSettings",
@@ -66,6 +68,7 @@ describe("USER_ROLES", () => {
 describe("ORDER_STATUS", () => {
 	it("has all order statuses", () => {
 		expect(ORDER_STATUS.DRAFT).toBe("draft");
+		expect(ORDER_STATUS.AWAITING_PAYMENT).toBe("awaiting_payment");
 		expect(ORDER_STATUS.SUBMITTED).toBe("submitted");
 		expect(ORDER_STATUS.PREPARING).toBe("preparing");
 		expect(ORDER_STATUS.READY).toBe("ready");
@@ -73,8 +76,8 @@ describe("ORDER_STATUS", () => {
 		expect(ORDER_STATUS.CANCELLED).toBe("cancelled");
 	});
 
-	it("has exactly 6 statuses", () => {
-		expect(Object.keys(ORDER_STATUS)).toHaveLength(6);
+	it("has exactly 7 statuses", () => {
+		expect(Object.keys(ORDER_STATUS)).toHaveLength(7);
 	});
 });
 

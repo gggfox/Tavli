@@ -18,6 +18,11 @@ A single physical location operated under one organization, identified by a
 public slug.
 _Avoid_: store, location, branch.
 
+**Platform subscription**:
+The 2,000 MXN/month fee a `Restaurant` pays Tavli for using the product,
+enabled per restaurant.
+_Avoid_: commission (that is the per-order **Tavli service fee**).
+
 **Menu**:
 A named, ordered collection of `MenuCategories` displayed to diners.
 _Avoid_: catalog.
@@ -43,33 +48,56 @@ _Avoid_: type, kind, beverage category, meal category.
 
 **Session**:
 An open service period at a `Table`, doubling as the group's shared
-**tab** — the primary settlement unit. `Orders` accumulate unpaid on
-the session, and one payment settles the whole tab (subtotal + tip):
-either in-app via Stripe or in person by staff (`settledBy`). The
-session carries the tab's `paymentState` and is locked against new or
-edited orders while a tab payment is in flight.
-A tab is **settleable** only once every order on it has been `served`.
-Un-served orders are still billed — they count toward the balance staff
-see — but they block checkout, and they leave the tab by **staff
-cancellation**, never by partial payment. That keeps the diner from
-paying for food that never arrives, which is the only thing that
-produces a Stripe refund here (refunds come out of the platform
-balance, not the restaurant's).
-_Avoid_: check, bill (the payable whole is the **tab**).
+visit. Members join by a short **join code**; each member pays for
+their own `Orders` as they place them, and each member is prompted for
+their own tip at **Visit close-out**. Staff close the session when the
+table leaves.
+_Avoid_: check, bill; tab (pre-pivot language for the session as a
+settlement unit — see ADR 008).
 
 **Order**:
-A round of items added to a `Session`'s tab. Holds a `status` (`draft →
-submitted → preparing → ready → served`, or `cancelled`) and
-per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
-Orders are normally settled together by their session's tab payment;
-an order's own payment fields (`paymentState`, `paidAt`) are the
-legacy per-order payment path. `served` is terminal — a served order
-cannot be cancelled — and it is the only status a tab payment may
-settle (see **Session**). Cancelling an un-served order removes it from
-the tab at no cost; it was never paid for — as does **86**'ing its last
-remaining line, which cancels the order.
-_Avoid_: ticket, check, transaction, "the unit a diner pays for" (that
-is the tab).
+A round of items added to a `Session` — **the unit a diner pays for**.
+An order is paid at submit, before the kitchen sees it, or handed to
+staff as **Awaiting payment** for in-person collection. Holds a
+`status` (`draft → submitted → preparing → ready → served`, or
+`cancelled`; the in-person path inserts `awaiting_payment` before
+`submitted`) and per-station completion timestamps (`kitchenReadyAt`,
+`barReadyAt`). `served` stays terminal — a served order cannot be
+cancelled.
+_Avoid_: ticket, check, transaction.
+
+**Access code**:
+The diner-facing name for the geofence bypass code staff hand out when
+location fails. Distinct from the session's **join code**, which admits
+a friend to the visit.
+_Avoid_: table code / clave-código de mesa (old name), join code
+(different thing).
+
+**Awaiting payment**:
+An `Order` committed by the diner for in-person payment. Visible only
+to staff — never on the kitchen rail — until staff mark it paid and
+release it.
+_Avoid_: pending (that is the diner-facing label for submitted), unpaid
+order on the tab.
+
+**Substitution**:
+A kitchen-proposed replacement for a paid line that can't be made —
+equal or higher cost, and the diner approves on their own device. Any
+price difference plus its service-fee share is charged on approval;
+declining means the line is **86**'d and refunded.
+_Avoid_: swap-out silently, edit the order.
+
+**Tavli service fee**:
+The 12% commission on an `Order`'s subtotal, paid by the diner on top
+and itemized on receipts. The restaurant nets the full subtotal. Never
+applied to tips.
+_Avoid_: platform fee carve-out, restaurant commission.
+
+**Visit close-out**:
+The per-member end-of-visit moment: each `Session` member who paid for
+rounds is prompted to tip on their own spend. Skipping is allowed.
+_Avoid_: checkout (that is paying for an order), settle (legacy tab
+language).
 
 **Order item**:
 A single line on an `Order`, denormalized at submission time with the
@@ -105,10 +133,10 @@ _Avoid_: clear, close (those suggest the `Order` itself ended).
 Staff cancelling a single `OrderItem` because it can't be made — the
 kitchen is out of an ingredient, the bar is out of a bottle. Stamps
 `cancelledAt` / `cancelledBy`; the line stays visible but leaves the
-`Order`'s `totalAmount`, so the diner is billed less at settle. When
-every line is 86'd, the `Order` becomes `cancelled`. Only possible
-while the round is unpaid — a paid order needs a whole-order cancel and
-refund instead.
+`Order`'s `totalAmount`. On a paid order, the 86'd line's price and its
+share of the **Tavli service fee** are automatically refunded; on an
+unpaid (**Awaiting payment**) round it remains a free subtraction. When
+every line is 86'd, the `Order` becomes `cancelled`.
 _Avoid_: void, remove, delete (the line is kept, not erased).
 
 ### Employee management
@@ -238,11 +266,13 @@ that are already active.
   `prepStation`, snapshot for everything else).
 - An **Order** is "ready" when every **PrepStation** that has at least one
   non-86'd **OrderItem** in that order has its `*ReadyAt` timestamp set.
-- A **Payment** settles either one **Session** — the tab payment covering
-  every payable **Order** on it (primary flow) — or one **Order**
-  (legacy per-order flow). Exactly one of the two, never both.
+- A **Payment** comes in kinds: an order payment settles one **Order**; a
+  tip payment records one member's tip on a **Session**; a substitution
+  payment covers one **Substitution**'s price difference; legacy tab
+  payments settle a whole pre-pivot **Session**.
 - An 86'd **OrderItem** contributes nothing to its **Order**'s
-  `totalAmount`, and so nothing to the tab balance.
+  `totalAmount`; on a paid **Order** its price and service-fee share are
+  refunded.
 - A **Station ticket** is derived from one **Order** and one
   **PrepStation** — it is never stored.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one

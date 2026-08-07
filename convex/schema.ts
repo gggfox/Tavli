@@ -8,6 +8,7 @@ import {
 	CLOCK_EVENT_TYPE,
 	INVITATION_STATUS,
 	ORDER_PAYMENT_STATE,
+	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PREP_STATION,
@@ -16,6 +17,7 @@ import {
 	RESTAURANT_MEMBER_ROLE,
 	SESSION_PAYMENT_STATE,
 	SHIFT_STATUS,
+	SUBSTITUTION_PROPOSAL_STATUS,
 	TABLE,
 	TIP_DISTRIBUTION_RULE,
 	TIP_ENTRY_SOURCE,
@@ -49,9 +51,23 @@ export default defineSchema({
 		sidebarExpanded: v.optional(v.boolean()),
 		language: v.optional(v.union(v.literal("en"), v.literal("es"))),
 		reservationSoundEnabled: v.optional(v.boolean()),
-		// Subset of order statuses the OrderDashboard should display.
+		// Single order status the OrderDashboard should display (ADR 008).
 		// `draft` is intentionally excluded: drafts are pre-submission state
-		// and never belong on the kitchen dashboard.
+		// and never belong on the kitchen dashboard. `awaiting_payment` is a
+		// staff-facing status, so it IS a valid filter here.
+		orderDashboardStatusFilter: v.optional(
+			v.union(
+				v.literal("awaiting_payment"),
+				v.literal("submitted"),
+				v.literal("preparing"),
+				v.literal("ready"),
+				v.literal("served"),
+				v.literal("cancelled")
+			)
+		),
+		// LEGACY multi-select predecessor of `orderDashboardStatusFilter`.
+		// Removed after `migrations/backfillOrderDashboardStatusFilter` has run
+		// in every environment.
 		orderDashboardStatusFilters: v.optional(
 			v.array(
 				v.union(
@@ -200,6 +216,22 @@ export default defineSchema({
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),
 		stripeOnboardingComplete: v.optional(v.boolean()),
+		/**
+		 * Receipt tax block (ADR 008): rendered verbatim on restaurant-branded
+		 * receipt emails. Informational only — this is NOT CFDI e-invoicing.
+		 */
+		rfc: v.optional(v.string()),
+		razonSocial: v.optional(v.string()),
+		fiscalAddress: v.optional(v.string()),
+		/** Per-restaurant flag gating the 2,000 MXN/month platform subscription (ADR 008). */
+		platformSubscriptionEnabled: v.optional(v.boolean()),
+		/** Stripe Billing Customer for the platform subscription (platform account, not Connect). */
+		stripeBillingCustomerId: v.optional(v.string()),
+		stripeSubscriptionId: v.optional(v.string()),
+		/** Raw Stripe subscription status, cached from Billing webhooks (not narrowed: Stripe evolves these). */
+		billingStatus: v.optional(v.string()),
+		/** Epoch ms end of the current billing period, cached from Billing webhooks. */
+		billingCurrentPeriodEnd: v.optional(v.number()),
 		/**
 		 * Geofence for customer ordering (TAVLI-6). When latitude/longitude are
 		 * unset the geofence is skipped entirely. This is a soft UX gate — browser
@@ -432,6 +464,9 @@ export default defineSchema({
 		tableId: v.id(TABLE.TABLES),
 		status: v.union(
 			v.literal("draft"),
+			// Committed by the diner for in-person payment; staff-only until
+			// released to "submitted" by "mark paid in person". See ADR 008.
+			v.literal("awaiting_payment"),
 			v.literal("submitted"),
 			v.literal("preparing"),
 			v.literal("ready"),
@@ -456,6 +491,12 @@ export default defineSchema({
 		stripePaymentIntentId: v.optional(v.string()),
 		submittedAt: v.optional(v.number()),
 		paidAt: v.optional(v.number()),
+		/** Clerk subject of the session member who paid for this order (ADR 008). */
+		paidByUserId: v.optional(v.string()),
+		/** When the diner committed this order for in-person payment. */
+		awaitingPaymentAt: v.optional(v.number()),
+		/** How this order was settled: "stripe" (pay-at-submit) or "staff" (marked paid in person). Mirrors `sessions.settledBy`. */
+		settledBy: v.optional(v.union(v.literal("stripe"), v.literal("staff"))),
 		/**
 		 * Per-station "ready" timestamps. Set by `markStationReady` when the
 		 * staff at that station confirm their portion of the order is done.
@@ -519,6 +560,45 @@ export default defineSchema({
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
 
+	// Kitchen-proposed replacement for a paid line that can't be made (ADR 008).
+	// `deltaAmount >= 0` is enforced in app code (equal-or-higher rule);
+	// `feeOnDelta` is the service-fee share on that delta. The proposed* fields
+	// snapshot the replacement at proposal time, mirroring the `orderItems`
+	// denormalization, so the offer the diner accepted stays legible after menu
+	// edits.
+	[TABLE.SUBSTITUTION_PROPOSALS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		sessionId: v.id(TABLE.SESSIONS),
+		orderId: v.id(TABLE.ORDERS),
+		orderItemId: v.id(TABLE.ORDER_ITEMS),
+		proposedMenuItemId: v.id(TABLE.MENU_ITEMS),
+		proposedMenuItemName: v.string(),
+		proposedUnitPrice: v.number(),
+		quantity: v.number(),
+		proposedLineTotal: v.number(),
+		/** proposedLineTotal - original lineTotal; >= 0 by the equal-or-higher rule. */
+		deltaAmount: v.number(),
+		feeOnDelta: v.number(),
+		status: v.union(
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.PENDING),
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.ACCEPTED),
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.DECLINED),
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.CANCELLED)
+		),
+		/** Payment covering deltaAmount + feeOnDelta; set when accepted with a positive delta. */
+		supplementalPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		/** Clerk subject of the staff member who proposed the substitution. */
+		proposedBy: v.string(),
+		/** Clerk subject of the diner who accepted/declined. */
+		respondedByUserId: v.optional(v.string()),
+		respondedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_order", ["orderId"])
+		.index("by_session_status", ["sessionId", "status"])
+		.index("by_restaurant_status", ["restaurantId", "status"]),
+
 	[TABLE.PAYMENTS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		/** Set for legacy per-order payments. Tab payments set `sessionId` instead (XOR). */
@@ -526,6 +606,27 @@ export default defineSchema({
 		/** Set for tab (session-level) payments covering every payable order in the session. */
 		sessionId: v.optional(v.id(TABLE.SESSIONS)),
 		amount: v.number(),
+		/**
+		 * ADR 008 breakdown. New rows satisfy `amount === subtotalAmount +
+		 * feeAmount` (tip payments carry feeAmount 0 — the service fee never
+		 * applies to tips). Absent on legacy rows.
+		 */
+		subtotalAmount: v.optional(v.number()),
+		feeAmount: v.optional(v.number()),
+		/** What this payment paid for (PAYMENT_KIND). Absent kind = legacy row (pre-pivot per-order or tab payment). */
+		kind: v.optional(
+			v.union(
+				v.literal(PAYMENT_KIND.ORDER),
+				v.literal(PAYMENT_KIND.TIP),
+				v.literal(PAYMENT_KIND.SUBSTITUTION)
+			)
+		),
+		/** Clerk subject of the session member this payment belongs to (ADR 008). */
+		paidByUserId: v.optional(v.string()),
+		/** Saved card used for one-tap tips / substitution deltas (setup_future_usage off_session). */
+		stripePaymentMethodId: v.optional(v.string()),
+		/** Set on kind "substitution" rows: the proposal whose delta this payment covers. */
+		substitutionProposalId: v.optional(v.id(TABLE.SUBSTITUTION_PROPOSALS)),
 		currency: v.string(),
 		status: v.union(
 			v.literal(PAYMENT_STATUS.PENDING),
@@ -615,6 +716,18 @@ export default defineSchema({
 		.index("by_dispute_id", ["stripeDisputeId"])
 		.index("by_payment", ["paymentId"])
 		.index("by_restaurant", ["restaurantId"]),
+
+	// Platform-level Stripe Customer per Clerk user (ADR 008). Needed so
+	// `setup_future_usage: "off_session"` on a pay-at-submit charge can attach
+	// the payment method somewhere reusable — one-tap tips and substitution
+	// deltas charge it later. Not restaurant-scoped: the customer follows the
+	// diner across restaurants.
+	[TABLE.STRIPE_CUSTOMERS]: defineTable({
+		userId: v.string(),
+		stripeCustomerId: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_user", ["userId"]),
 
 	// ============================================================================
 	// Reservations

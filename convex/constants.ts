@@ -18,9 +18,11 @@ export const TABLE = {
 	SESSIONS: "sessions",
 	ORDERS: "orders",
 	ORDER_ITEMS: "orderItems",
+	SUBSTITUTION_PROPOSALS: "substitutionProposals",
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
 	STRIPE_DISPUTES: "stripeDisputes",
+	STRIPE_CUSTOMERS: "stripeCustomers",
 	RESERVATIONS: "reservations",
 	TABLE_LOCKS: "tableLocks",
 	RESERVATION_SETTINGS: "reservationSettings",
@@ -76,6 +78,12 @@ export type StaffRole = (typeof STAFF_ROLES)[number];
 
 export const ORDER_STATUS = {
 	DRAFT: "draft",
+	/**
+	 * Committed by the diner for in-person (cash) payment. Visible only to
+	 * staff — never on the kitchen rail — until staff mark it paid and release
+	 * it to "submitted". See ADR 008.
+	 */
+	AWAITING_PAYMENT: "awaiting_payment",
 	SUBMITTED: "submitted",
 	PREPARING: "preparing",
 	READY: "ready",
@@ -176,14 +184,20 @@ export type SessionPaymentState =
 	(typeof SESSION_PAYMENT_STATE)[keyof typeof SESSION_PAYMENT_STATE];
 
 /**
- * Order statuses whose totals count toward the tab balance. Draft orders are
- * not yet sent to the kitchen; cancelled orders are excluded.
+ * LEGACY TAB MODEL (pre-ADR-008): order statuses whose totals count toward a
+ * tab balance. Kept for sessions opened before the pay-at-submit cutover,
+ * whose unpaid balances still settle through the tab flow. Draft orders are
+ * not yet sent to the kitchen; cancelled orders are excluded — and
+ * `awaiting_payment` must NOT appear here: those orders are collected in
+ * person, never through a tab payment.
  */
 export const TAB_PAYABLE_ORDER_STATUSES = ["submitted", "preparing", "ready", "served"] as const;
 
 /**
- * Order statuses a tab payment is allowed to settle. Everything else on the
- * tab is billed but blocks checkout until staff serve it or cancel it.
+ * LEGACY TAB MODEL (pre-ADR-008): order statuses a tab payment is allowed to
+ * settle. Kept for sessions opened before the pay-at-submit cutover.
+ * Everything else on the tab is billed but blocks checkout until staff serve
+ * it or cancel it.
  *
  * Deliberately an **allowlist**. Settling food the diner never received is the
  * only way a Stripe refund happens on the tab path (`served` is terminal in
@@ -200,12 +214,53 @@ export const TAB_SETTLEABLE_ORDER_STATUSES = [ORDER_STATUS.SERVED] as const sati
 export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;
 
-/** Platform application fee, applied to the tab subtotal only (never the tip). */
+/**
+ * Tavli service fee, charged to the DINER on top of the order subtotal
+ * (ADR 008 — reverses the pre-pivot restaurant-borne carve-out). Applied to
+ * order subtotals and substitution deltas, never tips. The restaurant nets
+ * the full subtotal.
+ */
 export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
-/** Tip selector presets (percent of tab subtotal). Ticket TAVLI-6: default 10%. */
-export const TIP_PERCENT_PRESETS = [0, 10, 15, 20] as const;
+/** Tip selector presets (percent of the member's own spend at Visit close-out; skipping is the zero option). */
+export const TIP_PERCENT_PRESETS = [10, 15, 20] as const;
 export const DEFAULT_TIP_PERCENT = 10;
+
+/**
+ * What a `payments` row paid for (ADR 008). Rows without a `kind` are legacy
+ * (pre-pivot per-order or tab payments).
+ */
+export const PAYMENT_KIND = {
+	/** Pay-at-submit charge for one order (subtotal + service fee). */
+	ORDER: "order",
+	/** A member's post-visit tip on a session; never carries a service fee. */
+	TIP: "tip",
+	/** The price delta (+ fee on delta) of an accepted substitution. */
+	SUBSTITUTION: "substitution",
+} as const;
+
+export type PaymentKind = (typeof PAYMENT_KIND)[keyof typeof PAYMENT_KIND];
+
+/**
+ * Lifecycle of a kitchen-proposed substitution on a paid order (ADR 008).
+ * `pending` awaits the diner's answer; `cancelled` is the kitchen retracting
+ * its own proposal before the diner responds.
+ */
+export const SUBSTITUTION_PROPOSAL_STATUS = {
+	PENDING: "pending",
+	ACCEPTED: "accepted",
+	DECLINED: "declined",
+	CANCELLED: "cancelled",
+} as const;
+
+export type SubstitutionProposalStatus =
+	(typeof SUBSTITUTION_PROPOSAL_STATUS)[keyof typeof SUBSTITUTION_PROPOSAL_STATUS];
+
+/**
+ * Monthly platform subscription (2,000 MXN) in centavos. Display only — the
+ * Stripe Price object is authoritative for what Stripe Billing charges.
+ */
+export const PLATFORM_MONTHLY_FEE_MXN_CENTS = 200000;
 
 /** Geofence radius fallback when a restaurant configured coordinates but no radius. */
 export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
@@ -513,6 +568,15 @@ export const AUDIT_EVENT = {
 	ORDER_PAYMENT_FAILED: "orders.paymentFailed",
 	ORDER_REFUND_SUCCEEDED: "orders.refundSucceeded",
 	ORDER_REFUND_FAILED: "orders.refundFailed",
+	ORDER_AWAITING_PAYMENT: "orders.awaitingPayment",
+	ORDER_PAID_IN_PERSON: "orders.paidInPerson",
+	ORDER_ITEM_REFUNDED: "orders.itemRefunded",
+
+	// -- Substitutions (ADR 008) --------------------------------------------
+	SUBSTITUTION_PROPOSED: "substitutions.proposed",
+	SUBSTITUTION_ACCEPTED: "substitutions.accepted",
+	SUBSTITUTION_DECLINED: "substitutions.declined",
+	SUBSTITUTION_CANCELLED: "substitutions.cancelled",
 
 	// -- Sessions (tabs) ----------------------------------------------------
 	SESSION_OPENED: "sessions.opened",
@@ -524,6 +588,15 @@ export const AUDIT_EVENT = {
 	SESSION_PAYMENT_CANCELLED: "sessions.paymentCancelled",
 	SESSION_STALE_CLOSED: "sessions.staleClosed",
 	SESSION_STALE_FLAGGED: "sessions.staleFlagged",
+	SESSION_TIP_PAID: "sessions.tipPaid",
+
+	// -- Restaurants (platform subscription, ADR 008) -----------------------
+	RESTAURANT_SUBSCRIPTION_CREATED: "restaurants.subscriptionCreated",
+	RESTAURANT_SUBSCRIPTION_INVOICE_PAID: "restaurants.subscriptionInvoicePaid",
+	RESTAURANT_SUBSCRIPTION_PAYMENT_FAILED: "restaurants.subscriptionPaymentFailed",
+
+	// -- Receipts -----------------------------------------------------------
+	RECEIPT_EMAIL_SENT: "receipts.emailSent",
 
 	// -- Reservations -------------------------------------------------------
 	RESERVATION_CREATED: "reservations.created",
@@ -575,6 +648,7 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.ORDERS,
 	TABLE.ORDER_ITEMS,
 	TABLE.ORDER_DAY_COUNTERS,
+	TABLE.SUBSTITUTION_PROPOSALS,
 	// Payments
 	TABLE.PAYMENTS,
 	TABLE.STRIPE_WEBHOOK_EVENTS,
