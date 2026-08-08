@@ -52,6 +52,7 @@ import {
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PLATFORM_APPLICATION_FEE_RATE,
+	SUBSTITUTION_PROPOSAL_STATUS,
 	TAB_RECONCILE_ALERT_AGE_MS,
 	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
@@ -925,42 +926,81 @@ export const refundOrderItem = internalAction({
 		// the reliable signal — no flag to drift on a replay.
 		const isLastLiveLine = order.status === "cancelled";
 
+		// The staff member who 86'd the line owns the money trail. (For a
+		// declined substitution the diner is the canceller — same field.)
+		const actorUserId = item.cancelledBy ?? AUDIT_SYSTEM_USER_ID;
+
+		// A substituted line's value spans two payments (ADR 008 Phase 3A): the
+		// original share lives on the order payment, and each accepted proposal's
+		// delta (+ fee on delta) on its own substitution payment. Refund the
+		// substitution payments' remaining balances in full — the delta always
+		// comes back whole — and only the original share from the order payment.
+		const acceptedProposals: Doc<"substitutionProposals">[] = await ctx.runQuery(
+			internal.substitutions.getAcceptedProposalsForItemInternal,
+			{ orderId: args.orderId, orderItemId: args.orderItemId }
+		);
+		const acceptedDeltaTotal = acceptedProposals.reduce((sum, p) => sum + p.deltaAmount, 0);
+		const originalLineTotal = Math.max(0, item.lineTotal - acceptedDeltaTotal);
+
 		const amount = computeLineRefundAmount({
-			lineTotal: item.lineTotal,
+			lineTotal: originalLineTotal,
 			feeRate: PLATFORM_APPLICATION_FEE_RATE,
 			paymentAmount: payment.amount,
 			paymentAmountRefunded: payment.amountRefunded,
 			isLastLiveLine,
 		});
-		if (amount <= 0) {
-			console.error(
-				`[stripe.refundOrderItem] payment ${args.paymentId} has no refundable balance ` +
-					`left for item ${args.orderItemId}`
-			);
-			return;
-		}
 
-		// The staff member who 86'd the line owns the money trail.
-		const actorUserId = item.cancelledBy ?? AUDIT_SYSTEM_USER_ID;
-
-		let refund: { refundId: string; status: string | null; amount: number };
+		const supplementalRefunds: Array<{
+			paymentId: Id<"payments">;
+			amount: number;
+			stripeRefundId: string;
+		}> = [];
 		try {
-			refund = await ctx.runAction(internal.stripe.createRefund, {
-				paymentId: args.paymentId,
-				orderId: args.orderId,
-				amount,
-				idempotencyKey: buildLineRefundIdempotencyKey(args.paymentId, args.orderItemId),
-				skipOrderStatePatch: true,
-			});
+			for (const proposal of acceptedProposals) {
+				if (!proposal.supplementalPaymentId) continue;
+				const subPayment: Doc<"payments"> | null = await ctx.runQuery(
+					internal.stripeHelpers.getPaymentInternal,
+					{ paymentId: proposal.supplementalPaymentId }
+				);
+				if (
+					!subPayment ||
+					subPayment.kind !== PAYMENT_KIND.SUBSTITUTION ||
+					subPayment.status !== PAYMENT_STATUS.SUCCEEDED
+				) {
+					console.error(
+						`[stripe.refundOrderItem] proposal ${proposal._id} points at unusable ` +
+							`substitution payment ${proposal.supplementalPaymentId} — skipping its refund`
+					);
+					continue;
+				}
+				const subRemaining = Math.max(0, subPayment.amount - (subPayment.amountRefunded ?? 0));
+				if (subRemaining <= 0) continue;
+
+				const subRefund = await ctx.runAction(internal.stripe.createRefund, {
+					paymentId: subPayment._id,
+					orderId: args.orderId,
+					amount: subRemaining,
+					idempotencyKey: buildLineRefundIdempotencyKey(subPayment._id, args.orderItemId),
+					skipOrderStatePatch: true,
+				});
+				supplementalRefunds.push({
+					paymentId: subPayment._id,
+					amount: subRefund.amount,
+					stripeRefundId: subRefund.refundId,
+				});
+			}
 		} catch (error) {
 			const failureMessage = error instanceof Error ? error.message : "Refund failed";
 			console.error(
-				"[stripe.refundOrderItem] REFUND FAILED",
+				"[stripe.refundOrderItem] SUBSTITUTION REFUND FAILED",
 				buildIntegrationErrorLog(error, {
 					integration: "stripe",
 					operation: "refundOrderItem",
 				})
 			);
+			// The line is not stamped refunded, so the retry path stays open —
+			// Stripe's idempotency keys make a replay of the already-issued
+			// portions a no-op.
 			await ctx.runMutation(internal.orderRefundHelpers.recordOrderItemRefundOutcomeInternal, {
 				orderId: args.orderId,
 				orderItemId: args.orderItemId,
@@ -970,20 +1010,64 @@ export const refundOrderItem = internalAction({
 				userId: actorUserId,
 				failureMessage,
 			});
-			// Recorded as refund_failed — do not rethrow, or the scheduler retry
-			// would race the manual follow-up this state exists to trigger.
 			return;
 		}
 
+		if (amount <= 0 && supplementalRefunds.length === 0) {
+			console.error(
+				`[stripe.refundOrderItem] payment ${args.paymentId} has no refundable balance ` +
+					`left for item ${args.orderItemId}`
+			);
+			return;
+		}
+
+		let refund: { refundId: string; status: string | null; amount: number } | null = null;
+		if (amount > 0) {
+			try {
+				refund = await ctx.runAction(internal.stripe.createRefund, {
+					paymentId: args.paymentId,
+					orderId: args.orderId,
+					amount,
+					idempotencyKey: buildLineRefundIdempotencyKey(args.paymentId, args.orderItemId),
+					skipOrderStatePatch: true,
+				});
+			} catch (error) {
+				const failureMessage = error instanceof Error ? error.message : "Refund failed";
+				console.error(
+					"[stripe.refundOrderItem] REFUND FAILED",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "refundOrderItem",
+					})
+				);
+				await ctx.runMutation(internal.orderRefundHelpers.recordOrderItemRefundOutcomeInternal, {
+					orderId: args.orderId,
+					orderItemId: args.orderItemId,
+					succeeded: false,
+					amount,
+					isLastLiveLine,
+					userId: actorUserId,
+					failureMessage,
+				});
+				// Recorded as refund_failed — do not rethrow, or the scheduler retry
+				// would race the manual follow-up this state exists to trigger.
+				return;
+			}
+		}
+
+		const supplementalTotal = supplementalRefunds.reduce((sum, r) => sum + r.amount, 0);
+		const orderPaymentPortion = refund?.amount ?? 0;
 		await ctx.runMutation(internal.orderRefundHelpers.recordOrderItemRefundOutcomeInternal, {
 			orderId: args.orderId,
 			orderItemId: args.orderItemId,
 			succeeded: true,
-			amount: refund.amount,
+			amount: orderPaymentPortion + supplementalTotal,
 			isLastLiveLine,
 			userId: actorUserId,
 			paymentId: args.paymentId,
-			stripeRefundId: refund.refundId,
+			paymentAmountPortion: orderPaymentPortion,
+			...(supplementalRefunds.length > 0 && { supplementalRefunds }),
+			...(refund !== null && { stripeRefundId: refund.refundId }),
 		});
 	},
 });
@@ -1275,6 +1359,496 @@ export const cancelOrderPaymentIntent = action({
 			userId: identity.subject,
 		});
 		return { cancelled };
+	},
+});
+
+// =============================================================================
+// 7b. Substitution Delta Payment Intent (ADR 008, TAVLI-71 Phase 3A)
+// =============================================================================
+
+/**
+ * Shape of the Stripe card error thrown by an off-session `confirm: true`
+ * create when the saved card demands 3DS. stripe-node surfaces the intent on
+ * `error.raw.payment_intent` (and mirrors `code` at the top level).
+ */
+type OffSessionCardError = {
+	code?: string;
+	payment_intent?: { id?: string; client_secret?: string | null };
+	raw?: { payment_intent?: { id?: string; client_secret?: string | null } };
+};
+
+/**
+ * Charges the diner an accepted substitution's price delta plus the 12%
+ * service fee **on the delta** (ADR 008): `amount = deltaAmount + feeOnDelta`,
+ * `application_fee_amount = feeOnDelta`, destination charge to the
+ * restaurant's connected account — mirroring {@link createPaymentIntent}.
+ *
+ * ONE-TAP FIRST: the member's saved card (persisted by their pay-at-submit
+ * charge in this session) is charged `off_session` + `confirm: true`. When the
+ * bank demands 3DS (`authentication_required`) or no saved card exists, the
+ * action returns a `clientSecret` instead and the diner completes payment
+ * through the Elements fallback on their device. Either way the swap itself is
+ * applied only by the `payment_intent.succeeded` webhook
+ * (`substitutions.confirmSubstitutionPayment`) — the mutation raises the order
+ * total by the delta at that point, never before the money.
+ *
+ * Idempotent re-calls: a still-processing intent for the proposal is returned
+ * as-is; a failed attempt is superseded by a fresh payment row (new attempt
+ * number, new idempotency key), matching {@link createPaymentIntent}.
+ */
+export const createSubstitutionPaymentIntent = action({
+	args: {
+		proposalId: v.id(TABLE.SUBSTITUTION_PROPOSALS),
+	},
+	handler: async (
+		ctx,
+		args
+	): Promise<{ clientSecret: string | null; paymentId: Id<"payments"> }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw fromErrorObject(new NotAuthenticatedError().toObject());
+		}
+		const userId = identity.subject;
+
+		const proposal: Doc<"substitutionProposals"> | null = await ctx.runQuery(
+			internal.substitutions.verifyProposalForPaymentInternal,
+			{ proposalId: args.proposalId, userId }
+		);
+		if (!proposal) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.ACCESS_DENIED).toObject());
+		}
+		if (proposal.status !== SUBSTITUTION_PROPOSAL_STATUS.PENDING) {
+			throw fromErrorObject(new ConflictError("ERROR_SUBSTITUTION_NOT_PENDING").toObject());
+		}
+		if (proposal.deltaAmount <= 0) {
+			// Zero-delta proposals accept via `substitutions.acceptProposal`.
+			throw fromErrorObject(new ConflictError("ERROR_SUBSTITUTION_NOT_PENDING").toObject());
+		}
+
+		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getRestaurantInternal,
+			{ restaurantId: proposal.restaurantId }
+		);
+		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
+			throw new Error("Restaurant is not set up for payments");
+		}
+
+		const subtotalAmount = proposal.deltaAmount;
+		const feeAmount = proposal.feeOnDelta;
+		const amount = subtotalAmount + feeAmount;
+		const currency = restaurant.currency.toLowerCase();
+		const stripeClient = getStripeClient();
+
+		// Retry-friendly reuse: an intent already in flight for this proposal is
+		// handed back rather than superseded.
+		const existingPayment: Doc<"payments"> | null = proposal.supplementalPaymentId
+			? await ctx.runQuery(internal.stripeHelpers.getPaymentInternal, {
+					paymentId: proposal.supplementalPaymentId,
+				})
+			: null;
+		if (
+			existingPayment?.status === PAYMENT_STATUS.PROCESSING &&
+			existingPayment.amount === amount &&
+			existingPayment.currency === currency &&
+			existingPayment.stripePaymentIntentId
+		) {
+			const existingIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+				existingPayment.stripePaymentIntentId
+			);
+			if (existingIntent.status === "succeeded") {
+				// The one-tap (or a prior confirm) already went through — the
+				// webhook applies the swap momentarily.
+				return { clientSecret: null, paymentId: existingPayment._id };
+			}
+			if (existingIntent.status !== "canceled" && existingIntent.client_secret) {
+				return { clientSecret: existingIntent.client_secret, paymentId: existingPayment._id };
+			}
+		}
+		if (
+			existingPayment &&
+			existingPayment.status !== PAYMENT_STATUS.SUCCEEDED &&
+			existingPayment.status !== PAYMENT_STATUS.SUPERSEDED &&
+			existingPayment.status !== PAYMENT_STATUS.CANCELLED
+		) {
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId: existingPayment._id,
+				status: PAYMENT_STATUS.SUPERSEDED,
+			});
+		}
+
+		const attemptNumber = existingPayment ? existingPayment.attemptNumber + 1 : 1;
+		const paymentId: Id<"payments"> = await ctx.runMutation(internal.stripeHelpers.createPayment, {
+			restaurantId: proposal.restaurantId,
+			orderId: proposal.orderId,
+			sessionId: proposal.sessionId,
+			amount,
+			subtotalAmount,
+			feeAmount,
+			kind: PAYMENT_KIND.SUBSTITUTION,
+			paidByUserId: userId,
+			substitutionProposalId: args.proposalId,
+			currency,
+			status: PAYMENT_STATUS.PENDING,
+			refundStatus: PAYMENT_REFUND_STATUS.NONE,
+			attemptNumber,
+		});
+		await ctx.runMutation(internal.substitutions.attachSupplementalPaymentInternal, {
+			proposalId: args.proposalId,
+			paymentId,
+		});
+
+		const baseIntentParams = {
+			amount,
+			currency,
+			application_fee_amount: feeAmount,
+			transfer_data: {
+				destination: restaurant.stripeAccountId,
+			},
+			on_behalf_of: restaurant.stripeAccountId,
+			metadata: {
+				kind: PAYMENT_KIND.SUBSTITUTION,
+				proposalId: args.proposalId,
+				orderId: proposal.orderId,
+				sessionId: proposal.sessionId,
+				restaurantId: proposal.restaurantId,
+				paymentId,
+				deltaAmount: String(subtotalAmount),
+				feeOnDelta: String(feeAmount),
+			},
+		} satisfies Stripe.PaymentIntentCreateParams;
+
+		const savedPaymentMethodId: string | null = await ctx.runQuery(
+			internal.substitutions.getSavedCardForSessionMemberInternal,
+			{ sessionId: proposal.sessionId, userId }
+		);
+		const customer: Doc<"stripeCustomers"> | null = await ctx.runQuery(
+			internal.stripeCustomers.getByUserInternal,
+			{ userId }
+		);
+
+		// ONE-TAP FIRST: charge the saved card off-session.
+		if (savedPaymentMethodId && customer) {
+			try {
+				const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
+					{
+						...baseIntentParams,
+						customer: customer.stripeCustomerId,
+						payment_method: savedPaymentMethodId,
+						off_session: true,
+						confirm: true,
+					},
+					{
+						idempotencyKey: `substitution-payment:${paymentId}`,
+					}
+				);
+
+				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+					paymentId,
+					status: PAYMENT_STATUS.PROCESSING,
+					stripePaymentIntentId: paymentIntent.id,
+					stripePaymentMethodId: savedPaymentMethodId,
+				});
+				// Confirmed (or confirming) — the webhook applies the swap.
+				return { clientSecret: null, paymentId };
+			} catch (error) {
+				const cardError = error as OffSessionCardError;
+				const errorIntent = cardError.raw?.payment_intent ?? cardError.payment_intent;
+				if (cardError.code === "authentication_required" && errorIntent?.id) {
+					// The bank wants 3DS — bring the diner back to their device.
+					// The intent already exists at Stripe (status requires_action);
+					// hand its client secret to the Elements fallback.
+					let clientSecret = errorIntent.client_secret ?? null;
+					if (!clientSecret) {
+						const retrieved: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+							errorIntent.id
+						);
+						clientSecret = retrieved.client_secret;
+					}
+					await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+						paymentId,
+						status: PAYMENT_STATUS.PROCESSING,
+						stripePaymentIntentId: errorIntent.id,
+					});
+					return { clientSecret, paymentId };
+				}
+
+				// Genuine decline (or Stripe failure): record it and surface the
+				// error. The proposal stays pending so the diner can retry — the
+				// next call supersedes this payment row.
+				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+					paymentId,
+					status: PAYMENT_STATUS.FAILED,
+					failureMessage:
+						error instanceof Error ? error.message : "Failed to charge the saved card",
+					failedAt: Date.now(),
+				});
+				throw error;
+			}
+		}
+
+		// Elements fallback: no saved card — create an unconfirmed intent the
+		// diner confirms in the payment sheet. The card saves for next time when
+		// a Customer exists.
+		try {
+			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
+				{
+					...baseIntentParams,
+					...(customer && {
+						customer: customer.stripeCustomerId,
+						setup_future_usage: "off_session" as const,
+					}),
+				},
+				{
+					idempotencyKey: `substitution-payment:${paymentId}`,
+				}
+			);
+
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId,
+				status: PAYMENT_STATUS.PROCESSING,
+				stripePaymentIntentId: paymentIntent.id,
+			});
+
+			return { clientSecret: paymentIntent.client_secret, paymentId };
+		} catch (error) {
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId,
+				status: PAYMENT_STATUS.FAILED,
+				failureMessage:
+					error instanceof Error ? error.message : "Failed to create substitution payment intent",
+				failedAt: Date.now(),
+			});
+			throw error;
+		}
+	},
+});
+
+// =============================================================================
+// 7c. Post-Visit Tip Charge (ADR 008, TAVLI-71 Phase 3B)
+// =============================================================================
+
+/**
+ * Charges a session member's post-visit tip on their own spend (ADR 008): a
+ * destination charge of exactly `tipAmount` to the restaurant's connected
+ * account with **no application fee** — 100% of the tip lands with the
+ * restaurant. The payment row records the whole amount as `gratuityAmount`
+ * (subtotal 0, fee 0) so the tip-pool aggregation (`convex/tips.ts`) picks it
+ * up by session unchanged.
+ *
+ * ONE-TAP FIRST, mirroring {@link createSubstitutionPaymentIntent}: the card
+ * saved by the member's pay-at-submit charge in this session is charged
+ * `off_session` + `confirm: true`. When the bank demands 3DS
+ * (`authentication_required`) or no saved card exists, a `clientSecret` is
+ * returned for the Elements fallback instead. Settlement is always the
+ * webhook's job (`payments.confirmTipPayment`) — this action never marks the
+ * payment succeeded.
+ *
+ * Re-tipping is allowed (each call charges a fresh tip), but a double-submit
+ * is guarded: an existing pending/processing tip payment for the caller in
+ * this session is reused rather than charged twice.
+ */
+export const createTipCharge = action({
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		/** Tip in the smallest currency unit; must be a positive integer (0 = skip, never sent here). */
+		tipAmount: v.number(),
+	},
+	handler: async (
+		ctx,
+		args
+	): Promise<{ clientSecret: string | null; paymentId: Id<"payments"> }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw fromErrorObject(new NotAuthenticatedError().toObject());
+		}
+		const userId = identity.subject;
+
+		if (!Number.isInteger(args.tipAmount) || args.tipAmount <= 0) {
+			throw fromErrorObject(new ConflictError("ERROR_TIP_INVALID_AMOUNT").toObject());
+		}
+
+		const membership = await ctx.runQuery(internal.sessions.verifySessionMemberInternal, {
+			sessionId: args.sessionId,
+			userId,
+		});
+		if (!membership) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.ACCESS_DENIED).toObject());
+		}
+
+		const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getRestaurantInternal,
+			{ restaurantId: membership.restaurantId }
+		);
+		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
+			throw new Error("Restaurant is not set up for payments");
+		}
+
+		const currency = restaurant.currency.toLowerCase();
+		const stripeClient = getStripeClient();
+
+		// Double-submit guard: an in-flight tip attempt is handed back, not
+		// duplicated. (A different amount still reuses it — the diner must let
+		// the in-flight charge settle or fail before re-tipping.)
+		const existingPayment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.payments.getActiveTipPaymentInternal,
+			{ sessionId: args.sessionId, userId }
+		);
+		if (
+			existingPayment?.status === PAYMENT_STATUS.PROCESSING &&
+			existingPayment.stripePaymentIntentId
+		) {
+			const existingIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+				existingPayment.stripePaymentIntentId
+			);
+			if (existingIntent.status === "succeeded") {
+				// Already charged — the webhook records it momentarily.
+				return { clientSecret: null, paymentId: existingPayment._id };
+			}
+			if (existingIntent.status !== "canceled" && existingIntent.client_secret) {
+				return { clientSecret: existingIntent.client_secret, paymentId: existingPayment._id };
+			}
+		}
+		if (existingPayment) {
+			// A pending row that never reached Stripe (or a canceled intent) is a
+			// dead attempt — retire it and start fresh.
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId: existingPayment._id,
+				status: PAYMENT_STATUS.SUPERSEDED,
+			});
+		}
+
+		// Payment row FIRST (before any Stripe call), so the intent's metadata
+		// can carry the row id and a crash between the two leaves a visible
+		// pending row instead of an orphaned charge. The whole amount is
+		// gratuity: no service fee on tips (ADR 008).
+		const paymentId: Id<"payments"> = await ctx.runMutation(internal.stripeHelpers.createPayment, {
+			restaurantId: membership.restaurantId,
+			sessionId: args.sessionId,
+			amount: args.tipAmount,
+			subtotalAmount: 0,
+			feeAmount: 0,
+			gratuityAmount: args.tipAmount,
+			kind: PAYMENT_KIND.TIP,
+			paidByUserId: userId,
+			currency,
+			status: PAYMENT_STATUS.PENDING,
+			refundStatus: PAYMENT_REFUND_STATUS.NONE,
+			attemptNumber: existingPayment ? existingPayment.attemptNumber + 1 : 1,
+		});
+
+		const baseIntentParams = {
+			amount: args.tipAmount,
+			currency,
+			// Deliberately NO application_fee_amount: the platform takes no
+			// commission on tips — the full amount transfers to the restaurant.
+			transfer_data: {
+				destination: restaurant.stripeAccountId,
+			},
+			on_behalf_of: restaurant.stripeAccountId,
+			metadata: {
+				kind: PAYMENT_KIND.TIP,
+				sessionId: args.sessionId,
+				restaurantId: membership.restaurantId,
+				paymentId,
+				paidByUserId: userId,
+			},
+		} satisfies Stripe.PaymentIntentCreateParams;
+
+		const savedPaymentMethodId: string | null = await ctx.runQuery(
+			internal.substitutions.getSavedCardForSessionMemberInternal,
+			{ sessionId: args.sessionId, userId }
+		);
+		const customerId = await getOrCreateStripeCustomerId(ctx, stripeClient, userId);
+
+		// ONE-TAP FIRST: charge the saved card off-session.
+		if (savedPaymentMethodId) {
+			try {
+				const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
+					{
+						...baseIntentParams,
+						customer: customerId,
+						payment_method: savedPaymentMethodId,
+						off_session: true,
+						confirm: true,
+					},
+					{
+						idempotencyKey: `tip-payment:${paymentId}`,
+					}
+				);
+
+				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+					paymentId,
+					status: PAYMENT_STATUS.PROCESSING,
+					stripePaymentIntentId: paymentIntent.id,
+					stripePaymentMethodId: savedPaymentMethodId,
+				});
+				// Confirmed (or confirming) — the webhook records the tip.
+				return { clientSecret: null, paymentId };
+			} catch (error) {
+				const cardError = error as OffSessionCardError;
+				const errorIntent = cardError.raw?.payment_intent ?? cardError.payment_intent;
+				if (cardError.code === "authentication_required" && errorIntent?.id) {
+					// The bank wants 3DS — the intent exists at Stripe in
+					// requires_action; hand its client secret to the Elements fallback.
+					let clientSecret = errorIntent.client_secret ?? null;
+					if (!clientSecret) {
+						const retrieved: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+							errorIntent.id
+						);
+						clientSecret = retrieved.client_secret;
+					}
+					await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+						paymentId,
+						status: PAYMENT_STATUS.PROCESSING,
+						stripePaymentIntentId: errorIntent.id,
+					});
+					return { clientSecret, paymentId };
+				}
+
+				// Genuine decline (or Stripe failure): record it and surface the
+				// error — the diner can retry, superseding this row.
+				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+					paymentId,
+					status: PAYMENT_STATUS.FAILED,
+					failureMessage:
+						error instanceof Error ? error.message : "Failed to charge the saved card",
+					failedAt: Date.now(),
+				});
+				throw error;
+			}
+		}
+
+		// Elements fallback: no saved card — an unconfirmed intent the diner
+		// confirms in the payment sheet. The card saves for a future one-tap.
+		try {
+			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
+				{
+					...baseIntentParams,
+					customer: customerId,
+					setup_future_usage: "off_session",
+				},
+				{
+					idempotencyKey: `tip-payment:${paymentId}`,
+				}
+			);
+
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId,
+				status: PAYMENT_STATUS.PROCESSING,
+				stripePaymentIntentId: paymentIntent.id,
+			});
+
+			return { clientSecret: paymentIntent.client_secret, paymentId };
+		} catch (error) {
+			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				paymentId,
+				status: PAYMENT_STATUS.FAILED,
+				failureMessage:
+					error instanceof Error ? error.message : "Failed to create tip payment intent",
+				failedAt: Date.now(),
+			});
+			throw error;
+		}
 	},
 });
 

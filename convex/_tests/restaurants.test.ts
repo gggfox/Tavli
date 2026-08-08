@@ -731,3 +731,81 @@ describe("setSharedEmployeeSubject", () => {
 		expect(err!.name).toBe("NOT_AUTHORIZED");
 	});
 });
+
+describe("update — receipt tax fields (TAVLI-71 Phase 3C)", () => {
+	async function seedRestaurantForUpdate(t: ReturnType<typeof convexTest>) {
+		const orgId = await seedOrganization(t);
+		await seedUserRole(t, { userId: "tax-owner", roles: ["owner"], organizationId: orgId });
+		const authed = t.withIdentity({ subject: "tax-owner" });
+		const [restaurantId] = await authed.mutation(api.restaurants.create, {
+			name: "Tax R",
+			slug: `tax-r-${Math.random().toString(36).slice(2, 10)}`,
+			currency: "MXN",
+			organizationId: orgId,
+		});
+		return { orgId, authed, restaurantId: restaurantId! };
+	}
+
+	it("sets trimmed rfc / razonSocial / fiscalAddress", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "  COC010101ABC  ",
+			razonSocial: " La Cocina S.A. de C.V. ",
+			fiscalAddress: " Av. Siempre Viva 123 ",
+		});
+		expect(error).toBeNull();
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc).toMatchObject({
+			rfc: "COC010101ABC",
+			razonSocial: "La Cocina S.A. de C.V.",
+			fiscalAddress: "Av. Siempre Viva 123",
+		});
+	});
+
+	it("clears a tax field when passed an empty string", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
+
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "COC010101ABC",
+			razonSocial: "La Cocina S.A. de C.V.",
+		});
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "",
+		});
+		expect(error).toBeNull();
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc?.rfc).toBeUndefined();
+		// Untouched fields survive a partial update.
+		expect(doc?.razonSocial).toBe("La Cocina S.A. de C.V.");
+	});
+
+	it("does not expose tax fields on the public restaurant shape", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "COC010101ABC",
+			razonSocial: "La Cocina S.A. de C.V.",
+			fiscalAddress: "Av. Siempre Viva 123",
+		});
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		const publicShape = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+		expect(publicShape).not.toBeNull();
+		expect(publicShape).not.toHaveProperty("rfc");
+		expect(publicShape).not.toHaveProperty("razonSocial");
+		expect(publicShape).not.toHaveProperty("fiscalAddress");
+	});
+});

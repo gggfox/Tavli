@@ -59,8 +59,22 @@ export const OrdersKeys = {
 	TICKET_ITEM_CANCELLED_BADGE: "orders.ticket.itemCancelledBadge",
 	ACTION_CANCEL_ITEM: "orders.ticket.cancelItem",
 	CANCEL_ITEM_PROMPT: "orders.ticket.cancelItemPrompt",
+	/** Paid-line variant: 86'ing refunds the line + fee share automatically (ADR 008). */
+	CANCEL_ITEM_PAID_PROMPT: "orders.ticket.cancelItemPaidPrompt",
 	ACTION_CONFIRM_CANCEL_ITEM: "orders.ticket.confirmCancelItem",
 	ACTION_KEEP_ITEM: "orders.ticket.keepItem",
+
+	// Substitutions on paid lines (ADR 008, TAVLI-71 Phase 3A)
+	SUB_ACTION_PROPOSE: "orders.substitution.propose",
+	SUB_PENDING_BADGE: "orders.substitution.pendingBadge",
+	SUB_ACTION_CANCEL_PROPOSAL: "orders.substitution.cancelProposal",
+	SUB_DIALOG_TITLE: "orders.substitution.dialogTitle",
+	SUB_DIALOG_SUBTITLE: "orders.substitution.dialogSubtitle",
+	SUB_DIALOG_EMPTY: "orders.substitution.dialogEmpty",
+	SUB_DELTA_FREE: "orders.substitution.deltaFree",
+	SUB_DELTA_PREVIEW: "orders.substitution.deltaPreview",
+	SUB_DIALOG_CONFIRM: "orders.substitution.confirm",
+	SUB_DIALOG_DISMISS: "orders.substitution.dismiss",
 	TICKET_UNDO_READY: "orders.ticket.undoReady",
 	TICKET_MARKED_READY: "orders.ticket.markedReady",
 	TICKET_EMPTY_ALL_DONE: "orders.ticket.emptyAllDone",
@@ -72,6 +86,7 @@ export const OrdersKeys = {
 	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",
 	ARIA_CANCEL_ITEM: "orders.aria.cancelItem",
+	ARIA_PROPOSE_SUBSTITUTION: "orders.aria.proposeSubstitution",
 	ARIA_FULL_ORDER: "orders.aria.fullOrder",
 	ARIA_LOADING: "orders.aria.loading",
 } as const;

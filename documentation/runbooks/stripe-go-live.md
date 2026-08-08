@@ -281,21 +281,42 @@ via `refunds.list({ payment_intent, limit: 1 })`. Without that fallback,
 `stripeRefundId` is silently never written and `refundedAt` falls back to
 webhook-processing time.
 
-### Partial refunds apportion on the charge total
+### Partial refunds apportion on the charge total (LEGACY tab payments only)
 
-Cancelling one order out of a paid tab refunds that order's `totalAmount` with
-**no tip share**. Stripe apportions `reverse_transfer` and
-`refund_application_fee` proportionally — but on the **charge total** (subtotal +
-tip), whereas our fee was levied on **subtotal only**. The platform therefore
-retains a small residue.
+**Legacy tab payments (pre-ADR-008):** cancelling one order out of a paid tab
+refunds that order's `totalAmount` with **no tip share**. Stripe apportions
+`reverse_transfer` and `refund_application_fee` proportionally — but on the
+**charge total** (subtotal + tip), whereas our fee was levied on **subtotal
+only**. The platform therefore retains a small residue.
 
 Measured on a real test-mode refund: charge 110000 (subtotal 100000 + tip
 10000), fee 12000, refund 100000 → fee refunded **10909**, platform retains
 **1091** = **1.09% of the refunded amount**. The error is
 `refundAmount × feeRate × tip/(subtotal + tip)` and shrinks with the tip.
-Accepted for v1; exact accounting would require explicit fee-refund and
-transfer-reversal calls, which are a one-way door — Stripe disallows the
-proportional flags on that charge afterwards.
+Accepted for the legacy tail; exact accounting would require explicit
+fee-refund and transfer-reversal calls, which are a one-way door — Stripe
+disallows the proportional flags on that charge afterwards.
+
+**New-model payments (ADR 008, pay-at-submit) retire this residue
+structurally.** The charge is fee-inclusive (`amount = subtotal + 12%`, no tip
+on it), and refund math is computed in-house, per line
+(`computeLineRefundAmount`):
+
+- 86'ing one paid line refunds `lineTotal + round(lineTotal × 12%)`, clamped to
+  the payment's remaining balance.
+- 86'ing the order's **last live line** refunds the payment's **entire
+  remaining balance**, so however the per-line `round()`s fell, a fully-86'd
+  order's refunds sum to exactly `payment.amount` — zero residue by
+  construction.
+- **Substituted lines span two payments** (TAVLI-71 Phase 3A): the accepted
+  substitution's delta (+ 12% fee on the delta) lives on its own
+  `kind: "substitution"` payment. 86'ing that line issues **two refunds** —
+  the substitution payment's full remaining balance (idempotency key
+  `refund:<subPaymentId>:<orderItemId>`), plus the original line share
+  (`lineTotal - delta` + its fee share) from the order payment
+  (`refund:<orderPaymentId>:<orderItemId>`). Cumulative refunds never exceed
+  either payment's captured amount, and the last-live-line sweep clears each
+  payment's remainder independently.
 
 > [!CAUTION]
 > **A refund issued from the Stripe Dashboard does NOT reverse the transfer.**

@@ -72,6 +72,7 @@ function renderList(
 		onViewOrder: (id: any) => void;
 		onContinueCheckout: (id: any) => void;
 		onPayTab: () => void;
+		onCloseout: () => void;
 	}> = {}
 ) {
 	return render(
@@ -81,6 +82,7 @@ function renderList(
 			onViewOrder={props.onViewOrder ?? (() => {})}
 			onContinueCheckout={props.onContinueCheckout ?? (() => {})}
 			onPayTab={props.onPayTab ?? (() => {})}
+			onCloseout={props.onCloseout ?? (() => {})}
 		/>
 	);
 }
@@ -225,6 +227,27 @@ describe("SessionOrdersList", () => {
 
 		fireEvent.click(screen.getByText("View →"));
 		expect(onViewOrder).toHaveBeenCalledWith("orders:submitted");
+	});
+
+	it("shows the close-out CTA while the session is active and routes to the closeout screen", () => {
+		mockQueries({
+			orders: [baseOrder({ status: "submitted", paymentState: "paid" })],
+			tab: baseTab({ subtotal: 0, payableOrderIds: [] }),
+		});
+
+		const onCloseout = vi.fn();
+		renderList({ onCloseout });
+
+		fireEvent.click(screen.getByText("Close out & tip"));
+		expect(onCloseout).toHaveBeenCalled();
+	});
+
+	it("hides the close-out CTA when there is no active session (tab summary null)", () => {
+		mockQueries({ orders: [baseOrder({})], tab: null });
+
+		renderList();
+
+		expect(screen.queryByText("Close out & tip")).toBeNull();
 	});
 
 	it("sorts the list by creation time, newest first", () => {

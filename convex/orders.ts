@@ -1,5 +1,4 @@
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
@@ -54,6 +53,10 @@ import {
 	selectedOptionValidator,
 	VALID_TRANSITIONS,
 } from "./orderHelpers";
+import {
+	cancelPendingProposalsForOrder,
+	executeOrderItemCancellation,
+} from "./orderItemCancellation";
 import { resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -709,10 +712,27 @@ export const getOrderWithItems = query({
 
 		const activePaymentRaw = order.activePaymentId ? await ctx.db.get(order.activePaymentId) : null;
 
+		// The succeeded pay-at-submit charge backing this order (ADR 008), so the
+		// UI can display what was ACTUALLY charged (subtotal/fee split) instead of
+		// recomputing the fee from the rate. Null for cash orders
+		// (`markOrderPaidInPerson` writes no payments row) and legacy tab-paid
+		// orders — those carried no customer-borne fee, so no fee line renders.
+		const paidPayment =
+			activePaymentRaw?.status === PAYMENT_STATUS.SUCCEEDED &&
+			activePaymentRaw.kind === PAYMENT_KIND.ORDER
+				? {
+						subtotalAmount: activePaymentRaw.subtotalAmount ?? order.totalAmount,
+						feeAmount: activePaymentRaw.feeAmount ?? 0,
+						amount: activePaymentRaw.amount,
+						paidAt: activePaymentRaw.succeededAt ?? order.paidAt ?? null,
+					}
+				: null;
+
 		return {
 			...order,
 			paymentState: order.paymentState ?? ORDER_PAYMENT_STATE.UNPAID,
 			activePayment: toDinerVisiblePayment(activePaymentRaw),
+			paidPayment,
 			items,
 		};
 	},
@@ -864,6 +884,18 @@ export const updateStatus = mutation({
 		// `stripe.cancelOrderAndRefund`, which calls this first and then refunds.
 		// A manager who calls this mutation directly leaves the order in
 		// `refund_requested`, which the orders tab surfaces as a pending refund.
+
+		// A cancelled order withdraws every pending substitution proposal on it —
+		// there is no line left for the diner to accept a replacement onto
+		// (TAVLI-71 Phase 3A). In-flight delta payments are retired in-app; the
+		// webhook race is closed by `confirmSubstitutionPayment`'s auto-refund.
+		if (args.newStatus === "cancelled") {
+			await cancelPendingProposalsForOrder(ctx, {
+				orderId: args.orderId,
+				actorUserId: userId,
+				reason: "order_cancelled",
+			});
+		}
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.ORDERS,
@@ -1323,86 +1355,18 @@ export const cancelOrderItem = mutation({
 			paidPaymentId = paidPayment._id;
 		}
 
-		const now = Date.now();
-		await ctx.db.patch(args.orderItemId, { cancelledAt: now, cancelledBy: userId });
-		await recalculateTotal(ctx, item.orderId);
-
-		const scheduleLineRefund = async () => {
-			if (paidPaymentId === null) return;
-			await ctx.scheduler.runAfter(0, internal.stripe.refundOrderItem, {
-				orderId: item.orderId,
-				orderItemId: args.orderItemId,
-				paymentId: paidPaymentId,
-			});
-		};
-
-		const remainingItems = (
-			await ctx.db
-				.query(TABLE.ORDER_ITEMS)
-				.withIndex("by_order", (q) => q.eq("orderId", item.orderId))
-				.collect()
-		).filter((it) => it.cancelledAt === undefined);
-
-		if (remainingItems.length === 0) {
-			await ctx.db.patch(item.orderId, {
-				status: "cancelled",
-				// The last live line of a paid order settles like a whole-order
-				// cancel: refund_requested now, `refundOrderItem` refunds the entire
-				// remaining balance and flips it to refunded.
-				...(isPaid && { paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED }),
-				updatedAt: now,
-				updatedBy: userId,
-			});
-
-			await appendAuditEvent(ctx, {
-				aggregateType: TABLE.ORDERS,
-				aggregateId: item.orderId,
-				eventType: AUDIT_EVENT.ORDER_STATUS_CHANGED,
-				restaurantId: order.restaurantId,
-				payload: {
-					restaurantId: order.restaurantId,
-					fromStatus: order.status,
-					toStatus: "cancelled",
-					refundEligible: isPaid,
-					totalAmount: 0,
-				},
-				userId,
-			});
-
-			await scheduleLineRefund();
-
-			return [args.orderItemId, null];
-		}
-
-		// 86'ing the last line of the one station that had not stamped yet leaves
-		// nobody to flip the order — the other stations are already done. Without
-		// this the order would sit in "preparing" forever.
-		if (order.status === "preparing") {
-			const menuItemIds = Array.from(new Set(remainingItems.map((it) => it.menuItemId)));
-			const menuItemDocs = await Promise.all(menuItemIds.map((id) => ctx.db.get(id)));
-			const menuItemStationMap = new Map<string, PrepStation>();
-			for (const doc of menuItemDocs) {
-				if (doc) menuItemStationMap.set(doc._id, resolvePrepStation(doc));
-			}
-
-			const applicable = getApplicableStations(remainingItems, menuItemStationMap);
-			const everyStationDone = Array.from(applicable).every((station) =>
-				station === PREP_STATION.KITCHEN
-					? order.kitchenReadyAt !== undefined
-					: order.barReadyAt !== undefined
-			);
-
-			if (everyStationDone) {
-				await ctx.db.patch(item.orderId, {
-					status: "ready",
-					updatedAt: now,
-					updatedBy: userId,
-				});
-			}
-		}
-
-		// Paid order keeps cooking; only the 86'd line's money goes back.
-		await scheduleLineRefund();
+		// The cancellation itself — stamps, totals, last-live-line fallout, and
+		// the scheduled refund — is shared with `substitutions.declineProposal`
+		// (the diner declining a substitution 86's the line the same way). Any
+		// pending substitution proposal on the line is auto-cancelled in there:
+		// the 86 is the stronger signal, so staff never have to withdraw the
+		// proposal first.
+		await executeOrderItemCancellation(ctx, {
+			item,
+			order,
+			actorUserId: userId,
+			paidPaymentId,
+		});
 
 		return [args.orderItemId, null];
 	},

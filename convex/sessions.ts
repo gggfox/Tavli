@@ -25,6 +25,8 @@ import {
 	AUDIT_EVENT,
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
+	ORDER_STATUS,
+	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	SESSION_PAYMENT_STATE,
@@ -288,9 +290,133 @@ export const close = mutation({
 	},
 });
 
+/**
+ * Everything the visit close-out screen needs (ADR 008, TAVLI-71 Phase 3B),
+ * scoped to the CALLING member: tips are per member, on the member's own paid
+ * totals, so two friends on one tab each see only their own spend.
+ *
+ * `canClose`/`closeBlockedReason` mirror the guards in {@link close}
+ * read-only, so the UI can explain a blocked close (e.g. an uncollected cash
+ * order) before the diner hits the error.
+ */
+export const getVisitSummary = query({
+	args: { sessionId: v.id(TABLE.SESSIONS) },
+	handler: async (ctx, args) => {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return null;
+
+		const session = await ctx.db.get(args.sessionId);
+		if (!session || !isSessionMember(session, userId)) return null;
+
+		const restaurant = await ctx.db.get(session.restaurantId);
+		if (!restaurant) return null;
+
+		const orders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+
+		// The caller's own card spend: order totals already reflect 86'd lines
+		// and accepted substitutions, so summing them needs no per-line math.
+		const myPaidOrders = orders.filter(
+			(o) =>
+				o.paymentState === ORDER_PAYMENT_STATE.PAID &&
+				o.paidByUserId === userId &&
+				o.status !== ORDER_STATUS.CANCELLED
+		);
+		const myPaidTotal = sumOrderTotals(myPaidOrders);
+
+		// Tip rows are session-scoped (no orderId), one per charge.
+		const sessionPayments = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+		const myTipRows = sessionPayments.filter(
+			(p) => p.kind === PAYMENT_KIND.TIP && p.paidByUserId === userId
+		);
+		const myTipPayments = myTipRows
+			.filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED)
+			.map((p) => ({ paymentId: p._id, amount: p.amount }));
+		// The latest non-settled tip attempt, so the close-out screen can follow
+		// an in-flight one-tap charge (processing → succeeded via webhook) and
+		// surface a decline for retry. Superseded/cancelled rows are dead ends.
+		const activeTipRow = myTipRows
+			.filter(
+				(p) =>
+					p.status === PAYMENT_STATUS.PENDING ||
+					p.status === PAYMENT_STATUS.PROCESSING ||
+					p.status === PAYMENT_STATUS.FAILED
+			)
+			.reduce<
+				(typeof myTipRows)[number] | null
+			>((latest, p) => (!latest || p.createdAt > latest.createdAt ? p : latest), null);
+
+		// One-tap eligibility: the card persisted by the caller's own
+		// pay-at-submit charge in this session (mirrors
+		// `substitutions.getSavedCardForSessionMemberInternal`).
+		let hasSavedCard = false;
+		for (const order of orders) {
+			if (order.paidByUserId !== userId || !order.activePaymentId) continue;
+			const payment = await ctx.db.get(order.activePaymentId);
+			if (
+				payment?.status === PAYMENT_STATUS.SUCCEEDED &&
+				payment.kind === PAYMENT_KIND.ORDER &&
+				payment.stripePaymentMethodId
+			) {
+				hasSavedCard = true;
+				break;
+			}
+		}
+
+		// Read-only mirror of the `close` guards, in the same precedence order.
+		let closeBlockedReason: string | null = null;
+		if (session.status !== SESSION_STATUS.ACTIVE) {
+			closeBlockedReason = null; // already closed — nothing to do
+		} else if (session.lockedForPaymentAt !== undefined) {
+			closeBlockedReason = DINER_SESSION_ERRORS.TAB_LOCKED;
+		} else if (sumOrderTotals(orders.filter(isPayableOrder)) > 0) {
+			closeBlockedReason = DINER_SESSION_ERRORS.TAB_UNPAID;
+		} else if (orders.some(isAwaitingPaymentOrder)) {
+			closeBlockedReason = DINER_SESSION_ERRORS.AWAITING_PAYMENT_ORDERS;
+		}
+
+		return {
+			sessionId: session._id,
+			restaurantId: session.restaurantId,
+			sessionStatus: session.status,
+			currency: restaurant.currency,
+			myPaidTotal,
+			myOrderCount: myPaidOrders.length,
+			myTipPayments,
+			myActiveTipPayment: toDinerVisiblePayment(activeTipRow),
+			hasSavedCard,
+			canClose: session.status === SESSION_STATUS.ACTIVE && closeBlockedReason === null,
+			closeBlockedReason,
+		};
+	},
+});
+
 // ============================================================================
 // Tab payment internals (called from the Stripe action / webhook)
 // ============================================================================
+
+/**
+ * Membership + active-session check for the tip charge action (Phase 3B).
+ * Returns the restaurant id the destination charge routes to, or null when
+ * the caller may not tip on this session.
+ */
+export const verifySessionMemberInternal = internalQuery({
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		userId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const session = await ctx.db.get(args.sessionId);
+		if (!session || session.status !== SESSION_STATUS.ACTIVE) return null;
+		if (!isSessionMember(session, args.userId)) return null;
+		return { restaurantId: session.restaurantId };
+	},
+});
 
 /**
  * Verifies the caller may pay this tab and returns the amount snapshot the

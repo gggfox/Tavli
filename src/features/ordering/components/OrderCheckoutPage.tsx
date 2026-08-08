@@ -2,8 +2,6 @@ import { OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
-import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { loadStripe, type Appearance } from "@stripe/stripe-js";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -17,65 +15,13 @@ import {
 	Loader2,
 	ShieldCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	STRIPE_BORDER_RADIUS,
-	STRIPE_DARK_TOKENS,
-	STRIPE_LIGHT_TOKENS,
-	type StripeThemeTokens,
-} from "../stripeAppearanceTokens";
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+import { EmailReceiptButton } from "./EmailReceiptButton";
+import { StripePaymentSection } from "./StripePaymentSection";
 
 /** Customer-borne service-fee rate as a display percentage (e.g. 12). */
 const SERVICE_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
-
-/**
- * Stripe Elements renders in a cross-origin iframe and therefore cannot read
- * our CSS custom properties, so this is the one surface that has to be handed
- * literal colours (see `../stripeAppearanceTokens`).
- */
-function toAppearance(theme: Appearance["theme"], tokens: StripeThemeTokens): Appearance {
-	return {
-		theme,
-		variables: {
-			colorPrimary: tokens.primary,
-			colorBackground: tokens.background,
-			colorText: tokens.text,
-			colorTextSecondary: tokens.textSecondary,
-			colorTextPlaceholder: tokens.textPlaceholder,
-			colorDanger: tokens.danger,
-			borderRadius: STRIPE_BORDER_RADIUS,
-		},
-	};
-}
-
-const LIGHT_APPEARANCE: Appearance = toAppearance("stripe", STRIPE_LIGHT_TOKENS);
-const DARK_APPEARANCE: Appearance = toAppearance("night", STRIPE_DARK_TOKENS);
-
-function useIsDarkTheme(): boolean {
-	const [isDark, setIsDark] = useState(() => {
-		if (typeof document === "undefined") return false;
-		return document.documentElement.classList.contains("dark");
-	});
-
-	useEffect(() => {
-		if (typeof document === "undefined") return;
-		const root = document.documentElement;
-		const update = () => {
-			setIsDark(root.classList.contains("dark"));
-		};
-		update();
-		const observer = new MutationObserver(update);
-		observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-		return () => {
-			observer.disconnect();
-		};
-	}, []);
-
-	return isDark;
-}
 
 interface OrderCheckoutPageProps {
 	orderId: Id<"orders">;
@@ -180,6 +126,7 @@ export function OrderCheckoutPage({
 	if (order.paymentState === "paid") {
 		return (
 			<OrderPaidScreen
+				orderId={orderId}
 				dailyOrderNumber={order.dailyOrderNumber ?? null}
 				onBackToMenu={onBackToMenu}
 				onViewOrders={onViewOrders}
@@ -263,7 +210,7 @@ export function OrderCheckoutPage({
 				)}
 
 				{clientSecret ? (
-					<OrderPaymentSection clientSecret={clientSecret} />
+					<StripePaymentSection clientSecret={clientSecret} />
 				) : (
 					<button
 						type="button"
@@ -329,94 +276,6 @@ function OrderCheckoutFallback({ onBackToMenu }: Readonly<{ onBackToMenu: () => 
 				{t(OrderingKeys.BACK_TO_MENU)}
 			</button>
 		</div>
-	);
-}
-
-function OrderPaymentSection({ clientSecret }: Readonly<{ clientSecret: string }>) {
-	const isDark = useIsDarkTheme();
-	const elementsOptions = useMemo(
-		() => ({
-			clientSecret,
-			appearance: isDark ? DARK_APPEARANCE : LIGHT_APPEARANCE,
-		}),
-		[clientSecret, isDark]
-	);
-
-	return (
-		<Elements key={isDark ? "dark" : "light"} stripe={stripePromise} options={elementsOptions}>
-			<OrderPaymentForm />
-		</Elements>
-	);
-}
-
-function OrderPaymentForm() {
-	const { t } = useTranslation();
-	const stripe = useStripe();
-	const elements = useElements();
-	const [processing, setProcessing] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-
-	// The parent's subscription owns success (paymentState flips to "paid" and
-	// the page re-renders to the paid screen) and webhook-reported failures;
-	// this form only surfaces synchronous confirmation errors.
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		if (!stripe || !elements) return;
-
-		setProcessing(true);
-		setError(null);
-
-		const { error: submitError } = await elements.submit();
-		if (submitError) {
-			setError(submitError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR));
-			setProcessing(false);
-			return;
-		}
-
-		const { error: confirmError } = await stripe.confirmPayment({
-			elements,
-			confirmParams: {
-				return_url: globalThis.location.href,
-			},
-			redirect: "if_required",
-		});
-
-		if (confirmError) {
-			setError(confirmError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR));
-			setProcessing(false);
-		}
-		// On success the webhook settles the order (`orders.confirmPayment`);
-		// the parent's subscription flips to the paid screen.
-	};
-
-	return (
-		<form onSubmit={handleSubmit} className="space-y-4">
-			<PaymentElement />
-
-			{error && (
-				<div className="px-4 py-3 rounded-lg text-sm text-destructive bg-destructive-subtle">
-					{error}
-				</div>
-			)}
-
-			<button
-				type="submit"
-				disabled={!stripe || processing}
-				className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold hover-btn-primary disabled:opacity-50"
-			>
-				{processing ? (
-					<>
-						<Loader2 size={16} className="animate-spin" />
-						{t(OrderingKeys.CHECKOUT_PROCESSING)}
-					</>
-				) : (
-					<>
-						<CreditCard size={16} />
-						{t(OrderingKeys.CHECKOUT_PAY_NOW)}
-					</>
-				)}
-			</button>
-		</form>
 	);
 }
 
@@ -492,10 +351,12 @@ function PayInPersonScreen({
 }
 
 function OrderPaidScreen({
+	orderId,
 	dailyOrderNumber,
 	onBackToMenu,
 	onViewOrders,
 }: Readonly<{
+	orderId: Id<"orders">;
 	dailyOrderNumber: number | null;
 	onBackToMenu: () => void;
 	onViewOrders: () => void;
@@ -518,6 +379,9 @@ function OrderPaidScreen({
 					? t(OrderingKeys.CHECKOUT_PAID_DESC, { n: dailyOrderNumber })
 					: t(OrderingKeys.CHECKOUT_PAID_DESC_NO_NUMBER)}
 			</p>
+			<div className="w-full max-w-xs">
+				<EmailReceiptButton orderId={orderId} />
+			</div>
 			<button
 				onClick={onViewOrders}
 				className="mt-2 px-6 py-2.5 rounded-xl text-sm font-medium hover-btn-primary"

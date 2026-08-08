@@ -218,10 +218,11 @@ export async function handleAccountStatusChange(
  * not create, e.g. tests run by another developer against shared keys).
  *
  * Dispatch order (ADR 008): the payment row's `kind` decides first —
- * `order` settles that order via `confirmPayment`; `tip`/`substitution`
- * handlers land in Phase 3 and log loudly until then. Rows without a `kind`
- * are legacy: `sessionId` marks a tab payment, otherwise a pre-pivot
- * per-order payment, both on their original paths.
+ * `order` settles that order via `confirmPayment`; `substitution` applies the
+ * swap via `confirmSubstitutionPayment`; `tip` records the post-visit tip via
+ * `confirmTipPayment`. Rows without a `kind` are legacy: `sessionId` marks a
+ * tab payment, otherwise a pre-pivot per-order payment, both on their
+ * original paths.
  */
 export async function handlePaymentIntentSuccess(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -264,14 +265,27 @@ export async function handlePaymentIntentSuccess(
 				? gratuityRaw
 				: 0;
 
-	if (payment.kind === PAYMENT_KIND.TIP || payment.kind === PAYMENT_KIND.SUBSTITUTION) {
-		// Cannot exist yet — createPaymentIntent only writes kind "order" in
-		// Phase 1. Do not throw: throwing would make the webhook retry an event
-		// no code can ever settle.
-		console.error(
-			`[stripe] unhandled payment kind "${payment.kind}" for payment ${payment._id} — ` +
-				"tip/substitution settlement lands in TAVLI-71 Phase 3"
-		);
+	if (payment.kind === PAYMENT_KIND.SUBSTITUTION) {
+		// Supplemental delta charge for an accepted substitution (Phase 3A):
+		// applies the swap, raises the order total by the delta, and marks the
+		// proposal accepted — idempotently.
+		await ctx.runMutation(internal.substitutions.confirmSubstitutionPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			stripeChargeId: chargeId,
+		});
+		return payment._id;
+	}
+
+	if (payment.kind === PAYMENT_KIND.TIP) {
+		// Post-visit tip (Phase 3B): marks the payment succeeded and records the
+		// sessions.tipPaid audit event — idempotently. Never closes the session
+		// and never touches the legacy session.tipAmount field.
+		await ctx.runMutation(internal.payments.confirmTipPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			stripeChargeId: chargeId,
+		});
 		return payment._id;
 	}
 
@@ -313,8 +327,9 @@ export async function handlePaymentIntentSuccess(
  *
  * Kind `order` rows (ADR 008) carry an `orderId` and no `sessionId`, so they
  * fall through to `failPayment` exactly like legacy per-order rows — the
- * routing needs no `kind` branch. Tip/substitution rows are guarded the same
- * way as on the success path so a Phase 3 intent can never unlock a tab.
+ * routing needs no `kind` branch. Tip/substitution rows are dispatched by
+ * `kind` before the `sessionId` check so a Phase 3 intent can never unlock a
+ * tab.
  */
 export async function handlePaymentIntentFailure(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -330,11 +345,27 @@ export async function handlePaymentIntentFailure(
 	);
 	if (!payment) return undefined;
 
-	if (payment.kind === PAYMENT_KIND.TIP || payment.kind === PAYMENT_KIND.SUBSTITUTION) {
-		console.error(
-			`[stripe] unhandled payment kind "${payment.kind}" for failed payment ${payment._id} — ` +
-				"tip/substitution settlement lands in TAVLI-71 Phase 3"
-		);
+	if (payment.kind === PAYMENT_KIND.SUBSTITUTION) {
+		// A declined delta charge leaves the proposal pending — the diner can
+		// retry from their device (a fresh intent supersedes the failed row).
+		await ctx.runMutation(internal.substitutions.failSubstitutionPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
+			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
+		});
+		return payment._id;
+	}
+
+	if (payment.kind === PAYMENT_KIND.TIP) {
+		// A declined tip charge is marked failed so the diner can retry from the
+		// close-out screen (a fresh attempt supersedes the failed row).
+		await ctx.runMutation(internal.payments.failTipPayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntent.id,
+			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
+			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
+		});
 		return payment._id;
 	}
 

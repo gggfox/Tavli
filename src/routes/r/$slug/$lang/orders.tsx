@@ -32,6 +32,12 @@ function Page() {
 					params: { slug, lang },
 				})
 			}
+			onCloseout={() =>
+				navigate({
+					to: "/r/$slug/$lang/closeout",
+					params: { slug, lang },
+				})
+			}
 		/>
 	);
 }

@@ -267,6 +267,12 @@ export const update = mutation({
 		description: v.optional(v.string()),
 		currency: v.optional(v.string()),
 		supportEmail: v.optional(v.string()),
+		// Informational tax block for restaurant-branded receipts (ADR 008 /
+		// TAVLI-71 Phase 3C). NOT CFDI data — display-only on receipt emails.
+		// Same access tier as supportEmail (manager or above); empty string clears.
+		rfc: v.optional(v.string()),
+		razonSocial: v.optional(v.string()),
+		fiscalAddress: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		openTime: v.optional(v.string()),
 		closeTime: v.optional(v.string()),
@@ -405,6 +411,15 @@ export const update = mutation({
 			...(args.currency !== undefined && { currency: args.currency }),
 			...(args.supportEmail !== undefined && {
 				supportEmail: args.supportEmail.trim() ? args.supportEmail.trim() : undefined,
+			}),
+			...(args.rfc !== undefined && {
+				rfc: args.rfc.trim() ? args.rfc.trim() : undefined,
+			}),
+			...(args.razonSocial !== undefined && {
+				razonSocial: args.razonSocial.trim() ? args.razonSocial.trim() : undefined,
+			}),
+			...(args.fiscalAddress !== undefined && {
+				fiscalAddress: args.fiscalAddress.trim() ? args.fiscalAddress.trim() : undefined,
 			}),
 			...(args.timezone !== undefined && {
 				timezone: args.timezone.trim() ? args.timezone.trim() : undefined,

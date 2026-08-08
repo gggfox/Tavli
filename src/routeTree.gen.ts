@@ -39,6 +39,7 @@ import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.i
 import { Route as RSlugOrderOrderIdRouteImport } from './routes/r/$slug/order/$orderId'
 import { Route as RSlugLangOrdersRouteImport } from './routes/r/$slug/$lang/orders'
 import { Route as RSlugLangMenuRouteImport } from './routes/r/$slug/$lang/menu'
+import { Route as RSlugLangCloseoutRouteImport } from './routes/r/$slug/$lang/closeout'
 import { Route as RSlugLangCheckoutRouteImport } from './routes/r/$slug/$lang/checkout'
 import { Route as RSlugLangCartRouteImport } from './routes/r/$slug/$lang/cart'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
@@ -196,6 +197,11 @@ const RSlugLangMenuRoute = RSlugLangMenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => RSlugLangRoute,
 } as any)
+const RSlugLangCloseoutRoute = RSlugLangCloseoutRouteImport.update({
+  id: '/closeout',
+  path: '/closeout',
+  getParentRoute: () => RSlugLangRoute,
+} as any)
 const RSlugLangCheckoutRoute = RSlugLangCheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
   '/r/$slug/$lang/checkout': typeof RSlugLangCheckoutRoute
+  '/r/$slug/$lang/closeout': typeof RSlugLangCloseoutRoute
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
@@ -297,6 +304,7 @@ export interface FileRoutesByTo {
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
   '/r/$slug/$lang/checkout': typeof RSlugLangCheckoutRoute
+  '/r/$slug/$lang/closeout': typeof RSlugLangCloseoutRoute
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
@@ -336,6 +344,7 @@ export interface FileRoutesById {
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
   '/r/$slug/$lang/checkout': typeof RSlugLangCheckoutRoute
+  '/r/$slug/$lang/closeout': typeof RSlugLangCloseoutRoute
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
@@ -376,6 +385,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/spa-mode'
     | '/r/$slug/$lang/cart'
     | '/r/$slug/$lang/checkout'
+    | '/r/$slug/$lang/closeout'
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
@@ -414,6 +424,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/spa-mode'
     | '/r/$slug/$lang/cart'
     | '/r/$slug/$lang/checkout'
+    | '/r/$slug/$lang/closeout'
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
@@ -452,6 +463,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/spa-mode'
     | '/r/$slug/$lang/cart'
     | '/r/$slug/$lang/checkout'
+    | '/r/$slug/$lang/closeout'
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
@@ -681,6 +693,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RSlugLangMenuRouteImport
       parentRoute: typeof RSlugLangRoute
     }
+    '/r/$slug/$lang/closeout': {
+      id: '/r/$slug/$lang/closeout'
+      path: '/closeout'
+      fullPath: '/r/$slug/$lang/closeout'
+      preLoaderRoute: typeof RSlugLangCloseoutRouteImport
+      parentRoute: typeof RSlugLangRoute
+    }
     '/r/$slug/$lang/checkout': {
       id: '/r/$slug/$lang/checkout'
       path: '/checkout'
@@ -785,6 +804,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface RSlugLangRouteChildren {
   RSlugLangCartRoute: typeof RSlugLangCartRoute
   RSlugLangCheckoutRoute: typeof RSlugLangCheckoutRoute
+  RSlugLangCloseoutRoute: typeof RSlugLangCloseoutRoute
   RSlugLangMenuRoute: typeof RSlugLangMenuRoute
   RSlugLangOrdersRoute: typeof RSlugLangOrdersRoute
   RSlugLangOrderOrderIdRoute: typeof RSlugLangOrderOrderIdRoute
@@ -793,6 +813,7 @@ interface RSlugLangRouteChildren {
 const RSlugLangRouteChildren: RSlugLangRouteChildren = {
   RSlugLangCartRoute: RSlugLangCartRoute,
   RSlugLangCheckoutRoute: RSlugLangCheckoutRoute,
+  RSlugLangCloseoutRoute: RSlugLangCloseoutRoute,
   RSlugLangMenuRoute: RSlugLangMenuRoute,
   RSlugLangOrdersRoute: RSlugLangOrdersRoute,
   RSlugLangOrderOrderIdRoute: RSlugLangOrderOrderIdRoute,

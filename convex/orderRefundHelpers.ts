@@ -195,6 +195,14 @@ export type OrderRefundPlan = {
 /**
  * Resolves an order to a refund plan, or explains why no refund is due.
  * Read-only; the caller performs the Stripe call and records the outcome.
+ *
+ * TODO(TAVLI-71): a WHOLE-ORDER cancel of an order holding substituted lines
+ * refunds only the order payment's remaining balance — the accepted
+ * substitutions' delta payments (`kind: "substitution"`) are not yet swept
+ * here. The per-line path (`stripe.refundOrderItem`) does refund both sources,
+ * so 86'ing lines individually is complete; extend this plan (or
+ * `cancelOrderAndRefund`) to enumerate the order's accepted proposals and
+ * refund their supplemental payments too.
  */
 export const resolveOrderRefundPlanInternal = internalQuery({
 	args: { orderId: v.id(TABLE.ORDERS) },
@@ -307,6 +315,14 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
  * the next line's refund math sees the reduced balance immediately; the
  * `charge.refunded` webhook later overwrites it with Stripe's authoritative
  * cumulative figure, which converges to the same number.
+ *
+ * A **substituted** line's refund spans two payments (ADR 008 Phase 3A): the
+ * original share comes back on the order payment and the delta (+ fee on
+ * delta) on the substitution payment. `amount` is the combined figure recorded
+ * on the line; `paymentAmountPortion` is the order-payment share of it
+ * (defaults to `amount` for the unsubstituted case) and `supplementalRefunds`
+ * carries the per-substitution-payment shares, each accumulated onto its own
+ * payment row.
  */
 export const recordOrderItemRefundOutcomeInternal = internalMutation({
 	args: {
@@ -319,6 +335,18 @@ export const recordOrderItemRefundOutcomeInternal = internalMutation({
 		/** The staff member who 86'd the line, for the audit trail. */
 		userId: v.string(),
 		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		/** Share of `amount` refunded from `paymentId` (defaults to `amount`). */
+		paymentAmountPortion: v.optional(v.number()),
+		/** Substitution-payment shares of a substituted line's refund. */
+		supplementalRefunds: v.optional(
+			v.array(
+				v.object({
+					paymentId: v.id(TABLE.PAYMENTS),
+					amount: v.number(),
+					stripeRefundId: v.optional(v.string()),
+				})
+			)
+		),
 		stripeRefundId: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
 	},
@@ -334,11 +362,23 @@ export const recordOrderItemRefundOutcomeInternal = internalMutation({
 				...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
 			});
 
-			if (args.paymentId !== undefined) {
+			const orderPaymentPortion = args.paymentAmountPortion ?? args.amount;
+			if (args.paymentId !== undefined && orderPaymentPortion > 0) {
 				const payment = await ctx.db.get(args.paymentId);
 				if (payment) {
 					await ctx.db.patch(args.paymentId, {
-						amountRefunded: (payment.amountRefunded ?? 0) + args.amount,
+						amountRefunded: (payment.amountRefunded ?? 0) + orderPaymentPortion,
+						updatedAt: now,
+						updatedBy: AUDIT_SYSTEM_USER_ID,
+					});
+				}
+			}
+
+			for (const supplemental of args.supplementalRefunds ?? []) {
+				const payment = await ctx.db.get(supplemental.paymentId);
+				if (payment) {
+					await ctx.db.patch(supplemental.paymentId, {
+						amountRefunded: (payment.amountRefunded ?? 0) + supplemental.amount,
 						updatedAt: now,
 						updatedBy: AUDIT_SYSTEM_USER_ID,
 					});
@@ -370,6 +410,10 @@ export const recordOrderItemRefundOutcomeInternal = internalMutation({
 				orderItemId: args.orderItemId,
 				amount: args.amount,
 				isLastLiveLine: args.isLastLiveLine,
+				...(args.supplementalRefunds !== undefined &&
+					args.supplementalRefunds.length > 0 && {
+						supplementalRefunds: args.supplementalRefunds,
+					}),
 				...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
 				...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
 			},

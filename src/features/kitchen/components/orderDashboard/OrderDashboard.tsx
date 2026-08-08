@@ -7,10 +7,13 @@ import {
 	VirtualGrid,
 	type SegmentedControlOption,
 } from "@/global/components";
-import { useOptimisticUserSetting } from "@/global/hooks";
+import { useConvexMutate, useOptimisticUserSetting } from "@/global/hooks";
 import { getErrorMessage } from "@/global/utils";
 import { OrdersKeys } from "@/global/i18n";
-import type { Id } from "convex/_generated/dataModel";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "convex/_generated/api";
+import type { Doc, Id } from "convex/_generated/dataModel";
 import { ChefHat, X } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,6 +22,7 @@ import { OrderCard } from "./OrderCard";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 import { OrderDetailModal } from "./OrderDetailModal";
 import { StationTicketCard } from "./StationTicketCard";
+import { SubstitutionProposalDialog, type SubstitutionTarget } from "./SubstitutionProposalDialog";
 import { deriveStationTickets, type StationTicket } from "./stationTickets";
 import { ALL_PREP_STATIONS, STATION_CONFIG } from "./stationConfig";
 import {
@@ -77,6 +81,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	const [now, setNow] = useState(() => Date.now());
 	const [cancelItemPendingId, setCancelItemPendingId] = useState<string | null>(null);
 	const [cancelItemError, setCancelItemError] = useState<string | null>(null);
+	// Line a substitution is being proposed for (ADR 008); opens the dialog.
+	const [substitutionTarget, setSubstitutionTarget] = useState<SubstitutionTarget | null>(null);
 	// Single slot: a second bump replaces the pending undo rather than stacking
 	// strips. The window is short and the latest bump is the one a mistap is
 	// most likely to belong to.
@@ -196,6 +202,48 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		setMarkPaidError(null);
 		setMarkPaidConfirm(null);
 	}, []);
+
+	// Pending substitution proposals for the badge + withdraw affordances on
+	// station tickets (ADR 008). Live query — a diner answering removes the
+	// badge without a refetch.
+	const { data: pendingProposals = [] } = useQuery(
+		convexQuery(api.substitutions.getPendingForRestaurant, { restaurantId })
+	);
+	const pendingProposalsByItem = useMemo(() => {
+		const map = new Map<string, Id<"substitutionProposals">>();
+		for (const proposal of pendingProposals as Doc<"substitutionProposals">[]) {
+			map.set(proposal.orderItemId, proposal._id);
+		}
+		return map;
+	}, [pendingProposals]);
+
+	const proposeSubstitution = useConvexMutate(api.substitutions.proposeSubstitution);
+	const cancelProposal = useConvexMutate(api.substitutions.cancelProposal);
+
+	const handleProposeSubstitution = useCallback(
+		async (args: {
+			orderId: DashboardOrder["_id"];
+			orderItemId: DashboardOrderItem["_id"];
+			proposedMenuItemId: Id<"menuItems">;
+		}) => {
+			const [, proposeError] = await proposeSubstitution.mutateAsync(args);
+			// Surfaced by the dialog through getErrorMessage.
+			if (proposeError) throw proposeError;
+		},
+		[proposeSubstitution]
+	);
+
+	const handleCancelProposal = useCallback(
+		async (proposalId: Id<"substitutionProposals">) => {
+			try {
+				await cancelProposal.mutateAsync({ proposalId });
+			} catch (err) {
+				// Already answered/withdrawn — the live query reflects reality.
+				console.error("[OrderDashboard] cancelProposal failed", err);
+			}
+		},
+		[cancelProposal]
+	);
 
 	const handleCancelItem = useCallback(
 		async (orderItemId: DashboardOrderItem["_id"]) => {
@@ -353,19 +401,24 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				now={now}
 				cancelItemPendingId={cancelItemPendingId}
 				cancelItemError={cancelItemError}
+				pendingProposalsByItem={pendingProposalsByItem}
 				onSelectFullOrder={setFullOrder}
 				onUpdateStatus={updateStatus}
 				onMarkStationReady={handleMarkStationReadyFromTicket}
 				onCancelItem={handleCancelItem}
+				onProposeSubstitution={setSubstitutionTarget}
+				onCancelProposal={handleCancelProposal}
 			/>
 		),
 		[
 			now,
 			cancelItemPendingId,
 			cancelItemError,
+			pendingProposalsByItem,
 			updateStatus,
 			handleMarkStationReadyFromTicket,
 			handleCancelItem,
+			handleCancelProposal,
 		]
 	);
 
@@ -452,6 +505,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			)}
 
 			<OrderDetailModal fullOrder={fullOrder} now={now} onClose={() => setFullOrder(null)} />
+
+			{substitutionTarget && (
+				<SubstitutionProposalDialog
+					restaurantId={restaurantId}
+					target={substitutionTarget}
+					onClose={() => setSubstitutionTarget(null)}
+					onPropose={handleProposeSubstitution}
+				/>
+			)}
 		</DashboardShell>
 	);
 }

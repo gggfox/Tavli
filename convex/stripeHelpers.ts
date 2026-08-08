@@ -245,14 +245,22 @@ export const savePaymentIntentId = internalMutation({
 export const createPayment = internalMutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
-		orderId: v.id(TABLE.ORDERS),
+		/** Absent on kind "tip" rows, which are session-scoped (`sessionId` only). */
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		/** Set on kind "substitution" rows (the visit grouping) and kind "tip" rows; order rows carry `orderId` only. */
+		sessionId: v.optional(v.id(TABLE.SESSIONS)),
 		amount: v.number(),
 		// ADR 008 breakdown: new-model rows satisfy amount === subtotalAmount +
-		// feeAmount. Absent on legacy rows.
+		// feeAmount. Absent on legacy rows. Tip rows carry subtotal 0 / fee 0 and
+		// the whole amount in `gratuityAmount`.
 		subtotalAmount: v.optional(v.number()),
 		feeAmount: v.optional(v.number()),
+		/** Tip portion in smallest currency unit (kind "tip": equals `amount`). */
+		gratuityAmount: v.optional(v.number()),
 		kind: v.optional(paymentKindValidator),
 		paidByUserId: v.optional(v.string()),
+		/** Set on kind "substitution" rows: the proposal whose delta this pays. */
+		substitutionProposalId: v.optional(v.id(TABLE.SUBSTITUTION_PROPOSALS)),
 		currency: v.string(),
 		status: paymentStatusValidator,
 		refundStatus: paymentRefundStatusValidator,

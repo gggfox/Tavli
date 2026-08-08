@@ -52,6 +52,26 @@ vi.mock("../../hooks/useOrders", () => ({
 	useOrders: (...args: unknown[]) => useOrdersMock(...args),
 }));
 
+// OrderDashboard now subscribes to pending substitution proposals and wires
+// the propose/withdraw mutations directly (TAVLI-71 Phase 3A); stub the
+// react-query layer so the dashboard renders without a QueryClientProvider.
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+	return {
+		...actual,
+		useQuery: vi.fn(() => ({ data: [], isLoading: false })),
+		useMutation: vi.fn(() => ({
+			mutateAsync: vi.fn(async () => [null, null]),
+			isPending: false,
+		})),
+	};
+});
+
+vi.mock("@convex-dev/react-query", () => ({
+	convexQuery: vi.fn((ref: unknown, args: unknown) => ({ ref, args })),
+	useConvexMutation: vi.fn(() => vi.fn()),
+}));
+
 const useUserSettingsMock = vi.fn();
 vi.mock("@/features/users/hooks/useUserSettings", () => ({
 	useUserSettings: () => useUserSettingsMock(),

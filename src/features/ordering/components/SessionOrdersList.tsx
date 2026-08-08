@@ -33,6 +33,8 @@ interface SessionOrdersListProps {
 	onContinueCheckout: (orderId: Id<"orders">) => void;
 	/** LEGACY (pre-pivot sessions only): navigate to the whole-tab checkout. */
 	onPayTab: () => void;
+	/** Navigate to the visit close-out (post-visit tip + close, Phase 3B). */
+	onCloseout: () => void;
 }
 
 type OrderDoc = Doc<"orders">;
@@ -116,6 +118,7 @@ export function SessionOrdersList({
 	onViewOrder,
 	onContinueCheckout,
 	onPayTab,
+	onCloseout,
 }: Readonly<SessionOrdersListProps>) {
 	const { t } = useTranslation();
 	const { sessionId } = useSessionStore();
@@ -139,6 +142,7 @@ export function SessionOrdersList({
 			onViewOrder={onViewOrder}
 			onContinueCheckout={onContinueCheckout}
 			onPayTab={onPayTab}
+			onCloseout={onCloseout}
 		/>
 	);
 }
@@ -166,6 +170,7 @@ function SessionOrdersListContent({
 	onViewOrder,
 	onContinueCheckout,
 	onPayTab,
+	onCloseout,
 }: Readonly<{
 	slug: string;
 	sessionId: Id<"sessions">;
@@ -173,6 +178,7 @@ function SessionOrdersListContent({
 	onViewOrder: (orderId: Id<"orders">) => void;
 	onContinueCheckout: (orderId: Id<"orders">) => void;
 	onPayTab: () => void;
+	onCloseout: () => void;
 }>) {
 	const { t } = useTranslation();
 	const { data: orders, isLoading } = useQuery(
@@ -199,6 +205,18 @@ function SessionOrdersListContent({
 				    subtotal of 0 (orders pay at submit), so the whole-tab payment
 				    card only renders for a pre-pivot session that still owes. */}
 				{tab && tab.subtotal > 0 && <TabSummaryCard tab={tab} onPayTab={onPayTab} />}
+				{/* Visit close-out (ADR 008, Phase 3B): per-member post-visit tip +
+				    session close. `tab` is non-null only while the session is active. */}
+				{tab && (
+					<button
+						type="button"
+						onClick={onCloseout}
+						className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold hover-btn-primary"
+					>
+						<HandCoins size={16} />
+						{t(OrderingKeys.CLOSEOUT_CTA)}
+					</button>
+				)}
 				<JoinTabCard slug={slug} />
 
 				{orders && sortedOrders.length === 0 && (
