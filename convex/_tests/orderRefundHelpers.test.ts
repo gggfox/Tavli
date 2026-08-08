@@ -6,6 +6,7 @@ import {
 	buildRefundIdempotencyKey,
 	computeLineRefundAmount,
 	computeOrderRefundAmount,
+	computeSupplementalSweepAmount,
 } from "../orderRefundHelpers";
 
 const PAYMENT_A = "pay_a" as Id<"payments">;
@@ -248,5 +249,72 @@ describe("computeLineRefundAmount", () => {
 				isLastLiveLine: true,
 			})
 		).toBe(0);
+	});
+});
+
+describe("computeSupplementalSweepAmount", () => {
+	it("returns the substitution charge's entire remaining balance", () => {
+		// delta 100 + fee 12: a substitution PaymentIntent carries nothing but one
+		// line's delta, so a whole-order cancel returns all of it.
+		expect(
+			computeSupplementalSweepAmount({
+				paymentAmount: 112,
+				paymentAmountRefunded: undefined,
+				lineAlreadyRefunded: false,
+			})
+		).toBe(112);
+	});
+
+	it("skips a line that was already 86'd and refunded individually", () => {
+		// `stripe.refundOrderItem` already returned this delta. Sweeping it again
+		// would pay the diner twice for one dish.
+		expect(
+			computeSupplementalSweepAmount({
+				paymentAmount: 112,
+				paymentAmountRefunded: 112,
+				lineAlreadyRefunded: true,
+			})
+		).toBe(0);
+	});
+
+	it("skips the line even when the earlier refund has not been recorded yet", () => {
+		// The `refundedAt` stamp is the guard; correctness must not depend on
+		// `amountRefunded` having landed (the webhook may still be in flight).
+		expect(
+			computeSupplementalSweepAmount({
+				paymentAmount: 112,
+				paymentAmountRefunded: undefined,
+				lineAlreadyRefunded: true,
+			})
+		).toBe(0);
+	});
+
+	it("never refunds more than is left on the charge", () => {
+		expect(
+			computeSupplementalSweepAmount({
+				paymentAmount: 112,
+				paymentAmountRefunded: 100,
+				lineAlreadyRefunded: false,
+			})
+		).toBe(12);
+		expect(
+			computeSupplementalSweepAmount({
+				paymentAmount: 112,
+				paymentAmountRefunded: 500,
+				lineAlreadyRefunded: false,
+			})
+		).toBe(0);
+	});
+});
+
+describe("the whole-order sweep key and the per-line key", () => {
+	it("never collide on the same substitution payment", () => {
+		// A line 86 keys (payment, line); the whole-order sweep keys (payment,
+		// order). Sharing a key would make Stripe replay the first refund and
+		// silently move no money on the second.
+		expect(buildRefundIdempotencyKey(PAYMENT_A, ORDER_A)).not.toBe(
+			buildLineRefundIdempotencyKey(PAYMENT_A, ITEM_A)
+		);
+		expect(buildRefundIdempotencyKey(PAYMENT_A, ORDER_A)).toBe(`refund:${PAYMENT_A}:${ORDER_A}`);
 	});
 });

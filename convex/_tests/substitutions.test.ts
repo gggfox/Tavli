@@ -7,7 +7,7 @@
  * of a substituted line.
  */
 import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
@@ -1046,6 +1046,365 @@ describe("substitutions (TAVLI-71 Phase 3A)", () => {
 			} finally {
 				vi.useRealTimers();
 			}
+		});
+	});
+
+	/**
+	 * The whole-order sibling of the block above (TAVLI-71 Phase 5): a staff comp
+	 * of an order holding accepted substitutions has to return the delta charges
+	 * too. Before this, `cancelOrderAndRefund` refunded only the order payment and
+	 * the diner stayed out of pocket by every accepted delta.
+	 */
+	describe("whole-order cancel sweeps the substitution payments", () => {
+		afterEach(() => {
+			// These tests install call-shape-driven implementations; reset so they
+			// cannot leak into anything appended after this block.
+			mockStripeClient.refunds.create.mockReset();
+			mockStripeClient.paymentIntents.create.mockReset();
+		});
+
+		/**
+		 * Proposes a substitution, charges its delta on the saved card, and lands
+		 * the webhook — leaving one ACCEPTED proposal with settled supplemental
+		 * money. Parameterised by line and replacement so a single line can be
+		 * substituted twice (the chained case).
+		 */
+		async function acceptSubstitution(
+			t: ReturnType<typeof convexTest>,
+			seed: Awaited<ReturnType<typeof seedPaidOrder>>,
+			args: {
+				orderItemId: Id<"orderItems">;
+				proposedMenuItemId: Id<"menuItems">;
+				stripePaymentIntentId: string;
+			}
+		) {
+			const [proposalId] = await seed.staff.mutation(api.substitutions.proposeSubstitution, {
+				orderId: seed.orderId,
+				orderItemId: args.orderItemId,
+				proposedMenuItemId: args.proposedMenuItemId,
+			});
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: args.stripePaymentIntentId,
+				status: "succeeded",
+				client_secret: null,
+			});
+			const { paymentId: subPaymentId } = await seed.diner.action(
+				api.stripe.createSubstitutionPaymentIntent,
+				{ proposalId: proposalId! }
+			);
+			await t.mutation(internal.substitutions.confirmSubstitutionPayment, {
+				paymentId: subPaymentId,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			});
+			return { proposalId: proposalId!, subPaymentId };
+		}
+
+		/** A second, pricier replacement for the chained-substitution case. */
+		async function insertMenuItem(
+			t: ReturnType<typeof convexTest>,
+			restaurantId: Id<"restaurants">,
+			args: { name: string; basePrice: number }
+		): Promise<Id<"menuItems">> {
+			return await t.run(async (ctx) => {
+				const sibling = (await ctx.db.query("menuItems").collect()).find(
+					(item) => item.restaurantId === restaurantId
+				)!;
+				return await ctx.db.insert("menuItems", {
+					categoryId: sibling.categoryId,
+					restaurantId,
+					name: args.name,
+					basePrice: args.basePrice,
+					isAvailable: true,
+					displayOrder: 9,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+		}
+
+		/** Every `refunds.create` call as `{ payment_intent, amount, idempotencyKey }`. */
+		function refundCalls() {
+			return mockStripeClient.refunds.create.mock.calls.map((call) => ({
+				...(call[0] as { payment_intent: string; amount?: number }),
+				idempotencyKey: (call[1] as { idempotencyKey: string }).idempotencyKey,
+			}));
+		}
+
+		it("refunds the order payment AND the accepted delta, with distinct keys", async () => {
+			const t = convexTest(schema, modules);
+			const seed = await seedPaidOrder(t);
+			const { subPaymentId } = await acceptSubstitution(t, seed, {
+				orderItemId: seed.drinkItemId,
+				proposedMenuItemId: seed.molcajeteId,
+				stripePaymentIntentId: "pi_sub_whole",
+			});
+
+			mockStripeClient.refunds.create
+				.mockResolvedValueOnce({ id: "re_whole_delta", status: "succeeded", amount: 112 })
+				.mockResolvedValueOnce({ id: "re_whole_order", status: "succeeded", amount: 1568 });
+
+			const [result, error] = await seed.staff.action(api.stripe.cancelOrderAndRefund, {
+				orderId: seed.orderId,
+			});
+			expect(error).toBeNull();
+
+			// (a) the substitution charge in full (delta 100 + feeOnDelta 12), keyed
+			// on (payment, ORDER) — distinct from the (payment, line) key an 86
+			// would use on this very same charge.
+			expect(mockStripeClient.refunds.create).toHaveBeenNthCalledWith(
+				1,
+				{
+					payment_intent: "pi_sub_whole",
+					amount: 112,
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{ idempotencyKey: `refund:${subPaymentId}:${seed.orderId}` }
+			);
+			// (b) then the order payment. Fee-inclusive ⇒ its whole remaining
+			// balance, so `amount` is omitted and Stripe empties the charge.
+			expect(mockStripeClient.refunds.create).toHaveBeenNthCalledWith(
+				2,
+				{
+					payment_intent: "pi_sub_order",
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{ idempotencyKey: `refund:${seed.paymentId}:${seed.orderId}` }
+			);
+			expect(new Set(refundCalls().map((call) => call.idempotencyKey)).size).toBe(2);
+
+			const { order, orderPayment, subPayment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seed.orderId),
+				orderPayment: await ctx.db.get(seed.paymentId),
+				subPayment: await ctx.db.get(subPaymentId),
+			}));
+
+			// The invariant that matters: the diner is made EXACTLY whole across
+			// both PaymentIntents — 1568 + 112 charged, 1568 + 112 back.
+			expect(result?.amountRefunded).toBe(orderPayment!.amount + subPayment!.amount);
+			expect(result?.amountRefunded).toBe(1680);
+			expect(subPayment?.amountRefunded).toBe(subPayment?.amount);
+			expect(subPayment?.refundStatus).toBe("succeeded");
+			expect(order?.status).toBe("cancelled");
+			expect(order?.paymentState).toBe("refunded");
+		});
+
+		it("does not re-refund a line that was already 86'd and refunded", async () => {
+			vi.useFakeTimers();
+			try {
+				const t = convexTest(schema, modules);
+				const seed = await seedPaidOrder(t);
+				const { subPaymentId } = await acceptSubstitution(t, seed, {
+					orderItemId: seed.drinkItemId,
+					proposedMenuItemId: seed.molcajeteId,
+					stripePaymentIntentId: "pi_sub_twice",
+				});
+
+				mockStripeClient.refunds.create
+					// The 86 of the substituted line: delta charge, then its original
+					// share of the order payment.
+					.mockResolvedValueOnce({ id: "re_86_delta", status: "succeeded", amount: 112 })
+					.mockResolvedValueOnce({ id: "re_86_original", status: "succeeded", amount: 672 })
+					// The later whole-order cancel: only what the order payment has left.
+					.mockResolvedValueOnce({ id: "re_rest", status: "succeeded", amount: 896 });
+
+				await seed.staff.mutation(api.orders.cancelOrderItem, {
+					orderItemId: seed.drinkItemId,
+				});
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+				const [result, error] = await seed.staff.action(api.stripe.cancelOrderAndRefund, {
+					orderId: seed.orderId,
+				});
+				expect(error).toBeNull();
+
+				const calls = refundCalls();
+				expect(calls).toHaveLength(3);
+				// The delta charge is touched exactly once, by the 86 — the sweep
+				// skips it because the line carries `refundedAt`.
+				expect(calls.filter((call) => call.payment_intent === "pi_sub_whole")).toHaveLength(0);
+				expect(calls.filter((call) => call.payment_intent === "pi_sub_twice")).toHaveLength(1);
+				// The whole-order refund empties what is left of the order payment
+				// (tacos 800 + its 96 fee), not the full 1568.
+				expect(calls[2]).toMatchObject({
+					payment_intent: "pi_sub_order",
+					idempotencyKey: `refund:${seed.paymentId}:${seed.orderId}`,
+				});
+
+				const { orderPayment, subPayment } = await t.run(async (ctx) => ({
+					orderPayment: await ctx.db.get(seed.paymentId),
+					subPayment: await ctx.db.get(subPaymentId),
+				}));
+				// 112 + 672 + 896 === 1568 + 112: still exactly whole, no double pay.
+				expect(112 + 672 + result!.amountRefunded).toBe(orderPayment!.amount + subPayment!.amount);
+				expect(subPayment?.amountRefunded).toBe(112);
+				expect(subPayment!.amountRefunded!).toBeLessThanOrEqual(subPayment!.amount);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("sweeps every accepted proposal when one line was substituted twice", async () => {
+			const t = convexTest(schema, modules);
+			const seed = await seedPaidOrder(t);
+			const parrilladaId = await insertMenuItem(t, seed.restaurantId, {
+				name: "Parrillada",
+				basePrice: 900,
+			});
+
+			// 600 → Molcajete 700 (delta 100, fee 12) → Parrillada 900 (delta 200,
+			// fee 24). Three charges in total, one order payment and two deltas.
+			const first = await acceptSubstitution(t, seed, {
+				orderItemId: seed.drinkItemId,
+				proposedMenuItemId: seed.molcajeteId,
+				stripePaymentIntentId: "pi_chain_1",
+			});
+			const second = await acceptSubstitution(t, seed, {
+				orderItemId: seed.drinkItemId,
+				proposedMenuItemId: parrilladaId,
+				stripePaymentIntentId: "pi_chain_2",
+			});
+
+			// Echo the requested amount so the assertions do not depend on the
+			// order the two delta charges happen to be swept in.
+			mockStripeClient.refunds.create.mockImplementation((params: { amount?: number }) =>
+				Promise.resolve({
+					id: `re_${params.amount ?? "remaining"}`,
+					status: "succeeded",
+					amount: params.amount ?? 1568,
+				})
+			);
+
+			const [result, error] = await seed.staff.action(api.stripe.cancelOrderAndRefund, {
+				orderId: seed.orderId,
+			});
+			expect(error).toBeNull();
+
+			const calls = refundCalls();
+			expect(calls).toHaveLength(3);
+			expect(calls.find((call) => call.payment_intent === "pi_chain_1")).toMatchObject({
+				amount: 112,
+				idempotencyKey: `refund:${first.subPaymentId}:${seed.orderId}`,
+			});
+			expect(calls.find((call) => call.payment_intent === "pi_chain_2")).toMatchObject({
+				amount: 224,
+				idempotencyKey: `refund:${second.subPaymentId}:${seed.orderId}`,
+			});
+			expect(new Set(calls.map((call) => call.idempotencyKey)).size).toBe(3);
+
+			const { firstPayment, secondPayment, orderPayment } = await t.run(async (ctx) => ({
+				firstPayment: await ctx.db.get(first.subPaymentId),
+				secondPayment: await ctx.db.get(second.subPaymentId),
+				orderPayment: await ctx.db.get(seed.paymentId),
+			}));
+			// Whole across all three intents: 1568 + 112 + 224.
+			expect(result?.amountRefunded).toBe(
+				orderPayment!.amount + firstPayment!.amount + secondPayment!.amount
+			);
+			expect(result?.amountRefunded).toBe(1904);
+			expect(firstPayment?.amountRefunded).toBe(firstPayment?.amount);
+			expect(secondPayment?.amountRefunded).toBe(secondPayment?.amount);
+		});
+
+		it("skips a supplemental payment that is not succeeded substitution money", async () => {
+			// Vintage guard, defense in depth: only a succeeded kind-"substitution"
+			// row is swept. Anything else (a retired delta intent, legacy money, a
+			// mis-pointed id) is left to the order-payment math alone.
+			const t = convexTest(schema, modules);
+			const seed = await seedPaidOrder(t);
+			const { subPaymentId } = await acceptSubstitution(t, seed, {
+				orderItemId: seed.drinkItemId,
+				proposedMenuItemId: seed.molcajeteId,
+				stripePaymentIntentId: "pi_sub_vintage",
+			});
+			await t.run(async (ctx) => {
+				await ctx.db.patch(subPaymentId, { kind: undefined, subtotalAmount: undefined });
+			});
+
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_order_only",
+				status: "succeeded",
+				amount: 1568,
+			});
+
+			const [result, error] = await seed.staff.action(api.stripe.cancelOrderAndRefund, {
+				orderId: seed.orderId,
+			});
+			expect(error).toBeNull();
+			expect(result?.amountRefunded).toBe(1568);
+
+			const calls = refundCalls();
+			expect(calls).toHaveLength(1);
+			expect(calls[0].payment_intent).toBe("pi_sub_order");
+			const subPayment = await t.run(async (ctx) => ctx.db.get(subPaymentId));
+			expect(subPayment?.amountRefunded).toBeUndefined();
+		});
+
+		it("records the delta that came back when the order-payment refund fails", async () => {
+			const t = convexTest(schema, modules);
+			const seed = await seedPaidOrder(t);
+			const { subPaymentId } = await acceptSubstitution(t, seed, {
+				orderItemId: seed.drinkItemId,
+				proposedMenuItemId: seed.molcajeteId,
+				stripePaymentIntentId: "pi_sub_partial",
+			});
+
+			mockStripeClient.refunds.create
+				.mockResolvedValueOnce({ id: "re_partial_delta", status: "succeeded", amount: 112 })
+				.mockRejectedValueOnce(new Error("charge_already_refunded"));
+
+			const [result, error] = await seed.staff.action(api.stripe.cancelOrderAndRefund, {
+				orderId: seed.orderId,
+			});
+			expect(result).toBeNull();
+			expect(error!.message).toBe("ERROR_REFUND_FAILED");
+
+			const { order, subPayment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seed.orderId),
+				subPayment: await ctx.db.get(subPaymentId),
+			}));
+			// Money is still owed, so staff must see it…
+			expect(order?.status).toBe("cancelled");
+			expect(order?.paymentState).toBe("refund_failed");
+			// …but the delta that DID come back is recorded, so the follow-up does
+			// not return it a second time.
+			expect(subPayment?.amountRefunded).toBe(112);
+		});
+
+		it("still refunds the order payment when a delta refund fails", async () => {
+			// Unlike the per-line path there is no retry here — a cancelled order
+			// cannot be cancelled again — so one failed leg must not strand the
+			// legs that would have succeeded.
+			const t = convexTest(schema, modules);
+			const seed = await seedPaidOrder(t);
+			const { subPaymentId } = await acceptSubstitution(t, seed, {
+				orderItemId: seed.drinkItemId,
+				proposedMenuItemId: seed.molcajeteId,
+				stripePaymentIntentId: "pi_sub_delta_fails",
+			});
+
+			mockStripeClient.refunds.create
+				.mockRejectedValueOnce(new Error("delta_refund_failed"))
+				.mockResolvedValueOnce({ id: "re_order_after", status: "succeeded", amount: 1568 });
+
+			const [result, error] = await seed.staff.action(api.stripe.cancelOrderAndRefund, {
+				orderId: seed.orderId,
+			});
+			expect(result).toBeNull();
+			expect(error!.message).toBe("ERROR_REFUND_FAILED");
+
+			const calls = refundCalls();
+			expect(calls).toHaveLength(2);
+			expect(calls[1].payment_intent).toBe("pi_sub_order");
+
+			const { order, subPayment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seed.orderId),
+				subPayment: await ctx.db.get(subPaymentId),
+			}));
+			expect(order?.paymentState).toBe("refund_failed");
+			expect(subPayment?.refundStatus).toBe("failed");
+			expect(subPayment?.amountRefunded).toBeUndefined();
 		});
 	});
 });

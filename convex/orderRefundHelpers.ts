@@ -48,6 +48,13 @@ export type OrderRefundBlockReason =
  * replay the first refund's response for 24h and silently move no money on the
  * second order. Deterministic, so a genuine network retry of the *same* cancel
  * still de-duplicates.
+ *
+ * The whole-order cancel also uses this shape for the **substitution** payments
+ * it sweeps (`refund:<substitutionPaymentId>:<orderId>`), which is deliberately
+ * distinct from the per-line key the 86 path uses on the same payment
+ * (`refund:<substitutionPaymentId>:<orderItemId>` — see
+ * {@link buildLineRefundIdempotencyKey}). The two can never collide: a Convex
+ * `orders` id is never an `orderItems` id.
  */
 export function buildRefundIdempotencyKey(
 	paymentId: Id<"payments">,
@@ -98,6 +105,34 @@ export function computeLineRefundAmount(args: {
 		return remaining;
 	}
 	return Math.min(args.lineTotal + Math.round(args.lineTotal * args.feeRate), remaining);
+}
+
+/**
+ * How much of one **substitution** payment a whole-order cancel sweeps back.
+ *
+ * A substitution payment is its own PaymentIntent charging exactly one accepted
+ * proposal's `deltaAmount + feeOnDelta` — money that belongs to a single line of
+ * a single order. So a whole-order cancel returns its **entire remaining
+ * balance**: there is nothing else on that charge to strand. (Contrast the
+ * legacy tab payment, where "remaining" belongs to many orders and the clamp in
+ * {@link computeOrderRefundAmount} is load-bearing.)
+ *
+ * Returns `0` — i.e. "skip this payment" — when the line was already refunded
+ * individually (86 on a paid order stamps `orderItems.refundedAt` and
+ * `stripe.refundOrderItem` already returned both this delta and the line's
+ * share of the order payment). Without that guard the sweep would issue a
+ * second refund for money the diner already has back; the remaining-balance
+ * clamp catches it too, but only once the per-line refund has been recorded,
+ * and correctness here must not depend on that write having landed.
+ */
+export function computeSupplementalSweepAmount(args: {
+	paymentAmount: number;
+	paymentAmountRefunded: number | undefined;
+	/** `orderItems.refundedAt !== undefined` for the proposal's line. */
+	lineAlreadyRefunded: boolean;
+}): number {
+	if (args.lineAlreadyRefunded) return 0;
+	return Math.max(0, args.paymentAmount - (args.paymentAmountRefunded ?? 0));
 }
 
 /**
@@ -196,13 +231,13 @@ export type OrderRefundPlan = {
  * Resolves an order to a refund plan, or explains why no refund is due.
  * Read-only; the caller performs the Stripe call and records the outcome.
  *
- * TODO(TAVLI-71): a WHOLE-ORDER cancel of an order holding substituted lines
- * refunds only the order payment's remaining balance — the accepted
- * substitutions' delta payments (`kind: "substitution"`) are not yet swept
- * here. The per-line path (`stripe.refundOrderItem`) does refund both sources,
- * so 86'ing lines individually is complete; extend this plan (or
- * `cancelOrderAndRefund`) to enumerate the order's accepted proposals and
- * refund their supplemental payments too.
+ * Scope: this plan covers the **order payment** only. An order holding accepted
+ * substitutions was also charged one supplemental PaymentIntent per accepted
+ * proposal, and those are swept separately by `stripe.cancelOrderAndRefund`
+ * (see {@link computeSupplementalSweepAmount}) — the same split
+ * `stripe.refundOrderItem` makes for a single 86'd substituted line. A `null`
+ * plan therefore does **not** mean "no money to return": the caller must still
+ * run the substitution sweep before reporting nothing was refundable.
  */
 export const resolveOrderRefundPlanInternal = internalQuery({
 	args: { orderId: v.id(TABLE.ORDERS) },
@@ -253,6 +288,13 @@ export const resolveOrderRefundPlanInternal = internalQuery({
  * `charge.refunded` webhook (`stripeHelpers.recordChargeRefund`) only patches an
  * order when the refund is full *and* `payments.orderId` is set, and neither
  * holds for a partial refund of a tab payment.
+ *
+ * `supplementalRefunds` carries the substitution payments the whole-order sweep
+ * returned (ADR 008), each accumulated onto its own payment row — the same
+ * shape and the same optimistic accounting as
+ * {@link recordOrderItemRefundOutcomeInternal}. They are recorded whatever
+ * `succeeded` says: a refund that moved money is a fact, and a partial failure
+ * must not erase the parts that worked.
  */
 export const recordOrderRefundOutcomeInternal = internalMutation({
 	args: {
@@ -261,6 +303,16 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
 		amount: v.number(),
 		/** The manager who initiated the cancel, for the audit trail. */
 		userId: v.string(),
+		/** Substitution-payment shares swept by a whole-order cancel. */
+		supplementalRefunds: v.optional(
+			v.array(
+				v.object({
+					paymentId: v.id(TABLE.PAYMENTS),
+					amount: v.number(),
+					stripeRefundId: v.optional(v.string()),
+				})
+			)
+		),
 		stripeRefundId: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
 	},
@@ -277,6 +329,17 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
 			updatedBy: args.userId,
 		});
 
+		for (const supplemental of args.supplementalRefunds ?? []) {
+			const payment = await ctx.db.get(supplemental.paymentId);
+			if (payment) {
+				await ctx.db.patch(supplemental.paymentId, {
+					amountRefunded: (payment.amountRefunded ?? 0) + supplemental.amount,
+					updatedAt: now,
+					updatedBy: AUDIT_SYSTEM_USER_ID,
+				});
+			}
+		}
+
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.ORDERS,
 			aggregateId: args.orderId,
@@ -287,6 +350,10 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
 			payload: {
 				restaurantId: order.restaurantId,
 				amount: args.amount,
+				...(args.supplementalRefunds !== undefined &&
+					args.supplementalRefunds.length > 0 && {
+						supplementalRefunds: args.supplementalRefunds,
+					}),
 				...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
 				...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
 			},
@@ -322,7 +389,8 @@ export const recordOrderRefundOutcomeInternal = internalMutation({
  * on the line; `paymentAmountPortion` is the order-payment share of it
  * (defaults to `amount` for the unsubstituted case) and `supplementalRefunds`
  * carries the per-substitution-payment shares, each accumulated onto its own
- * payment row.
+ * payment row — including when `succeeded` is false, because a delta refund
+ * that went through before a later leg failed still moved the diner's money.
  */
 export const recordOrderItemRefundOutcomeInternal = internalMutation({
 	args: {
@@ -373,16 +441,20 @@ export const recordOrderItemRefundOutcomeInternal = internalMutation({
 					});
 				}
 			}
+		}
 
-			for (const supplemental of args.supplementalRefunds ?? []) {
-				const payment = await ctx.db.get(supplemental.paymentId);
-				if (payment) {
-					await ctx.db.patch(supplemental.paymentId, {
-						amountRefunded: (payment.amountRefunded ?? 0) + supplemental.amount,
-						updatedAt: now,
-						updatedBy: AUDIT_SYSTEM_USER_ID,
-					});
-				}
+		// Outside the success branch on purpose: a substitution refund that went
+		// through before a later leg failed still moved the diner's money, and the
+		// payment row has to say so — otherwise the whole-order sweep (which reads
+		// `amountRefunded` to decide what is left) would try to return it twice.
+		for (const supplemental of args.supplementalRefunds ?? []) {
+			const payment = await ctx.db.get(supplemental.paymentId);
+			if (payment) {
+				await ctx.db.patch(supplemental.paymentId, {
+					amountRefunded: (payment.amountRefunded ?? 0) + supplemental.amount,
+					updatedAt: now,
+					updatedBy: AUDIT_SYSTEM_USER_ID,
+				});
 			}
 		}
 

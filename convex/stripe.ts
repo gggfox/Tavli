@@ -43,6 +43,7 @@ import { v } from "convex/values";
 import type Stripe from "stripe";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import { action, internalAction } from "./_generated/server";
 import {
 	AUDIT_SYSTEM_USER_ID,
@@ -71,7 +72,9 @@ import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import type { AsyncReturn } from "./_shared/types";
 import {
 	buildLineRefundIdempotencyKey,
+	buildRefundIdempotencyKey,
 	computeLineRefundAmount,
+	computeSupplementalSweepAmount,
 	ORDER_REFUND_BLOCK_REASON,
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
@@ -751,12 +754,114 @@ export const createRefund = internalAction({
 });
 
 /**
+ * One substitution payment the whole-order sweep has to return, resolved from
+ * an accepted proposal (ADR 008 Phase 3A). Same shape of decision as the
+ * order-payment plan from `resolveOrderRefundPlanInternal`, one per charge.
+ */
+type SubstitutionSweepPlan = {
+	paymentId: Id<"payments">;
+	proposalId: Id<"substitutionProposals">;
+	orderItemId: Id<"orderItems">;
+	/** Smallest currency unit — the payment's entire remaining balance. */
+	amount: number;
+	idempotencyKey: string;
+};
+
+/**
+ * Every substitution payment a whole-order cancel owes the diner back.
+ *
+ * The diner paid the order payment **plus** one supplemental PaymentIntent per
+ * accepted proposal (`deltaAmount + feeOnDelta`), so refunding the order
+ * payment alone leaves them out of pocket by every accepted delta — the gap
+ * this resolves. Mirrors the per-line sweep in {@link refundOrderItem}: same
+ * proposal lookup, same payment-vintage guard, same "refund the whole remaining
+ * balance of a substitution charge" rule.
+ *
+ * Skips, each of which would otherwise move money that is not owed:
+ * - a proposal with no supplemental payment (delta 0 — nothing was charged);
+ * - a payment that is not a succeeded `kind: "substitution"` row (an in-flight
+ *   or retired delta intent, or a mis-pointed id);
+ * - a line already refunded individually, or a charge with no balance left.
+ *
+ * Payments are de-duplicated so two proposals that somehow name the same charge
+ * cannot sweep it twice — each plan is priced from a payment read *before* any
+ * refund of this cancel is issued.
+ */
+async function resolveSubstitutionSweepPlans(
+	ctx: ActionCtx,
+	orderId: Id<"orders">
+): Promise<SubstitutionSweepPlan[]> {
+	const proposals: Doc<"substitutionProposals">[] = await ctx.runQuery(
+		internal.substitutions.getAcceptedProposalsForOrderInternal,
+		{ orderId }
+	);
+
+	const plans: SubstitutionSweepPlan[] = [];
+	const seenPayments = new Set<string>();
+	for (const proposal of proposals) {
+		if (!proposal.supplementalPaymentId) continue;
+		if (seenPayments.has(proposal.supplementalPaymentId)) continue;
+
+		const payment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentInternal,
+			{ paymentId: proposal.supplementalPaymentId }
+		);
+		if (
+			!payment ||
+			payment.kind !== PAYMENT_KIND.SUBSTITUTION ||
+			payment.status !== PAYMENT_STATUS.SUCCEEDED
+		) {
+			console.error(
+				`[stripe.cancelOrderAndRefund] proposal ${proposal._id} points at unusable ` +
+					`substitution payment ${proposal.supplementalPaymentId} — skipping its refund`
+			);
+			continue;
+		}
+
+		const item: Doc<"orderItems"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getOrderItemInternal,
+			{ orderItemId: proposal.orderItemId }
+		);
+		const amount = computeSupplementalSweepAmount({
+			paymentAmount: payment.amount,
+			paymentAmountRefunded: payment.amountRefunded,
+			lineAlreadyRefunded: item?.refundedAt !== undefined,
+		});
+		if (amount <= 0) continue;
+
+		seenPayments.add(payment._id);
+		plans.push({
+			paymentId: payment._id,
+			proposalId: proposal._id,
+			orderItemId: proposal.orderItemId,
+			amount,
+			// (payment, ORDER) — deliberately distinct from the (payment, line)
+			// key the 86 path uses on this same charge, so a whole-order cancel
+			// after a failed per-line attempt is not replayed as a no-op.
+			idempotencyKey: buildRefundIdempotencyKey(payment._id, orderId),
+		});
+	}
+	return plans;
+}
+
+/**
  * Cancels an order and refunds the diner that order's share, synchronously.
  *
  * Order of operations is **cancel first, then refund**. If Stripe fails the
  * order is still cancelled and flagged `refund_failed`, so the kitchen stops
  * cooking and the money is loudly surfaced for manual follow-up. Refunding
  * first would risk returning money for a dish that keeps cooking.
+ *
+ * The refund itself can span several charges (ADR 008): the order payment plus
+ * one substitution payment per accepted proposal on the order
+ * ({@link resolveSubstitutionSweepPlans}). Substitution charges go first,
+ * matching {@link refundOrderItem}, so the two paths sequence money the same
+ * way. Unlike that path this one does **not** abort on the first failure: a
+ * cancelled order cannot be cancelled again (`VALID_TRANSITIONS` has no
+ * `cancelled` key), so there is no automatic retry to preserve, and stopping
+ * early would strand the refunds that would have succeeded. Every leg is
+ * attempted, what moved is recorded, and any failure still lands the order in
+ * `refund_failed` for manual follow-up.
  *
  * Double-cancel is impossible: `updateStatus` rejects a transition out of
  * `cancelled` (no such key in `VALID_TRANSITIONS`), so two managers clicking at
@@ -765,8 +870,12 @@ export const createRefund = internalAction({
 export type CancelOrderAndRefundResult = {
 	orderId: Id<"orders">;
 	refunded: boolean;
-	/** Smallest currency unit. `0` when nothing was refunded. */
+	/**
+	 * Smallest currency unit, summed across every charge refunded (order payment
+	 * + swept substitution payments). `0` when nothing was refunded.
+	 */
 	amountRefunded: number;
+	/** The order payment's refund. `null` when only substitution charges moved. */
 	stripeRefundId: string | null;
 	/** Set when the order was cancelled but no refund was due. */
 	skippedReason: OrderRefundBlockReason | null;
@@ -802,8 +911,11 @@ export const cancelOrderAndRefund = action({
 			internal.orderRefundHelpers.resolveOrderRefundPlanInternal,
 			{ orderId: args.orderId }
 		);
+		// The order payment is only part of the money on a substituted order, so
+		// a `null` plan is not yet a reason to report nothing was refundable.
+		const sweepPlans = await resolveSubstitutionSweepPlans(ctx, args.orderId);
 
-		if (!plan) {
+		if (!plan && sweepPlans.length === 0) {
 			// An unpaid order is the normal case here — cancelling is the whole
 			// job. The other reasons mean money may be owed, so they surface as
 			// errors rather than a silent success.
@@ -829,36 +941,85 @@ export const cancelOrderAndRefund = action({
 			];
 		}
 
-		// Only the Stripe call is guarded. Recording the outcome runs *after* the
-		// catch, because once money has moved, an error while writing our own
+		// Only the Stripe calls are guarded. Recording the outcome runs *after*
+		// each catch, because once money has moved, an error while writing our own
 		// records must not be reported as "refund failed" — that would send staff
 		// to re-issue a refund the diner already received.
-		let refund: { refundId: string; status: string | null; amount: number };
-		try {
-			refund = await ctx.runAction(internal.stripe.createRefund, {
-				paymentId: plan.paymentId,
-				orderId: plan.orderId,
-				// Omit `amount` when the order's share is the whole charge (the
-				// legacy per-order case) so the Stripe call is byte-identical to
-				// what shipped before partial refunds existed.
-				...(plan.isFullRefund ? {} : { amount: plan.amount }),
-				idempotencyKey: plan.idempotencyKey,
-			});
-		} catch (error) {
-			const failureMessage = error instanceof Error ? error.message : "Refund failed";
-			console.error(
-				"[stripe.cancelOrderAndRefund] REFUND FAILED",
-				buildIntegrationErrorLog(error, {
-					integration: "stripe",
-					operation: "cancelOrderAndRefund",
-				})
-			);
+		const supplementalRefunds: Array<{
+			paymentId: Id<"payments">;
+			amount: number;
+			stripeRefundId: string;
+		}> = [];
+		const failureMessages: string[] = [];
+
+		for (const sweep of sweepPlans) {
+			try {
+				const subRefund = await ctx.runAction(internal.stripe.createRefund, {
+					paymentId: sweep.paymentId,
+					orderId: args.orderId,
+					amount: sweep.amount,
+					idempotencyKey: sweep.idempotencyKey,
+					// The order's own state is settled once by the record mutation
+					// below; letting the delta refund drive it would flip the order
+					// to `refunded` before the order payment has moved.
+					skipOrderStatePatch: true,
+				});
+				supplementalRefunds.push({
+					paymentId: sweep.paymentId,
+					amount: subRefund.amount,
+					stripeRefundId: subRefund.refundId,
+				});
+			} catch (error) {
+				failureMessages.push(error instanceof Error ? error.message : "Refund failed");
+				console.error(
+					"[stripe.cancelOrderAndRefund] SUBSTITUTION REFUND FAILED",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "cancelOrderAndRefund",
+					})
+				);
+			}
+		}
+
+		let refund: { refundId: string; status: string | null; amount: number } | null = null;
+		if (plan) {
+			try {
+				refund = await ctx.runAction(internal.stripe.createRefund, {
+					paymentId: plan.paymentId,
+					orderId: plan.orderId,
+					// Omit `amount` when the order's share is the whole charge (the
+					// legacy per-order case) so the Stripe call is byte-identical to
+					// what shipped before partial refunds existed.
+					...(plan.isFullRefund ? {} : { amount: plan.amount }),
+					idempotencyKey: plan.idempotencyKey,
+				});
+			} catch (error) {
+				failureMessages.push(error instanceof Error ? error.message : "Refund failed");
+				console.error(
+					"[stripe.cancelOrderAndRefund] REFUND FAILED",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "cancelOrderAndRefund",
+					})
+				);
+			}
+		}
+
+		const supplementalTotal = supplementalRefunds.reduce((sum, r) => sum + r.amount, 0);
+		const amountRefunded = (refund?.amount ?? 0) + supplementalTotal;
+
+		if (failureMessages.length > 0) {
+			// `amount` stays the *intended* order-payment figure, as it always has;
+			// what actually moved is carried by `supplementalRefunds` and the
+			// refund id, so the audit trail shows the partial outcome honestly.
 			await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
 				orderId: args.orderId,
 				succeeded: false,
-				amount: plan.amount,
-				failureMessage,
+				amount: plan?.amount ?? 0,
+				failureMessage: failureMessages.join("; "),
 				userId,
+				...(supplementalRefunds.length > 0 && { supplementalRefunds }),
+				...(refund !== null && { stripeRefundId: refund.refundId }),
 			});
 			return [null, new ConflictError("ERROR_REFUND_FAILED").toObject()];
 		}
@@ -866,17 +1027,18 @@ export const cancelOrderAndRefund = action({
 		await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
 			orderId: args.orderId,
 			succeeded: true,
-			amount: refund.amount,
-			stripeRefundId: refund.refundId,
+			amount: amountRefunded,
 			userId,
+			...(supplementalRefunds.length > 0 && { supplementalRefunds }),
+			...(refund !== null && { stripeRefundId: refund.refundId }),
 		});
 
 		return [
 			{
 				orderId: args.orderId,
 				refunded: true,
-				amountRefunded: refund.amount,
-				stripeRefundId: refund.refundId,
+				amountRefunded,
+				stripeRefundId: refund?.refundId ?? null,
 				skippedReason: null,
 			},
 			null,
@@ -1051,7 +1213,9 @@ export const refundOrderItem = internalAction({
 			);
 			// The line is not stamped refunded, so the retry path stays open —
 			// Stripe's idempotency keys make a replay of the already-issued
-			// portions a no-op.
+			// portions a no-op. The deltas that *did* come back are still recorded:
+			// they moved real money, and the whole-order sweep prices its own
+			// refunds off `amountRefunded`.
 			await ctx.runMutation(internal.orderRefundHelpers.recordOrderItemRefundOutcomeInternal, {
 				orderId: args.orderId,
 				orderItemId: args.orderItemId,
@@ -1059,6 +1223,7 @@ export const refundOrderItem = internalAction({
 				amount,
 				isLastLiveLine,
 				userId: actorUserId,
+				...(supplementalRefunds.length > 0 && { supplementalRefunds }),
 				failureMessage,
 			});
 			return;
@@ -1098,6 +1263,9 @@ export const refundOrderItem = internalAction({
 					amount,
 					isLastLiveLine,
 					userId: actorUserId,
+					// Same reason as the substitution catch above: record the delta
+					// refunds that already went through.
+					...(supplementalRefunds.length > 0 && { supplementalRefunds }),
 					failureMessage,
 				});
 				// Recorded as refund_failed — do not rethrow, or the scheduler retry

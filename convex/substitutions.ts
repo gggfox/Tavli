@@ -31,6 +31,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { DatabaseReader } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	ConflictError,
@@ -609,6 +610,24 @@ export const attachSupplementalPaymentInternal = internalMutation({
 });
 
 /**
+ * Every accepted proposal on an order, in creation order — the one place the
+ * `by_order` index is read for refund purposes, so the line-scoped and
+ * order-scoped refund paths can never disagree about what "accepted" means.
+ */
+async function loadAcceptedProposalsForOrder(
+	ctx: { db: DatabaseReader },
+	orderId: Id<"orders">
+): Promise<Doc<"substitutionProposals">[]> {
+	const proposals = await ctx.db
+		.query(TABLE.SUBSTITUTION_PROPOSALS)
+		.withIndex("by_order", (q) => q.eq("orderId", orderId))
+		.collect();
+	return proposals
+		.filter((p) => p.status === SUBSTITUTION_PROPOSAL_STATUS.ACCEPTED)
+		.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/**
  * Accepted proposals (with their money) for one line — the cross-payment
  * refund in `stripe.refundOrderItem` uses this to split an 86'd substituted
  * line's refund between the order payment and the substitution payment(s).
@@ -619,15 +638,24 @@ export const getAcceptedProposalsForItemInternal = internalQuery({
 		orderItemId: v.id(TABLE.ORDER_ITEMS),
 	},
 	handler: async (ctx, args): Promise<Doc<"substitutionProposals">[]> => {
-		const proposals = await ctx.db
-			.query(TABLE.SUBSTITUTION_PROPOSALS)
-			.withIndex("by_order", (q) => q.eq("orderId", args.orderId))
-			.collect();
-		return proposals.filter(
-			(p) =>
-				p.orderItemId === args.orderItemId && p.status === SUBSTITUTION_PROPOSAL_STATUS.ACCEPTED
-		);
+		const proposals = await loadAcceptedProposalsForOrder(ctx, args.orderId);
+		return proposals.filter((p) => p.orderItemId === args.orderItemId);
 	},
+});
+
+/**
+ * Accepted proposals for a whole order — the order-scoped sibling of
+ * {@link getAcceptedProposalsForItemInternal}, read by the whole-order refund
+ * sweep in `stripe.cancelOrderAndRefund`.
+ *
+ * A whole-order cancel has to return the delta money too: each accepted
+ * proposal was charged on its **own** PaymentIntent, so refunding only the
+ * order payment leaves the diner out of pocket by every accepted delta.
+ */
+export const getAcceptedProposalsForOrderInternal = internalQuery({
+	args: { orderId: v.id(TABLE.ORDERS) },
+	handler: async (ctx, args): Promise<Doc<"substitutionProposals">[]> =>
+		await loadAcceptedProposalsForOrder(ctx, args.orderId),
 });
 
 /**
