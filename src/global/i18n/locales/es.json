@@ -370,6 +370,7 @@
 			"description": "Panel de pedidos en vivo. Los pedidos se actualizan en tiempo real."
 		},
 		"status": {
+			"awaitingPayment": "Por cobrar",
 			"submitted": "Pendiente",
 			"preparing": "Preparando",
 			"ready": "Listo",
@@ -393,6 +394,15 @@
 			"confirmCancel": "Confirmar cancelación",
 			"keepOrder": "Mantener pedido",
 			"viewFullOrder": "Ver pedido completo →"
+		},
+		"markPaid": {
+			"action": "Marcar pagado en persona",
+			"promptTitle": "¿Marcar este pedido como pagado?",
+			"promptBody": "Confirma que cobraste {{amount}} en persona. El pedido pasa a cocina de inmediato.",
+			"confirm": "Confirmar pago",
+			"dismiss": "Todavía no",
+			"pending": "Marcando pagado…",
+			"amountDue": "Importe por cobrar"
 		},
 		"cancel": {
 			"prompt": "¿Cancelar este pedido?",
@@ -424,6 +434,7 @@
 		},
 		"aria": {
 			"filter": "Filtrar pedidos por estado",
+			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
@@ -549,6 +560,7 @@
 		"ERROR_ORDER_ITEM_NOT_CANCELLABLE": "Este artículo ya no se puede cancelar por separado. Usa la cancelación del pedido completo.",
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "El pago de este pedido ya está en curso o completado. Cancela el pedido completo para emitir un reembolso.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "Hay un pago en curso en esta cuenta. Espera a que termine antes de quitar artículos.",
+		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "Ya hay un pago con tarjeta en curso para este pedido. Cancélalo antes de elegir pagar en persona.",
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
@@ -640,7 +652,21 @@
 			"retry": "Reintentar",
 			"processing": "Procesando...",
 			"payNow": "Pagar ahora",
-			"securedByStripe": "Pagos protegidos por Stripe"
+			"securedByStripe": "Pagos protegidos por Stripe",
+			"subtotal": "Subtotal",
+			"serviceFee": "Tarifa de servicio Tavli ({{rate}}%)",
+			"continueToPayment": "Continuar al pago",
+			"payInPerson": "Pagar en persona",
+			"payByCardInstead": "Mejor pagar con tarjeta",
+			"orderNotFound": "No pudimos cargar este pedido. Puede que ya se haya enviado o cancelado.",
+			"cashTitle": "Paga en la mesa",
+			"cashOrderNumber": "Pedido #{{n}}",
+			"cashShowServer": "Muéstrale esto a tu mesero para pagar en la mesa.",
+			"cashKitchenNote": "Tu pedido pasará a la cocina en cuanto el personal confirme tu pago.",
+			"paidTitle": "¡Pago completado!",
+			"paidDesc": "El pedido #{{n}} se envió a la cocina.",
+			"paidDescNoNumber": "Tu pedido se envió a la cocina.",
+			"viewOrders": "Ver mis pedidos"
 		},
 		"orderStatus": {
 			"loading": "Cargando pedido...",
@@ -671,6 +697,9 @@
 			"lifecycleView": "Ver",
 			"lifecycleUnpaid": "Sin pagar",
 			"lifecycleFinishCheckout": "Terminar pago",
+			"lifecycleAwaitingPayment": "Paga con tu mesero",
+			"lifecycleContinuePayment": "Continuar al pago",
+			"paidBadge": "Pagado",
 			"lifecyclePlaced": "Pedido realizado",
 			"lifecyclePreparing": "Preparando",
 			"lifecycleReady": "Listo",
@@ -920,7 +949,7 @@
 			"partialRequirements": "Los pagos están habilitados, pero hay requisitos adicionales pendientes.",
 			"redirecting": "Redirigiendo...",
 			"continueSetup": "Continuar configuración de Stripe",
-			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Aplica una comisión de plataforma del {{rate}} % además de las comisiones estándar de procesamiento de Stripe.",
+			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Los comensales pagan una tarifa de servicio Tavli del {{rate}} % sobre el subtotal del pedido, así que tú recibes el subtotal completo de cada pedido. Las comisiones estándar de procesamiento de Stripe siguen aplicando al depósito.",
 			"settingUp": "Configurando...",
 			"onboard": "Iniciar configuración para cobrar pagos",
 			"resetButton": "Restablecer configuración de Stripe",

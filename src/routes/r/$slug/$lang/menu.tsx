@@ -13,10 +13,14 @@ function Page() {
 		<CustomerMenuPage
 			slug={slug}
 			lang={lang}
-			onOrderSubmitted={() =>
-				// Orders go straight to the kitchen; the tab view shows the running
-				// balance and the pay CTA (TAVLI-6).
-				navigate({ to: "/r/$slug/$lang/orders", params: { slug, lang } })
+			onProceedToCheckout={(orderId) =>
+				// ADR 008 pay-at-submit: the diner pays (or commits to cash) at the
+				// per-order checkout before the kitchen sees the order.
+				navigate({
+					to: "/r/$slug/$lang/checkout",
+					params: { slug, lang },
+					search: { orderId },
+				})
 			}
 		/>
 	);

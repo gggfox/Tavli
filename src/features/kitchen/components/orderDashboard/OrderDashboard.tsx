@@ -1,11 +1,11 @@
-import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilter } from "@/features";
+import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilterValue } from "@/features";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import {
 	DashboardShell,
 	EmptyState,
-	StatusFilterChips,
+	SegmentedControl,
 	VirtualGrid,
-	type StatusFilterOption,
+	type SegmentedControlOption,
 } from "@/global/components";
 import { useOptimisticUserSetting } from "@/global/hooks";
 import { getErrorMessage } from "@/global/utils";
@@ -23,7 +23,8 @@ import { deriveStationTickets, type StationTicket } from "./stationTickets";
 import { ALL_PREP_STATIONS, STATION_CONFIG } from "./stationConfig";
 import {
 	ALL_STATUSES,
-	DEFAULT_STATUS_FILTERS,
+	collapseLegacyStatusFilters,
+	DEFAULT_STATUS,
 	isDashboardStatus,
 	STATUS_CONFIG,
 	STATUS_SORT_PRIORITY,
@@ -52,13 +53,19 @@ interface OrderDashboardProps {
 export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) {
 	const { t } = useTranslation();
 	const {
+		orderDashboardStatusFilter,
 		orderDashboardStatusFilters,
-		updateOrderDashboardStatusFilters,
+		updateOrderDashboardStatusFilter,
 		orderDashboardPrepStationFilters,
 		updateOrderDashboardPrepStationFilters,
 	} = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 	const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
+	// Mark-paid-in-person confirm flow (ADR 008). Single slot like the cancel
+	// confirm above: only one card shows the confirmation at a time.
+	const [markPaidConfirm, setMarkPaidConfirm] = useState<string | null>(null);
+	const [markPaidPendingId, setMarkPaidPendingId] = useState<string | null>(null);
+	const [markPaidError, setMarkPaidError] = useState<string | null>(null);
 	// Deliberately a persistent banner, not a toast: a failed refund means the
 	// diner is owed money, and the cancelled order it belongs to is filtered out
 	// of the default dashboard view, so a message that disappears would be the
@@ -79,11 +86,18 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		orderLabel: string;
 	} | null>(null);
 
-	const [activeFilters, setActiveFilters] = useOptimisticUserSetting<OrderDashboardStatusFilter[]>({
-		serverValue: orderDashboardStatusFilters,
-		persist: updateOrderDashboardStatusFilters,
-		fallback: DEFAULT_STATUS_FILTERS,
-	});
+	// The new single-select setting wins; a user who never touched the new
+	// control falls back to the collapse of their legacy multi-select array
+	// (same rule as the Phase 0 backfill migration); a brand-new user starts
+	// on the queue ("submitted"). Writes always go to the new setting.
+	const serverStatus =
+		orderDashboardStatusFilter ?? collapseLegacyStatusFilters(orderDashboardStatusFilters);
+	const [selectedStatus, setSelectedStatus] =
+		useOptimisticUserSetting<OrderDashboardStatusFilterValue>({
+			serverValue: serverStatus,
+			persist: updateOrderDashboardStatusFilter,
+			fallback: DEFAULT_STATUS,
+		});
 
 	const [activeStationFilters, setActiveStationFilters] = useOptimisticUserSetting<
 		OrderDashboardPrepStationFilter[]
@@ -98,6 +112,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	// presence check on the server side.
 	const queryStations = activeStationFilters.length > 0 ? activeStationFilters : undefined;
 
+	// Strict single-select: the query only ever asks for the one visible status.
+	const queryStatuses = useMemo(() => [selectedStatus], [selectedStatus]);
+
 	const {
 		orders,
 		isLoading,
@@ -107,12 +124,19 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		unmarkStationReady,
 		cancelOrderItem,
 		cancelOrderAndRefund,
-	} = useOrders(restaurantId, activeFilters, queryStations);
+		markOrderPaidInPerson,
+	} = useOrders(restaurantId, queryStatuses, queryStations);
 
 	// Exactly one station selected → that station gets its own tickets. With no
 	// filter or both stations selected the dashboard stays the whole-order
 	// overview, where money, cross-station progress, and cancel live.
-	const ticketStation = activeStationFilters.length === 1 ? activeStationFilters[0] : null;
+	// `awaiting_payment` never enters rail mode (ADR 008): those orders carry
+	// money actions, not station work, so the ordinary card grid stays up even
+	// with a single station selected.
+	const ticketStation =
+		selectedStatus !== "awaiting_payment" && activeStationFilters.length === 1
+			? activeStationFilters[0]
+			: null;
 
 	const handleCancelOrder = useCallback(
 		async (orderId: DashboardOrder["_id"]) => {
@@ -138,6 +162,40 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		},
 		[orders, cancelOrderAndRefund, t]
 	);
+
+	// On success the order flips to `submitted` server-side and leaves the
+	// awaiting-payment view through the live query subscription — no manual
+	// refetch. Errors stay pinned to the confirm panel: money is involved, so
+	// a silent failure is not acceptable.
+	const handleMarkPaidInPerson = useCallback(
+		async (orderId: DashboardOrder["_id"]) => {
+			setMarkPaidPendingId(orderId);
+			setMarkPaidError(null);
+			try {
+				const [, markError] = await markOrderPaidInPerson({ orderId });
+				if (markError) {
+					setMarkPaidError(getErrorMessage(markError, t));
+					return;
+				}
+				setMarkPaidConfirm(null);
+			} catch (err) {
+				setMarkPaidError(getErrorMessage(err, t));
+			} finally {
+				setMarkPaidPendingId(null);
+			}
+		},
+		[markOrderPaidInPerson, t]
+	);
+
+	const handleRequestMarkPaid = useCallback((orderId: string) => {
+		setMarkPaidError(null);
+		setMarkPaidConfirm(orderId);
+	}, []);
+
+	const handleDismissMarkPaid = useCallback(() => {
+		setMarkPaidError(null);
+		setMarkPaidConfirm(null);
+	}, []);
 
 	const handleCancelItem = useCallback(
 		async (orderItemId: DashboardOrderItem["_id"]) => {
@@ -188,14 +246,13 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		return () => clearTimeout(id);
 	}, [undoStamp]);
 
-	const activeFilterSet = useMemo(() => new Set(activeFilters), [activeFilters]);
 	const activeStationFilterSet = useMemo<ReadonlySet<OrderDashboardPrepStationFilter>>(
 		() => new Set(activeStationFilters),
 		[activeStationFilters]
 	);
 
-	const statusFilterOptions = useMemo<
-		ReadonlyArray<StatusFilterOption<OrderDashboardStatusFilter>>
+	const statusSegments = useMemo<
+		ReadonlyArray<SegmentedControlOption<OrderDashboardStatusFilterValue>>
 	>(
 		() =>
 			ALL_STATUSES.map((status) => ({
@@ -206,13 +263,6 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		[t]
 	);
 
-	const handleToggleFilter = (status: OrderDashboardStatusFilter) => {
-		const next = activeFilters.includes(status)
-			? activeFilters.filter((s) => s !== status)
-			: [...activeFilters, status];
-		setActiveFilters(next);
-	};
-
 	const handleToggleStationFilter = (station: OrderDashboardPrepStationFilter) => {
 		const next = activeStationFilters.includes(station)
 			? activeStationFilters.filter((s) => s !== station)
@@ -222,11 +272,12 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 	const filterPills = (
 		<div className="flex flex-col gap-2">
-			<StatusFilterChips
-				options={statusFilterOptions}
-				selected={activeFilterSet}
-				onToggle={handleToggleFilter}
-				ariaLabel={t(OrdersKeys.ARIA_FILTER)}
+			<SegmentedControl
+				options={statusSegments}
+				value={selectedStatus}
+				onChange={setSelectedStatus}
+				ariaLabel={t(OrdersKeys.ARIA_STATUS_SEGMENTS)}
+				size="sm"
 			/>
 			<StationFilterChips
 				selected={activeStationFilterSet}
@@ -244,8 +295,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				.filter((o) => isDashboardStatus(o.status))
 				.slice()
 				.sort((a, b) => {
-					const aPriority = STATUS_SORT_PRIORITY[a.status as OrderDashboardStatusFilter];
-					const bPriority = STATUS_SORT_PRIORITY[b.status as OrderDashboardStatusFilter];
+					const aPriority = STATUS_SORT_PRIORITY[a.status as OrderDashboardStatusFilterValue];
+					const bPriority = STATUS_SORT_PRIORITY[b.status as OrderDashboardStatusFilterValue];
 					return aPriority - bPriority || a.createdAt - b.createdAt;
 				}),
 		[typedOrders]
@@ -258,11 +309,17 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				now={now}
 				cancelConfirm={cancelConfirm}
 				cancelPendingId={cancelPendingId}
+				markPaidConfirm={markPaidConfirm}
+				markPaidPendingId={markPaidPendingId}
+				markPaidError={markPaidError}
 				activeStationFilters={activeStationFilterSet}
 				onSelectFullOrder={setFullOrder}
 				onRequestCancel={setCancelConfirm}
 				onDismissCancel={() => setCancelConfirm(null)}
 				onCancelOrder={handleCancelOrder}
+				onRequestMarkPaid={handleRequestMarkPaid}
+				onDismissMarkPaid={handleDismissMarkPaid}
+				onMarkPaidInPerson={handleMarkPaidInPerson}
 				onUpdateStatus={updateStatus}
 				onMarkStationReady={markStationReady}
 			/>
@@ -271,8 +328,14 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			now,
 			cancelConfirm,
 			cancelPendingId,
+			markPaidConfirm,
+			markPaidPendingId,
+			markPaidError,
 			activeStationFilterSet,
 			handleCancelOrder,
+			handleRequestMarkPaid,
+			handleDismissMarkPaid,
+			handleMarkPaidInPerson,
 			updateStatus,
 			markStationReady,
 		]
@@ -358,13 +421,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				stationTickets.length === 0 ? (
 					<EmptyState
 						icon={STATION_CONFIG[ticketStation].icon}
-						title={
-							activeFilters.length === 0
-								? t(OrdersKeys.EMPTY_NO_FILTERS)
-								: t(OrdersKeys.TICKET_EMPTY_ALL_DONE, {
-										station: t(STATION_CONFIG[ticketStation].labelKey),
-									})
-						}
+						title={t(OrdersKeys.TICKET_EMPTY_ALL_DONE, {
+							station: t(STATION_CONFIG[ticketStation].labelKey),
+						})}
 						fill
 					/>
 				) : (
@@ -379,15 +438,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					/>
 				)
 			) : sorted.length === 0 ? (
-				<EmptyState
-					icon={ChefHat}
-					title={
-						activeFilters.length === 0
-							? t(OrdersKeys.EMPTY_NO_FILTERS)
-							: t(OrdersKeys.EMPTY_NO_ORDERS)
-					}
-					fill
-				/>
+				<EmptyState icon={ChefHat} title={t(OrdersKeys.EMPTY_NO_ORDERS)} fill />
 			) : (
 				// Virtualized: a busy service can hold hundreds of live orders,
 				// and every one of them used to re-render on each Convex push.

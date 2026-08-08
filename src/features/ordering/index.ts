@@ -6,6 +6,7 @@ export { MenuBrowser } from "./components/MenuBrowser";
 export { MenuBrowserSkeleton } from "./components/MenuBrowserSkeleton";
 export { MenuItemDetail } from "./components/MenuItemDetail";
 export { MenuItemDetailSkeleton } from "./components/MenuItemDetailSkeleton";
+export { OrderCheckoutPage } from "./components/OrderCheckoutPage";
 export { OrderStatus } from "./components/OrderStatus";
 export { SessionOrdersList } from "./components/SessionOrdersList";
 export { SessionOrdersListSkeleton } from "./components/SessionOrdersListSkeleton";

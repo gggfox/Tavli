@@ -98,7 +98,10 @@ export function Cart({
 						disabled={isSubmitting}
 						className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 					>
-						{isSubmitting ? t(OrderingKeys.CART_PLACING_ORDER) : t(OrderingKeys.CART_PLACE_ORDER)}
+						{/* ADR 008: the draft heads to the per-order checkout, not the kitchen. */}
+						{isSubmitting
+							? t(OrderingKeys.CART_PLACING_ORDER)
+							: t(OrderingKeys.CHECKOUT_CONTINUE_TO_PAYMENT)}
 					</button>
 				</div>
 			)}

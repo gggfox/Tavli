@@ -12,6 +12,7 @@ import {
 	Clock,
 	Copy,
 	CreditCard,
+	HandCoins,
 	Lock,
 	Users,
 	UtensilsCrossed,
@@ -28,7 +29,9 @@ interface SessionOrdersListProps {
 	slug: string;
 	onBackToMenu: () => void;
 	onViewOrder: (orderId: Id<"orders">) => void;
-	/** Navigate to the tab checkout (tip + one Stripe payment for the whole tab). */
+	/** Navigate a draft to the per-order checkout (ADR 008 pay-at-submit). */
+	onContinueCheckout: (orderId: Id<"orders">) => void;
+	/** LEGACY (pre-pivot sessions only): navigate to the whole-tab checkout. */
 	onPayTab: () => void;
 }
 
@@ -50,12 +53,11 @@ function getStatusMeta(order: OrderDoc, t: TFunction): StatusMeta {
 				iconColor: "var(--accent-warning)",
 				iconBg: "rgba(217, 119, 6, 0.12)",
 			};
-		// TODO(TAVLI-71 Phase 2B): dedicated diner-facing treatment for the
-		// in-person payment path; minimal compile-safe entry for now.
+		// ADR 008 cash path: staff collect at the table, then the kitchen fires.
 		case "awaiting_payment":
 			return {
-				label: t(OrderingKeys.ORDERS_LIFECYCLE_UNPAID),
-				icon: CreditCard,
+				label: t(OrderingKeys.ORDERS_LIFECYCLE_AWAITING_PAYMENT),
+				icon: HandCoins,
 				iconColor: "var(--accent-warning)",
 				iconBg: "rgba(217, 119, 6, 0.12)",
 			};
@@ -112,6 +114,7 @@ export function SessionOrdersList({
 	slug,
 	onBackToMenu,
 	onViewOrder,
+	onContinueCheckout,
 	onPayTab,
 }: Readonly<SessionOrdersListProps>) {
 	const { t } = useTranslation();
@@ -134,6 +137,7 @@ export function SessionOrdersList({
 			sessionId={sessionId}
 			onBackToMenu={onBackToMenu}
 			onViewOrder={onViewOrder}
+			onContinueCheckout={onContinueCheckout}
 			onPayTab={onPayTab}
 		/>
 	);
@@ -160,12 +164,14 @@ function SessionOrdersListContent({
 	sessionId,
 	onBackToMenu,
 	onViewOrder,
+	onContinueCheckout,
 	onPayTab,
 }: Readonly<{
 	slug: string;
 	sessionId: Id<"sessions">;
 	onBackToMenu: () => void;
 	onViewOrder: (orderId: Id<"orders">) => void;
+	onContinueCheckout: (orderId: Id<"orders">) => void;
 	onPayTab: () => void;
 }>) {
 	const { t } = useTranslation();
@@ -186,7 +192,13 @@ function SessionOrdersListContent({
 			<div className="max-w-lg w-full mx-auto p-4 pb-8 flex flex-col gap-3">
 				<Header onBackToMenu={onBackToMenu} />
 
-				{tab && <TabSummaryCard tab={tab} onPayTab={onPayTab} />}
+				{/* Share/join stay for every session vintage — the Session survives
+				    ADR 008 as the visit grouping. */}
+				{tab && <ShareTabCard tab={tab} />}
+				{/* LEGACY settlement tail: post-pivot sessions always report a tab
+				    subtotal of 0 (orders pay at submit), so the whole-tab payment
+				    card only renders for a pre-pivot session that still owes. */}
+				{tab && tab.subtotal > 0 && <TabSummaryCard tab={tab} onPayTab={onPayTab} />}
 				<JoinTabCard slug={slug} />
 
 				{orders && sortedOrders.length === 0 && (
@@ -208,7 +220,12 @@ function SessionOrdersListContent({
 				)}
 
 				{sortedOrders.map((order) => (
-					<OrderCard key={order._id} order={order} onViewOrder={onViewOrder} />
+					<OrderCard
+						key={order._id}
+						order={order}
+						onViewOrder={onViewOrder}
+						onContinueCheckout={onContinueCheckout}
+					/>
 				))}
 			</div>
 		</div>
@@ -217,17 +234,10 @@ function SessionOrdersListContent({
 
 type TabSummary = NonNullable<FunctionReturnType<typeof api.sessions.getTabSummary>>;
 
-function TabSummaryCard({
-	tab,
-	onPayTab,
-}: Readonly<{
-	tab: TabSummary;
-	onPayTab: () => void;
-}>) {
+/** Join-code sharing — always available while the session is open. */
+function ShareTabCard({ tab }: Readonly<{ tab: TabSummary }>) {
 	const { t } = useTranslation();
 	const [copied, setCopied] = useState(false);
-	// The tab still bills this food; it just can't be settled until it lands.
-	const blocked = tab.unservedOrderIds.length > 0;
 
 	const handleCopy = async () => {
 		if (!tab.joinCode) return;
@@ -242,17 +252,14 @@ function TabSummaryCard({
 
 	return (
 		<div className="rounded-xl p-4 space-y-3 bg-muted border border-border">
-			<div className="flex items-center justify-between gap-2">
-				<div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-					<Users size={16} className="text-muted-foreground" />
-					<span>{t(OrderingKeys.TAB_HEADING)}</span>
-					{tab.memberCount > 1 && (
-						<span className="text-xs font-medium text-faint-foreground">
-							{t(OrderingKeys.TAB_MEMBER_COUNT, { count: tab.memberCount })}
-						</span>
-					)}
-				</div>
-				<span className="text-sm font-semibold text-foreground">${formatCents(tab.subtotal)}</span>
+			<div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+				<Users size={16} className="text-muted-foreground" />
+				<span>{t(OrderingKeys.TAB_HEADING)}</span>
+				{tab.memberCount > 1 && (
+					<span className="text-xs font-medium text-faint-foreground">
+						{t(OrderingKeys.TAB_MEMBER_COUNT, { count: tab.memberCount })}
+					</span>
+				)}
 			</div>
 
 			{tab.joinCode && (
@@ -271,6 +278,35 @@ function TabSummaryCard({
 				</button>
 			)}
 			{copied && <p className="text-xs text-success">{t(OrderingKeys.TAB_CODE_COPIED)}</p>}
+		</div>
+	);
+}
+
+/**
+ * LEGACY (pre-ADR-008) whole-tab balance + Pay-tab CTA. Only rendered while
+ * the session carries a pre-pivot unpaid balance (`subtotal > 0`); deleted
+ * with the rest of the tab machinery at T+30d.
+ */
+function TabSummaryCard({
+	tab,
+	onPayTab,
+}: Readonly<{
+	tab: TabSummary;
+	onPayTab: () => void;
+}>) {
+	const { t } = useTranslation();
+	// The tab still bills this food; it just can't be settled until it lands.
+	const blocked = tab.unservedOrderIds.length > 0;
+
+	return (
+		<div className="rounded-xl p-4 space-y-3 bg-muted border border-border">
+			<div className="flex items-center justify-between gap-2">
+				<div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+					<CreditCard size={16} className="text-muted-foreground" />
+					<span>{t(OrderingKeys.TAB_PAY_HEADING)}</span>
+				</div>
+				<span className="text-sm font-semibold text-foreground">${formatCents(tab.subtotal)}</span>
+			</div>
 
 			{/* Locked wins: while a payment is in flight there is nothing the diner
 			    can do but wait, so telling them to fetch a server would be wrong. */}
@@ -357,17 +393,23 @@ function JoinTabCard({ slug }: Readonly<{ slug: string }>) {
 function OrderCard({
 	order,
 	onViewOrder,
+	onContinueCheckout,
 }: Readonly<{
 	order: OrderDoc;
 	onViewOrder: (orderId: Id<"orders">) => void;
+	onContinueCheckout: (orderId: Id<"orders">) => void;
 }>) {
 	const { t, i18n } = useTranslation();
 	const meta = getStatusMeta(order, t);
 	const Icon = meta.icon;
+	// A draft with items resumes at the per-order checkout (ADR 008); every
+	// other status opens the order detail page.
+	const isDraft = order.status === "draft";
+	const isPaid = order.paymentState === "paid";
 
 	return (
 		<button
-			onClick={() => onViewOrder(order._id)}
+			onClick={() => (isDraft ? onContinueCheckout(order._id) : onViewOrder(order._id))}
 			className="w-full text-left flex items-center gap-3 p-4 rounded-xl transition-colors hover:bg-(--bg-hover) bg-muted border border-border"
 		>
 			<div
@@ -387,8 +429,18 @@ function OrderCard({
 						)}
 						<span className="truncate">{meta.label}</span>
 					</span>
-					<span className="text-sm font-semibold text-foreground">
-						${formatCents(order.totalAmount)}
+					<span className="flex items-center gap-2 shrink-0">
+						{isPaid && (
+							<span
+								className="text-xs font-semibold px-2 py-0.5 rounded-full bg-success-subtle"
+								style={{ color: "var(--accent-success)" }}
+							>
+								{t(OrderingKeys.ORDERS_PAID_BADGE)}
+							</span>
+						)}
+						<span className="text-sm font-semibold text-foreground">
+							${formatCents(order.totalAmount)}
+						</span>
 					</span>
 				</div>
 				<div className="flex items-center justify-between mt-1">
@@ -396,7 +448,9 @@ function OrderCard({
 						{formatTime(order._creationTime, t, i18n.language)}
 					</span>
 					<span className="text-xs font-medium text-primary">
-						{t(OrderingKeys.ORDERS_LIFECYCLE_VIEW)} →
+						{isDraft
+							? `${t(OrderingKeys.ORDERS_LIFECYCLE_CONTINUE_PAYMENT)} →`
+							: `${t(OrderingKeys.ORDERS_LIFECYCLE_VIEW)} →`}
 					</span>
 				</div>
 			</div>

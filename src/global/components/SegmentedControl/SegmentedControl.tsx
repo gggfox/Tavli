@@ -11,11 +11,20 @@
 import { KEY } from "@/global/utils/keyboard";
 import type { LucideIcon } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, useCallback, useRef } from "react";
+import { getStatusToneStyle, type StatusTone } from "../StatusFilterChips/statusPalette";
 
 export interface SegmentedControlOption<T extends string> {
 	readonly value: T;
 	readonly label: string;
 	readonly icon?: LucideIcon;
+	/**
+	 * Optional semantic tone (shared with `StatusFilterChips`). When set, the
+	 * active segment fills with the tone's solid color and the inactive
+	 * segment's text takes the tone's foreground, so status-shaped segments
+	 * read the same as status chips elsewhere. When omitted the control keeps
+	 * its neutral primary-button styling.
+	 */
+	readonly tone?: StatusTone;
 }
 
 export interface SegmentedControlProps<T extends string> {
@@ -107,6 +116,16 @@ export function SegmentedControl<T extends string>({
 			{options.map((opt, index) => {
 				const isActive = opt.value === value;
 				const Icon = opt.icon;
+				const palette = opt.tone ? getStatusToneStyle(opt.tone) : null;
+				const segmentStyle: CSSProperties = isActive
+					? {
+							backgroundColor: palette?.solidBg ?? "var(--btn-primary-bg)",
+							color: palette?.solidFg ?? "var(--btn-primary-text)",
+						}
+					: {
+							backgroundColor: "transparent",
+							color: palette?.fg ?? "var(--text-secondary)",
+						};
 				return (
 					<button
 						key={opt.value}
@@ -129,10 +148,7 @@ export function SegmentedControl<T extends string>({
 						]
 							.filter(Boolean)
 							.join(" ")}
-						style={{
-							backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
-							color: isActive ? "var(--btn-primary-text)" : "var(--text-secondary)",
-						}}
+						style={segmentStyle}
 					>
 						{Icon ? <Icon size={iconOnly ? 16 : 14} className="shrink-0" aria-hidden /> : null}
 						{!iconOnly ? opt.label : null}

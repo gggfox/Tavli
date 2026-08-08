@@ -566,6 +566,8 @@ export const AUDIT_EVENT = {
 	ORDER_STATUS_CHANGED: "orders.statusChanged",
 	ORDER_PAYMENT_CONFIRMED: "orders.paymentConfirmed",
 	ORDER_PAYMENT_FAILED: "orders.paymentFailed",
+	/** Diner abandoned an in-flight card intent (e.g. switching to cash). */
+	ORDER_PAYMENT_CANCELLED: "orders.paymentCancelled",
 	ORDER_REFUND_SUCCEEDED: "orders.refundSucceeded",
 	ORDER_REFUND_FAILED: "orders.refundFailed",
 	ORDER_AWAITING_PAYMENT: "orders.awaitingPayment",

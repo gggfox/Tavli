@@ -1,4 +1,4 @@
-import type { OrderDashboardStatusFilter } from "@/features";
+import type { OrderDashboardStatusFilterValue } from "@/features";
 import { getStatusToneStyle, StatusBadge, Surface } from "@/global/components";
 import { OrdersKeys, useLocalizedName } from "@/global/i18n";
 import { getRelativeTime } from "@/global/utils/relativeTime";
@@ -55,7 +55,7 @@ export function StationTicketCard({
 	const { t, i18n } = useTranslation();
 	const [cancelItemConfirm, setCancelItemConfirm] = useState<string | null>(null);
 	const { order, station, items } = ticket;
-	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilter];
+	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilterValue];
 	const stationConfig = STATION_CONFIG[station];
 	const StationIcon = stationConfig.icon;
 	const age = getRelativeTime(order.createdAt, now);

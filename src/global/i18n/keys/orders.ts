@@ -10,6 +10,7 @@ export const OrdersKeys = {
 	PAGE_TITLE: "orders.page.title",
 	PAGE_DESCRIPTION: "orders.page.description",
 
+	STATUS_AWAITING_PAYMENT: "orders.status.awaitingPayment",
 	STATUS_SUBMITTED: "orders.status.submitted",
 	STATUS_PREPARING: "orders.status.preparing",
 	STATUS_READY: "orders.status.ready",
@@ -31,6 +32,14 @@ export const OrdersKeys = {
 	ACTION_CONFIRM_CANCEL: "orders.actions.confirmCancel",
 	ACTION_KEEP_ORDER: "orders.actions.keepOrder",
 	ACTION_VIEW_FULL_ORDER: "orders.actions.viewFullOrder",
+
+	ACTION_MARK_PAID_IN_PERSON: "orders.markPaid.action",
+	MARK_PAID_PROMPT_TITLE: "orders.markPaid.promptTitle",
+	MARK_PAID_PROMPT_BODY: "orders.markPaid.promptBody",
+	MARK_PAID_CONFIRM: "orders.markPaid.confirm",
+	MARK_PAID_DISMISS: "orders.markPaid.dismiss",
+	MARK_PAID_PENDING: "orders.markPaid.pending",
+	MARK_PAID_AMOUNT_DUE: "orders.markPaid.amountDue",
 
 	CANCEL_PROMPT: "orders.cancel.prompt",
 	CANCEL_PAID_PROMPT: "orders.cancel.paidPrompt",
@@ -60,6 +69,7 @@ export const OrdersKeys = {
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
 
 	ARIA_FILTER: "orders.aria.filter",
+	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",
 	ARIA_CANCEL_ITEM: "orders.aria.cancelItem",
 	ARIA_FULL_ORDER: "orders.aria.fullOrder",

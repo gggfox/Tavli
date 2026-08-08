@@ -370,6 +370,7 @@
 			"description": "Live order dashboard. Orders update in real time."
 		},
 		"status": {
+			"awaitingPayment": "Awaiting payment",
 			"submitted": "Pending",
 			"preparing": "Preparing",
 			"ready": "Ready",
@@ -393,6 +394,15 @@
 			"confirmCancel": "Confirm Cancel",
 			"keepOrder": "Keep Order",
 			"viewFullOrder": "View full order →"
+		},
+		"markPaid": {
+			"action": "Mark paid in person",
+			"promptTitle": "Mark this order as paid?",
+			"promptBody": "Confirm you collected {{amount}} in person. The order is released to the kitchen immediately.",
+			"confirm": "Confirm payment",
+			"dismiss": "Not yet",
+			"pending": "Marking paid…",
+			"amountDue": "Amount due"
 		},
 		"cancel": {
 			"prompt": "Cancel this order?",
@@ -424,6 +434,7 @@
 		},
 		"aria": {
 			"filter": "Filter orders by status",
+			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders",
@@ -549,6 +560,7 @@
 		"ERROR_ORDER_ITEM_NOT_CANCELLABLE": "This item can no longer be cancelled on its own. Use the order-level cancel instead.",
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "This order's payment is already in progress or settled. Cancel the whole order to issue a refund.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "A payment is in progress on this tab. Wait for it to finish before removing items.",
+		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "A card payment is already in progress for this order. Cancel it before choosing to pay in person.",
 		"ERROR_REFUND_FAILED": "The order was cancelled, but the refund did not go through. Issue it from the Stripe dashboard.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "The order was cancelled, but we could not find its payment to refund. Check the Stripe dashboard.",
 		"ERROR_REFUND_ALREADY_ISSUED": "This payment has already been fully refunded.",
@@ -640,7 +652,21 @@
 			"retry": "Retry",
 			"processing": "Processing...",
 			"payNow": "Pay Now",
-			"securedByStripe": "Payments secured by Stripe"
+			"securedByStripe": "Payments secured by Stripe",
+			"subtotal": "Subtotal",
+			"serviceFee": "Tavli service fee ({{rate}}%)",
+			"continueToPayment": "Continue to payment",
+			"payInPerson": "Pay in person",
+			"payByCardInstead": "Pay by card instead",
+			"orderNotFound": "We couldn't load this order. It may have already been sent or cancelled.",
+			"cashTitle": "Pay at the table",
+			"cashOrderNumber": "Order #{{n}}",
+			"cashShowServer": "Show this to your server to pay at the table.",
+			"cashKitchenNote": "Your order will go to the kitchen once the staff confirms your payment.",
+			"paidTitle": "Payment complete!",
+			"paidDesc": "Order #{{n}} was sent to the kitchen.",
+			"paidDescNoNumber": "Your order was sent to the kitchen.",
+			"viewOrders": "View my orders"
 		},
 		"orderStatus": {
 			"loading": "Loading order...",
@@ -671,6 +697,9 @@
 			"lifecycleView": "View",
 			"lifecycleUnpaid": "Unpaid",
 			"lifecycleFinishCheckout": "Finish checkout",
+			"lifecycleAwaitingPayment": "Pay with your server",
+			"lifecycleContinuePayment": "Continue to payment",
+			"paidBadge": "Paid",
 			"lifecyclePlaced": "Order placed",
 			"lifecyclePreparing": "Preparing",
 			"lifecycleReady": "Ready",
@@ -920,7 +949,7 @@
 			"partialRequirements": "Payments are enabled but additional requirements need attention.",
 			"redirecting": "Redirecting...",
 			"continueSetup": "Continue Stripe Setup",
-			"intro": "Set up Stripe to accept credit card payments from customers. A {{rate}}% platform fee applies on top of Stripe's standard processing fees.",
+			"intro": "Set up Stripe to accept credit card payments from customers. Diners pay a {{rate}}% Tavli service fee on top of the order subtotal, so you receive the full subtotal of every order. Stripe's standard processing fees still apply to the payout.",
 			"settingUp": "Setting up...",
 			"onboard": "Onboard to collect payments",
 			"resetButton": "Reset Stripe Setup",

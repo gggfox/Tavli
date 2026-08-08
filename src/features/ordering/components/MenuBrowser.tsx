@@ -308,7 +308,9 @@ export function MenuBrowser({
 								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								{isSubmitting ? t(OrderingKeys.MENU_PREPARING) : t(OrderingKeys.MENU_PLACE_ORDER)}
+								{isSubmitting
+									? t(OrderingKeys.MENU_PREPARING)
+									: t(OrderingKeys.MENU_PROCEED_TO_PAYMENT)}
 							</button>
 						</>
 					) : (
@@ -322,7 +324,7 @@ export function MenuBrowser({
 								disabled={paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
-								{t(OrderingKeys.MENU_PLACE_ORDER)}
+								{t(OrderingKeys.MENU_PROCEED_TO_PAYMENT)}
 							</button>
 						</>
 					)}

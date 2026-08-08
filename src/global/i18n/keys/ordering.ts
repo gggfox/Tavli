@@ -61,6 +61,23 @@ export const OrderingKeys = {
 	CHECKOUT_PAY_NOW: "ordering.checkout.payNow",
 	CHECKOUT_SECURED_BY_STRIPE: "ordering.checkout.securedByStripe",
 
+	// Per-order pay-at-submit checkout (ADR 008): the diner pays subtotal +
+	// the customer-borne Tavli service fee before the kitchen sees the order.
+	CHECKOUT_SUBTOTAL: "ordering.checkout.subtotal",
+	CHECKOUT_SERVICE_FEE: "ordering.checkout.serviceFee",
+	CHECKOUT_CONTINUE_TO_PAYMENT: "ordering.checkout.continueToPayment",
+	CHECKOUT_PAY_IN_PERSON: "ordering.checkout.payInPerson",
+	CHECKOUT_PAY_BY_CARD_INSTEAD: "ordering.checkout.payByCardInstead",
+	CHECKOUT_ORDER_NOT_FOUND: "ordering.checkout.orderNotFound",
+	CHECKOUT_CASH_TITLE: "ordering.checkout.cashTitle",
+	CHECKOUT_CASH_ORDER_NUMBER: "ordering.checkout.cashOrderNumber",
+	CHECKOUT_CASH_SHOW_SERVER: "ordering.checkout.cashShowServer",
+	CHECKOUT_CASH_KITCHEN_NOTE: "ordering.checkout.cashKitchenNote",
+	CHECKOUT_PAID_TITLE: "ordering.checkout.paidTitle",
+	CHECKOUT_PAID_DESC: "ordering.checkout.paidDesc",
+	CHECKOUT_PAID_DESC_NO_NUMBER: "ordering.checkout.paidDescNoNumber",
+	CHECKOUT_VIEW_ORDERS: "ordering.checkout.viewOrders",
+
 	ORDER_STATUS_LOADING: "ordering.orderStatus.loading",
 	ORDER_STATUS_HEADING: "ordering.orderStatus.heading",
 	ORDER_STATUS_DAY_NUMBER: "ordering.orderStatus.dayNumber",
@@ -88,6 +105,10 @@ export const OrderingKeys = {
 	ORDERS_LIFECYCLE_VIEW: "ordering.orders.lifecycleView",
 	ORDERS_LIFECYCLE_UNPAID: "ordering.orders.lifecycleUnpaid",
 	ORDERS_LIFECYCLE_FINISH_CHECKOUT: "ordering.orders.lifecycleFinishCheckout",
+	// ADR 008 per-order payment states on the orders list.
+	ORDERS_LIFECYCLE_AWAITING_PAYMENT: "ordering.orders.lifecycleAwaitingPayment",
+	ORDERS_LIFECYCLE_CONTINUE_PAYMENT: "ordering.orders.lifecycleContinuePayment",
+	ORDERS_PAID_BADGE: "ordering.orders.paidBadge",
 	ORDERS_LIFECYCLE_PLACED: "ordering.orders.lifecyclePlaced",
 	ORDERS_LIFECYCLE_PREPARING: "ordering.orders.lifecyclePreparing",
 	ORDERS_LIFECYCLE_READY: "ordering.orders.lifecycleReady",

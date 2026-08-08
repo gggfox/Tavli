@@ -1,4 +1,4 @@
-import type { OrderDashboardStatusFilter } from "@/features";
+import type { OrderDashboardStatusFilter, OrderDashboardStatusFilterValue } from "@/features";
 import type { StatusTone } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import type { Urgency } from "@/global/utils/relativeTime";
@@ -56,7 +56,16 @@ export const URGENCY_BG_CLASS: Record<Urgency, string> = {
 	cold: "bg-destructive",
 };
 
-export const STATUS_CONFIG: Record<OrderDashboardStatusFilter, StatusConfig> = {
+export const STATUS_CONFIG: Record<OrderDashboardStatusFilterValue, StatusConfig> = {
+	// Money owed, not workflow: the only actions are "mark paid in person"
+	// and cancel, both rendered by the OrderCard awaiting-payment variant —
+	// hence no `next` transition here (ADR 008).
+	awaiting_payment: {
+		labelKey: OrdersKeys.STATUS_AWAITING_PAYMENT,
+		tone: "warning",
+		next: null,
+		nextLabelKey: null,
+	},
 	submitted: {
 		labelKey: OrdersKeys.STATUS_SUBMITTED,
 		tone: "warning",
@@ -89,7 +98,9 @@ export const STATUS_CONFIG: Record<OrderDashboardStatusFilter, StatusConfig> = {
 	},
 };
 
-export const ALL_STATUSES: OrderDashboardStatusFilter[] = [
+/** Segment order of the dashboard's single-select status control. */
+export const ALL_STATUSES: OrderDashboardStatusFilterValue[] = [
+	"awaiting_payment",
 	"submitted",
 	"preparing",
 	"ready",
@@ -97,18 +108,44 @@ export const ALL_STATUSES: OrderDashboardStatusFilter[] = [
 	"cancelled",
 ];
 
-export const DEFAULT_STATUS_FILTERS: OrderDashboardStatusFilter[] = [
+/** What a user who never picked a status sees first: the queue. */
+export const DEFAULT_STATUS: OrderDashboardStatusFilterValue = "submitted";
+
+/**
+ * Highest-priority-first order used to collapse the LEGACY multi-select
+ * filter array into the single-select value. Must match the rule of
+ * `convex/migrations/backfillOrderDashboardStatusFilter.ts` so a user who
+ * renders before the migration ran lands on the same segment the migration
+ * would give them. `awaiting_payment` is absent by construction: the legacy
+ * array predates that status.
+ */
+export const LEGACY_STATUS_PRIORITY: readonly OrderDashboardStatusFilter[] = [
 	"submitted",
 	"preparing",
 	"ready",
+	"served",
+	"cancelled",
 ];
 
-export const STATUS_SORT_PRIORITY: Record<OrderDashboardStatusFilter, number> = {
-	submitted: 0,
-	preparing: 1,
-	ready: 2,
-	served: 3,
-	cancelled: 4,
+/**
+ * Collapse the legacy multi-select filter array into a single-select value.
+ * `null` in → `null` out (setting never loaded / never set), so callers can
+ * keep distinguishing "unknown yet" from a real value.
+ */
+export function collapseLegacyStatusFilters(
+	legacy: readonly OrderDashboardStatusFilter[] | null
+): OrderDashboardStatusFilterValue | null {
+	if (legacy === null) return null;
+	return LEGACY_STATUS_PRIORITY.find((status) => legacy.includes(status)) ?? DEFAULT_STATUS;
+}
+
+export const STATUS_SORT_PRIORITY: Record<OrderDashboardStatusFilterValue, number> = {
+	awaiting_payment: 0,
+	submitted: 1,
+	preparing: 2,
+	ready: 3,
+	served: 4,
+	cancelled: 5,
 };
 
 /**
@@ -145,6 +182,6 @@ export function formatOrderDate(timestamp: number, locale: string): string {
 	}).format(new Date(timestamp));
 }
 
-export function isDashboardStatus(status: string): status is OrderDashboardStatusFilter {
+export function isDashboardStatus(status: string): status is OrderDashboardStatusFilterValue {
 	return status in STATUS_CONFIG;
 }

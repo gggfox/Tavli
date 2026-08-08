@@ -4,13 +4,16 @@ import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { fromErrorObject } from "./_shared/errors";
 import { getCurrentUserId, requireOrgOwnerOrAdmin } from "./_util/auth";
+import { DASHBOARD_STATUS_VALIDATOR } from "./orderHelpers";
 import { TABLE } from "./constants";
 import { stampUpdated } from "./_util/audit";
 
 /**
- * Order statuses the dashboard is allowed to filter by.
- * `draft` is excluded because drafts are pre-submission and never belong
- * on the kitchen dashboard.
+ * LEGACY multi-select validator — kept only for the legacy array mutation
+ * below. `draft` is excluded because drafts are pre-submission and never
+ * belong on the kitchen dashboard. `awaiting_payment` postdates the array
+ * setting and is deliberately absent; the single-select mutation reuses
+ * `DASHBOARD_STATUS_VALIDATOR`, which includes it.
  */
 const orderDashboardStatusValidator = v.union(
 	v.literal("submitted"),
@@ -24,12 +27,14 @@ const orderDashboardStatusValidator = v.union(
 const orderDashboardPrepStationValidator = v.union(v.literal("kitchen"), v.literal("bar"));
 
 type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "cancelled";
+type OrderDashboardStatusValue = "awaiting_payment" | OrderDashboardStatus;
 type OrderDashboardPrepStation = "kitchen" | "bar";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
 	sidebarExpanded?: boolean;
 	language?: "en" | "es";
+	orderDashboardStatusFilter?: OrderDashboardStatusValue;
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
 	orderDashboardPrepStationFilters?: OrderDashboardPrepStation[];
 	expandedSidebarGroups?: string[];
@@ -112,6 +117,9 @@ async function upsertUserSettings({
 		theme: updates.theme ?? defaults.theme,
 		sidebarExpanded: updates.sidebarExpanded ?? defaults.sidebarExpanded,
 		language: updates.language ?? defaults.language,
+		...(updates.orderDashboardStatusFilter !== undefined && {
+			orderDashboardStatusFilter: updates.orderDashboardStatusFilter,
+		}),
 		...(updates.orderDashboardStatusFilters !== undefined && {
 			orderDashboardStatusFilters: updates.orderDashboardStatusFilters,
 		}),
@@ -242,6 +250,33 @@ export const updateOrderDashboardStatusFilters = mutation({
 			ctx,
 			userId,
 			updates: { orderDashboardStatusFilters: deduped },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update the single-select OrderDashboard status filter for the
+ * authenticated user (ADR 008). Creates settings if they don't exist.
+ *
+ * Successor of `updateOrderDashboardStatusFilters` (the legacy multi-select
+ * array, kept above for legacy clients). Accepts every dashboard status
+ * including `awaiting_payment` — reuses `DASHBOARD_STATUS_VALIDATOR` from
+ * `orderHelpers` so the two stay in lockstep.
+ */
+export const updateOrderDashboardStatusFilter = mutation({
+	args: {
+		status: DASHBOARD_STATUS_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardStatusFilter: args.status },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
 		});
 	},

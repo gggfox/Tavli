@@ -1,9 +1,16 @@
-import type { OrderDashboardStatusFilter } from "@/features";
+import type { OrderDashboardStatusFilterValue } from "@/features";
 import { getStatusToneStyle, StatusBadge, Surface } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
-import { CheckCircle2, ChefHat, Clock, UtensilsCrossed, XCircle } from "lucide-react";
+import {
+	BadgeDollarSign,
+	CheckCircle2,
+	ChefHat,
+	Clock,
+	UtensilsCrossed,
+	XCircle,
+} from "lucide-react";
 import { type CSSProperties, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
@@ -33,10 +40,19 @@ interface OrderCardProps {
 	activeStationFilters: ReadonlySet<DashboardPrepStation>;
 	/** Order id whose cancel is in flight, if any. Disables the confirm button. */
 	cancelPendingId: string | null;
+	/** Order id currently showing the mark-paid confirmation, if any (ADR 008). */
+	markPaidConfirm: string | null;
+	/** Order id whose mark-paid mutation is in flight, if any. */
+	markPaidPendingId: string | null;
+	/** Localized failure message of the last mark-paid attempt on this card. */
+	markPaidError: string | null;
 	onSelectFullOrder: (order: DashboardOrder) => void;
 	onRequestCancel: (orderId: string) => void;
 	onDismissCancel: () => void;
 	onCancelOrder: (orderId: DashboardOrder["_id"]) => void;
+	onRequestMarkPaid: (orderId: string) => void;
+	onDismissMarkPaid: () => void;
+	onMarkPaidInPerson: (orderId: DashboardOrder["_id"]) => void;
 	onUpdateStatus: (args: { orderId: DashboardOrder["_id"]; newStatus: NextOrderStatus }) => void;
 	onMarkStationReady: (args: {
 		orderId: DashboardOrder["_id"];
@@ -50,22 +66,36 @@ export function OrderCard({
 	cancelConfirm,
 	activeStationFilters,
 	cancelPendingId,
+	markPaidConfirm,
+	markPaidPendingId,
+	markPaidError,
 	onSelectFullOrder,
 	onRequestCancel,
 	onDismissCancel,
 	onCancelOrder,
+	onRequestMarkPaid,
+	onDismissMarkPaid,
+	onMarkPaidInPerson,
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
 	const { t, i18n } = useTranslation();
-	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilter];
+	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilterValue];
 	const visibleItems = order.items.slice(0, MAX_VISIBLE_ITEMS);
 	const hiddenCount = order.items.length - visibleItems.length;
-	const age = getRelativeTime(order.createdAt, now);
-	const absoluteTimestamp = `${formatOrderDate(order.createdAt, i18n.language)}, ${formatOrderTime(order.createdAt, i18n.language)}`;
+	const isAwaitingPayment = order.status === "awaiting_payment";
+	// For an awaiting-payment card the clock that matters is "how long has
+	// this table owed cash", not "when was the order created".
+	const ageBasis = isAwaitingPayment
+		? (order.awaitingPaymentAt ?? order.createdAt)
+		: order.createdAt;
+	const age = getRelativeTime(ageBasis, now);
+	const absoluteTimestamp = `${formatOrderDate(ageBasis, i18n.language)}, ${formatOrderTime(ageBasis, i18n.language)}`;
 	const hasNextAction = config.next !== null && config.nextLabelKey !== null;
 	const isCancelling = cancelConfirm === order._id;
 	const isCancelPending = cancelPendingId === order._id;
+	const isMarkPaidConfirming = markPaidConfirm === order._id;
+	const isMarkPaidPending = markPaidPendingId === order._id;
 	// `stripePaymentIntentId` is only ever set on legacy per-order payments — it
 	// is undefined for every tab-paid order, which is all of them in practice.
 	// `paymentState` is the field that actually tracks the money.
@@ -127,6 +157,35 @@ export function OrderCard({
 						${formatCents(order.totalAmount)}
 					</span>
 				</div>
+
+				{isAwaitingPayment && (
+					<div
+						className="flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-lg"
+						style={{
+							backgroundColor: getStatusToneStyle("warning").tintedBg,
+							color: getStatusToneStyle("warning").fg,
+						}}
+					>
+						<div className="min-w-0">
+							<span className="block text-xl font-bold tabular-nums leading-tight">
+								{order.dailyOrderNumber != null
+									? t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })
+									: `#${order._id.slice(-6)}`}
+							</span>
+							<span className="block text-xs font-medium truncate">
+								{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
+							</span>
+						</div>
+						<div className="text-right shrink-0">
+							<span className="block text-[10px] font-medium uppercase tracking-wide">
+								{t(OrdersKeys.MARK_PAID_AMOUNT_DUE)}
+							</span>
+							<span className="block text-xl font-bold tabular-nums leading-tight">
+								${formatCents(order.totalAmount)}
+							</span>
+						</div>
+					</div>
+				)}
 
 				{orderStations.length > 0 && (
 					<div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -235,6 +294,73 @@ export function OrderCard({
 							</button>
 						</div>
 					</div>
+				) : isAwaitingPayment ? (
+					isMarkPaidConfirming ? (
+						<div
+							className="p-3 rounded-lg space-y-2"
+							style={{
+								backgroundColor: getStatusToneStyle("warning").tintedBg,
+								border: `1px solid ${getStatusToneStyle("warning").solidBg}`,
+							}}
+						>
+							<p className="text-xs font-semibold text-foreground">
+								{t(OrdersKeys.MARK_PAID_PROMPT_TITLE)}
+							</p>
+							<p className="text-xs text-muted-foreground">
+								{t(OrdersKeys.MARK_PAID_PROMPT_BODY, {
+									amount: `$${formatCents(order.totalAmount)}`,
+								})}
+							</p>
+							{markPaidError && (
+								<p role="alert" className="text-xs font-medium text-destructive">
+									{markPaidError}
+								</p>
+							)}
+							<div className="flex gap-2">
+								<button
+									onClick={() => onMarkPaidInPerson(order._id)}
+									disabled={isMarkPaidPending}
+									className="flex-1 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
+									style={{
+										backgroundColor: getStatusToneStyle("warning").solidBg,
+										color: getStatusToneStyle("warning").solidFg,
+									}}
+								>
+									{isMarkPaidPending
+										? t(OrdersKeys.MARK_PAID_PENDING)
+										: t(OrdersKeys.MARK_PAID_CONFIRM)}
+								</button>
+								<button
+									onClick={onDismissMarkPaid}
+									disabled={isMarkPaidPending}
+									className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground disabled:opacity-60"
+								>
+									{t(OrdersKeys.MARK_PAID_DISMISS)}
+								</button>
+							</div>
+						</div>
+					) : (
+						<div className="flex gap-2">
+							<button
+								onClick={() => onRequestMarkPaid(order._id)}
+								className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
+								style={{
+									backgroundColor: getStatusToneStyle("warning").solidBg,
+									color: getStatusToneStyle("warning").solidFg,
+								}}
+							>
+								<BadgeDollarSign size={14} />
+								{t(OrdersKeys.ACTION_MARK_PAID_IN_PERSON)}
+							</button>
+							<button
+								onClick={() => onRequestCancel(order._id)}
+								className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
+							>
+								<XCircle size={14} />
+								{t(OrdersKeys.ACTION_CANCEL)}
+							</button>
+						</div>
+					)
 				) : (
 					hasNextAction && (
 						<div className="flex gap-2">
@@ -264,7 +390,7 @@ export function OrderCard({
 
 interface NextActionButtonProps {
 	readonly order: DashboardOrder;
-	readonly config: (typeof STATUS_CONFIG)[OrderDashboardStatusFilter];
+	readonly config: (typeof STATUS_CONFIG)[OrderDashboardStatusFilterValue];
 	readonly stationActionTarget: DashboardPrepStation | null;
 	readonly onUpdateStatus: (args: {
 		orderId: DashboardOrder["_id"];

@@ -1,4 +1,4 @@
-import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilter } from "@/features";
+import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilterValue } from "@/features";
 import { useConvexMutate } from "@/global/hooks";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery, useConvexAction } from "@convex-dev/react-query";
@@ -13,7 +13,7 @@ type ActiveOrdersValue = UnwrappedValue<
 
 export function useOrders(
 	restaurantId: Id<"restaurants"> | undefined,
-	statuses?: OrderDashboardStatusFilter[],
+	statuses?: OrderDashboardStatusFilterValue[],
 	prepStations?: OrderDashboardPrepStationFilter[]
 ) {
 	const {
@@ -32,6 +32,10 @@ export function useOrders(
 	const markStationReady = useConvexMutate(api.orders.markStationReady);
 	const unmarkStationReady = useConvexMutate(api.orders.unmarkStationReady);
 	const cancelOrderItem = useConvexMutate(api.orders.cancelOrderItem);
+	// Staff collected cash for an `awaiting_payment` order (ADR 008). On
+	// success the order flips to `submitted` server-side and the dashboard
+	// updates through the live query — no manual refetch needed.
+	const markOrderPaidInPerson = useConvexMutate(api.orders.markOrderPaidInPerson);
 
 	// Cancelling is an *action*, not a mutation — it calls Stripe — so it can't
 	// go through `useConvexMutate`, which is typed for mutations.
@@ -47,6 +51,7 @@ export function useOrders(
 		markStationReady: markStationReady.mutateAsync,
 		unmarkStationReady: unmarkStationReady.mutateAsync,
 		cancelOrderItem: cancelOrderItem.mutateAsync,
+		markOrderPaidInPerson: markOrderPaidInPerson.mutateAsync,
 		cancelOrderAndRefund: cancelOrder.mutateAsync,
 	};
 }

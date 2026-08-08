@@ -121,7 +121,7 @@ describe("MenuBrowser", () => {
 			).toBeTruthy();
 		});
 
-		const proceedButtons = screen.getAllByText("Send order to kitchen");
+		const proceedButtons = screen.getAllByText("Proceed to Payment");
 		const paymentButton = proceedButtons.at(-1) as HTMLButtonElement;
 		expect(paymentButton.disabled).toBe(true);
 	});
@@ -143,7 +143,7 @@ describe("MenuBrowser", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Ordering unavailable")).toBeTruthy();
 		});
-		expect(screen.queryByText("Send order to kitchen")).toBeNull();
+		expect(screen.queryByText("Proceed to Payment")).toBeNull();
 	});
 
 	it("renders no footer while ordering is blocked without a notice (checking)", async () => {
@@ -160,7 +160,7 @@ describe("MenuBrowser", () => {
 		fireEvent.click(screen.getByText("Add mocked item"));
 
 		await waitFor(() => {
-			expect(screen.queryByText("Send order to kitchen")).toBeNull();
+			expect(screen.queryByText("Proceed to Payment")).toBeNull();
 		});
 		expect(screen.queryByText("Tap items to start your order")).toBeNull();
 	});

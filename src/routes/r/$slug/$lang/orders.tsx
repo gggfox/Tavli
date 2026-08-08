@@ -19,6 +19,13 @@ function Page() {
 					params: { slug, lang, orderId },
 				})
 			}
+			onContinueCheckout={(orderId) =>
+				navigate({
+					to: "/r/$slug/$lang/checkout",
+					params: { slug, lang },
+					search: { orderId },
+				})
+			}
 			onPayTab={() =>
 				navigate({
 					to: "/r/$slug/$lang/checkout",

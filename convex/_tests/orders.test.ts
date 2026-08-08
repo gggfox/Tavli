@@ -2171,6 +2171,90 @@ describe("orders", () => {
 			);
 		});
 
+		it("rejects while a card intent is in flight, unblocks once it is cancelled", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, orderId, authed, dinerId } = await seedCommittableDraft(t);
+
+			const paymentId = await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					orderId,
+					amount: 5600,
+					subtotalAmount: 5000,
+					feeAmount: 600,
+					kind: "order",
+					currency: "usd",
+					status: "processing",
+					refundStatus: "none",
+					attemptNumber: 1,
+					stripePaymentIntentId: "pi_in_flight",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id, paymentState: "processing" });
+				return id;
+			});
+
+			// Committing to cash under a live card intent would double-settle.
+			await expect(authed.mutation(api.orders.requestPayInPerson, { orderId })).rejects.toThrow(
+				/ERROR_ORDER_PAYMENT_IN_FLIGHT/
+			);
+
+			// The interlock: cancel clears the pointer, then cash goes through.
+			const cancelled = await t.mutation(internal.orders.cancelActivePaymentInternal, {
+				orderId,
+				userId: dinerId,
+			});
+			expect(cancelled).toBe(true);
+
+			const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+			expect(payment?.status).toBe("cancelled");
+
+			await authed.mutation(api.orders.requestPayInPerson, { orderId });
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("awaiting_payment");
+			expect(order?.activePaymentId).toBeUndefined();
+			expect(order?.paymentState).toBe("unpaid");
+		});
+
+		it("cancelActivePaymentInternal never touches a succeeded payment", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, orderId, dinerId } = await seedCommittableDraft(t);
+
+			const paymentId = await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					orderId,
+					amount: 5600,
+					subtotalAmount: 5000,
+					feeAmount: 600,
+					kind: "order",
+					currency: "usd",
+					status: "succeeded",
+					refundStatus: "none",
+					attemptNumber: 1,
+					stripePaymentIntentId: "pi_done",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id });
+				return id;
+			});
+
+			const cancelled = await t.mutation(internal.orders.cancelActivePaymentInternal, {
+				orderId,
+				userId: dinerId,
+			});
+			expect(cancelled).toBe(false);
+
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(payment?.status).toBe("succeeded");
+			expect(order?.activePaymentId).toBe(paymentId);
+		});
+
 		it("never lands in the default staff dashboard set", async () => {
 			const t = convexTest(schema, modules);
 			const { organizationId, restaurantId, orderId, authed } = await seedCommittableDraft(t);

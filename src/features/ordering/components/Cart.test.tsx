@@ -131,7 +131,7 @@ describe("Cart", () => {
 		expect(onBack).toHaveBeenCalledTimes(1);
 	});
 
-	it("calls onSubmit when Place Order is clicked", () => {
+	it("calls onSubmit when Continue to payment is clicked", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,7 +147,7 @@ describe("Cart", () => {
 				isSubmitting={false}
 			/>
 		);
-		fireEvent.click(screen.getByText("Place Order"));
+		fireEvent.click(screen.getByText("Continue to payment"));
 		expect(onSubmit).toHaveBeenCalledTimes(1);
 	});
 

@@ -196,6 +196,31 @@ export const removeItem = mutation({
 });
 
 /**
+ * Persists order-level notes on a draft before it heads to checkout (ADR 008).
+ * Under the tab model the notes travelled inside `submitOrder`; pay-at-submit
+ * has no diner-side submit call — `confirmPayment` (webhook) and
+ * `requestPayInPerson` flip the status — so the draft row itself must carry
+ * them. Bumps `updatedAt` (and supersedes any active intent) so a payment
+ * intent priced before the edit can never settle a differently-annotated
+ * order.
+ */
+export const setDraftInstructions = mutation({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		specialInstructions: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const order = await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
+
+		await ctx.db.patch(args.orderId, {
+			specialInstructions: args.specialInstructions,
+			updatedAt: Date.now(),
+		});
+		await invalidateActivePayment(ctx, order);
+	},
+});
+
+/**
  * LEGACY pre-ADR-008 path: sends a draft order to the kitchen/bar unpaid
  * (TAVLI-6 tab model — the whole tab settles with one Stripe payment at the
  * end of the visit). Kept fully functional for pre-pivot sessions and for the
@@ -307,6 +332,21 @@ export const requestPayInPerson = mutation({
 		// the tab-lock guard for legacy sessions.
 		const order = await requireOwnedOrder(ctx, args.orderId, { draftOnly: true });
 
+		// A live card intent must be cancelled first (stripe.cancelOrderPaymentIntent).
+		// Without this guard the diner could commit to cash while the PaymentElement
+		// is still mounted, and a late card confirmation would double-settle the
+		// order the staff just collected cash for.
+		if (order.activePaymentId) {
+			const activePayment = await ctx.db.get(order.activePaymentId);
+			if (
+				activePayment &&
+				(activePayment.status === PAYMENT_STATUS.PENDING ||
+					activePayment.status === PAYMENT_STATUS.PROCESSING)
+			) {
+				throw new ConflictError("ERROR_ORDER_PAYMENT_IN_FLIGHT");
+			}
+		}
+
 		const items = await ctx.db
 			.query(TABLE.ORDER_ITEMS)
 			.withIndex("by_order", (q) => q.eq("orderId", args.orderId))
@@ -380,6 +420,65 @@ export const requestPayInPerson = mutation({
 			// not necessarily the actor.
 			userId: dinerId,
 		});
+	},
+});
+
+/**
+ * Transactional half of `stripe.cancelOrderPaymentIntent`: marks the order's
+ * active pending/processing payment `cancelled` and clears the order's payment
+ * pointer so the cash path (`requestPayInPerson`) unblocks. Mirrors the
+ * bookkeeping of `sessions.cancelTabPayment` and the supersede semantics of
+ * `invalidateActivePayment`.
+ *
+ * A payment that already `succeeded` is left untouched — the webhook owns that
+ * settlement and cancelling it here would orphan real money.
+ */
+export const cancelActivePaymentInternal = internalMutation({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+		/** Clerk subject of the diner who abandoned the intent (audit actor). */
+		userId: v.string(),
+	},
+	returns: v.boolean(),
+	handler: async (ctx, args) => {
+		const order = await ctx.db.get(args.orderId);
+		if (!order?.activePaymentId) return false;
+		if (order.status !== "draft" && order.status !== ORDER_STATUS.AWAITING_PAYMENT) return false;
+
+		const payment = await ctx.db.get(order.activePaymentId);
+		if (!payment) return false;
+		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
+			return false;
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(payment._id, {
+			status: PAYMENT_STATUS.CANCELLED,
+			updatedAt: now,
+		});
+		await ctx.db.patch(order._id, {
+			paymentState: ORDER_PAYMENT_STATE.UNPAID,
+			activePaymentId: undefined,
+			stripePaymentIntentId: undefined,
+			updatedAt: now,
+			updatedBy: args.userId,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.ORDERS,
+			aggregateId: order._id,
+			eventType: AUDIT_EVENT.ORDER_PAYMENT_CANCELLED,
+			restaurantId: order.restaurantId,
+			payload: {
+				restaurantId: order.restaurantId,
+				sessionId: order.sessionId,
+				paymentId: payment._id,
+				amount: payment.amount,
+				stripePaymentIntentId: payment.stripePaymentIntentId,
+			},
+			userId: args.userId,
+		});
+		return true;
 	},
 });
 

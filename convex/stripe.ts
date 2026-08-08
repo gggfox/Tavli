@@ -1194,6 +1194,90 @@ export const createPaymentIntent = action({
 	},
 });
 
+/**
+ * Abandons the order's active card intent (ADR 008) — the diner backed out of
+ * the payment sheet or is switching to cash. Cancels the PaymentIntent at
+ * Stripe and clears the order's payment pointer
+ * (`orders.cancelActivePaymentInternal`), so `requestPayInPerson`'s
+ * in-flight-payment guard unblocks.
+ *
+ * Membership-verified exactly like {@link createPaymentIntent}. Mirrors
+ * `sessions.cancelTabPayment`, with one extra rule: an intent that already
+ * `succeeded` at Stripe is left alone (`cancelled: false`) — the webhook will
+ * settle the order moments later, and clearing the pointer would orphan the
+ * charge.
+ */
+export const cancelOrderPaymentIntent = action({
+	args: {
+		orderId: v.id(TABLE.ORDERS),
+	},
+	handler: async (ctx, args): Promise<{ cancelled: boolean }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw fromErrorObject(new NotAuthenticatedError().toObject());
+		}
+
+		const ownedOrderId = await ctx.runQuery(internal.orders.verifyOrderForPaymentInternal, {
+			orderId: args.orderId,
+			userId: identity.subject,
+		});
+		if (!ownedOrderId) {
+			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.ACCESS_DENIED).toObject());
+		}
+
+		const order: Doc<"orders"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getOrderInternal,
+			{ orderId: args.orderId }
+		);
+		if (!order?.activePaymentId) return { cancelled: false };
+
+		const payment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentInternal,
+			{ paymentId: order.activePaymentId }
+		);
+		if (
+			!payment ||
+			(payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING)
+		) {
+			return { cancelled: false };
+		}
+
+		// Cancel at Stripe first, then clear our records — the reverse order
+		// would leave a live intent a stale client secret could still confirm.
+		if (payment.stripePaymentIntentId) {
+			const stripeClient = getStripeClient();
+			const intent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
+				payment.stripePaymentIntentId
+			);
+			if (intent.status === "succeeded") {
+				// The charge won the race; let the webhook settle the order.
+				return { cancelled: false };
+			}
+			if (intent.status !== "canceled") {
+				try {
+					await stripeClient.paymentIntents.cancel(payment.stripePaymentIntentId);
+				} catch (error) {
+					console.error(
+						"[stripe.cancelOrderPaymentIntent]",
+						buildIntegrationErrorLog(error, {
+							integration: "stripe",
+							operation: "cancelOrderPaymentIntent",
+							eventId: payment.stripePaymentIntentId,
+						})
+					);
+					throw error;
+				}
+			}
+		}
+
+		const cancelled: boolean = await ctx.runMutation(internal.orders.cancelActivePaymentInternal, {
+			orderId: args.orderId,
+			userId: identity.subject,
+		});
+		return { cancelled };
+	},
+});
+
 // =============================================================================
 // 8. Tab Payment Intent (TAVLI-6 — one payment settles the whole session tab)
 // =============================================================================

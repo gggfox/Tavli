@@ -13,15 +13,15 @@ function CartPage() {
 	const { slug, lang } = Route.useParams();
 	const { orderId } = Route.useSearch();
 	const navigate = useNavigate();
-	const { removeItem, submitOrder, isSubmitting } = useCart();
+	const { removeItem } = useCart();
 
-	const handleSubmit = async () => {
-		// Submitting sends the order to the kitchen; payment happens later from
-		// the tab view (TAVLI-6).
-		await submitOrder({ orderId: orderId as Id<"orders"> });
+	const handleSubmit = () => {
+		// ADR 008 pay-at-submit: the draft heads to the per-order checkout,
+		// where payment (or a cash commitment) releases it to the kitchen.
 		navigate({
-			to: "/r/$slug/$lang/orders",
+			to: "/r/$slug/$lang/checkout",
 			params: { slug, lang },
+			search: { orderId },
 		});
 	};
 
@@ -31,7 +31,7 @@ function CartPage() {
 			onBack={() => navigate({ to: "/r/$slug/$lang/menu", params: { slug, lang } })}
 			onSubmit={handleSubmit}
 			onRemoveItem={(orderItemId) => removeItem({ orderItemId })}
-			isSubmitting={isSubmitting}
+			isSubmitting={false}
 		/>
 	);
 }

@@ -25,6 +25,7 @@ const mockStripeClient = {
 	paymentIntents: {
 		create: vi.fn(),
 		retrieve: vi.fn(),
+		cancel: vi.fn(),
 	},
 	customers: {
 		create: vi.fn(),
@@ -1430,6 +1431,170 @@ describe("stripe actions", () => {
 			expect(order?.settledBy).toBe("stripe");
 			// The number allocated at cash-commit time survives — no re-allocation.
 			expect(order?.dailyOrderNumber).toBe(1);
+		});
+	});
+
+	describe("cancelOrderPaymentIntent — stale-payment-sheet interlock (ADR 008)", () => {
+		/** Draft order with a live processing intent, exactly as the checkout leaves it. */
+		async function seedOrderWithProcessingIntent(t: ReturnType<typeof convexTest>) {
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 5000 });
+
+			mockStripeClient.customers.create.mockResolvedValueOnce({ id: "cus_cancel" });
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_cancel_me",
+				client_secret: "cs_cancel_me",
+			});
+			const { paymentId } = await diner.action(api.stripe.createPaymentIntent, { orderId });
+
+			return { orderId, paymentId, diner, restaurantId };
+		}
+
+		it("cancels the intent at Stripe and clears the payment row + order pointer", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, paymentId, diner } = await seedOrderWithProcessingIntent(t);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_cancel_me",
+				status: "requires_payment_method",
+			});
+			mockStripeClient.paymentIntents.cancel.mockResolvedValueOnce({
+				id: "pi_cancel_me",
+				status: "canceled",
+			});
+
+			const result = await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
+			expect(result.cancelled).toBe(true);
+			expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_cancel_me");
+
+			const { order, payment, events } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+				events: await ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("aggregateId"), orderId))
+					.collect(),
+			}));
+			expect(payment?.status).toBe("cancelled");
+			expect(order?.activePaymentId).toBeUndefined();
+			expect(order?.stripePaymentIntentId).toBeUndefined();
+			expect(order?.paymentState).toBe("unpaid");
+			// Still a draft — abandoning payment never advances the order.
+			expect(order?.status).toBe("draft");
+			expect(events.some((e) => e.eventType === "orders.paymentCancelled")).toBe(true);
+		});
+
+		it("cash switch REQUIRES the cancel: requestPayInPerson rejects in-flight, succeeds after", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, diner, restaurantId } = await seedOrderWithProcessingIntent(t);
+			// The action path settles through confirmPayment eventually; the cash
+			// path needs a live line to commit.
+			await t.run(async (ctx) => {
+				const menuId = await ctx.db.insert("menus", {
+					restaurantId,
+					name: "Menu",
+					isActive: true,
+					displayOrder: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				const categoryId = await ctx.db.insert("menuCategories", {
+					menuId,
+					restaurantId,
+					name: "Cat",
+					displayOrder: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				const menuItemId = await ctx.db.insert("menuItems", {
+					categoryId,
+					restaurantId,
+					name: "Tacos",
+					basePrice: 5000,
+					isAvailable: true,
+					displayOrder: 0,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.insert("orderItems", {
+					orderId,
+					menuItemId,
+					menuItemName: "Tacos",
+					quantity: 1,
+					unitPrice: 5000,
+					selectedOptions: [],
+					lineTotal: 5000,
+					createdAt: Date.now(),
+				});
+			});
+
+			await expect(diner.mutation(api.orders.requestPayInPerson, { orderId })).rejects.toThrow(
+				/ERROR_ORDER_PAYMENT_IN_FLIGHT/
+			);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_cancel_me",
+				status: "requires_confirmation",
+			});
+			mockStripeClient.paymentIntents.cancel.mockResolvedValueOnce({
+				id: "pi_cancel_me",
+				status: "canceled",
+			});
+			await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
+
+			await diner.mutation(api.orders.requestPayInPerson, { orderId });
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.status).toBe("awaiting_payment");
+		});
+
+		it("leaves an intent that already succeeded at Stripe for the webhook to settle", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, paymentId, diner } = await seedOrderWithProcessingIntent(t);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_cancel_me",
+				status: "succeeded",
+			});
+
+			const result = await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
+			expect(result.cancelled).toBe(false);
+			expect(mockStripeClient.paymentIntents.cancel).not.toHaveBeenCalled();
+
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			// Untouched: the webhook owns this settlement.
+			expect(payment?.status).toBe("processing");
+			expect(order?.activePaymentId).toBe(paymentId);
+		});
+
+		it("no-ops without an active payment and rejects non-members", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 3000 });
+
+			await expect(
+				t
+					.withIdentity({ subject: "stranger-1" })
+					.action(api.stripe.cancelOrderPaymentIntent, { orderId })
+			).rejects.toThrow(/ERROR_SESSION_ACCESS_DENIED/);
+
+			const result = await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
+			expect(result.cancelled).toBe(false);
+			expect(mockStripeClient.paymentIntents.cancel).not.toHaveBeenCalled();
 		});
 	});
 
