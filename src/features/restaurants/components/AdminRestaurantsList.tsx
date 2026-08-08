@@ -438,8 +438,11 @@ export function AdminRestaurantsList({
 						</button>
 					</div>
 					<CreateRestaurantForm
-						onCreated={(id) => {
-							setSelectedRestaurantId(id);
+						onCreated={(id, organizationId) => {
+							// The organization travels with the id: this provider's
+							// `restaurants.getAll` has not seen the new row yet, so it cannot
+							// look the organization up to widen the sidebar filter itself.
+							setSelectedRestaurantId(id, { organizationId });
 							closeModal();
 						}}
 						onError={setError}
@@ -560,7 +563,7 @@ function CreateRestaurantForm({
 	onCreated,
 	onError,
 }: {
-	onCreated: (id: Id<"restaurants">) => void;
+	onCreated: (id: Id<"restaurants">, organizationId: Id<"organizations">) => void;
 	onError: (msg: string) => void;
 }) {
 	const { t } = useTranslation();
@@ -577,6 +580,7 @@ function CreateRestaurantForm({
 	const form = useForm({
 		defaultValues: { name: "", slug: "", currency: "MXN", organizationId: "" },
 		onSubmit: async ({ value }) => {
+			const organizationId = value.organizationId as Id<"organizations">;
 			try {
 				const id = unwrapResult(
 					await createMutation.mutateAsync({
@@ -584,10 +588,10 @@ function CreateRestaurantForm({
 						slug: value.slug,
 						currency: value.currency,
 						timezone: DEFAULT_RESTAURANT_TIMEZONE,
-						organizationId: value.organizationId as Id<"organizations">,
+						organizationId,
 					})
 				);
-				onCreated(id!);
+				onCreated(id!, organizationId);
 			} catch (err) {
 				onError(getErrorMessage(err, t, RestaurantsKeys.FORM_CREATE_FAILED));
 			}

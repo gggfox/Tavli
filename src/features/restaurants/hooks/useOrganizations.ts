@@ -22,16 +22,36 @@ export interface UseOrganizationsResult {
 	error: unknown;
 }
 
-export function useOrganizations(): UseOrganizationsResult {
+export interface UseOrganizationsOptions {
+	/**
+	 * Skip the query entirely. `getAllOrganizations` rejects anyone below owner,
+	 * so a caller that already knows the viewer is not entitled (the sidebar
+	 * organization switcher, which is admin-only) must not subscribe: it would
+	 * open a permanently-failing Convex subscription for every manager,
+	 * employee and customer and render nothing from it. Defaults to `true` for
+	 * the owner-facing callers (create form, settings canvas).
+	 */
+	enabled?: boolean;
+}
+
+export function useOrganizations({
+	enabled = true,
+}: UseOrganizationsOptions = {}): UseOrganizationsResult {
 	const { isAuthenticated } = useConvexAuth();
+	const active = isAuthenticated && enabled;
 	const {
 		data = [],
 		isLoading,
 		error,
 	} = useQuery({
 		...convexQuery(api.organizations.getAllOrganizations, {}),
-		enabled: isAuthenticated,
+		enabled: active,
 		select: unwrapResult<OrganizationsValue>,
 	});
-	return { organizations: data, isLoading: isAuthenticated && isLoading, error };
+	// A disabled query is not "loading" and cannot have errored — it never ran.
+	return {
+		organizations: active ? data : [],
+		isLoading: active && isLoading,
+		error: active ? error : null,
+	};
 }

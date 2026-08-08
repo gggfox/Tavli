@@ -22,7 +22,11 @@ export function RestaurantSwitcher() {
 	};
 
 	const sorted = [...restaurants].sort((a, b) => a.name.localeCompare(b.name));
-	const effectiveId = selectedRestaurantId ?? restaurant?._id ?? "";
+	// The derived active restaurant comes first: it is resolved against the same
+	// filtered list these options come from, whereas the raw selected id can, for
+	// the frame right after an organization switch, still point outside it — and
+	// the select would then render blank.
+	const effectiveId = restaurant?._id ?? selectedRestaurantId ?? "";
 
 	return (
 		<div className="px-3 py-2 border-b border-border">

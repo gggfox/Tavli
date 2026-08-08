@@ -64,18 +64,31 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 	const {
 		restaurant,
 		restaurants,
-		isMultiRestaurant,
+		allRestaurants,
 		isLoading: restaurantsLoading,
 	} = useRestaurant();
 	const { scope, activeLayoutId, editMode, setScope, setActiveLayoutId, setEditMode } =
 		useDashboardPrefs();
 
 	const restaurantId = scope === "restaurant" ? (restaurant?._id ?? null) : null;
+	/*
+	 * The one admin surface the sidebar organization filter deliberately does
+	 * NOT narrow. Portfolio widgets are fetched with `restaurantId: null`, which
+	 * the backend aggregates across the viewer's entire portfolio; there is no
+	 * client-side way to narrow those numbers to one organization. So portfolio
+	 * scope reads the unfiltered `allRestaurants` and stays directory-wide,
+	 * rather than reporting an org-filtered currency and empty state over
+	 * directory-wide figures. Restaurant scope follows the filter like every
+	 * other admin page, because it keys off the selected restaurant.
+	 */
+	const scopeRestaurants = scope === "portfolio" ? allRestaurants : restaurants;
 	// Currency for money widgets. Restaurant scope: the selected restaurant's.
 	// Portfolio scope: best-effort first restaurant's (mirrors revenueOverTime,
 	// which aggregates across possibly-different currencies).
 	const currency =
-		scope === "restaurant" ? (restaurant?.currency ?? null) : (restaurants[0]?.currency ?? null);
+		scope === "restaurant"
+			? (restaurant?.currency ?? null)
+			: (scopeRestaurants[0]?.currency ?? null);
 
 	const {
 		layouts,
@@ -88,7 +101,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 	} = useDashboardLayouts({
 		scopeKind: scope,
 		restaurantId,
-		enabled: scope === "portfolio" ? restaurants.length > 0 : Boolean(restaurantId),
+		enabled: scope === "portfolio" ? scopeRestaurants.length > 0 : Boolean(restaurantId),
 	});
 
 	const activeLayout = useMemo(() => {
@@ -354,7 +367,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 
 	if (restaurantsLoading) return <LoadingState />;
 
-	if (restaurants.length === 0) {
+	if (scopeRestaurants.length === 0) {
 		return (
 			<AdminPageLayout>
 				<EmptyState
@@ -371,7 +384,13 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 	const header = (
 		<div className="space-y-3">
 			<div className="flex flex-wrap items-center gap-3">
-				{isMultiRestaurant && (
+				{/*
+				 * Judged on the unfiltered directory, not `isMultiRestaurant`: the
+				 * portfolio side of this toggle is directory-wide, so narrowing to an
+				 * organization with a single restaurant must not hide the control and
+				 * strand an admin in whichever scope they were last in.
+				 */}
+				{allRestaurants.length > 1 && (
 					<DashboardScopeSwitcher
 						value={scope}
 						onChange={setScope}

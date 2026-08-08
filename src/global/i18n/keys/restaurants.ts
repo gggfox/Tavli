@@ -49,6 +49,15 @@ export const RestaurantsKeys = {
 	/** Sidebar: which restaurant staff admin routes apply to */
 	SWITCHER_LABEL: "restaurants.switcher.label",
 
+	/** Sidebar (admin only): which organization narrows the restaurant switcher */
+	ORG_SWITCHER_LABEL: "restaurants.orgSwitcher.label",
+	ORG_SWITCHER_ALL: "restaurants.orgSwitcher.all",
+	/** Stands in for the active organization's name when the directory failed to load. */
+	ORG_SWITCHER_CURRENT: "restaurants.orgSwitcher.current",
+	ORG_SWITCHER_LOAD_FAILED: "restaurants.orgSwitcher.loadFailed",
+	/** Same failure, but a filter is still narrowing the scope — say so. */
+	ORG_SWITCHER_LOAD_FAILED_FILTERED: "restaurants.orgSwitcher.loadFailedFiltered",
+
 	MODAL_CREATE_ARIA: "restaurants.modal.createAria",
 	MODAL_CREATE_HEADING: "restaurants.modal.createHeading",
 

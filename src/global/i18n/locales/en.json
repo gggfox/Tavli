@@ -862,6 +862,13 @@
 		"switcher": {
 			"label": "Active restaurant"
 		},
+		"orgSwitcher": {
+			"label": "Organization",
+			"all": "All organizations",
+			"current": "Selected organization",
+			"loadFailed": "Could not load organizations. Showing every restaurant.",
+			"loadFailedFiltered": "Could not load organizations. Still showing only the one you selected — pick All organizations to clear it."
+		},
 		"canvas": {
 			"notFoundTitle": "Restaurant not found",
 			"notFoundBody": "This restaurant was deleted, or it is no longer one you can manage. The link you followed points at nothing.",

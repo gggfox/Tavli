@@ -1,3 +1,4 @@
+import { OrganizationSwitcher } from "@/features/restaurants/components/OrganizationSwitcher";
 import { RestaurantSwitcher } from "@/features/restaurants/components/RestaurantSwitcher";
 import { AuthSections } from "./AuthSections";
 import { LogoSection } from "./LogoSection";
@@ -14,6 +15,8 @@ export function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
 	return (
 		<SidebarContainer>
 			<LogoSection />
+			{/* Broadest scope first: organization narrows the restaurant list below it. */}
+			<OrganizationSwitcher />
 			<RestaurantSwitcher />
 			<SidebarItemsList list={filteredSidebarItems} pathname={pathname} />
 			<AuthSections />

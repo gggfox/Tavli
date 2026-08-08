@@ -862,6 +862,13 @@
 		"switcher": {
 			"label": "Restaurante activo"
 		},
+		"orgSwitcher": {
+			"label": "Organización",
+			"all": "Todas las organizaciones",
+			"current": "Organización seleccionada",
+			"loadFailed": "No se pudieron cargar las organizaciones. Se muestran todos los restaurantes.",
+			"loadFailedFiltered": "No se pudieron cargar las organizaciones. Se sigue mostrando solo la que seleccionaste; elige Todas las organizaciones para quitar el filtro."
+		},
 		"canvas": {
 			"notFoundTitle": "Restaurante no encontrado",
 			"notFoundBody": "Este restaurante fue eliminado o ya no es uno que puedas administrar. El enlace que seguiste no apunta a nada.",
