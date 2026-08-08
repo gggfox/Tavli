@@ -82,6 +82,7 @@ import type * as orderRefundHelpers from "../orderRefundHelpers.js";
 import type * as orderServiceDate from "../orderServiceDate.js";
 import type * as orders from "../orders.js";
 import type * as organizations from "../organizations.js";
+import type * as paymentMoneyHelpers from "../paymentMoneyHelpers.js";
 import type * as payments from "../payments.js";
 import type * as performance from "../performance.js";
 import type * as receiptActions from "../receiptActions.js";
@@ -190,6 +191,7 @@ declare const fullApi: ApiFromModules<{
   orderServiceDate: typeof orderServiceDate;
   orders: typeof orders;
   organizations: typeof organizations;
+  paymentMoneyHelpers: typeof paymentMoneyHelpers;
   payments: typeof payments;
   performance: typeof performance;
   receiptActions: typeof receiptActions;

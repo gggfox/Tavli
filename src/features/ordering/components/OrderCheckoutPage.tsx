@@ -95,7 +95,16 @@ export function OrderCheckoutPage({
 				order?.activePayment?.status === "pending" ||
 				order?.activePayment?.status === "processing";
 			if (activeCardIntent) {
-				await cancelPaymentIntent({ orderId });
+				const { settled } = await cancelPaymentIntent({ orderId });
+				if (settled) {
+					// The card charge won the race and the webhook is settling the
+					// order. `requestPayInPerson` would reject with
+					// ERROR_ORDER_PAYMENT_IN_FLIGHT, so the diner would see an error
+					// one tick before the paid screen. Yield to the subscription
+					// instead: `paymentState: "paid"` swaps this page out.
+					setClientSecret(null);
+					return;
+				}
 			}
 			// Already committed to cash (card-switch abandoned): dropping the
 			// intent is the whole job — the order is not a draft anymore, so

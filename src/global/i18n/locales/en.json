@@ -442,11 +442,9 @@
 			"dismiss": "Cancel"
 		},
 		"empty": {
-			"noFilters": "Select at least one status to view orders.",
 			"noOrders": "No orders match the selected filters."
 		},
 		"aria": {
-			"filter": "Filter orders by status",
 			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
 			"fullOrder": "Full order details",
@@ -480,7 +478,9 @@
 		"summary": {
 			"totalRevenue": "Total Revenue",
 			"orders": "Orders",
-			"avgOrder": "Avg. Order"
+			"avgOrder": "Avg. Order",
+			"serviceFees": "Tavli Service Fee",
+			"tips": "Tips"
 		},
 		"empty": {
 			"noPayments": "No payments in this period."
@@ -490,14 +490,22 @@
 		"resultCount_other": "{{count}} payments",
 		"table": {
 			"dayOrderNumber": "Order # (day)",
-			"orderId": "Order ID",
 			"date": "Date",
 			"table": "Table",
 			"items": "Items",
-			"total": "Total"
+			"rowId": "ID",
+			"type": "Type",
+			"subtotal": "Subtotal",
+			"serviceFee": "Tavli fee",
+			"tip": "Tip",
+			"netToRestaurant": "Net to restaurant"
 		},
 		"tooltip": {
-			"total": "Total"
+			"subtotal": "Subtotal"
+		},
+		"rowKind": {
+			"order": "Order",
+			"tip": "Tip"
 		}
 	},
 	"customer": {
@@ -595,6 +603,7 @@
 		"ERROR_BILLING_SUBSCRIPTION_EXISTS": "This restaurant already has an active Tavli subscription.",
 		"ERROR_BILLING_NO_SUBSCRIPTION": "There's no active Tavli subscription to cancel.",
 		"ERROR_BILLING_CHECKOUT_FAILED": "We couldn't open the Stripe checkout page. Please try again in a moment.",
+		"ERROR_BILLING_PORTAL_UNAVAILABLE": "We couldn't open the Stripe billing portal. Please try again in a moment.",
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "Category name is required.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "Category name is too long.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Enter at least one category name.",
@@ -651,8 +660,7 @@
 			"noOnlineOrdering": "Online ordering is not available at this restaurant yet.",
 			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
-			"filterNoMatches": "No categories or items match your search.",
-			"placeOrder": "Send order to kitchen"
+			"filterNoMatches": "No categories or items match your search."
 		},
 		"item": {
 			"required": "Required",
@@ -668,9 +676,7 @@
 			"back": "Back to menu",
 			"heading": "Your Order",
 			"empty": "Your cart is empty. Add some items!",
-			"total": "Total",
-			"placeOrder": "Place Order",
-			"placingOrder": "Placing Order..."
+			"total": "Total"
 		},
 		"checkout": {
 			"heading": "Checkout",
@@ -804,6 +810,7 @@
 			"decline": "No thanks, refund that item",
 			"declineConfirmTitle": "Decline this substitution?",
 			"declineConfirmBody": "{{original}} comes off your order and {{amount}} is refunded to your card.",
+			"declineConfirmBodyNoAmount": "{{original}} comes off your order and is refunded to your card.",
 			"declineConfirm": "Decline and refund",
 			"back": "Go back",
 			"oneTapSuccess": "Done! Your saved card was charged {{amount}}.",
@@ -855,12 +862,15 @@
 		"switcher": {
 			"label": "Active restaurant"
 		},
+		"canvas": {
+			"notFoundTitle": "Restaurant not found",
+			"notFoundBody": "This restaurant was deleted, or it is no longer one you can manage. The link you followed points at nothing.",
+			"notFoundBack": "Back to restaurants"
+		},
 		"modal": {
 			"createAria": "Create Restaurant",
-			"editAria": "Edit Restaurant",
 			"deleteAria": "Confirm delete restaurant",
 			"createHeading": "New Restaurant",
-			"editHeading": "Edit Restaurant",
 			"deleteHeading": "Delete this restaurant?",
 			"deleteBody": "It will go offline immediately, Stripe will be disconnected from this location, and all data stays recoverable for 30 days. After that, the system permanently removes the restaurant and related records (a deletion log is kept).",
 			"deleteConfirm": "Delete",
@@ -1087,7 +1097,9 @@
 			"cancelScheduled": "Cancellation scheduled — the subscription ends on {{date}} and won't renew.",
 			"setupButton": "Set up billing",
 			"setupRedirecting": "Opening Stripe...",
-			"pastDueHint": "The last payment didn't go through. Stripe is retrying automatically — use the payment link in the invoice email to pay with a different card.",
+			"portalButton": "Update payment method",
+			"portalFailed": "Could not open the Stripe billing portal.",
+			"pastDueHint": "The last payment didn't go through. Stripe is retrying automatically — use \"Update payment method\" to pay with a different card.",
 			"cancelButton": "Cancel subscription",
 			"cancelConfirm": "Cancel at the end of the current period? The restaurant keeps access until then — the period is already paid for.",
 			"cancelConfirmYes": "Yes, cancel at period end",
@@ -1596,7 +1608,7 @@
 			},
 			"revenueOverTime": {
 				"label": "Revenue over time",
-				"description": "Successful payment totals bucketed by day.",
+				"description": "Restaurant revenue by day: food sold, excluding the Tavli service fee and tips.",
 				"axis": "Revenue"
 			},
 			"ordersByHour": {
@@ -1629,7 +1641,7 @@
 			},
 			"tipsTotal": {
 				"label": "Tips total",
-				"description": "Tip pool entries summed over the date range with a daily sparkline."
+				"description": "Card and cash tips summed over the date range with a daily sparkline."
 			},
 			"tableOccupancy": {
 				"label": "Table occupancy",

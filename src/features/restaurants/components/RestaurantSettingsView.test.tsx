@@ -10,6 +10,8 @@ const hoisted = vi.hoisted(() => ({
 		{ _id: "organizations:2", name: "Otra Org" },
 	] as any[],
 	orgState: { isLoading: false, error: null as unknown },
+	clerkUserId: "user_owner" as string | null,
+	clerkLoaded: true,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -22,6 +24,13 @@ vi.mock("@convex-dev/react-query", () => ({
 	useConvexMutation: () => hoisted.updateMock,
 	useConvexAction: () => vi.fn(),
 	useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
+}));
+
+vi.mock("@clerk/tanstack-react-start", () => ({
+	useUser: () => ({
+		user: hoisted.clerkUserId ? { id: hoisted.clerkUserId } : null,
+		isLoaded: hoisted.clerkLoaded,
+	}),
 }));
 
 vi.mock("@/features/users/hooks", () => ({
@@ -115,6 +124,8 @@ describe("RestaurantSettingsView", () => {
 		vi.clearAllMocks();
 		hoisted.updateMock.mockResolvedValue(["restaurants:1", null] as any);
 		hoisted.roles = ["admin"];
+		hoisted.clerkUserId = "user_owner";
+		hoisted.clerkLoaded = true;
 		hoisted.orgState = { isLoading: false, error: null };
 		hoisted.organizations = [
 			{ _id: "organizations:1", name: "Grupo Tavli" },
@@ -312,6 +323,50 @@ describe("RestaurantSettingsView", () => {
 		expect(screen.queryByTestId("settings-section-managers")).toBeNull();
 		expect(screen.queryByTestId("settings-section-payments")).toBeNull();
 		expect(screen.queryByLabelText("Order number reset frequency (admin)")).toBeNull();
+	});
+
+	it("hides the payments section from an org owner who does not own THIS restaurant", () => {
+		// `requireStripeRestaurantAccess` admits only a platform admin or the
+		// restaurant's own ownerId, so anyone else was being shown Connect and
+		// billing buttons that answer NOT_AUTHORIZED on click.
+		hoisted.roles = ["owner"];
+		hoisted.clerkUserId = "user_someone_else";
+		renderView();
+
+		expect(screen.queryByTestId("settings-section-payments")).toBeNull();
+		// The rest of the full-access canvas is unaffected.
+		expect(screen.getByTestId("settings-section-organization")).toBeTruthy();
+		expect(screen.getByTestId("settings-section-managers")).toBeTruthy();
+	});
+
+	it("shows the payments section to the restaurant's own owner", () => {
+		hoisted.roles = ["owner"];
+		hoisted.clerkUserId = "user_owner";
+		renderView();
+
+		expect(screen.getByTestId("settings-section-payments")).toBeTruthy();
+	});
+
+	it("holds the payments section's place while Clerk is still resolving the user", () => {
+		// Deciding "hidden" from an unresolved user made the owner's own section
+		// blink in after first paint and shove the canvas down when it did.
+		hoisted.roles = ["owner"];
+		hoisted.clerkUserId = null;
+		hoisted.clerkLoaded = false;
+		renderView();
+
+		expect(screen.queryByTestId("settings-section-payments")).toBeNull();
+		expect(screen.getByTestId("settings-section-payments-loading")).toBeTruthy();
+	});
+
+	it("does not make a platform admin wait on Clerk for the payments section", () => {
+		hoisted.roles = ["admin"];
+		hoisted.clerkUserId = null;
+		hoisted.clerkLoaded = false;
+		renderView();
+
+		expect(screen.getByTestId("settings-section-payments")).toBeTruthy();
+		expect(screen.queryByTestId("settings-section-payments-loading")).toBeNull();
 	});
 
 	it("explains itself instead of vanishing when organizations cannot be listed", () => {

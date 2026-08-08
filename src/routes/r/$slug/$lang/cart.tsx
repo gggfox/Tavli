@@ -31,7 +31,6 @@ function CartPage() {
 			onBack={() => navigate({ to: "/r/$slug/$lang/menu", params: { slug, lang } })}
 			onSubmit={handleSubmit}
 			onRemoveItem={(orderItemId) => removeItem({ orderItemId })}
-			isSubmitting={false}
 		/>
 	);
 }

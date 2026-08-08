@@ -108,6 +108,48 @@ export function computeLineRefundAmount(args: {
 }
 
 /**
+ * What 86'ing one line of a paid order will actually put back on the diner's
+ * card, **before** anything is cancelled — the read-only twin of what
+ * `stripe.refundOrderItem` executes, assembled from the same two legs:
+ *
+ * 1. the order payment's share, via {@link computeLineRefundAmount} (clamped to
+ *    that payment's remaining balance, or its whole remainder when this is the
+ *    order's last live line), computed on the line's **original** value —
+ *    `lineTotal` minus every accepted substitution delta, because each delta was
+ *    charged on its own PaymentIntent and comes back from there;
+ * 2. each accepted proposal's substitution payment, whose remaining balance
+ *    always comes back whole (that charge covers nothing but this line).
+ *
+ * Exists because the diner-facing decline confirmation used to price the refund
+ * as `lineTotal + round(lineTotal × 12%)` with no clamp, so a partially-refunded
+ * payment promised more than the diner would receive. The number a diner is
+ * shown before consenting has to be the number the refund path will move.
+ */
+export function computeLineRefundPreview(args: {
+	lineTotal: number;
+	/** Sum of accepted proposal deltas already folded into `lineTotal`. */
+	acceptedDeltaTotal: number;
+	feeRate: number;
+	paymentAmount: number;
+	paymentAmountRefunded: number | undefined;
+	isLastLiveLine: boolean;
+	/** One entry per accepted proposal's succeeded substitution payment. */
+	substitutionPayments: Array<{ amount: number; amountRefunded: number | undefined }>;
+}): number {
+	const orderPaymentShare = computeLineRefundAmount({
+		lineTotal: Math.max(0, args.lineTotal - args.acceptedDeltaTotal),
+		feeRate: args.feeRate,
+		paymentAmount: args.paymentAmount,
+		paymentAmountRefunded: args.paymentAmountRefunded,
+		isLastLiveLine: args.isLastLiveLine,
+	});
+	return args.substitutionPayments.reduce(
+		(sum, p) => sum + Math.max(0, p.amount - (p.amountRefunded ?? 0)),
+		orderPaymentShare
+	);
+}
+
+/**
  * How much of one **substitution** payment a whole-order cancel sweeps back.
  *
  * A substitution payment is its own PaymentIntent charging exactly one accepted

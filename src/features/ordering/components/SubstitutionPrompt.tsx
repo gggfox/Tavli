@@ -13,8 +13,8 @@
  *   otherwise the returned client secret mounts the shared Elements sheet.
  *   Either way the webhook applies the swap — the proposal leaving the pending
  *   subscription is the success signal.
- * - **Decline** → confirm dialog (mentions the automatic refund of that line)
- *   → `substitutions.declineProposal`.
+ * - **Decline** → confirm dialog quoting `declineRefundAmount`, the server's
+ *   clamp-aware price for that line's refund → `substitutions.declineProposal`.
  */
 import { OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
@@ -23,7 +23,6 @@ import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/rea
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
 import { CheckCircle2, Loader2, UtensilsCrossed } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -42,6 +41,13 @@ type PendingProposal = {
 	proposedLineTotal: number;
 	deltaAmount: number;
 	feeOnDelta: number;
+	/**
+	 * Exactly what declining refunds, priced server-side against the live
+	 * balances of the order payment and any substitution payments on this line
+	 * (`substitutions.getPendingForSession`). `null` when the money cannot be
+	 * resolved — declining would fail too, so no figure is promised.
+	 */
+	declineRefundAmount: number | null;
 	createdAt: number;
 };
 
@@ -260,14 +266,22 @@ function SubstitutionModal({
 						<p className="text-sm font-medium text-foreground">
 							{t(OrderingKeys.SUB_DECLINE_CONFIRM_TITLE)}
 						</p>
+						{/*
+						 * The figure comes from the server, which is the only side that
+						 * knows what is left on the payment(s) backing this line. The
+						 * old client-side `lineTotal + 12%` was unclamped, so a
+						 * partially-refunded payment promised the diner more than they
+						 * would actually get back.
+						 */}
 						<p className="text-sm text-muted-foreground">
-							{t(OrderingKeys.SUB_DECLINE_CONFIRM_BODY, {
-								original: proposal.originalName,
-								amount: `$${formatCents(
-									proposal.originalLineTotal +
-										Math.round(proposal.originalLineTotal * PLATFORM_APPLICATION_FEE_RATE)
-								)}`,
-							})}
+							{proposal.declineRefundAmount !== null
+								? t(OrderingKeys.SUB_DECLINE_CONFIRM_BODY, {
+										original: proposal.originalName,
+										amount: `$${formatCents(proposal.declineRefundAmount)}`,
+									})
+								: t(OrderingKeys.SUB_DECLINE_CONFIRM_BODY_NO_AMOUNT, {
+										original: proposal.originalName,
+									})}
 						</p>
 						<button
 							type="button"

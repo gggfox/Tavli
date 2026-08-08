@@ -18,7 +18,8 @@ const modules = import.meta.glob("../**/*.ts");
 const mockStripeClient = {
 	customers: { create: vi.fn() },
 	checkout: { sessions: { create: vi.fn() } },
-	subscriptions: { update: vi.fn() },
+	billingPortal: { sessions: { create: vi.fn() } },
+	subscriptions: { update: vi.fn(), cancel: vi.fn() },
 	webhooks: { constructEvent: vi.fn() },
 	v2: { core: { accounts: { create: vi.fn(), retrieve: vi.fn() } } },
 };
@@ -320,6 +321,140 @@ describe("cancelSubscription", () => {
 			"ERROR_BILLING_NO_SUBSCRIPTION"
 		);
 		expect(mockStripeClient.subscriptions.update).not.toHaveBeenCalled();
+	});
+});
+
+describe("createBillingPortalSession", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.STRIPE_PLATFORM_FEE_PRICE_ID = "price_platform_monthly";
+		process.env.PUBLIC_APP_URL = "https://app.tavliai.com";
+	});
+
+	it("opens the portal against the stored Customer with a server-built return URL", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, {
+			ownerId: "owner-1",
+			platformSubscriptionEnabled: true,
+			stripeBillingCustomerId: "cus_live",
+			stripeSubscriptionId: "sub_123",
+			billingStatus: BILLING_STATUS.PAST_DUE,
+		});
+		mockStripeClient.billingPortal.sessions.create.mockResolvedValueOnce({
+			url: "https://billing.stripe.com/session/test",
+		});
+		const owner = t.withIdentity({ subject: "owner-1" });
+
+		const { url } = await owner.action(api.billing.createBillingPortalSession, { restaurantId });
+
+		expect(url).toBe("https://billing.stripe.com/session/test");
+		expect(mockStripeClient.billingPortal.sessions.create).toHaveBeenCalledWith({
+			customer: "cus_live",
+			// Never caller-supplied: a `return_url` argument is an open redirect.
+			return_url: `https://app.tavliai.com/admin/restaurants?settings=${encodeURIComponent(restaurantId)}`,
+		});
+	});
+
+	it("refuses without a subscription — that caller belongs in Checkout", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, {
+			ownerId: "owner-1",
+			platformSubscriptionEnabled: true,
+			stripeBillingCustomerId: "cus_live",
+		});
+		const owner = t.withIdentity({ subject: "owner-1" });
+
+		await expect(
+			owner.action(api.billing.createBillingPortalSession, { restaurantId })
+		).rejects.toThrow("ERROR_BILLING_NO_SUBSCRIPTION");
+		expect(mockStripeClient.billingPortal.sessions.create).not.toHaveBeenCalled();
+	});
+
+	it("denies a caller who neither owns the restaurant nor is a platform admin", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, {
+			ownerId: "owner-1",
+			platformSubscriptionEnabled: true,
+			stripeBillingCustomerId: "cus_live",
+			stripeSubscriptionId: "sub_123",
+			billingStatus: BILLING_STATUS.ACTIVE,
+		});
+		const stranger = t.withIdentity({ subject: "someone-else" });
+
+		await expect(
+			stranger.action(api.billing.createBillingPortalSession, { restaurantId })
+		).rejects.toThrow("NOT_AUTHORIZED");
+		expect(mockStripeClient.billingPortal.sessions.create).not.toHaveBeenCalled();
+	});
+});
+
+describe("soft-deleting a restaurant stops Tavli billing it", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.PUBLIC_APP_URL = "https://app.tavliai.com";
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("cancels the subscription immediately — a deleted restaurant owes nothing more", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, {
+			ownerId: "owner-1",
+			platformSubscriptionEnabled: true,
+			stripeBillingCustomerId: "cus_live",
+			stripeSubscriptionId: "sub_123",
+			billingStatus: BILLING_STATUS.ACTIVE,
+		});
+		mockStripeClient.subscriptions.cancel.mockResolvedValueOnce(
+			subscriptionObject({ status: BILLING_STATUS.CANCELED })
+		);
+		const owner = t.withIdentity({ subject: "owner-1" });
+
+		const [, error] = await owner.mutation(api.restaurants.softDelete, { restaurantId });
+		expect(error).toBeNull();
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		// Immediate, not cancel_at_period_end: the product is gone right now.
+		expect(mockStripeClient.subscriptions.cancel).toHaveBeenCalledWith("sub_123");
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.billingStatus).toBe(BILLING_STATUS.CANCELED);
+		expect(restaurant?.deletedAt).toBeTypeOf("number");
+	});
+
+	it("does not reach Stripe when the restaurant never had a subscription", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, { ownerId: "owner-1" });
+		const owner = t.withIdentity({ subject: "owner-1" });
+
+		await owner.mutation(api.restaurants.softDelete, { restaurantId });
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(mockStripeClient.subscriptions.cancel).not.toHaveBeenCalled();
+	});
+
+	it("swallows a Stripe failure — the delete already committed", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, {
+			ownerId: "owner-1",
+			platformSubscriptionEnabled: true,
+			stripeSubscriptionId: "sub_gone",
+			billingStatus: BILLING_STATUS.ACTIVE,
+		});
+		mockStripeClient.subscriptions.cancel.mockRejectedValueOnce(new Error("No such subscription"));
+		const owner = t.withIdentity({ subject: "owner-1" });
+
+		await owner.mutation(api.restaurants.softDelete, { restaurantId });
+		// Retrying against a restaurant that is already gone helps nobody.
+		await expect(t.finishAllScheduledFunctions(() => vi.runAllTimers())).resolves.toBeUndefined();
+
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.deletedAt).toBeTypeOf("number");
+		expect(restaurant?.billingStatus).toBe(BILLING_STATUS.ACTIVE);
 	});
 });
 

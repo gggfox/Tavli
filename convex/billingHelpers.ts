@@ -42,8 +42,9 @@ type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
  * exactly what an unresolvable reference already does.
  *
  * Cancelling the Stripe subscription itself is the delete path's job, not the
- * webhook's — TODO(TAVLI-71): confirm `restaurants.softDelete` cancels a live
- * platform subscription so Stripe stops billing a deleted restaurant.
+ * webhook's: `restaurants.softDelete` schedules
+ * `billing.cancelSubscriptionForDeletedRestaurant`, so Stripe stops billing a
+ * deleted restaurant instead of invoicing it into this silent no-op.
  */
 function isBillable(restaurant: Doc<"restaurants"> | null): restaurant is Doc<"restaurants"> {
 	return restaurant != null && restaurant.deletedAt == null;

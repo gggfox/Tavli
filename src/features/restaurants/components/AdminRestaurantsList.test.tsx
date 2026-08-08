@@ -110,6 +110,47 @@ describe("AdminRestaurantsList settings entry point", () => {
 		expect(screen.queryByText("New Restaurant")).toBeNull();
 	});
 
+	it.each([
+		["settings", { settingsId: "restaurants:ghost", manageId: null }],
+		["manage", { settingsId: null, manageId: "restaurants:ghost" }],
+	])(
+		"renders a not-found state with a back action when ?%s points at a restaurant getAll cannot see",
+		(_param, ids) => {
+			const onSettingsChange = vi.fn();
+			const onManageChange = vi.fn();
+			render(
+				<AdminRestaurantsList
+					manageId={ids.manageId as any}
+					settingsId={ids.settingsId as any}
+					onSettingsChange={onSettingsChange}
+					onManageChange={onManageChange}
+				/>
+			);
+
+			// Previously: every row returned null and the canvas never mounted, so
+			// the page was blank with browser-back as the only exit.
+			expect(screen.getByTestId("restaurant-canvas-not-found")).toBeTruthy();
+			expect(screen.getByText("Restaurant not found")).toBeTruthy();
+
+			fireEvent.click(screen.getByText("Back to restaurants"));
+			const cleared = ids.settingsId ? onSettingsChange : onManageChange;
+			expect(cleared).toHaveBeenCalledWith(null);
+		}
+	);
+
+	it("does not claim not-found while a live restaurant fills the canvas", () => {
+		render(
+			<AdminRestaurantsList
+				manageId={null}
+				settingsId={"restaurants:1" as any}
+				onSettingsChange={vi.fn()}
+				onManageChange={vi.fn()}
+			/>
+		);
+
+		expect(screen.queryByTestId("restaurant-canvas-not-found")).toBeNull();
+	});
+
 	it("clears the param when the canvas closes itself", () => {
 		const onSettingsChange = vi.fn();
 		render(

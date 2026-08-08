@@ -6,12 +6,14 @@ const hoisted = vi.hoisted(() => ({
 	setEnabledMock: vi.fn(async () => ["restaurants:1", null]),
 	checkoutMock: vi.fn(async () => ({ url: "https://checkout.stripe.com/c/pay/cs_1" })),
 	cancelMock: vi.fn(async () => ({ cancelAtPeriodEnd: true, currentPeriodEnd: 1_800_000_000_000 })),
+	portalMock: vi.fn(async () => ({ url: "https://billing.stripe.com/session/test" })),
 }));
 
 vi.mock("@convex-dev/react-query", () => ({
 	useConvexMutation: () => hoisted.setEnabledMock,
 	useConvexAction: (ref: any) => {
 		const name = String(ref?.name ?? ref ?? "");
+		if (name.includes("Portal")) return hoisted.portalMock;
 		return name.includes("cancel") ? hoisted.cancelMock : hoisted.checkoutMock;
 	},
 }));
@@ -20,6 +22,7 @@ vi.mock("convex/_generated/api", () => ({
 	api: {
 		billing: {
 			createSubscriptionCheckout: { name: "billing:createSubscriptionCheckout" },
+			createBillingPortalSession: { name: "billing:createBillingPortalSession" },
 			cancelSubscription: { name: "billing:cancelSubscription" },
 		},
 		billingHelpers: {
@@ -101,7 +104,9 @@ describe("BillingSection", () => {
 			restaurant: { platformSubscriptionEnabled: true },
 		});
 
-		expect(screen.getByTestId("settings-billing-amount").textContent).toBe("$2000.00 MXN / month");
+		// Thousands separator, matching Tavli's own platform-fee receipt email
+		// (`formatPlatformFeeAmount`) — the in-app figure used to read "$2000.00".
+		expect(screen.getByTestId("settings-billing-amount").textContent).toBe("$2,000.00 MXN / month");
 		expect(screen.getByTestId("settings-billing-status").textContent).toBe("Not set up");
 		expect(screen.getByTestId("settings-billing-checkout")).toBeTruthy();
 	});
@@ -137,9 +142,62 @@ describe("BillingSection", () => {
 			},
 		});
 
+		// Checkout STARTS a subscription and is refused server-side while one
+		// exists; managing the card goes through the Billing Portal instead.
 		expect(screen.queryByTestId("settings-billing-checkout")).toBeNull();
+		expect(screen.getByTestId("settings-billing-portal")).toBeTruthy();
 		expect(screen.getByTestId("settings-billing-status").textContent).toBe("Active");
 		expect(screen.getByTestId("settings-billing-cancel")).toBeTruthy();
+	});
+
+	it("sends a card swap to the Stripe Billing Portal, never a second checkout", async () => {
+		const assign = vi.fn();
+		const original = globalThis.location;
+		Object.defineProperty(globalThis, "location", {
+			configurable: true,
+			value: { ...original, search: original.search, href: original.href, assign },
+		});
+
+		renderSection({
+			restaurant: {
+				platformSubscriptionEnabled: true,
+				stripeSubscriptionId: "sub_123",
+				billingStatus: "past_due",
+			},
+		});
+		fireEvent.click(screen.getByTestId("settings-billing-portal"));
+
+		await waitFor(() => {
+			expect(hoisted.portalMock).toHaveBeenCalledWith({ restaurantId: "restaurants:1" });
+		});
+		await waitFor(() => {
+			expect(globalThis.location.href).toBe("https://billing.stripe.com/session/test");
+		});
+		// A second Checkout would mint a second subscription.
+		expect(hoisted.checkoutMock).not.toHaveBeenCalled();
+
+		Object.defineProperty(globalThis, "location", { configurable: true, value: original });
+	});
+
+	it("surfaces a portal failure as localized copy", async () => {
+		hoisted.portalMock.mockRejectedValueOnce(
+			new Error(
+				"[CONVEX A(billing:createBillingPortalSession)] ERROR_BILLING_PORTAL_UNAVAILABLE"
+			) as any
+		);
+		renderSection({
+			restaurant: {
+				platformSubscriptionEnabled: true,
+				stripeSubscriptionId: "sub_123",
+				billingStatus: "active",
+			},
+		});
+
+		fireEvent.click(screen.getByTestId("settings-billing-portal"));
+
+		await waitFor(() => {
+			expect(screen.getByText(/couldn't open the Stripe billing portal/i)).toBeTruthy();
+		});
 	});
 
 	it("requires a confirmation before cancelling, and cancels at period end", async () => {
@@ -177,7 +235,7 @@ describe("BillingSection", () => {
 		expect(screen.queryByTestId("settings-billing-cancel")).toBeNull();
 	});
 
-	it("lets a past_due restaurant retry checkout with a different card", () => {
+	it("points a past_due restaurant at the portal to pay with a different card", () => {
 		renderSection({
 			restaurant: {
 				platformSubscriptionEnabled: true,
@@ -188,6 +246,7 @@ describe("BillingSection", () => {
 
 		expect(screen.getByTestId("settings-billing-status").textContent).toBe("Payment failed");
 		expect(screen.getByText(/The last payment didn't go through/i)).toBeTruthy();
+		expect(screen.getByTestId("settings-billing-portal")).toBeTruthy();
 	});
 
 	it("surfaces a checkout failure as localized copy, never the raw error", async () => {

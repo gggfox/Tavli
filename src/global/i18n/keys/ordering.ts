@@ -17,7 +17,6 @@ export const OrderingKeys = {
 	BACK_TO_MENU_ARIA: "ordering.backToMenuAria",
 
 	MENU_PROCEED_TO_PAYMENT: "ordering.menu.proceedToPayment",
-	MENU_PLACE_ORDER: "ordering.menu.placeOrder",
 	MENU_PREPARING: "ordering.menu.preparing",
 	MENU_REVIEW_ORDER: "ordering.menu.reviewOrder",
 	MENU_TABLE_NUMBER: "ordering.menu.tableNumber",
@@ -46,8 +45,6 @@ export const OrderingKeys = {
 	CART_HEADING: "ordering.cart.heading",
 	CART_EMPTY: "ordering.cart.empty",
 	CART_TOTAL: "ordering.cart.total",
-	CART_PLACE_ORDER: "ordering.cart.placeOrder",
-	CART_PLACING_ORDER: "ordering.cart.placingOrder",
 
 	CHECKOUT_HEADING: "ordering.checkout.heading",
 	CHECKOUT_ORDER_SUMMARY: "ordering.checkout.orderSummary",
@@ -185,6 +182,8 @@ export const OrderingKeys = {
 	SUB_DECLINE: "ordering.substitution.decline",
 	SUB_DECLINE_CONFIRM_TITLE: "ordering.substitution.declineConfirmTitle",
 	SUB_DECLINE_CONFIRM_BODY: "ordering.substitution.declineConfirmBody",
+	/** Used when the server could not price the refund (money unresolvable). */
+	SUB_DECLINE_CONFIRM_BODY_NO_AMOUNT: "ordering.substitution.declineConfirmBodyNoAmount",
 	SUB_DECLINE_CONFIRM: "ordering.substitution.declineConfirm",
 	SUB_BACK: "ordering.substitution.back",
 	SUB_ONE_TAP_SUCCESS: "ordering.substitution.oneTapSuccess",

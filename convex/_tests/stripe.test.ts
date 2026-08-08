@@ -1470,7 +1470,7 @@ describe("stripe actions", () => {
 			});
 
 			const result = await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
-			expect(result.cancelled).toBe(true);
+			expect(result).toEqual({ cancelled: true, settled: false });
 			expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_cancel_me");
 
 			const { order, payment, events } = await t.run(async (ctx) => ({
@@ -1563,7 +1563,9 @@ describe("stripe actions", () => {
 			});
 
 			const result = await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
-			expect(result.cancelled).toBe(false);
+			// `settled` is what tells the checkout to stand down instead of firing
+			// `requestPayInPerson` into ERROR_ORDER_PAYMENT_IN_FLIGHT.
+			expect(result).toEqual({ cancelled: false, settled: true });
 			expect(mockStripeClient.paymentIntents.cancel).not.toHaveBeenCalled();
 
 			const { order, payment } = await t.run(async (ctx) => ({
@@ -1592,8 +1594,9 @@ describe("stripe actions", () => {
 					.action(api.stripe.cancelOrderPaymentIntent, { orderId })
 			).rejects.toThrow(/ERROR_SESSION_ACCESS_DENIED/);
 
+			// Nothing to cancel is NOT a settled charge — the cash switch proceeds.
 			const result = await diner.action(api.stripe.cancelOrderPaymentIntent, { orderId });
-			expect(result.cancelled).toBe(false);
+			expect(result).toEqual({ cancelled: false, settled: false });
 			expect(mockStripeClient.paymentIntents.cancel).not.toHaveBeenCalled();
 		});
 	});

@@ -394,6 +394,232 @@ describe("exportOrdersXlsx", () => {
 	});
 });
 
+describe("exportPaymentsXlsx (ADR 008 breakdown)", () => {
+	/**
+	 * Seeds one of each money vintage in June 2026:
+	 * - a post-pivot card order (10,000 food + 1,200 customer-borne fee),
+	 * - a post-visit tip payment (2,000, no order, no fee),
+	 * - a legacy tab payment with no recorded split (5,500, tip folded in),
+	 * - a cash order marked paid in person (3,000, no payments row at all).
+	 */
+	async function seedPaymentVintages(
+		t: ReturnType<typeof convexTest>,
+		restaurantId: Id<"restaurants">
+	) {
+		const at = Date.UTC(2026, 5, 20, 19, 0);
+		await t.run(async (ctx) => {
+			const tableId = await ctx.db.insert("tables", {
+				restaurantId,
+				tableNumber: 7,
+				isActive: true,
+				createdAt: at,
+			});
+			const sessionId = await ctx.db.insert("sessions", {
+				restaurantId,
+				tableId,
+				status: "active",
+				startedAt: at,
+			});
+			const base = { sessionId, restaurantId, tableId, createdAt: at, updatedAt: at };
+
+			const cardOrderId = await ctx.db.insert("orders", {
+				...base,
+				status: "served",
+				totalAmount: 10000,
+				paymentState: "paid",
+				submittedAt: at,
+				paidAt: at,
+				settledBy: "stripe",
+				dailyOrderNumber: 1,
+				orderServiceDateKey: "2026-06-20",
+			});
+			await ctx.db.insert("payments", {
+				restaurantId,
+				orderId: cardOrderId,
+				amount: 11200,
+				subtotalAmount: 10000,
+				feeAmount: 1200,
+				kind: "order",
+				currency: "USD",
+				status: "succeeded",
+				refundStatus: "none",
+				attemptNumber: 1,
+				succeededAt: at,
+				createdAt: at,
+				updatedAt: at,
+			});
+			await ctx.db.insert("payments", {
+				restaurantId,
+				sessionId,
+				amount: 2000,
+				subtotalAmount: 0,
+				feeAmount: 0,
+				gratuityAmount: 2000,
+				kind: "tip",
+				currency: "USD",
+				status: "succeeded",
+				refundStatus: "none",
+				attemptNumber: 1,
+				succeededAt: at,
+				createdAt: at,
+				updatedAt: at,
+			});
+			await ctx.db.insert("payments", {
+				restaurantId,
+				amount: 5500,
+				gratuityAmount: 500,
+				currency: "USD",
+				status: "succeeded",
+				refundStatus: "none",
+				attemptNumber: 1,
+				succeededAt: at,
+				createdAt: at,
+				updatedAt: at,
+			});
+			// Cash order: paid, released to the kitchen, deliberately no payments row.
+			await ctx.db.insert("orders", {
+				...base,
+				status: "served",
+				totalAmount: 3000,
+				paymentState: "paid",
+				submittedAt: at,
+				paidAt: at,
+				settledBy: "staff",
+			});
+		});
+	}
+
+	it("splits each payment into subtotal, service fee, tip and net to restaurant", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurant(t, { ownerId: "owner1", timezone: "UTC" });
+		await seedPaymentVintages(t, restaurantId);
+
+		const result = await t
+			.withIdentity({ subject: "owner1" })
+			.action(api.exports.exportPaymentsXlsx, { restaurantId, year: 2026, locale: "en" });
+
+		const wb = XLSX.read(Buffer.from(result.base64, "base64"), { type: "buffer" });
+		const juneRows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[wb.SheetNames[6]], { header: 1 });
+
+		const headers = juneRows[0];
+		expect(headers).toContain("charged to diner (USD)");
+		expect(headers).toContain("subtotal (USD)");
+		expect(headers).toContain("tavli service fee (USD)");
+		expect(headers).toContain("net to restaurant (USD)");
+		expect(headers).toContain("kind");
+		// The old ambiguous header is gone: post-pivot it included Tavli's cut.
+		expect(headers).not.toContain("amount (USD)");
+
+		const col = (name: string) => headers.indexOf(name);
+		const rowsByKind = new Map(juneRows.slice(1).map((r) => [r[col("kind")], r]));
+
+		const orderRow = rowsByKind.get("order")!;
+		expect(orderRow[col("charged to diner (USD)")]).toBe("112.00");
+		expect(orderRow[col("subtotal (USD)")]).toBe("100.00");
+		expect(orderRow[col("tavli service fee (USD)")]).toBe("12.00");
+		// No tip on a pay-at-submit charge — tips are their own rows.
+		expect(orderRow[col("gratuity (USD)")]).toBe("");
+		expect(orderRow[col("net to restaurant (USD)")]).toBe("100.00");
+
+		const tipRow = rowsByKind.get("tip")!;
+		expect(tipRow[col("subtotal (USD)")]).toBe("0.00");
+		expect(tipRow[col("gratuity (USD)")]).toBe("20.00");
+		expect(tipRow[col("net to restaurant (USD)")]).toBe("20.00");
+
+		// Legacy row: charged and gratuity are known, the split never was.
+		const legacyRow = rowsByKind.get("")!;
+		expect(legacyRow[col("charged to diner (USD)")]).toBe("55.00");
+		expect(legacyRow[col("gratuity (USD)")]).toBe("5.00");
+		expect(legacyRow[col("subtotal (USD)")]).toBe("");
+		expect(legacyRow[col("tavli service fee (USD)")]).toBe("");
+		expect(legacyRow[col("net to restaurant (USD)")]).toBe("");
+	});
+
+	it("totals the split and reports cash orders, which have no payment row", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurant(t, { ownerId: "owner1", timezone: "UTC" });
+		await seedPaymentVintages(t, restaurantId);
+
+		const result = await t
+			.withIdentity({ subject: "owner1" })
+			.action(api.exports.exportPaymentsXlsx, { restaurantId, year: 2026, locale: "en" });
+
+		const wb = XLSX.read(Buffer.from(result.base64, "base64"), { type: "buffer" });
+		const summaryRows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets["Summary"], { header: 1 });
+		const headers = summaryRows[0];
+		const col = (name: string) => headers.indexOf(name);
+		const totalRow = summaryRows.find(
+			(r) => typeof r[0] === "string" && r[0].includes("2026 total")
+		)!;
+
+		expect(totalRow[1]).toBe(3); // three payment rows
+		expect(totalRow[col("succeeded charged to diner (USD)")]).toBe("187.00");
+		// Post-pivot rows only — the legacy row never recorded a split.
+		expect(totalRow[col("succeeded subtotal (USD)")]).toBe("100.00");
+		expect(totalRow[col("succeeded tavli service fee (USD)")]).toBe("12.00");
+		expect(totalRow[col("succeeded gratuity (USD)")]).toBe("25.00");
+		expect(totalRow[col("succeeded net to restaurant (USD)")]).toBe("120.00");
+		// The cash order is invisible to the payments table by design.
+		expect(totalRow[col("cash orders subtotal (USD)")]).toBe("30.00");
+	});
+});
+
+describe("exportOrdersXlsx cash orders", () => {
+	it("includes an order marked paid in person, which has no assigned business date", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurant(t, { ownerId: "owner1", timezone: "UTC" });
+		const at = Date.UTC(2026, 5, 20, 19, 0);
+		await t.run(async (ctx) => {
+			const tableId = await ctx.db.insert("tables", {
+				restaurantId,
+				tableNumber: 9,
+				isActive: true,
+				createdAt: at,
+			});
+			const sessionId = await ctx.db.insert("sessions", {
+				restaurantId,
+				tableId,
+				status: "active",
+				startedAt: at,
+			});
+			await ctx.db.insert("orders", {
+				sessionId,
+				restaurantId,
+				tableId,
+				status: "served",
+				totalAmount: 3000,
+				paymentState: "paid",
+				submittedAt: at,
+				paidAt: at,
+				settledBy: "staff",
+				createdAt: at,
+				updatedAt: at,
+			});
+		});
+
+		const result = await t
+			.withIdentity({ subject: "owner1" })
+			.action(api.exports.exportOrdersXlsx, { restaurantId, year: 2026, locale: "en" });
+
+		const wb = XLSX.read(Buffer.from(result.base64, "base64"), { type: "buffer" });
+		const juneRows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[wb.SheetNames[6]], { header: 1 });
+		expect(juneRows).toHaveLength(2);
+		const headers = juneRows[0];
+		expect(headers).toContain("settled by");
+		expect(juneRows[1][headers.indexOf("settled by")]).toBe("staff");
+		// Business date derived from `paidAt`: `markOrderPaidInPerson` never
+		// assigns an `orderServiceDateKey`.
+		expect(juneRows[1][headers.indexOf("order service date")]).toBe("2026-06-20");
+
+		const summaryRows = XLSX.utils.sheet_to_json<string[]>(wb.Sheets["Summary"], { header: 1 });
+		const totalRow = summaryRows.find(
+			(r) => typeof r[0] === "string" && r[0].includes("2026 total")
+		);
+		expect(totalRow?.[1]).toBe(1);
+		expect(totalRow?.[2]).toBe("30.00");
+	});
+});
+
 describe("exportMenuXlsx", () => {
 	it("returns a base64 workbook with 5 menu snapshot sheets", async () => {
 		const t = convexTest(schema, modules);

@@ -1069,6 +1069,12 @@ export const cancelOrderAndRefund = action({
  * schedule before Stripe is reached, and the (payment, orderItem) idempotency
  * key dedupes at Stripe below that.
  *
+ * Retry-safe bookkeeping: a substituted line's refund spans two payments, and a
+ * half-failure (delta refunded, order payment threw) leaves the line unstamped
+ * so it can be retried. The retry sees the substitution payment at zero
+ * remaining, so `orderItems.refundAmount` is derived from what BOTH payments
+ * record as refunded — not from what this attempt happened to move.
+ *
  * Order-state policy lives in `recordOrderItemRefundOutcomeInternal`: a
  * cooking order stays `paid` (only the item + audit + payment record the
  * refund); a last-live-line refund follows refund_requested → refunded; any
@@ -1168,6 +1174,16 @@ export const refundOrderItem = internalAction({
 			amount: number;
 			stripeRefundId: string;
 		}> = [];
+		// Delta money this line already got back on a PREVIOUS attempt. A retry
+		// after a half-failure (substitution refund succeeded, order-payment
+		// refund threw) finds those substitution payments at zero remaining and
+		// refunds nothing more for them — so what *this* attempt moved would
+		// understate the line's combined refund. `orderItems.refundAmount` is the
+		// figure staff read, so it is derived from both payments' actual refund
+		// records, not from this attempt's tally. (Per-payment `amountRefunded`
+		// was already correct: the failure path records the legs that went
+		// through.)
+		let priorSupplementalRefunded = 0;
 		try {
 			for (const proposal of acceptedProposals) {
 				if (!proposal.supplementalPaymentId) continue;
@@ -1186,6 +1202,9 @@ export const refundOrderItem = internalAction({
 					);
 					continue;
 				}
+				// A substitution PaymentIntent covers exactly this one line, so
+				// everything already refunded on it belongs to this line.
+				priorSupplementalRefunded += subPayment.amountRefunded ?? 0;
 				const subRemaining = Math.max(0, subPayment.amount - (subPayment.amountRefunded ?? 0));
 				if (subRemaining <= 0) continue;
 
@@ -1229,7 +1248,7 @@ export const refundOrderItem = internalAction({
 			return;
 		}
 
-		if (amount <= 0 && supplementalRefunds.length === 0) {
+		if (amount <= 0 && supplementalRefunds.length === 0 && priorSupplementalRefunded === 0) {
 			console.error(
 				`[stripe.refundOrderItem] payment ${args.paymentId} has no refundable balance ` +
 					`left for item ${args.orderItemId}`
@@ -1280,7 +1299,9 @@ export const refundOrderItem = internalAction({
 			orderId: args.orderId,
 			orderItemId: args.orderItemId,
 			succeeded: true,
-			amount: orderPaymentPortion + supplementalTotal,
+			// Both payments' actual refund records, not just this attempt's legs —
+			// see `priorSupplementalRefunded` above.
+			amount: orderPaymentPortion + supplementalTotal + priorSupplementalRefunded,
 			isLastLiveLine,
 			userId: actorUserId,
 			paymentId: args.paymentId,
@@ -1506,15 +1527,24 @@ export const createPaymentIntent = action({
  *
  * Membership-verified exactly like {@link createPaymentIntent}. Mirrors
  * `sessions.cancelTabPayment`, with one extra rule: an intent that already
- * `succeeded` at Stripe is left alone (`cancelled: false`) — the webhook will
- * settle the order moments later, and clearing the pointer would orphan the
- * charge.
+ * `succeeded` at Stripe is left alone — the webhook will settle the order
+ * moments later, and clearing the pointer would orphan the charge.
+ *
+ * Two booleans, because `cancelled: false` alone is ambiguous and the caller
+ * has to branch on the difference:
+ * - `cancelled` — an intent was actually stood down here.
+ * - `settled` — the charge WON the race and the order is about to be paid.
+ *   The caller must stop: `orders.requestPayInPerson` would reject with
+ *   ERROR_ORDER_PAYMENT_IN_FLIGHT, so a cash switch at this moment has to
+ *   yield to the webhook rather than fire a doomed mutation. Every other
+ *   "nothing to cancel" outcome (no active payment, payment already failed or
+ *   cancelled) reports `settled: false` and the cash switch proceeds.
  */
 export const cancelOrderPaymentIntent = action({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
 	},
-	handler: async (ctx, args): Promise<{ cancelled: boolean }> => {
+	handler: async (ctx, args): Promise<{ cancelled: boolean; settled: boolean }> => {
 		const identity = await ctx.auth.getUserIdentity();
 		if (!identity) {
 			throw fromErrorObject(new NotAuthenticatedError().toObject());
@@ -1532,7 +1562,7 @@ export const cancelOrderPaymentIntent = action({
 			internal.stripeHelpers.getOrderInternal,
 			{ orderId: args.orderId }
 		);
-		if (!order?.activePaymentId) return { cancelled: false };
+		if (!order?.activePaymentId) return { cancelled: false, settled: false };
 
 		const payment: Doc<"payments"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getPaymentInternal,
@@ -1542,7 +1572,7 @@ export const cancelOrderPaymentIntent = action({
 			!payment ||
 			(payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING)
 		) {
-			return { cancelled: false };
+			return { cancelled: false, settled: payment?.status === PAYMENT_STATUS.SUCCEEDED };
 		}
 
 		// Cancel at Stripe first, then clear our records — the reverse order
@@ -1554,7 +1584,7 @@ export const cancelOrderPaymentIntent = action({
 			);
 			if (intent.status === "succeeded") {
 				// The charge won the race; let the webhook settle the order.
-				return { cancelled: false };
+				return { cancelled: false, settled: true };
 			}
 			if (intent.status !== "canceled") {
 				try {
@@ -1577,7 +1607,7 @@ export const cancelOrderPaymentIntent = action({
 			orderId: args.orderId,
 			userId: identity.subject,
 		});
-		return { cancelled };
+		return { cancelled, settled: false };
 	},
 });
 

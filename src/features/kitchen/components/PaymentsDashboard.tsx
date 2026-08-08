@@ -8,12 +8,12 @@ import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { CreditCard, DollarSign, Hash, TrendingUp } from "lucide-react";
+import { CreditCard, DollarSign, HandCoins, Hash, Receipt, TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { PaymentsDashboardSkeleton } from "./PaymentsDashboardSkeleton";
 import { usePaymentsColumns } from "./payments/Columns";
-import type { PaymentsOrder } from "./payments/OrderItemsTooltipTrigger";
+import type { PaymentsLedgerRow } from "./payments/types";
 
 interface PaymentsDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -54,16 +54,35 @@ function getTimeFrameStart(frame: PaymentsTimePeriod): number | undefined {
 }
 
 interface PaymentsAggregates {
+	/** Food sold — excludes the Tavli service fee and tips (ADR 008). */
 	totalRevenue: number;
 	orderCount: number;
 	averageOrder: number;
+	serviceFees: number;
+	tips: number;
 }
 
-function deriveAggregates(orders: ReadonlyArray<PaymentsOrder>): PaymentsAggregates {
-	const orderCount = orders.length;
-	const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
+/**
+ * Summary numbers for the ledger. `totalRevenue` counts order rows only — a
+ * tip row's money is reported under `tips`, never as restaurant sales — and
+ * the Tavli service fee is reported separately because the diner, not the
+ * restaurant, pays it.
+ */
+function deriveAggregates(rows: ReadonlyArray<PaymentsLedgerRow>): PaymentsAggregates {
+	let totalRevenue = 0;
+	let orderCount = 0;
+	let serviceFees = 0;
+	let tips = 0;
+	for (const row of rows) {
+		if (row.rowKind === "order") {
+			orderCount += 1;
+			totalRevenue += row.subtotalCents;
+		}
+		serviceFees += row.serviceFeeCents ?? 0;
+		tips += row.tipCents;
+	}
 	const averageOrder = orderCount > 0 ? totalRevenue / orderCount : 0;
-	return { totalRevenue, orderCount, averageOrder };
+	return { totalRevenue, orderCount, averageOrder, serviceFees, tips };
 }
 
 export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardProps>) {
@@ -73,8 +92,8 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 	const from = useMemo(() => getTimeFrameStart(period), [period]);
 	const columns = usePaymentsColumns();
 
-	const tableState = useAdminTable<PaymentsOrder>({
-		queryOptions: convexQuery(api.orders.getPaidOrdersByRestaurant, {
+	const tableState = useAdminTable<PaymentsLedgerRow>({
+		queryOptions: convexQuery(api.orders.getPaymentsLedgerByRestaurant, {
 			restaurantId,
 			from,
 			to: undefined,
@@ -109,7 +128,7 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			header={timeFrameControl}
 			gap="6"
 		>
-			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+			<div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
 				<SummaryCard
 					icon={<DollarSign size={20} />}
 					label={t(PaymentsKeys.SUMMARY_TOTAL_REVENUE)}
@@ -124,6 +143,16 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 					icon={<TrendingUp size={20} />}
 					label={t(PaymentsKeys.SUMMARY_AVG_ORDER)}
 					value={`$${formatCents(aggregates.averageOrder)}`}
+				/>
+				<SummaryCard
+					icon={<Receipt size={20} />}
+					label={t(PaymentsKeys.SUMMARY_SERVICE_FEES)}
+					value={`$${formatCents(aggregates.serviceFees)}`}
+				/>
+				<SummaryCard
+					icon={<HandCoins size={20} />}
+					label={t(PaymentsKeys.SUMMARY_TIPS)}
+					value={`$${formatCents(aggregates.tips)}`}
 				/>
 			</div>
 

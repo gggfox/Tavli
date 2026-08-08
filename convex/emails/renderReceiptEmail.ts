@@ -28,12 +28,23 @@ export type ReceiptEmailContext = {
 };
 
 /**
+ * Grouped, fixed-2-decimals formatting, pinned to `en-US` for the same reasons
+ * `src/global/utils/money.ts` pins its formatter: both app locales (en-US and
+ * Mexican Spanish) group with `,` and separate decimals with `.`, and a bare
+ * `"es"` would resolve to es-ES's `2.000,00`.
+ */
+const RECEIPT_AMOUNT_FORMATTER = new Intl.NumberFormat("en-US", {
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 2,
+});
+
+/**
  * Minimal replica of `src/global/utils/money.ts#formatCents` — emails cannot
- * import from `src/`, and the display convention (integer cents → "$12.99")
- * must match the app.
+ * import from `src/`, and the display convention (integer cents → "$12.99",
+ * "$2,000.00") must match the app.
  */
 export function formatReceiptAmount(cents: number): string {
-	return `$${(cents / 100).toFixed(2)}`;
+	return `$${RECEIPT_AMOUNT_FORMATTER.format(cents / 100)}`;
 }
 
 /** Localized date-time in the restaurant's timezone (mirrors `formatExpiresAt`). */

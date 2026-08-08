@@ -62,6 +62,8 @@ export const BILLING_ERRORS = {
 	NO_SUBSCRIPTION: "ERROR_BILLING_NO_SUBSCRIPTION",
 	/** Stripe returned a session without a redirect URL. */
 	CHECKOUT_FAILED: "ERROR_BILLING_CHECKOUT_FAILED",
+	/** The Billing Portal returned no URL (usually: unconfigured in the Dashboard). */
+	PORTAL_UNAVAILABLE: "ERROR_BILLING_PORTAL_UNAVAILABLE",
 } as const;
 
 /**
@@ -70,11 +72,17 @@ export const BILLING_ERRORS = {
  * redirect, and this flow has exactly one sensible destination — the Billing
  * block of the restaurant's settings canvas.
  */
-function buildReturnUrls(restaurantId: string): { successUrl: string; cancelUrl: string } {
+function buildReturnUrls(restaurantId: string): {
+	successUrl: string;
+	cancelUrl: string;
+	returnUrl: string;
+} {
 	const base = `${getAppUrl()}/admin/restaurants?settings=${encodeURIComponent(restaurantId)}`;
 	return {
 		successUrl: `${base}&billing=success`,
 		cancelUrl: `${base}&billing=cancelled`,
+		/** The Billing Portal has one exit, not a success/cancel pair. */
+		returnUrl: base,
 	};
 }
 
@@ -129,11 +137,10 @@ async function getOrCreateBillingCustomerId(
  * `PLATFORM_MONTHLY_FEE_MXN_CENTS`: the constant is display copy, the Stripe
  * Price is what gets charged.
  *
- * TODO(TAVLI-71): swapping the card on a LIVE subscription needs a Stripe
- * Billing Portal session (`billingPortal.sessions.create`), not this action —
- * a second Checkout would create a second subscription, which is exactly what
- * the `ERROR_BILLING_SUBSCRIPTION_EXISTS` guard below refuses. Until then a
- * `past_due` restaurant pays through the hosted invoice link Stripe emails.
+ * Starting a subscription only. Swapping the card on a LIVE one goes through
+ * {@link createBillingPortalSession} — a second Checkout would create a second
+ * subscription, which is exactly what the `ERROR_BILLING_SUBSCRIPTION_EXISTS`
+ * guard below refuses.
  */
 export const createSubscriptionCheckout = action({
 	args: {
@@ -192,6 +199,128 @@ export const createSubscriptionCheckout = action({
 			);
 			throw error;
 		}
+	},
+});
+
+// =============================================================================
+// 1b. Manage an existing subscription (card swap, invoices)
+// =============================================================================
+
+/**
+ * Opens a Stripe-hosted **Billing Portal** session and returns its URL — the
+ * correct surface for everything {@link createSubscriptionCheckout} must not do
+ * to a live subscription: updating the card, retrying a `past_due` invoice,
+ * downloading past invoices.
+ *
+ * Requires an existing subscription (`ERROR_BILLING_NO_SUBSCRIPTION` otherwise),
+ * which is the exact complement of Checkout's `ERROR_BILLING_SUBSCRIPTION_EXISTS`:
+ * between them, exactly one of the two actions is available at any moment, and
+ * neither can ever mint a second subscription.
+ *
+ * Same `requireStripeRestaurantAccess` gate and same server-built return URL as
+ * Checkout — a caller-supplied `return_url` is an open redirect.
+ *
+ * The portal needs a configuration in the Stripe Dashboard (Settings → Billing →
+ * Customer portal). Stripe answers an unconfigured account with an error, which
+ * surfaces here as ERROR_BILLING_PORTAL_UNAVAILABLE rather than a raw Stripe
+ * message; see `documentation/runbooks/stripe-go-live.md`.
+ */
+export const createBillingPortalSession = action({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+	},
+	handler: async (ctx, args): Promise<{ url: string }> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) throw fromErrorObject(new NotAuthenticatedError().toObject());
+
+		const restaurant = await requireStripeRestaurantAccess(ctx, args.restaurantId);
+
+		// The portal manages a customer, so both the Customer and a subscription
+		// to manage have to exist. A restaurant that never subscribed belongs in
+		// Checkout, not here.
+		if (!restaurant.stripeBillingCustomerId || !restaurant.stripeSubscriptionId) {
+			throw fromErrorObject(new ConflictError(BILLING_ERRORS.NO_SUBSCRIPTION).toObject());
+		}
+
+		const { returnUrl } = buildReturnUrls(args.restaurantId);
+		const stripeClient = getStripeClient();
+		try {
+			const session = await stripeClient.billingPortal.sessions.create({
+				customer: restaurant.stripeBillingCustomerId,
+				return_url: returnUrl,
+			});
+			if (!session.url) {
+				throw fromErrorObject(new ConflictError(BILLING_ERRORS.PORTAL_UNAVAILABLE).toObject());
+			}
+			return { url: session.url };
+		} catch (error) {
+			console.error(
+				"[billing.createBillingPortalSession]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-billing",
+					operation: "billingPortal.sessions.create",
+					restaurantId: args.restaurantId,
+				})
+			);
+			throw error;
+		}
+	},
+});
+
+// =============================================================================
+// 1c. Stop billing a deleted restaurant
+// =============================================================================
+
+/**
+ * Cancels the platform subscription of a soft-deleted restaurant, immediately.
+ *
+ * Scheduled by `restaurants.softDelete` — mutations never call Stripe. Without
+ * this, deleting a restaurant left its Stripe subscription live and Tavli kept
+ * invoicing an operator who believed they were gone; the webhook side already
+ * refuses to touch a deleted restaurant (`billingHelpers.isBillable`), so the
+ * charges would not even have shown up in the app.
+ *
+ * Immediate, not `cancel_at_period_end`: the restaurant is off the product the
+ * moment it is deleted, so it should not owe the rest of the month. That is the
+ * opposite of {@link cancelSubscription}, where the operator keeps a month they
+ * are still using.
+ *
+ * Best-effort by design: a Stripe failure is logged, never rethrown. Throwing
+ * would retry the scheduled action against a restaurant that is already gone
+ * from every other lookup, and the soft delete itself has already committed.
+ */
+export const cancelSubscriptionForDeletedRestaurant = internalAction({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		stripeSubscriptionId: v.string(),
+		userId: v.string(),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		const stripeClient = getStripeClient();
+		let subscription: Stripe.Subscription;
+		try {
+			subscription = await stripeClient.subscriptions.cancel(args.stripeSubscriptionId);
+		} catch (error) {
+			console.error(
+				"[billing.cancelSubscriptionForDeletedRestaurant]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-billing",
+					operation: "subscriptions.cancel",
+					restaurantId: args.restaurantId,
+				})
+			);
+			return;
+		}
+
+		await ctx.runMutation(internal.billingHelpers.syncSubscriptionInternal, {
+			restaurantId: args.restaurantId,
+			stripeSubscriptionId: subscription.id,
+			billingStatus: subscription.status,
+			billingCurrentPeriodEnd: resolveCurrentPeriodEndMs(subscription),
+			cancelAtPeriodEnd: subscription.cancel_at_period_end,
+			auditEventType: AUDIT_EVENT.RESTAURANT_SUBSCRIPTION_CANCEL_SCHEDULED,
+			userId: args.userId,
+		});
 	},
 });
 

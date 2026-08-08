@@ -1,32 +1,26 @@
 import { Tooltip } from "@/global/components";
 import { CommonKeys, localizeName, PaymentsKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
-import type { Doc } from "convex/_generated/dataModel";
 import { useTranslation } from "react-i18next";
-
-type LiveNameDescriptionTranslations = Record<string, { name?: string; description?: string }>;
-
-export type PaymentsOrderItem = Doc<"orderItems"> & {
-	readonly menuItemTranslations?: LiveNameDescriptionTranslations;
-};
-
-export type PaymentsOrder = Doc<"orders"> & {
-	readonly items: ReadonlyArray<PaymentsOrderItem>;
-	readonly tableNumber: number;
-};
+import type { PaymentsLedgerRow } from "./types";
 
 /**
- * Renders the "N items" tooltip cell for the payments table. Hovering reveals
- * each line item with its quantity and localized name plus the order total.
+ * Renders the "N items" tooltip cell for the payments ledger. Hovering reveals
+ * each line item with its quantity and localized name plus the food subtotal.
+ * Tip rows have no items, so they render an em dash instead.
  */
-export function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOrder }>) {
+export function OrderItemsTooltipTrigger({ row }: Readonly<{ row: PaymentsLedgerRow }>) {
 	const { t, i18n } = useTranslation();
-	// A paid order can still carry lines that were 86'd while the tab was open.
+	// A paid order can still carry lines that were 86'd while it was open.
 	// They were never charged, so listing them here would not add up to the
-	// total right below.
-	const chargedItems = order.items.filter((item) => item.cancelledAt === undefined);
+	// subtotal right below.
+	const chargedItems = row.items.filter((item) => item.cancelledAt === undefined);
 	const itemCount = chargedItems.reduce((n, item) => n + item.quantity, 0);
 	const label = t(CommonKeys.ITEMS_COUNT, { count: itemCount });
+
+	if (chargedItems.length === 0) {
+		return <span className="text-faint-foreground">—</span>;
+	}
 
 	return (
 		<Tooltip
@@ -46,8 +40,8 @@ export function OrderItemsTooltipTrigger({ order }: Readonly<{ order: PaymentsOr
 						))}
 					</ul>
 					<div className="flex items-baseline justify-between gap-3 pt-1.5 mt-1 font-medium border-t border-border text-foreground">
-						<span className="text-faint-foreground">{t(PaymentsKeys.TOOLTIP_TOTAL)}</span>
-						<span>${formatCents(order.totalAmount)}</span>
+						<span className="text-faint-foreground">{t(PaymentsKeys.TOOLTIP_SUBTOTAL)}</span>
+						<span>${formatCents(row.subtotalCents)}</span>
 					</div>
 				</div>
 			}

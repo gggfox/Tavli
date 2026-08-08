@@ -49,10 +49,12 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 	const { t } = useTranslation();
 	const setEnabled = useConvexMutation(api.billingHelpers.setPlatformSubscriptionEnabled);
 	const createCheckout = useConvexAction(api.billing.createSubscriptionCheckout);
+	const createPortalSession = useConvexAction(api.billing.createBillingPortalSession);
 	const cancelSubscription = useConvexAction(api.billing.cancelSubscription);
 
 	const [togglePending, setTogglePending] = useState(false);
 	const [checkoutPending, setCheckoutPending] = useState(false);
+	const [portalPending, setPortalPending] = useState(false);
 	const [cancelPending, setCancelPending] = useState(false);
 	const [confirmingCancel, setConfirmingCancel] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -112,6 +114,25 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 		} catch (err) {
 			setError(getErrorMessage(err, t, RestaurantsKeys.BILLING_CHECKOUT_FAILED));
 			setCheckoutPending(false);
+		}
+	};
+
+	/**
+	 * The card swap / invoice history surface. A second Checkout would mint a
+	 * second subscription, which `createSubscriptionCheckout` refuses outright —
+	 * the Billing Portal is the only correct way to change payment details on a
+	 * live (or past_due) subscription.
+	 */
+	const handleOpenPortal = async () => {
+		setError(null);
+		setNotice(null);
+		setPortalPending(true);
+		try {
+			const { url } = await createPortalSession({ restaurantId: restaurant._id });
+			globalThis.location.href = url;
+		} catch (err) {
+			setError(getErrorMessage(err, t, RestaurantsKeys.BILLING_PORTAL_FAILED));
+			setPortalPending(false);
 		}
 	};
 
@@ -245,14 +266,31 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 					) : null}
 
 					{/*
-					 * Checkout starts a subscription, so it is offered only when there
-					 * isn't one. Changing the card on a live (or past_due) subscription
-					 * needs a Stripe Billing Portal session, not a second Checkout —
-					 * TODO(TAVLI-71): add `billing.createBillingPortalSession` and an
-					 * "Update payment method" button here.
+					 * Exactly one of these two is ever offered, and the backend enforces
+					 * the same split: Checkout STARTS a subscription (and refuses when
+					 * one exists), the Billing Portal MANAGES an existing one (and
+					 * refuses when none exists). That is what keeps a card swap from
+					 * accidentally minting a second subscription.
 					 */}
 					<div className="flex flex-wrap items-center gap-3">
-						{hasLiveSubscription ? null : (
+						{hasLiveSubscription ? (
+							<button
+								type="button"
+								onClick={handleOpenPortal}
+								disabled={portalPending}
+								data-testid="settings-billing-portal"
+								className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{portalPending ? (
+									<span className="flex items-center gap-2">
+										<Loader2 size={14} className="animate-spin" />
+										{t(RestaurantsKeys.BILLING_SETUP_REDIRECTING)}
+									</span>
+								) : (
+									t(RestaurantsKeys.BILLING_PORTAL_BUTTON)
+								)}
+							</button>
+						) : (
 							<button
 								type="button"
 								onClick={handleCheckout}

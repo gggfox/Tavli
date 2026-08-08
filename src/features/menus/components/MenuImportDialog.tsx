@@ -1,5 +1,6 @@
 import { Modal } from "@/global/components/Modal";
 import { MenusKeys } from "@/global/i18n";
+import { formatCents } from "@/global/utils/money";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { FileUp, Loader2, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -72,7 +73,7 @@ export function MenuImportDialog({
 
 	const formatPrice = (cents: number) => {
 		if (cents === 0) return "—";
-		return `$${(cents / 100).toFixed(2)}`;
+		return `$${formatCents(cents)}`;
 	};
 
 	const totalItems = extraction?.categories.reduce((sum, cat) => sum + cat.items.length, 0) ?? 0;

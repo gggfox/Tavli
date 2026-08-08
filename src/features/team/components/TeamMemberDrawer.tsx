@@ -12,6 +12,7 @@ import { DialogHeader, Drawer } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
 import { getMondayYmdOfWeek, startOfDayMs, utcMsToYmdInTimezone } from "@/global/utils/timezone";
+import { formatCents } from "@/global/utils/money";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -88,10 +89,6 @@ function poolStatusLabel(status: string, t: TFunction): string {
 	if (status === TIP_POOL_STATUS.PAID) return t(AdminStaffKeys.TEAM_DRAWER_TIPS_POOL_STATUS_PAID);
 	if (status === TIP_POOL_STATUS.OPEN) return t(AdminStaffKeys.TEAM_DRAWER_TIPS_POOL_STATUS_OPEN);
 	return status;
-}
-
-function fmtMoney(cents: number): string {
-	return (cents / 100).toFixed(2);
 }
 
 export function TeamMemberDrawer({
@@ -475,7 +472,7 @@ function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectio
 					{t(AdminStaffKeys.TEAM_DRAWER_TIPS_TOTAL)}
 				</span>
 				<span className="text-base font-semibold text-foreground">
-					{fmtMoney(totalCents)} {currency}
+					{formatCents(totalCents)} {currency}
 				</span>
 			</div>
 			<div className="text-xs text-faint-foreground mb-2">
@@ -491,7 +488,7 @@ function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectio
 							</span>
 						</div>
 						<span className="text-sm font-medium text-foreground tabular-nums shrink-0">
-							{fmtMoney(d.amountCents)} {currency}
+							{formatCents(d.amountCents)} {currency}
 						</span>
 					</li>
 				))}

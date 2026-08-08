@@ -242,6 +242,19 @@ export const PAYMENT_KIND = {
 export type PaymentKind = (typeof PAYMENT_KIND)[keyof typeof PAYMENT_KIND];
 
 /**
+ * How an Order / Session was settled (ADR 008). `stripe` means a `payments`
+ * row backs it; `staff` means it was collected in person and there is **no**
+ * `payments` row at all — analytics and exports must derive that money from
+ * `orders.totalAmount`. Absent on pre-pivot orders settled through a tab.
+ */
+export const SETTLED_BY = {
+	STRIPE: "stripe",
+	STAFF: "staff",
+} as const;
+
+export type SettledBy = (typeof SETTLED_BY)[keyof typeof SETTLED_BY];
+
+/**
  * Lifecycle of a kitchen-proposed substitution on a paid order (ADR 008).
  * `pending` awaits the diner's answer; `cancelled` is the kitchen retracting
  * its own proposal before the diner responds.

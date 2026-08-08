@@ -70,7 +70,7 @@ const createIntentMock = vi.fn(async () => {
 });
 const cancelIntentMock = vi.fn(async () => {
 	callLog.push("cancel");
-	return { cancelled: true };
+	return { cancelled: true, settled: false };
 });
 const requestPayInPersonMock = vi.fn(async () => {
 	callLog.push("requestPayInPerson");
@@ -211,6 +211,26 @@ describe("OrderCheckoutPage", () => {
 
 		fireEvent.click(screen.getByText("View my orders"));
 		expect(onViewOrders).toHaveBeenCalled();
+	});
+
+	it("stands down when the card charge won the race instead of firing a doomed cash request", async () => {
+		mockBackend(baseOrder({ activePayment: { status: "processing" } }));
+		// The intent already succeeded at Stripe; the webhook is settling the
+		// order. `requestPayInPerson` would only surface
+		// ERROR_ORDER_PAYMENT_IN_FLIGHT one tick before the paid screen.
+		cancelIntentMock.mockImplementationOnce(async () => {
+			callLog.push("cancel");
+			return { cancelled: false, settled: true };
+		});
+
+		renderPage();
+		fireEvent.click(screen.getByText("Pay in person"));
+
+		await waitFor(() => {
+			expect(cancelIntentMock).toHaveBeenCalledWith({ orderId: "orders:checkout" });
+		});
+		expect(requestPayInPersonMock).not.toHaveBeenCalled();
+		expect(callLog).toEqual(["cancel"]);
 	});
 
 	it("surfaces a webhook-reported decline and drops back to the summary", () => {

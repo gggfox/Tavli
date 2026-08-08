@@ -48,6 +48,9 @@ function baseProposal(overrides: Record<string, any> = {}) {
 		proposedLineTotal: 700,
 		deltaAmount: 100,
 		feeOnDelta: 12,
+		// Priced by the server (clamped to what is actually left on the payments
+		// backing this line), never recomputed on the device.
+		declineRefundAmount: 672,
 		createdAt: 1,
 		...overrides,
 	};
@@ -149,7 +152,7 @@ describe("SubstitutionPrompt", () => {
 		render(<SubstitutionPrompt />);
 
 		fireEvent.click(screen.getByText("No thanks, refund that item"));
-		// 600 + round(600 × 12%) = 672 back to the card.
+		// The server's figure, shown verbatim.
 		expect(screen.getByText(/\$6\.72 is refunded to your card/)).toBeTruthy();
 		expect(declineMock).not.toHaveBeenCalled();
 
@@ -157,6 +160,29 @@ describe("SubstitutionPrompt", () => {
 		await waitFor(() => {
 			expect(declineMock).toHaveBeenCalledWith({ proposalId: "substitutionProposals:1" });
 		});
+	});
+
+	it("quotes the server's clamped figure, not lineTotal + 12%", () => {
+		// A payment with only 200 left refunds 200, not the 672 the old
+		// client-side `lineTotal + round(lineTotal x 12%)` would have promised.
+		mockBackend([baseProposal({ declineRefundAmount: 200 })]);
+		render(<SubstitutionPrompt />);
+
+		fireEvent.click(screen.getByText("No thanks, refund that item"));
+
+		expect(screen.getByText(/\$2\.00 is refunded to your card/)).toBeTruthy();
+		expect(screen.queryByText(/\$6\.72/)).toBeNull();
+	});
+
+	it("promises no figure when the server could not price the refund", () => {
+		mockBackend([baseProposal({ declineRefundAmount: null })]);
+		render(<SubstitutionPrompt />);
+
+		fireEvent.click(screen.getByText("No thanks, refund that item"));
+
+		expect(
+			screen.getByText("Agua fresca comes off your order and is refunded to your card.")
+		).toBeTruthy();
 	});
 
 	it("the decline confirm can be backed out of", () => {

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	ConflictError,
@@ -35,8 +35,10 @@ import {
 	PAYMENT_STATUS,
 	PREP_STATION,
 	type PrepStation,
+	SETTLED_BY,
 	TABLE,
 } from "./constants";
+import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
 import { resolveAttributedMemberId } from "./_util/attribution";
@@ -1372,7 +1374,38 @@ export const cancelOrderItem = mutation({
 	},
 });
 
-export const getPaidOrdersByRestaurant = query({
+/**
+ * Rows for the staff Payments ledger: every paid Order in the window **plus**
+ * every succeeded post-visit tip payment, which under ADR 008 is its own
+ * `payments` row with no order behind it. Both kinds carry `rowKind` so the
+ * table can label a tip distinctly from an order.
+ *
+ * Money per row follows `convex/paymentMoneyHelpers.ts`:
+ * - `subtotalCents` is the food the restaurant sold. For an order this is the
+ *   live `orders.totalAmount` (so an 86'd line leaves it, and an accepted
+ *   substitution's delta is already in it), not the charge-time snapshot on
+ *   the payment; tips contribute zero.
+ * - `serviceFeeCents` is the customer-borne Tavli fee actually charged — the
+ *   order payment's `feeAmount` **plus** every accepted substitution's
+ *   `feeOnDelta`, which rode its own PaymentIntent — and is `null` when there
+ *   is no fee-split payment behind the row (cash orders report a known 0;
+ *   pre-pivot tab-settled orders report `null`, the commission having never
+ *   been recorded on our side).
+ * - `netToRestaurantCents` is what the restaurant keeps (subtotal + tip), also
+ *   `null` for legacy rows for the same reason.
+ *
+ * ## One payment's money is never reported twice
+ *
+ * A row only takes tip/charge money from a payment whose `orderId` is that
+ * order. This matters for the pre-pivot tail: `sessions.confirmTabPayment`
+ * stamps ONE tab payment as `activePaymentId` on EVERY order it covers, so
+ * reading its `gratuityAmount` off the order row multiplied a single tab's tip
+ * by the number of orders on the tab (the dashboard's Tips card sums the
+ * column). The tab's gratuity is instead surfaced once, as its own tip row
+ * keyed on the payment. Order rows and that tip row partition the tab charge
+ * exactly: Σ covered `orders.totalAmount` + gratuity === tab `amount`.
+ */
+export const getPaymentsLedgerByRestaurant = query({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		from: v.optional(v.number()),
@@ -1384,17 +1417,19 @@ export const getPaidOrdersByRestaurant = query({
 		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
 		if (accessError) return [null, accessError];
 
+		const inWindow = (t: number | undefined): t is number => {
+			if (t === undefined) return false;
+			if (args.from && t < args.from) return false;
+			if (args.to && t > args.to) return false;
+			return true;
+		};
+
 		const allOrders = await ctx.db
 			.query(TABLE.ORDERS)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
 
-		const paidOrders = allOrders.filter((o) => {
-			if (!o.paidAt) return false;
-			if (args.from && o.paidAt < args.from) return false;
-			if (args.to && o.paidAt > args.to) return false;
-			return true;
-		});
+		const paidOrders = allOrders.filter((o) => inWindow(o.paidAt));
 
 		const ordersWithItems = await Promise.all(
 			paidOrders.map(async (order) => {
@@ -1403,7 +1438,8 @@ export const getPaidOrdersByRestaurant = query({
 					.withIndex("by_order", (q) => q.eq("orderId", order._id))
 					.collect();
 				const table = await ctx.db.get(order.tableId);
-				return { ...order, items, tableNumber: table?.tableNumber ?? 0 };
+				const payment = order.activePaymentId ? await ctx.db.get(order.activePaymentId) : null;
+				return { order, items, tableNumber: table?.tableNumber ?? 0, payment };
 			})
 		);
 
@@ -1411,10 +1447,66 @@ export const getPaidOrdersByRestaurant = query({
 		const { menuItemTranslations, optionTranslations, optionGroupTranslations } =
 			await loadOrderItemTranslations(ctx, allItems);
 
-		const enrichedOrders = ordersWithItems
-			.map((order) => ({
-				...order,
-				items: order.items.map((item) => ({
+		const succeededPayments = (
+			await ctx.db
+				.query(TABLE.PAYMENTS)
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
+				.collect()
+		).filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED);
+
+		// Accepted substitutions charge their delta (+ fee on delta) on a separate
+		// PaymentIntent carrying the same `orderId`. The food value is already in
+		// `orders.totalAmount`; only the fee and the charge have to be folded back
+		// in here, or a substituted order reports full food against a submit-time
+		// fee that no longer covers it.
+		const substitutionPaymentsByOrder = new Map<string, Doc<"payments">[]>();
+		for (const payment of succeededPayments) {
+			if (payment.kind !== PAYMENT_KIND.SUBSTITUTION || !payment.orderId) continue;
+			const key = payment.orderId as string;
+			const bucket = substitutionPaymentsByOrder.get(key);
+			if (bucket) bucket.push(payment);
+			else substitutionPaymentsByOrder.set(key, [payment]);
+		}
+
+		const orderRows = ordersWithItems.map(({ order, items, tableNumber, payment }) => {
+			// Only a payment for THIS order may put money on this row — a tab
+			// payment is stamped on every order it covers (see the header note).
+			const ownPayment = payment?.orderId === order._id ? payment : null;
+			const money =
+				ownPayment && ownPayment.status === PAYMENT_STATUS.SUCCEEDED
+					? paymentMoneyBreakdown(ownPayment)
+					: null;
+			const substitutionMoney = (substitutionPaymentsByOrder.get(order._id as string) ?? []).map(
+				paymentMoneyBreakdown
+			);
+			const substitutionFeeCents = substitutionMoney.reduce(
+				(sum, m) => sum + (m.serviceFee ?? 0),
+				0
+			);
+			const substitutionChargedCents = substitutionMoney.reduce(
+				(sum, m) => sum + m.chargedToDiner,
+				0
+			);
+			// A cash order never went through Stripe, so no service fee was
+			// charged and the restaurant keeps the whole subtotal — a known zero,
+			// not the "we never recorded it" null of a pre-pivot tab payment.
+			const baseServiceFeeCents = isCashSettledOrder(order) ? 0 : (money?.serviceFee ?? null);
+			const serviceFeeCents =
+				baseServiceFeeCents === null ? null : baseServiceFeeCents + substitutionFeeCents;
+			const tipCents = money?.tip ?? 0;
+			return {
+				id: order._id as string,
+				rowKind: PAYMENT_KIND.ORDER,
+				dailyOrderNumber: order.dailyOrderNumber ?? null,
+				paidAt: order.paidAt ?? null,
+				tableNumber,
+				settledBy: order.settledBy ?? null,
+				subtotalCents: order.totalAmount,
+				serviceFeeCents,
+				tipCents,
+				chargedCents: (money?.chargedToDiner ?? order.totalAmount) + substitutionChargedCents,
+				netToRestaurantCents: serviceFeeCents === null ? null : order.totalAmount + tipCents,
+				items: items.map((item) => ({
 					...item,
 					menuItemTranslations: menuItemTranslations.get(item.menuItemId),
 					selectedOptions: item.selectedOptions.map((selected) => ({
@@ -1423,10 +1515,53 @@ export const getPaidOrdersByRestaurant = query({
 						optionGroupTranslations: optionGroupTranslations.get(selected.optionGroupId),
 					})),
 				})),
-			}))
-			.sort((a, b) => (b.paidAt ?? 0) - (a.paidAt ?? 0));
+			};
+		});
 
-		return [enrichedOrders, null];
+		// Two shapes produce a tip row: an ADR 008 post-visit tip payment (the
+		// whole row is the tip), and a pre-pivot TAB settlement, whose gratuity
+		// rode along with the food. The tab's food is already reported by the
+		// order rows it covers, so its tip row carries the gratuity ONLY — the
+		// two together add up to the tab charge, and neither counts the other's
+		// money. A pre-pivot per-ORDER payment is not in here: its gratuity is
+		// reported on its own order row, which would otherwise double-count.
+		const tipPayments = succeededPayments.filter((p) => {
+			if (!inWindow(p.succeededAt)) return false;
+			if (p.kind === PAYMENT_KIND.TIP) return true;
+			const isLegacyTabPayment = p.kind === undefined && p.orderId === undefined && !!p.sessionId;
+			return isLegacyTabPayment && (p.gratuityAmount ?? 0) > 0;
+		});
+
+		const tipRows = await Promise.all(
+			tipPayments.map(async (payment) => {
+				const session = payment.sessionId ? await ctx.db.get(payment.sessionId) : null;
+				const table = session?.tableId ? await ctx.db.get(session.tableId) : null;
+				const money = paymentMoneyBreakdown(payment);
+				const isTipPayment = payment.kind === PAYMENT_KIND.TIP;
+				return {
+					id: payment._id as string,
+					rowKind: PAYMENT_KIND.TIP,
+					dailyOrderNumber: null,
+					paidAt: payment.succeededAt ?? payment.createdAt,
+					tableNumber: table?.tableNumber ?? 0,
+					settledBy: SETTLED_BY.STRIPE as string | null,
+					subtotalCents: 0,
+					// Legacy tab: `serviceFee`/`netToRestaurant` are null — the
+					// commission Stripe carved out was never recorded on our side.
+					serviceFeeCents: money.serviceFee,
+					tipCents: money.tip,
+					// The tip slice of the charge, not the whole tab: the covered
+					// orders report the rest.
+					chargedCents: isTipPayment ? money.chargedToDiner : money.tip,
+					netToRestaurantCents: money.netToRestaurant,
+					items: [] as (typeof orderRows)[number]["items"],
+				};
+			})
+		);
+
+		const rows = [...orderRows, ...tipRows].sort((a, b) => (b.paidAt ?? 0) - (a.paidAt ?? 0));
+
+		return [rows, null];
 	},
 });
 
@@ -1444,7 +1579,7 @@ export const internalListOrdersForExportYear = internalQuery({
 		year: v.number(),
 	},
 	handler: async (ctx, args) => {
-		const [, aerr] = await requireRestaurantManagerOrAbove(
+		const [restaurant, aerr] = await requireRestaurantManagerOrAbove(
 			ctx,
 			args.actingUserId,
 			args.restaurantId
@@ -1457,7 +1592,21 @@ export const internalListOrdersForExportYear = internalQuery({
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
 
-		const filtered = orders.filter((o) => o.orderServiceDateKey?.startsWith(yearPrefix));
+		// Cash orders (`markOrderPaidInPerson`) never go through `confirmPayment`,
+		// so they carry no `orderServiceDateKey` — without a fallback they would
+		// be silently missing from the export even though they are paid revenue.
+		// The key is derived exactly the way `confirmPayment` would have.
+		const serviceDateKeyOf = (order: Doc<"orders">): string | undefined =>
+			order.orderServiceDateKey ??
+			(order.paidAt !== undefined
+				? getOrderServiceDateKey(
+						order.paidAt,
+						restaurant.timezone,
+						restaurant.orderDayStartMinutesFromMidnight
+					)
+				: undefined);
+
+		const filtered = orders.filter((o) => serviceDateKeyOf(o)?.startsWith(yearPrefix));
 
 		const tableNumberCache = new Map<string, number>();
 		const memberEmailCache = new Map<string, string>();
@@ -1517,11 +1666,13 @@ export const internalListOrdersForExportYear = internalQuery({
 
 				return {
 					id: order._id as string,
-					orderServiceDateKey: order.orderServiceDateKey ?? "",
+					orderServiceDateKey: serviceDateKeyOf(order) ?? "",
 					dailyOrderNumber: order.dailyOrderNumber ?? null,
 					tableNumber,
 					status: order.status,
 					paymentState: order.paymentState ?? "",
+					/** "stripe" | "staff" — "staff" is a cash order with no payments row. */
+					settledBy: order.settledBy ?? "",
 					submittedAt: order.submittedAt ?? null,
 					paidAt: order.paidAt ?? null,
 					serverDisplay,

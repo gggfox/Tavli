@@ -16,6 +16,7 @@ import {
 	PAYMENT_STATUS,
 	TABLE,
 } from "./constants";
+import { hasFeeBreakdown, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 
 /**
  * Internal export query: returns denormalized payment rows whose bucketing
@@ -97,16 +98,27 @@ export const internalListPaymentsForExportYear = internalQuery({
 					}
 				}
 
+				// ADR 008 split, so the export can reconcile what the diner paid
+				// against what the restaurant received. `subtotalCents` /
+				// `serviceFeeCents` / `netToRestaurantCents` are null on legacy
+				// (pre-pivot) rows, which never recorded the fee.
+				const money = paymentMoneyBreakdown(payment);
+				const hasSplit = hasFeeBreakdown(payment);
+
 				return {
 					id: payment._id as string,
 					orderId: (payment.orderId as string | undefined) ?? "",
 					sessionId: (payment.sessionId as string | undefined) ?? "",
 					dailyOrderNumber: orderInfo.dailyOrderNumber,
 					tableNumber,
+					kind: payment.kind ?? "",
 					status: payment.status,
 					refundStatus: payment.refundStatus,
 					attemptNumber: payment.attemptNumber,
 					amountCents: payment.amount,
+					subtotalCents: hasSplit ? money.restaurantRevenue : null,
+					serviceFeeCents: money.serviceFee,
+					netToRestaurantCents: money.netToRestaurant,
 					gratuityCents: payment.gratuityAmount ?? null,
 					currency: payment.currency,
 					succeededAt: payment.succeededAt ?? null,

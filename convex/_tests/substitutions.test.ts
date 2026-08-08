@@ -387,6 +387,85 @@ describe("substitutions (TAVLI-71 Phase 3A)", () => {
 				stranger.query(api.substitutions.getPendingForSession, { sessionId })
 			).resolves.toEqual([]);
 		});
+
+		it("prices the decline refund as line + fee share while the payment is untouched", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, sessionId, drinkItemId, molcajeteId, staff, diner } = await seedPaidOrder(t);
+
+			await staff.mutation(api.substitutions.proposeSubstitution, {
+				orderId,
+				orderItemId: drinkItemId,
+				proposedMenuItemId: molcajeteId,
+			});
+
+			const pending = await diner.query(api.substitutions.getPendingForSession, { sessionId });
+			// 600 + round(600 x 12%) = 672 — one of two live lines, so no sweep.
+			expect(pending[0].declineRefundAmount).toBe(672);
+		});
+
+		it("clamps the decline refund to what is LEFT on the payment", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, sessionId, drinkItemId, molcajeteId, paymentId, staff, diner } =
+				await seedPaidOrder(t);
+
+			await staff.mutation(api.substitutions.proposeSubstitution, {
+				orderId,
+				orderItemId: drinkItemId,
+				proposedMenuItemId: molcajeteId,
+			});
+			// Something already came back off this charge: only 200 is left.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, { amountRefunded: 1368, refundStatus: "partial" });
+			});
+
+			const pending = await diner.query(api.substitutions.getPendingForSession, { sessionId });
+			// The unclamped client-side formula promised 672; the diner gets 200.
+			expect(pending[0].declineRefundAmount).toBe(200);
+		});
+
+		it("previews the whole remaining balance when the line is the order's last live one", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, sessionId, tacosItemId, drinkItemId, molcajeteId, staff, diner } =
+				await seedPaidOrder(t);
+
+			await staff.mutation(api.substitutions.proposeSubstitution, {
+				orderId,
+				orderItemId: drinkItemId,
+				proposedMenuItemId: molcajeteId,
+			});
+			// Tacos already 86'd by hand: declining now cancels the order, and the
+			// refund sweeps the payment's entire remainder (fee included).
+			await t.run(async (ctx) => {
+				await ctx.db.patch(tacosItemId, { cancelledAt: Date.now(), cancelledBy: STAFF });
+			});
+
+			const pending = await diner.query(api.substitutions.getPendingForSession, { sessionId });
+			expect(pending[0].declineRefundAmount).toBe(1568);
+		});
+
+		it("reports null rather than a wrong figure when the money is legacy/unresolvable", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, sessionId, drinkItemId, molcajeteId, paymentId, staff, diner } =
+				await seedPaidOrder(t);
+
+			await staff.mutation(api.substitutions.proposeSubstitution, {
+				orderId,
+				orderItemId: drinkItemId,
+				proposedMenuItemId: molcajeteId,
+			});
+			// Strip the ADR 008 vintage markers: declineProposal would refuse with
+			// ERROR_REFUND_PAYMENT_UNRESOLVED, so no figure may be promised.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, {
+					kind: undefined,
+					subtotalAmount: undefined,
+					feeAmount: undefined,
+				});
+			});
+
+			const pending = await diner.query(api.substitutions.getPendingForSession, { sessionId });
+			expect(pending[0].declineRefundAmount).toBeNull();
+		});
 	});
 
 	describe("acceptProposal (delta 0)", () => {
@@ -1043,6 +1122,64 @@ describe("substitutions (TAVLI-71 Phase 3A)", () => {
 				}));
 				expect(orderPayment!.amountRefunded!).toBeLessThanOrEqual(orderPayment!.amount);
 				expect(subPayment!.amountRefunded!).toBeLessThanOrEqual(subPayment!.amount);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("a retry after a half-failure records the line's COMBINED refund, not just the retry's leg", async () => {
+			vi.useFakeTimers();
+			try {
+				const t = convexTest(schema, modules);
+				const { orderId, drinkItemId, paymentId, subPaymentId, staff } =
+					await seedSubstitutedLine(t);
+
+				// Attempt 1: the delta refund goes through, the order-payment refund
+				// throws. The line is deliberately left unstamped so it can retry.
+				mockStripeClient.refunds.create
+					.mockResolvedValueOnce({ id: "re_half_delta", status: "succeeded", amount: 112 })
+					.mockRejectedValueOnce(new Error("stripe_unavailable"));
+
+				await staff.mutation(api.orders.cancelOrderItem, { orderItemId: drinkItemId });
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+				const half = await t.run(async (ctx) => ({
+					item: await ctx.db.get(drinkItemId),
+					order: await ctx.db.get(orderId),
+					subPayment: await ctx.db.get(subPaymentId),
+				}));
+				expect(half.item?.refundedAt).toBeUndefined();
+				expect(half.order?.paymentState).toBe("refund_failed");
+				// The delta that DID come back is on the record already.
+				expect(half.subPayment?.amountRefunded).toBe(112);
+
+				// Attempt 2: the substitution payment now has nothing left, so this
+				// run only moves the order-payment share.
+				mockStripeClient.refunds.create.mockResolvedValueOnce({
+					id: "re_retry_original",
+					status: "succeeded",
+					amount: 672,
+				});
+				await t.action(internal.stripe.refundOrderItem, {
+					orderId,
+					orderItemId: drinkItemId,
+					paymentId,
+				});
+
+				const after = await t.run(async (ctx) => ({
+					item: await ctx.db.get(drinkItemId),
+					order: await ctx.db.get(orderId),
+					orderPayment: await ctx.db.get(paymentId),
+					subPayment: await ctx.db.get(subPaymentId),
+				}));
+				// Three Stripe calls total: the delta was NOT refunded twice.
+				expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(3);
+				expect(after.subPayment?.amountRefunded).toBe(112);
+				expect(after.orderPayment?.amountRefunded).toBe(672);
+				// The figure staff read off the line is the combined one — the retry
+				// used to record 672 and understate the line by the whole delta.
+				expect(after.item?.refundAmount).toBe(672 + 112);
+				expect(after.item?.refundedAt).toBeTypeOf("number");
 			} finally {
 				vi.useRealTimers();
 			}

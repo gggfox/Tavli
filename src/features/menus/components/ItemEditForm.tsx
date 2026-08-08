@@ -1,6 +1,6 @@
 import { SegmentedControl } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
-import { formatCents, parseDollarsToCents } from "@/global/utils/money";
+import { formatCentsInput, parseDollarsToCents } from "@/global/utils/money";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
 import { useState } from "react";
@@ -39,7 +39,9 @@ export function ItemEditForm({
 		defaultValues: {
 			name: currentName,
 			description: currentDescription,
-			price: formatCents(currentPrice),
+			// Ungrouped: this is the literal text in the price field, and it must
+			// survive a round-trip through `parseDollarsToCents` untouched.
+			price: formatCentsInput(currentPrice),
 		},
 		onSubmit: async ({ value }) => {
 			const parsedPrice = parseDollarsToCents(value.price);

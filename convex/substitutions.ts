@@ -59,7 +59,7 @@ import {
 	executeOrderItemCancellation,
 	retirePendingSupplementalPayment,
 } from "./orderItemCancellation";
-import { resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
+import { computeLineRefundPreview, resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -362,8 +362,68 @@ export const getPendingForRestaurant = query({
 // ============================================================================
 
 /**
+ * What declining this proposal refunds, priced against the live payment
+ * balances — see {@link computeLineRefundPreview}.
+ *
+ * Returns `null` when the line's money cannot be priced (no resolvable
+ * fee-inclusive order payment). That is exactly the condition on which
+ * `declineProposal` refuses with ERROR_REFUND_PAYMENT_UNRESOLVED, so the caller
+ * showing no figure and the decline failing stay consistent.
+ */
+async function computeDeclineRefundAmount(
+	ctx: { db: DatabaseReader },
+	args: { item: Doc<"orderItems">; order: Doc<"orders"> }
+): Promise<number | null> {
+	const payment = await resolveSucceededPaymentForOrder(ctx, args.order);
+	if (!isNewModelOrderPayment(payment) || payment.status !== PAYMENT_STATUS.SUCCEEDED) {
+		return null;
+	}
+
+	const acceptedProposals = (await loadAcceptedProposalsForOrder(ctx, args.order._id)).filter(
+		(p) => p.orderItemId === args.item._id
+	);
+	const substitutionPayments: Array<{ amount: number; amountRefunded: number | undefined }> = [];
+	for (const proposal of acceptedProposals) {
+		if (!proposal.supplementalPaymentId) continue;
+		const subPayment = await ctx.db.get(proposal.supplementalPaymentId);
+		// Same usability filter `stripe.refundOrderItem` applies before it will
+		// refund one: anything else is money it would skip.
+		if (
+			subPayment?.kind === PAYMENT_KIND.SUBSTITUTION &&
+			subPayment.status === PAYMENT_STATUS.SUCCEEDED
+		) {
+			substitutionPayments.push({
+				amount: subPayment.amount,
+				amountRefunded: subPayment.amountRefunded,
+			});
+		}
+	}
+
+	// 86'ing this line cancels the order when nothing else is live, and the
+	// refund then sweeps the payment's entire remainder — mirrors the
+	// `remainingItems.length === 0` branch of `executeOrderItemCancellation`.
+	const liveItems = (
+		await ctx.db
+			.query(TABLE.ORDER_ITEMS)
+			.withIndex("by_order", (q) => q.eq("orderId", args.order._id))
+			.collect()
+	).filter((it) => it.cancelledAt === undefined);
+
+	return computeLineRefundPreview({
+		lineTotal: args.item.lineTotal,
+		acceptedDeltaTotal: acceptedProposals.reduce((sum, p) => sum + p.deltaAmount, 0),
+		feeRate: PLATFORM_APPLICATION_FEE_RATE,
+		paymentAmount: payment.amount,
+		paymentAmountRefunded: payment.amountRefunded,
+		isLastLiveLine: liveItems.length <= 1,
+		substitutionPayments,
+	});
+}
+
+/**
  * Pending proposals for the diner's session, joined with the original line so
- * the prompt can show "X → Y" with the exact price delta. Session-member
+ * the prompt can show "X → Y" with the exact price delta, plus the clamp-aware
+ * refund the decline path would issue (`declineRefundAmount`). Session-member
  * gated; returns `[]` rather than throwing so it can be mounted in the diner
  * layout unconditionally (mirrors `orders.getOrdersBySession`).
  */
@@ -405,6 +465,12 @@ export const getPendingForSession = query({
 					proposedLineTotal: proposal.proposedLineTotal,
 					deltaAmount: proposal.deltaAmount,
 					feeOnDelta: proposal.feeOnDelta,
+					// Priced here, not on the device: only the server knows what is
+					// left on the payment(s) backing this line. `null` means the
+					// money could not be resolved — declining would fail anyway with
+					// ERROR_REFUND_PAYMENT_UNRESOLVED, so the UI shows no figure
+					// rather than a wrong one.
+					declineRefundAmount: await computeDeclineRefundAmount(ctx, { item, order }),
 					createdAt: proposal.createdAt,
 				};
 			})

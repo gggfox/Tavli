@@ -79,10 +79,8 @@ export const OrdersKeys = {
 	TICKET_MARKED_READY: "orders.ticket.markedReady",
 	TICKET_EMPTY_ALL_DONE: "orders.ticket.emptyAllDone",
 
-	EMPTY_NO_FILTERS: "orders.empty.noFilters",
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
 
-	ARIA_FILTER: "orders.aria.filter",
 	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",
 	ARIA_CANCEL_ITEM: "orders.aria.cancelItem",

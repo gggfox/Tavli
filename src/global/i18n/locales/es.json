@@ -442,11 +442,9 @@
 			"dismiss": "Cancelar"
 		},
 		"empty": {
-			"noFilters": "Selecciona al menos un estado para ver pedidos.",
 			"noOrders": "Ningún pedido coincide con los filtros seleccionados."
 		},
 		"aria": {
-			"filter": "Filtrar pedidos por estado",
 			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"fullOrder": "Detalles del pedido",
@@ -480,7 +478,9 @@
 		"summary": {
 			"totalRevenue": "Ingresos totales",
 			"orders": "Pedidos",
-			"avgOrder": "Pedido promedio"
+			"avgOrder": "Pedido promedio",
+			"serviceFees": "Comisión de servicio Tavli",
+			"tips": "Propinas"
 		},
 		"empty": {
 			"noPayments": "Sin pagos en este periodo."
@@ -490,14 +490,22 @@
 		"resultCount_other": "{{count}} pagos",
 		"table": {
 			"dayOrderNumber": "N.º del día",
-			"orderId": "ID del pedido",
 			"date": "Fecha",
 			"table": "Mesa",
 			"items": "Artículos",
-			"total": "Total"
+			"rowId": "ID",
+			"type": "Tipo",
+			"subtotal": "Subtotal",
+			"serviceFee": "Comisión Tavli",
+			"tip": "Propina",
+			"netToRestaurant": "Neto para el restaurante"
 		},
 		"tooltip": {
-			"total": "Total"
+			"subtotal": "Subtotal"
+		},
+		"rowKind": {
+			"order": "Pedido",
+			"tip": "Propina"
 		}
 	},
 	"customer": {
@@ -595,6 +603,7 @@
 		"ERROR_BILLING_SUBSCRIPTION_EXISTS": "Este restaurante ya tiene una suscripción a Tavli activa.",
 		"ERROR_BILLING_NO_SUBSCRIPTION": "No hay una suscripción a Tavli activa que cancelar.",
 		"ERROR_BILLING_CHECKOUT_FAILED": "No pudimos abrir la página de pago de Stripe. Inténtalo de nuevo en un momento.",
+		"ERROR_BILLING_PORTAL_UNAVAILABLE": "No pudimos abrir el portal de facturación de Stripe. Inténtalo de nuevo en un momento.",
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "El nombre de la categoría es obligatorio.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "El nombre de la categoría es demasiado largo.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Ingresa al menos un nombre de categoría.",
@@ -651,8 +660,7 @@
 			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea.",
 			"orderingUnavailable": "Los pedidos en línea aún no están disponibles aquí.",
 			"filterPlaceholder": "Buscar en el menú",
-			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
-			"placeOrder": "Enviar pedido a cocina"
+			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda."
 		},
 		"item": {
 			"required": "Obligatorio",
@@ -668,9 +676,7 @@
 			"back": "Volver al menú",
 			"heading": "Tu pedido",
 			"empty": "Tu carrito está vacío. ¡Agrega productos!",
-			"total": "Total",
-			"placeOrder": "Realizar pedido",
-			"placingOrder": "Realizando pedido..."
+			"total": "Total"
 		},
 		"checkout": {
 			"heading": "Pago",
@@ -804,6 +810,7 @@
 			"decline": "No, gracias — reembolsar ese artículo",
 			"declineConfirmTitle": "¿Rechazar esta sustitución?",
 			"declineConfirmBody": "{{original}} se quita de tu pedido y {{amount}} se reembolsa a tu tarjeta.",
+			"declineConfirmBodyNoAmount": "{{original}} se quita de tu pedido y se reembolsa a tu tarjeta.",
 			"declineConfirm": "Rechazar y reembolsar",
 			"back": "Volver",
 			"oneTapSuccess": "¡Listo! Se cobraron {{amount}} a tu tarjeta guardada.",
@@ -855,12 +862,15 @@
 		"switcher": {
 			"label": "Restaurante activo"
 		},
+		"canvas": {
+			"notFoundTitle": "Restaurante no encontrado",
+			"notFoundBody": "Este restaurante fue eliminado o ya no es uno que puedas administrar. El enlace que seguiste no apunta a nada.",
+			"notFoundBack": "Volver a restaurantes"
+		},
 		"modal": {
 			"createAria": "Crear restaurante",
-			"editAria": "Editar restaurante",
 			"deleteAria": "Confirmar eliminación del restaurante",
 			"createHeading": "Nuevo restaurante",
-			"editHeading": "Editar restaurante",
 			"deleteHeading": "¿Eliminar este restaurante?",
 			"deleteBody": "Se desactivará de inmediato, se desvinculará Stripe de este local y los datos seguirán recuperables durante 30 días. Después, el sistema eliminará permanentemente el restaurante y los registros relacionados (se conserva un registro de la eliminación).",
 			"deleteConfirm": "Eliminar",
@@ -1087,7 +1097,9 @@
 			"cancelScheduled": "Cancelación programada — la suscripción termina el {{date}} y no se renovará.",
 			"setupButton": "Configurar facturación",
 			"setupRedirecting": "Abriendo Stripe...",
-			"pastDueHint": "El último pago no se completó. Stripe lo reintentará automáticamente — usa el enlace de pago del correo de la factura para pagar con otra tarjeta.",
+			"portalButton": "Actualizar método de pago",
+			"portalFailed": "No se pudo abrir el portal de facturación de Stripe.",
+			"pastDueHint": "El último pago no se completó. Stripe lo reintentará automáticamente — usa \"Actualizar método de pago\" para pagar con otra tarjeta.",
 			"cancelButton": "Cancelar suscripción",
 			"cancelConfirm": "¿Cancelar al final del periodo actual? El restaurante conserva el acceso hasta entonces — ese periodo ya está pagado.",
 			"cancelConfirmYes": "Sí, cancelar al final del periodo",
@@ -1596,7 +1608,7 @@
 			},
 			"revenueOverTime": {
 				"label": "Ingresos en el tiempo",
-				"description": "Pagos exitosos agrupados por día.",
+				"description": "Ingresos del restaurante por día: comida vendida, sin la comisión de servicio Tavli ni propinas.",
 				"axis": "Ingresos"
 			},
 			"ordersByHour": {
@@ -1629,7 +1641,7 @@
 			},
 			"tipsTotal": {
 				"label": "Total de propinas",
-				"description": "Suma de propinas en el rango con un sparkline diario."
+				"description": "Propinas con tarjeta y en efectivo sumadas en el rango con un sparkline diario."
 			},
 			"tableOccupancy": {
 				"label": "Ocupación de mesas",

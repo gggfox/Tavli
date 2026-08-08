@@ -31,6 +31,15 @@ export const RestaurantsKeys = {
 	TRASH_RESTORE: "restaurants.trash.restore",
 	TRASH_PUBLIC_SLUG: "restaurants.trash.publicSlug",
 
+	/**
+	 * `?settings=<id>` / `?manage=<id>` pointing at a restaurant the caller
+	 * cannot see (deleted, or outside their scope) — without this the canvas
+	 * renders blank with browser-back as the only exit.
+	 */
+	CANVAS_NOT_FOUND_TITLE: "restaurants.canvas.notFoundTitle",
+	CANVAS_NOT_FOUND_BODY: "restaurants.canvas.notFoundBody",
+	CANVAS_NOT_FOUND_BACK: "restaurants.canvas.notFoundBack",
+
 	MODAL_DELETE_ARIA: "restaurants.modal.deleteAria",
 	MODAL_DELETE_HEADING: "restaurants.modal.deleteHeading",
 	MODAL_DELETE_BODY: "restaurants.modal.deleteBody",
@@ -41,9 +50,7 @@ export const RestaurantsKeys = {
 	SWITCHER_LABEL: "restaurants.switcher.label",
 
 	MODAL_CREATE_ARIA: "restaurants.modal.createAria",
-	MODAL_EDIT_ARIA: "restaurants.modal.editAria",
 	MODAL_CREATE_HEADING: "restaurants.modal.createHeading",
-	MODAL_EDIT_HEADING: "restaurants.modal.editHeading",
 
 	FORM_NAME_LABEL: "restaurants.form.nameLabel",
 	FORM_SLUG_LABEL: "restaurants.form.slugLabel",
@@ -268,6 +275,8 @@ export const RestaurantsKeys = {
 	BILLING_CANCEL_SCHEDULED: "restaurants.billing.cancelScheduled",
 	BILLING_SETUP_BUTTON: "restaurants.billing.setupButton",
 	BILLING_SETUP_REDIRECTING: "restaurants.billing.setupRedirecting",
+	BILLING_PORTAL_BUTTON: "restaurants.billing.portalButton",
+	BILLING_PORTAL_FAILED: "restaurants.billing.portalFailed",
 	BILLING_PAST_DUE_HINT: "restaurants.billing.pastDueHint",
 	BILLING_CANCEL_BUTTON: "restaurants.billing.cancelButton",
 	BILLING_CANCEL_CONFIRM: "restaurants.billing.cancelConfirm",

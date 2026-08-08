@@ -1,7 +1,7 @@
 import { CollapsibleCard, InlineEditInput, LanguageTabBar } from "@/global/components";
 import { useConvexMutate } from "@/global/hooks";
 import { Languages, OptionsKeys } from "@/global/i18n";
-import { formatCents, parseDollarsToCents } from "@/global/utils/money";
+import { formatCents, formatCentsInput, parseDollarsToCents } from "@/global/utils/money";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -342,7 +342,9 @@ function GroupCard({
 							className="text-sm"
 						/>
 						<InlineEditInput
-							value={formatCents(opt.priceModifier)}
+							// Ungrouped: the editable value has to round-trip through
+							// `parseDollarsToCents` exactly as shown.
+							value={formatCentsInput(opt.priceModifier)}
 							placeholder="0"
 							onSave={async (val) => {
 								await onUpdateOption({

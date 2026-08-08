@@ -24,6 +24,7 @@ import {
 	Pencil,
 	Plus,
 	RotateCcw,
+	SearchX,
 	ToggleLeft,
 	ToggleRight,
 	Trash2,
@@ -148,6 +149,11 @@ export function AdminRestaurantsList({
 		}
 	};
 	const isCanvasOpen = expandedTablesId !== null || openSettingsId !== null;
+	/** Clears whichever canvas param is set — the not-found state's only exit. */
+	const closeCanvas = () => {
+		if (expandedTablesId !== null) setExpandedTablesId(null);
+		if (openSettingsId !== null) setOpenSettingsId(null);
+	};
 	const [error, setError] = useState<string | null>(null);
 
 	const { data: deletedRestaurants = [], isLoading: deletedLoading } = useQuery({
@@ -161,6 +167,18 @@ export function AdminRestaurantsList({
 	if (isLoading) {
 		return <AdminRestaurantsListSkeleton />;
 	}
+
+	// A canvas param can outlive its restaurant: the row is deleted from another
+	// tab, an owner shares `?settings=<id>` with someone whose scope excludes it,
+	// or the id is simply wrong. Every row then renders `null` and the canvas
+	// never mounts, so without this the page is blank with browser-back as the
+	// only way out. Suppressed while `queryError` is set — the error banner
+	// already explains an empty list, and "not found" would be a lie.
+	const canvasTargetMissing =
+		isCanvasOpen &&
+		isAuthenticated &&
+		!queryError &&
+		!restaurants.some((r) => r._id === expandedTablesId || r._id === openSettingsId);
 
 	return (
 		<div className="space-y-4">
@@ -376,6 +394,25 @@ export function AdminRestaurantsList({
 						</div>
 					);
 				})}
+				{canvasTargetMissing && (
+					<div data-testid="restaurant-canvas-not-found">
+						<EmptyState
+							icon={SearchX}
+							title={t(RestaurantsKeys.CANVAS_NOT_FOUND_TITLE)}
+							description={t(RestaurantsKeys.CANVAS_NOT_FOUND_BODY)}
+							action={
+								<button
+									type="button"
+									onClick={closeCanvas}
+									className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium border border-border hover:bg-hover text-foreground"
+								>
+									<ChevronLeft size={16} />
+									{t(RestaurantsKeys.CANVAS_NOT_FOUND_BACK)}
+								</button>
+							}
+						/>
+					</div>
+				)}
 				{restaurants.length === 0 && !isCanvasOpen && (
 					<EmptyState variant="inline" title={t(RestaurantsKeys.LIST_EMPTY)} />
 				)}

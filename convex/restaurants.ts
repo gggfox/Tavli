@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery, mutation, query } from "./_generated/server";
@@ -131,6 +132,20 @@ export const softDelete = mutation({
 			stripeOnboardingComplete: undefined,
 			...stampUpdated(userId),
 		});
+
+		// Stop Tavli billing a restaurant the operator just deleted. Mutations
+		// never call Stripe, so the cancel runs as a scheduled action; it is
+		// best-effort by design (see
+		// `billing.cancelSubscriptionForDeletedRestaurant`). Without this the
+		// subscription stayed live while `billingHelpers.isBillable` refused to
+		// record any of its webhooks — invisible charges.
+		if (restaurant.stripeSubscriptionId) {
+			await ctx.scheduler.runAfter(0, internal.billing.cancelSubscriptionForDeletedRestaurant, {
+				restaurantId: args.restaurantId,
+				stripeSubscriptionId: restaurant.stripeSubscriptionId,
+				userId,
+			});
+		}
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.RESTAURANTS,
