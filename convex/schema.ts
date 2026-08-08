@@ -233,6 +233,13 @@ export default defineSchema({
 		/** Epoch ms end of the current billing period, cached from Billing webhooks. */
 		billingCurrentPeriodEnd: v.optional(v.number()),
 		/**
+		 * Cached `cancel_at_period_end`: the subscription is scheduled to end at
+		 * `billingCurrentPeriodEnd` but is still `active` until then. Without this
+		 * the settings UI would show a plain "active" after a cancellation and
+		 * only find out at the period boundary.
+		 */
+		billingCancelAtPeriodEnd: v.optional(v.boolean()),
+		/**
 		 * Geofence for customer ordering (TAVLI-6). When latitude/longitude are
 		 * unset the geofence is skipped entirely. This is a soft UX gate — browser
 		 * geolocation is spoofable; unpaid tabs are settled by staff in person.
@@ -261,6 +268,13 @@ export default defineSchema({
 		.index("by_owner", ["ownerId"])
 		.index("by_organization", ["organizationId"])
 		.index("by_stripe_account", ["stripeAccountId"])
+		// Platform-subscription webhooks arrive keyed by Stripe Customer or
+		// Subscription id and must resolve back to the restaurant without a
+		// table scan. Two indexes because the two Billing event families carry
+		// different handles: invoices carry the customer, subscription events
+		// carry the subscription.
+		.index("by_billing_customer", ["stripeBillingCustomerId"])
+		.index("by_billing_subscription", ["stripeSubscriptionId"])
 		.index("by_hard_delete_after", ["hardDeleteAfterAt"])
 		.index("by_shared_employee_subject", ["sharedEmployeeClerkSubject"]),
 

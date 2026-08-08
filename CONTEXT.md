@@ -67,11 +67,15 @@ cancelled.
 _Avoid_: ticket, check, transaction.
 
 **Access code**:
-The diner-facing name for the geofence bypass code staff hand out when
-location fails. Distinct from the session's **join code**, which admits
-a friend to the visit.
-_Avoid_: table code / clave-código de mesa (old name), join code
-(different thing).
+The diner-facing name ("Access code" / "Código de acceso") for the
+geofence bypass code staff hand out when a device's location check
+fails. Staff-facing settings call it by its technical name, **Geofence
+bypass code** / _Código de anulación de geocerca_ — same value,
+`restaurants.geofenceBypassCode`. It is a soft UX gate, not a security
+control: browser geolocation is spoofable. Distinct from the session's
+**join code**, which admits a friend to the visit.
+_Avoid_: table code / código de mesa (old name), join code (different
+thing).
 
 **Awaiting payment**:
 An `Order` committed by the diner for in-person payment. Visible only

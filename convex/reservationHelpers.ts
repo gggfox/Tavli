@@ -520,6 +520,39 @@ const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.NO_SHOW,
 ];
 
+/**
+ * Statuses a cancellation may not be applied to. `completed` is deliberately
+ * absent: a completed reservation still occupies its table window (it is in
+ * `ACTIVE_RESERVATION_STATUSES`), so staff who marked the wrong booking
+ * completed need a way to take it out of the floor plan.
+ */
+const NON_CANCELLABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+];
+
+export function ensureCancellable(
+	status: ReservationStatus
+): UserInputValidationErrorObject | null {
+	if (!NON_CANCELLABLE_STATUSES.includes(status)) return null;
+	return new UserInputValidationError({
+		fields: [{ field: "status", message: `Cannot cancel a reservation in status ${status}` }],
+	}).toObject();
+}
+
+/**
+ * Whether the forward-looking booking horizon applies to a reschedule.
+ *
+ * A `completed` visit already happened, so its `startsAt` is always in the
+ * past and `isWithinHorizon` would reject *every* correction to it. Staff
+ * fixing a mistyped duration after service are not making a booking, so the
+ * horizon does not apply. Window length, the 15-minute minimum, blackout
+ * windows, table capacity and the double-booking check all still run.
+ */
+export function enforcesBookingHorizon(status: ReservationStatus): boolean {
+	return status !== RESERVATION_STATUS.COMPLETED;
+}
+
 export const TERMINAL_RECOVERABLE_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.CANCELLED,
 	RESERVATION_STATUS.NO_SHOW,

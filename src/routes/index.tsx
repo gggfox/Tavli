@@ -10,7 +10,13 @@ function App() {
 	if (isLoading) return null;
 
 	if (isAuthenticated) {
-		return <Navigate to="/admin/restaurants" search={{ manage: undefined }} replace />;
+		return (
+			<Navigate
+				to="/admin/restaurants"
+				search={{ manage: undefined, settings: undefined }}
+				replace
+			/>
+		);
 	}
 
 	return (

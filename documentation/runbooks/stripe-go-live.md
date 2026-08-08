@@ -258,6 +258,86 @@ Test-mode connected-account ids are **invalid in live mode**, and ids created
 under the dev Stripe account are unreachable with the production `sk_live`
 entirely. Any restaurant onboarded in test must be onboarded again in live.
 
+### 5. Platform subscription — the 2,000 MXN/month Price
+
+This is the fee **restaurants pay Tavli** for using the product (ADR 008,
+`convex/billing.ts`). It has nothing to do with the 12% service fee diners pay
+on an order — different payer, different money path, different Stripe objects.
+Do not model it as a Connect fee and do not touch the connected accounts for it.
+
+**Create the Price in each account separately.** Dev and production are separate
+Stripe accounts (see the account-prefix check above), so this is done twice and
+the two ids differ. There is no "copy to live" for this object.
+
+1. Dashboard → **Product catalog** → **+ Add product**
+   - Name: `Tavli platform subscription`
+   - Pricing model: **Recurring**, **Standard pricing**
+   - Amount: **2,000.00 MXN**, billing period **Monthly**
+2. Save, then copy the **Price** id (`price_…`, _not_ the product `prod_…`).
+
+The amount lives in Stripe, not in the code. `PLATFORM_MONTHLY_FEE_MXN_CENTS`
+(`convex/constants.ts`) is display copy for the settings screen; changing it
+changes what the UI says, never what Stripe charges. To reprice, create a new
+Price and point the env var at it.
+
+**Set the env var per deployment** (Convex deployment env, like the other Stripe
+values — not Infisical):
+
+```bash
+npx convex env set STRIPE_PLATFORM_FEE_PRICE_ID price_...            # dev
+npx convex env set STRIPE_PLATFORM_FEE_PRICE_ID price_... --prod     # production
+```
+
+Unset, `billing.createSubscriptionCheckout` fails closed with the stable code
+`ERROR_BILLING_PRICE_NOT_CONFIGURED` rather than charging anything.
+
+| Value                          | Lives in                  | Applied                                              |
+| ------------------------------ | ------------------------- | ---------------------------------------------------- |
+| `STRIPE_PLATFORM_FEE_PRICE_ID` | **Convex deployment env** | Read at call time by `getStripePlatformFeePriceId()` |
+
+#### Extra events on the PAYMENTS destination
+
+The subscription lifecycle is made of **platform-account v1 snapshot events**,
+so they go on the existing payments destination (`/stripe/webhook`) next to
+`payment_intent.*`. Add these six to that destination's event list:
+
+```text
+checkout.session.completed          customer.subscription.created
+customer.subscription.updated       customer.subscription.deleted
+invoice.paid                        invoice.payment_failed
+```
+
+Notes that will save an afternoon:
+
+- **Do not touch the Connect destination's event list.** It is v2 thin
+  `v2.core.account*` only; a subscription event subscribed there would never
+  fire, because it does not belong to a connected account.
+- `checkout.session.completed` used to be explicitly excluded here ("Tavli uses
+  an embedded PaymentElement, never hosted Checkout"). That is still true of the
+  **diner** money path. The platform subscription is the one exception: it uses
+  Stripe-hosted Checkout in `mode: "subscription"`, and the handler ignores every
+  session whose mode is not `subscription`, so the diner path is unaffected.
+- `invoice.paid` (not `invoice.payment_succeeded`) is the one Tavli listens for.
+- Dedup is shared with the payment events via `stripeWebhookEvents`, so
+  redeliveries are no-ops.
+
+Local forwarding picks them up with the same command, extended:
+
+```bash
+stripe listen --forward-to http://localhost:3210/stripe/webhook \
+  --events payment_intent.succeeded,payment_intent.payment_failed,charge.refunded,\
+checkout.session.completed,customer.subscription.created,customer.subscription.updated,\
+customer.subscription.deleted,invoice.paid,invoice.payment_failed
+```
+
+Test-mode `trigger` shortcuts for a smoke test:
+
+```bash
+stripe trigger checkout.session.completed
+stripe trigger customer.subscription.updated
+stripe trigger invoice.paid
+```
+
 ## Money-path behaviour worth knowing
 
 ### The platform is `losses_collector`

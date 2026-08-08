@@ -262,6 +262,45 @@ export type SubstitutionProposalStatus =
  */
 export const PLATFORM_MONTHLY_FEE_MXN_CENTS = 200000;
 
+/** Currency the platform subscription is priced in. The Stripe Price is authoritative. */
+export const PLATFORM_SUBSCRIPTION_CURRENCY = "MXN";
+
+/**
+ * Stripe subscription statuses, cached verbatim on `restaurants.billingStatus`.
+ * Listed here so app code and UI copy stop spelling them inline; Stripe may add
+ * new ones, so readers must tolerate a status that is absent from this map.
+ */
+export const BILLING_STATUS = {
+	INCOMPLETE: "incomplete",
+	INCOMPLETE_EXPIRED: "incomplete_expired",
+	TRIALING: "trialing",
+	ACTIVE: "active",
+	PAST_DUE: "past_due",
+	CANCELED: "canceled",
+	UNPAID: "unpaid",
+	PAUSED: "paused",
+} as const;
+
+export type BillingStatus = (typeof BILLING_STATUS)[keyof typeof BILLING_STATUS];
+
+/**
+ * Statuses that mean a subscription already exists for this restaurant, so a
+ * second Checkout Session would double-bill them. `past_due` / `unpaid` count:
+ * the subscription is live and Stripe is retrying, and the fix is a new payment
+ * method, not a second subscription.
+ */
+export const LIVE_BILLING_STATUSES: readonly string[] = [
+	BILLING_STATUS.TRIALING,
+	BILLING_STATUS.ACTIVE,
+	BILLING_STATUS.PAST_DUE,
+	BILLING_STATUS.UNPAID,
+];
+
+/** Whether `billingStatus` means the restaurant is currently subscribed. */
+export function isLiveBillingStatus(status: string | undefined): boolean {
+	return status !== undefined && LIVE_BILLING_STATUSES.includes(status);
+}
+
 /** Geofence radius fallback when a restaurant configured coordinates but no radius. */
 export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 
@@ -594,6 +633,12 @@ export const AUDIT_EVENT = {
 
 	// -- Restaurants (platform subscription, ADR 008) -----------------------
 	RESTAURANT_SUBSCRIPTION_CREATED: "restaurants.subscriptionCreated",
+	/** Stripe told us the subscription's status or period moved (created/updated webhooks). */
+	RESTAURANT_SUBSCRIPTION_STATUS_CHANGED: "restaurants.subscriptionStatusChanged",
+	/** Staff asked to cancel; the subscription runs to the end of the paid period. */
+	RESTAURANT_SUBSCRIPTION_CANCEL_SCHEDULED: "restaurants.subscriptionCancelScheduled",
+	/** Stripe ended the subscription for good (`customer.subscription.deleted`). */
+	RESTAURANT_SUBSCRIPTION_CANCELLED: "restaurants.subscriptionCancelled",
 	RESTAURANT_SUBSCRIPTION_INVOICE_PAID: "restaurants.subscriptionInvoicePaid",
 	RESTAURANT_SUBSCRIPTION_PAYMENT_FAILED: "restaurants.subscriptionPaymentFailed",
 

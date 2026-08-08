@@ -1,8 +1,7 @@
 import { AdminRestaurantsListSkeleton } from "@/features/restaurants/components/AdminRestaurantsListSkeleton";
-import { RestaurantManagersField } from "@/features/restaurants/components/RestaurantManagersField";
-import { RestaurantSettingsForm } from "@/features/restaurants/components/RestaurantSettingsForm";
+import { RestaurantSettingsView } from "@/features/restaurants/components/RestaurantSettingsView";
 import { useRestaurant } from "@/features/restaurants/RestaurantAdminScope";
-import { StripeConnectSetup } from "@/features/restaurants/components/StripeConnectSetup";
+import { useOrganizations } from "@/features/restaurants/hooks/useOrganizations";
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global/components";
@@ -33,28 +32,14 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-type OrganizationsValue = UnwrappedValue<
-	FunctionReturnType<typeof api.organizations.getAllOrganizations>
->;
 type RestaurantsValue = UnwrappedValue<FunctionReturnType<typeof api.restaurants.getAll>>;
 type DeletedRestaurantsValue = UnwrappedValue<
 	FunctionReturnType<typeof api.restaurants.getDeletedForAdmin>
 >;
 
-function useOrganizations() {
-	const { isAuthenticated } = useConvexAuth();
-	const { data = [] } = useQuery({
-		...convexQuery(api.organizations.getAllOrganizations, {}),
-		enabled: isAuthenticated,
-		select: unwrapResult<OrganizationsValue>,
-	});
-	return data;
-}
-
 type ModalState =
 	| { kind: "closed" }
 	| { kind: "create" }
-	| { kind: "edit"; restaurant: Doc<"restaurants"> }
 	| { kind: "confirmDelete"; restaurant: Doc<"restaurants"> };
 
 interface AdminRestaurantsListProps {
@@ -65,17 +50,24 @@ interface AdminRestaurantsListProps {
 	 */
 	manageId?: Id<"restaurants"> | null;
 	onManageChange?: (next: Id<"restaurants"> | null) => void;
+	/**
+	 * The restaurant whose settings canvas is open (`?settings=<id>`). Same
+	 * plumbing as `manageId`, and mutually exclusive with it.
+	 */
+	settingsId?: Id<"restaurants"> | null;
+	onSettingsChange?: (next: Id<"restaurants"> | null) => void;
 }
 
 export function AdminRestaurantsList({
 	manageId,
 	onManageChange,
+	settingsId,
+	onSettingsChange,
 }: Readonly<AdminRestaurantsListProps> = {}) {
 	const { t } = useTranslation();
 	const isTabletPortrait = useIsTabletPortraitViewport();
 	const { isAuthenticated } = useConvexAuth();
 	const { setSelectedRestaurantId } = useRestaurant();
-	const organizations = useOrganizations();
 
 	const { roles: userRoles, organizationId: userOrgId } = useCurrentUserRoles();
 	const { user } = useUser();
@@ -121,9 +113,6 @@ export function AdminRestaurantsList({
 		select: unwrapResult<RestaurantsValue>,
 	});
 
-	const updateMutation = useMutation({
-		mutationFn: useConvexMutation(api.restaurants.update),
-	});
 	const toggleActiveMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.toggleActive),
 	});
@@ -148,6 +137,17 @@ export function AdminRestaurantsList({
 			setInternalExpandedId(next);
 		}
 	};
+	// Same lift-to-the-route pattern for the settings canvas.
+	const [internalSettingsId, setInternalSettingsId] = useState<Id<"restaurants"> | null>(null);
+	const openSettingsId = settingsId !== undefined ? settingsId : internalSettingsId;
+	const setOpenSettingsId = (next: Id<"restaurants"> | null) => {
+		if (onSettingsChange) {
+			onSettingsChange(next);
+		} else {
+			setInternalSettingsId(next);
+		}
+	};
+	const isCanvasOpen = expandedTablesId !== null || openSettingsId !== null;
 	const [error, setError] = useState<string | null>(null);
 
 	const { data: deletedRestaurants = [], isLoading: deletedLoading } = useQuery({
@@ -169,7 +169,7 @@ export function AdminRestaurantsList({
 			)}
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 
-			{canManage && expandedTablesId === null && (
+			{canManage && !isCanvasOpen && (
 				<div className="flex flex-wrap justify-end gap-2">
 					<button
 						type="button"
@@ -189,7 +189,9 @@ export function AdminRestaurantsList({
 				</div>
 			)}
 
-			{canManage && showTrash && (
+			{/* The trash drawer belongs to the list, not to a full-canvas editor --
+			    its toggle lives in the action row that a canvas hides. */}
+			{canManage && showTrash && !isCanvasOpen && (
 				<div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
 					<h3 className="text-sm font-semibold text-foreground">
 						{t(RestaurantsKeys.TRASH_HEADING)}
@@ -252,13 +254,31 @@ export function AdminRestaurantsList({
 			<div className="space-y-2">
 				{restaurants.map((r) => {
 					const isExpanded = expandedTablesId === r._id;
-					if (expandedTablesId !== null && !isExpanded) return null;
+					const isSettingsOpen = openSettingsId === r._id;
+					if (isCanvasOpen && !isExpanded && !isSettingsOpen) return null;
 					if (isExpanded) {
 						return (
 							<ExpandedTablesRow
 								key={r._id}
 								restaurant={r}
 								onClose={() => setExpandedTablesId(null)}
+							/>
+						);
+					}
+					if (isSettingsOpen) {
+						return (
+							<RestaurantSettingsView
+								key={r._id}
+								restaurant={r}
+								settingsAccess={canManage ? "full" : "manager"}
+								onClose={() => setOpenSettingsId(null)}
+								onToggleActive={async (restaurantId) => {
+									try {
+										unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
+									} catch (err) {
+										setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
+									}
+								}}
 							/>
 						);
 					}
@@ -290,7 +310,7 @@ export function AdminRestaurantsList({
 								{canEditSettingsFor(r) && (
 									<button
 										type="button"
-										onClick={() => setModal({ kind: "edit", restaurant: r })}
+										onClick={() => setOpenSettingsId(r._id)}
 										className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
 										title={t(RestaurantsKeys.LIST_EDIT)}
 									>
@@ -356,7 +376,7 @@ export function AdminRestaurantsList({
 						</div>
 					);
 				})}
-				{restaurants.length === 0 && expandedTablesId === null && (
+				{restaurants.length === 0 && !isCanvasOpen && (
 					<EmptyState variant="inline" title={t(RestaurantsKeys.LIST_EMPTY)} />
 				)}
 			</div>
@@ -389,68 +409,6 @@ export function AdminRestaurantsList({
 					/>
 				</div>
 			</Modal>
-
-			{/* Edit Modal */}
-			{modal.kind === "edit" && (
-				<Modal isOpen onClose={closeModal} ariaLabel={t(RestaurantsKeys.MODAL_EDIT_ARIA)} size="lg">
-					<div className="p-6 rounded-xl bg-background border border-border">
-						<div className="flex items-center justify-between mb-6">
-							<h2 className="text-xl font-semibold text-foreground">
-								{t(RestaurantsKeys.MODAL_EDIT_HEADING)}
-							</h2>
-							<button
-								onClick={closeModal}
-								className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
-							>
-								<X size={20} />
-							</button>
-						</div>
-						<RestaurantSettingsForm
-							restaurant={modal.restaurant}
-							organizations={organizations}
-							settingsAccess={canManage ? "full" : "manager"}
-							onSave={async (data) => {
-								try {
-									unwrapResult(
-										await updateMutation.mutateAsync({
-											restaurantId: modal.restaurant._id,
-											...data,
-										})
-									);
-									closeModal();
-								} catch (err) {
-									setError(getErrorMessage(err, t, RestaurantsKeys.FORM_UPDATE_FAILED));
-								}
-							}}
-							onToggleActive={
-								canManage
-									? async (restaurantId) => {
-											try {
-												unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
-											} catch (err) {
-												setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
-											}
-										}
-									: undefined
-							}
-							isSaving={updateMutation.isPending}
-						/>
-						{canManage ? (
-							<>
-								<div className="mt-6 border-t border-border pt-6">
-									<RestaurantManagersField
-										restaurantId={modal.restaurant._id}
-										onError={(msg) => setError(msg)}
-									/>
-								</div>
-								<div className="mt-6">
-									<StripeConnectSetup restaurantId={modal.restaurant._id} />
-								</div>
-							</>
-						) : null}
-					</div>
-				</Modal>
-			)}
 
 			{modal.kind === "confirmDelete" && (
 				<Modal
@@ -572,7 +530,12 @@ function CreateRestaurantForm({
 	const createMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.create),
 	});
-	const organizations = useOrganizations();
+	// Three explicit states, never a silently blank required <select>: the org
+	// query used to be admin-only, so an owner opening this modal got a
+	// swallowed NotAuthorized and an empty picker with no way to tell whether
+	// the list was slow, broken, or genuinely empty (TAVLI-71 item 8).
+	const { organizations, isLoading: orgsLoading, error: orgsError } = useOrganizations();
+	const canPickOrganization = !orgsLoading && !orgsError && organizations.length > 0;
 
 	const form = useForm({
 		defaultValues: { name: "", slug: "", currency: "MXN", organizationId: "" },
@@ -669,11 +632,16 @@ function CreateRestaurantForm({
 							id="admin-rest-org"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
+							disabled={!canPickOrganization}
 							required
-							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+							aria-busy={orgsLoading}
+							aria-describedby={canPickOrganization ? undefined : "admin-rest-org-status"}
+							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground disabled:opacity-60"
 						>
 							<option value="" disabled>
-								{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
+								{orgsLoading
+									? t(RestaurantsKeys.FORM_ORG_LOADING)
+									: t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
 							</option>
 							{organizations.map((org) => (
 								<option key={org._id} value={org._id}>
@@ -681,6 +649,21 @@ function CreateRestaurantForm({
 								</option>
 							))}
 						</select>
+						{orgsLoading ? (
+							<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
+								{t(RestaurantsKeys.FORM_ORG_LOADING)}
+							</p>
+						) : null}
+						{!orgsLoading && orgsError ? (
+							<p id="admin-rest-org-status" className="mt-1 text-xs text-destructive">
+								{getErrorMessage(orgsError, t, RestaurantsKeys.FORM_ORG_LOAD_FAILED)}
+							</p>
+						) : null}
+						{!orgsLoading && !orgsError && organizations.length === 0 ? (
+							<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
+								{t(RestaurantsKeys.FORM_ORG_EMPTY)}
+							</p>
+						) : null}
 					</div>
 				)}
 			/>
@@ -690,8 +673,8 @@ function CreateRestaurantForm({
 					children={(isSubmitting) => (
 						<button
 							type="submit"
-							disabled={isSubmitting}
-							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+							disabled={isSubmitting || !canPickOrganization}
+							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-60"
 						>
 							{isSubmitting ? t(RestaurantsKeys.FORM_CREATING) : t(RestaurantsKeys.FORM_CREATE)}
 						</button>

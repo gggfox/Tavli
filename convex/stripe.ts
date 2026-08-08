@@ -76,6 +76,13 @@ import {
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
+import {
+	handleSubscriptionCheckoutCompleted,
+	handleSubscriptionDeleted,
+	handleSubscriptionInvoicePaid,
+	handleSubscriptionInvoicePaymentFailed,
+	handleSubscriptionLifecycle,
+} from "./_util/billing";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
 	getOrCreateStripeCustomerId,
@@ -427,6 +434,15 @@ export const handleThinEvent = internalAction({
  * - `charge.dispute.created` — a chargeback was opened; records dispute facts
  * - `charge.dispute.closed` — a chargeback was resolved; updates dispute facts
  * - `account.updated` — legacy V1 account status updates
+ * - `checkout.session.completed` — a restaurant finished platform-subscription
+ *   checkout (`mode: "subscription"`); binds the subscription
+ * - `customer.subscription.created` / `.updated` / `.deleted` — platform
+ *   subscription lifecycle; caches status and period end
+ * - `invoice.paid` / `invoice.payment_failed` — platform-subscription billing;
+ *   audits and (on paid) schedules Tavli's receipt to the restaurant
+ *
+ * The last six are the 2,000 MXN/month platform subscription (ADR 008), not the
+ * diner-paid 12% service fee — see `convex/_util/billing.ts`.
  *
  * These event types must be enabled on the standard webhook destination in the
  * Stripe Dashboard (ties into TAVLI-46). Because our checkout uses destination
@@ -523,6 +539,41 @@ export const fulfillPayment = internalAction({
 						event.id,
 						event.created * 1000
 					);
+					break;
+				}
+
+				// -----------------------------------------------------------------
+				// Platform subscription (ADR 008 / TAVLI-71 Phase 4B).
+				// These are Stripe Billing objects on TAVLI'S OWN account — the
+				// 2,000 MXN/month a restaurant pays us — so they are v1 snapshot
+				// events and belong on THIS destination, never on the v2 thin
+				// connect endpoint. They carry no `payments` row, so `paymentId`
+				// stays undefined and the dedup record is written on event id
+				// alone. See convex/_util/billing.ts.
+				// -----------------------------------------------------------------
+				case "checkout.session.completed": {
+					await handleSubscriptionCheckoutCompleted(ctx, event.data.object);
+					break;
+				}
+
+				case "customer.subscription.created":
+				case "customer.subscription.updated": {
+					await handleSubscriptionLifecycle(ctx, event.data.object);
+					break;
+				}
+
+				case "customer.subscription.deleted": {
+					await handleSubscriptionDeleted(ctx, event.data.object);
+					break;
+				}
+
+				case "invoice.paid": {
+					await handleSubscriptionInvoicePaid(ctx, event.data.object);
+					break;
+				}
+
+				case "invoice.payment_failed": {
+					await handleSubscriptionInvoicePaymentFailed(ctx, event.data.object);
 					break;
 				}
 

@@ -38,6 +38,11 @@ type RestaurantAdminContextValue = {
 		description?: string;
 		currency?: string;
 		supportEmail?: string;
+		// Informational tax block printed on diner receipts (TAVLI-71 Phase 3C).
+		// Empty string clears the stored value; omitting leaves it untouched.
+		rfc?: string;
+		razonSocial?: string;
+		fiscalAddress?: string;
 		timezone?: string;
 		openTime?: string;
 		closeTime?: string;
@@ -154,6 +159,9 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 			description?: string;
 			currency?: string;
 			supportEmail?: string;
+			rfc?: string;
+			razonSocial?: string;
+			fiscalAddress?: string;
 			timezone?: string;
 			openTime?: string;
 			closeTime?: string;
