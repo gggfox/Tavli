@@ -60,6 +60,8 @@
 			"noRoles": "Sin roles asignados",
 			"devTools": "Herramientas de Desarrollo",
 			"switchRoles": "Cambiar Roles",
+			"roleSwitcherUnavailable": "El cambio de roles está deshabilitado en este deployment de Convex. Configura CONVEX_ENV=development y ENABLE_DEV_ROLE_SWITCHER=true en él (ver README).",
+			"roleSwitchFailed": "No se pudieron cambiar los roles",
 			"selfAssignAdmin": "Auto-asignar Rol de Admin",
 			"adminAlreadyAssigned": "Rol de admin ya asignado",
 			"assigningAdmin": "Asignando..."

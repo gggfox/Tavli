@@ -1,7 +1,14 @@
-import { useCurrentUserRoles, useUserSettings } from "@/features/users/hooks";
+import {
+	useCurrentUserRoles,
+	useDevRoleSwitcherStatus,
+	useUserSettings,
+} from "@/features/users/hooks";
 import { i18n, Modal, useTheme } from "@/global";
+import { pushToast } from "@/global/components";
 import { Languages, SidebarKeys, writeLanguageCookie } from "@/global/i18n";
+import { unwrapResult } from "@/global/utils";
 import { config } from "@/global/utils/config";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useClerk } from "@clerk/tanstack-react-start";
 import { api } from "convex/_generated/api";
 import { USER_ROLES } from "convex/constants";
@@ -65,19 +72,24 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 
 			setOptimisticRoles(newRoles);
 			try {
-				const [, error] = await convex.mutation(api.admin.devSetOwnRoles, {
-					roles: newRoles as typeof ALL_ROLES,
-				});
-				if (error) {
-					console.error("Failed to update roles:", error);
-				}
+				unwrapResult(
+					await convex.mutation(api.admin.devSetOwnRoles, {
+						roles: newRoles as typeof ALL_ROLES,
+					})
+				);
 			} catch (error) {
 				console.error("Failed to update roles:", error);
+				pushToast({
+					id: `dev-role-switch-error-${Date.now()}`,
+					kind: "error",
+					title: t(SidebarKeys.ROLE_SWITCH_FAILED),
+					body: getErrorMessage(error, t, SidebarKeys.ROLE_SWITCH_FAILED),
+				});
 			} finally {
 				setOptimisticRoles(null);
 			}
 		},
-		[convex, displayRoles]
+		[convex, displayRoles, t]
 	);
 
 	const handleToggleTheme = useCallback(() => {
@@ -93,6 +105,12 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 	const ThemeIcon = theme === "light" ? Moon : Sun;
 	const showDevTools =
 		config.isDev && import.meta.env.VITE_DEV_ROLE_SWITCHER_ENABLED === "true" && isAuthenticated;
+	// The backend refuses `devSetOwnRoles` unless the deployment also sets
+	// CONVEX_ENV=development and ENABLE_DEV_ROLE_SWITCHER, so the buttons are
+	// additionally gated on the deployment's own answer — otherwise a missing
+	// env var renders a switcher whose clicks silently do nothing.
+	const { switcherEnabled, isLoading: switcherStatusLoading } =
+		useDevRoleSwitcherStatus(showDevTools);
 
 	return (
 		<Modal
@@ -182,25 +200,33 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 							{t(SidebarKeys.DEV_TOOLS)}
 						</h3>
 						<p className="text-xs mb-2 text-faint-foreground">{t(SidebarKeys.SWITCH_ROLES)}</p>
-						<div className="flex flex-wrap gap-2">
-							{ALL_ROLES.map((role) => {
-								const isActive = displayRoles.includes(role);
-								return (
-									<button
-										key={role}
-										onClick={() => handleToggleRole(role)}
-										className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all border ${
-											isActive
-												? "bg-active border-accent"
-												: "border-border hover:border-[var(--border-hover)]"
-										}`}
-										style={{ color: isActive ? "var(--text-primary)" : "var(--text-muted)" }}
-									>
-										{role}
-									</button>
-								);
-							})}
-						</div>
+						{switcherEnabled ? (
+							<div className="flex flex-wrap gap-2">
+								{ALL_ROLES.map((role) => {
+									const isActive = displayRoles.includes(role);
+									return (
+										<button
+											key={role}
+											onClick={() => handleToggleRole(role)}
+											className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all border ${
+												isActive
+													? "bg-active border-accent"
+													: "border-border hover:border-[var(--border-hover)]"
+											}`}
+											style={{ color: isActive ? "var(--text-primary)" : "var(--text-muted)" }}
+										>
+											{role}
+										</button>
+									);
+								})}
+							</div>
+						) : (
+							!switcherStatusLoading && (
+								<p className="text-xs text-faint-foreground">
+									{t(SidebarKeys.ROLE_SWITCHER_UNAVAILABLE)}
+								</p>
+							)
+						)}
 					</div>
 				)}
 
