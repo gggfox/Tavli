@@ -7,7 +7,7 @@ import { useCurrentUserRoles } from "@/features/users/hooks";
 import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global/components";
 import { useIsTabletPortraitViewport } from "@/global/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
-import { sanitizeSlug, unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
@@ -576,16 +576,28 @@ function CreateRestaurantForm({
 	// the list was slow, broken, or genuinely empty (TAVLI-71 item 8).
 	const { organizations, isLoading: orgsLoading, error: orgsError } = useOrganizations();
 	const canPickOrganization = !orgsLoading && !orgsError && organizations.length > 0;
+	/**
+	 * One selectable organization is not a choice — it is an announcement. Owners
+	 * almost always belong to exactly one, so they get a read-only line instead
+	 * of a single-option `<select>`. Deliberately role-agnostic: an admin scoped
+	 * to one organization gets the same treatment, and an owner in two still
+	 * gets the picker.
+	 */
+	const soleOrganization =
+		canPickOrganization && organizations.length === 1 ? organizations[0] : null;
 
 	const form = useForm({
-		defaultValues: { name: "", slug: "", currency: "MXN", organizationId: "" },
+		// No `slug`: it is derived from the name server-side (see
+		// `convex/slugHelpers.ts`) and stays editable in the settings canvas.
+		defaultValues: { name: "", currency: "MXN", organizationId: "" },
 		onSubmit: async ({ value }) => {
-			const organizationId = value.organizationId as Id<"organizations">;
+			const organizationId = (
+				soleOrganization ? soleOrganization._id : value.organizationId
+			) as Id<"organizations">;
 			try {
 				const id = unwrapResult(
 					await createMutation.mutateAsync({
 						name: value.name,
-						slug: value.slug,
 						currency: value.currency,
 						timezone: DEFAULT_RESTAURANT_TIMEZONE,
 						organizationId,
@@ -622,20 +634,6 @@ function CreateRestaurantForm({
 				)}
 			/>
 			<form.Field
-				name="slug"
-				children={(field) => (
-					<TextInput
-						id="admin-rest-slug"
-						label={t(RestaurantsKeys.FORM_SLUG_LABEL)}
-						type="text"
-						value={field.state.value}
-						onChange={(e) => field.handleChange(sanitizeSlug(e.target.value))}
-						onBlur={field.handleBlur}
-						required
-					/>
-				)}
-			/>
-			<form.Field
 				name="currency"
 				children={(field) => (
 					<div>
@@ -659,62 +657,86 @@ function CreateRestaurantForm({
 					</div>
 				)}
 			/>
-			<form.Field
-				name="organizationId"
-				children={(field) => (
-					<div>
-						<label
-							htmlFor="admin-rest-org"
-							className="block text-xs font-medium mb-1 text-muted-foreground"
-						>
-							{t(RestaurantsKeys.FORM_ORG_LABEL)}
-						</label>
-						<select
-							id="admin-rest-org"
-							value={field.state.value}
-							onChange={(e) => field.handleChange(e.target.value)}
-							disabled={!canPickOrganization}
-							required
-							aria-busy={orgsLoading}
-							aria-describedby={canPickOrganization ? undefined : "admin-rest-org-status"}
-							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground disabled:opacity-60"
-						>
-							<option value="" disabled>
-								{orgsLoading
-									? t(RestaurantsKeys.FORM_ORG_LOADING)
-									: t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
-							</option>
-							{organizations.map((org) => (
-								<option key={org._id} value={org._id}>
-									{org.name}
+			{soleOrganization ? (
+				<div data-testid="admin-rest-org-single">
+					<span className="block text-xs font-medium mb-1 text-muted-foreground">
+						{t(RestaurantsKeys.FORM_ORG_LABEL)}
+					</span>
+					<p className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground">
+						{soleOrganization.name}
+					</p>
+					<p className="mt-1 text-xs text-faint-foreground">
+						{t(RestaurantsKeys.FORM_ORG_SINGLE_HINT)}
+					</p>
+				</div>
+			) : (
+				<form.Field
+					name="organizationId"
+					children={(field) => (
+						<div>
+							<label
+								htmlFor="admin-rest-org"
+								className="block text-xs font-medium mb-1 text-muted-foreground"
+							>
+								{t(RestaurantsKeys.FORM_ORG_LABEL)}
+							</label>
+							<select
+								id="admin-rest-org"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								disabled={!canPickOrganization}
+								required
+								aria-busy={orgsLoading}
+								aria-describedby={canPickOrganization ? undefined : "admin-rest-org-status"}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground disabled:opacity-60"
+							>
+								<option value="" disabled>
+									{orgsLoading
+										? t(RestaurantsKeys.FORM_ORG_LOADING)
+										: t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
 								</option>
-							))}
-						</select>
-						{orgsLoading ? (
-							<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
-								{t(RestaurantsKeys.FORM_ORG_LOADING)}
-							</p>
-						) : null}
-						{!orgsLoading && orgsError ? (
-							<p id="admin-rest-org-status" className="mt-1 text-xs text-destructive">
-								{getErrorMessage(orgsError, t, RestaurantsKeys.FORM_ORG_LOAD_FAILED)}
-							</p>
-						) : null}
-						{!orgsLoading && !orgsError && organizations.length === 0 ? (
-							<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
-								{t(RestaurantsKeys.FORM_ORG_EMPTY)}
-							</p>
-						) : null}
-					</div>
-				)}
-			/>
+								{organizations.map((org) => (
+									<option key={org._id} value={org._id}>
+										{org.name}
+									</option>
+								))}
+							</select>
+							{orgsLoading ? (
+								<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
+									{t(RestaurantsKeys.FORM_ORG_LOADING)}
+								</p>
+							) : null}
+							{!orgsLoading && orgsError ? (
+								<p id="admin-rest-org-status" className="mt-1 text-xs text-destructive">
+									{getErrorMessage(orgsError, t, RestaurantsKeys.FORM_ORG_LOAD_FAILED)}
+								</p>
+							) : null}
+							{!orgsLoading && !orgsError && organizations.length === 0 ? (
+								<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
+									{t(RestaurantsKeys.FORM_ORG_EMPTY)}
+								</p>
+							) : null}
+						</div>
+					)}
+				/>
+			)}
 			<div className="flex gap-2 pt-2">
 				<form.Subscribe
-					selector={(state) => state.isSubmitting}
-					children={(isSubmitting) => (
+					selector={(state) => ({
+						isSubmitting: state.isSubmitting,
+						organizationId: state.values.organizationId,
+					})}
+					children={({ isSubmitting, organizationId }) => (
 						<button
 							type="submit"
-							disabled={isSubmitting || !canPickOrganization}
+							// The organization must be RESOLVED, not merely available:
+							// auto-selected when there is exactly one, explicitly picked
+							// when there are several.
+							disabled={
+								isSubmitting ||
+								!canPickOrganization ||
+								(soleOrganization === null && organizationId === "")
+							}
 							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-60"
 						>
 							{isSubmitting ? t(RestaurantsKeys.FORM_CREATING) : t(RestaurantsKeys.FORM_CREATE)}

@@ -1,4 +1,5 @@
 import type { RestaurantSettingsPatch } from "@/features/restaurants/hooks/useRestaurantSettingsSave";
+import type { BackendErrorCode } from "@/global/i18n/keys/errors";
 import type { Doc } from "convex/_generated/dataModel";
 
 /**
@@ -13,5 +14,7 @@ export interface RestaurantSettingsSectionProps {
 	readonly isSaving: boolean;
 	readonly isSaved: boolean;
 	readonly error: string | null;
+	/** Stable code behind `error`, so a section can pin it to the guilty field. */
+	readonly errorCode: BackendErrorCode | null;
 	readonly onDismissError: () => void;
 }

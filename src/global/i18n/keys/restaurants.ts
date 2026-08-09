@@ -62,8 +62,16 @@ export const RestaurantsKeys = {
 	MODAL_CREATE_HEADING: "restaurants.modal.createHeading",
 
 	FORM_NAME_LABEL: "restaurants.form.nameLabel",
+	/**
+	 * The slug is only editable in the settings canvas — creation derives it from
+	 * the restaurant name (`convex/slugHelpers.ts`). `FORM_SLUG_HINT` now labels
+	 * a marked-up URL preview instead of interpolating the slug itself, so the
+	 * editable segment can be highlighted.
+	 */
 	FORM_SLUG_LABEL: "restaurants.form.slugLabel",
 	FORM_SLUG_HINT: "restaurants.form.slugHint",
+	FORM_SLUG_PLACEHOLDER: "restaurants.form.slugPlaceholder",
+	FORM_SLUG_CHANGE_WARNING: "restaurants.form.slugChangeWarning",
 	FORM_OPEN_TEST_LINK: "restaurants.form.openTestLink",
 	FORM_DESCRIPTION_LABEL: "restaurants.form.descriptionLabel",
 	FORM_SUPPORT_EMAIL_LABEL: "restaurants.form.supportEmailLabel",
@@ -113,6 +121,8 @@ export const RestaurantsKeys = {
 	FORM_ORG_LOADING: "restaurants.form.orgLoading",
 	FORM_ORG_EMPTY: "restaurants.form.orgEmpty",
 	FORM_ORG_LOAD_FAILED: "restaurants.form.orgLoadFailed",
+	/** Shown instead of the picker when there is exactly one selectable org. */
+	FORM_ORG_SINGLE_HINT: "restaurants.form.orgSingleHint",
 	FORM_STATUS_LABEL: "restaurants.form.statusLabel",
 	FORM_TOGGLE_DEACTIVATE_TITLE: "restaurants.form.toggleDeactivateTitle",
 	FORM_TOGGLE_ACTIVATE_TITLE: "restaurants.form.toggleActivateTitle",

@@ -3,10 +3,10 @@ import { SettingsSectionFooter } from "@/features/restaurants/components/setting
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
 import { StatusBadge } from "@/global/components";
 import { RestaurantsKeys } from "@/global/i18n";
-import { sanitizeSlug } from "@/global/utils/slug";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
-import { ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
+import { sanitizeSlugInput, SLUG_ERROR } from "convex/slugHelpers";
+import { AlertTriangle, ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface GeneralSectionProps extends RestaurantSettingsSectionProps {
@@ -20,6 +20,7 @@ export function GeneralSection({
 	isSaving,
 	isSaved,
 	error,
+	errorCode,
 	onDismissError,
 	onToggleActive,
 }: Readonly<GeneralSectionProps>) {
@@ -45,8 +46,18 @@ export function GeneralSection({
 		},
 	});
 
-	const slugValue = form.state.values.slug;
-	const testUrl = `/r/${slugValue || "your-slug"}/en/menu`;
+	/**
+	 * The canvas renders during SSR, where there is no `location`. Same guard the
+	 * storage helpers use; an empty origin just renders the path-only preview.
+	 */
+	const publicOrigin = globalThis.window === undefined ? "" : globalThis.location.origin;
+	/**
+	 * A rejected slug belongs on the slug input. Without this the only feedback
+	 * was the footer's generic "Failed to update restaurant", four fields away
+	 * from the one that caused it.
+	 */
+	const slugError =
+		errorCode === SLUG_ERROR.TAKEN || errorCode === SLUG_ERROR.INVALID ? error : null;
 
 	return (
 		<form
@@ -69,7 +80,9 @@ export function GeneralSection({
 								canSave={!isDefaultValue}
 								isSaving={isSaving}
 								isSaved={isSaved}
-								error={error}
+								// A slug failure is shown on the field instead — repeating it
+								// here would say the same thing twice.
+								error={slugError ? null : error}
 								onDismissError={onDismissError}
 							/>
 						)}
@@ -136,41 +149,85 @@ export function GeneralSection({
 
 				<form.Field
 					name="slug"
-					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-slug"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_SLUG_LABEL)}
-							</label>
-							<input
-								id="restaurant-slug"
-								type="text"
-								value={field.state.value}
-								onChange={(e) => field.handleChange(sanitizeSlug(e.target.value))}
-								onBlur={field.handleBlur}
-								required
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							/>
-							<div className="flex items-center gap-2 mt-1">
-								<p className="text-xs text-faint-foreground">
-									{t(RestaurantsKeys.FORM_SLUG_HINT, { slug: slugValue || "your-slug" })}
-								</p>
-								{slugValue ? (
-									<a
-										href={testUrl}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded hover:bg-hover text-accent"
+					children={(field) => {
+						// Everything below reads the LIVE field value, not
+						// `form.state.values` — the section body does not re-render on a
+						// keystroke, so a preview built up there would lag one edit behind.
+						const slugValue = field.state.value;
+						const slugPreview = slugValue || t(RestaurantsKeys.FORM_SLUG_PLACEHOLDER);
+						const testUrl = `/r/${slugPreview}/en/menu`;
+						/** Editing a live slug retires every link and QR code pointing at it. */
+						const slugChanged = slugValue !== restaurant.slug;
+						return (
+							<div>
+								<label
+									htmlFor="restaurant-slug"
+									className="block text-sm font-medium mb-1 text-foreground"
+								>
+									{t(RestaurantsKeys.FORM_SLUG_LABEL)}
+								</label>
+								<input
+									id="restaurant-slug"
+									type="text"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(sanitizeSlugInput(e.target.value))}
+									onBlur={field.handleBlur}
+									required
+									aria-invalid={slugError ? true : undefined}
+									aria-describedby="restaurant-slug-url"
+									className={`w-full px-3 py-2 rounded-lg text-sm bg-muted border text-foreground ${
+										slugError ? "border-destructive" : "border-border"
+									}`}
+								/>
+								{/* The public address, with the editable part called out — the
+							    rest of the URL is fixed and must not read as editable. */}
+								<div className="flex flex-wrap items-center gap-2 mt-1">
+									<p id="restaurant-slug-url" className="text-xs text-faint-foreground">
+										{t(RestaurantsKeys.FORM_SLUG_HINT)}{" "}
+										<span data-testid="settings-slug-url">
+											<span>{publicOrigin}/r/</span>
+											<span
+												data-testid="settings-slug-url-slug"
+												className="font-semibold text-foreground bg-accent/10 rounded px-1 py-0.5"
+											>
+												{slugPreview}
+											</span>
+											<span>/en/menu</span>
+										</span>
+									</p>
+									{slugValue ? (
+										<a
+											href={testUrl}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded hover:bg-hover text-accent"
+										>
+											<ExternalLink size={12} />
+											{t(RestaurantsKeys.FORM_OPEN_TEST_LINK)}
+										</a>
+									) : null}
+								</div>
+								{slugError ? (
+									<p
+										data-testid="settings-slug-error"
+										role="alert"
+										className="mt-1 text-xs text-destructive"
 									>
-										<ExternalLink size={12} />
-										{t(RestaurantsKeys.FORM_OPEN_TEST_LINK)}
-									</a>
+										{slugError}
+									</p>
+								) : null}
+								{slugChanged ? (
+									<p
+										data-testid="settings-slug-change-warning"
+										className="mt-1 flex items-start gap-1 text-xs text-warning"
+									>
+										<AlertTriangle size={12} className="mt-0.5 shrink-0" />
+										{t(RestaurantsKeys.FORM_SLUG_CHANGE_WARNING, { slug: restaurant.slug })}
+									</p>
 								) : null}
 							</div>
-						</div>
-					)}
+						);
+					}}
 				/>
 
 				<form.Field

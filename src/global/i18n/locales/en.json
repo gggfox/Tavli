@@ -620,6 +620,8 @@
 		"ERROR_TABLE_LOCKED": "That table is unavailable during the selected time.",
 		"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND": "That shared staff session is already linked to another restaurant.",
 		"ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT": "That shared staff session identity isn't valid.",
+		"ERROR_SLUG_TAKEN": "That web address is already taken. Try another one.",
+		"ERROR_SLUG_INVALID": "That web address needs at least one letter or number.",
 		"ERROR_TABLE_HAS_RESERVATIONS": "This table has reservations and can't be changed right now.",
 		"ERROR_TABLE_NUMBER_EXISTS": "A table with that number already exists."
 	},
@@ -886,7 +888,9 @@
 		"form": {
 			"nameLabel": "Restaurant Name",
 			"slugLabel": "Slug (URL identifier)",
-			"slugHint": "Customers will visit: /r/{{slug}}/en/menu",
+			"slugHint": "Customers will visit:",
+			"slugPlaceholder": "your-restaurant",
+			"slugChangeWarning": "Changing this retires the current address ({{slug}}). Printed QR codes and shared links stop working, and diners who unlocked ordering have to enter the access code again.",
 			"openTestLink": "Open Test Link",
 			"descriptionLabel": "Description",
 			"supportEmailLabel": "Support email",
@@ -918,6 +922,7 @@
 			"orgLoading": "Loading organizations…",
 			"orgEmpty": "No organizations are available to you. Ask an administrator to add you to one before creating a restaurant.",
 			"orgLoadFailed": "Could not load organizations, so a restaurant cannot be created right now.",
+			"orgSingleHint": "Your only organization — the restaurant will be created here.",
 			"statusLabel": "Status",
 			"toggleDeactivateTitle": "Deactivate restaurant",
 			"toggleActivateTitle": "Activate restaurant",

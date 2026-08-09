@@ -73,7 +73,8 @@ type RestaurantAdminContextValue = {
 	organizationsError: unknown;
 	create: (args: {
 		name: string;
-		slug: string;
+		/** Derived from `name` server-side when omitted (see `convex/slugHelpers.ts`). */
+		slug?: string;
 		currency: string;
 		organizationId: Id<"organizations">;
 		description?: string;
@@ -337,7 +338,7 @@ export function RestaurantAdminProvider({ children }: Readonly<{ children: React
 	const create = useCallback(
 		async (args: {
 			name: string;
-			slug: string;
+			slug?: string;
 			currency: string;
 			organizationId: Id<"organizations">;
 			description?: string;

@@ -99,6 +99,7 @@ import type * as sessions from "../sessions.js";
 import type * as sharedEmployee from "../sharedEmployee.js";
 import type * as shiftTemplates from "../shiftTemplates.js";
 import type * as shifts from "../shifts.js";
+import type * as slugHelpers from "../slugHelpers.js";
 import type * as softDeletePurge from "../softDeletePurge.js";
 import type * as stripe from "../stripe.js";
 import type * as stripeCustomers from "../stripeCustomers.js";
@@ -208,6 +209,7 @@ declare const fullApi: ApiFromModules<{
   sharedEmployee: typeof sharedEmployee;
   shiftTemplates: typeof shiftTemplates;
   shifts: typeof shifts;
+  slugHelpers: typeof slugHelpers;
   softDeletePurge: typeof softDeletePurge;
   stripe: typeof stripe;
   stripeCustomers: typeof stripeCustomers;

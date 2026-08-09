@@ -50,7 +50,7 @@ export function RestaurantSettingsView({
 	const isAdmin = roles.includes(USER_ROLES.ADMIN);
 	const isFullAccess = settingsAccess === "full";
 
-	const { save, savingSection, errorSection, error, savedSection, clearError } =
+	const { save, savingSection, errorSection, error, errorCode, savedSection, clearError } =
 		useRestaurantSettingsSave(restaurant);
 	const [sideEffectError, setSideEffectError] = useState<string | null>(null);
 
@@ -62,6 +62,7 @@ export function RestaurantSettingsView({
 		isSaving: savingSection === section,
 		isSaved: savedSection === section,
 		error: errorSection === section ? error : null,
+		errorCode: errorSection === section ? errorCode : null,
 		onDismissError: clearError,
 	});
 
@@ -124,7 +125,13 @@ export function RestaurantSettingsView({
 
 				{isFullAccess ? (
 					<>
-						<OrganizationSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.ORGANIZATION)} />
+						{/* Moving a restaurant between organizations is admin-only on the
+						    backend (`restaurants.update` rejects everyone else), so an
+						    owner was being shown a control that always answered
+						    NOT_AUTHORIZED. */}
+						{isAdmin ? (
+							<OrganizationSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.ORGANIZATION)} />
+						) : null}
 						<ManagersSection restaurantId={restaurant._id} onError={setSideEffectError} />
 						<PaymentsSection restaurant={restaurant} isAdmin={isAdmin} />
 					</>

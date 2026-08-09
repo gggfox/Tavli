@@ -1,14 +1,15 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
 /**
- * TAVLI-71 item 8 -- the create-restaurant organization picker.
+ * The create-restaurant form.
  *
- * The reported bug was an owner opening this modal and finding an empty,
- * required organization `<select>` with no spinner, no message and no disabled
- * state, because `getAllOrganizations` was admin-only and the hook swallowed
- * the NotAuthorized. These tests pin the three states the field must always
- * distinguish (loading / failed / empty) plus the owner regression.
+ * Two behaviours are pinned here. First (TAVLI-71 item 8): the organization
+ * picker must never be an empty, required, silent `<select>` — the query used
+ * to be admin-only, so an owner got a blank control with no spinner, no message
+ * and no disabled state. Second: an operator is no longer asked to invent a
+ * slug (it is derived from the name server-side), and is not asked to pick an
+ * organization when only one is available to them.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,10 +20,12 @@ const hoisted = vi.hoisted(() => ({
 		isLoading: false,
 		error: null as unknown,
 	},
+	createMock: vi.fn(async (_args: unknown) => ["restaurants:1", null]),
+	setSelectedRestaurantId: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-	useMutation: () => ({ mutateAsync: vi.fn(async () => [null, null]), isPending: false }),
+	useMutation: () => ({ mutateAsync: hoisted.createMock, isPending: false }),
 	useQuery: ({ queryKey }: any) => {
 		const name = queryKey?.[0];
 		if (name === "restaurants:getAll") return { data: [], isLoading: false };
@@ -32,7 +35,7 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@convex-dev/react-query", () => ({
 	convexQuery: (ref: any, args: unknown) => ({ queryKey: [getFunctionName(ref), args] }),
-	useConvexMutation: () => vi.fn(async () => [null, null]),
+	useConvexMutation: () => hoisted.createMock,
 	useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 
@@ -49,7 +52,7 @@ vi.mock("@/features/users/hooks", () => ({
 }));
 
 vi.mock("@/features/restaurants/RestaurantAdminScope", () => ({
-	useRestaurant: () => ({ setSelectedRestaurantId: vi.fn() }),
+	useRestaurant: () => ({ setSelectedRestaurantId: hoisted.setSelectedRestaurantId }),
 }));
 
 vi.mock("@/features/restaurants/hooks/useOrganizations", () => ({
@@ -76,14 +79,19 @@ function openCreateModal() {
 		/>
 	);
 	fireEvent.click(screen.getByText("New Restaurant"));
-	return {
-		select: screen.getByLabelText("Organization") as HTMLSelectElement,
-		submit: screen.getByRole("button", { name: "Create" }) as HTMLButtonElement,
-	};
+	return { submit: screen.getByRole("button", { name: "Create" }) as HTMLButtonElement };
+}
+
+/** The states that still render the `<select>`: loading, failed, empty, 2+. */
+function openWithPicker() {
+	const { submit } = openCreateModal();
+	return { select: screen.getByLabelText("Organization") as HTMLSelectElement, submit };
 }
 
 describe("CreateRestaurantForm organization picker", () => {
 	beforeEach(() => {
+		vi.clearAllMocks();
+		hoisted.createMock.mockResolvedValue(["restaurants:1", null] as any);
 		HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
 			this.setAttribute("open", "");
 		});
@@ -97,7 +105,7 @@ describe("CreateRestaurantForm organization picker", () => {
 	it("shows a loading state and blocks submit while the organizations load", () => {
 		hoisted.orgState = { organizations: [], isLoading: true, error: null };
 
-		const { select, submit } = openCreateModal();
+		const { select, submit } = openWithPicker();
 
 		expect(select.disabled).toBe(true);
 		expect(select).toHaveAttribute("aria-busy", "true");
@@ -114,7 +122,7 @@ describe("CreateRestaurantForm organization picker", () => {
 			}),
 		};
 
-		const { select, submit } = openCreateModal();
+		const { select, submit } = openWithPicker();
 
 		expect(select.disabled).toBe(true);
 		expect(submit.disabled).toBe(true);
@@ -136,7 +144,7 @@ describe("CreateRestaurantForm organization picker", () => {
 	it("explains an empty directory rather than leaving a silently empty required field", () => {
 		hoisted.orgState = { organizations: [], isLoading: false, error: null };
 
-		const { select, submit } = openCreateModal();
+		const { select, submit } = openWithPicker();
 
 		expect(select.disabled).toBe(true);
 		expect(submit.disabled).toBe(true);
@@ -147,7 +155,7 @@ describe("CreateRestaurantForm organization picker", () => {
 		).toBeInTheDocument();
 	});
 
-	it("lists the organization of an owner who is not an admin", () => {
+	it("does not ask an owner with a single organization to pick one", async () => {
 		hoisted.roles = ["owner"];
 		hoisted.orgState = {
 			organizations: [{ _id: "organizations:1", name: "Grupo Tavli" }],
@@ -155,13 +163,87 @@ describe("CreateRestaurantForm organization picker", () => {
 			error: null,
 		};
 
-		const { select, submit } = openCreateModal();
+		const { submit } = openCreateModal();
+
+		// No control to operate — just a read-only statement of where it lands.
+		expect(screen.queryByLabelText("Organization")).toBeNull();
+		expect(screen.getByTestId("admin-rest-org-single").textContent).toContain("Grupo Tavli");
+		expect(
+			screen.getByText("Your only organization — the restaurant will be created here.")
+		).toBeInTheDocument();
+		expect(submit.disabled).toBe(false);
+
+		fireEvent.change(screen.getByLabelText("Restaurant Name"), { target: { value: "La Cocina" } });
+		fireEvent.click(submit);
+
+		await waitFor(() => {
+			expect(hoisted.createMock).toHaveBeenCalledWith(
+				expect.objectContaining({ name: "La Cocina", organizationId: "organizations:1" })
+			);
+		});
+	});
+
+	it("keeps the picker for someone who belongs to more than one organization", () => {
+		hoisted.roles = ["admin"];
+		hoisted.orgState = {
+			organizations: [
+				{ _id: "organizations:1", name: "Grupo Tavli" },
+				{ _id: "organizations:2", name: "Otra Org" },
+			],
+			isLoading: false,
+			error: null,
+		};
+
+		const { select, submit } = openWithPicker();
 
 		expect(select.disabled).toBe(false);
-		expect(submit.disabled).toBe(false);
 		expect(screen.getByRole("option", { name: "Grupo Tavli" })).toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "Otra Org" })).toBeInTheDocument();
+		// Nothing picked yet: the restaurant has nowhere to land.
+		expect(submit.disabled).toBe(true);
 
-		fireEvent.change(select, { target: { value: "organizations:1" } });
-		expect(select.value).toBe("organizations:1");
+		fireEvent.change(select, { target: { value: "organizations:2" } });
+
+		expect(select.value).toBe("organizations:2");
+		expect((screen.getByRole("button", { name: "Create" }) as HTMLButtonElement).disabled).toBe(
+			false
+		);
+	});
+});
+
+describe("CreateRestaurantForm slug", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		hoisted.createMock.mockResolvedValue(["restaurants:1", null] as any);
+		HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+			this.setAttribute("open", "");
+		});
+		HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+			this.removeAttribute("open");
+		});
+		hoisted.roles = ["owner"];
+		hoisted.orgState = {
+			organizations: [{ _id: "organizations:1", name: "Grupo Tavli" }],
+			isLoading: false,
+			error: null,
+		};
+	});
+
+	it("never asks for a slug", () => {
+		openCreateModal();
+
+		expect(screen.queryByLabelText("Slug (URL identifier)")).toBeNull();
+	});
+
+	it("submits without a slug so the server derives it from the name", async () => {
+		const { submit } = openCreateModal();
+
+		fireEvent.change(screen.getByLabelText("Restaurant Name"), { target: { value: "Café Ñoño" } });
+		fireEvent.click(submit);
+
+		await waitFor(() => {
+			expect(hoisted.createMock).toHaveBeenCalledTimes(1);
+		});
+		expect(hoisted.createMock.mock.calls[0][0]).not.toHaveProperty("slug");
 	});
 });

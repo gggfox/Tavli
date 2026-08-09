@@ -620,6 +620,8 @@
 		"ERROR_TABLE_LOCKED": "Esa mesa no está disponible durante el horario seleccionado.",
 		"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND": "Esa sesión compartida del personal ya está vinculada a otro restaurante.",
 		"ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT": "Esa identidad de sesión compartida del personal no es válida.",
+		"ERROR_SLUG_TAKEN": "Esa dirección web ya está ocupada. Prueba con otra.",
+		"ERROR_SLUG_INVALID": "Esa dirección web necesita al menos una letra o un número.",
 		"ERROR_TABLE_HAS_RESERVATIONS": "Esta mesa tiene reservas y no se puede modificar en este momento.",
 		"ERROR_TABLE_NUMBER_EXISTS": "Ya existe una mesa con ese número."
 	},
@@ -886,7 +888,9 @@
 		"form": {
 			"nameLabel": "Nombre del restaurante",
 			"slugLabel": "Slug (identificador de URL)",
-			"slugHint": "Los clientes visitarán: /r/{{slug}}/en/menu",
+			"slugHint": "Tus clientes visitarán:",
+			"slugPlaceholder": "tu-restaurante",
+			"slugChangeWarning": "Al cambiarla se retira la dirección actual ({{slug}}). Los códigos QR impresos y los enlaces compartidos dejarán de funcionar, y los comensales que ya habían desbloqueado los pedidos tendrán que ingresar el código de acceso otra vez.",
 			"openTestLink": "Abrir enlace de prueba",
 			"descriptionLabel": "Descripción",
 			"supportEmailLabel": "Correo de soporte",
@@ -918,6 +922,7 @@
 			"orgLoading": "Cargando organizaciones…",
 			"orgEmpty": "No tienes organizaciones disponibles. Pide a un administrador que te agregue a una antes de crear un restaurante.",
 			"orgLoadFailed": "No se pudieron cargar las organizaciones, así que no se puede crear un restaurante en este momento.",
+			"orgSingleHint": "Es tu única organización: el restaurante se creará aquí.",
 			"statusLabel": "Estado",
 			"toggleDeactivateTitle": "Desactivar restaurante",
 			"toggleActivateTitle": "Activar restaurante",

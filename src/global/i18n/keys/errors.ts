@@ -114,6 +114,9 @@ export const BACKEND_ERROR_CODES = [
 	// Restaurants / shared employee session — convex/restaurants.ts
 	"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND",
 	"ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT",
+	// Public restaurant slug — convex/slugHelpers.ts (`SLUG_ERROR`)
+	"ERROR_SLUG_TAKEN",
+	"ERROR_SLUG_INVALID",
 	// Tables & table locks — convex/tables.ts, convex/tableLocks.ts
 	"ERROR_TABLE_HAS_RESERVATIONS",
 	"ERROR_TABLE_NUMBER_EXISTS",

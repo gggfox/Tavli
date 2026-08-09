@@ -675,6 +675,30 @@ export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
+ * Longest public restaurant slug we will store. The slug is derived from the
+ * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily
+ * long, so the derivation caps them: 60 characters keeps `/r/<slug>/en/menu`
+ * readable in a QR-code target and inside export filenames without truncating
+ * any realistic restaurant name.
+ */
+export const RESTAURANT_SLUG_MAX_LENGTH = 60;
+
+/**
+ * Base used when a name yields nothing slug-able (all emoji / CJK / punctuation).
+ * Deliberately a plain word rather than a random string: the collision counter
+ * then produces `restaurant`, `restaurant-2`, … which is guessable and easy to
+ * rename, instead of an opaque hash the operator would have to copy.
+ */
+export const RESTAURANT_SLUG_FALLBACK_BASE = "restaurant";
+
+/**
+ * How many `-2`, `-3`, … candidates the create mutation tries before giving up.
+ * Bounds the loop so a pathological data set cannot spin a mutation forever;
+ * 50 same-named live restaurants in one deployment is already implausible.
+ */
+export const RESTAURANT_SLUG_MAX_COLLISION_ATTEMPTS = 50;
+
+/**
  * Restaurant hard-purge coverage (TAVLI-66).
  *
  * Every table holding restaurant-scoped rows must appear in exactly one of the

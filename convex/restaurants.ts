@@ -27,11 +27,18 @@ import {
 } from "./_util/auth";
 import {
 	RESTAURANT_MEMBER_ROLE,
+	RESTAURANT_SLUG_MAX_COLLISION_ATTEMPTS,
 	RESTAURANT_SOFT_DELETE_RETENTION_MS,
 	TABLE,
 	USER_ROLES,
 } from "./constants";
 import { insertMenuForRestaurant } from "./menus";
+import {
+	buildCandidateSlug,
+	normalizeRestaurantSlug,
+	SLUG_ERROR,
+	slugifyRestaurantName,
+} from "./slugHelpers";
 import { isValidIanaTimezone, resolveRestaurantTimezone } from "./_util/timezone";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -39,6 +46,60 @@ type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 function tombstoneSlug(restaurantId: Id<"restaurants">, slug: string): string {
 	const safe = slug.replace(/[^a-zA-Z0-9_-]/g, "_");
 	return `${safe}__deleted__${restaurantId}`;
+}
+
+/** Field-scoped validation error so the settings form can pin it to the input. */
+function slugError(code: string): UserInputValidationErrorObject {
+	return new UserInputValidationError({ fields: [{ field: "slug", message: code }] }).toObject();
+}
+
+/**
+ * Convex has no unique index, so slug uniqueness is a mutation-time rule.
+ * A soft-deleted row never counts as an occupant — it has been tombstoned
+ * (`slug__deleted__<id>`) and its public address is free to reuse.
+ */
+async function isSlugFree(
+	ctx: QueryCtx,
+	slug: string,
+	exceptId?: Id<"restaurants">
+): Promise<boolean> {
+	const existing = await ctx.db
+		.query(TABLE.RESTAURANTS)
+		.withIndex("by_slug", (q) => q.eq("slug", slug))
+		.first();
+	if (!existing) return true;
+	if (exceptId && existing._id === exceptId) return true;
+	return existing.deletedAt != null;
+}
+
+/**
+ * Resolves the slug a new restaurant is created with.
+ *
+ * Nothing in the product asks for a slug any more: it is derived from the
+ * name and de-duplicated with a dash counter. An explicitly supplied slug is
+ * still honoured (API clients, fixtures) but goes through the same
+ * normalization, so no un-normalized value can reach the table.
+ */
+async function resolveCreateSlug(
+	ctx: QueryCtx,
+	name: string,
+	requested: string | undefined
+): Promise<[string, null] | [null, UserInputValidationErrorObject]> {
+	if (requested !== undefined) {
+		const normalized = normalizeRestaurantSlug(requested);
+		if (!normalized) return [null, slugError(SLUG_ERROR.INVALID)];
+		if (!(await isSlugFree(ctx, normalized))) return [null, slugError(SLUG_ERROR.TAKEN)];
+		return [normalized, null];
+	}
+
+	const base = slugifyRestaurantName(name);
+	for (let attempt = 0; attempt < RESTAURANT_SLUG_MAX_COLLISION_ATTEMPTS; attempt++) {
+		const candidate = buildCandidateSlug(base, attempt);
+		if (await isSlugFree(ctx, candidate)) return [candidate, null];
+	}
+	// Every candidate up to the bound is occupied — report it as "taken", which
+	// is exactly what the operator needs to hear: pick a different name.
+	return [null, slugError(SLUG_ERROR.TAKEN)];
 }
 
 /** Fields safe to expose to anonymous diners (ordering / public reservation pages). */
@@ -220,7 +281,13 @@ export const restore = mutation({
 export const create = mutation({
 	args: {
 		name: v.string(),
-		slug: v.string(),
+		/**
+		 * Optional since TAVLI-71: the create form no longer asks for a slug —
+		 * it is derived from `name` and de-duplicated (`la-cocina`,
+		 * `la-cocina-2`, …). Still accepted for API callers and fixtures, and
+		 * normalized through the same rules when supplied.
+		 */
+		slug: v.optional(v.string()),
 		description: v.optional(v.string()),
 		currency: v.string(),
 		timezone: v.optional(v.string()),
@@ -235,26 +302,15 @@ export const create = mutation({
 		const [, error2] = await requireOwnerRole(ctx, userId);
 		if (error2) return [null, error2];
 
-		const existing = await ctx.db
-			.query(TABLE.RESTAURANTS)
-			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
-			.first();
-
-		if (existing && existing.deletedAt == null) {
-			return [
-				null,
-				new UserInputValidationError({
-					fields: [{ field: "slug", message: "This slug is already taken" }],
-				}).toObject(),
-			];
-		}
+		const [slug, slugErr] = await resolveCreateSlug(ctx, args.name, args.slug);
+		if (slugErr) return [null, slugErr];
 
 		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.RESTAURANTS, {
 			ownerId: userId,
 			organizationId: args.organizationId,
 			name: args.name,
-			slug: args.slug,
+			slug,
 			description: args.description,
 			currency: args.currency,
 			timezone: resolveRestaurantTimezone(args.timezone),
@@ -264,9 +320,12 @@ export const create = mutation({
 			updatedBy: userId,
 		});
 
+		// Named after the restaurant, not the slug: a derived slug carries the
+		// collision counter, and "La Cocina" must not seed a menu called
+		// "la-cocina-2".
 		await insertMenuForRestaurant(ctx, {
 			restaurantId: id,
-			name: args.slug,
+			name: args.name,
 			userId,
 		});
 
@@ -359,19 +418,21 @@ export const update = mutation({
 			];
 		}
 
-		if (args.slug && args.slug !== restaurant.slug) {
-			const existing = await ctx.db
-				.query(TABLE.RESTAURANTS)
-				.withIndex("by_slug", (q) => q.eq("slug", args.slug!))
-				.first();
-			if (existing && existing._id !== args.restaurantId && existing.deletedAt == null) {
-				return [
-					null,
-					new UserInputValidationError({
-						fields: [{ field: "slug", message: "This slug is already taken" }],
-					}).toObject(),
-				];
+		// Normalize BEFORE deciding anything: the previous version guarded the
+		// conflict check with `args.slug &&` but patched on `!== undefined`, so
+		// an empty string skipped the check and was written verbatim, leaving a
+		// restaurant reachable at `/r//en/menu`.
+		let nextSlug: string | undefined;
+		if (args.slug !== undefined) {
+			const normalized = normalizeRestaurantSlug(args.slug);
+			if (!normalized) return [null, slugError(SLUG_ERROR.INVALID)];
+			if (
+				normalized !== restaurant.slug &&
+				!(await isSlugFree(ctx, normalized, args.restaurantId))
+			) {
+				return [null, slugError(SLUG_ERROR.TAKEN)];
 			}
+			nextSlug = normalized;
 		}
 
 		if (args.timezone !== undefined) {
@@ -421,7 +482,7 @@ export const update = mutation({
 
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
-			...(args.slug !== undefined && { slug: args.slug }),
+			...(nextSlug !== undefined && { slug: nextSlug }),
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
 			...(args.supportEmail !== undefined && {
@@ -468,7 +529,8 @@ export const update = mutation({
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.updated",
 			restaurantId: args.restaurantId,
-			payload: args,
+			// Record what was written, not what was typed — the slug is normalized.
+			payload: { ...args, ...(nextSlug !== undefined && { slug: nextSlug }) },
 			userId,
 		});
 

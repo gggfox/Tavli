@@ -14,8 +14,9 @@
  */
 import type { RestaurantSettingsSection } from "@/features/restaurants/constants";
 import { RestaurantsKeys } from "@/global/i18n";
+import type { BackendErrorCode } from "@/global/i18n/keys/errors";
 import { unwrapResult } from "@/global/utils";
-import { getErrorMessage } from "@/global/utils/errorMessages";
+import { extractErrorCode, getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -36,6 +37,12 @@ export interface UseRestaurantSettingsSaveResult {
 	/** Localized failure message for the section that last failed, if any. */
 	errorSection: RestaurantSettingsSection | null;
 	error: string | null;
+	/**
+	 * Stable backend code behind `error`, when there was one. Sections use it to
+	 * pin a failure to the field that caused it (a taken slug belongs on the slug
+	 * input, not only on the footer).
+	 */
+	errorCode: BackendErrorCode | null;
 	/** Section that most recently saved successfully -- drives the "Saved" note. */
 	savedSection: RestaurantSettingsSection | null;
 	clearError: () => void;
@@ -51,6 +58,7 @@ export function useRestaurantSettingsSave(
 	const [savingSection, setSavingSection] = useState<RestaurantSettingsSection | null>(null);
 	const [errorSection, setErrorSection] = useState<RestaurantSettingsSection | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [errorCode, setErrorCode] = useState<BackendErrorCode | null>(null);
 	const [savedSection, setSavedSection] = useState<RestaurantSettingsSection | null>(null);
 
 	const restaurantId = restaurant._id;
@@ -59,6 +67,7 @@ export function useRestaurantSettingsSave(
 
 	const clearError = useCallback(() => {
 		setError(null);
+		setErrorCode(null);
 		setErrorSection(null);
 	}, []);
 
@@ -67,6 +76,7 @@ export function useRestaurantSettingsSave(
 			setSavingSection(section);
 			setSavedSection(null);
 			setError(null);
+			setErrorCode(null);
 			setErrorSection(null);
 			try {
 				unwrapResult(
@@ -80,6 +90,7 @@ export function useRestaurantSettingsSave(
 				return true;
 			} catch (err) {
 				setError(getErrorMessage(err, t, RestaurantsKeys.FORM_UPDATE_FAILED));
+				setErrorCode(extractErrorCode(err));
 				setErrorSection(section);
 				return false;
 			} finally {
@@ -89,5 +100,5 @@ export function useRestaurantSettingsSave(
 		[mutateAsync, restaurantId, currentOrganizationId, t]
 	);
 
-	return { save, savingSection, errorSection, error, savedSection, clearError };
+	return { save, savingSection, errorSection, error, errorCode, savedSection, clearError };
 }

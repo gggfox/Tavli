@@ -218,6 +218,92 @@ describe("RestaurantSettingsView", () => {
 		});
 	});
 
+	it("previews the public URL with the slug segment called out", () => {
+		renderView();
+
+		const preview = screen.getByTestId("settings-slug-url");
+		expect(preview.textContent).toBe(`${globalThis.location.origin}/r/la-cocina/en/menu`);
+		// The editable part is its own node; the fixed path around it is not.
+		const highlighted = screen.getByTestId("settings-slug-url-slug");
+		expect(highlighted.textContent).toBe("la-cocina");
+		expect(highlighted.textContent).not.toContain("/en/menu");
+		expect(screen.getByRole("link", { name: "Open Test Link" })).toHaveAttribute(
+			"href",
+			"/r/la-cocina/en/menu"
+		);
+	});
+
+	it("normalizes the slug as it is typed and follows it in the preview", () => {
+		renderView();
+
+		fireEvent.change(screen.getByLabelText("Slug (URL identifier)"), {
+			target: { value: "Café Ñoño" },
+		});
+
+		expect((screen.getByLabelText("Slug (URL identifier)") as HTMLInputElement).value).toBe(
+			"cafe-nono"
+		);
+		expect(screen.getByTestId("settings-slug-url-slug").textContent).toBe("cafe-nono");
+	});
+
+	it("cautions that changing a live slug retires the current address", () => {
+		renderView();
+
+		expect(screen.queryByTestId("settings-slug-change-warning")).toBeNull();
+
+		fireEvent.change(screen.getByLabelText("Slug (URL identifier)"), {
+			target: { value: "la-cocina-nueva" },
+		});
+
+		expect(screen.getByTestId("settings-slug-change-warning").textContent).toContain("la-cocina");
+	});
+
+	it("puts a taken slug on the slug field instead of the generic footer copy", async () => {
+		hoisted.updateMock.mockResolvedValue([
+			null,
+			{
+				name: "VALIDATION_ERROR",
+				message: "slug: ERROR_SLUG_TAKEN",
+				fields: [{ field: "slug", message: "ERROR_SLUG_TAKEN" }],
+			},
+		] as any);
+		renderView();
+
+		fireEvent.change(screen.getByLabelText("Slug (URL identifier)"), {
+			target: { value: "el-fogon" },
+		});
+		fireEvent.click(screen.getByTestId("settings-save-general"));
+
+		await waitFor(() => {
+			expect(screen.getByTestId("settings-slug-error").textContent).toBe(
+				"That web address is already taken. Try another one."
+			);
+		});
+		expect(screen.getByLabelText("Slug (URL identifier)")).toHaveAttribute("aria-invalid", "true");
+		// Not repeated as the section's generic failure.
+		expect(screen.getByTestId("settings-section-general").textContent).not.toContain(
+			"Failed to update restaurant"
+		);
+	});
+
+	it("leaves a non-slug failure on the section footer", async () => {
+		hoisted.updateMock.mockResolvedValue([
+			null,
+			{ name: "NOT_AUTHORIZED", message: "NOT_AUTHORIZED" },
+		] as any);
+		renderView();
+
+		fireEvent.change(screen.getByLabelText("Restaurant Name"), { target: { value: "Nuevo" } });
+		fireEvent.click(screen.getByTestId("settings-save-general"));
+
+		await waitFor(() => {
+			expect(screen.getByTestId("settings-section-general").textContent).toContain(
+				"You don't have permission to do that."
+			);
+		});
+		expect(screen.queryByTestId("settings-slug-error")).toBeNull();
+	});
+
 	it("saves the new tax block", async () => {
 		renderView({ restaurant: baseRestaurant({ rfc: undefined }) });
 
@@ -335,8 +421,26 @@ describe("RestaurantSettingsView", () => {
 
 		expect(screen.queryByTestId("settings-section-payments")).toBeNull();
 		// The rest of the full-access canvas is unaffected.
-		expect(screen.getByTestId("settings-section-organization")).toBeTruthy();
 		expect(screen.getByTestId("settings-section-managers")).toBeTruthy();
+	});
+
+	it("hides the organization section from an owner, who cannot move a restaurant", () => {
+		// `restaurants.update` admits an organizationId CHANGE only from a
+		// platform admin, and the section's own hint says so — rendering it for
+		// owners offered a control whose every save answered NOT_AUTHORIZED.
+		hoisted.roles = ["owner"];
+		renderView();
+
+		expect(screen.queryByTestId("settings-section-organization")).toBeNull();
+		expect(screen.getByTestId("settings-section-general")).toBeTruthy();
+		expect(screen.getByTestId("settings-section-managers")).toBeTruthy();
+	});
+
+	it("keeps the organization section for a platform admin", () => {
+		hoisted.roles = ["admin"];
+		renderView();
+
+		expect(screen.getByTestId("settings-section-organization")).toBeTruthy();
 	});
 
 	it("shows the payments section to the restaurant's own owner", () => {
