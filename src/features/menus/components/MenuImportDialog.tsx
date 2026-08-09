@@ -85,7 +85,7 @@ export function MenuImportDialog({
 			ariaLabel={t(MenusKeys.IMPORT_MODAL_ARIA)}
 			size="3xl"
 		>
-			<div className="p-6 bg-surface rounded-xl space-y-6">
+			<div className="p-6 bg-background border border-border rounded-xl space-y-6">
 				<h2 className="text-lg font-semibold text-foreground">{t(MenusKeys.IMPORT_MODAL_TITLE)}</h2>
 
 				{(step === "idle" || step === "error") && (

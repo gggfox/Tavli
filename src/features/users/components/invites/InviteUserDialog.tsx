@@ -224,7 +224,7 @@ export function InviteUserDialog({ isOpen, onClose }: Readonly<InviteUserDialogP
 			ariaLabel={t(UserOnboardingKeys.SINGLE_TITLE)}
 			size="lg"
 		>
-			<div className="bg-surface rounded-xl flex flex-col max-h-[85vh]">
+			<div className="bg-background border border-border rounded-xl flex flex-col max-h-[85vh] overflow-hidden">
 				<DialogHeader
 					title={t(UserOnboardingKeys.SINGLE_TITLE)}
 					subtitle={sent ? undefined : t(UserOnboardingKeys.SINGLE_SUBTITLE)}

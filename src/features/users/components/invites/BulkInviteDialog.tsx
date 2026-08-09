@@ -222,7 +222,7 @@ export function BulkInviteDialog({ isOpen, onClose }: Readonly<BulkInviteDialogP
 			ariaLabel={t(UserOnboardingKeys.BULK_TITLE)}
 			size="5xl"
 		>
-			<div className="bg-surface rounded-xl flex flex-col max-h-[88vh]">
+			<div className="bg-background border border-border rounded-xl flex flex-col max-h-[88vh] overflow-hidden">
 				<DialogHeader
 					title={t(UserOnboardingKeys.BULK_TITLE)}
 					subtitle={t(UserOnboardingKeys.BULK_SUBTITLE)}
