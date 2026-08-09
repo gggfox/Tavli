@@ -128,7 +128,12 @@ export default defineSchema({
 		devSimulateEmployeeTier: v.optional(v.boolean()),
 	})
 		.index("by_user", ["userId"])
-		.index("by_organizationId", ["organizationId"]),
+		.index("by_organizationId", ["organizationId"])
+		// Admin onboarding classifies a prospective invitee by email (does this
+		// person already hold a role, and in which organization?). Without this
+		// index a 500-row CSV preview would full-scan `userRoles` 500 times.
+		// `email` is optional; rows without one simply sort under `undefined`.
+		.index("by_email", ["email"]),
 
 	// ============================================================================
 	// Restaurant membership (per-location manager / employee)

@@ -658,6 +658,17 @@ export const AUDIT_EVENT = {
 	// -- Receipts -----------------------------------------------------------
 	RECEIPT_EMAIL_SENT: "receipts.emailSent",
 
+	// -- Invitations --------------------------------------------------------
+	// NOTE: the three lifecycle strings below are HISTORICAL — `invitations.created`
+	// and `invitations.accepted` were emitted as inline literals long before these
+	// constants existed, and rows carrying them are already in `allEvents`. Rename
+	// the constant freely; never change the value.
+	INVITATION_CREATED: "invitations.created",
+	INVITATION_ACCEPTED: "invitations.accepted",
+	INVITATION_REVOKED: "invitations.revoked",
+	/** One admin bulk CSV onboarding run — counts only, never the recipient list. */
+	INVITATION_BULK_IMPORTED: "invitations.bulkImported",
+
 	// -- Reservations -------------------------------------------------------
 	RESERVATION_CREATED: "reservations.created",
 	RESERVATION_CONFIRMED: "reservations.confirmed",
@@ -670,6 +681,52 @@ export const AUDIT_EVENT = {
 } as const;
 
 export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
+
+// =============================================================================
+// Admin user onboarding — invitations (single + bulk CSV)
+// =============================================================================
+
+/** Longest email we will accept on an invitation (RFC 5321 path limit). */
+export const INVITE_EMAIL_MAX_LENGTH = 254;
+
+/**
+ * Row cap for one uploaded CSV. 500 covers a whole-group onboarding in a single
+ * file while keeping the preview payload (and the classification's per-row DB
+ * lookups) inside one Convex query's budget.
+ */
+export const INVITE_CSV_MAX_ROWS = 500;
+
+/**
+ * Byte cap for the uploaded blob, checked before parsing. 500 rows of the widest
+ * plausible record is well under 200 KB; 512 KB leaves generous headroom while
+ * refusing an accidental multi-megabyte export outright.
+ */
+export const INVITE_CSV_MAX_BYTES = 512 * 1024;
+
+/**
+ * Rows one `commitBulkInvitations` call may create. The preview allows 500, so
+ * the client walks the confirmed rows in chunks of this size. Each commit writes
+ * up to 3 documents per row (invitation + audit event + rate-limit counters) and
+ * schedules one email per row, so a bounded chunk keeps every transaction small
+ * and makes a mid-run failure cost one chunk rather than the whole upload.
+ */
+export const INVITE_BULK_COMMIT_MAX_ROWS = 100;
+
+/**
+ * Invitation send budget per inviter, per hour. Sized to let one admin push a
+ * full 500-row CSV through (5 chunks of 100) plus normal single invites, while
+ * capping a runaway script or a compromised admin session at a few hundred
+ * emails rather than unbounded.
+ */
+export const INVITE_SEND_RATE_LIMIT = { windowMs: 60 * 60 * 1000, max: 600 };
+
+/**
+ * Invitation budget per TARGET email address, per day — deliberately tight. The
+ * per-inviter cap alone would still let one address be mailed 600 times; this
+ * makes a single person un-spammable no matter how many admins or uploads are
+ * involved, while leaving room for a legitimate resend or two.
+ */
+export const INVITE_TARGET_EMAIL_RATE_LIMIT = { windowMs: 24 * 60 * 60 * 1000, max: 5 };
 
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

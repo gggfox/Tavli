@@ -18,6 +18,7 @@ import {
 	RoleKeys,
 	SidebarKeys,
 	TimeKeys,
+	UserOnboardingKeys,
 	WelcomeKeys,
 } from "@/global/i18n";
 import en from "./locales/en.json";
@@ -106,6 +107,7 @@ describe("Key enums resolve in every locale", () => {
 		["OrderingKeys", OrderingKeys as Record<string, string>],
 		["DashboardKeys", DashboardKeys as Record<string, string>],
 		["ExportsKeys", ExportsKeys as Record<string, string>],
+		["UserOnboardingKeys", UserOnboardingKeys as Record<string, string>],
 		["ErrorKeys", ErrorKeys as Record<string, string>],
 	])("%s -- all values resolve in en.json and es.json", (name, keys) => {
 		expectAllKeysResolve(name, keys);

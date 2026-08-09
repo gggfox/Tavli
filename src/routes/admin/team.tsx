@@ -15,11 +15,12 @@ import {
 	AdminTable,
 	DialogHeader,
 	Drawer,
+	InlineError,
 	LoadingState,
 } from "@/global/components";
 import { useAdminTable, useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
-import { unwrapResult } from "@/global/utils";
+import { getErrorMessage, unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -93,6 +94,7 @@ function AdminTeamPage() {
 	const [role, setRole] = useState<InviteRole>(RESTAURANT_MEMBER_ROLE.EMPLOYEE);
 	const [selectedRestaurantIds, setSelectedRestaurantIds] = useState<Id<"restaurants">[]>([]);
 	const [inviteModalOpen, setInviteModalOpen] = useState(false);
+	const [inviteError, setInviteError] = useState<string | null>(null);
 	const [revokePendingId, setRevokePendingId] = useState<Id<"invitations"> | null>(null);
 	const [showRemoved, setShowRemoved] = useState(false);
 
@@ -285,20 +287,30 @@ function AdminTeamPage() {
 		if (allowedInviteRoles.length > 0 && !allowedInviteRoles.includes(role)) return;
 		const restaurantIds =
 			role === USER_ROLES.OWNER ? [] : selectedRestaurantIds.length ? selectedRestaurantIds : [];
-		unwrapResult(
-			await createInvitation.mutateAsync({
-				organizationId,
-				email: email.trim(),
-				role,
-				restaurantIds,
-			})
-		);
+		setInviteError(null);
+		try {
+			unwrapResult(
+				await createInvitation.mutateAsync({
+					organizationId,
+					email: email.trim(),
+					role,
+					restaurantIds,
+				})
+			);
+		} catch (err) {
+			// The send can be refused (an invite budget is spent, the address was
+			// already invited today). Keep the drawer open with what was typed so
+			// the sender can read why and retry.
+			setInviteError(getErrorMessage(err, t, AdminStaffKeys.TEAM_INVITE_FAILED));
+			return;
+		}
 		setEmail("");
 		setSelectedRestaurantIds([]);
 		setInviteModalOpen(false);
 	};
 
 	const closeInviteModal = () => {
+		setInviteError(null);
 		setInviteModalOpen(false);
 	};
 
@@ -478,23 +490,28 @@ function AdminTeamPage() {
 							</div>
 						)}
 					</div>
-					<div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border">
-						<button
-							type="button"
-							onClick={() => void onInvite()}
-							disabled={
-								createInvitation.isPending ||
-								!email.trim() ||
-								allowedInviteRoles.length === 0 ||
-								(role !== USER_ROLES.OWNER &&
-									(selectedRestaurantIds.length === 0 || restaurantInviteOptions.length === 0))
-							}
-							className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
-						>
-							{createInvitation.isPending
-								? t(AdminStaffKeys.TEAM_SENDING)
-								: t(AdminStaffKeys.TEAM_SEND_INVITE)}
-						</button>
+					<div className="flex flex-col gap-2 px-5 py-3 border-t border-border">
+						{inviteError && (
+							<InlineError message={inviteError} onDismiss={() => setInviteError(null)} />
+						)}
+						<div className="flex items-center justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => void onInvite()}
+								disabled={
+									createInvitation.isPending ||
+									!email.trim() ||
+									allowedInviteRoles.length === 0 ||
+									(role !== USER_ROLES.OWNER &&
+										(selectedRestaurantIds.length === 0 || restaurantInviteOptions.length === 0))
+								}
+								className="text-sm font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+							>
+								{createInvitation.isPending
+									? t(AdminStaffKeys.TEAM_SENDING)
+									: t(AdminStaffKeys.TEAM_SEND_INVITE)}
+							</button>
+						</div>
 					</div>
 				</Drawer>
 

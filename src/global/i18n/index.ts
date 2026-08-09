@@ -36,5 +36,6 @@ export { RestaurantsKeys, type RestaurantsKey } from "./keys/restaurants";
 export { RoleKeys, type RoleKey } from "./keys/role";
 export { SidebarKeys, type SidebarKey } from "./keys/sidebar";
 export { TimeKeys, type TimeKey } from "./keys/time";
+export { UserOnboardingKeys, type UserOnboardingKey } from "./keys/userOnboarding";
 export { WelcomeKeys, type WelcomeKey } from "./keys/welcome";
 export { localizeName, useLocalizedName } from "./useLocalizedName";
