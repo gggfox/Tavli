@@ -15,16 +15,31 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { ChefHat, X } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOrders } from "../../hooks/useOrders";
+import { useOrders, useOrderStatusCounts } from "../../hooks/useOrders";
 import { OrderCard } from "./OrderCard";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 import { OrderDetailModal } from "./OrderDetailModal";
 import { StationTicketCard } from "./StationTicketCard";
 import { SubstitutionProposalDialog, type SubstitutionTarget } from "./SubstitutionProposalDialog";
 import { deriveStationTickets, type StationTicket } from "./stationTickets";
-import { ALL_PREP_STATIONS, STATION_CONFIG } from "./stationConfig";
+import {
+	ALL_SERVICE_DATE_VALUES,
+	DEFAULT_SERVICE_DATE,
+	SERVICE_DATE_ICON,
+	SERVICE_DATE_LABEL_KEY,
+	type ServiceDateFilterValue,
+} from "./serviceDateConfig";
+import {
+	ALL_STATION_FILTER_VALUES,
+	STATION_CONFIG,
+	STATION_FILTER_ICON,
+	STATION_FILTER_LABEL_KEY,
+	stationFilterToValue,
+	stationValueToFilters,
+	type StationFilterValue,
+} from "./stationConfig";
 import {
 	ALL_STATUSES,
 	collapseLegacyStatusFilters,
@@ -62,6 +77,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		updateOrderDashboardStatusFilter,
 		orderDashboardPrepStationFilters,
 		updateOrderDashboardPrepStationFilters,
+		orderDashboardServiceDateFilter,
+		updateOrderDashboardServiceDateFilter,
 	} = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 	const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
@@ -113,6 +130,13 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		fallback: DEFAULT_PREP_STATION_FILTERS,
 	});
 
+	const [selectedServiceDate, setSelectedServiceDate] =
+		useOptimisticUserSetting<ServiceDateFilterValue>({
+			serverValue: orderDashboardServiceDateFilter,
+			persist: updateOrderDashboardServiceDateFilter,
+			fallback: DEFAULT_SERVICE_DATE,
+		});
+
 	// Pass `undefined` (not `[]`) when no station filter is active so the
 	// query treats it as "no filter" and short-circuits the per-order
 	// presence check on the server side.
@@ -131,7 +155,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		cancelOrderItem,
 		cancelOrderAndRefund,
 		markOrderPaidInPerson,
-	} = useOrders(restaurantId, queryStatuses, queryStations);
+	} = useOrders(restaurantId, queryStatuses, queryStations, selectedServiceDate);
 
 	// Exactly one station selected → that station gets its own tickets. With no
 	// filter or both stations selected the dashboard stays the whole-order
@@ -202,6 +226,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		setMarkPaidError(null);
 		setMarkPaidConfirm(null);
 	}, []);
+
+	// Per-segment card counts, under the same station filter as the board.
+	const statusCounts = useOrderStatusCounts(restaurantId, queryStations, selectedServiceDate);
 
 	// Pending substitution proposals for the badge + withdraw affordances on
 	// station tickets (ADR 008). Live query — a diner answering removes the
@@ -303,23 +330,54 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		ReadonlyArray<SegmentedControlOption<OrderDashboardStatusFilterValue>>
 	>(
 		() =>
-			ALL_STATUSES.map((status) => ({
-				value: status,
-				label: t(STATUS_CONFIG[status].labelKey),
-				tone: STATUS_CONFIG[status].tone,
+			ALL_STATUSES.map((status) => {
+				const tally = statusCounts?.[status];
+				return {
+					value: status,
+					// No count until the query resolves — a momentary "(0)" on a
+					// segment that in fact has work would be worse than no number.
+					label:
+						tally === undefined
+							? t(STATUS_CONFIG[status].labelKey)
+							: `${t(STATUS_CONFIG[status].labelKey)} (${tally.count}${tally.capped ? "+" : ""})`,
+					tone: STATUS_CONFIG[status].tone,
+					icon: STATUS_CONFIG[status].icon,
+				};
+			}),
+		[t, statusCounts]
+	);
+
+	const stationSegments = useMemo<ReadonlyArray<SegmentedControlOption<StationFilterValue>>>(
+		() =>
+			ALL_STATION_FILTER_VALUES.map((station) => ({
+				value: station,
+				label: t(STATION_FILTER_LABEL_KEY[station]),
+				icon: STATION_FILTER_ICON[station],
 			})),
 		[t]
 	);
 
-	const handleToggleStationFilter = (station: OrderDashboardPrepStationFilter) => {
-		const next = activeStationFilters.includes(station)
-			? activeStationFilters.filter((s) => s !== station)
-			: [...activeStationFilters, station];
-		setActiveStationFilters(next);
-	};
+	const serviceDateSegments = useMemo<
+		ReadonlyArray<SegmentedControlOption<ServiceDateFilterValue>>
+	>(
+		() =>
+			ALL_SERVICE_DATE_VALUES.map((value) => ({
+				value,
+				label: t(SERVICE_DATE_LABEL_KEY[value]),
+				icon: SERVICE_DATE_ICON[value],
+			})),
+		[t]
+	);
+
+	const stationFilterValue = stationFilterToValue(activeStationFilters);
+
+	const handleStationFilterChange = useCallback(
+		(next: StationFilterValue) => setActiveStationFilters(stationValueToFilters(next)),
+		[setActiveStationFilters]
+	);
 
 	const filterPills = (
-		<div className="flex flex-col gap-2">
+		<div className="flex flex-wrap items-center justify-between gap-2">
 			<SegmentedControl
 				options={statusSegments}
 				value={selectedStatus}
@@ -327,11 +385,22 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				ariaLabel={t(OrdersKeys.ARIA_STATUS_SEGMENTS)}
 				size="sm"
 			/>
-			<StationFilterChips
-				selected={activeStationFilterSet}
-				onToggle={handleToggleStationFilter}
-				ariaLabel={t(OrdersKeys.ARIA_STATION_FILTER)}
-			/>
+			<div className="flex flex-wrap items-center gap-2">
+				<SegmentedControl
+					options={stationSegments}
+					value={stationFilterValue}
+					onChange={handleStationFilterChange}
+					ariaLabel={t(OrdersKeys.ARIA_STATION_FILTER)}
+					size="sm"
+				/>
+				<SegmentedControl
+					options={serviceDateSegments}
+					value={selectedServiceDate}
+					onChange={setSelectedServiceDate}
+					ariaLabel={t(OrdersKeys.ARIA_SERVICE_DATE_FILTER)}
+					size="sm"
+				/>
+			</div>
 		</div>
 	);
 
@@ -488,6 +557,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 						renderItem={renderStationTicket}
 						gap={16}
 						estimateRowHeight={300}
+						uniformCardHeight
 					/>
 				)
 			) : sorted.length === 0 ? (
@@ -501,6 +571,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					renderItem={renderOrderCard}
 					gap={16}
 					estimateRowHeight={260}
+					uniformCardHeight
 				/>
 			)}
 
@@ -515,47 +586,5 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				/>
 			)}
 		</DashboardShell>
-	);
-}
-
-interface StationFilterChipsProps {
-	readonly selected: ReadonlySet<OrderDashboardPrepStationFilter>;
-	readonly onToggle: (station: OrderDashboardPrepStationFilter) => void;
-	readonly ariaLabel: string;
-}
-
-/**
- * Prep-station equivalent of `StatusFilterChips`. Renders a small
- * fieldset of toggle pills using the station-specific palette in
- * `STATION_CONFIG` so the row is visually distinct from the status row
- * above it.
- */
-function StationFilterChips({ selected, onToggle, ariaLabel }: StationFilterChipsProps) {
-	const { t } = useTranslation();
-	return (
-		<fieldset className="flex flex-wrap gap-2 m-0 p-0 border-0">
-			<legend className="sr-only">{ariaLabel}</legend>
-			{ALL_PREP_STATIONS.map((station) => {
-				const config = STATION_CONFIG[station];
-				const Icon = config.icon;
-				const isActive = selected.has(station);
-				const style: CSSProperties = isActive
-					? { backgroundColor: config.visual.solidBg, color: config.visual.solidFg }
-					: { backgroundColor: config.visual.tintedBg, color: config.visual.fg };
-				return (
-					<button
-						key={station}
-						type="button"
-						aria-pressed={isActive}
-						onClick={() => onToggle(station)}
-						className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
-						style={style}
-					>
-						<Icon size={12} />
-						{t(config.labelKey)}
-					</button>
-				);
-			})}
-		</fieldset>
 	);
 }

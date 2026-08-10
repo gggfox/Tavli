@@ -86,6 +86,11 @@ export default defineSchema({
 		orderDashboardPrepStationFilters: v.optional(
 			v.array(v.union(v.literal("kitchen"), v.literal("bar")))
 		),
+		// Service-day window the OrderDashboard should display. "today" means
+		// the restaurant's current business day (its 04:00-style rollover, not
+		// midnight UTC); "all" is every order ever, which is the pre-existing
+		// behavior and so stays the default for a user who never picked.
+		orderDashboardServiceDateFilter: v.optional(v.union(v.literal("today"), v.literal("all"))),
 		// Sidebar accordion groups the user has open. Identified by the group's
 		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
 		// render time so removing groups later is safe.

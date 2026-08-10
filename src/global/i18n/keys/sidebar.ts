@@ -56,6 +56,7 @@ export const SidebarKeys = {
 	// Settings
 	SETTINGS: "sidebar.settings.title",
 	CLOSE: "sidebar.settings.close",
+	ACCOUNT: "sidebar.settings.account",
 	THEME: "sidebar.settings.theme",
 	ROLES: "sidebar.settings.roles",
 	NO_ROLES: "sidebar.settings.noRoles",

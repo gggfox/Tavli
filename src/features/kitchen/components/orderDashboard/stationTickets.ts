@@ -1,3 +1,4 @@
+import { hasStationTicket } from "convex/orderHelpers";
 import type { DashboardPrepStation } from "./stationConfig";
 import type { DashboardOrder, DashboardOrderItem } from "./statusConfig";
 
@@ -30,6 +31,10 @@ export interface StationTicket {
  * 3. The ticket bumps (leaves the rail) once the station has stamped ready, or
  *    once it has no live items left. Stamping means the portion left the
  *    station, so what remains on screen is only work still to do.
+ *
+ * The rules themselves live in `hasStationTicket` (convex/orderHelpers), which
+ * the backend segment counts share — a segment reading "Preparing (4)" over a
+ * rail holding three tickets is exactly the drift that splitting them invites.
  */
 export function deriveStationTickets(
 	orders: ReadonlyArray<DashboardOrder>,
@@ -38,15 +43,16 @@ export function deriveStationTickets(
 	const tickets: StationTicket[] = [];
 
 	for (const order of orders) {
-		if (order.status !== "submitted" && order.status !== "preparing") continue;
-
-		const stamp = station === "kitchen" ? order.kitchenReadyAt : order.barReadyAt;
-		if (stamp !== undefined) continue;
-
 		const items = order.items.filter(
 			(item) => item.prepStation === station && item.cancelledAt === undefined
 		);
-		if (items.length === 0) continue;
+
+		const visible = hasStationTicket({
+			status: order.status,
+			stationStamp: station === "kitchen" ? order.kitchenReadyAt : order.barReadyAt,
+			liveStationItemCount: items.length,
+		});
+		if (!visible) continue;
 
 		tickets.push({ order, station, items });
 	}

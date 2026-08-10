@@ -17,6 +17,10 @@ export const OrdersKeys = {
 	STATUS_SERVED: "orders.status.served",
 	STATUS_CANCELLED: "orders.status.cancelled",
 
+	SERVICE_DATE_TODAY: "orders.serviceDate.today",
+	SERVICE_DATE_ALL: "orders.serviceDate.all",
+	ARIA_SERVICE_DATE_FILTER: "orders.aria.serviceDateFilter",
+	STATION_ALL: "orders.station.all",
 	STATION_KITCHEN: "orders.station.kitchen",
 	STATION_BAR: "orders.station.bar",
 	STATION_READY_BADGE: "orders.station.readyBadge",

@@ -4,6 +4,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { ERROR_NAMES } from "../_shared/errors";
 import { assertPositiveIntegerQuantity } from "../orderHelpers";
+import { DASHBOARD_COUNT_SCAN_CAP } from "../orders";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "../orderServiceDate";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
@@ -3042,5 +3043,229 @@ describe("orders", () => {
 			const result = await authed.mutation(api.migrations.backfillPrepStation.run, {});
 			expect(result.ok).toBe(false);
 		});
+	});
+});
+
+describe("getDashboardStatusCounts", () => {
+	it("counts every dashboard status, not just the active ones", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, staff } = await seedMixedStationOrder(t, { status: "submitted" });
+
+		const [counts, error] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+		});
+
+		expect(error).toBeNull();
+		expect(counts!.submitted.count).toBe(1);
+		expect(counts!.preparing.count).toBe(0);
+		expect(counts!.served.count).toBe(0);
+		expect(counts!.cancelled.count).toBe(0);
+		expect(counts!.awaiting_payment.count).toBe(0);
+		expect(counts!.submitted.capped).toBe(false);
+	});
+
+	it("counts rail tickets, not orders, when one station is selected", async () => {
+		const t = convexTest(schema, modules);
+		// Kitchen has already stamped ready, so this order shows NO kitchen
+		// ticket even though it is still `preparing` with live kitchen items.
+		const { restaurantId, staff } = await seedMixedStationOrder(t, {
+			status: "preparing",
+			kitchenReadyAt: Date.now(),
+		});
+
+		const [kitchenCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			prepStations: ["kitchen"],
+		});
+		const [barCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			prepStations: ["bar"],
+		});
+
+		expect(kitchenCounts!.preparing.count).toBe(0);
+		// The bar has not stamped, so its rail still holds the ticket.
+		expect(barCounts!.preparing.count).toBe(1);
+	});
+
+	it("reports zero for statuses a station rail never shows", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, staff } = await seedMixedStationOrder(t, { status: "ready" });
+
+		const [unfiltered] = await staff.query(api.orders.getDashboardStatusCounts, { restaurantId });
+		const [kitchenCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			prepStations: ["kitchen"],
+		});
+
+		expect(unfiltered!.ready.count).toBe(1);
+		// A `ready` order has nothing left for a station to make, so the rail
+		// is empty and the segment must say so rather than advertising work.
+		expect(kitchenCounts!.ready.count).toBe(0);
+	});
+
+	it("still counts awaiting-payment cards with a station selected", async () => {
+		const t = convexTest(schema, modules);
+		// awaiting_payment never enters rail mode (ADR 008) — it stays a card
+		// grid under the station presence filter.
+		const { restaurantId, staff } = await seedMixedStationOrder(t, {
+			status: "awaiting_payment",
+		});
+
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			prepStations: ["kitchen"],
+		});
+
+		expect(counts!.awaiting_payment.count).toBe(1);
+	});
+
+	it("flags a capped scan instead of reporting a short count as exact", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, tableId, sessionId, staff } = await seedMixedStationOrder(t, {
+			status: "served",
+		});
+
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			// One order already exists; top up past the scan ceiling.
+			for (let i = 0; i < DASHBOARD_COUNT_SCAN_CAP; i += 1) {
+				await ctx.db.insert("orders", {
+					sessionId,
+					restaurantId,
+					tableId,
+					status: "served",
+					totalAmount: 100,
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+		});
+
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, { restaurantId });
+
+		expect(counts!.served.count).toBe(DASHBOARD_COUNT_SCAN_CAP);
+		expect(counts!.served.capped).toBe(true);
+	});
+
+	it("refuses a caller without staff access to the restaurant", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMixedStationOrder(t);
+		const outsider = t.withIdentity({ subject: "nobody" });
+
+		const [counts, error] = await outsider.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+		});
+
+		expect(counts).toBeNull();
+		expect(error).not.toBeNull();
+	});
+});
+
+describe("dashboard service-day filter", () => {
+	/** Milliseconds in a day — enough to push an order out of "today". */
+	const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+	async function seedOrderAgedDays(
+		t: ReturnType<typeof convexTest>,
+		args: {
+			restaurantId: Id<"restaurants">;
+			sessionId: Id<"sessions">;
+			tableId: Id<"tables">;
+			daysAgo: number;
+		}
+	) {
+		await t.run(async (ctx) => {
+			const when = Date.now() - args.daysAgo * ONE_DAY_MS;
+			await ctx.db.insert("orders", {
+				sessionId: args.sessionId,
+				restaurantId: args.restaurantId,
+				tableId: args.tableId,
+				status: "submitted",
+				totalAmount: 500,
+				createdAt: when,
+				updatedAt: when,
+			});
+		});
+	}
+
+	it("keeps only the current business day when serviceDate is today", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "submitted",
+		});
+		await seedOrderAgedDays(t, { restaurantId, sessionId, tableId, daysAgo: 30 });
+
+		const [allOrders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["submitted"],
+			serviceDate: "all",
+		});
+		const [todayOrders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["submitted"],
+			serviceDate: "today",
+		});
+
+		if (!Array.isArray(allOrders) || !Array.isArray(todayOrders)) {
+			throw new Error("Expected arrays");
+		}
+		expect(allOrders).toHaveLength(2);
+		expect(todayOrders).toHaveLength(1);
+	});
+
+	it("omitting serviceDate keeps the original show-everything behavior", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "submitted",
+		});
+		await seedOrderAgedDays(t, { restaurantId, sessionId, tableId, daysAgo: 30 });
+
+		const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["submitted"],
+		});
+
+		if (!Array.isArray(orders)) throw new Error("Expected array");
+		expect(orders).toHaveLength(2);
+	});
+
+	it("applies the same window to the segment counts", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "submitted",
+		});
+		await seedOrderAgedDays(t, { restaurantId, sessionId, tableId, daysAgo: 30 });
+
+		const [allCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			serviceDate: "all",
+		});
+		const [todayCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			serviceDate: "today",
+		});
+
+		expect(allCounts!.submitted.count).toBe(2);
+		expect(todayCounts!.submitted.count).toBe(1);
+	});
+
+	it("dates an order by when it was opened, not by its unset payment key", async () => {
+		const t = convexTest(schema, modules);
+		// `orderServiceDateKey` is only written at payment confirmation, so an
+		// unpaid order has none. Bucketing on `createdAt` is what keeps
+		// awaiting-payment tickets — the ones staff most need — inside "today".
+		const { restaurantId, staff, orderId } = await seedMixedStationOrder(t, {
+			status: "awaiting_payment",
+		});
+
+		const stored = await t.run(async (ctx) => await ctx.db.get(orderId));
+		expect(stored!.orderServiceDateKey).toBeUndefined();
+
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			serviceDate: "today",
+		});
+
+		expect(counts!.awaiting_payment.count).toBe(1);
 	});
 });
