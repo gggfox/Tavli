@@ -3064,7 +3064,7 @@ describe("getDashboardStatusCounts", () => {
 		expect(counts!.submitted.capped).toBe(false);
 	});
 
-	it("counts rail tickets, not orders, when one station is selected", async () => {
+	it("counts rail tickets, not orders, while the ticket rail is open", async () => {
 		const t = convexTest(schema, modules);
 		// Kitchen has already stamped ready, so this order shows NO kitchen
 		// ticket even though it is still `preparing` with live kitchen items.
@@ -3076,10 +3076,12 @@ describe("getDashboardStatusCounts", () => {
 		const [kitchenCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
 			restaurantId,
 			prepStations: ["kitchen"],
+			railStation: "kitchen",
 		});
 		const [barCounts] = await staff.query(api.orders.getDashboardStatusCounts, {
 			restaurantId,
 			prepStations: ["bar"],
+			railStation: "bar",
 		});
 
 		expect(kitchenCounts!.preparing.count).toBe(0);
@@ -3087,7 +3089,24 @@ describe("getDashboardStatusCounts", () => {
 		expect(barCounts!.preparing.count).toBe(1);
 	});
 
-	it("reports zero for statuses a station rail never shows", async () => {
+	it("counts a stamped station's order as a card once the rail is closed", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, staff } = await seedMixedStationOrder(t, {
+			status: "preparing",
+			kitchenReadyAt: Date.now(),
+		});
+
+		// Same filter, no rail: the order still HAS live kitchen items, so as a
+		// card it is there to be seen. Only the rail hides bumped tickets.
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			prepStations: ["kitchen"],
+		});
+
+		expect(counts!.preparing.count).toBe(1);
+	});
+
+	it("keeps counting closed statuses as cards under a station filter", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, staff } = await seedMixedStationOrder(t, { status: "ready" });
 
@@ -3098,9 +3117,26 @@ describe("getDashboardStatusCounts", () => {
 		});
 
 		expect(unfiltered!.ready.count).toBe(1);
-		// A `ready` order has nothing left for a station to make, so the rail
-		// is empty and the segment must say so rather than advertising work.
-		expect(kitchenCounts!.ready.count).toBe(0);
+		// The regression this guards: filtering to a station used to be read as
+		// "open that station's rail", and a rail shows nothing for `ready`, so
+		// every closed status reported zero with orders sitting behind it.
+		expect(kitchenCounts!.ready.count).toBe(1);
+	});
+
+	it("counts a rail-less status as cards even while a rail is open", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, staff } = await seedMixedStationOrder(t, { status: "served" });
+
+		// The board can only be on a rail for submitted/preparing, so picking
+		// Served would drop it back to cards — the count has to say what the
+		// user would then see, not zero.
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, {
+			restaurantId,
+			prepStations: ["kitchen"],
+			railStation: "kitchen",
+		});
+
+		expect(counts!.served.count).toBe(1);
 	});
 
 	it("still counts awaiting-payment cards with a station selected", async () => {

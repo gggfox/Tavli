@@ -30,12 +30,14 @@ type StatusCountsValue = UnwrappedValue<
 export function useOrderStatusCounts(
 	restaurantId: Id<"restaurants"> | undefined,
 	prepStations?: OrderDashboardPrepStationFilter[],
-	serviceDate?: OrderDashboardServiceDateFilter
+	serviceDate?: OrderDashboardServiceDateFilter,
+	/** Set only while the board is showing that station's ticket rail. */
+	railStation?: OrderDashboardPrepStationFilter
 ) {
 	const { data } = useQuery({
 		...convexQuery(
 			api.orders.getDashboardStatusCounts,
-			restaurantId ? { restaurantId, prepStations, serviceDate } : "skip"
+			restaurantId ? { restaurantId, prepStations, serviceDate, railStation } : "skip"
 		),
 		select: unwrapResult<StatusCountsValue>,
 	});

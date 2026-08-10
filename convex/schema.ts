@@ -91,6 +91,11 @@ export default defineSchema({
 		// midnight UTC); "all" is every order ever, which is the pre-existing
 		// behavior and so stays the default for a user who never picked.
 		orderDashboardServiceDateFilter: v.optional(v.union(v.literal("today"), v.literal("all"))),
+		// Whether the OrderDashboard shows whole-order cards or one station's
+		// tickets. Selecting a station is only ever a filter; this is the
+		// separate switch that opens the station rail (ADR 007), and it only
+		// takes effect for the statuses a rail can show.
+		orderDashboardStationView: v.optional(v.union(v.literal("cards"), v.literal("tickets"))),
 		// Sidebar accordion groups the user has open. Identified by the group's
 		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
 		// render time so removing groups later is safe.

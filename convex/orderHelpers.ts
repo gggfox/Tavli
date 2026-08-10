@@ -103,9 +103,22 @@ export function hasStationTicket(args: {
 	readonly stationStamp: number | undefined;
 	readonly liveStationItemCount: number;
 }): boolean {
-	if (args.status !== "submitted" && args.status !== "preparing") return false;
+	if (!isStationRailStatus(args.status)) return false;
 	if (args.stationStamp !== undefined) return false;
 	return args.liveStationItemCount > 0;
+}
+
+/**
+ * Whether a station rail can show this status at all.
+ *
+ * `ready` has nothing left for a station to make; `served` and `cancelled` are
+ * closed; `awaiting_payment` must never reach a rail (ADR 008). Selecting any
+ * of them drops the board back to cards, so this is also what decides when the
+ * dashboard's ticket view is offered — and what keeps the segment counts
+ * honest, since a status that falls back to cards must be counted as cards.
+ */
+export function isStationRailStatus(status: string): boolean {
+	return status === "submitted" || status === "preparing";
 }
 
 /**
@@ -116,6 +129,15 @@ export function hasStationTicket(args: {
 export const SERVICE_DATE_FILTER_VALIDATOR = v.union(v.literal("today"), v.literal("all"));
 
 export type ServiceDateFilter = "today" | "all";
+
+/**
+ * How the dashboard renders what it has: whole-order cards, or one station's
+ * tickets. Orthogonal to the station filter — a station can be filtered to
+ * without opening its rail.
+ */
+export const STATION_VIEW_VALIDATOR = v.union(v.literal("cards"), v.literal("tickets"));
+
+export type StationView = "cards" | "tickets";
 
 /**
  * Validator for the `prepStation` literal used in mutation/query args.

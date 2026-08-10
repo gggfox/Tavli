@@ -379,6 +379,11 @@
 			"served": "Entregado",
 			"cancelled": "Cancelado"
 		},
+		"view": {
+			"cards": "Tarjetas",
+			"tickets": "Comandas",
+			"ticketsUnavailable": "Elige una estación, en Pendiente o Preparando, para abrir sus comandas"
+		},
 		"serviceDate": {
 			"today": "Hoy",
 			"all": "Todo"
@@ -454,6 +459,7 @@
 		"aria": {
 			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
+			"stationView": "Mostrar pedidos completos o las comandas de una estación",
 			"serviceDateFilter": "Filtrar pedidos por día de servicio",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
