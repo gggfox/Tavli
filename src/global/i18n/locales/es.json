@@ -55,6 +55,7 @@
 		"settings": {
 			"title": "Configuración",
 			"close": "Cerrar",
+			"account": "Cuenta",
 			"theme": "Tema",
 			"roles": "Tus Roles",
 			"noRoles": "Sin roles asignados",
