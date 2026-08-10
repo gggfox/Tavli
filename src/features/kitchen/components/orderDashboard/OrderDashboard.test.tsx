@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OrderDashboard } from "./OrderDashboard";
@@ -48,8 +48,10 @@ vi.mock("@/global/components", async (importOriginal) => {
 });
 
 const useOrdersMock = vi.fn();
+const useOrderStatusCountsMock = vi.fn();
 vi.mock("../../hooks/useOrders", () => ({
 	useOrders: (...args: unknown[]) => useOrdersMock(...args),
+	useOrderStatusCounts: (...args: unknown[]) => useOrderStatusCountsMock(...args),
 }));
 
 // OrderDashboard now subscribes to pending substitution proposals and wires
@@ -113,6 +115,8 @@ function makeOrder(overrides: Partial<DashboardOrder> = {}): DashboardOrder {
 }
 
 const updateOrderDashboardStatusFilter = vi.fn(() => Promise.resolve("settings1"));
+const updateOrderDashboardPrepStationFilters = vi.fn(() => Promise.resolve("settings1"));
+const updateOrderDashboardServiceDateFilter = vi.fn(() => Promise.resolve("settings1"));
 
 function settingsWith(overrides: Record<string, unknown> = {}) {
 	return {
@@ -120,7 +124,9 @@ function settingsWith(overrides: Record<string, unknown> = {}) {
 		orderDashboardStatusFilters: null,
 		updateOrderDashboardStatusFilter,
 		orderDashboardPrepStationFilters: null,
-		updateOrderDashboardPrepStationFilters: vi.fn(() => Promise.resolve("settings1")),
+		updateOrderDashboardPrepStationFilters,
+		orderDashboardServiceDateFilter: null,
+		updateOrderDashboardServiceDateFilter,
 		...overrides,
 	};
 }
@@ -144,6 +150,9 @@ const RESTAURANT_ID = "r1" as Parameters<typeof OrderDashboard>[0]["restaurantId
 beforeEach(() => {
 	vi.clearAllMocks();
 	useOrdersMock.mockReturnValue(ordersWith());
+	// Counts are decoration; default to "not loaded yet" so the existing
+	// assertions keep matching bare labels.
+	useOrderStatusCountsMock.mockReturnValue(undefined);
 	useUserSettingsMock.mockReturnValue(settingsWith());
 });
 
@@ -154,7 +163,8 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 		const group = screen.getByRole("radiogroup", { name: "orders.aria.statusSegments" });
 		expect(group).toBeInTheDocument();
 
-		const radios = screen.getAllByRole("radio");
+		// Scoped to the status group: the station filter is a radiogroup too.
+		const radios = within(group).getAllByRole("radio");
 		expect(radios.map((radio) => radio.textContent)).toEqual([
 			"orders.status.awaitingPayment",
 			"orders.status.submitted",
@@ -168,12 +178,14 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 			"aria-checked",
 			"true"
 		);
+		// Every segment carries its status glyph.
+		expect(radios.every((radio) => radio.querySelector("svg") !== null)).toBe(true);
 	});
 
 	it("queries only the selected status", () => {
 		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
 
-		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["preparing"], undefined);
+		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["preparing"], undefined, "all");
 	});
 
 	it("persists the single value and narrows the query when a segment is picked", () => {
@@ -183,7 +195,12 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 
 		expect(updateOrderDashboardStatusFilter).toHaveBeenCalledTimes(1);
 		expect(updateOrderDashboardStatusFilter).toHaveBeenCalledWith("awaiting_payment");
-		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["awaiting_payment"], undefined);
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["awaiting_payment"],
+			undefined,
+			"all"
+		);
 		expect(screen.getByRole("radio", { name: "orders.status.awaitingPayment" })).toHaveAttribute(
 			"aria-checked",
 			"true"
@@ -203,7 +220,7 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 			"aria-checked",
 			"true"
 		);
-		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["ready"], undefined);
+		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["ready"], undefined, "all");
 	});
 
 	it("defaults to the submitted queue when nothing was ever persisted", () => {
@@ -213,6 +230,169 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
 
 		expect(screen.getByRole("radio", { name: "orders.status.submitted" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+	});
+});
+
+describe("OrderDashboard service-day filter", () => {
+	function serviceDateGroup() {
+		return within(screen.getByRole("radiogroup", { name: "orders.aria.serviceDateFilter" }));
+	}
+
+	it("offers today / all, defaulting to all so no open ticket disappears", () => {
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(
+			serviceDateGroup()
+				.getAllByRole("radio")
+				.map((radio) => radio.textContent)
+		).toEqual(["orders.serviceDate.today", "orders.serviceDate.all"]);
+		expect(
+			serviceDateGroup().getByRole("radio", { name: "orders.serviceDate.all" })
+		).toHaveAttribute("aria-checked", "true");
+	});
+
+	it("persists the window and narrows both queries when today is picked", () => {
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		fireEvent.click(serviceDateGroup().getByRole("radio", { name: "orders.serviceDate.today" }));
+
+		expect(updateOrderDashboardServiceDateFilter).toHaveBeenCalledWith("today");
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"today"
+		);
+		// Counts follow the same window, or the numbers would contradict the board.
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(RESTAURANT_ID, undefined, "today");
+	});
+
+	it("restores a persisted today selection", () => {
+		useUserSettingsMock.mockReturnValue(settingsWith({ orderDashboardServiceDateFilter: "today" }));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(
+			serviceDateGroup().getByRole("radio", { name: "orders.serviceDate.today" })
+		).toHaveAttribute("aria-checked", "true");
+	});
+});
+
+describe("OrderDashboard segment counts", () => {
+	it("appends the card count to each status label", () => {
+		useOrderStatusCountsMock.mockReturnValue({
+			awaiting_payment: { count: 2, capped: false },
+			submitted: { count: 0, capped: false },
+			preparing: { count: 13, capped: false },
+			ready: { count: 1, capped: false },
+			served: { count: 7, capped: false },
+			cancelled: { count: 4, capped: false },
+		});
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		const group = screen.getByRole("radiogroup", { name: "orders.aria.statusSegments" });
+		expect(
+			within(group)
+				.getAllByRole("radio")
+				.map((radio) => radio.textContent)
+		).toEqual([
+			"orders.status.awaitingPayment (2)",
+			"orders.status.submitted (0)",
+			"orders.status.preparing (13)",
+			"orders.status.ready (1)",
+			"orders.status.served (7)",
+			"orders.status.cancelled (4)",
+		]);
+	});
+
+	it("marks a capped count so a truncated scan never reads as exact", () => {
+		useOrderStatusCountsMock.mockReturnValue({
+			served: { count: 200, capped: true },
+		});
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(screen.getByRole("radio", { name: "orders.status.served (200+)" })).toBeInTheDocument();
+	});
+
+	it("renders bare labels until the counts arrive", () => {
+		useOrderStatusCountsMock.mockReturnValue(undefined);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		// A flash of "(0)" on a segment that has work would be worse than no
+		// number at all.
+		expect(screen.getByRole("radio", { name: "orders.status.preparing" })).toBeInTheDocument();
+	});
+
+	it("counts under the active station filter, matching what the board shows", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({ orderDashboardPrepStationFilters: ["kitchen"] })
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["kitchen"], "all");
+	});
+});
+
+describe("OrderDashboard station filter control", () => {
+	function stationGroup() {
+		return within(screen.getByRole("radiogroup", { name: "orders.aria.stationFilter" }));
+	}
+
+	it("offers all / kitchen / bar, defaulting to all when nothing is filtered", () => {
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(
+			stationGroup()
+				.getAllByRole("radio")
+				.map((radio) => radio.textContent)
+		).toEqual(["orders.station.all", "orders.station.kitchen", "orders.station.bar"]);
+		expect(stationGroup().getByRole("radio", { name: "orders.station.all" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+		expect(
+			stationGroup()
+				.getAllByRole("radio")
+				.every((radio) => radio.querySelector("svg") !== null)
+		).toBe(true);
+	});
+
+	it("persists a single station and narrows the query when one is picked", () => {
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		fireEvent.click(stationGroup().getByRole("radio", { name: "orders.station.kitchen" }));
+
+		expect(updateOrderDashboardPrepStationFilters).toHaveBeenCalledWith(["kitchen"]);
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			["kitchen"],
+			"all"
+		);
+	});
+
+	it("clears the station filter when all is picked", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({ orderDashboardPrepStationFilters: ["bar"] })
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		fireEvent.click(stationGroup().getByRole("radio", { name: "orders.station.all" }));
+
+		expect(updateOrderDashboardPrepStationFilters).toHaveBeenCalledWith([]);
+		// `undefined`, not `[]` — the query short-circuits its per-order check.
+		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["preparing"], undefined, "all");
+	});
+
+	it("shows a legacy both-stations array as all, since it filters nothing out", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({ orderDashboardPrepStationFilters: ["kitchen", "bar"] })
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(stationGroup().getByRole("radio", { name: "orders.station.all" })).toHaveAttribute(
 			"aria-checked",
 			"true"
 		);

@@ -379,7 +379,12 @@
 			"served": "Served",
 			"cancelled": "Cancelled"
 		},
+		"serviceDate": {
+			"today": "Today",
+			"all": "All"
+		},
 		"station": {
+			"all": "All",
 			"kitchen": "Kitchen",
 			"bar": "Bar",
 			"readyBadge": "{{station}}: ready",
@@ -449,6 +454,7 @@
 		"aria": {
 			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
+			"serviceDateFilter": "Filter orders by service day",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders",
 			"cancelItem": "Cancel item {{name}}",

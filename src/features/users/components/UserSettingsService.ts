@@ -59,6 +59,13 @@ export type OrderDashboardStatusFilterValue = "awaiting_payment" | OrderDashboar
 export type OrderDashboardPrepStationFilter = "kitchen" | "bar";
 
 /**
+ * Service-day window the OrderDashboard shows. Mirrors
+ * `SERVICE_DATE_FILTER_VALIDATOR` in convex/orderHelpers.ts. "today" is the
+ * restaurant's business day, not the calendar day.
+ */
+export type OrderDashboardServiceDateFilter = "today" | "all";
+
+/**
  * Transform raw Convex user settings to domain UserSettings.
  * Currently an identity function, but provides a hook for
  * future domain transformations if needed.
@@ -79,6 +86,7 @@ export class UserSettingsError {
 			| "updateOrderDashboardStatusFilter"
 			| "updateOrderDashboardStatusFilters"
 			| "updateOrderDashboardPrepStationFilters"
+			| "updateOrderDashboardServiceDateFilter"
 			| "setSidebarGroupExpanded",
 		readonly cause: unknown
 	) {}
@@ -188,6 +196,23 @@ export async function updateOrderDashboardPrepStationFilters(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardPrepStationFilters", error);
+	}
+}
+
+/**
+ * Update the user's OrderDashboard service-day window.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardServiceDateFilter(
+	client: ConvexReactClient,
+	serviceDate: OrderDashboardServiceDateFilter
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardServiceDateFilter, {
+			serviceDate,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardServiceDateFilter", error);
 	}
 }
 

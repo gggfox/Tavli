@@ -8,7 +8,7 @@
  */
 import type { OrderDashboardPrepStationFilter } from "@/features";
 import { OrdersKeys } from "@/global/i18n";
-import { ChefHat, Wine, type LucideIcon } from "lucide-react";
+import { ChefHat, LayoutGrid, Wine, type LucideIcon } from "lucide-react";
 
 export type DashboardPrepStation = OrderDashboardPrepStationFilter;
 
@@ -65,8 +65,48 @@ export const STATION_CONFIG: Record<DashboardPrepStation, StationConfig> = {
 	},
 };
 
-export const ALL_PREP_STATIONS: DashboardPrepStation[] = ["kitchen", "bar"];
-
 export function isDashboardPrepStation(value: string): value is DashboardPrepStation {
 	return value in STATION_CONFIG;
+}
+
+/** Sentinel for "don't filter by station" in the single-select station control. */
+export const STATION_FILTER_ALL = "all";
+
+/**
+ * Value space of the dashboard's station segmented control: no filter, or
+ * exactly one station.
+ *
+ * The persisted user setting stays an ARRAY (`orderDashboardPrepStationFilters`)
+ * because that is what the orders query takes and what older clients wrote.
+ * `stationFilterToValue` / `stationValueToFilters` are the only two places that
+ * bridge the two shapes — a legacy both-stations-selected array collapses to
+ * "all", which filters identically (every order has an item in some station).
+ */
+export type StationFilterValue = typeof STATION_FILTER_ALL | DashboardPrepStation;
+
+/** Segment order of the station control. */
+export const ALL_STATION_FILTER_VALUES: StationFilterValue[] = [
+	STATION_FILTER_ALL,
+	"kitchen",
+	"bar",
+];
+
+export const STATION_FILTER_ICON: Record<StationFilterValue, LucideIcon> = {
+	[STATION_FILTER_ALL]: LayoutGrid,
+	kitchen: STATION_CONFIG.kitchen.icon,
+	bar: STATION_CONFIG.bar.icon,
+};
+
+export const STATION_FILTER_LABEL_KEY: Record<StationFilterValue, string> = {
+	[STATION_FILTER_ALL]: OrdersKeys.STATION_ALL,
+	kitchen: STATION_CONFIG.kitchen.labelKey,
+	bar: STATION_CONFIG.bar.labelKey,
+};
+
+export function stationFilterToValue(filters: readonly DashboardPrepStation[]): StationFilterValue {
+	return filters.length === 1 ? filters[0] : STATION_FILTER_ALL;
+}
+
+export function stationValueToFilters(value: StationFilterValue): DashboardPrepStation[] {
+	return value === STATION_FILTER_ALL ? [] : [value];
 }

@@ -45,7 +45,12 @@ import { resolveAttributedMemberId } from "./_util/attribution";
 import {
 	assertPositiveIntegerQuantity,
 	DASHBOARD_STATUS_VALIDATOR,
+	DASHBOARD_STATUSES,
+	type DashboardStatusCounts,
 	getApplicableStations,
+	hasStationTicket,
+	SERVICE_DATE_FILTER_VALIDATOR,
+	type ServiceDateFilter,
 	invalidateActivePayment,
 	loadOrderItemTranslations,
 	normalizeSelectedOptions,
@@ -980,6 +985,159 @@ export const markOrderPaidInPerson = mutation({
 
 const DEFAULT_DASHBOARD_STATUSES = ["submitted", "preparing", "ready"] as const;
 
+/**
+ * Ceiling on how many orders `getDashboardStatusCounts` will read per status.
+ *
+ * Counting spans every dashboard status at once, and `served` / `cancelled`
+ * grow with the restaurant's whole history — an uncapped count would make the
+ * dashboard hold a live subscription over that entire history and re-run on
+ * every write to it. Past the cap the query reports what it saw plus
+ * `capped: true`, and the UI renders "200+" rather than a wrong number.
+ */
+export const DASHBOARD_COUNT_SCAN_CAP = 200;
+
+/**
+ * Predicate for "does this order fall inside the requested service window".
+ *
+ * Buckets on `createdAt` rather than the stored `orderServiceDateKey`: that
+ * column is only written at payment confirmation, so every unpaid and
+ * awaiting-payment order — exactly the ones staff most need to see today —
+ * would otherwise be filtered out as undated. Bucketing uses the restaurant's
+ * own rollover, so an order opened at 01:00 still counts as last night's.
+ */
+function buildServiceDatePredicate(
+	restaurant: Doc<"restaurants">,
+	serviceDate: ServiceDateFilter | undefined
+): (order: Doc<"orders">) => boolean {
+	if (serviceDate !== "today") return () => true;
+
+	const todayKey = getOrderServiceDateKey(
+		Date.now(),
+		restaurant.timezone,
+		restaurant.orderDayStartMinutesFromMidnight
+	);
+
+	return (order) =>
+		getOrderServiceDateKey(
+			order.createdAt,
+			restaurant.timezone,
+			restaurant.orderDayStartMinutesFromMidnight
+		) === todayKey;
+}
+
+/**
+ * Per-status card counts for the dashboard's status filter, under the
+ * station filter currently applied.
+ *
+ * Counts what the user would SEE on each segment, not how many orders hold
+ * that status: with a single station selected the dashboard switches to that
+ * station's rail, where `hasStationTicket` decides what survives — so these
+ * counts route through the same rule (see `convex/orderHelpers.ts`).
+ */
+export const getDashboardStatusCounts = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		prepStations: v.optional(v.array(PREP_STATION_VALIDATOR)),
+		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<DashboardStatusCounts, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [restaurant, accessError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			args.restaurantId
+		);
+		if (accessError) return [null, accessError];
+
+		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
+
+		const stationFilter =
+			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
+		// Exactly one station selected puts the dashboard on that station's
+		// rail; `awaiting_payment` is excluded there and handled as cards.
+		const railStation =
+			args.prepStations && args.prepStations.length === 1 ? args.prepStations[0] : null;
+
+		// Every key is filled by the loop below, which walks all statuses.
+		const counts = {} as DashboardStatusCounts;
+
+		for (const status of DASHBOARD_STATUSES) {
+			// Newest first, so a capped scan keeps the orders an ops board
+			// actually cares about — and so a "today" window is never missed
+			// behind a wall of older history.
+			const scanned = await ctx.db
+				.query(TABLE.ORDERS)
+				.withIndex("by_restaurant_status", (q) =>
+					q.eq("restaurantId", args.restaurantId).eq("status", status)
+				)
+				.order("desc")
+				.take(DASHBOARD_COUNT_SCAN_CAP);
+
+			const orders = scanned.filter(isInServiceWindow);
+
+			// Hitting the ceiling only makes the count uncertain if the window
+			// was still open at the oldest row we saw. With a "today" filter
+			// whose oldest scanned order already predates the window, every
+			// unscanned order is older still — the count is exact.
+			const oldestScanned = scanned[scanned.length - 1];
+			const capped =
+				scanned.length === DASHBOARD_COUNT_SCAN_CAP &&
+				oldestScanned !== undefined &&
+				isInServiceWindow(oldestScanned);
+
+			// No station filter: every order in the window is a card.
+			if (!stationFilter) {
+				counts[status] = { count: orders.length, capped };
+				continue;
+			}
+
+			const onRail = railStation !== null && status !== "awaiting_payment";
+			let count = 0;
+
+			for (const order of orders) {
+				const items = await ctx.db
+					.query(TABLE.ORDER_ITEMS)
+					.withIndex("by_order", (q) => q.eq("orderId", order._id))
+					.collect();
+
+				const liveStationItems = [];
+				for (const item of items) {
+					if (item.cancelledAt !== undefined) continue;
+					const menuItem = await ctx.db.get(item.menuItemId);
+					const station = menuItem ? resolvePrepStation(menuItem) : DEFAULT_PREP_STATION;
+					if (stationFilter.has(station)) liveStationItems.push(item);
+				}
+
+				if (onRail) {
+					const stamp = railStation === "kitchen" ? order.kitchenReadyAt : order.barReadyAt;
+					if (
+						hasStationTicket({
+							status: order.status,
+							stationStamp: stamp,
+							liveStationItemCount: liveStationItems.length,
+						})
+					) {
+						count += 1;
+					}
+					continue;
+				}
+
+				// Card grid with a station filter: the same presence check the
+				// orders query applies.
+				if (liveStationItems.length > 0) count += 1;
+			}
+
+			counts[status] = { count, capped };
+		}
+
+		return [counts, null];
+	},
+});
+
 export const getActiveOrdersByRestaurant = query({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -993,12 +1151,21 @@ export const getActiveOrdersByRestaurant = query({
 		// renders, the UI applies the visual highlight on matching items).
 		// Reads `menuItems.prepStation` live (no snapshot on `orderItems`).
 		prepStations: v.optional(v.array(PREP_STATION_VALIDATOR)),
+		// Service-day window. Omitted / "all" keeps the original behavior of
+		// returning every order in the requested statuses.
+		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
 	},
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
+		const [restaurant, accessError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			args.restaurantId
+		);
 		if (accessError) return [null, accessError];
+
+		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
 
 		const requestedStatuses =
 			args.statuses && args.statuses.length > 0
@@ -1019,7 +1186,7 @@ export const getActiveOrdersByRestaurant = query({
 					.collect()
 			)
 		);
-		const filteredOrders = ordersPerStatus.flat();
+		const filteredOrders = ordersPerStatus.flat().filter(isInServiceWindow);
 
 		const ordersWithItems = await Promise.all(
 			filteredOrders.map(async (order) => {

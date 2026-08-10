@@ -54,6 +54,10 @@
 	--accent-success-light: rgba(15, 123, 108, 0.1);
 	--accent-warning: #dfab01;
 	--accent-warning-light: rgba(223, 171, 1, 0.12);
+	/* One step past warning, short of danger: work that is waiting on a
+	 * person right now (an unpaid tab) rather than merely worth noting. */
+	--accent-urgent: #d9730d;
+	--accent-urgent-light: rgba(217, 115, 13, 0.12);
 	--accent-danger: #e03e3e;
 	--accent-danger-light: rgba(224, 62, 62, 0.1);
 	--accent-info: #2383e2;
@@ -127,6 +131,8 @@
 	--accent-success-light: rgba(77, 171, 154, 0.15);
 	--accent-warning: #f0c000;
 	--accent-warning-light: rgba(240, 192, 0, 0.16);
+	--accent-urgent: #f59e42;
+	--accent-urgent-light: rgba(245, 158, 66, 0.16);
 	--accent-danger: #eb5757;
 	--accent-danger-light: rgba(235, 87, 87, 0.15);
 	--accent-info: #4b9fe8;

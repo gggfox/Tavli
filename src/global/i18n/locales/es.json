@@ -379,7 +379,12 @@
 			"served": "Entregado",
 			"cancelled": "Cancelado"
 		},
+		"serviceDate": {
+			"today": "Hoy",
+			"all": "Todo"
+		},
 		"station": {
+			"all": "Todo",
 			"kitchen": "Cocina",
 			"bar": "Barra",
 			"readyBadge": "{{station}}: listo",
@@ -449,6 +454,7 @@
 		"aria": {
 			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
+			"serviceDateFilter": "Filtrar pedidos por día de servicio",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
 			"cancelItem": "Cancelar artículo {{name}}",

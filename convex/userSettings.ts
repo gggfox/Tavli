@@ -4,7 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { fromErrorObject } from "./_shared/errors";
 import { getCurrentUserId, requireOrgOwnerOrAdmin } from "./_util/auth";
-import { DASHBOARD_STATUS_VALIDATOR } from "./orderHelpers";
+import { DASHBOARD_STATUS_VALIDATOR, SERVICE_DATE_FILTER_VALIDATOR } from "./orderHelpers";
 import { TABLE } from "./constants";
 import { stampUpdated } from "./_util/audit";
 
@@ -29,6 +29,7 @@ const orderDashboardPrepStationValidator = v.union(v.literal("kitchen"), v.liter
 type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "cancelled";
 type OrderDashboardStatusValue = "awaiting_payment" | OrderDashboardStatus;
 type OrderDashboardPrepStation = "kitchen" | "bar";
+type OrderDashboardServiceDate = "today" | "all";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
@@ -37,6 +38,7 @@ type SettingsUpdates = {
 	orderDashboardStatusFilter?: OrderDashboardStatusValue;
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
 	orderDashboardPrepStationFilters?: OrderDashboardPrepStation[];
+	orderDashboardServiceDateFilter?: OrderDashboardServiceDate;
 	expandedSidebarGroups?: string[];
 };
 
@@ -125,6 +127,9 @@ async function upsertUserSettings({
 		}),
 		...(updates.orderDashboardPrepStationFilters !== undefined && {
 			orderDashboardPrepStationFilters: updates.orderDashboardPrepStationFilters,
+		}),
+		...(updates.orderDashboardServiceDateFilter !== undefined && {
+			orderDashboardServiceDateFilter: updates.orderDashboardServiceDateFilter,
 		}),
 		...(updates.expandedSidebarGroups !== undefined && {
 			expandedSidebarGroups: updates.expandedSidebarGroups,
@@ -304,6 +309,32 @@ export const updateOrderDashboardPrepStationFilters = mutation({
 			ctx,
 			userId,
 			updates: { orderDashboardPrepStationFilters: deduped },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update the OrderDashboard service-day window for the authenticated user.
+ * Creates settings if they don't exist.
+ *
+ * "today" is the restaurant's own business day (its configured rollover, not
+ * midnight UTC); "all" keeps the board's original behavior of showing every
+ * order ever, and stays the default for anyone who never picked.
+ */
+export const updateOrderDashboardServiceDateFilter = mutation({
+	args: {
+		serviceDate: SERVICE_DATE_FILTER_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardServiceDateFilter: args.serviceDate },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
 		});
 	},

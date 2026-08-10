@@ -81,6 +81,10 @@ export function OrderCard({
 }: Readonly<OrderCardProps>) {
 	const { t, i18n } = useTranslation();
 	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilterValue];
+	// The money UI on an awaiting-payment card — amount due, mark-paid confirm
+	// panel, mark-paid button — takes that status's own tone, so recoloring the
+	// status never leaves the card mixing two palettes.
+	const awaitingPaymentTone = getStatusToneStyle(STATUS_CONFIG.awaiting_payment.tone);
 	const visibleItems = order.items.slice(0, MAX_VISIBLE_ITEMS);
 	const hiddenCount = order.items.length - visibleItems.length;
 	const isAwaitingPayment = order.status === "awaiting_payment";
@@ -162,8 +166,8 @@ export function OrderCard({
 					<div
 						className="flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-lg"
 						style={{
-							backgroundColor: getStatusToneStyle("warning").tintedBg,
-							color: getStatusToneStyle("warning").fg,
+							backgroundColor: awaitingPaymentTone.tintedBg,
+							color: awaitingPaymentTone.fg,
 						}}
 					>
 						<div className="min-w-0">
@@ -299,8 +303,8 @@ export function OrderCard({
 						<div
 							className="p-3 rounded-lg space-y-2"
 							style={{
-								backgroundColor: getStatusToneStyle("warning").tintedBg,
-								border: `1px solid ${getStatusToneStyle("warning").solidBg}`,
+								backgroundColor: awaitingPaymentTone.tintedBg,
+								border: `1px solid ${awaitingPaymentTone.solidBg}`,
 							}}
 						>
 							<p className="text-xs font-semibold text-foreground">
@@ -322,8 +326,8 @@ export function OrderCard({
 									disabled={isMarkPaidPending}
 									className="flex-1 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
 									style={{
-										backgroundColor: getStatusToneStyle("warning").solidBg,
-										color: getStatusToneStyle("warning").solidFg,
+										backgroundColor: awaitingPaymentTone.solidBg,
+										color: awaitingPaymentTone.solidFg,
 									}}
 								>
 									{isMarkPaidPending
@@ -345,8 +349,8 @@ export function OrderCard({
 								onClick={() => onRequestMarkPaid(order._id)}
 								className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
 								style={{
-									backgroundColor: getStatusToneStyle("warning").solidBg,
-									color: getStatusToneStyle("warning").solidFg,
+									backgroundColor: awaitingPaymentTone.solidBg,
+									color: awaitingPaymentTone.solidFg,
 								}}
 							>
 								<BadgeDollarSign size={14} />

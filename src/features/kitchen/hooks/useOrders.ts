@@ -1,4 +1,8 @@
-import type { OrderDashboardPrepStationFilter, OrderDashboardStatusFilterValue } from "@/features";
+import type {
+	OrderDashboardPrepStationFilter,
+	OrderDashboardServiceDateFilter,
+	OrderDashboardStatusFilterValue,
+} from "@/features";
 import { useConvexMutate } from "@/global/hooks";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery, useConvexAction } from "@convex-dev/react-query";
@@ -11,10 +15,39 @@ type ActiveOrdersValue = UnwrappedValue<
 	FunctionReturnType<typeof api.orders.getActiveOrdersByRestaurant>
 >;
 
+type StatusCountsValue = UnwrappedValue<
+	FunctionReturnType<typeof api.orders.getDashboardStatusCounts>
+>;
+
+/**
+ * Card count per dashboard status segment, under the given station filter.
+ *
+ * Its own query rather than a field on `useOrders`: the dashboard fetches only
+ * the ONE selected status (ADR 008), so the other five segments have nothing to
+ * count from. Counts are decoration — a failure resolves to `undefined` and the
+ * segments simply render without a number rather than taking the board down.
+ */
+export function useOrderStatusCounts(
+	restaurantId: Id<"restaurants"> | undefined,
+	prepStations?: OrderDashboardPrepStationFilter[],
+	serviceDate?: OrderDashboardServiceDateFilter
+) {
+	const { data } = useQuery({
+		...convexQuery(
+			api.orders.getDashboardStatusCounts,
+			restaurantId ? { restaurantId, prepStations, serviceDate } : "skip"
+		),
+		select: unwrapResult<StatusCountsValue>,
+	});
+
+	return data;
+}
+
 export function useOrders(
 	restaurantId: Id<"restaurants"> | undefined,
 	statuses?: OrderDashboardStatusFilterValue[],
-	prepStations?: OrderDashboardPrepStationFilter[]
+	prepStations?: OrderDashboardPrepStationFilter[],
+	serviceDate?: OrderDashboardServiceDateFilter
 ) {
 	const {
 		data: orders = [],
@@ -23,7 +56,7 @@ export function useOrders(
 	} = useQuery({
 		...convexQuery(
 			api.orders.getActiveOrdersByRestaurant,
-			restaurantId ? { restaurantId, statuses, prepStations } : "skip"
+			restaurantId ? { restaurantId, statuses, prepStations, serviceDate } : "skip"
 		),
 		select: unwrapResult<ActiveOrdersValue>,
 	});
