@@ -84,6 +84,7 @@
 			"inviteSingleRoleHint": "Solo puedes asignar este rol.",
 			"sendInvite": "Enviar invitación",
 			"sending": "Enviando…",
+			"inviteFailed": "No se pudo enviar la invitación. Revisa los datos e inténtalo de nuevo.",
 			"pendingInvitations": "Invitaciones pendientes",
 			"noPendingInvitations": "No hay invitaciones pendientes.",
 			"revoke": "Revocar",
@@ -370,6 +371,7 @@
 			"description": "Panel de pedidos en vivo. Los pedidos se actualizan en tiempo real."
 		},
 		"status": {
+			"awaitingPayment": "Por cobrar",
 			"submitted": "Pendiente",
 			"preparing": "Preparando",
 			"ready": "Listo",
@@ -394,6 +396,15 @@
 			"keepOrder": "Mantener pedido",
 			"viewFullOrder": "Ver pedido completo →"
 		},
+		"markPaid": {
+			"action": "Marcar pagado en persona",
+			"promptTitle": "¿Marcar este pedido como pagado?",
+			"promptBody": "Confirma que cobraste {{amount}} en persona. El pedido pasa a cocina de inmediato.",
+			"confirm": "Confirmar pago",
+			"dismiss": "Todavía no",
+			"pending": "Marcando pagado…",
+			"amountDue": "Importe por cobrar"
+		},
 		"cancel": {
 			"prompt": "¿Cancelar este pedido?",
 			"paidPrompt": "Este pedido ha sido pagado. Cancelarlo reembolsa su importe al comensal. La propina no se reembolsa.",
@@ -412,22 +423,35 @@
 			"itemCancelledBadge": "Dado de baja",
 			"cancelItem": "Dar de baja",
 			"cancelItemPrompt": "¿No se puede preparar {{name}}? Se quita de la cuenta del comensal de inmediato.",
+			"cancelItemPaidPrompt": "¿No se puede preparar {{name}}? Su precio más su parte de la tarifa de servicio se reembolsan al comensal automáticamente.",
 			"confirmCancelItem": "Confirmar baja",
 			"keepItem": "Mantener artículo",
 			"undoReady": "Deshacer",
 			"markedReady": "{{station}}: marcado listo · #{{n}}",
 			"emptyAllDone": "Todo al día — nada pendiente para {{station}}."
 		},
+		"substitution": {
+			"propose": "Sustituir",
+			"pendingBadge": "Sustitución ofrecida",
+			"cancelProposal": "Retirar oferta",
+			"dialogTitle": "Proponer una sustitución",
+			"dialogSubtitle": "Reemplaza {{name}} por un artículo de precio igual o mayor. El comensal lo aprueba en su dispositivo; cualquier diferencia se le cobra a él.",
+			"dialogEmpty": "No hay artículos disponibles de ese precio o superior.",
+			"deltaFree": "Sin cargo extra",
+			"deltaPreview": "+${{amount}} (+${{fee}} tarifa de servicio)",
+			"confirm": "Enviar al comensal",
+			"dismiss": "Cancelar"
+		},
 		"empty": {
-			"noFilters": "Selecciona al menos un estado para ver pedidos.",
 			"noOrders": "Ningún pedido coincide con los filtros seleccionados."
 		},
 		"aria": {
-			"filter": "Filtrar pedidos por estado",
+			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
-			"cancelItem": "Cancelar artículo {{name}}"
+			"cancelItem": "Cancelar artículo {{name}}",
+			"proposeSubstitution": "Proponer sustitución para {{name}}"
 		},
 		"payment": {
 			"refundRequested": "Reembolso pendiente",
@@ -455,7 +479,9 @@
 		"summary": {
 			"totalRevenue": "Ingresos totales",
 			"orders": "Pedidos",
-			"avgOrder": "Pedido promedio"
+			"avgOrder": "Pedido promedio",
+			"serviceFees": "Comisión de servicio Tavli",
+			"tips": "Propinas"
 		},
 		"empty": {
 			"noPayments": "Sin pagos en este periodo."
@@ -465,14 +491,22 @@
 		"resultCount_other": "{{count}} pagos",
 		"table": {
 			"dayOrderNumber": "N.º del día",
-			"orderId": "ID del pedido",
 			"date": "Fecha",
 			"table": "Mesa",
 			"items": "Artículos",
-			"total": "Total"
+			"rowId": "ID",
+			"type": "Tipo",
+			"subtotal": "Subtotal",
+			"serviceFee": "Comisión Tavli",
+			"tip": "Propina",
+			"netToRestaurant": "Neto para el restaurante"
 		},
 		"tooltip": {
-			"total": "Total"
+			"subtotal": "Subtotal"
+		},
+		"rowKind": {
+			"order": "Pedido",
+			"tip": "Propina"
 		}
 	},
 	"customer": {
@@ -534,6 +568,7 @@
 		"ERROR_TAB_EMPTY": "Todavía no hay nada por pagar en esta cuenta.",
 		"ERROR_TAB_UNPAID": "Esta cuenta todavía tiene pedidos sin pagar. Paga la cuenta o pide al personal que la cierre.",
 		"ERROR_TAB_HAS_UNSERVED_ORDERS": "Parte de tu pedido todavía no llega a la mesa. Podrás pagar cuando llegue, o pide a tu mesero que lo cancele.",
+		"ERROR_SESSION_AWAITING_PAYMENT_ORDERS": "Parte del pedido de tu mesa aún está pendiente de pagarse en persona. Pide al personal que lo cobre antes de cerrar la cuenta.",
 		"ERROR_DEV_ENVIRONMENT_ONLY": "Esta acción solo está disponible en entornos de desarrollo.",
 		"ERROR_DASHBOARD_RESTAURANT_REQUIRED": "Selecciona un restaurante para ver este panel.",
 		"ERROR_DASHBOARD_RANGE_TOO_LARGE": "El rango de fechas seleccionado es demasiado grande. Elige un rango más corto.",
@@ -549,9 +584,27 @@
 		"ERROR_ORDER_ITEM_NOT_CANCELLABLE": "Este artículo ya no se puede cancelar por separado. Usa la cancelación del pedido completo.",
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "El pago de este pedido ya está en curso o completado. Cancela el pedido completo para emitir un reembolso.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "Hay un pago en curso en esta cuenta. Espera a que termine antes de quitar artículos.",
+		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "Ya hay un pago con tarjeta en curso para este pedido. Cancélalo antes de elegir pagar en persona.",
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
+		"ERROR_SUBSTITUTION_NOT_ELIGIBLE": "Esta línea no admite sustitución — el pedido debe estar pagado y aún en cocina.",
+		"ERROR_SUBSTITUTION_ITEM_UNAVAILABLE": "Ese artículo de reemplazo no está disponible.",
+		"ERROR_SUBSTITUTION_PROPOSAL_EXISTS": "Ya hay una sustitución esperando la respuesta del comensal para este artículo.",
+		"ERROR_SUBSTITUTION_DELTA_NEGATIVE": "El reemplazo debe costar lo mismo o más que el artículo original.",
+		"ERROR_SUBSTITUTION_NOT_PENDING": "Esta sustitución ya fue respondida o retirada.",
+		"ERROR_SUBSTITUTION_REQUIRES_PAYMENT": "Esta sustitución tiene un costo extra — confirma el pago para aceptarla.",
+		"ERROR_TIP_INVALID_AMOUNT": "Ese monto de propina no es válido. Ingresa un monto mayor a cero.",
+		"ERROR_RECEIPT_ORDER_NOT_PAID": "Este pedido aún no se ha pagado, así que no hay recibo para enviar.",
+		"ERROR_RECEIPT_NO_VERIFIED_EMAIL": "Tu cuenta no tiene un correo verificado al cual enviar el recibo.",
+		"ERROR_RECEIPT_RATE_LIMITED": "Este recibo ya se envió varias veces. Espera un momento antes de solicitarlo de nuevo.",
+		"ERROR_RECEIPT_SEND_FAILED": "No pudimos enviar el recibo por correo. Inténtalo de nuevo en un momento.",
+		"ERROR_BILLING_NOT_ENABLED": "Este restaurante aún no tiene activada la suscripción a Tavli. Un administrador de Tavli debe habilitarla primero.",
+		"ERROR_BILLING_PRICE_NOT_CONFIGURED": "La facturación de la suscripción aún no está configurada en este entorno. Contacta al soporte de Tavli.",
+		"ERROR_BILLING_SUBSCRIPTION_EXISTS": "Este restaurante ya tiene una suscripción a Tavli activa.",
+		"ERROR_BILLING_NO_SUBSCRIPTION": "No hay una suscripción a Tavli activa que cancelar.",
+		"ERROR_BILLING_CHECKOUT_FAILED": "No pudimos abrir la página de pago de Stripe. Inténtalo de nuevo en un momento.",
+		"ERROR_BILLING_PORTAL_UNAVAILABLE": "No pudimos abrir el portal de facturación de Stripe. Inténtalo de nuevo en un momento.",
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "El nombre de la categoría es obligatorio.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "El nombre de la categoría es demasiado largo.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Ingresa al menos un nombre de categoría.",
@@ -568,8 +621,32 @@
 		"ERROR_TABLE_LOCKED": "Esa mesa no está disponible durante el horario seleccionado.",
 		"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND": "Esa sesión compartida del personal ya está vinculada a otro restaurante.",
 		"ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT": "Esa identidad de sesión compartida del personal no es válida.",
+		"ERROR_SLUG_TAKEN": "Esa dirección web ya está ocupada. Prueba con otra.",
+		"ERROR_SLUG_INVALID": "Esa dirección web necesita al menos una letra o un número.",
 		"ERROR_TABLE_HAS_RESERVATIONS": "Esta mesa tiene reservas y no se puede modificar en este momento.",
-		"ERROR_TABLE_NUMBER_EXISTS": "Ya existe una mesa con ese número."
+		"ERROR_TABLE_NUMBER_EXISTS": "Ya existe una mesa con ese número.",
+		"ERROR_INVITE_CROSS_ORG": "Esta persona ya pertenece a otra organización. Si acepta la invitación, saldrá de ella.",
+		"ERROR_INVITE_DUPLICATE_PENDING": "Esta persona ya tiene una invitación pendiente para esta organización.",
+		"ERROR_INVITE_DUPLICATE_IN_FILE": "Una fila anterior de este archivo ya invita a esta persona a esta organización.",
+		"ERROR_INVITE_INVALID_EMAIL": "Ese correo electrónico no es válido.",
+		"ERROR_INVITE_INVALID_ROLE": "El rol debe ser propietario, gerente o empleado.",
+		"ERROR_INVITE_INVALID_ORGANIZATION": "No encontramos esa organización.",
+		"ERROR_INVITE_INVALID_ORGANIZATION_AMBIGUOUS": "Más de una organización tiene ese nombre. Usa el ID de la organización.",
+		"ERROR_INVITE_INVALID_RESTAURANTS_REQUIRED": "Los gerentes y empleados necesitan al menos un restaurante.",
+		"ERROR_INVITE_INVALID_RESTAURANT_UNKNOWN": "No encontramos uno de esos restaurantes.",
+		"ERROR_INVITE_INVALID_RESTAURANT_AMBIGUOUS": "Más de un restaurante tiene ese nombre. Usa el ID del restaurante.",
+		"ERROR_INVITE_INVALID_RESTAURANT_OTHER_ORG": "Uno de esos restaurantes pertenece a otra organización.",
+		"ERROR_INVITE_RATE_LIMITED": "Has enviado muchas invitaciones en la última hora. Espera un rato antes de enviar más.",
+		"ERROR_INVITE_EMAIL_RATE_LIMITED": "Hoy ya se invitó varias veces a esta dirección. Inténtalo de nuevo mañana.",
+		"ERROR_INVITE_BULK_TOO_MANY_ROWS": "Se enviaron demasiadas filas a la vez. Inténtalo de nuevo.",
+		"ERROR_INVITE_CSV_EMPTY": "Ese archivo no tiene filas para invitar.",
+		"ERROR_INVITE_CSV_MISSING_COLUMN": "A tu archivo le falta una columna obligatoria: {{detail}}.",
+		"ERROR_INVITE_CSV_UNKNOWN_COLUMN": "Tu archivo tiene una columna que no reconocemos: {{detail}}.",
+		"ERROR_INVITE_CSV_DUPLICATE_COLUMN": "Tu archivo tiene la misma columna dos veces: {{detail}}.",
+		"ERROR_INVITE_CSV_TOO_MANY_ROWS": "Ese archivo tiene más de {{detail}} filas. Divídelo y súbelo por partes.",
+		"ERROR_INVITE_CSV_TOO_LARGE": "Ese archivo pesa más de {{detail}}. Divídelo y súbelo por partes.",
+		"ERROR_INVITE_CSV_UNTERMINATED_QUOTE": "Ese archivo tiene unas comillas que nunca se cierran.",
+		"ERROR_INVITE_CSV_NOT_CSV": "Ese archivo no parece un CSV. Expórtalo como CSV y vuelve a subirlo."
 	},
 	"time": {
 		"relative": {
@@ -608,8 +685,7 @@
 			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea.",
 			"orderingUnavailable": "Los pedidos en línea aún no están disponibles aquí.",
 			"filterPlaceholder": "Buscar en el menú",
-			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
-			"placeOrder": "Enviar pedido a cocina"
+			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda."
 		},
 		"item": {
 			"required": "Obligatorio",
@@ -625,9 +701,7 @@
 			"back": "Volver al menú",
 			"heading": "Tu pedido",
 			"empty": "Tu carrito está vacío. ¡Agrega productos!",
-			"total": "Total",
-			"placeOrder": "Realizar pedido",
-			"placingOrder": "Realizando pedido..."
+			"total": "Total"
 		},
 		"checkout": {
 			"heading": "Pago",
@@ -640,7 +714,21 @@
 			"retry": "Reintentar",
 			"processing": "Procesando...",
 			"payNow": "Pagar ahora",
-			"securedByStripe": "Pagos protegidos por Stripe"
+			"securedByStripe": "Pagos protegidos por Stripe",
+			"subtotal": "Subtotal",
+			"serviceFee": "Tarifa de servicio Tavli ({{rate}}%)",
+			"continueToPayment": "Continuar al pago",
+			"payInPerson": "Pagar en persona",
+			"payByCardInstead": "Mejor pagar con tarjeta",
+			"orderNotFound": "No pudimos cargar este pedido. Puede que ya se haya enviado o cancelado.",
+			"cashTitle": "Paga en la mesa",
+			"cashOrderNumber": "Pedido #{{n}}",
+			"cashShowServer": "Muéstrale esto a tu mesero para pagar en la mesa.",
+			"cashKitchenNote": "Tu pedido pasará a la cocina en cuanto el personal confirme tu pago.",
+			"paidTitle": "¡Pago completado!",
+			"paidDesc": "El pedido #{{n}} se envió a la cocina.",
+			"paidDescNoNumber": "Tu pedido se envió a la cocina.",
+			"viewOrders": "Ver mis pedidos"
 		},
 		"orderStatus": {
 			"loading": "Cargando pedido...",
@@ -655,6 +743,12 @@
 			"stepPreparing": "Preparando",
 			"stepReady": "Listo",
 			"stepServed": "Entregado"
+		},
+		"receipt": {
+			"itemRefunded": "Reembolsado",
+			"emailCta": "Envíame el recibo por correo",
+			"emailSending": "Enviando...",
+			"emailSent": "Enviado a {{email}}"
 		},
 		"orders": {
 			"header": "Tus pedidos",
@@ -671,6 +765,9 @@
 			"lifecycleView": "Ver",
 			"lifecycleUnpaid": "Sin pagar",
 			"lifecycleFinishCheckout": "Terminar pago",
+			"lifecycleAwaitingPayment": "Paga con tu mesero",
+			"lifecycleContinuePayment": "Continuar al pago",
+			"paidBadge": "Pagado",
 			"lifecyclePlaced": "Pedido realizado",
 			"lifecyclePreparing": "Preparando",
 			"lifecycleReady": "Listo",
@@ -705,13 +802,53 @@
 			"paidDesc": "Tu pago se procesó y la cuenta quedó cerrada. ¡Esperamos verte pronto!",
 			"paidDone": "Listo"
 		},
+		"closeout": {
+			"cta": "Cerrar cuenta y dar propina",
+			"heading": "Cierra tu visita",
+			"visitTotal": "Total de tu visita",
+			"orderCount_one": "{{count}} pedido",
+			"orderCount_other": "{{count}} pedidos",
+			"tipHeading": "Agrega una propina para el equipo",
+			"presetAria": "Propina del {{percent}}%",
+			"tipCustom": "Otra cantidad",
+			"tipCustomPlaceholder": "Monto de propina",
+			"addTipCta": "Agregar propina · ${{amount}}",
+			"skip": "Omitir",
+			"tipsGiven": "Propina agregada · ${{amount}}",
+			"thanksTitle": "¡Gracias!",
+			"thanksBody": "Tu propina de ${{amount}} va directo al equipo.",
+			"paymentTitle": "Confirma tu propina",
+			"nothingPaid": "No tienes nada por pagar — no pagaste ningún pedido en esta visita.",
+			"done": "Listo"
+		},
+		"substitution": {
+			"title": "La cocina sugiere una sustitución",
+			"body": "Pedido #{{n}}: {{original}} no está disponible.",
+			"bodyNoNumber": "{{original}} no está disponible.",
+			"originalLabel": "Pediste",
+			"proposedLabel": "Sugerencia",
+			"noExtra": "Sin cargo extra",
+			"deltaLine": "Diferencia de precio",
+			"feeLine": "Tarifa de servicio Tavli",
+			"totalExtra": "Total extra",
+			"accept": "Aceptar sustitución",
+			"decline": "No, gracias — reembolsar ese artículo",
+			"declineConfirmTitle": "¿Rechazar esta sustitución?",
+			"declineConfirmBody": "{{original}} se quita de tu pedido y {{amount}} se reembolsa a tu tarjeta.",
+			"declineConfirmBodyNoAmount": "{{original}} se quita de tu pedido y se reembolsa a tu tarjeta.",
+			"declineConfirm": "Rechazar y reembolsar",
+			"back": "Volver",
+			"oneTapSuccess": "¡Listo! Se cobraron {{amount}} a tu tarjeta guardada.",
+			"paymentTitle": "Confirma el cargo extra",
+			"done": "Listo"
+		},
 		"geofence": {
 			"blockedTitle": "Los pedidos están disponibles en el restaurante",
-			"outside": "Parece que estás fuera del restaurante. Puedes ver el menú y ordenar cuando llegues.",
-			"locationUnavailable": "No pudimos acceder a tu ubicación. Permite el acceso o pide al personal un código de mesa.",
-			"codePlaceholder": "Código de mesa",
+			"outside": "Parece que estás fuera del restaurante. Puedes ver el menú y ordenar cuando llegues, o pide al personal un código de acceso.",
+			"locationUnavailable": "No pudimos acceder a tu ubicación. Permite el acceso o pide al personal un código de acceso.",
+			"codePlaceholder": "Código de acceso",
 			"codeSubmit": "Desbloquear",
-			"codeInvalid": "Ese código no es válido.",
+			"codeInvalid": "Ese código de acceso no es válido. Pide al personal que lo verifique.",
 			"retry": "Verificar mi ubicación de nuevo"
 		}
 	},
@@ -750,12 +887,22 @@
 		"switcher": {
 			"label": "Restaurante activo"
 		},
+		"orgSwitcher": {
+			"label": "Organización",
+			"all": "Todas las organizaciones",
+			"current": "Organización seleccionada",
+			"loadFailed": "No se pudieron cargar las organizaciones. Se muestran todos los restaurantes.",
+			"loadFailedFiltered": "No se pudieron cargar las organizaciones. Se sigue mostrando solo la que seleccionaste; elige Todas las organizaciones para quitar el filtro."
+		},
+		"canvas": {
+			"notFoundTitle": "Restaurante no encontrado",
+			"notFoundBody": "Este restaurante fue eliminado o ya no es uno que puedas administrar. El enlace que seguiste no apunta a nada.",
+			"notFoundBack": "Volver a restaurantes"
+		},
 		"modal": {
 			"createAria": "Crear restaurante",
-			"editAria": "Editar restaurante",
 			"deleteAria": "Confirmar eliminación del restaurante",
 			"createHeading": "Nuevo restaurante",
-			"editHeading": "Editar restaurante",
 			"deleteHeading": "¿Eliminar este restaurante?",
 			"deleteBody": "Se desactivará de inmediato, se desvinculará Stripe de este local y los datos seguirán recuperables durante 30 días. Después, el sistema eliminará permanentemente el restaurante y los registros relacionados (se conserva un registro de la eliminación).",
 			"deleteConfirm": "Eliminar",
@@ -764,7 +911,9 @@
 		"form": {
 			"nameLabel": "Nombre del restaurante",
 			"slugLabel": "Slug (identificador de URL)",
-			"slugHint": "Los clientes visitarán: /r/{{slug}}/en/menu",
+			"slugHint": "Tus clientes visitarán:",
+			"slugPlaceholder": "tu-restaurante",
+			"slugChangeWarning": "Al cambiarla se retira la dirección actual ({{slug}}). Los códigos QR impresos y los enlaces compartidos dejarán de funcionar, y los comensales que ya habían desbloqueado los pedidos tendrán que ingresar el código de acceso otra vez.",
 			"openTestLink": "Abrir enlace de prueba",
 			"descriptionLabel": "Descripción",
 			"supportEmailLabel": "Correo de soporte",
@@ -793,6 +942,10 @@
 			"orderNumberResetOptionMonthly": "Mensual",
 			"orgLabel": "Organización",
 			"orgPlaceholder": "Selecciona una organización",
+			"orgLoading": "Cargando organizaciones…",
+			"orgEmpty": "No tienes organizaciones disponibles. Pide a un administrador que te agregue a una antes de crear un restaurante.",
+			"orgLoadFailed": "No se pudieron cargar las organizaciones, así que no se puede crear un restaurante en este momento.",
+			"orgSingleHint": "Es tu única organización: el restaurante se creará aquí.",
 			"statusLabel": "Estado",
 			"toggleDeactivateTitle": "Desactivar restaurante",
 			"toggleActivateTitle": "Activar restaurante",
@@ -802,18 +955,38 @@
 			"updateFailed": "Error al actualizar el restaurante",
 			"createFailed": "Error al crear el restaurante",
 			"geofenceSectionTitle": "Geocerca de pedidos",
-			"geofenceSectionHint": "Los clientes siempre pueden ver el menú. Marca una ubicación en el mapa para activar pedidos en línea — deben estar cerca (o usar el código del personal) para ordenar.",
+			"geofenceSectionHint": "Los clientes siempre pueden ver el menú. Marca una ubicación en el mapa para activar pedidos en línea — deben estar cerca (o ingresar el código de anulación de geocerca) para ordenar.",
 			"geofenceLatitudeLabel": "Latitud",
 			"geofenceLongitudeLabel": "Longitud",
 			"geofenceRadiusLabel": "Radio (metros)",
-			"geofenceBypassLabel": "Código de mesa",
-			"geofenceBypassHint": "El personal comparte este código con clientes cuya ubicación esté denegada o no disponible.",
+			"geofenceBypassLabel": "Código de anulación de geocerca",
+			"geofenceBypassHint": "Los clientes lo ven como su \"código de acceso\". El personal lo comparte para que un cliente pueda ordenar cuando la verificación de ubicación de su dispositivo falla o está denegada. Es una comodidad, no un control de seguridad — la ubicación se puede falsear — así que cámbialo si se difunde fuera de tus mesas.",
 			"geofenceUseMyLocation": "Usar mi ubicación actual",
 			"geofenceMapHint": "Haz clic en el mapa o arrastra el pin para marcar la ubicación. El círculo muestra el radio de pedidos.",
 			"geofenceMapSearchPlaceholder": "Buscar dirección…",
 			"geofenceMapSearchButton": "Buscar",
 			"geofenceMapSearchNotFound": "No se encontró la dirección. Prueba otra búsqueda.",
 			"geofenceCoordinatesAdvanced": "Avanzado: editar coordenadas"
+		},
+		"settings": {
+			"close": "Cerrar configuración del restaurante",
+			"saving": "Guardando…",
+			"saved": "Guardado",
+			"generalTitle": "General",
+			"generalHint": "Nombre, enlace público y lo básico que ven los comensales.",
+			"hoursTitle": "Horario y zona horaria",
+			"hoursHint": "La zona horaria determina los reportes, los turnos y el día de pedidos de este restaurante.",
+			"taxTitle": "Información fiscal",
+			"taxHint": "Aparece en los correos de recibo para que los comensales puedan pasarle los datos a su contador. Tavli no emite CFDIs — nada de esto se declara ante el SAT.",
+			"taxRfcLabel": "RFC",
+			"taxRazonSocialLabel": "Razón social",
+			"taxFiscalAddressLabel": "Domicilio fiscal",
+			"organizationTitle": "Organización",
+			"organizationHint": "Qué organización es dueña de este restaurante. Solo los administradores de la plataforma pueden moverlo.",
+			"organizationLoading": "Cargando organizaciones…",
+			"organizationEmpty": "Aún no hay organizaciones. Crea una antes de mover este restaurante.",
+			"organizationLoadFailed": "No se pudieron cargar las organizaciones. Se conserva la actual hasta que reintentes.",
+			"organizationCurrentUnresolved": "Organización actual"
 		},
 		"managers": {
 			"sectionTitle": "Gerentes del local",
@@ -920,7 +1093,7 @@
 			"partialRequirements": "Los pagos están habilitados, pero hay requisitos adicionales pendientes.",
 			"redirecting": "Redirigiendo...",
 			"continueSetup": "Continuar configuración de Stripe",
-			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Aplica una comisión de plataforma del {{rate}} % además de las comisiones estándar de procesamiento de Stripe.",
+			"intro": "Configura Stripe para aceptar pagos con tarjeta de los clientes. Los comensales pagan una tarifa de servicio Tavli del {{rate}} % sobre el subtotal del pedido, así que tú recibes el subtotal completo de cada pedido. Las comisiones estándar de procesamiento de Stripe siguen aplicando al depósito.",
 			"settingUp": "Configurando...",
 			"onboard": "Iniciar configuración para cobrar pagos",
 			"resetButton": "Restablecer configuración de Stripe",
@@ -933,6 +1106,45 @@
 			"statusFailed": "Error al verificar el estado de pagos",
 			"setupFailed": "Error al iniciar la configuración de Stripe",
 			"resetFailed": "Error al restablecer la configuración de Stripe"
+		},
+		"billing": {
+			"heading": "Suscripción a Tavli",
+			"description": "Lo que este restaurante le paga a Tavli cada mes por usar el producto.",
+			"distinctNote": "Es distinta de la tarifa de servicio Tavli que pagan tus comensales en sus pedidos — esa se cobra por pedido al pagar y nunca aparece en esta factura.",
+			"enableLabel": "Suscripción a la plataforma",
+			"enableHint": "Cuando está activa, a este restaurante se le cobra la suscripción mensual de Tavli.",
+			"adminOnly": "Solo los administradores de Tavli pueden activarla o desactivarla.",
+			"disabledState": "Este restaurante no tiene la suscripción a Tavli.",
+			"planLabel": "Plan",
+			"planValue": "${{amount}} {{currency}} / mes",
+			"statusLabel": "Estado",
+			"statusNone": "Sin configurar",
+			"statusActive": "Activa",
+			"statusTrialing": "Periodo de prueba",
+			"statusPastDue": "Pago rechazado",
+			"statusUnpaid": "Sin pagar",
+			"statusIncomplete": "Pago pendiente",
+			"statusPaused": "En pausa",
+			"statusCanceled": "Cancelada",
+			"statusUnknown": "Desconocido",
+			"renewsLabel": "Se renueva el",
+			"endsLabel": "Acceso hasta",
+			"cancelScheduled": "Cancelación programada — la suscripción termina el {{date}} y no se renovará.",
+			"setupButton": "Configurar facturación",
+			"setupRedirecting": "Abriendo Stripe...",
+			"portalButton": "Actualizar método de pago",
+			"portalFailed": "No se pudo abrir el portal de facturación de Stripe.",
+			"pastDueHint": "El último pago no se completó. Stripe lo reintentará automáticamente — usa \"Actualizar método de pago\" para pagar con otra tarjeta.",
+			"cancelButton": "Cancelar suscripción",
+			"cancelConfirm": "¿Cancelar al final del periodo actual? El restaurante conserva el acceso hasta entonces — ese periodo ya está pagado.",
+			"cancelConfirmYes": "Sí, cancelar al final del periodo",
+			"cancelConfirmNo": "Mantener suscripción",
+			"cancelling": "Cancelando...",
+			"returnSuccess": "Suscripción iniciada. Stripe está confirmando el pago — el estado se actualizará aquí en breve.",
+			"returnCancelled": "Pago cancelado. No se cobró nada.",
+			"checkoutFailed": "No se pudo iniciar el pago de la suscripción.",
+			"cancelFailed": "No se pudo cancelar la suscripción.",
+			"toggleFailed": "No se pudo actualizar la configuración de la suscripción."
 		}
 	},
 	"welcome": {
@@ -1196,7 +1408,11 @@
 			"editEndBeforeStart": "La hora de fin debe ser posterior al inicio",
 			"editMinDuration": "La reservación debe durar al menos 15 minutos",
 			"editSeatedNeedsTable": "Las reservaciones sentadas deben conservar al menos una mesa",
-			"cancelReasonLabel": "Motivo de cancelación (opcional)"
+			"cancelReasonLabel": "Motivo de cancelación (opcional)",
+			"editCompletedHint": "Esta visita ya ocurrió: puedes corregir sus horarios. Las mesas asignadas se conservan.",
+			"editTablesLocked": "Mesas (bloqueadas)",
+			"cancelCompletedTitle": "¿Cancelar una reservación completada?",
+			"cancelCompletedBody": "La visita de {{guest}} está marcada como completada y sigue ocupando su mesa. Cancelarla libera la mesa y no se deshace desde aquí: tendrías que reconfirmar la reservación."
 		},
 		"actions": {
 			"confirm": "Confirmar",
@@ -1427,7 +1643,7 @@
 			},
 			"revenueOverTime": {
 				"label": "Ingresos en el tiempo",
-				"description": "Pagos exitosos agrupados por día.",
+				"description": "Ingresos del restaurante por día: comida vendida, sin la comisión de servicio Tavli ni propinas.",
 				"axis": "Ingresos"
 			},
 			"ordersByHour": {
@@ -1460,7 +1676,7 @@
 			},
 			"tipsTotal": {
 				"label": "Total de propinas",
-				"description": "Suma de propinas en el rango con un sparkline diario."
+				"description": "Propinas con tarjeta y en efectivo sumadas en el rango con un sparkline diario."
 			},
 			"tableOccupancy": {
 				"label": "Ocupación de mesas",
@@ -1515,5 +1731,122 @@
 		"closeTab": "Cerrar cuenta",
 		"closeTabConfirm": "¿Cerrar esta cuenta? Úsalo cuando el saldo se pagó en persona.",
 		"closeFailed": "No se pudo cerrar la cuenta."
+	},
+	"userOnboarding": {
+		"inviteAction": "Invitar usuario",
+		"bulkAction": "Invitar en lote",
+		"cancel": "Cancelar",
+		"close": "Cerrar",
+		"back": "Atrás",
+		"done": "Listo",
+		"role": {
+			"owner": "Propietario",
+			"manager": "Gerente",
+			"employee": "Empleado"
+		},
+		"status": {
+			"ok": "Lista para enviar",
+			"alreadyMember": "Ya está en esta organización",
+			"crossOrg": "Pertenece a otra organización",
+			"duplicatePending": "Ya tiene invitación",
+			"duplicateInFile": "Repetida en este archivo",
+			"invalid": "No se puede enviar"
+		},
+		"outcome": {
+			"created": "Invitación enviada",
+			"skipped": "Omitida",
+			"failed": "Falló"
+		},
+		"single": {
+			"title": "Invitar a un usuario",
+			"subtitle": "Tavli envía una invitación por correo. La persona crea su propio acceso y la acepta — aquí no se le crea ninguna cuenta.",
+			"emailLabel": "Correo electrónico",
+			"emailHint": "La invitación solo sirve para esta dirección.",
+			"roleLabel": "Rol",
+			"organizationLabel": "Organización",
+			"organizationPlaceholder": "Elige una organización",
+			"organizationLoading": "Cargando organizaciones…",
+			"organizationError": "No pudimos cargar la lista de organizaciones. Recarga la página e inténtalo de nuevo.",
+			"organizationEmpty": "Todavía no hay organizaciones. Crea una antes de invitar a alguien.",
+			"restaurantsLabel": "Restaurantes",
+			"restaurantsPlaceholder": "Elige al menos un restaurante",
+			"restaurantsAria": "Restaurantes de esta invitación",
+			"restaurantsSummary_one": "1 restaurante seleccionado",
+			"restaurantsSummary_other": "{{count}} restaurantes seleccionados",
+			"restaurantsLoading": "Cargando restaurantes…",
+			"restaurantsError": "No pudimos cargar los restaurantes de esta organización. Recarga la página e inténtalo de nuevo.",
+			"restaurantsEmpty": "Esta organización todavía no tiene restaurantes, así que no admite gerentes ni empleados.",
+			"restaurantsPickOrganization": "Elige primero una organización.",
+			"restaurantsRequiredHint": "Los gerentes y empleados necesitan al menos un restaurante. Los propietarios reciben toda la organización.",
+			"namesSection": "Nombre (opcional)",
+			"firstNameLabel": "Nombre",
+			"paternalLastnameLabel": "Apellido paterno",
+			"maternalLastnameLabel": "Apellido materno",
+			"send": "Enviar invitación",
+			"sending": "Enviando…",
+			"successTitle": "Invitación enviada",
+			"successBody": "Le escribimos a {{email}}. La invitación vence en 7 días.",
+			"successAlreadyMember": "Ojo: esta persona ya tenía un rol en esta organización.",
+			"successReplaced": "Se canceló la invitación que ya la esperaba y se reemplazó por esta.",
+			"inviteAnother": "Invitar a otra persona"
+		},
+		"crossOrg": {
+			"title": "Esta persona pertenece a otra organización",
+			"body": "Tavli le da a cada persona una sola organización a la vez. Si acepta esta invitación se muda aquí y pierde el acceso a la organización en la que está hoy. Nadie se mueve hasta que acepte.",
+			"acknowledge": "Entiendo — mover a esta persona a la nueva organización"
+		},
+		"replacePending": {
+			"title": "Ya tiene una invitación pendiente",
+			"body": "Sigue pendiente una invitación a esta organización. Al enviar una nueva se cancela el enlace anterior para que solo uno sea válido.",
+			"acknowledge": "Cancelar la invitación anterior y enviar una nueva"
+		},
+		"bulk": {
+			"title": "Invitar usuarios en lote",
+			"subtitle": "Sube un CSV, revisa fila por fila y envía. No se crea nada hasta que confirmes.",
+			"dropzoneLabel": "Arrastra un CSV aquí, o haz clic para elegir uno",
+			"dropzoneHint": "Solo CSV",
+			"notCsv": "Ese archivo no es un CSV. Exporta tu hoja de cálculo como CSV e inténtalo de nuevo.",
+			"templateDownload": "Descargar la plantilla CSV",
+			"formatTitle": "Formato del archivo",
+			"formatRequired": "Columnas obligatorias: email, role, organization.",
+			"formatOptional": "Columnas opcionales: restaurants, firstName, paternalLastname, maternalLastname.",
+			"formatRoles": "role debe ser owner, manager o employee.",
+			"formatOrganization": "organization acepta el ID de la organización o su nombre exacto.",
+			"formatRestaurants": "restaurants acepta IDs o nombres exactos separados por ; — obligatorio para gerentes y empleados, se ignora para propietarios.",
+			"formatLimits": "Hasta {{maxRows}} filas y {{maxKilobytes}} KB por archivo.",
+			"uploading": "Subiendo el archivo…",
+			"validating": "Revisando cada fila…",
+			"committing": "Enviando invitaciones… {{done}} de {{total}}",
+			"previewTitle": "Revisa antes de enviar",
+			"previewNothingCreated": "Todavía no se ha creado nada. Solo se envían las filas que marques.",
+			"summaryTotal": "{{count}} filas leídas",
+			"summarySelected": "{{count}} seleccionadas para enviar",
+			"selectAllSafe": "Seleccionar todas las filas seguras",
+			"clearSelection": "Quitar la selección",
+			"acknowledgeAllCrossOrg": "Mover a las {{count}}",
+			"crossOrgBanner_one": "1 fila pertenece a otra organización. Marcarla saca a esa persona de la organización en la que está hoy.",
+			"crossOrgBanner_other": "{{count}} filas pertenecen a otra organización. Marcar una saca a esa persona de la organización en la que está hoy.",
+			"colInclude": "Enviar",
+			"colRow": "Fila",
+			"colEmail": "Correo",
+			"colRole": "Rol",
+			"colOrganization": "Organización",
+			"colRestaurants": "Restaurantes",
+			"colStatus": "Estado",
+			"colReason": "Motivo",
+			"colOutcome": "Resultado",
+			"rowIncludeAria": "Enviar una invitación a {{email}}",
+			"rowNotSendable": "Corrige esta fila en el archivo y vuelve a subirlo.",
+			"confirm": "Enviar {{count}} invitaciones",
+			"confirmNoneSelected": "Selecciona al menos una fila para enviar.",
+			"reportTitle": "Resultado de esta carga",
+			"reportSummary": "{{created}} enviadas, {{skipped}} omitidas, {{failed}} fallidas.",
+			"reportPartial": "El proceso se detuvo antes de tiempo, así que algunas filas seleccionadas nunca se intentaron.",
+			"reportAllGood": "Se enviaron todas las filas seleccionadas.",
+			"reportCopy": "Copiar las filas con problemas",
+			"reportCopied": "Copiado",
+			"reportDownload": "Descargar las filas con problemas",
+			"retry": "Probar con otro archivo"
+		}
 	}
 }

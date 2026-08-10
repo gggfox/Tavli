@@ -17,7 +17,6 @@ export const OrderingKeys = {
 	BACK_TO_MENU_ARIA: "ordering.backToMenuAria",
 
 	MENU_PROCEED_TO_PAYMENT: "ordering.menu.proceedToPayment",
-	MENU_PLACE_ORDER: "ordering.menu.placeOrder",
 	MENU_PREPARING: "ordering.menu.preparing",
 	MENU_REVIEW_ORDER: "ordering.menu.reviewOrder",
 	MENU_TABLE_NUMBER: "ordering.menu.tableNumber",
@@ -46,8 +45,6 @@ export const OrderingKeys = {
 	CART_HEADING: "ordering.cart.heading",
 	CART_EMPTY: "ordering.cart.empty",
 	CART_TOTAL: "ordering.cart.total",
-	CART_PLACE_ORDER: "ordering.cart.placeOrder",
-	CART_PLACING_ORDER: "ordering.cart.placingOrder",
 
 	CHECKOUT_HEADING: "ordering.checkout.heading",
 	CHECKOUT_ORDER_SUMMARY: "ordering.checkout.orderSummary",
@@ -61,6 +58,23 @@ export const OrderingKeys = {
 	CHECKOUT_PAY_NOW: "ordering.checkout.payNow",
 	CHECKOUT_SECURED_BY_STRIPE: "ordering.checkout.securedByStripe",
 
+	// Per-order pay-at-submit checkout (ADR 008): the diner pays subtotal +
+	// the customer-borne Tavli service fee before the kitchen sees the order.
+	CHECKOUT_SUBTOTAL: "ordering.checkout.subtotal",
+	CHECKOUT_SERVICE_FEE: "ordering.checkout.serviceFee",
+	CHECKOUT_CONTINUE_TO_PAYMENT: "ordering.checkout.continueToPayment",
+	CHECKOUT_PAY_IN_PERSON: "ordering.checkout.payInPerson",
+	CHECKOUT_PAY_BY_CARD_INSTEAD: "ordering.checkout.payByCardInstead",
+	CHECKOUT_ORDER_NOT_FOUND: "ordering.checkout.orderNotFound",
+	CHECKOUT_CASH_TITLE: "ordering.checkout.cashTitle",
+	CHECKOUT_CASH_ORDER_NUMBER: "ordering.checkout.cashOrderNumber",
+	CHECKOUT_CASH_SHOW_SERVER: "ordering.checkout.cashShowServer",
+	CHECKOUT_CASH_KITCHEN_NOTE: "ordering.checkout.cashKitchenNote",
+	CHECKOUT_PAID_TITLE: "ordering.checkout.paidTitle",
+	CHECKOUT_PAID_DESC: "ordering.checkout.paidDesc",
+	CHECKOUT_PAID_DESC_NO_NUMBER: "ordering.checkout.paidDescNoNumber",
+	CHECKOUT_VIEW_ORDERS: "ordering.checkout.viewOrders",
+
 	ORDER_STATUS_LOADING: "ordering.orderStatus.loading",
 	ORDER_STATUS_HEADING: "ordering.orderStatus.heading",
 	ORDER_STATUS_DAY_NUMBER: "ordering.orderStatus.dayNumber",
@@ -73,6 +87,14 @@ export const OrderingKeys = {
 	ORDER_STATUS_STEP_PREPARING: "ordering.orderStatus.stepPreparing",
 	ORDER_STATUS_STEP_READY: "ordering.orderStatus.stepReady",
 	ORDER_STATUS_STEP_SERVED: "ordering.orderStatus.stepServed",
+
+	// Receipt (ADR 008, TAVLI-71 Phase 3C): paid-order breakdown showing the
+	// CHARGED subtotal/fee split, plus the emailed restaurant-branded receipt.
+	// Breakdown amount labels reuse the checkout keys (subtotal/serviceFee/total).
+	RECEIPT_ITEM_REFUNDED: "ordering.receipt.itemRefunded",
+	RECEIPT_EMAIL_CTA: "ordering.receipt.emailCta",
+	RECEIPT_EMAIL_SENDING: "ordering.receipt.emailSending",
+	RECEIPT_EMAIL_SENT: "ordering.receipt.emailSent",
 
 	ORDERS_HEADER: "ordering.orders.header",
 	ORDERS_DAY_NUMBER: "ordering.orders.dayNumber",
@@ -88,6 +110,10 @@ export const OrderingKeys = {
 	ORDERS_LIFECYCLE_VIEW: "ordering.orders.lifecycleView",
 	ORDERS_LIFECYCLE_UNPAID: "ordering.orders.lifecycleUnpaid",
 	ORDERS_LIFECYCLE_FINISH_CHECKOUT: "ordering.orders.lifecycleFinishCheckout",
+	// ADR 008 per-order payment states on the orders list.
+	ORDERS_LIFECYCLE_AWAITING_PAYMENT: "ordering.orders.lifecycleAwaitingPayment",
+	ORDERS_LIFECYCLE_CONTINUE_PAYMENT: "ordering.orders.lifecycleContinuePayment",
+	ORDERS_PAID_BADGE: "ordering.orders.paidBadge",
 	ORDERS_LIFECYCLE_PLACED: "ordering.orders.lifecyclePlaced",
 	ORDERS_LIFECYCLE_PREPARING: "ordering.orders.lifecyclePreparing",
 	ORDERS_LIFECYCLE_READY: "ordering.orders.lifecycleReady",
@@ -121,6 +147,48 @@ export const OrderingKeys = {
 	TAB_PAID_TITLE: "ordering.tab.paidTitle",
 	TAB_PAID_DESC: "ordering.tab.paidDesc",
 	TAB_PAID_DONE: "ordering.tab.paidDone",
+
+	// Visit close-out (ADR 008, TAVLI-71 Phase 3B): each member tips on their
+	// own paid total (no commission on tips), then the session closes.
+	CLOSEOUT_CTA: "ordering.closeout.cta",
+	CLOSEOUT_HEADING: "ordering.closeout.heading",
+	CLOSEOUT_VISIT_TOTAL: "ordering.closeout.visitTotal",
+	CLOSEOUT_ORDER_COUNT: "ordering.closeout.orderCount",
+	CLOSEOUT_TIP_HEADING: "ordering.closeout.tipHeading",
+	CLOSEOUT_PRESET_ARIA: "ordering.closeout.presetAria",
+	CLOSEOUT_TIP_CUSTOM: "ordering.closeout.tipCustom",
+	CLOSEOUT_TIP_CUSTOM_PLACEHOLDER: "ordering.closeout.tipCustomPlaceholder",
+	CLOSEOUT_ADD_TIP_CTA: "ordering.closeout.addTipCta",
+	CLOSEOUT_SKIP: "ordering.closeout.skip",
+	CLOSEOUT_TIPS_GIVEN: "ordering.closeout.tipsGiven",
+	CLOSEOUT_THANKS_TITLE: "ordering.closeout.thanksTitle",
+	CLOSEOUT_THANKS_BODY: "ordering.closeout.thanksBody",
+	CLOSEOUT_PAYMENT_TITLE: "ordering.closeout.paymentTitle",
+	CLOSEOUT_NOTHING_PAID: "ordering.closeout.nothingPaid",
+	CLOSEOUT_DONE: "ordering.closeout.done",
+
+	// Substitution prompt (ADR 008, TAVLI-71 Phase 3A): the kitchen proposed a
+	// replacement for a paid line; the diner answers on their own device.
+	SUB_TITLE: "ordering.substitution.title",
+	SUB_BODY: "ordering.substitution.body",
+	SUB_BODY_NO_NUMBER: "ordering.substitution.bodyNoNumber",
+	SUB_ORIGINAL_LABEL: "ordering.substitution.originalLabel",
+	SUB_PROPOSED_LABEL: "ordering.substitution.proposedLabel",
+	SUB_NO_EXTRA: "ordering.substitution.noExtra",
+	SUB_DELTA_LINE: "ordering.substitution.deltaLine",
+	SUB_FEE_LINE: "ordering.substitution.feeLine",
+	SUB_TOTAL_EXTRA: "ordering.substitution.totalExtra",
+	SUB_ACCEPT: "ordering.substitution.accept",
+	SUB_DECLINE: "ordering.substitution.decline",
+	SUB_DECLINE_CONFIRM_TITLE: "ordering.substitution.declineConfirmTitle",
+	SUB_DECLINE_CONFIRM_BODY: "ordering.substitution.declineConfirmBody",
+	/** Used when the server could not price the refund (money unresolvable). */
+	SUB_DECLINE_CONFIRM_BODY_NO_AMOUNT: "ordering.substitution.declineConfirmBodyNoAmount",
+	SUB_DECLINE_CONFIRM: "ordering.substitution.declineConfirm",
+	SUB_BACK: "ordering.substitution.back",
+	SUB_ONE_TAP_SUCCESS: "ordering.substitution.oneTapSuccess",
+	SUB_PAYMENT_TITLE: "ordering.substitution.paymentTitle",
+	SUB_DONE: "ordering.substitution.done",
 
 	// Geofence gate (TAVLI-6): menu browsable, ordering hidden while away.
 	GEOFENCE_BLOCKED_TITLE: "ordering.geofence.blockedTitle",

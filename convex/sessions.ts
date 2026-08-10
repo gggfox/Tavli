@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import type { DatabaseWriter } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
+	ConflictError,
 	NotAuthenticatedErrorObject,
 	NotAuthorizedError,
 	NotAuthorizedErrorObject,
@@ -24,6 +25,8 @@ import {
 	AUDIT_EVENT,
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
+	ORDER_STATUS,
+	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	SESSION_PAYMENT_STATE,
@@ -37,6 +40,7 @@ import {
 	blocksTabSettlement,
 	generateJoinCode,
 	getPayableOrders,
+	isAwaitingPaymentOrder,
 	isPayableOrder,
 	sumOrderTotals,
 } from "./sessionHelpers";
@@ -229,9 +233,11 @@ export const getTabSummary = query({
 });
 
 /**
- * Diner ends a tab that owes nothing (never ordered, or everything already
+ * Diner ends a session that owes nothing (never ordered, or everything already
  * settled). A tab with a payable balance can only leave the active state via
- * payment (`confirmTabPayment`) or staff (`closeTabAsStaff`).
+ * payment (`confirmTabPayment`) or staff (`closeTabAsStaff`), and a session
+ * holding an uncollected cash order (`awaiting_payment`) is blocked the same
+ * way — cash walkout is the only walkout left under ADR 008.
  */
 export const close = mutation({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
@@ -241,12 +247,26 @@ export const close = mutation({
 			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_LOCKED).toObject());
 		}
 
+		const orders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+
 		// An unpaid tab must stay active: the staff open-tabs view only lists
 		// active sessions, so a diner close here would hide a walkout from the
 		// dashboard. Even the stale sweep only flags unpaid tabs, never closes them.
-		const payableOrders = await getPayableOrders(ctx, args.sessionId);
+		const payableOrders = orders.filter(isPayableOrder);
 		if (sumOrderTotals(payableOrders) > 0) {
 			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_UNPAID).toObject());
+		}
+
+		// Uncollected cash is owed money too, just outside the tab balance
+		// (`awaiting_payment` is deliberately not tab-payable). Same reasoning as
+		// above: closing would hide the debt from the open-tabs view.
+		if (orders.some(isAwaitingPaymentOrder)) {
+			throw fromErrorObject(
+				new NotAuthorizedError(DINER_SESSION_ERRORS.AWAITING_PAYMENT_ORDERS).toObject()
+			);
 		}
 
 		await ctx.db.patch(args.sessionId, {
@@ -270,9 +290,133 @@ export const close = mutation({
 	},
 });
 
+/**
+ * Everything the visit close-out screen needs (ADR 008, TAVLI-71 Phase 3B),
+ * scoped to the CALLING member: tips are per member, on the member's own paid
+ * totals, so two friends on one tab each see only their own spend.
+ *
+ * `canClose`/`closeBlockedReason` mirror the guards in {@link close}
+ * read-only, so the UI can explain a blocked close (e.g. an uncollected cash
+ * order) before the diner hits the error.
+ */
+export const getVisitSummary = query({
+	args: { sessionId: v.id(TABLE.SESSIONS) },
+	handler: async (ctx, args) => {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return null;
+
+		const session = await ctx.db.get(args.sessionId);
+		if (!session || !isSessionMember(session, userId)) return null;
+
+		const restaurant = await ctx.db.get(session.restaurantId);
+		if (!restaurant) return null;
+
+		const orders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+
+		// The caller's own card spend: order totals already reflect 86'd lines
+		// and accepted substitutions, so summing them needs no per-line math.
+		const myPaidOrders = orders.filter(
+			(o) =>
+				o.paymentState === ORDER_PAYMENT_STATE.PAID &&
+				o.paidByUserId === userId &&
+				o.status !== ORDER_STATUS.CANCELLED
+		);
+		const myPaidTotal = sumOrderTotals(myPaidOrders);
+
+		// Tip rows are session-scoped (no orderId), one per charge.
+		const sessionPayments = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+		const myTipRows = sessionPayments.filter(
+			(p) => p.kind === PAYMENT_KIND.TIP && p.paidByUserId === userId
+		);
+		const myTipPayments = myTipRows
+			.filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED)
+			.map((p) => ({ paymentId: p._id, amount: p.amount }));
+		// The latest non-settled tip attempt, so the close-out screen can follow
+		// an in-flight one-tap charge (processing → succeeded via webhook) and
+		// surface a decline for retry. Superseded/cancelled rows are dead ends.
+		const activeTipRow = myTipRows
+			.filter(
+				(p) =>
+					p.status === PAYMENT_STATUS.PENDING ||
+					p.status === PAYMENT_STATUS.PROCESSING ||
+					p.status === PAYMENT_STATUS.FAILED
+			)
+			.reduce<
+				(typeof myTipRows)[number] | null
+			>((latest, p) => (!latest || p.createdAt > latest.createdAt ? p : latest), null);
+
+		// One-tap eligibility: the card persisted by the caller's own
+		// pay-at-submit charge in this session (mirrors
+		// `substitutions.getSavedCardForSessionMemberInternal`).
+		let hasSavedCard = false;
+		for (const order of orders) {
+			if (order.paidByUserId !== userId || !order.activePaymentId) continue;
+			const payment = await ctx.db.get(order.activePaymentId);
+			if (
+				payment?.status === PAYMENT_STATUS.SUCCEEDED &&
+				payment.kind === PAYMENT_KIND.ORDER &&
+				payment.stripePaymentMethodId
+			) {
+				hasSavedCard = true;
+				break;
+			}
+		}
+
+		// Read-only mirror of the `close` guards, in the same precedence order.
+		let closeBlockedReason: string | null = null;
+		if (session.status !== SESSION_STATUS.ACTIVE) {
+			closeBlockedReason = null; // already closed — nothing to do
+		} else if (session.lockedForPaymentAt !== undefined) {
+			closeBlockedReason = DINER_SESSION_ERRORS.TAB_LOCKED;
+		} else if (sumOrderTotals(orders.filter(isPayableOrder)) > 0) {
+			closeBlockedReason = DINER_SESSION_ERRORS.TAB_UNPAID;
+		} else if (orders.some(isAwaitingPaymentOrder)) {
+			closeBlockedReason = DINER_SESSION_ERRORS.AWAITING_PAYMENT_ORDERS;
+		}
+
+		return {
+			sessionId: session._id,
+			restaurantId: session.restaurantId,
+			sessionStatus: session.status,
+			currency: restaurant.currency,
+			myPaidTotal,
+			myOrderCount: myPaidOrders.length,
+			myTipPayments,
+			myActiveTipPayment: toDinerVisiblePayment(activeTipRow),
+			hasSavedCard,
+			canClose: session.status === SESSION_STATUS.ACTIVE && closeBlockedReason === null,
+			closeBlockedReason,
+		};
+	},
+});
+
 // ============================================================================
 // Tab payment internals (called from the Stripe action / webhook)
 // ============================================================================
+
+/**
+ * Membership + active-session check for the tip charge action (Phase 3B).
+ * Returns the restaurant id the destination charge routes to, or null when
+ * the caller may not tip on this session.
+ */
+export const verifySessionMemberInternal = internalQuery({
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		userId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const session = await ctx.db.get(args.sessionId);
+		if (!session || session.status !== SESSION_STATUS.ACTIVE) return null;
+		if (!isSessionMember(session, args.userId)) return null;
+		return { restaurantId: session.restaurantId };
+	},
+});
 
 /**
  * Verifies the caller may pay this tab and returns the amount snapshot the
@@ -640,6 +784,14 @@ export type OpenTabRow = {
 	 * someone down.
 	 */
 	unservedOrderCount: number;
+	/**
+	 * Cash the table owes on `awaiting_payment` orders (ADR 008). Deliberately
+	 * separate from `unpaidTotal`: this money can only be collected in person
+	 * (`orders.markOrderPaidInPerson`), never through a tab payment.
+	 */
+	awaitingPaymentTotal: number;
+	/** How many `awaiting_payment` orders are waiting for staff to collect. */
+	awaitingPaymentCount: number;
 	lockedForPayment: boolean;
 	paymentState: string;
 	flaggedStaleAt: number | null;
@@ -667,8 +819,9 @@ export const getOpenTabsByRestaurant = query({
 					.withIndex("by_session", (q) => q.eq("sessionId", session._id))
 					.collect();
 				const payableOrders = orders.filter(isPayableOrder);
+				const awaitingPaymentOrders = orders.filter(isAwaitingPaymentOrder);
 				const table = session.tableId ? await ctx.db.get(session.tableId) : null;
-				const orderTableId = payableOrders[0]?.tableId;
+				const orderTableId = payableOrders[0]?.tableId ?? awaitingPaymentOrders[0]?.tableId;
 				const orderTable = !table && orderTableId ? await ctx.db.get(orderTableId) : null;
 				return {
 					sessionId: session._id,
@@ -679,6 +832,8 @@ export const getOpenTabsByRestaurant = query({
 					orderCount: payableOrders.length,
 					unpaidTotal: sumOrderTotals(payableOrders),
 					unservedOrderCount: payableOrders.filter(blocksTabSettlement).length,
+					awaitingPaymentTotal: sumOrderTotals(awaitingPaymentOrders),
+					awaitingPaymentCount: awaitingPaymentOrders.length,
 					lockedForPayment: session.lockedForPaymentAt !== undefined,
 					paymentState: session.paymentState ?? SESSION_PAYMENT_STATE.UNPAID,
 					flaggedStaleAt: session.flaggedStaleAt ?? null,
@@ -698,6 +853,13 @@ export const getOpenTabsByRestaurant = query({
 /**
  * Staff closes a tab that was settled in person (walkout fallback — no card
  * pre-auth exists, so unpaid tabs are a staff problem like a normal restaurant).
+ *
+ * Blocked while an `awaiting_payment` order exists (ADR 008): a staff close
+ * quietly settles whatever tab balance remains, but an uncollected cash order
+ * is a *specific* order that must either be marked paid in person (so it
+ * reaches the kitchen and the books) or cancelled — silently closing over it
+ * would leave a committed order in a status nothing can ever advance. The
+ * safer block-with-error makes staff resolve the order first.
  */
 export const closeTabAsStaff = mutation({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
@@ -712,6 +874,14 @@ export const closeTabAsStaff = mutation({
 		if (accessError) return [null, accessError];
 
 		if (session.status === SESSION_STATUS.CLOSED) return [args.sessionId, null];
+
+		const orders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+		if (orders.some(isAwaitingPaymentOrder)) {
+			throw new ConflictError(DINER_SESSION_ERRORS.AWAITING_PAYMENT_ORDERS);
+		}
 
 		if (session.activePaymentId) {
 			const payment = await ctx.db.get(session.activePaymentId);
@@ -762,8 +932,13 @@ export const closeTabAsStaff = mutation({
 
 /**
  * End-of-day hygiene: active tabs older than STALE_TAB_MAX_AGE_MS are closed
- * when they have no unpaid balance, and flagged (surfaced in the staff open
- * tabs view) when they still owe money. Never auto-charges anything.
+ * when they owe nothing, and flagged (surfaced in the staff open tabs view)
+ * when they still owe money. Never auto-charges anything.
+ *
+ * "Owes money" covers both vintages (ADR 008): the legacy tab balance
+ * (payable orders) **and** uncollected cash on `awaiting_payment` orders —
+ * a session whose only debt is cash must be flagged, not closed, or the
+ * walkout disappears from the dashboard.
  *
  * The scan is bounded on both ends by the `by_status_started` index range —
  * active tabs whose `startedAt` falls in
@@ -789,12 +964,19 @@ export const sweepStaleOpenTabs = internalMutation({
 
 		let closed = 0;
 		let flagged = 0;
+		let awaitingPaymentOrdersSeen = 0;
 
 		for (const session of staleTabs) {
-			const payableOrders = await getPayableOrders(ctx, session._id);
-			const unpaidTotal = sumOrderTotals(payableOrders);
+			const orders = await ctx.db
+				.query(TABLE.ORDERS)
+				.withIndex("by_session", (q) => q.eq("sessionId", session._id))
+				.collect();
+			const unpaidTotal = sumOrderTotals(orders.filter(isPayableOrder));
+			const awaitingPaymentOrders = orders.filter(isAwaitingPaymentOrder);
+			const awaitingPaymentTotal = sumOrderTotals(awaitingPaymentOrders);
+			awaitingPaymentOrdersSeen += awaitingPaymentOrders.length;
 
-			if (unpaidTotal === 0) {
+			if (unpaidTotal + awaitingPaymentTotal === 0) {
 				await ctx.db.patch(session._id, {
 					status: SESSION_STATUS.CLOSED,
 					closedAt: Date.now(),
@@ -828,13 +1010,15 @@ export const sweepStaleOpenTabs = internalMutation({
 						startedAt: session.startedAt,
 						ageMs: now - session.startedAt,
 						unpaidTotal,
+						awaitingPaymentTotal,
+						awaitingPaymentCount: awaitingPaymentOrders.length,
 					},
 					userId: AUDIT_SYSTEM_USER_ID,
 				});
 			}
 		}
 
-		return { scanned: staleTabs.length, closed, flagged };
+		return { scanned: staleTabs.length, closed, flagged, awaitingPaymentOrdersSeen };
 	},
 });
 

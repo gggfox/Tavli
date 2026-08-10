@@ -31,6 +31,15 @@ export const RestaurantsKeys = {
 	TRASH_RESTORE: "restaurants.trash.restore",
 	TRASH_PUBLIC_SLUG: "restaurants.trash.publicSlug",
 
+	/**
+	 * `?settings=<id>` / `?manage=<id>` pointing at a restaurant the caller
+	 * cannot see (deleted, or outside their scope) — without this the canvas
+	 * renders blank with browser-back as the only exit.
+	 */
+	CANVAS_NOT_FOUND_TITLE: "restaurants.canvas.notFoundTitle",
+	CANVAS_NOT_FOUND_BODY: "restaurants.canvas.notFoundBody",
+	CANVAS_NOT_FOUND_BACK: "restaurants.canvas.notFoundBack",
+
 	MODAL_DELETE_ARIA: "restaurants.modal.deleteAria",
 	MODAL_DELETE_HEADING: "restaurants.modal.deleteHeading",
 	MODAL_DELETE_BODY: "restaurants.modal.deleteBody",
@@ -40,14 +49,29 @@ export const RestaurantsKeys = {
 	/** Sidebar: which restaurant staff admin routes apply to */
 	SWITCHER_LABEL: "restaurants.switcher.label",
 
+	/** Sidebar (admin only): which organization narrows the restaurant switcher */
+	ORG_SWITCHER_LABEL: "restaurants.orgSwitcher.label",
+	ORG_SWITCHER_ALL: "restaurants.orgSwitcher.all",
+	/** Stands in for the active organization's name when the directory failed to load. */
+	ORG_SWITCHER_CURRENT: "restaurants.orgSwitcher.current",
+	ORG_SWITCHER_LOAD_FAILED: "restaurants.orgSwitcher.loadFailed",
+	/** Same failure, but a filter is still narrowing the scope — say so. */
+	ORG_SWITCHER_LOAD_FAILED_FILTERED: "restaurants.orgSwitcher.loadFailedFiltered",
+
 	MODAL_CREATE_ARIA: "restaurants.modal.createAria",
-	MODAL_EDIT_ARIA: "restaurants.modal.editAria",
 	MODAL_CREATE_HEADING: "restaurants.modal.createHeading",
-	MODAL_EDIT_HEADING: "restaurants.modal.editHeading",
 
 	FORM_NAME_LABEL: "restaurants.form.nameLabel",
+	/**
+	 * The slug is only editable in the settings canvas — creation derives it from
+	 * the restaurant name (`convex/slugHelpers.ts`). `FORM_SLUG_HINT` now labels
+	 * a marked-up URL preview instead of interpolating the slug itself, so the
+	 * editable segment can be highlighted.
+	 */
 	FORM_SLUG_LABEL: "restaurants.form.slugLabel",
 	FORM_SLUG_HINT: "restaurants.form.slugHint",
+	FORM_SLUG_PLACEHOLDER: "restaurants.form.slugPlaceholder",
+	FORM_SLUG_CHANGE_WARNING: "restaurants.form.slugChangeWarning",
 	FORM_OPEN_TEST_LINK: "restaurants.form.openTestLink",
 	FORM_DESCRIPTION_LABEL: "restaurants.form.descriptionLabel",
 	FORM_SUPPORT_EMAIL_LABEL: "restaurants.form.supportEmailLabel",
@@ -89,6 +113,16 @@ export const RestaurantsKeys = {
 	FORM_GEOFENCE_COORDINATES_ADVANCED: "restaurants.form.geofenceCoordinatesAdvanced",
 	FORM_ORG_LABEL: "restaurants.form.orgLabel",
 	FORM_ORG_PLACEHOLDER: "restaurants.form.orgPlaceholder",
+	/**
+	 * The create-restaurant organization picker is a *required* select, so it
+	 * must never render blank and silent: loading / failed / empty each get
+	 * their own line (TAVLI-71 item 8).
+	 */
+	FORM_ORG_LOADING: "restaurants.form.orgLoading",
+	FORM_ORG_EMPTY: "restaurants.form.orgEmpty",
+	FORM_ORG_LOAD_FAILED: "restaurants.form.orgLoadFailed",
+	/** Shown instead of the picker when there is exactly one selectable org. */
+	FORM_ORG_SINGLE_HINT: "restaurants.form.orgSingleHint",
 	FORM_STATUS_LABEL: "restaurants.form.statusLabel",
 	FORM_TOGGLE_DEACTIVATE_TITLE: "restaurants.form.toggleDeactivateTitle",
 	FORM_TOGGLE_ACTIVATE_TITLE: "restaurants.form.toggleActivateTitle",
@@ -97,6 +131,30 @@ export const RestaurantsKeys = {
 	FORM_CREATING: "restaurants.form.creating",
 	FORM_UPDATE_FAILED: "restaurants.form.updateFailed",
 	FORM_CREATE_FAILED: "restaurants.form.createFailed",
+
+	/**
+	 * Full-canvas restaurant settings sub-view (`?settings=<id>`), which
+	 * replaced the oversized edit modal. Field labels are reused from
+	 * `FORM_*` above -- these keys only cover the section chrome.
+	 */
+	SETTINGS_CLOSE: "restaurants.settings.close",
+	SETTINGS_SAVING: "restaurants.settings.saving",
+	SETTINGS_SAVED: "restaurants.settings.saved",
+	SETTINGS_GENERAL_TITLE: "restaurants.settings.generalTitle",
+	SETTINGS_GENERAL_HINT: "restaurants.settings.generalHint",
+	SETTINGS_HOURS_TITLE: "restaurants.settings.hoursTitle",
+	SETTINGS_HOURS_HINT: "restaurants.settings.hoursHint",
+	SETTINGS_TAX_TITLE: "restaurants.settings.taxTitle",
+	SETTINGS_TAX_HINT: "restaurants.settings.taxHint",
+	SETTINGS_TAX_RFC_LABEL: "restaurants.settings.taxRfcLabel",
+	SETTINGS_TAX_RAZON_SOCIAL_LABEL: "restaurants.settings.taxRazonSocialLabel",
+	SETTINGS_TAX_FISCAL_ADDRESS_LABEL: "restaurants.settings.taxFiscalAddressLabel",
+	SETTINGS_ORG_TITLE: "restaurants.settings.organizationTitle",
+	SETTINGS_ORG_HINT: "restaurants.settings.organizationHint",
+	SETTINGS_ORG_LOADING: "restaurants.settings.organizationLoading",
+	SETTINGS_ORG_EMPTY: "restaurants.settings.organizationEmpty",
+	SETTINGS_ORG_LOAD_FAILED: "restaurants.settings.organizationLoadFailed",
+	SETTINGS_ORG_CURRENT_UNRESOLVED: "restaurants.settings.organizationCurrentUnresolved",
 
 	MANAGERS_SECTION_TITLE: "restaurants.managers.sectionTitle",
 	MANAGERS_SECTION_HINT: "restaurants.managers.sectionHint",
@@ -208,6 +266,47 @@ export const RestaurantsKeys = {
 	STRIPE_STATUS_FAILED: "restaurants.stripe.statusFailed",
 	STRIPE_SETUP_FAILED: "restaurants.stripe.setupFailed",
 	STRIPE_RESET_FAILED: "restaurants.stripe.resetFailed",
+
+	// Platform subscription — the 2,000 MXN/month the RESTAURANT pays Tavli
+	// (ADR 008 / TAVLI-71 Phase 4B). Never the diner-paid service fee: copy in
+	// this block must keep the two apart.
+	BILLING_HEADING: "restaurants.billing.heading",
+	BILLING_DESCRIPTION: "restaurants.billing.description",
+	BILLING_DISTINCT_NOTE: "restaurants.billing.distinctNote",
+	BILLING_ENABLE_LABEL: "restaurants.billing.enableLabel",
+	BILLING_ENABLE_HINT: "restaurants.billing.enableHint",
+	BILLING_ADMIN_ONLY: "restaurants.billing.adminOnly",
+	BILLING_DISABLED_STATE: "restaurants.billing.disabledState",
+	BILLING_PLAN_LABEL: "restaurants.billing.planLabel",
+	BILLING_PLAN_VALUE: "restaurants.billing.planValue",
+	BILLING_STATUS_LABEL: "restaurants.billing.statusLabel",
+	BILLING_STATUS_NONE: "restaurants.billing.statusNone",
+	BILLING_STATUS_ACTIVE: "restaurants.billing.statusActive",
+	BILLING_STATUS_TRIALING: "restaurants.billing.statusTrialing",
+	BILLING_STATUS_PAST_DUE: "restaurants.billing.statusPastDue",
+	BILLING_STATUS_UNPAID: "restaurants.billing.statusUnpaid",
+	BILLING_STATUS_INCOMPLETE: "restaurants.billing.statusIncomplete",
+	BILLING_STATUS_PAUSED: "restaurants.billing.statusPaused",
+	BILLING_STATUS_CANCELED: "restaurants.billing.statusCanceled",
+	BILLING_STATUS_UNKNOWN: "restaurants.billing.statusUnknown",
+	BILLING_RENEWS_LABEL: "restaurants.billing.renewsLabel",
+	BILLING_ENDS_LABEL: "restaurants.billing.endsLabel",
+	BILLING_CANCEL_SCHEDULED: "restaurants.billing.cancelScheduled",
+	BILLING_SETUP_BUTTON: "restaurants.billing.setupButton",
+	BILLING_SETUP_REDIRECTING: "restaurants.billing.setupRedirecting",
+	BILLING_PORTAL_BUTTON: "restaurants.billing.portalButton",
+	BILLING_PORTAL_FAILED: "restaurants.billing.portalFailed",
+	BILLING_PAST_DUE_HINT: "restaurants.billing.pastDueHint",
+	BILLING_CANCEL_BUTTON: "restaurants.billing.cancelButton",
+	BILLING_CANCEL_CONFIRM: "restaurants.billing.cancelConfirm",
+	BILLING_CANCEL_CONFIRM_YES: "restaurants.billing.cancelConfirmYes",
+	BILLING_CANCEL_CONFIRM_NO: "restaurants.billing.cancelConfirmNo",
+	BILLING_CANCELLING: "restaurants.billing.cancelling",
+	BILLING_RETURN_SUCCESS: "restaurants.billing.returnSuccess",
+	BILLING_RETURN_CANCELLED: "restaurants.billing.returnCancelled",
+	BILLING_CHECKOUT_FAILED: "restaurants.billing.checkoutFailed",
+	BILLING_CANCEL_FAILED: "restaurants.billing.cancelFailed",
+	BILLING_TOGGLE_FAILED: "restaurants.billing.toggleFailed",
 } as const;
 
 export type RestaurantsKey = (typeof RestaurantsKeys)[keyof typeof RestaurantsKeys];

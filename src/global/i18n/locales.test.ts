@@ -18,6 +18,7 @@ import {
 	RoleKeys,
 	SidebarKeys,
 	TimeKeys,
+	UserOnboardingKeys,
 	WelcomeKeys,
 } from "@/global/i18n";
 import en from "./locales/en.json";
@@ -106,8 +107,54 @@ describe("Key enums resolve in every locale", () => {
 		["OrderingKeys", OrderingKeys as Record<string, string>],
 		["DashboardKeys", DashboardKeys as Record<string, string>],
 		["ExportsKeys", ExportsKeys as Record<string, string>],
+		["UserOnboardingKeys", UserOnboardingKeys as Record<string, string>],
 		["ErrorKeys", ErrorKeys as Record<string, string>],
 	])("%s -- all values resolve in en.json and es.json", (name, keys) => {
 		expectAllKeysResolve(name, keys);
+	});
+});
+
+/**
+ * TAVLI-71: the diner-facing geofence **access code** and the session
+ * **join code** are two different things (CONTEXT.md glossary). They were
+ * both called "código de mesa"/"table code" at one point; this guards
+ * against re-conflating them in copy.
+ */
+describe("Access code and join code stay distinct", () => {
+	it.each([
+		["en", en],
+		["es", es],
+	])("%s -- geofence code copy never reuses the join-code label", (_locale, bundle) => {
+		const geofence = bundle.ordering.geofence;
+		const joinCodeLabel = bundle.ordering.tab.shareCodeLabel;
+
+		expect(geofence.codePlaceholder).not.toBe(joinCodeLabel);
+		for (const value of Object.values(geofence)) {
+			expect(value.toLowerCase()).not.toContain(joinCodeLabel.toLowerCase());
+		}
+	});
+
+	it.each([
+		["en", en, "Access code", "Geofence bypass code"],
+		["es", es, "Código de acceso", "Código de anulación de geocerca"],
+	])(
+		"%s -- diner sees the access-code label, staff see the technical one",
+		(_locale, bundle, dinerLabel, staffLabel) => {
+			expect(bundle.ordering.geofence.codePlaceholder).toBe(dinerLabel);
+			expect(bundle.restaurants.form.geofenceBypassLabel).toBe(staffLabel);
+			expect(bundle.ordering.geofence.codePlaceholder).not.toBe(
+				bundle.restaurants.form.geofenceBypassLabel
+			);
+		}
+	);
+
+	it.each([
+		["en", en],
+		["es", es],
+	])("%s -- no leftover table-code phrasing", (_locale, bundle) => {
+		const copy = JSON.stringify(bundle).toLowerCase();
+		expect(copy).not.toContain("table code");
+		expect(copy).not.toContain("table bypass");
+		expect(copy).not.toContain("código de mesa");
 	});
 });

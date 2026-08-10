@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { DatabaseReader } from "./_generated/server";
+import type { DatabaseReader, MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
@@ -10,6 +10,8 @@ import {
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
+	RateLimitedError,
+	RateLimitedErrorObject,
 	UserInputValidationError,
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
@@ -24,6 +26,7 @@ import {
 	RoleErrorMessages,
 } from "./_util/auth";
 import {
+	AUDIT_EVENT,
 	AUDIT_SYSTEM_USER_ID,
 	INVITATION_STATUS,
 	RESTAURANT_MEMBER_ROLE,
@@ -32,11 +35,76 @@ import {
 } from "./constants";
 import { buildInviterDisplayName } from "./emails/contextHelpers";
 import { resolveInviteLocale } from "./emails/locale";
+import type { InviteRole } from "./inviteOnboardingHelpers";
+import { consumeInvitationBudget } from "./inviteRateLimit";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
-function normalizeEmail(email: string): string {
+export function normalizeEmail(email: string): string {
 	return email.trim().toLowerCase();
+}
+
+/** Default invitation lifetime: a week is long enough to survive a holiday. */
+export const INVITATION_DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Write one invitation row, audit it, and queue its email.
+ *
+ * Shared by the org-scoped `createInvitation` (team tab) and the admin
+ * onboarding paths in `convex/inviteOnboarding.ts` so the three of them cannot
+ * drift on token generation, TTL, audit shape, or email dispatch. Callers own
+ * authorization, classification and rate limiting BEFORE calling this — this
+ * function trusts what it is handed.
+ */
+export async function insertInvitationRow(
+	ctx: MutationCtx,
+	args: {
+		actorId: string;
+		organizationId: Id<"organizations">;
+		/** Must already be normalized by the caller. */
+		email: string;
+		role: InviteRole;
+		restaurantIds: Id<"restaurants">[];
+		expiresInMs?: number;
+		firstName?: string;
+		paternalLastname?: string;
+		maternalLastname?: string;
+	}
+): Promise<Id<"invitations">> {
+	const now = Date.now();
+	const ttl = args.expiresInMs ?? INVITATION_DEFAULT_TTL_MS;
+
+	const id = await ctx.db.insert(TABLE.INVITATIONS, {
+		token: crypto.randomUUID(),
+		email: args.email,
+		organizationId: args.organizationId,
+		role: args.role,
+		restaurantIds: args.restaurantIds,
+		invitedBy: args.actorId,
+		status: INVITATION_STATUS.PENDING,
+		expiresAt: now + ttl,
+		...(args.firstName && { firstName: args.firstName.trim() }),
+		...(args.paternalLastname && { paternalLastname: args.paternalLastname.trim() }),
+		...(args.maternalLastname && { maternalLastname: args.maternalLastname.trim() }),
+		createdAt: now,
+		updatedAt: now,
+		updatedBy: args.actorId,
+	});
+
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.INVITATIONS,
+		aggregateId: id,
+		eventType: AUDIT_EVENT.INVITATION_CREATED,
+		// Invitations can span several restaurants; the full list lives in the
+		// payload rather than the single indexed column.
+		restaurantId: null,
+		payload: { email: args.email, role: args.role, restaurantIds: args.restaurantIds },
+		userId: args.actorId,
+	});
+
+	await ctx.scheduler.runAfter(0, internal.inviteActions.sendInviteEmail, { invitationId: id });
+
+	return id;
 }
 
 function maskInviteEmail(email: string): string {
@@ -191,7 +259,10 @@ export const createInvitation = mutation({
 	handler: async function (
 		ctx,
 		args
-	): AsyncReturn<Id<"invitations">, AuthErrors | UserInputValidationErrorObject> {
+	): AsyncReturn<
+		Id<"invitations">,
+		AuthErrors | UserInputValidationErrorObject | RateLimitedErrorObject
+	> {
 		const [actorId, err] = await getCurrentUserId(ctx);
 		if (err) return [null, err];
 
@@ -215,40 +286,24 @@ export const createInvitation = mutation({
 		});
 		if (permErr) return [null, permErr];
 
-		const token = crypto.randomUUID();
-		const now = Date.now();
-		const ttl = args.expiresInMs ?? 7 * 24 * 60 * 60 * 1000;
+		const email = normalizeEmail(args.email);
 
-		const id = await ctx.db.insert(TABLE.INVITATIONS, {
-			token,
-			email: normalizeEmail(args.email),
+		// Charged after authorization so an unauthorized caller cannot burn a
+		// legitimate inviter's budget, and before the insert so a rejected hit
+		// never schedules an email.
+		const limited = await consumeInvitationBudget(ctx, { actorId, normalizedEmail: email });
+		if (limited) return [null, new RateLimitedError(limited).toObject()];
+
+		const id = await insertInvitationRow(ctx, {
+			actorId,
 			organizationId: args.organizationId,
+			email,
 			role: args.role,
 			restaurantIds: args.restaurantIds,
-			invitedBy: actorId,
-			status: INVITATION_STATUS.PENDING,
-			expiresAt: now + ttl,
-			...(args.firstName && { firstName: args.firstName.trim() }),
-			...(args.paternalLastname && { paternalLastname: args.paternalLastname.trim() }),
-			...(args.maternalLastname && { maternalLastname: args.maternalLastname.trim() }),
-			createdAt: now,
-			updatedAt: now,
-			updatedBy: actorId,
-		});
-
-		await appendAuditEvent(ctx, {
-			aggregateType: TABLE.INVITATIONS,
-			aggregateId: id,
-			eventType: "invitations.created",
-			// Invitations can span several restaurants; the full list lives in the
-			// payload rather than the single indexed column.
-			restaurantId: null,
-			payload: { email: args.email, role: args.role, restaurantIds: args.restaurantIds },
-			userId: actorId,
-		});
-
-		await ctx.scheduler.runAfter(0, internal.inviteActions.sendInviteEmail, {
-			invitationId: id,
+			expiresInMs: args.expiresInMs,
+			firstName: args.firstName,
+			paternalLastname: args.paternalLastname,
+			maternalLastname: args.maternalLastname,
 		});
 
 		return [id, null];
@@ -446,7 +501,7 @@ export const acceptInvitation = mutation({
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.INVITATIONS,
 			aggregateId: invitation._id,
-			eventType: "invitations.accepted",
+			eventType: AUDIT_EVENT.INVITATION_ACCEPTED,
 			restaurantId: null,
 			payload: { userId, restaurantIds: invitation.restaurantIds },
 			userId,
@@ -473,6 +528,17 @@ export const revokeInvitation = mutation({
 			revokedAt: Date.now(),
 			revokedBy: actorId,
 			...stampUpdated(actorId),
+		});
+
+		// Revocation emitted nothing until now, leaving a gap in the invitation
+		// lifecycle: created and accepted were auditable, killing an invite was not.
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.INVITATIONS,
+			aggregateId: args.invitationId,
+			eventType: AUDIT_EVENT.INVITATION_REVOKED,
+			restaurantId: null,
+			payload: { email: row.email, role: row.role, restaurantIds: row.restaurantIds },
+			userId: actorId,
 		});
 
 		return [true, null];

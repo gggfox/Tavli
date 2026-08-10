@@ -31,9 +31,10 @@ export type Theme = "light" | "dark";
 export type { Language } from "@/global/i18n";
 
 /**
- * Statuses the OrderDashboard is allowed to filter by. Mirrors the validator
- * in convex/userSettings.ts -- `draft` is excluded because drafts never appear
- * on the dashboard.
+ * Statuses the LEGACY multi-select OrderDashboard filter accepts. Mirrors
+ * the legacy array validator in convex/userSettings.ts -- `draft` is excluded
+ * because drafts never appear on the dashboard, and `awaiting_payment`
+ * postdates the array setting.
  */
 export type OrderDashboardStatusFilter =
 	| "submitted"
@@ -41,6 +42,14 @@ export type OrderDashboardStatusFilter =
 	| "ready"
 	| "served"
 	| "cancelled";
+
+/**
+ * Value of the single-select OrderDashboard status filter (ADR 008).
+ * Mirrors `DASHBOARD_STATUS_VALIDATOR` in convex/orderHelpers.ts —
+ * unlike the legacy multi-select type it includes `awaiting_payment`,
+ * the staff-facing "cash owed" status.
+ */
+export type OrderDashboardStatusFilterValue = "awaiting_payment" | OrderDashboardStatusFilter;
 
 /**
  * Prep stations the OrderDashboard is allowed to filter by. Mirrors the
@@ -67,6 +76,7 @@ export class UserSettingsError {
 			| "updateTheme"
 			| "updateSidebarExpanded"
 			| "updateLanguage"
+			| "updateOrderDashboardStatusFilter"
 			| "updateOrderDashboardStatusFilters"
 			| "updateOrderDashboardPrepStationFilters"
 			| "setSidebarGroupExpanded",
@@ -141,6 +151,25 @@ export async function updateOrderDashboardStatusFilters(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardStatusFilters", error);
+	}
+}
+
+/**
+ * Update the single-select OrderDashboard status filter for the
+ * authenticated user (ADR 008). Successor of the legacy multi-select
+ * `updateOrderDashboardStatusFilters`.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardStatusFilter(
+	client: ConvexReactClient,
+	status: OrderDashboardStatusFilterValue
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardStatusFilter, {
+			status,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardStatusFilter", error);
 	}
 }
 

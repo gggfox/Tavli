@@ -13,6 +13,14 @@
  *
  * Authorization is enforced inside the internal queries (owner / manager /
  * admin); the action's `actingUserId` is read from Convex auth.
+ *
+ * **Column headers are English in every sheet, by convention.** Only the month
+ * names (`getMonthNames(locale)`) follow the caller's locale — a workbook is a
+ * data interchange artifact whose column names are read by spreadsheet formulas
+ * and downstream tooling, so they are kept stable rather than translated. The
+ * ADR 008 columns added to the Payments sheet (subtotal / tavli service fee /
+ * net to restaurant / kind / settled by) follow that same rule; localizing
+ * headers is an all-sheets change, not a per-column one.
  */
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -32,7 +40,9 @@ import {
 	yearInTz,
 } from "./exportHelpers";
 import { requireRestaurantManagerOrAbove } from "./_util/auth";
-import { TABLE } from "./constants";
+import { SETTLED_BY, TABLE } from "./constants";
+import type { DataModel, Id } from "./_generated/dataModel";
+import type { GenericActionCtx } from "convex/server";
 
 function csvEscape(cell: string): string {
 	if (/[",\n]/.test(cell)) return `"${cell.replaceAll('"', '""')}"`;
@@ -239,6 +249,8 @@ interface OrderExportRow {
 	tableNumber: number | null;
 	status: string;
 	paymentState: string;
+	/** "stripe" | "staff" | "" — "staff" means cash, collected in person. */
+	settledBy: string;
 	submittedAt: number | null;
 	paidAt: number | null;
 	serverDisplay: string;
@@ -295,6 +307,7 @@ export const exportOrdersXlsx = action({
 			"table number",
 			"status",
 			"payment state",
+			"settled by",
 			"submitted at",
 			"paid at",
 			"server",
@@ -310,6 +323,7 @@ export const exportOrdersXlsx = action({
 			r.tableNumber,
 			r.status,
 			r.paymentState,
+			r.settledBy,
 			formatLocalTimestamp(r.submittedAt, tz),
 			formatLocalTimestamp(r.paidAt, tz),
 			r.serverDisplay,
@@ -330,7 +344,12 @@ export const exportOrdersXlsx = action({
 		summaryRows.push(
 			[`${args.year} total`, rows.length, formatMoneyCents(grandTotalCents)],
 			[],
-			["Note: only orders with an assigned business date (paid orders) are included."]
+			["Note: only orders with an assigned business date (paid orders) are included."],
+			[
+				"Note: 'total amount' is the food subtotal — it excludes the customer-borne Tavli " +
+					"service fee and any tip. Orders with settled by = staff were paid in cash and have " +
+					"no row in the Payments export.",
+			]
 		);
 
 		const base64 = buildMonthlyWorkbook<OrderExportRow>({
@@ -356,10 +375,16 @@ interface PaymentExportRow {
 	orderId: string;
 	dailyOrderNumber: number | null;
 	tableNumber: number | null;
+	/** PAYMENT_KIND ("order" | "tip" | "substitution"); "" on legacy rows. */
+	kind: string;
 	status: string;
 	refundStatus: string;
 	attemptNumber: number;
 	amountCents: number;
+	/** Food value — null on legacy rows, which never recorded the split. */
+	subtotalCents: number | null;
+	serviceFeeCents: number | null;
+	netToRestaurantCents: number | null;
 	gratuityCents: number | null;
 	currency: string;
 	succeededAt: number | null;
@@ -412,6 +437,9 @@ export const exportPaymentsXlsx = action({
 		const monthlyCounts = new Array(12).fill(0);
 		const monthlySucceededCents = new Array(12).fill(0);
 		const monthlyGratuityCents = new Array(12).fill(0);
+		const monthlySubtotalCents = new Array(12).fill(0);
+		const monthlyServiceFeeCents = new Array(12).fill(0);
+		const monthlyNetCents = new Array(12).fill(0);
 
 		for (const row of rows) {
 			const bucketingMs = row.succeededAt ?? row.createdAt;
@@ -422,20 +450,37 @@ export const exportPaymentsXlsx = action({
 			if (row.status === "succeeded") {
 				monthlySucceededCents[idx] += row.amountCents;
 				monthlyGratuityCents[idx] += row.gratuityCents ?? 0;
+				// Legacy rows contribute null here (no recorded split); they are
+				// still counted in the charged/gratuity columns above.
+				monthlySubtotalCents[idx] += row.subtotalCents ?? 0;
+				monthlyServiceFeeCents[idx] += row.serviceFeeCents ?? 0;
+				monthlyNetCents[idx] += row.netToRestaurantCents ?? 0;
 			}
 		}
 
-		const amountLabel = currencyLabel ? `amount (${currencyLabel})` : "amount";
+		// `amount` was renamed to `charged to diner`: post-ADR-008 the number
+		// includes Tavli's customer-borne service fee, so "amount" no longer
+		// means "what the restaurant took in".
+		const chargedLabel = currencyLabel ? `charged to diner (${currencyLabel})` : "charged to diner";
+		const subtotalLabel = currencyLabel ? `subtotal (${currencyLabel})` : "subtotal";
+		const serviceFeeLabel = currencyLabel
+			? `tavli service fee (${currencyLabel})`
+			: "tavli service fee";
 		const gratuityLabel = currencyLabel ? `gratuity (${currencyLabel})` : "gratuity";
+		const netLabel = currencyLabel ? `net to restaurant (${currencyLabel})` : "net to restaurant";
 
 		const headers = [
 			"daily order number",
 			"table number",
+			"kind",
 			"status",
 			"refund status",
 			"attempt",
-			amountLabel,
+			chargedLabel,
+			subtotalLabel,
+			serviceFeeLabel,
 			gratuityLabel,
+			netLabel,
 			"currency",
 			"created at",
 			"succeeded at",
@@ -454,11 +499,15 @@ export const exportPaymentsXlsx = action({
 		const mapRow = (r: PaymentExportRow): CellValue[] => [
 			r.dailyOrderNumber,
 			r.tableNumber,
+			r.kind,
 			r.status,
 			r.refundStatus,
 			r.attemptNumber,
 			formatMoneyCents(r.amountCents),
+			formatMoneyCents(r.subtotalCents),
+			formatMoneyCents(r.serviceFeeCents),
 			formatMoneyCents(r.gratuityCents),
+			formatMoneyCents(r.netToRestaurantCents),
 			r.currency,
 			formatLocalTimestamp(r.createdAt, tz),
 			formatLocalTimestamp(r.succeededAt, tz),
@@ -474,31 +523,68 @@ export const exportPaymentsXlsx = action({
 			r.orderId,
 		];
 
+		// Cash orders (`markOrderPaidInPerson`) are real restaurant revenue with
+		// no `payments` row by design, so they can never be rows on these sheets.
+		// They get their own summary line instead, so the workbook still adds up
+		// to what the restaurant took in.
+		const cashByMonth = await cashOrderRevenueByMonth(ctx, {
+			actingUserId: identity.subject,
+			restaurantId: args.restaurantId,
+			year: args.year,
+		});
+
 		const monthNames = getMonthNames(locale);
 		const summaryHeaders = [
 			"month",
 			"payment rows",
-			`succeeded ${amountLabel}`,
+			`succeeded ${chargedLabel}`,
+			`succeeded ${subtotalLabel}`,
+			`succeeded ${serviceFeeLabel}`,
 			`succeeded ${gratuityLabel}`,
+			`succeeded ${netLabel}`,
+			`cash orders ${subtotalLabel}`,
 		];
 		const summaryRows: CellValue[][] = monthNames.map((name, i) => [
 			`${name} ${args.year}`,
 			monthlyCounts[i],
 			formatMoneyCents(monthlySucceededCents[i]),
+			formatMoneyCents(monthlySubtotalCents[i]),
+			formatMoneyCents(monthlyServiceFeeCents[i]),
 			formatMoneyCents(monthlyGratuityCents[i]),
+			formatMoneyCents(monthlyNetCents[i]),
+			formatMoneyCents(cashByMonth[i]),
 		]);
 		const totalCount = rows.length;
-		const totalSucceeded = monthlySucceededCents.reduce((a, b) => a + b, 0);
-		const totalGratuity = monthlyGratuityCents.reduce((a, b) => a + b, 0);
+		const sumOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 		summaryRows.push(
 			[
 				`${args.year} total`,
 				totalCount,
-				formatMoneyCents(totalSucceeded),
-				formatMoneyCents(totalGratuity),
+				formatMoneyCents(sumOf(monthlySucceededCents)),
+				formatMoneyCents(sumOf(monthlySubtotalCents)),
+				formatMoneyCents(sumOf(monthlyServiceFeeCents)),
+				formatMoneyCents(sumOf(monthlyGratuityCents)),
+				formatMoneyCents(sumOf(monthlyNetCents)),
+				formatMoneyCents(sumOf(cashByMonth)),
 			],
 			[],
-			["Note: rows are bucketed by succeededAt when available; createdAt is used otherwise."]
+			["Note: rows are bucketed by succeededAt when available; createdAt is used otherwise."],
+			[
+				"Note: 'charged to diner' is the full card charge. From 2026-08 it includes the " +
+					"customer-borne Tavli service fee; before the pivot it included the tip instead. " +
+					"'subtotal', 'tavli service fee' and 'net to restaurant' are blank on pre-pivot rows, " +
+					"which never recorded the split (the commission was deducted from the restaurant's " +
+					"proceeds by Stripe), so the monthly totals for those three columns cover post-pivot " +
+					"rows only.",
+			],
+			[
+				"Note: tip rows (kind = tip) are separate payments with no order; their whole amount " +
+					"is gratuity and carries no service fee.",
+			],
+			[
+				"Note: cash orders marked paid in person have no payment row at all — they appear " +
+					"only in the 'cash orders' column and in the Orders export.",
+			]
 		);
 
 		const base64 = buildMonthlyWorkbook<PaymentExportRow>({
@@ -866,6 +952,30 @@ export const exportMenuXlsx = action({
 });
 
 // ----------------------------- shared helpers ------------------------------
+
+/**
+ * Per-month cash-order revenue (`settledBy === "staff"`, ADR 008) for a year,
+ * bucketed by the order's business date. Cash orders are paid restaurant
+ * revenue that produces **no** `payments` row, so the payments workbook has to
+ * source them from the orders side to add up.
+ */
+async function cashOrderRevenueByMonth(
+	ctx: GenericActionCtx<DataModel>,
+	args: { actingUserId: string; restaurantId: Id<"restaurants">; year: number }
+): Promise<number[]> {
+	const byMonth = new Array<number>(12).fill(0);
+	const orderRows: OrderExportRow[] = await ctx.runQuery(
+		internal.orders.internalListOrdersForExportYear,
+		args
+	);
+	for (const row of orderRows) {
+		if (row.settledBy !== SETTLED_BY.STAFF) continue;
+		const idx = monthIndexFromYmd(row.orderServiceDateKey, args.year);
+		if (idx == null) continue;
+		byMonth[idx] += row.totalAmountCents;
+	}
+	return byMonth;
+}
 
 /**
  * Compute the approximate ms window for a calendar year in the given timezone.

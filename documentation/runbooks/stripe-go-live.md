@@ -258,6 +258,86 @@ Test-mode connected-account ids are **invalid in live mode**, and ids created
 under the dev Stripe account are unreachable with the production `sk_live`
 entirely. Any restaurant onboarded in test must be onboarded again in live.
 
+### 5. Platform subscription — the 2,000 MXN/month Price
+
+This is the fee **restaurants pay Tavli** for using the product (ADR 008,
+`convex/billing.ts`). It has nothing to do with the 12% service fee diners pay
+on an order — different payer, different money path, different Stripe objects.
+Do not model it as a Connect fee and do not touch the connected accounts for it.
+
+**Create the Price in each account separately.** Dev and production are separate
+Stripe accounts (see the account-prefix check above), so this is done twice and
+the two ids differ. There is no "copy to live" for this object.
+
+1. Dashboard → **Product catalog** → **+ Add product**
+   - Name: `Tavli platform subscription`
+   - Pricing model: **Recurring**, **Standard pricing**
+   - Amount: **2,000.00 MXN**, billing period **Monthly**
+2. Save, then copy the **Price** id (`price_…`, _not_ the product `prod_…`).
+
+The amount lives in Stripe, not in the code. `PLATFORM_MONTHLY_FEE_MXN_CENTS`
+(`convex/constants.ts`) is display copy for the settings screen; changing it
+changes what the UI says, never what Stripe charges. To reprice, create a new
+Price and point the env var at it.
+
+**Set the env var per deployment** (Convex deployment env, like the other Stripe
+values — not Infisical):
+
+```bash
+npx convex env set STRIPE_PLATFORM_FEE_PRICE_ID price_...            # dev
+npx convex env set STRIPE_PLATFORM_FEE_PRICE_ID price_... --prod     # production
+```
+
+Unset, `billing.createSubscriptionCheckout` fails closed with the stable code
+`ERROR_BILLING_PRICE_NOT_CONFIGURED` rather than charging anything.
+
+| Value                          | Lives in                  | Applied                                              |
+| ------------------------------ | ------------------------- | ---------------------------------------------------- |
+| `STRIPE_PLATFORM_FEE_PRICE_ID` | **Convex deployment env** | Read at call time by `getStripePlatformFeePriceId()` |
+
+#### Extra events on the PAYMENTS destination
+
+The subscription lifecycle is made of **platform-account v1 snapshot events**,
+so they go on the existing payments destination (`/stripe/webhook`) next to
+`payment_intent.*`. Add these six to that destination's event list:
+
+```text
+checkout.session.completed          customer.subscription.created
+customer.subscription.updated       customer.subscription.deleted
+invoice.paid                        invoice.payment_failed
+```
+
+Notes that will save an afternoon:
+
+- **Do not touch the Connect destination's event list.** It is v2 thin
+  `v2.core.account*` only; a subscription event subscribed there would never
+  fire, because it does not belong to a connected account.
+- `checkout.session.completed` used to be explicitly excluded here ("Tavli uses
+  an embedded PaymentElement, never hosted Checkout"). That is still true of the
+  **diner** money path. The platform subscription is the one exception: it uses
+  Stripe-hosted Checkout in `mode: "subscription"`, and the handler ignores every
+  session whose mode is not `subscription`, so the diner path is unaffected.
+- `invoice.paid` (not `invoice.payment_succeeded`) is the one Tavli listens for.
+- Dedup is shared with the payment events via `stripeWebhookEvents`, so
+  redeliveries are no-ops.
+
+Local forwarding picks them up with the same command, extended:
+
+```bash
+stripe listen --forward-to http://localhost:3210/stripe/webhook \
+  --events payment_intent.succeeded,payment_intent.payment_failed,charge.refunded,\
+checkout.session.completed,customer.subscription.created,customer.subscription.updated,\
+customer.subscription.deleted,invoice.paid,invoice.payment_failed
+```
+
+Test-mode `trigger` shortcuts for a smoke test:
+
+```bash
+stripe trigger checkout.session.completed
+stripe trigger customer.subscription.updated
+stripe trigger invoice.paid
+```
+
 ## Money-path behaviour worth knowing
 
 ### The platform is `losses_collector`
@@ -281,21 +361,42 @@ via `refunds.list({ payment_intent, limit: 1 })`. Without that fallback,
 `stripeRefundId` is silently never written and `refundedAt` falls back to
 webhook-processing time.
 
-### Partial refunds apportion on the charge total
+### Partial refunds apportion on the charge total (LEGACY tab payments only)
 
-Cancelling one order out of a paid tab refunds that order's `totalAmount` with
-**no tip share**. Stripe apportions `reverse_transfer` and
-`refund_application_fee` proportionally — but on the **charge total** (subtotal +
-tip), whereas our fee was levied on **subtotal only**. The platform therefore
-retains a small residue.
+**Legacy tab payments (pre-ADR-008):** cancelling one order out of a paid tab
+refunds that order's `totalAmount` with **no tip share**. Stripe apportions
+`reverse_transfer` and `refund_application_fee` proportionally — but on the
+**charge total** (subtotal + tip), whereas our fee was levied on **subtotal
+only**. The platform therefore retains a small residue.
 
 Measured on a real test-mode refund: charge 110000 (subtotal 100000 + tip
 10000), fee 12000, refund 100000 → fee refunded **10909**, platform retains
 **1091** = **1.09% of the refunded amount**. The error is
 `refundAmount × feeRate × tip/(subtotal + tip)` and shrinks with the tip.
-Accepted for v1; exact accounting would require explicit fee-refund and
-transfer-reversal calls, which are a one-way door — Stripe disallows the
-proportional flags on that charge afterwards.
+Accepted for the legacy tail; exact accounting would require explicit
+fee-refund and transfer-reversal calls, which are a one-way door — Stripe
+disallows the proportional flags on that charge afterwards.
+
+**New-model payments (ADR 008, pay-at-submit) retire this residue
+structurally.** The charge is fee-inclusive (`amount = subtotal + 12%`, no tip
+on it), and refund math is computed in-house, per line
+(`computeLineRefundAmount`):
+
+- 86'ing one paid line refunds `lineTotal + round(lineTotal × 12%)`, clamped to
+  the payment's remaining balance.
+- 86'ing the order's **last live line** refunds the payment's **entire
+  remaining balance**, so however the per-line `round()`s fell, a fully-86'd
+  order's refunds sum to exactly `payment.amount` — zero residue by
+  construction.
+- **Substituted lines span two payments** (TAVLI-71 Phase 3A): the accepted
+  substitution's delta (+ 12% fee on the delta) lives on its own
+  `kind: "substitution"` payment. 86'ing that line issues **two refunds** —
+  the substitution payment's full remaining balance (idempotency key
+  `refund:<subPaymentId>:<orderItemId>`), plus the original line share
+  (`lineTotal - delta` + its fee share) from the order payment
+  (`refund:<orderPaymentId>:<orderItemId>`). Cumulative refunds never exceed
+  either payment's captured amount, and the last-live-line sweep clears each
+  payment's remainder independently.
 
 > [!CAUTION]
 > **A refund issued from the Stripe Dashboard does NOT reverse the transfer.**

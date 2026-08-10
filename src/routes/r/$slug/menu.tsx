@@ -1,22 +1,17 @@
-import { CustomerMenuPage } from "@/features/ordering";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { resolveLanguage } from "@/global/i18n";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
+/**
+ * Legacy unlocalized route. Customer pages live under `/r/$slug/$lang/*`;
+ * this redirects using the same resolution the root layout applies (URL
+ * segment — none here — then the language cookie, then English).
+ */
 export const Route = createFileRoute("/r/$slug/menu")({
-	component: Page,
+	beforeLoad: async ({ params, location }) => {
+		const lang = await resolveLanguage(location.pathname);
+		throw redirect({
+			to: "/r/$slug/$lang/menu",
+			params: { slug: params.slug, lang },
+		});
+	},
 });
-
-function Page() {
-	const { slug } = Route.useParams();
-	const navigate = useNavigate();
-
-	return (
-		<CustomerMenuPage
-			slug={slug}
-			onOrderSubmitted={() => {
-				// Orders go straight to the kitchen; the tab view shows the running
-				// balance and the pay CTA (TAVLI-6).
-				navigate({ to: "/r/$slug/orders", params: { slug } });
-			}}
-		/>
-	);
-}

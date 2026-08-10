@@ -65,6 +65,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.ORDERS]: 0,
 		[TABLE.ORDER_ITEMS]: 0,
 		[TABLE.ORDER_DAY_COUNTERS]: 0,
+		[TABLE.SUBSTITUTION_PROPOSALS]: 0,
 		[TABLE.PAYMENTS]: 0,
 		[TABLE.STRIPE_WEBHOOK_EVENTS]: 0,
 		[TABLE.STRIPE_DISPUTES]: 0,
@@ -280,6 +281,15 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const s of sessions) await ctx.db.delete(s._id);
 	deleted[TABLE.SESSIONS] += sessions.length;
+
+	// Deleted via the restaurant-prefixed index rather than per order, so
+	// proposals whose order is already gone are still swept.
+	const substitutionProposals = await ctx.db
+		.query(TABLE.SUBSTITUTION_PROPOSALS)
+		.withIndex("by_restaurant_status", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const sp of substitutionProposals) await ctx.db.delete(sp._id);
+	deleted[TABLE.SUBSTITUTION_PROPOSALS] += substitutionProposals.length;
 
 	const counters = await ctx.db
 		.query(TABLE.ORDER_DAY_COUNTERS)

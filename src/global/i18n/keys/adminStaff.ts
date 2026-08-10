@@ -19,6 +19,7 @@ export const AdminStaffKeys = {
 	TEAM_INVITE_SINGLE_ROLE_HINT: "adminStaff.team.inviteSingleRoleHint",
 	TEAM_SEND_INVITE: "adminStaff.team.sendInvite",
 	TEAM_SENDING: "adminStaff.team.sending",
+	TEAM_INVITE_FAILED: "adminStaff.team.inviteFailed",
 	TEAM_PENDING_INVITATIONS: "adminStaff.team.pendingInvitations",
 	TEAM_NO_PENDING_INVITATIONS: "adminStaff.team.noPendingInvitations",
 	TEAM_REVOKE: "adminStaff.team.revoke",

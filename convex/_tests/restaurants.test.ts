@@ -45,7 +45,6 @@ describe("restaurants", () => {
 
 			const [id, error] = await authed.mutation(api.restaurants.create, {
 				name: "Test Restaurant",
-				slug: "test-restaurant",
 				currency: "USD",
 				organizationId: orgId,
 			});
@@ -55,7 +54,118 @@ describe("restaurants", () => {
 
 			const menus = await t.query(api.menus.getMenusByRestaurant, { restaurantId: id! });
 			expect(menus).toHaveLength(1);
-			expect(menus![0].name).toBe("test-restaurant");
+			// Named after the RESTAURANT, not the slug: a derived slug can carry a
+			// collision counter, and no operator wants a menu called "la-cocina-2".
+			expect(menus![0].name).toBe("Test Restaurant");
+		});
+
+		it("derives the slug from the name so the form never has to ask", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			const [id, error] = await authed.mutation(api.restaurants.create, {
+				name: "Café Ñoño",
+				currency: "MXN",
+				organizationId: orgId,
+			});
+
+			expect(error).toBeNull();
+			const doc = await t.run(async (ctx) => ctx.db.get(id!));
+			expect(doc!.slug).toBe("cafe-nono");
+		});
+
+		it("settles repeated names with a dash counter", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			const slugs: string[] = [];
+			for (let i = 0; i < 3; i++) {
+				const [id, error] = await authed.mutation(api.restaurants.create, {
+					name: "La Cocina",
+					currency: "MXN",
+					organizationId: orgId,
+				});
+				expect(error).toBeNull();
+				const doc = await t.run(async (ctx) => ctx.db.get(id!));
+				slugs.push(doc!.slug);
+			}
+
+			expect(slugs).toEqual(["la-cocina", "la-cocina-2", "la-cocina-3"]);
+		});
+
+		it("reuses the slug of a soft-deleted restaurant", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			// Seeded directly: the soft-delete mutation tombstones the slug, so
+			// only a hand-written row can still hold the plain one.
+			await t.run(async (ctx) => {
+				const now = Date.now();
+				await ctx.db.insert("restaurants", {
+					ownerId: "user1",
+					organizationId: orgId,
+					name: "La Cocina",
+					slug: "la-cocina",
+					currency: "MXN",
+					isActive: false,
+					deletedAt: now,
+					deletedBy: "user1",
+					createdAt: now,
+					updatedAt: now,
+				});
+			});
+
+			const [id, error] = await authed.mutation(api.restaurants.create, {
+				name: "La Cocina",
+				currency: "MXN",
+				organizationId: orgId,
+			});
+
+			expect(error).toBeNull();
+			const doc = await t.run(async (ctx) => ctx.db.get(id!));
+			expect(doc!.slug).toBe("la-cocina");
+		});
+
+		it("normalizes an explicitly supplied slug", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			const [id, error] = await authed.mutation(api.restaurants.create, {
+				name: "Imported",
+				slug: "  Mi Café!  ",
+				currency: "MXN",
+				organizationId: orgId,
+			});
+
+			expect(error).toBeNull();
+			const doc = await t.run(async (ctx) => ctx.db.get(id!));
+			expect(doc!.slug).toBe("mi-cafe");
+		});
+
+		it("rejects an explicit slug that normalizes to nothing", async () => {
+			const t = convexTest(schema, modules);
+			const authed = t.withIdentity({ subject: "user1" });
+			const orgId = await seedOrganization(t);
+			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
+
+			const [value, error] = await authed.mutation(api.restaurants.create, {
+				name: "Blank",
+				slug: "   ",
+				currency: "MXN",
+				organizationId: orgId,
+			});
+
+			expect(value).toBeNull();
+			expect(error!.name).toBe("VALIDATION_ERROR");
+			expect(error!.message).toContain("ERROR_SLUG_INVALID");
 		});
 
 		it("fails when not authenticated", async () => {
@@ -74,7 +184,7 @@ describe("restaurants", () => {
 			expect(error!.name).toBe("NOT_AUTHENTICATED");
 		});
 
-		it("rejects duplicate slugs", async () => {
+		it("rejects duplicate slugs with a stable code", async () => {
 			const t = convexTest(schema, modules);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
@@ -97,6 +207,8 @@ describe("restaurants", () => {
 			expect(value).toBeNull();
 			expect(error).toBeTruthy();
 			expect(error!.name).toBe("VALIDATION_ERROR");
+			// Prose used to fall through to the generic frontend copy.
+			expect(error!.message).toContain("ERROR_SLUG_TAKEN");
 		});
 	});
 
@@ -729,5 +841,184 @@ describe("setSharedEmployeeSubject", () => {
 		});
 		expect(err).not.toBeNull();
 		expect(err!.name).toBe("NOT_AUTHORIZED");
+	});
+});
+
+describe("update — receipt tax fields (TAVLI-71 Phase 3C)", () => {
+	async function seedRestaurantForUpdate(t: ReturnType<typeof convexTest>) {
+		const orgId = await seedOrganization(t);
+		await seedUserRole(t, { userId: "tax-owner", roles: ["owner"], organizationId: orgId });
+		const authed = t.withIdentity({ subject: "tax-owner" });
+		const [restaurantId] = await authed.mutation(api.restaurants.create, {
+			name: "Tax R",
+			slug: `tax-r-${Math.random().toString(36).slice(2, 10)}`,
+			currency: "MXN",
+			organizationId: orgId,
+		});
+		return { orgId, authed, restaurantId: restaurantId! };
+	}
+
+	it("sets trimmed rfc / razonSocial / fiscalAddress", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "  COC010101ABC  ",
+			razonSocial: " La Cocina S.A. de C.V. ",
+			fiscalAddress: " Av. Siempre Viva 123 ",
+		});
+		expect(error).toBeNull();
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc).toMatchObject({
+			rfc: "COC010101ABC",
+			razonSocial: "La Cocina S.A. de C.V.",
+			fiscalAddress: "Av. Siempre Viva 123",
+		});
+	});
+
+	it("clears a tax field when passed an empty string", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
+
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "COC010101ABC",
+			razonSocial: "La Cocina S.A. de C.V.",
+		});
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "",
+		});
+		expect(error).toBeNull();
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc?.rfc).toBeUndefined();
+		// Untouched fields survive a partial update.
+		expect(doc?.razonSocial).toBe("La Cocina S.A. de C.V.");
+	});
+
+	it("does not expose tax fields on the public restaurant shape", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			rfc: "COC010101ABC",
+			razonSocial: "La Cocina S.A. de C.V.",
+			fiscalAddress: "Av. Siempre Viva 123",
+		});
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		const publicShape = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+		expect(publicShape).not.toBeNull();
+		expect(publicShape).not.toHaveProperty("rfc");
+		expect(publicShape).not.toHaveProperty("razonSocial");
+		expect(publicShape).not.toHaveProperty("fiscalAddress");
+	});
+});
+
+describe("update — slug", () => {
+	async function seedTwoRestaurants(t: ReturnType<typeof convexTest>) {
+		const orgId = await seedOrganization(t);
+		await seedUserRole(t, { userId: "slug-owner", roles: ["owner"], organizationId: orgId });
+		const authed = t.withIdentity({ subject: "slug-owner" });
+		const [restaurantId] = await authed.mutation(api.restaurants.create, {
+			name: "La Cocina",
+			currency: "MXN",
+			organizationId: orgId,
+		});
+		const [otherId] = await authed.mutation(api.restaurants.create, {
+			name: "El Fogón",
+			currency: "MXN",
+			organizationId: orgId,
+		});
+		return { orgId, authed, restaurantId: restaurantId!, otherId: otherId! };
+	}
+
+	it("normalizes whatever the operator typed", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			slug: "  La Cocina Nueva!  ",
+		});
+
+		expect(error).toBeNull();
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc!.slug).toBe("la-cocina-nueva");
+	});
+
+	it("refuses a blank slug instead of writing an empty string", async () => {
+		// Regression: the conflict check was guarded by `args.slug &&` while the
+		// patch fired on `args.slug !== undefined`, so "" skipped validation and
+		// was stored, leaving the restaurant reachable only at `/r//en/menu`.
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
+
+		const [value, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			slug: "   ",
+		});
+
+		expect(value).toBeNull();
+		expect(error!.name).toBe("VALIDATION_ERROR");
+		expect(error!.message).toContain("ERROR_SLUG_INVALID");
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc!.slug).toBe("la-cocina");
+	});
+
+	it("reports a taken slug with a stable code", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
+
+		const [value, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			slug: "El Fogón",
+		});
+
+		expect(value).toBeNull();
+		expect(error!.name).toBe("VALIDATION_ERROR");
+		expect(error!.message).toContain("ERROR_SLUG_TAKEN");
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc!.slug).toBe("la-cocina");
+	});
+
+	it("accepts the restaurant's own slug unchanged", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			slug: "la-cocina",
+		});
+
+		expect(error).toBeNull();
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc!.slug).toBe("la-cocina");
+	});
+
+	it("leaves the slug alone when the patch omits it", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			description: "Comida casera",
+		});
+
+		expect(error).toBeNull();
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc!.slug).toBe("la-cocina");
 	});
 });

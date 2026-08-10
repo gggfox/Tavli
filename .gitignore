@@ -26,3 +26,7 @@ tmp/
 !.claude/handoffs/.gitkeep
 .cursor/handoffs/*
 !.cursor/handoffs/.gitkeep
+
+# Playwright run artifacts (traces, screenshots, HTML report)
+test-results/
+playwright-report/

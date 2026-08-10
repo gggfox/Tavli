@@ -64,6 +64,8 @@ import {
 	checkTablesFreeForReservation,
 	contactValidator,
 	createReservationCore,
+	enforcesBookingHorizon,
+	ensureCancellable,
 	ensureConfirmable,
 	ensureReschedulable,
 	ensureTerminalRecoverable,
@@ -463,6 +465,10 @@ type RescheduleErrors =
  * replace (drawer), or per-block table move via `fromTableId` / `toTableId`
  * (timeline DnD). `toTableId: null` drops the dragged table onto the
  * unassigned row.
+ *
+ * `completed` rows are reschedulable so staff can correct a wrong duration
+ * after service; the booking horizon is skipped for them (see
+ * `enforcesBookingHorizon`).
  */
 export const reschedule = mutation({
 	args: {
@@ -523,7 +529,10 @@ export const reschedule = mutation({
 			const settings = await loadEffectiveSettings(ctx, reservation.restaurantId);
 			const { maxAdvanceDays } = settings;
 			const now = Date.now();
-			if (!isWithinHorizon({ minAdvanceMinutes: 0, maxAdvanceDays, startsAt, now })) {
+			if (
+				enforcesBookingHorizon(reservation.status) &&
+				!isWithinHorizon({ minAdvanceMinutes: 0, maxAdvanceDays, startsAt, now })
+			) {
 				return [null, new ConflictError("ERROR_OUTSIDE_BOOKING_HORIZON").toObject()];
 			}
 			if (intersectsBlackout(settings, startsAt, endsAt)) {
@@ -750,6 +759,12 @@ export const reconfirm = mutation({
 
 type CancelErrors = StaffAuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
+/**
+ * Staff cancellation, including corrections on a `completed` visit: marking
+ * the wrong reservation completed leaves it holding its table window, and
+ * cancelling is how staff release it. Already-cancelled and `no_show` rows are
+ * rejected — those reopen through `reconfirm` instead.
+ */
 export const cancel = mutation({
 	args: {
 		reservationId: v.id(TABLE.RESERVATIONS),
@@ -764,24 +779,8 @@ export const cancel = mutation({
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
 		if (restError) return [null, restError];
 
-		const blocked: ReservationStatus[] = [
-			RESERVATION_STATUS.CANCELLED,
-			RESERVATION_STATUS.NO_SHOW,
-			RESERVATION_STATUS.COMPLETED,
-		];
-		if (blocked.includes(reservation.status)) {
-			return [
-				null,
-				new UserInputValidationError({
-					fields: [
-						{
-							field: "status",
-							message: `Cannot cancel a reservation in status ${reservation.status}`,
-						},
-					],
-				}).toObject(),
-			];
-		}
+		const cancellableError = ensureCancellable(reservation.status);
+		if (cancellableError) return [null, cancellableError];
 
 		const now = Date.now();
 		await ctx.db.patch(reservation._id, {

@@ -68,7 +68,7 @@ export function NotificationCenter() {
 					<output
 						key={t.id}
 						className="flex items-start gap-3 rounded-lg px-4 py-3 shadow-lg border border-border text-foreground"
-						style={{ backgroundColor: "var(--bg-elevated))" }}
+						style={{ backgroundColor: "var(--bg-elevated)" }}
 					>
 						<Icon size={18} style={{ color: ACCENT_VAR[t.kind], flexShrink: 0, marginTop: 2 }} />
 						<div className="flex-1 min-w-0">

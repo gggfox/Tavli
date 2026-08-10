@@ -10,7 +10,7 @@
  * `CONVEX_ENV` is locked down rather than exposed.
  */
 
-import { AppUrlNotConfiguredError } from "../_shared/errors";
+import { AppUrlNotConfiguredError, ConflictError } from "../_shared/errors";
 
 export const CONVEX_ENV = {
 	DEVELOPMENT: "development",
@@ -88,6 +88,31 @@ export function getAppUrl(): string {
 	throw new AppUrlNotConfiguredError(
 		`PUBLIC_APP_URL (or VITE_APP_URL) must be set when CONVEX_ENV is "${getConvexEnv()}"; refusing to fall back to localhost.`
 	);
+}
+
+/**
+ * Convex env var holding the Stripe **Price** id for the 2,000 MXN/month
+ * platform subscription (`price_…`, recurring monthly).
+ *
+ * Deliberately not a constant: dev and production are separate Stripe accounts
+ * (see `documentation/runbooks/stripe-go-live.md`), so the id differs per
+ * deployment. `PLATFORM_MONTHLY_FEE_MXN_CENTS` is display copy only — this
+ * Price is what Stripe actually charges.
+ */
+export const STRIPE_PLATFORM_FEE_PRICE_ID_ENV = "STRIPE_PLATFORM_FEE_PRICE_ID";
+
+/**
+ * Resolve the platform-subscription Price id, or throw the stable
+ * `ERROR_BILLING_PRICE_NOT_CONFIGURED` code when the deployment has none.
+ *
+ * Fails loud like `getAppUrl`: a missing Price cannot be defaulted, and a
+ * silent fallback would either charge the wrong amount or charge against the
+ * wrong Stripe account.
+ */
+export function getStripePlatformFeePriceId(): string {
+	const configured = process.env[STRIPE_PLATFORM_FEE_PRICE_ID_ENV]?.trim();
+	if (configured) return configured;
+	throw new ConflictError("ERROR_BILLING_PRICE_NOT_CONFIGURED");
 }
 
 /** Convex env var that must be set (truthy) to arm the first-admin bootstrap. */

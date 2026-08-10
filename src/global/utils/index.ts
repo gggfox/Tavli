@@ -5,7 +5,6 @@ export * from "./iconMapper";
 export * from "./keyboard";
 export * from "./money";
 export * from "./relativeTime";
-export * from "./slug";
 export * from "./theme";
 export * from "./timezone";
 export * from "./translations";

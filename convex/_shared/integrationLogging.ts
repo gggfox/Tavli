@@ -27,6 +27,8 @@ export type IntegrationLogFields = {
 	httpStatus?: number;
 	httpStatusText?: string;
 	invitationId?: string;
+	/** Restaurant the failing call belonged to (redacted, like every other id). */
+	restaurantId?: string;
 };
 
 export function buildIntegrationErrorLog(
@@ -43,6 +45,7 @@ export function buildIntegrationErrorLog(
 	if (fields.httpStatus !== undefined) log.httpStatus = fields.httpStatus;
 	if (fields.httpStatusText) log.httpStatusText = fields.httpStatusText;
 	if (fields.invitationId) log.invitationId = redactExternalId(fields.invitationId);
+	if (fields.restaurantId) log.restaurantId = redactExternalId(fields.restaurantId);
 
 	if (isStripeSignatureVerificationError(error)) {
 		log.kind = INTEGRATION_LOG_KIND.SIGNATURE_VERIFICATION_FAILED;

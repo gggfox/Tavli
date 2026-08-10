@@ -1,14 +1,13 @@
 import { AdminRestaurantsListSkeleton } from "@/features/restaurants/components/AdminRestaurantsListSkeleton";
-import { RestaurantManagersField } from "@/features/restaurants/components/RestaurantManagersField";
-import { RestaurantSettingsForm } from "@/features/restaurants/components/RestaurantSettingsForm";
+import { RestaurantSettingsView } from "@/features/restaurants/components/RestaurantSettingsView";
 import { useRestaurant } from "@/features/restaurants/RestaurantAdminScope";
-import { StripeConnectSetup } from "@/features/restaurants/components/StripeConnectSetup";
+import { useOrganizations } from "@/features/restaurants/hooks/useOrganizations";
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
 import { useCurrentUserRoles } from "@/features/users/hooks";
 import { EmptyState, InlineError, Modal, StatusBadge, TextInput } from "@/global/components";
 import { useIsTabletPortraitViewport } from "@/global/hooks";
 import { RestaurantsKeys } from "@/global/i18n";
-import { sanitizeSlug, unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery, useConvexAuth, useConvexMutation } from "@convex-dev/react-query";
@@ -25,6 +24,7 @@ import {
 	Pencil,
 	Plus,
 	RotateCcw,
+	SearchX,
 	ToggleLeft,
 	ToggleRight,
 	Trash2,
@@ -33,28 +33,14 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-type OrganizationsValue = UnwrappedValue<
-	FunctionReturnType<typeof api.organizations.getAllOrganizations>
->;
 type RestaurantsValue = UnwrappedValue<FunctionReturnType<typeof api.restaurants.getAll>>;
 type DeletedRestaurantsValue = UnwrappedValue<
 	FunctionReturnType<typeof api.restaurants.getDeletedForAdmin>
 >;
 
-function useOrganizations() {
-	const { isAuthenticated } = useConvexAuth();
-	const { data = [] } = useQuery({
-		...convexQuery(api.organizations.getAllOrganizations, {}),
-		enabled: isAuthenticated,
-		select: unwrapResult<OrganizationsValue>,
-	});
-	return data;
-}
-
 type ModalState =
 	| { kind: "closed" }
 	| { kind: "create" }
-	| { kind: "edit"; restaurant: Doc<"restaurants"> }
 	| { kind: "confirmDelete"; restaurant: Doc<"restaurants"> };
 
 interface AdminRestaurantsListProps {
@@ -65,17 +51,24 @@ interface AdminRestaurantsListProps {
 	 */
 	manageId?: Id<"restaurants"> | null;
 	onManageChange?: (next: Id<"restaurants"> | null) => void;
+	/**
+	 * The restaurant whose settings canvas is open (`?settings=<id>`). Same
+	 * plumbing as `manageId`, and mutually exclusive with it.
+	 */
+	settingsId?: Id<"restaurants"> | null;
+	onSettingsChange?: (next: Id<"restaurants"> | null) => void;
 }
 
 export function AdminRestaurantsList({
 	manageId,
 	onManageChange,
+	settingsId,
+	onSettingsChange,
 }: Readonly<AdminRestaurantsListProps> = {}) {
 	const { t } = useTranslation();
 	const isTabletPortrait = useIsTabletPortraitViewport();
 	const { isAuthenticated } = useConvexAuth();
 	const { setSelectedRestaurantId } = useRestaurant();
-	const organizations = useOrganizations();
 
 	const { roles: userRoles, organizationId: userOrgId } = useCurrentUserRoles();
 	const { user } = useUser();
@@ -121,9 +114,6 @@ export function AdminRestaurantsList({
 		select: unwrapResult<RestaurantsValue>,
 	});
 
-	const updateMutation = useMutation({
-		mutationFn: useConvexMutation(api.restaurants.update),
-	});
 	const toggleActiveMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.toggleActive),
 	});
@@ -148,6 +138,22 @@ export function AdminRestaurantsList({
 			setInternalExpandedId(next);
 		}
 	};
+	// Same lift-to-the-route pattern for the settings canvas.
+	const [internalSettingsId, setInternalSettingsId] = useState<Id<"restaurants"> | null>(null);
+	const openSettingsId = settingsId !== undefined ? settingsId : internalSettingsId;
+	const setOpenSettingsId = (next: Id<"restaurants"> | null) => {
+		if (onSettingsChange) {
+			onSettingsChange(next);
+		} else {
+			setInternalSettingsId(next);
+		}
+	};
+	const isCanvasOpen = expandedTablesId !== null || openSettingsId !== null;
+	/** Clears whichever canvas param is set — the not-found state's only exit. */
+	const closeCanvas = () => {
+		if (expandedTablesId !== null) setExpandedTablesId(null);
+		if (openSettingsId !== null) setOpenSettingsId(null);
+	};
 	const [error, setError] = useState<string | null>(null);
 
 	const { data: deletedRestaurants = [], isLoading: deletedLoading } = useQuery({
@@ -162,6 +168,18 @@ export function AdminRestaurantsList({
 		return <AdminRestaurantsListSkeleton />;
 	}
 
+	// A canvas param can outlive its restaurant: the row is deleted from another
+	// tab, an owner shares `?settings=<id>` with someone whose scope excludes it,
+	// or the id is simply wrong. Every row then renders `null` and the canvas
+	// never mounts, so without this the page is blank with browser-back as the
+	// only way out. Suppressed while `queryError` is set — the error banner
+	// already explains an empty list, and "not found" would be a lie.
+	const canvasTargetMissing =
+		isCanvasOpen &&
+		isAuthenticated &&
+		!queryError &&
+		!restaurants.some((r) => r._id === expandedTablesId || r._id === openSettingsId);
+
 	return (
 		<div className="space-y-4">
 			{queryError && (
@@ -169,7 +187,7 @@ export function AdminRestaurantsList({
 			)}
 			{error && <InlineError message={error} onDismiss={() => setError(null)} />}
 
-			{canManage && expandedTablesId === null && (
+			{canManage && !isCanvasOpen && (
 				<div className="flex flex-wrap justify-end gap-2">
 					<button
 						type="button"
@@ -189,7 +207,9 @@ export function AdminRestaurantsList({
 				</div>
 			)}
 
-			{canManage && showTrash && (
+			{/* The trash drawer belongs to the list, not to a full-canvas editor --
+			    its toggle lives in the action row that a canvas hides. */}
+			{canManage && showTrash && !isCanvasOpen && (
 				<div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
 					<h3 className="text-sm font-semibold text-foreground">
 						{t(RestaurantsKeys.TRASH_HEADING)}
@@ -252,13 +272,31 @@ export function AdminRestaurantsList({
 			<div className="space-y-2">
 				{restaurants.map((r) => {
 					const isExpanded = expandedTablesId === r._id;
-					if (expandedTablesId !== null && !isExpanded) return null;
+					const isSettingsOpen = openSettingsId === r._id;
+					if (isCanvasOpen && !isExpanded && !isSettingsOpen) return null;
 					if (isExpanded) {
 						return (
 							<ExpandedTablesRow
 								key={r._id}
 								restaurant={r}
 								onClose={() => setExpandedTablesId(null)}
+							/>
+						);
+					}
+					if (isSettingsOpen) {
+						return (
+							<RestaurantSettingsView
+								key={r._id}
+								restaurant={r}
+								settingsAccess={canManage ? "full" : "manager"}
+								onClose={() => setOpenSettingsId(null)}
+								onToggleActive={async (restaurantId) => {
+									try {
+										unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
+									} catch (err) {
+										setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
+									}
+								}}
 							/>
 						);
 					}
@@ -290,7 +328,7 @@ export function AdminRestaurantsList({
 								{canEditSettingsFor(r) && (
 									<button
 										type="button"
-										onClick={() => setModal({ kind: "edit", restaurant: r })}
+										onClick={() => setOpenSettingsId(r._id)}
 										className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
 										title={t(RestaurantsKeys.LIST_EDIT)}
 									>
@@ -356,7 +394,26 @@ export function AdminRestaurantsList({
 						</div>
 					);
 				})}
-				{restaurants.length === 0 && expandedTablesId === null && (
+				{canvasTargetMissing && (
+					<div data-testid="restaurant-canvas-not-found">
+						<EmptyState
+							icon={SearchX}
+							title={t(RestaurantsKeys.CANVAS_NOT_FOUND_TITLE)}
+							description={t(RestaurantsKeys.CANVAS_NOT_FOUND_BODY)}
+							action={
+								<button
+									type="button"
+									onClick={closeCanvas}
+									className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium border border-border hover:bg-hover text-foreground"
+								>
+									<ChevronLeft size={16} />
+									{t(RestaurantsKeys.CANVAS_NOT_FOUND_BACK)}
+								</button>
+							}
+						/>
+					</div>
+				)}
+				{restaurants.length === 0 && !isCanvasOpen && (
 					<EmptyState variant="inline" title={t(RestaurantsKeys.LIST_EMPTY)} />
 				)}
 			</div>
@@ -381,76 +438,17 @@ export function AdminRestaurantsList({
 						</button>
 					</div>
 					<CreateRestaurantForm
-						onCreated={(id) => {
-							setSelectedRestaurantId(id);
+						onCreated={(id, organizationId) => {
+							// The organization travels with the id: this provider's
+							// `restaurants.getAll` has not seen the new row yet, so it cannot
+							// look the organization up to widen the sidebar filter itself.
+							setSelectedRestaurantId(id, { organizationId });
 							closeModal();
 						}}
 						onError={setError}
 					/>
 				</div>
 			</Modal>
-
-			{/* Edit Modal */}
-			{modal.kind === "edit" && (
-				<Modal isOpen onClose={closeModal} ariaLabel={t(RestaurantsKeys.MODAL_EDIT_ARIA)} size="lg">
-					<div className="p-6 rounded-xl bg-background border border-border">
-						<div className="flex items-center justify-between mb-6">
-							<h2 className="text-xl font-semibold text-foreground">
-								{t(RestaurantsKeys.MODAL_EDIT_HEADING)}
-							</h2>
-							<button
-								onClick={closeModal}
-								className="p-1.5 rounded-md hover:bg-hover text-faint-foreground"
-							>
-								<X size={20} />
-							</button>
-						</div>
-						<RestaurantSettingsForm
-							restaurant={modal.restaurant}
-							organizations={organizations}
-							settingsAccess={canManage ? "full" : "manager"}
-							onSave={async (data) => {
-								try {
-									unwrapResult(
-										await updateMutation.mutateAsync({
-											restaurantId: modal.restaurant._id,
-											...data,
-										})
-									);
-									closeModal();
-								} catch (err) {
-									setError(getErrorMessage(err, t, RestaurantsKeys.FORM_UPDATE_FAILED));
-								}
-							}}
-							onToggleActive={
-								canManage
-									? async (restaurantId) => {
-											try {
-												unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
-											} catch (err) {
-												setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
-											}
-										}
-									: undefined
-							}
-							isSaving={updateMutation.isPending}
-						/>
-						{canManage ? (
-							<>
-								<div className="mt-6 border-t border-border pt-6">
-									<RestaurantManagersField
-										restaurantId={modal.restaurant._id}
-										onError={(msg) => setError(msg)}
-									/>
-								</div>
-								<div className="mt-6">
-									<StripeConnectSetup restaurantId={modal.restaurant._id} />
-								</div>
-							</>
-						) : null}
-					</div>
-				</Modal>
-			)}
 
 			{modal.kind === "confirmDelete" && (
 				<Modal
@@ -565,29 +563,47 @@ function CreateRestaurantForm({
 	onCreated,
 	onError,
 }: {
-	onCreated: (id: Id<"restaurants">) => void;
+	onCreated: (id: Id<"restaurants">, organizationId: Id<"organizations">) => void;
 	onError: (msg: string) => void;
 }) {
 	const { t } = useTranslation();
 	const createMutation = useMutation({
 		mutationFn: useConvexMutation(api.restaurants.create),
 	});
-	const organizations = useOrganizations();
+	// Three explicit states, never a silently blank required <select>: the org
+	// query used to be admin-only, so an owner opening this modal got a
+	// swallowed NotAuthorized and an empty picker with no way to tell whether
+	// the list was slow, broken, or genuinely empty (TAVLI-71 item 8).
+	const { organizations, isLoading: orgsLoading, error: orgsError } = useOrganizations();
+	const canPickOrganization = !orgsLoading && !orgsError && organizations.length > 0;
+	/**
+	 * One selectable organization is not a choice — it is an announcement. Owners
+	 * almost always belong to exactly one, so they get a read-only line instead
+	 * of a single-option `<select>`. Deliberately role-agnostic: an admin scoped
+	 * to one organization gets the same treatment, and an owner in two still
+	 * gets the picker.
+	 */
+	const soleOrganization =
+		canPickOrganization && organizations.length === 1 ? organizations[0] : null;
 
 	const form = useForm({
-		defaultValues: { name: "", slug: "", currency: "MXN", organizationId: "" },
+		// No `slug`: it is derived from the name server-side (see
+		// `convex/slugHelpers.ts`) and stays editable in the settings canvas.
+		defaultValues: { name: "", currency: "MXN", organizationId: "" },
 		onSubmit: async ({ value }) => {
+			const organizationId = (
+				soleOrganization ? soleOrganization._id : value.organizationId
+			) as Id<"organizations">;
 			try {
 				const id = unwrapResult(
 					await createMutation.mutateAsync({
 						name: value.name,
-						slug: value.slug,
 						currency: value.currency,
 						timezone: DEFAULT_RESTAURANT_TIMEZONE,
-						organizationId: value.organizationId as Id<"organizations">,
+						organizationId,
 					})
 				);
-				onCreated(id!);
+				onCreated(id!, organizationId);
 			} catch (err) {
 				onError(getErrorMessage(err, t, RestaurantsKeys.FORM_CREATE_FAILED));
 			}
@@ -618,20 +634,6 @@ function CreateRestaurantForm({
 				)}
 			/>
 			<form.Field
-				name="slug"
-				children={(field) => (
-					<TextInput
-						id="admin-rest-slug"
-						label={t(RestaurantsKeys.FORM_SLUG_LABEL)}
-						type="text"
-						value={field.state.value}
-						onChange={(e) => field.handleChange(sanitizeSlug(e.target.value))}
-						onBlur={field.handleBlur}
-						required
-					/>
-				)}
-			/>
-			<form.Field
 				name="currency"
 				children={(field) => (
 					<div>
@@ -655,43 +657,87 @@ function CreateRestaurantForm({
 					</div>
 				)}
 			/>
-			<form.Field
-				name="organizationId"
-				children={(field) => (
-					<div>
-						<label
-							htmlFor="admin-rest-org"
-							className="block text-xs font-medium mb-1 text-muted-foreground"
-						>
-							{t(RestaurantsKeys.FORM_ORG_LABEL)}
-						</label>
-						<select
-							id="admin-rest-org"
-							value={field.state.value}
-							onChange={(e) => field.handleChange(e.target.value)}
-							required
-							className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-						>
-							<option value="" disabled>
-								{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
-							</option>
-							{organizations.map((org) => (
-								<option key={org._id} value={org._id}>
-									{org.name}
+			{soleOrganization ? (
+				<div data-testid="admin-rest-org-single">
+					<span className="block text-xs font-medium mb-1 text-muted-foreground">
+						{t(RestaurantsKeys.FORM_ORG_LABEL)}
+					</span>
+					<p className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground">
+						{soleOrganization.name}
+					</p>
+					<p className="mt-1 text-xs text-faint-foreground">
+						{t(RestaurantsKeys.FORM_ORG_SINGLE_HINT)}
+					</p>
+				</div>
+			) : (
+				<form.Field
+					name="organizationId"
+					children={(field) => (
+						<div>
+							<label
+								htmlFor="admin-rest-org"
+								className="block text-xs font-medium mb-1 text-muted-foreground"
+							>
+								{t(RestaurantsKeys.FORM_ORG_LABEL)}
+							</label>
+							<select
+								id="admin-rest-org"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								disabled={!canPickOrganization}
+								required
+								aria-busy={orgsLoading}
+								aria-describedby={canPickOrganization ? undefined : "admin-rest-org-status"}
+								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground disabled:opacity-60"
+							>
+								<option value="" disabled>
+									{orgsLoading
+										? t(RestaurantsKeys.FORM_ORG_LOADING)
+										: t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
 								</option>
-							))}
-						</select>
-					</div>
-				)}
-			/>
+								{organizations.map((org) => (
+									<option key={org._id} value={org._id}>
+										{org.name}
+									</option>
+								))}
+							</select>
+							{orgsLoading ? (
+								<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
+									{t(RestaurantsKeys.FORM_ORG_LOADING)}
+								</p>
+							) : null}
+							{!orgsLoading && orgsError ? (
+								<p id="admin-rest-org-status" className="mt-1 text-xs text-destructive">
+									{getErrorMessage(orgsError, t, RestaurantsKeys.FORM_ORG_LOAD_FAILED)}
+								</p>
+							) : null}
+							{!orgsLoading && !orgsError && organizations.length === 0 ? (
+								<p id="admin-rest-org-status" className="mt-1 text-xs text-faint-foreground">
+									{t(RestaurantsKeys.FORM_ORG_EMPTY)}
+								</p>
+							) : null}
+						</div>
+					)}
+				/>
+			)}
 			<div className="flex gap-2 pt-2">
 				<form.Subscribe
-					selector={(state) => state.isSubmitting}
-					children={(isSubmitting) => (
+					selector={(state) => ({
+						isSubmitting: state.isSubmitting,
+						organizationId: state.values.organizationId,
+					})}
+					children={({ isSubmitting, organizationId }) => (
 						<button
 							type="submit"
-							disabled={isSubmitting}
-							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+							// The organization must be RESOLVED, not merely available:
+							// auto-selected when there is exactly one, explicitly picked
+							// when there are several.
+							disabled={
+								isSubmitting ||
+								!canPickOrganization ||
+								(soleOrganization === null && organizationId === "")
+							}
+							className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-60"
 						>
 							{isSubmitting ? t(RestaurantsKeys.FORM_CREATING) : t(RestaurantsKeys.FORM_CREATE)}
 						</button>

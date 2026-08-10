@@ -1,7 +1,13 @@
 /**
- * `revenueOverTime` widget query: total successful payment revenue bucketed
- * by day in the restaurant's local timezone (or UTC if absent). Manager-or-
- * above; portfolio-capable.
+ * `revenueOverTime` widget query: **restaurant** revenue bucketed by day in
+ * the restaurant's local timezone (or UTC if absent). Manager-or-above;
+ * portfolio-capable.
+ *
+ * Revenue here means the food the restaurant sold — not Tavli's customer-borne
+ * service fee (which lives inside `payments.amount` post-ADR 008) and not tips
+ * (their own `kind: "tip"` rows). Cash orders carry no `payments` row at all
+ * and are added back from `orders.totalAmount`. See
+ * `convex/paymentMoneyHelpers.ts` for the rules and the legacy-row caveat.
  */
 import { v } from "convex/values";
 import { query } from "../_generated/server";
@@ -12,9 +18,15 @@ import {
 	NotFoundErrorObject,
 	UserInputValidationErrorObject,
 } from "../_shared/errors";
-import { PAYMENT_STATUS, TABLE } from "../constants";
+import { TABLE } from "../constants";
+import { isCashSettledOrder, restaurantRevenueFromPayment } from "../paymentMoneyHelpers";
 import { utcMsToYmdInTimezone } from "../_util/timezone";
-import { buildWindow, loadPaymentsInRange, resolveRestaurantIds } from "./_shared";
+import {
+	buildWindow,
+	loadOrdersInRange,
+	loadPaymentsInRange,
+	resolveRestaurantIds,
+} from "./_shared";
 
 const REVENUE_OVER_TIME_MAX_RANGE_DAYS = 366;
 
@@ -81,14 +93,26 @@ async function bucketByDay(
 ): Promise<RevenueBucket[]> {
 	const payments = await loadPaymentsInRange(ctx, restaurantIds, range);
 	const tally = new Map<string, number>();
-	for (const p of payments) {
-		if (p.status !== PAYMENT_STATUS.SUCCEEDED) continue;
-		const t = p.succeededAt ?? p.createdAt;
+	const addTo = (t: number, amount: number) => {
+		if (amount === 0) return;
 		const key = timezone
 			? utcMsToYmdInTimezone(t, timezone)
 			: new Date(t).toISOString().slice(0, 10);
-		tally.set(key, (tally.get(key) ?? 0) + p.amount);
+		tally.set(key, (tally.get(key) ?? 0) + amount);
+	};
+
+	for (const p of payments) {
+		addTo(p.succeededAt ?? p.createdAt, restaurantRevenueFromPayment(p));
 	}
+
+	// Cash orders are paid restaurant revenue with no `payments` row by design
+	// (`markOrderPaidInPerson`), so they are added back from the order total.
+	const orders = await loadOrdersInRange(ctx, restaurantIds, range);
+	for (const o of orders) {
+		if (!isCashSettledOrder(o)) continue;
+		addTo(o.paidAt ?? o.createdAt, o.totalAmount);
+	}
+
 	return [...tally.entries()]
 		.sort((a, b) => a[0].localeCompare(b[0]))
 		.map(([date, amount]) => ({ date, amount }));

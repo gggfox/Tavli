@@ -102,6 +102,15 @@ describe("deriveStationTickets", () => {
 		}
 	});
 
+	it("never lets an awaiting_payment order reach a station rail (ADR 008)", () => {
+		// Uncollected cash: staff-visible, but the kitchen must not start
+		// cooking, so neither station gets a ticket regardless of items.
+		const order = makeOrder({ status: "awaiting_payment", awaitingPaymentAt: 1_000 });
+
+		expect(deriveStationTickets([order], "bar")).toHaveLength(0);
+		expect(deriveStationTickets([order], "kitchen")).toHaveLength(0);
+	});
+
 	it("preserves the order of the list it was given", () => {
 		const first = makeOrder({ _id: "a" as DashboardOrder["_id"] });
 		const second = makeOrder({ _id: "b" as DashboardOrder["_id"] });

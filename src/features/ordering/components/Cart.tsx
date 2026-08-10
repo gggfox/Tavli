@@ -14,16 +14,18 @@ interface CartProps {
 	onBack: () => void;
 	onSubmit: () => void;
 	onRemoveItem: (orderItemId: Id<"orderItems">) => void;
-	isSubmitting: boolean;
 }
 
-export function Cart({
-	orderId,
-	onBack,
-	onSubmit,
-	onRemoveItem,
-	isSubmitting,
-}: Readonly<CartProps>) {
+/**
+ * The diner's draft-order review step.
+ *
+ * ADR 008 note: there is deliberately no busy/`isSubmitting` state here. Under
+ * the tab model this button ran `orders.submitOrder` and needed a "Placing
+ * order…" label while the mutation was in flight; pay-at-submit turned it into
+ * a client-side route change to the per-order checkout, which has nothing to
+ * wait on. The spinner now lives on the checkout's own pay buttons.
+ */
+export function Cart({ orderId, onBack, onSubmit, onRemoveItem }: Readonly<CartProps>) {
 	const { t, i18n } = useTranslation();
 	const { data: orderData } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
 
@@ -95,10 +97,10 @@ export function Cart({
 					</div>
 					<button
 						onClick={onSubmit}
-						disabled={isSubmitting}
-						className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
+						className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary"
 					>
-						{isSubmitting ? t(OrderingKeys.CART_PLACING_ORDER) : t(OrderingKeys.CART_PLACE_ORDER)}
+						{/* ADR 008: the draft heads to the per-order checkout, not the kitchen. */}
+						{t(OrderingKeys.CHECKOUT_CONTINUE_TO_PAYMENT)}
 					</button>
 				</div>
 			)}

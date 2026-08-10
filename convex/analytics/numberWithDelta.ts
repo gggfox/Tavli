@@ -7,20 +7,29 @@
  * - `reservations.confirmed` — count where status = confirmed | seated | completed
  * - `orders.count`           — paid orders by `paidAt`
  * - `orders.avgDishValue`    — Σ order-item lineTotal ÷ Σ order-item quantity
- * - `orders.avgCheck`        — succeeded-payment revenue ÷ count of paid orders
- * - `payments.revenueTotal`  — sum of payments.amount where status = succeeded
+ * - `orders.avgCheck`        — restaurant revenue ÷ count of paid orders
+ * - `payments.revenueTotal`  — restaurant revenue over the window
  * - `covers`                 — sum of `partySize` of seated/completed reservations
  *
  * Money metrics (`payments.revenueTotal`, `orders.avgDishValue`,
  * `orders.avgCheck`) require manager-or-above; counts are available to any
  * staff member with restaurant access.
+ *
+ * "Restaurant revenue" is the ADR 008 definition: food only — excluding the
+ * customer-borne Tavli service fee that now sits inside `payments.amount` and
+ * excluding tips (their own `kind: "tip"` rows), and including cash orders,
+ * which carry no `payments` row. See `convex/paymentMoneyHelpers.ts`.
  */
 import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { AsyncReturn } from "../_shared/types";
 import { UserInputValidationErrorObject } from "../_shared/errors";
-import { PAYMENT_STATUS, RESERVATION_STATUS, TABLE } from "../constants";
-import type { Id } from "../_generated/dataModel";
+import { RESERVATION_STATUS, TABLE } from "../constants";
+import type { Doc, Id } from "../_generated/dataModel";
+import {
+	sumCashSettledOrderRevenue,
+	sumRestaurantRevenueFromPayments,
+} from "../paymentMoneyHelpers";
 import {
 	buildWindow,
 	loadOrderItemsInRange,
@@ -148,17 +157,12 @@ async function computeMetric(
 			const orders = await loadOrdersInRange(ctx, restaurantIds, range);
 			const paidOrderCount = orders.filter((o) => o.paidAt !== undefined).length;
 			if (paidOrderCount === 0) return 0;
-			const payments = await loadPaymentsInRange(ctx, restaurantIds, range);
-			const revenue = payments
-				.filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED)
-				.reduce((sum, p) => sum + p.amount, 0);
-			return revenue / paidOrderCount;
+			// Cash orders are in the denominator (they have `paidAt`), so they
+			// have to be in the numerator too — they just have no payments row.
+			return (await restaurantRevenue(ctx, restaurantIds, range, orders)) / paidOrderCount;
 		}
 		case "payments.revenueTotal": {
-			const rows = await loadPaymentsInRange(ctx, restaurantIds, range);
-			return rows
-				.filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED)
-				.reduce((sum, p) => sum + p.amount, 0);
+			return await restaurantRevenue(ctx, restaurantIds, range);
 		}
 		case "covers": {
 			const rows = await loadReservationsInRange(ctx, restaurantIds, range);
@@ -173,4 +177,21 @@ async function computeMetric(
 			return exhaustive;
 		}
 	}
+}
+
+/**
+ * Restaurant revenue over a window: succeeded-payment food value (excluding
+ * the Tavli service fee and tips) plus cash orders, which are paid but carry
+ * no `payments` row. `preloadedOrders` lets a caller that already loaded the
+ * window's orders avoid a second scan.
+ */
+async function restaurantRevenue(
+	ctx: AnalyticsCtx,
+	restaurantIds: Id<"restaurants">[],
+	range: DashboardRange,
+	preloadedOrders?: Doc<"orders">[]
+): Promise<number> {
+	const payments = await loadPaymentsInRange(ctx, restaurantIds, range);
+	const orders = preloadedOrders ?? (await loadOrdersInRange(ctx, restaurantIds, range));
+	return sumRestaurantRevenueFromPayments(payments) + sumCashSettledOrderRevenue(orders);
 }

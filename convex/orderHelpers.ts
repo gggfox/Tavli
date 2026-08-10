@@ -35,8 +35,13 @@ export const selectedOptionValidator = v.object({
  * This closes an API-only hole: the dashboard already renders no Cancel button
  * on served cards (`statusConfig.ts` sets `served.next = null`, and the button
  * is gated on `hasNextAction`), so no staff-facing capability is lost.
+ *
+ * `awaiting_payment` (ADR 008) can only be cancelled from here: its paid flips
+ * stay encapsulated in `confirmPayment` (card) and `markOrderPaidInPerson`
+ * (cash), the same pattern as `confirmPayment`'s draft → submitted bypass.
  */
 export const VALID_TRANSITIONS: Record<string, string[]> = {
+	awaiting_payment: ["cancelled"],
 	submitted: ["preparing", "cancelled"],
 	preparing: ["ready", "cancelled"],
 	ready: ["served", "cancelled"],
@@ -44,7 +49,11 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
 
 // Statuses the kitchen dashboard is allowed to surface. `draft` is excluded
 // because drafts are pre-submission state and never belong on the dashboard.
+// `awaiting_payment` is staff-visible (owed cash) but never appears in the
+// default active set — callers must ask for it explicitly, and station rails
+// exclude it on the frontend (ADR 008).
 export const DASHBOARD_STATUS_VALIDATOR = v.union(
+	v.literal("awaiting_payment"),
 	v.literal("submitted"),
 	v.literal("preparing"),
 	v.literal("ready"),
