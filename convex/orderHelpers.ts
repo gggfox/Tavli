@@ -61,6 +61,62 @@ export const DASHBOARD_STATUS_VALIDATOR = v.union(
 	v.literal("cancelled")
 );
 
+/** Every status the dashboard's status filter can select, in segment order. */
+export const DASHBOARD_STATUSES = [
+	"awaiting_payment",
+	"submitted",
+	"preparing",
+	"ready",
+	"served",
+	"cancelled",
+] as const;
+
+export type DashboardStatus = (typeof DASHBOARD_STATUSES)[number];
+
+/**
+ * Cards behind one status segment. `capped` means the scan hit its ceiling
+ * and the true total is higher — the UI renders it as "N+".
+ */
+export interface DashboardStatusCount {
+	readonly count: number;
+	readonly capped: boolean;
+}
+
+export type DashboardStatusCounts = Record<DashboardStatus, DashboardStatusCount>;
+
+/**
+ * Whether an order still shows a ticket on one station's rail.
+ *
+ * The single source of truth for the three rail rules, shared by the
+ * frontend projection (`deriveStationTickets`) and the backend segment
+ * counts — the count on a segment has to agree with the number of cards
+ * behind it, and two copies of this rule would eventually disagree.
+ *
+ * 1. Only `submitted` / `preparing` have station work left. `ready` has
+ *    nothing left to make, `served` / `cancelled` are closed, and
+ *    `awaiting_payment` must never reach a rail (ADR 008).
+ * 2. Stamping the station bumps the ticket off that rail.
+ * 3. A station with no live items of its own has nothing to show.
+ */
+export function hasStationTicket(args: {
+	readonly status: string;
+	readonly stationStamp: number | undefined;
+	readonly liveStationItemCount: number;
+}): boolean {
+	if (args.status !== "submitted" && args.status !== "preparing") return false;
+	if (args.stationStamp !== undefined) return false;
+	return args.liveStationItemCount > 0;
+}
+
+/**
+ * Service-day window for the dashboard. "today" is the restaurant's own
+ * business day — its configured rollover (default 04:00 local), so a ticket
+ * opened at 01:00 still belongs to the night that is still being worked.
+ */
+export const SERVICE_DATE_FILTER_VALIDATOR = v.union(v.literal("today"), v.literal("all"));
+
+export type ServiceDateFilter = "today" | "all";
+
 /**
  * Validator for the `prepStation` literal used in mutation/query args.
  * Matches `PREP_STATION` constant; keep them in sync.

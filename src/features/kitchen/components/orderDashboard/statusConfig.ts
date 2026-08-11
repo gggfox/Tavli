@@ -4,6 +4,15 @@ import { OrdersKeys } from "@/global/i18n";
 import type { Urgency } from "@/global/utils/relativeTime";
 import type { OrderPaymentState } from "convex/constants";
 import type { Doc } from "convex/_generated/dataModel";
+import {
+	BadgeDollarSign,
+	CheckCircle2,
+	ChefHat,
+	Inbox,
+	UtensilsCrossed,
+	XCircle,
+	type LucideIcon,
+} from "lucide-react";
 
 type LiveNameTranslations = Record<string, { name?: string }>;
 type LiveNameDescriptionTranslations = Record<string, { name?: string; description?: string }>;
@@ -40,6 +49,12 @@ export type NextOrderStatus = "preparing" | "ready" | "served" | "cancelled";
 export type StatusConfig = {
 	labelKey: string;
 	tone: StatusTone;
+	/**
+	 * Segment glyph for the status filter. Deliberately the same icons the
+	 * order card uses on its advance-to-this-status button, so "the button
+	 * that makes an order ready" and "the ready segment" read as one thing.
+	 */
+	icon: LucideIcon;
 	next: NextOrderStatus | null;
 	nextLabelKey: string | null;
 };
@@ -62,37 +77,43 @@ export const STATUS_CONFIG: Record<OrderDashboardStatusFilterValue, StatusConfig
 	// hence no `next` transition here (ADR 008).
 	awaiting_payment: {
 		labelKey: OrdersKeys.STATUS_AWAITING_PAYMENT,
-		tone: "warning",
+		tone: "urgent",
+		icon: BadgeDollarSign,
 		next: null,
 		nextLabelKey: null,
 	},
 	submitted: {
 		labelKey: OrdersKeys.STATUS_SUBMITTED,
 		tone: "warning",
+		icon: Inbox,
 		next: "preparing",
 		nextLabelKey: OrdersKeys.ACTION_ACCEPT,
 	},
 	preparing: {
 		labelKey: OrdersKeys.STATUS_PREPARING,
 		tone: "info",
+		icon: ChefHat,
 		next: "ready",
 		nextLabelKey: OrdersKeys.ACTION_MARK_READY,
 	},
 	ready: {
 		labelKey: OrdersKeys.STATUS_READY,
 		tone: "success",
+		icon: CheckCircle2,
 		next: "served",
 		nextLabelKey: OrdersKeys.ACTION_MARK_SERVED,
 	},
 	served: {
 		labelKey: OrdersKeys.STATUS_SERVED,
 		tone: "neutral",
+		icon: UtensilsCrossed,
 		next: null,
 		nextLabelKey: null,
 	},
 	cancelled: {
 		labelKey: OrdersKeys.STATUS_CANCELLED,
 		tone: "danger",
+		icon: XCircle,
 		next: null,
 		nextLabelKey: null,
 	},
