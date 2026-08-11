@@ -19,7 +19,6 @@ export const SidebarKeys = {
 	OPTIONS: "sidebar.nav.options",
 	ORDERS: "sidebar.nav.orders",
 	PAYMENTS: "sidebar.nav.payments",
-	TABS: "sidebar.nav.tabs",
 	RESERVATIONS: "sidebar.nav.reservations",
 	TEAM: "sidebar.nav.team",
 	TEAM_INVITES: "sidebar.nav.teamInvites",

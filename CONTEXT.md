@@ -50,8 +50,10 @@ _Avoid_: type, kind, beverage category, meal category.
 An open service period at a `Table`, doubling as the group's shared
 visit. Members join by a short **join code**; each member pays for
 their own `Orders` as they place them, and each member is prompted for
-their own tip at **Visit close-out**. Staff close the session when the
-table leaves.
+their own tip at **Visit close-out**. A session closes at Visit
+close-out, or the hourly stale sweep auto-closes it once nothing is
+owed; staff resolve cash walkouts by collecting or 86'ing
+**Awaiting payment** orders on the Orders dashboard.
 _Avoid_: check, bill; tab (pre-pivot language for the session as a
 settlement unit — see ADR 008).
 

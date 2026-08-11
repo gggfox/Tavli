@@ -463,20 +463,16 @@ describe("session tabs", () => {
 	describe("diner close", () => {
 		it("rejects closing a tab that still has an unpaid balance", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, authed } = await seedTabWithOrder(t);
+			const { sessionId, authed } = await seedTabWithOrder(t);
 
 			await expect(authed.mutation(api.sessions.close, { sessionId })).rejects.toThrow(
 				/ERROR_TAB_UNPAID/
 			);
 
-			// The tab stays active, so the walkout is still on the staff dashboard.
-			const staff = t.withIdentity({ subject: "owner1" });
-			const [tabs, listError] = await staff.query(api.sessions.getOpenTabsByRestaurant, {
-				restaurantId,
+			// The tab stays active, so the walkout's debt is not erased.
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(sessionId))!.status).toBe("active");
 			});
-			expect(listError).toBeNull();
-			expect(tabs).toHaveLength(1);
-			expect(tabs![0].unpaidTotal).toBe(1800);
 		});
 
 		it("closes a tab that never ordered anything", async () => {
@@ -516,47 +512,6 @@ describe("session tabs", () => {
 			await t.run(async (ctx) => {
 				expect((await ctx.db.get(sessionId))!.status).toBe("closed");
 			});
-		});
-	});
-
-	describe("staff open tabs", () => {
-		it("lists open tabs with their unpaid balance and closes one manually", async () => {
-			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedTabWithOrder(t);
-
-			// Restaurant owners have staff access.
-			const staff = t.withIdentity({ subject: "owner1" });
-			const [tabs, listError] = await staff.query(api.sessions.getOpenTabsByRestaurant, {
-				restaurantId,
-			});
-			expect(listError).toBeNull();
-			expect(tabs).toHaveLength(1);
-			expect(tabs![0].unpaidTotal).toBe(1800);
-			expect(tabs![0].orderCount).toBe(1);
-
-			const [closedId, closeError] = await staff.mutation(api.sessions.closeTabAsStaff, {
-				sessionId,
-			});
-			expect(closeError).toBeNull();
-			expect(closedId).toBe(sessionId);
-
-			await t.run(async (ctx) => {
-				const session = await ctx.db.get(sessionId);
-				expect(session!.status).toBe("closed");
-				expect(session!.settledBy).toBe("staff");
-			});
-		});
-
-		it("denies the open tabs view to unrelated users", async () => {
-			const t = convexTest(schema, modules);
-			const { restaurantId } = await seedTabWithOrder(t);
-
-			const stranger = t.withIdentity({ subject: "stranger1" });
-			const [tabs, error] = await stranger.query(api.sessions.getOpenTabsByRestaurant, {
-				restaurantId,
-			});
-			expect(tabs).toBeNull();
-			expect(error).not.toBeNull();
 		});
 	});
 
@@ -730,9 +685,9 @@ describe("session tabs", () => {
 			return orderId;
 		}
 
-		it("keeps awaiting_payment orders out of the tab balance but visible to staff", async () => {
+		it("keeps awaiting_payment orders out of the tab balance", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId, menuItemId, authed } = await seedTabWithOrder(t);
+			const { sessionId, tableId, menuItemId, authed } = await seedTabWithOrder(t);
 			const cashOrderId = await addAwaitingPaymentRound(t, {
 				sessionId,
 				tableId,
@@ -746,15 +701,6 @@ describe("session tabs", () => {
 			expect(tab!.subtotal).toBe(1800);
 			expect(tab!.payableOrderIds).not.toContain(cashOrderId);
 			expect(tab!.unservedOrderIds).not.toContain(cashOrderId);
-
-			// Staff see the owed cash on the open-tabs row, separate from the tab.
-			const staff = t.withIdentity({ subject: "owner1" });
-			const [tabs] = await staff.query(api.sessions.getOpenTabsByRestaurant, { restaurantId });
-			expect(tabs![0]).toMatchObject({
-				unpaidTotal: 1800,
-				awaitingPaymentTotal: 900,
-				awaitingPaymentCount: 1,
-			});
 		});
 
 		it("reports a zero tab balance for a new-model session whose orders are paid", async () => {
@@ -788,39 +734,6 @@ describe("session tabs", () => {
 			await expect(authed.mutation(api.sessions.close, { sessionId })).rejects.toThrow(
 				/ERROR_SESSION_AWAITING_PAYMENT_ORDERS/
 			);
-		});
-
-		it("blocks the staff close until the cash order is collected or cancelled", async () => {
-			const t = convexTest(schema, modules);
-			const {
-				sessionId,
-				restaurantId: _restaurantId,
-				tableId,
-				menuItemId,
-				authed,
-			} = await seedTabWithOrder(t);
-			const cashOrderId = await addAwaitingPaymentRound(t, {
-				sessionId,
-				tableId,
-				menuItemId,
-				authed,
-			});
-
-			const staff = t.withIdentity({ subject: "owner1" });
-			await expect(staff.mutation(api.sessions.closeTabAsStaff, { sessionId })).rejects.toThrow(
-				/ERROR_SESSION_AWAITING_PAYMENT_ORDERS/
-			);
-
-			// Collecting the cash clears the block; the close then settles the tab.
-			const [, collectError] = await staff.mutation(api.orders.markOrderPaidInPerson, {
-				orderId: cashOrderId,
-			});
-			expect(collectError).toBeNull();
-			const [closedId, closeError] = await staff.mutation(api.sessions.closeTabAsStaff, {
-				sessionId,
-			});
-			expect(closeError).toBeNull();
-			expect(closedId).toBe(sessionId);
 		});
 	});
 });

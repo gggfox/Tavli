@@ -9,52 +9,46 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as DemoRouteRouteImport } from './routes/demo/route'
 import { Route as HealthRouteImport } from './routes/health'
-import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-flags'
-import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
-import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
-import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
-import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
-import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
-import { Route as AdminTabsRouteImport } from './routes/admin/tabs'
-import { Route as AdminTeamRouteImport } from './routes/admin/team'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as DemoRouteRouteImport } from './routes/demo/route'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
-import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
-import { Route as AdminMenusMenuIdRouteImport } from './routes/admin/menus/$menuId'
+import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminTeamRouteImport } from './routes/admin/team'
+import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
+import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
+import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
+import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
+import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
+import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-flags'
 import { Route as AdminReservationsIndexRouteImport } from './routes/admin/reservations/index'
-import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
-import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
-import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
-import { Route as RSlugLangRouteImport } from './routes/r/$slug/$lang'
-import { Route as RSlugMenuRouteImport } from './routes/r/$slug/menu'
-import { Route as RSlugOrdersRouteImport } from './routes/r/$slug/orders'
+import { Route as AdminMenusIndexRouteImport } from './routes/admin/menus/index'
 import { Route as RSlugReserveRouteImport } from './routes/r/$slug/reserve'
+import { Route as RSlugOrdersRouteImport } from './routes/r/$slug/orders'
+import { Route as RSlugMenuRouteImport } from './routes/r/$slug/menu'
+import { Route as RSlugLangRouteImport } from './routes/r/$slug/$lang'
+import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
+import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
+import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
+import { Route as AdminMenusMenuIdRouteImport } from './routes/admin/menus/$menuId'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
-import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
-import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
-import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
-import { Route as RSlugLangCartRouteImport } from './routes/r/$slug/$lang/cart'
-import { Route as RSlugLangCheckoutRouteImport } from './routes/r/$slug/$lang/checkout'
-import { Route as RSlugLangCloseoutRouteImport } from './routes/r/$slug/$lang/closeout'
-import { Route as RSlugLangMenuRouteImport } from './routes/r/$slug/$lang/menu'
-import { Route as RSlugLangOrdersRouteImport } from './routes/r/$slug/$lang/orders'
 import { Route as RSlugOrderOrderIdRouteImport } from './routes/r/$slug/order/$orderId'
+import { Route as RSlugLangOrdersRouteImport } from './routes/r/$slug/$lang/orders'
+import { Route as RSlugLangMenuRouteImport } from './routes/r/$slug/$lang/menu'
+import { Route as RSlugLangCloseoutRouteImport } from './routes/r/$slug/$lang/closeout'
+import { Route as RSlugLangCheckoutRouteImport } from './routes/r/$slug/$lang/checkout'
+import { Route as RSlugLangCartRouteImport } from './routes/r/$slug/$lang/cart'
+import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
+import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
+import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
 import { Route as RSlugLangOrderOrderIdRouteImport } from './routes/r/$slug/$lang/order/$orderId'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -62,64 +56,19 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DemoRouteRoute = DemoRouteRouteImport.update({
   id: '/demo',
   path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HealthRoute = HealthRouteImport.update({
-  id: '/health',
-  path: '/health',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminFeatureFlagsRoute = AdminFeatureFlagsRouteImport.update({
-  id: '/feature-flags',
-  path: '/feature-flags',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminOrdersRoute = AdminOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
-  id: '/organizations',
-  path: '/organizations',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
-  id: '/payments',
-  path: '/payments',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
-  id: '/restaurants',
-  path: '/restaurants',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminScheduleRoute = AdminScheduleRouteImport.update({
-  id: '/schedule',
-  path: '/schedule',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminTabsRoute = AdminTabsRouteImport.update({
-  id: '/tabs',
-  path: '/tabs',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminTeamRoute = AdminTeamRouteImport.update({
-  id: '/team',
-  path: '/team',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AdminRoute,
-} as any)
-const InvitesTokenRoute = InvitesTokenRouteImport.update({
-  id: '/invites/$token',
-  path: '/invites/$token',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RSlugRoute = RSlugRouteImport.update({
@@ -127,14 +76,49 @@ const RSlugRoute = RSlugRouteImport.update({
   path: '/r/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminMenusIndexRoute = AdminMenusIndexRouteImport.update({
-  id: '/menus/',
-  path: '/menus/',
+const InvitesTokenRoute = InvitesTokenRouteImport.update({
+  id: '/invites/$token',
+  path: '/invites/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
-  id: '/menus/$menuId',
-  path: '/menus/$menuId',
+const AdminTeamRoute = AdminTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminScheduleRoute = AdminScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
+  id: '/restaurants',
+  path: '/restaurants',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrdersRoute = AdminOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFeatureFlagsRoute = AdminFeatureFlagsRouteImport.update({
+  id: '/feature-flags',
+  path: '/feature-flags',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminReservationsIndexRoute = AdminReservationsIndexRouteImport.update({
@@ -142,29 +126,14 @@ const AdminReservationsIndexRoute = AdminReservationsIndexRouteImport.update({
   path: '/reservations/',
   getParentRoute: () => AdminRoute,
 } as any)
-const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
-  id: '/api/names',
-  path: '/api/names',
-  getParentRoute: () => DemoRouteRoute,
+const AdminMenusIndexRoute = AdminMenusIndexRouteImport.update({
+  id: '/menus/',
+  path: '/menus/',
+  getParentRoute: () => AdminRoute,
 } as any)
-const DemoStartApiRequestRoute = DemoStartApiRequestRouteImport.update({
-  id: '/start/api-request',
-  path: '/start/api-request',
-  getParentRoute: () => DemoRouteRoute,
-} as any)
-const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
-  id: '/start/server-funcs',
-  path: '/start/server-funcs',
-  getParentRoute: () => DemoRouteRoute,
-} as any)
-const RSlugLangRoute = RSlugLangRouteImport.update({
-  id: '/$lang',
-  path: '/$lang',
-  getParentRoute: () => RSlugRoute,
-} as any)
-const RSlugMenuRoute = RSlugMenuRouteImport.update({
-  id: '/menu',
-  path: '/menu',
+const RSlugReserveRoute = RSlugReserveRouteImport.update({
+  id: '/reserve',
+  path: '/reserve',
   getParentRoute: () => RSlugRoute,
 } as any)
 const RSlugOrdersRoute = RSlugOrdersRouteImport.update({
@@ -172,44 +141,49 @@ const RSlugOrdersRoute = RSlugOrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => RSlugRoute,
 } as any)
-const RSlugReserveRoute = RSlugReserveRouteImport.update({
-  id: '/reserve',
-  path: '/reserve',
+const RSlugMenuRoute = RSlugMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
   getParentRoute: () => RSlugRoute,
+} as any)
+const RSlugLangRoute = RSlugLangRouteImport.update({
+  id: '/$lang',
+  path: '/$lang',
+  getParentRoute: () => RSlugRoute,
+} as any)
+const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
+  id: '/start/server-funcs',
+  path: '/start/server-funcs',
+  getParentRoute: () => DemoRouteRoute,
+} as any)
+const DemoStartApiRequestRoute = DemoStartApiRequestRouteImport.update({
+  id: '/start/api-request',
+  path: '/start/api-request',
+  getParentRoute: () => DemoRouteRoute,
+} as any)
+const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
+  id: '/api/names',
+  path: '/api/names',
+  getParentRoute: () => DemoRouteRoute,
+} as any)
+const AdminMenusMenuIdRoute = AdminMenusMenuIdRouteImport.update({
+  id: '/menus/$menuId',
+  path: '/menus/$menuId',
+  getParentRoute: () => AdminRoute,
 } as any)
 const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
   id: '/start/ssr/',
   path: '/start/ssr/',
   getParentRoute: () => DemoRouteRoute,
 } as any)
-const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
-  id: '/start/ssr/data-only',
-  path: '/start/ssr/data-only',
-  getParentRoute: () => DemoRouteRoute,
+const RSlugOrderOrderIdRoute = RSlugOrderOrderIdRouteImport.update({
+  id: '/order/$orderId',
+  path: '/order/$orderId',
+  getParentRoute: () => RSlugRoute,
 } as any)
-const DemoStartSsrFullSsrRoute = DemoStartSsrFullSsrRouteImport.update({
-  id: '/start/ssr/full-ssr',
-  path: '/start/ssr/full-ssr',
-  getParentRoute: () => DemoRouteRoute,
-} as any)
-const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
-  id: '/start/ssr/spa-mode',
-  path: '/start/ssr/spa-mode',
-  getParentRoute: () => DemoRouteRoute,
-} as any)
-const RSlugLangCartRoute = RSlugLangCartRouteImport.update({
-  id: '/cart',
-  path: '/cart',
-  getParentRoute: () => RSlugLangRoute,
-} as any)
-const RSlugLangCheckoutRoute = RSlugLangCheckoutRouteImport.update({
-  id: '/checkout',
-  path: '/checkout',
-  getParentRoute: () => RSlugLangRoute,
-} as any)
-const RSlugLangCloseoutRoute = RSlugLangCloseoutRouteImport.update({
-  id: '/closeout',
-  path: '/closeout',
+const RSlugLangOrdersRoute = RSlugLangOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
   getParentRoute: () => RSlugLangRoute,
 } as any)
 const RSlugLangMenuRoute = RSlugLangMenuRouteImport.update({
@@ -217,15 +191,35 @@ const RSlugLangMenuRoute = RSlugLangMenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => RSlugLangRoute,
 } as any)
-const RSlugLangOrdersRoute = RSlugLangOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
+const RSlugLangCloseoutRoute = RSlugLangCloseoutRouteImport.update({
+  id: '/closeout',
+  path: '/closeout',
   getParentRoute: () => RSlugLangRoute,
 } as any)
-const RSlugOrderOrderIdRoute = RSlugOrderOrderIdRouteImport.update({
-  id: '/order/$orderId',
-  path: '/order/$orderId',
-  getParentRoute: () => RSlugRoute,
+const RSlugLangCheckoutRoute = RSlugLangCheckoutRouteImport.update({
+  id: '/checkout',
+  path: '/checkout',
+  getParentRoute: () => RSlugLangRoute,
+} as any)
+const RSlugLangCartRoute = RSlugLangCartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => RSlugLangRoute,
+} as any)
+const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
+  id: '/start/ssr/spa-mode',
+  path: '/start/ssr/spa-mode',
+  getParentRoute: () => DemoRouteRoute,
+} as any)
+const DemoStartSsrFullSsrRoute = DemoStartSsrFullSsrRouteImport.update({
+  id: '/start/ssr/full-ssr',
+  path: '/start/ssr/full-ssr',
+  getParentRoute: () => DemoRouteRoute,
+} as any)
+const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
+  id: '/start/ssr/data-only',
+  path: '/start/ssr/data-only',
+  getParentRoute: () => DemoRouteRoute,
 } as any)
 const RSlugLangOrderOrderIdRoute = RSlugLangOrderOrderIdRouteImport.update({
   id: '/order/$orderId',
@@ -245,7 +239,6 @@ export interface FileRoutesByFullPath {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
-  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -258,8 +251,8 @@ export interface FileRoutesByFullPath {
   '/r/$slug/menu': typeof RSlugMenuRoute
   '/r/$slug/orders': typeof RSlugOrdersRoute
   '/r/$slug/reserve': typeof RSlugReserveRoute
-  '/admin/menus/': typeof AdminMenusIndexRoute
-  '/admin/reservations/': typeof AdminReservationsIndexRoute
+  '/admin/menus': typeof AdminMenusIndexRoute
+  '/admin/reservations': typeof AdminReservationsIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -269,7 +262,7 @@ export interface FileRoutesByFullPath {
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
-  '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
+  '/demo/start/ssr': typeof DemoStartSsrIndexRoute
   '/r/$slug/$lang/order/$orderId': typeof RSlugLangOrderOrderIdRoute
 }
 export interface FileRoutesByTo {
@@ -284,7 +277,6 @@ export interface FileRoutesByTo {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
-  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -324,7 +316,6 @@ export interface FileRoutesById {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
-  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -365,7 +356,6 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
-    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -378,8 +368,8 @@ export interface FileRouteTypes {
     | '/r/$slug/menu'
     | '/r/$slug/orders'
     | '/r/$slug/reserve'
-    | '/admin/menus/'
-    | '/admin/reservations/'
+    | '/admin/menus'
+    | '/admin/reservations'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -389,7 +379,7 @@ export interface FileRouteTypes {
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
-    | '/demo/start/ssr/'
+    | '/demo/start/ssr'
     | '/r/$slug/$lang/order/$orderId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -404,7 +394,6 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
-    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -443,7 +432,6 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
-    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -483,18 +471,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -504,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo': {
       id: '/demo'
       path: '/demo'
@@ -511,81 +499,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/health': {
-      id: '/health'
-      path: '/health'
-      fullPath: '/health'
-      preLoaderRoute: typeof HealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/feature-flags': {
-      id: '/admin/feature-flags'
-      path: '/feature-flags'
-      fullPath: '/admin/feature-flags'
-      preLoaderRoute: typeof AdminFeatureFlagsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/orders': {
-      id: '/admin/orders'
-      path: '/orders'
-      fullPath: '/admin/orders'
-      preLoaderRoute: typeof AdminOrdersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/organizations': {
-      id: '/admin/organizations'
-      path: '/organizations'
-      fullPath: '/admin/organizations'
-      preLoaderRoute: typeof AdminOrganizationsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/payments': {
-      id: '/admin/payments'
-      path: '/payments'
-      fullPath: '/admin/payments'
-      preLoaderRoute: typeof AdminPaymentsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/restaurants': {
-      id: '/admin/restaurants'
-      path: '/restaurants'
-      fullPath: '/admin/restaurants'
-      preLoaderRoute: typeof AdminRestaurantsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/schedule': {
-      id: '/admin/schedule'
-      path: '/schedule'
-      fullPath: '/admin/schedule'
-      preLoaderRoute: typeof AdminScheduleRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/tabs': {
-      id: '/admin/tabs'
-      path: '/tabs'
-      fullPath: '/admin/tabs'
-      preLoaderRoute: typeof AdminTabsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/team': {
-      id: '/admin/team'
-      path: '/team'
-      fullPath: '/admin/team'
-      preLoaderRoute: typeof AdminTeamRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/invites/$token': {
-      id: '/invites/$token'
-      path: '/invites/$token'
-      fullPath: '/invites/$token'
-      preLoaderRoute: typeof InvitesTokenRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/r/$slug': {
@@ -595,60 +513,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/menus/': {
-      id: '/admin/menus/'
-      path: '/menus'
-      fullPath: '/admin/menus/'
-      preLoaderRoute: typeof AdminMenusIndexRouteImport
+    '/invites/$token': {
+      id: '/invites/$token'
+      path: '/invites/$token'
+      fullPath: '/invites/$token'
+      preLoaderRoute: typeof InvitesTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/menus/$menuId': {
-      id: '/admin/menus/$menuId'
-      path: '/menus/$menuId'
-      fullPath: '/admin/menus/$menuId'
-      preLoaderRoute: typeof AdminMenusMenuIdRouteImport
+    '/admin/team': {
+      id: '/admin/team'
+      path: '/team'
+      fullPath: '/admin/team'
+      preLoaderRoute: typeof AdminTeamRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/schedule': {
+      id: '/admin/schedule'
+      path: '/schedule'
+      fullPath: '/admin/schedule'
+      preLoaderRoute: typeof AdminScheduleRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/restaurants': {
+      id: '/admin/restaurants'
+      path: '/restaurants'
+      fullPath: '/admin/restaurants'
+      preLoaderRoute: typeof AdminRestaurantsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/organizations': {
+      id: '/admin/organizations'
+      path: '/organizations'
+      fullPath: '/admin/organizations'
+      preLoaderRoute: typeof AdminOrganizationsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orders': {
+      id: '/admin/orders'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/feature-flags': {
+      id: '/admin/feature-flags'
+      path: '/feature-flags'
+      fullPath: '/admin/feature-flags'
+      preLoaderRoute: typeof AdminFeatureFlagsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/reservations/': {
       id: '/admin/reservations/'
       path: '/reservations'
-      fullPath: '/admin/reservations/'
+      fullPath: '/admin/reservations'
       preLoaderRoute: typeof AdminReservationsIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/demo/api/names': {
-      id: '/demo/api/names'
-      path: '/api/names'
-      fullPath: '/demo/api/names'
-      preLoaderRoute: typeof DemoApiNamesRouteImport
-      parentRoute: typeof DemoRouteRoute
+    '/admin/menus/': {
+      id: '/admin/menus/'
+      path: '/menus'
+      fullPath: '/admin/menus'
+      preLoaderRoute: typeof AdminMenusIndexRouteImport
+      parentRoute: typeof AdminRoute
     }
-    '/demo/start/api-request': {
-      id: '/demo/start/api-request'
-      path: '/start/api-request'
-      fullPath: '/demo/start/api-request'
-      preLoaderRoute: typeof DemoStartApiRequestRouteImport
-      parentRoute: typeof DemoRouteRoute
-    }
-    '/demo/start/server-funcs': {
-      id: '/demo/start/server-funcs'
-      path: '/start/server-funcs'
-      fullPath: '/demo/start/server-funcs'
-      preLoaderRoute: typeof DemoStartServerFuncsRouteImport
-      parentRoute: typeof DemoRouteRoute
-    }
-    '/r/$slug/$lang': {
-      id: '/r/$slug/$lang'
-      path: '/$lang'
-      fullPath: '/r/$slug/$lang'
-      preLoaderRoute: typeof RSlugLangRouteImport
-      parentRoute: typeof RSlugRoute
-    }
-    '/r/$slug/menu': {
-      id: '/r/$slug/menu'
-      path: '/menu'
-      fullPath: '/r/$slug/menu'
-      preLoaderRoute: typeof RSlugMenuRouteImport
+    '/r/$slug/reserve': {
+      id: '/r/$slug/reserve'
+      path: '/reserve'
+      fullPath: '/r/$slug/reserve'
+      preLoaderRoute: typeof RSlugReserveRouteImport
       parentRoute: typeof RSlugRoute
     }
     '/r/$slug/orders': {
@@ -658,60 +604,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RSlugOrdersRouteImport
       parentRoute: typeof RSlugRoute
     }
-    '/r/$slug/reserve': {
-      id: '/r/$slug/reserve'
-      path: '/reserve'
-      fullPath: '/r/$slug/reserve'
-      preLoaderRoute: typeof RSlugReserveRouteImport
+    '/r/$slug/menu': {
+      id: '/r/$slug/menu'
+      path: '/menu'
+      fullPath: '/r/$slug/menu'
+      preLoaderRoute: typeof RSlugMenuRouteImport
       parentRoute: typeof RSlugRoute
+    }
+    '/r/$slug/$lang': {
+      id: '/r/$slug/$lang'
+      path: '/$lang'
+      fullPath: '/r/$slug/$lang'
+      preLoaderRoute: typeof RSlugLangRouteImport
+      parentRoute: typeof RSlugRoute
+    }
+    '/demo/start/server-funcs': {
+      id: '/demo/start/server-funcs'
+      path: '/start/server-funcs'
+      fullPath: '/demo/start/server-funcs'
+      preLoaderRoute: typeof DemoStartServerFuncsRouteImport
+      parentRoute: typeof DemoRouteRoute
+    }
+    '/demo/start/api-request': {
+      id: '/demo/start/api-request'
+      path: '/start/api-request'
+      fullPath: '/demo/start/api-request'
+      preLoaderRoute: typeof DemoStartApiRequestRouteImport
+      parentRoute: typeof DemoRouteRoute
+    }
+    '/demo/api/names': {
+      id: '/demo/api/names'
+      path: '/api/names'
+      fullPath: '/demo/api/names'
+      preLoaderRoute: typeof DemoApiNamesRouteImport
+      parentRoute: typeof DemoRouteRoute
+    }
+    '/admin/menus/$menuId': {
+      id: '/admin/menus/$menuId'
+      path: '/menus/$menuId'
+      fullPath: '/admin/menus/$menuId'
+      preLoaderRoute: typeof AdminMenusMenuIdRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/demo/start/ssr/': {
       id: '/demo/start/ssr/'
       path: '/start/ssr'
-      fullPath: '/demo/start/ssr/'
+      fullPath: '/demo/start/ssr'
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
       parentRoute: typeof DemoRouteRoute
     }
-    '/demo/start/ssr/data-only': {
-      id: '/demo/start/ssr/data-only'
-      path: '/start/ssr/data-only'
-      fullPath: '/demo/start/ssr/data-only'
-      preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
-      parentRoute: typeof DemoRouteRoute
+    '/r/$slug/order/$orderId': {
+      id: '/r/$slug/order/$orderId'
+      path: '/order/$orderId'
+      fullPath: '/r/$slug/order/$orderId'
+      preLoaderRoute: typeof RSlugOrderOrderIdRouteImport
+      parentRoute: typeof RSlugRoute
     }
-    '/demo/start/ssr/full-ssr': {
-      id: '/demo/start/ssr/full-ssr'
-      path: '/start/ssr/full-ssr'
-      fullPath: '/demo/start/ssr/full-ssr'
-      preLoaderRoute: typeof DemoStartSsrFullSsrRouteImport
-      parentRoute: typeof DemoRouteRoute
-    }
-    '/demo/start/ssr/spa-mode': {
-      id: '/demo/start/ssr/spa-mode'
-      path: '/start/ssr/spa-mode'
-      fullPath: '/demo/start/ssr/spa-mode'
-      preLoaderRoute: typeof DemoStartSsrSpaModeRouteImport
-      parentRoute: typeof DemoRouteRoute
-    }
-    '/r/$slug/$lang/cart': {
-      id: '/r/$slug/$lang/cart'
-      path: '/cart'
-      fullPath: '/r/$slug/$lang/cart'
-      preLoaderRoute: typeof RSlugLangCartRouteImport
-      parentRoute: typeof RSlugLangRoute
-    }
-    '/r/$slug/$lang/checkout': {
-      id: '/r/$slug/$lang/checkout'
-      path: '/checkout'
-      fullPath: '/r/$slug/$lang/checkout'
-      preLoaderRoute: typeof RSlugLangCheckoutRouteImport
-      parentRoute: typeof RSlugLangRoute
-    }
-    '/r/$slug/$lang/closeout': {
-      id: '/r/$slug/$lang/closeout'
-      path: '/closeout'
-      fullPath: '/r/$slug/$lang/closeout'
-      preLoaderRoute: typeof RSlugLangCloseoutRouteImport
+    '/r/$slug/$lang/orders': {
+      id: '/r/$slug/$lang/orders'
+      path: '/orders'
+      fullPath: '/r/$slug/$lang/orders'
+      preLoaderRoute: typeof RSlugLangOrdersRouteImport
       parentRoute: typeof RSlugLangRoute
     }
     '/r/$slug/$lang/menu': {
@@ -721,19 +674,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RSlugLangMenuRouteImport
       parentRoute: typeof RSlugLangRoute
     }
-    '/r/$slug/$lang/orders': {
-      id: '/r/$slug/$lang/orders'
-      path: '/orders'
-      fullPath: '/r/$slug/$lang/orders'
-      preLoaderRoute: typeof RSlugLangOrdersRouteImport
+    '/r/$slug/$lang/closeout': {
+      id: '/r/$slug/$lang/closeout'
+      path: '/closeout'
+      fullPath: '/r/$slug/$lang/closeout'
+      preLoaderRoute: typeof RSlugLangCloseoutRouteImport
       parentRoute: typeof RSlugLangRoute
     }
-    '/r/$slug/order/$orderId': {
-      id: '/r/$slug/order/$orderId'
-      path: '/order/$orderId'
-      fullPath: '/r/$slug/order/$orderId'
-      preLoaderRoute: typeof RSlugOrderOrderIdRouteImport
-      parentRoute: typeof RSlugRoute
+    '/r/$slug/$lang/checkout': {
+      id: '/r/$slug/$lang/checkout'
+      path: '/checkout'
+      fullPath: '/r/$slug/$lang/checkout'
+      preLoaderRoute: typeof RSlugLangCheckoutRouteImport
+      parentRoute: typeof RSlugLangRoute
+    }
+    '/r/$slug/$lang/cart': {
+      id: '/r/$slug/$lang/cart'
+      path: '/cart'
+      fullPath: '/r/$slug/$lang/cart'
+      preLoaderRoute: typeof RSlugLangCartRouteImport
+      parentRoute: typeof RSlugLangRoute
+    }
+    '/demo/start/ssr/spa-mode': {
+      id: '/demo/start/ssr/spa-mode'
+      path: '/start/ssr/spa-mode'
+      fullPath: '/demo/start/ssr/spa-mode'
+      preLoaderRoute: typeof DemoStartSsrSpaModeRouteImport
+      parentRoute: typeof DemoRouteRoute
+    }
+    '/demo/start/ssr/full-ssr': {
+      id: '/demo/start/ssr/full-ssr'
+      path: '/start/ssr/full-ssr'
+      fullPath: '/demo/start/ssr/full-ssr'
+      preLoaderRoute: typeof DemoStartSsrFullSsrRouteImport
+      parentRoute: typeof DemoRouteRoute
+    }
+    '/demo/start/ssr/data-only': {
+      id: '/demo/start/ssr/data-only'
+      path: '/start/ssr/data-only'
+      fullPath: '/demo/start/ssr/data-only'
+      preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
+      parentRoute: typeof DemoRouteRoute
     }
     '/r/$slug/$lang/order/$orderId': {
       id: '/r/$slug/$lang/order/$orderId'
@@ -776,7 +757,6 @@ interface AdminRouteChildren {
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
-  AdminTabsRoute: typeof AdminTabsRoute
   AdminTeamRoute: typeof AdminTeamRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
@@ -791,7 +771,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
-  AdminTabsRoute: AdminTabsRoute,
   AdminTeamRoute: AdminTeamRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,

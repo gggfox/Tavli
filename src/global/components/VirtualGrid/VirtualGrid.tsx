@@ -1,7 +1,7 @@
 /**
  * VirtualGrid — responsive card grid that only mounts the rows in view.
  *
- * The staff dashboards (open orders, open tabs) render one card per record in
+ * The staff dashboards (e.g. open orders) render one card per record in
  * a `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` grid. On a busy service that
  * is hundreds of live-updating cards, all mounted, all re-rendering on every
  * Convex push. This keeps the same visual grid but mounts only the visible
