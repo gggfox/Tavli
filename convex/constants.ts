@@ -335,10 +335,9 @@ export const STALE_TAB_SWEEP_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
  *
  * Newest-first matters: the actionable work is flagging tabs that *just* crossed
  * the 24h line. Already-flagged tabs sit at the old end of the window and their
- * only remaining sweep work is the close-if-settled safety net, which is rarely
- * load-bearing — both `confirmTabPayment` and `closeTabAsStaff` close the
- * session directly. Oldest-first would let a backlog of flagged tabs starve the
- * flagging of new ones.
+ * only remaining sweep work is the close-if-settled pass, which re-runs every
+ * hour and so tolerates being deferred a run. Oldest-first would let a backlog
+ * of flagged tabs starve the flagging of new ones.
  */
 export const STALE_TAB_SWEEP_BATCH_SIZE = 200;
 

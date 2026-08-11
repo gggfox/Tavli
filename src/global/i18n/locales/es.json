@@ -26,8 +26,7 @@
 			"admin": "Administración",
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
-			"adminFeatureFlags": "Feature flags",
-			"tabs": "Cuentas abiertas"
+			"adminFeatureFlags": "Feature flags"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -1713,24 +1712,6 @@
 			"tooLarge": "Esta exportación es demasiado grande para descargarse en un solo archivo. Contacta a soporte."
 		},
 		"noYears": "Aún no hay datos para exportar."
-	},
-	"tabs": {
-		"header": "Cuentas abiertas",
-		"empty": "No hay cuentas abiertas por ahora.",
-		"tableLabel": "Mesa {{number}}",
-		"noTable": "Sin mesa",
-		"joinCode": "Código",
-		"members": "{{count}} personas",
-		"orders": "{{count}} pedidos",
-		"unpaidTotal": "Por pagar",
-		"openedAt": "Abierta {{time}}",
-		"staleBadge": "Antigua",
-		"lockedBadge": "Pagando",
-		"unservedBadge_one": "1 sin servir",
-		"unservedBadge_other": "{{count}} sin servir",
-		"closeTab": "Cerrar cuenta",
-		"closeTabConfirm": "¿Cerrar esta cuenta? Úsalo cuando el saldo se pagó en persona.",
-		"closeFailed": "No se pudo cerrar la cuenta."
 	},
 	"userOnboarding": {
 		"inviteAction": "Invitar usuario",

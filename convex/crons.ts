@@ -26,8 +26,9 @@ crons.interval(
 );
 
 // End-of-day tab hygiene (TAVLI-6): active tabs older than 24h are closed
-// when settled and flagged (never auto-charged) when they still owe money,
-// so staff see lingering walkout candidates in the open-tabs view.
+// when settled and flagged (never auto-charged) when they still owe money.
+// With the staff open-tabs screen deleted (ADR 008 cleanup), this sweep and
+// the diner close-out flow are what close abandoned sessions.
 crons.interval("stale open tab sweep", { hours: 1 }, internal.sessions.sweepStaleOpenTabs);
 
 // Stuck-tab reconciliation (TAVLI-45): tab settlement rides on the

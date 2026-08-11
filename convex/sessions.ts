@@ -2,18 +2,9 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { DatabaseWriter } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import {
-	ConflictError,
-	NotAuthenticatedErrorObject,
-	NotAuthorizedError,
-	NotAuthorizedErrorObject,
-	NotFoundError,
-	NotFoundErrorObject,
-	fromErrorObject,
-} from "./_shared/errors";
-import { AsyncReturn } from "./_shared/types";
+import { NotAuthorizedError, NotFoundError, fromErrorObject } from "./_shared/errors";
 import { appendAuditEvent } from "./_util/audit";
-import { getCurrentUserId, requireRestaurantStaffAccess } from "./_util/auth";
+import { getCurrentUserId } from "./_util/auth";
 import {
 	DINER_SESSION_ERRORS,
 	isSessionMember,
@@ -44,8 +35,6 @@ import {
 	isPayableOrder,
 	sumOrderTotals,
 } from "./sessionHelpers";
-
-type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
 
 async function insertSessionWithJoinCode(
 	ctx: { db: DatabaseWriter },
@@ -235,9 +224,10 @@ export const getTabSummary = query({
 /**
  * Diner ends a session that owes nothing (never ordered, or everything already
  * settled). A tab with a payable balance can only leave the active state via
- * payment (`confirmTabPayment`) or staff (`closeTabAsStaff`), and a session
- * holding an uncollected cash order (`awaiting_payment`) is blocked the same
- * way — cash walkout is the only walkout left under ADR 008.
+ * payment (`confirmTabPayment` — legacy pre-pivot flow), and a session holding
+ * an uncollected cash order (`awaiting_payment`) stays open until staff collect
+ * the cash or 86 the order from the Orders dashboard — cash walkout is the
+ * only walkout left under ADR 008.
  */
 export const close = mutation({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
@@ -252,9 +242,10 @@ export const close = mutation({
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
 			.collect();
 
-		// An unpaid tab must stay active: the staff open-tabs view only lists
-		// active sessions, so a diner close here would hide a walkout from the
-		// dashboard. Even the stale sweep only flags unpaid tabs, never closes them.
+		// An unpaid tab must stay active: a diner close here would erase a
+		// walkout's debt. The stale sweep honors the same rule — it only flags
+		// unpaid tabs, never closes them — so the session stays open until the
+		// balance is settled.
 		const payableOrders = orders.filter(isPayableOrder);
 		if (sumOrderTotals(payableOrders) > 0) {
 			throw fromErrorObject(new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_UNPAID).toObject());
@@ -262,7 +253,8 @@ export const close = mutation({
 
 		// Uncollected cash is owed money too, just outside the tab balance
 		// (`awaiting_payment` is deliberately not tab-payable). Same reasoning as
-		// above: closing would hide the debt from the open-tabs view.
+		// above: closing would erase debt staff still have to collect — or 86 —
+		// from the Orders dashboard.
 		if (orders.some(isAwaitingPaymentOrder)) {
 			throw fromErrorObject(
 				new NotAuthorizedError(DINER_SESSION_ERRORS.AWAITING_PAYMENT_ORDERS).toObject()
@@ -761,184 +753,20 @@ export const cancelTabPayment = mutation({
 });
 
 // ============================================================================
-// Staff-facing (open tabs view, manual close)
-// ============================================================================
-
-export type OpenTabRow = {
-	sessionId: Id<typeof TABLE.SESSIONS>;
-	joinCode: string | null;
-	startedAt: number;
-	memberCount: number;
-	tableNumber: number | null;
-	orderCount: number;
-	/**
-	 * Full payable balance — the walkout number. Deliberately NOT reduced by
-	 * `unservedOrderCount`: this is what the table owes, even if some of it can't
-	 * be settled in-app yet.
-	 */
-	unpaidTotal: number;
-	/**
-	 * Payable orders the kitchen still holds. Non-zero means the diner cannot
-	 * check out until staff serve or cancel them — without this the block is
-	 * invisible to the floor and the only escalation is the diner flagging
-	 * someone down.
-	 */
-	unservedOrderCount: number;
-	/**
-	 * Cash the table owes on `awaiting_payment` orders (ADR 008). Deliberately
-	 * separate from `unpaidTotal`: this money can only be collected in person
-	 * (`orders.markOrderPaidInPerson`), never through a tab payment.
-	 */
-	awaitingPaymentTotal: number;
-	/** How many `awaiting_payment` orders are waiting for staff to collect. */
-	awaitingPaymentCount: number;
-	lockedForPayment: boolean;
-	paymentState: string;
-	flaggedStaleAt: number | null;
-};
-
-export const getOpenTabsByRestaurant = query({
-	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
-	handler: async function (ctx, args): AsyncReturn<OpenTabRow[], StaffAuthErrors> {
-		const [userId, error] = await getCurrentUserId(ctx);
-		if (error) return [null, error];
-		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
-		if (accessError) return [null, accessError];
-
-		const sessions = await ctx.db
-			.query(TABLE.SESSIONS)
-			.withIndex("by_restaurant_status", (q) =>
-				q.eq("restaurantId", args.restaurantId).eq("status", SESSION_STATUS.ACTIVE)
-			)
-			.collect();
-
-		const tabs = await Promise.all(
-			sessions.map(async (session) => {
-				const orders = await ctx.db
-					.query(TABLE.ORDERS)
-					.withIndex("by_session", (q) => q.eq("sessionId", session._id))
-					.collect();
-				const payableOrders = orders.filter(isPayableOrder);
-				const awaitingPaymentOrders = orders.filter(isAwaitingPaymentOrder);
-				const table = session.tableId ? await ctx.db.get(session.tableId) : null;
-				const orderTableId = payableOrders[0]?.tableId ?? awaitingPaymentOrders[0]?.tableId;
-				const orderTable = !table && orderTableId ? await ctx.db.get(orderTableId) : null;
-				return {
-					sessionId: session._id,
-					joinCode: session.joinCode ?? null,
-					startedAt: session.startedAt,
-					memberCount: 1 + (session.memberUserIds?.length ?? 0),
-					tableNumber: table?.tableNumber ?? orderTable?.tableNumber ?? null,
-					orderCount: payableOrders.length,
-					unpaidTotal: sumOrderTotals(payableOrders),
-					unservedOrderCount: payableOrders.filter(blocksTabSettlement).length,
-					awaitingPaymentTotal: sumOrderTotals(awaitingPaymentOrders),
-					awaitingPaymentCount: awaitingPaymentOrders.length,
-					lockedForPayment: session.lockedForPaymentAt !== undefined,
-					paymentState: session.paymentState ?? SESSION_PAYMENT_STATE.UNPAID,
-					flaggedStaleAt: session.flaggedStaleAt ?? null,
-				};
-			})
-		);
-
-		// Tabs with a balance first, oldest first inside each group.
-		const withBalance = tabs.filter((tab) => tab.unpaidTotal > 0);
-		const withoutBalance = tabs.filter((tab) => tab.unpaidTotal === 0);
-		withBalance.sort((a, b) => a.startedAt - b.startedAt);
-		withoutBalance.sort((a, b) => a.startedAt - b.startedAt);
-		return [[...withBalance, ...withoutBalance], null];
-	},
-});
-
-/**
- * Staff closes a tab that was settled in person (walkout fallback — no card
- * pre-auth exists, so unpaid tabs are a staff problem like a normal restaurant).
- *
- * Blocked while an `awaiting_payment` order exists (ADR 008): a staff close
- * quietly settles whatever tab balance remains, but an uncollected cash order
- * is a *specific* order that must either be marked paid in person (so it
- * reaches the kitchen and the books) or cancelled — silently closing over it
- * would leave a committed order in a status nothing can ever advance. The
- * safer block-with-error makes staff resolve the order first.
- */
-export const closeTabAsStaff = mutation({
-	args: { sessionId: v.id(TABLE.SESSIONS) },
-	handler: async function (ctx, args): AsyncReturn<string, StaffAuthErrors | NotFoundErrorObject> {
-		const [userId, error] = await getCurrentUserId(ctx);
-		if (error) return [null, error];
-
-		const session = await ctx.db.get(args.sessionId);
-		if (!session) return [null, new NotFoundError("Session not found").toObject()];
-
-		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, session.restaurantId);
-		if (accessError) return [null, accessError];
-
-		if (session.status === SESSION_STATUS.CLOSED) return [args.sessionId, null];
-
-		const orders = await ctx.db
-			.query(TABLE.ORDERS)
-			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-			.collect();
-		if (orders.some(isAwaitingPaymentOrder)) {
-			throw new ConflictError(DINER_SESSION_ERRORS.AWAITING_PAYMENT_ORDERS);
-		}
-
-		if (session.activePaymentId) {
-			const payment = await ctx.db.get(session.activePaymentId);
-			if (
-				payment &&
-				payment.status !== PAYMENT_STATUS.SUCCEEDED &&
-				payment.status !== PAYMENT_STATUS.FAILED
-			) {
-				await ctx.db.patch(payment._id, {
-					status: PAYMENT_STATUS.CANCELLED,
-					updatedAt: Date.now(),
-					updatedBy: userId,
-				});
-			}
-		}
-
-		await ctx.db.patch(args.sessionId, {
-			status: SESSION_STATUS.CLOSED,
-			closedAt: Date.now(),
-			lockedForPaymentAt: undefined,
-			settledBy: "staff",
-		});
-
-		// Settled in person. This is the one close where money may have changed
-		// hands entirely outside Stripe, so the actor matters most.
-		await appendAuditEvent(ctx, {
-			aggregateType: TABLE.SESSIONS,
-			aggregateId: args.sessionId,
-			eventType: AUDIT_EVENT.SESSION_CLOSED,
-			restaurantId: session.restaurantId,
-			payload: {
-				restaurantId: session.restaurantId,
-				closedBy: "staff",
-				settledBy: "staff",
-				cancelledPaymentId: session.activePaymentId,
-				flaggedStaleAt: session.flaggedStaleAt,
-			},
-			userId,
-		});
-
-		return [args.sessionId, null];
-	},
-});
-
-// ============================================================================
 // Cron sweep
 // ============================================================================
 
 /**
  * End-of-day hygiene: active tabs older than STALE_TAB_MAX_AGE_MS are closed
- * when they owe nothing, and flagged (surfaced in the staff open tabs view)
- * when they still owe money. Never auto-charges anything.
+ * when they owe nothing, and flagged (stamped `flaggedStaleAt` + audit event)
+ * when they still owe money. Never auto-charges anything. With the staff
+ * open-tabs screen deleted (ADR 008 cleanup), this sweep and the diner
+ * close-out flow are the only ways an abandoned session gets closed.
  *
  * "Owes money" covers both vintages (ADR 008): the legacy tab balance
  * (payable orders) **and** uncollected cash on `awaiting_payment` orders —
  * a session whose only debt is cash must be flagged, not closed, or the
- * walkout disappears from the dashboard.
+ * walkout's debt would be silently erased.
  *
  * The scan is bounded on both ends by the `by_status_started` index range —
  * active tabs whose `startedAt` falls in

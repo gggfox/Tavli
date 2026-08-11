@@ -26,8 +26,7 @@
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations",
-			"adminFeatureFlags": "Feature flags",
-			"tabs": "Open tabs"
+			"adminFeatureFlags": "Feature flags"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -1713,24 +1712,6 @@
 			"tooLarge": "This export is too large to download in a single file. Please contact support."
 		},
 		"noYears": "No data available to export yet."
-	},
-	"tabs": {
-		"header": "Open tabs",
-		"empty": "No open tabs right now.",
-		"tableLabel": "Table {{number}}",
-		"noTable": "No table",
-		"joinCode": "Code",
-		"members": "{{count}} people",
-		"orders": "{{count}} orders",
-		"unpaidTotal": "Unpaid",
-		"openedAt": "Opened {{time}}",
-		"staleBadge": "Stale",
-		"lockedBadge": "Paying",
-		"unservedBadge_one": "1 not served",
-		"unservedBadge_other": "{{count}} not served",
-		"closeTab": "Close tab",
-		"closeTabConfirm": "Close this tab? Use this when the balance was settled in person.",
-		"closeFailed": "Could not close the tab."
 	},
 	"userOnboarding": {
 		"inviteAction": "Invite user",

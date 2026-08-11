@@ -44,16 +44,15 @@ const DINER_ROUTES = [
 ] as const;
 
 /**
- * Staff routes the pivot touched. `/admin/tabs` is the legacy settlement tail
- * ADR 008 keeps until T+30d — it must stay routable until it is deleted
- * deliberately, not by accident.
+ * Staff routes the pivot touched. `/admin/tabs` (the legacy settlement tail)
+ * was deleted deliberately in the ADR 008 cleanup — no production pre-pivot
+ * sessions ever existed — so it is intentionally absent here.
  */
 const STAFF_ROUTES = [
 	"/admin/orders",
 	// `/admin/payments` is covered by stripe-admin-payments.spec.ts.
 	"/admin/reservations",
 	"/admin/restaurants",
-	"/admin/tabs",
 	// Phase 4 replaced the settings modal with `?settings=<id>`; a malformed id
 	// must not break `validateSearch`.
 	"/admin/restaurants?settings=not-a-real-id",

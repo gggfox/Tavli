@@ -109,6 +109,17 @@ gate is the data itself (does this session have a pre-pivot unpaid balance?).
 The legacy tab machinery is deleted at T+30d, when every pre-pivot session has
 either settled or been closed by staff.
 
+> **2026-08-10 — early execution of the screen deletion.** No production
+> pre-pivot session ever existed (the pivot shipped before go-live), so the
+> T+30d wait protected nothing. The staff open-tabs screen (`/admin/tabs`,
+> `OpenTabsPanel`) and its two endpoints (`sessions.getOpenTabsByRestaurant`,
+> `sessions.closeTabAsStaff`) were deleted ahead of schedule. Session closing
+> is now diner close-out plus the hourly stale sweep; staff resolve cash
+> walkouts by collecting or 86'ing `awaiting_payment` orders on the Orders
+> dashboard. The backend settlement machinery (`beginTabPayment`,
+> `confirmTabPayment`, the webhook tab branch, `reconcileStuckTabPayments`,
+> `blocksTabSettlement`, `lockedForPayment`) follows in its own PR.
+
 ## Consequences
 
 ### Positive
