@@ -181,8 +181,17 @@ jobs:
         timeout-minutes: 6
         run: npx playwright install chromium
 
-      - name: Install Playwright system deps
-        timeout-minutes: 6
+      # Best-effort, and deliberately not allowed to fail the job. This shells
+      # out to `apt-get update`, which stalled for six minutes straight against
+      # an unreachable azure.archive.ubuntu.com mirror — an outage on GitHub's
+      # side that has nothing to do with this repo. The ubuntu-24.04 image
+      # already ships Chromium's shared libraries, so this is belt-and-braces;
+      # if a library really is missing the E2E step below fails loudly with a
+      # browser-launch error, which is a far better signal than a wedged
+      # package manager.
+      - name: Install Playwright system deps (best effort)
+        continue-on-error: true
+        timeout-minutes: 3
         env:
           DEBIAN_FRONTEND: noninteractive
         run: npx playwright install-deps chromium
