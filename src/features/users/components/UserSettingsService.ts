@@ -66,6 +66,13 @@ export type OrderDashboardPrepStationFilter = "kitchen" | "bar";
 export type OrderDashboardServiceDateFilter = "today" | "all";
 
 /**
+ * Whether the OrderDashboard renders whole-order cards or one station's
+ * tickets. Mirrors `STATION_VIEW_VALIDATOR` in convex/orderHelpers.ts.
+ * Orthogonal to the station filter.
+ */
+export type OrderDashboardStationView = "cards" | "tickets";
+
+/**
  * Transform raw Convex user settings to domain UserSettings.
  * Currently an identity function, but provides a hook for
  * future domain transformations if needed.
@@ -87,6 +94,7 @@ export class UserSettingsError {
 			| "updateOrderDashboardStatusFilters"
 			| "updateOrderDashboardPrepStationFilters"
 			| "updateOrderDashboardServiceDateFilter"
+			| "updateOrderDashboardStationView"
 			| "setSidebarGroupExpanded",
 		readonly cause: unknown
 	) {}
@@ -213,6 +221,23 @@ export async function updateOrderDashboardServiceDateFilter(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardServiceDateFilter", error);
+	}
+}
+
+/**
+ * Update whether the OrderDashboard shows cards or station tickets.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardStationView(
+	client: ConvexReactClient,
+	stationView: OrderDashboardStationView
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardStationView, {
+			stationView,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardStationView", error);
 	}
 }
 

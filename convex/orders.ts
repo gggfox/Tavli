@@ -49,6 +49,7 @@ import {
 	type DashboardStatusCounts,
 	getApplicableStations,
 	hasStationTicket,
+	isStationRailStatus,
 	SERVICE_DATE_FILTER_VALIDATOR,
 	type ServiceDateFilter,
 	invalidateActivePayment,
@@ -1027,18 +1028,27 @@ function buildServiceDatePredicate(
 
 /**
  * Per-status card counts for the dashboard's status filter, under the
- * station filter currently applied.
+ * filters currently applied.
  *
  * Counts what the user would SEE on each segment, not how many orders hold
- * that status: with a single station selected the dashboard switches to that
- * station's rail, where `hasStationTicket` decides what survives — so these
- * counts route through the same rule (see `convex/orderHelpers.ts`).
+ * that status. `prepStations` is a plain presence filter and applies to every
+ * status. `railStation` is separate and narrower: it says the board is on that
+ * station's ticket rail, where `hasStationTicket` decides what survives — and
+ * only for the two statuses a rail can show, since picking any other status
+ * drops the board back to cards.
  */
 export const getDashboardStatusCounts = query({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		prepStations: v.optional(v.array(PREP_STATION_VALIDATOR)),
 		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
+		/**
+		 * Set only while the board is showing station tickets. Deliberately not
+		 * inferred from a single-entry `prepStations`: selecting one station is
+		 * now just a filter, and conflating the two is what made every closed
+		 * status report zero.
+		 */
+		railStation: v.optional(PREP_STATION_VALIDATOR),
 	},
 	handler: async function (
 		ctx,
@@ -1057,10 +1067,7 @@ export const getDashboardStatusCounts = query({
 
 		const stationFilter =
 			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
-		// Exactly one station selected puts the dashboard on that station's
-		// rail; `awaiting_payment` is excluded there and handled as cards.
-		const railStation =
-			args.prepStations && args.prepStations.length === 1 ? args.prepStations[0] : null;
+		const railStation = args.railStation ?? null;
 
 		// Every key is filled by the loop below, which walks all statuses.
 		const counts = {} as DashboardStatusCounts;
@@ -1095,7 +1102,11 @@ export const getDashboardStatusCounts = query({
 				continue;
 			}
 
-			const onRail = railStation !== null && status !== "awaiting_payment";
+			// Only the statuses a rail can actually show are counted as tickets.
+			// Every other status would drop the board back to cards when picked,
+			// so counting it as an empty rail is what made Served read "(0)"
+			// while four served orders sat behind it.
+			const onRail = railStation !== null && isStationRailStatus(status);
 			let count = 0;
 
 			for (const order of orders) {

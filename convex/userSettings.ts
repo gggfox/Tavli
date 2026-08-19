@@ -4,7 +4,11 @@ import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { fromErrorObject } from "./_shared/errors";
 import { getCurrentUserId, requireOrgOwnerOrAdmin } from "./_util/auth";
-import { DASHBOARD_STATUS_VALIDATOR, SERVICE_DATE_FILTER_VALIDATOR } from "./orderHelpers";
+import {
+	DASHBOARD_STATUS_VALIDATOR,
+	SERVICE_DATE_FILTER_VALIDATOR,
+	STATION_VIEW_VALIDATOR,
+} from "./orderHelpers";
 import { TABLE } from "./constants";
 import { stampUpdated } from "./_util/audit";
 
@@ -30,6 +34,7 @@ type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "ca
 type OrderDashboardStatusValue = "awaiting_payment" | OrderDashboardStatus;
 type OrderDashboardPrepStation = "kitchen" | "bar";
 type OrderDashboardServiceDate = "today" | "all";
+type OrderDashboardStationView = "cards" | "tickets";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
@@ -39,6 +44,7 @@ type SettingsUpdates = {
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
 	orderDashboardPrepStationFilters?: OrderDashboardPrepStation[];
 	orderDashboardServiceDateFilter?: OrderDashboardServiceDate;
+	orderDashboardStationView?: OrderDashboardStationView;
 	expandedSidebarGroups?: string[];
 };
 
@@ -130,6 +136,9 @@ async function upsertUserSettings({
 		}),
 		...(updates.orderDashboardServiceDateFilter !== undefined && {
 			orderDashboardServiceDateFilter: updates.orderDashboardServiceDateFilter,
+		}),
+		...(updates.orderDashboardStationView !== undefined && {
+			orderDashboardStationView: updates.orderDashboardStationView,
 		}),
 		...(updates.expandedSidebarGroups !== undefined && {
 			expandedSidebarGroups: updates.expandedSidebarGroups,
@@ -335,6 +344,32 @@ export const updateOrderDashboardServiceDateFilter = mutation({
 			ctx,
 			userId,
 			updates: { orderDashboardServiceDateFilter: args.serviceDate },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update whether the OrderDashboard shows whole-order cards or one station's
+ * tickets. Creates settings if they don't exist.
+ *
+ * Separate from the station filter on purpose: filtering to Kitchen should
+ * narrow what you see, never blank the board because the rail has no work for
+ * a closed status.
+ */
+export const updateOrderDashboardStationView = mutation({
+	args: {
+		stationView: STATION_VIEW_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardStationView: args.stationView },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
 		});
 	},

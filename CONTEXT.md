@@ -122,11 +122,17 @@ _Avoid_: complete. Say "mark bar ready" for the action — _bumping_ is
 what happens to the ticket afterwards, not another name for this.
 
 **Station ticket**:
-One station's portion of an `Order`, as shown on that station's
-dashboard when exactly one station is selected: only that station's
-live items, and only the actions it can take on them. A projection
-rendered at read time — there is no such document, and the `Order`
-remains the unit of payment, cancellation, and history. See ADR 007.
+One station's portion of an `Order`: only that station's live items,
+and only the actions it can take on them. A projection rendered at read
+time — there is no such document, and the `Order` remains the unit of
+payment, cancellation, and history. See ADR 007.
+
+Reached by choosing the dashboard's **ticket view**, which needs one
+station selected and a status that still has station work
+(`submitted` / `preparing`). Selecting a station on its own is only a
+_filter_ and never opens the rail: conflating the two meant filtering to
+Kitchen on a closed status blanked the board, since a rail has nothing
+to show for `ready` / `served` / `cancelled`.
 _Avoid_: sub-order, chit, split order.
 
 **Bump**:

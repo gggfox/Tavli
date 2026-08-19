@@ -378,6 +378,11 @@
 			"served": "Served",
 			"cancelled": "Cancelled"
 		},
+		"view": {
+			"cards": "Cards",
+			"tickets": "Tickets",
+			"ticketsUnavailable": "Pick one station, on Pending or Preparing, to open its ticket rail"
+		},
 		"serviceDate": {
 			"today": "Today",
 			"all": "All"
@@ -453,6 +458,7 @@
 		"aria": {
 			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
+			"stationView": "Show whole orders or one station's tickets",
 			"serviceDateFilter": "Filter orders by service day",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders",

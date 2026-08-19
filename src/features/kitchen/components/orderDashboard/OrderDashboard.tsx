@@ -17,6 +17,7 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { ChefHat, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { isStationRailStatus } from "convex/orderHelpers";
 import { useOrders, useOrderStatusCounts } from "../../hooks/useOrders";
 import { OrderCard } from "./OrderCard";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
@@ -24,6 +25,13 @@ import { OrderDetailModal } from "./OrderDetailModal";
 import { StationTicketCard } from "./StationTicketCard";
 import { SubstitutionProposalDialog, type SubstitutionTarget } from "./SubstitutionProposalDialog";
 import { deriveStationTickets, type StationTicket } from "./stationTickets";
+import {
+	ALL_STATION_VIEWS,
+	DEFAULT_STATION_VIEW,
+	STATION_VIEW_ICON,
+	STATION_VIEW_LABEL_KEY,
+	type StationViewValue,
+} from "./stationViewConfig";
 import {
 	ALL_SERVICE_DATE_VALUES,
 	DEFAULT_SERVICE_DATE,
@@ -79,6 +87,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		updateOrderDashboardPrepStationFilters,
 		orderDashboardServiceDateFilter,
 		updateOrderDashboardServiceDateFilter,
+		orderDashboardStationView,
+		updateOrderDashboardStationView,
 	} = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 	const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
@@ -137,6 +147,12 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			fallback: DEFAULT_SERVICE_DATE,
 		});
 
+	const [selectedStationView, setSelectedStationView] = useOptimisticUserSetting<StationViewValue>({
+		serverValue: orderDashboardStationView,
+		persist: updateOrderDashboardStationView,
+		fallback: DEFAULT_STATION_VIEW,
+	});
+
 	// Pass `undefined` (not `[]`) when no station filter is active so the
 	// query treats it as "no filter" and short-circuits the per-order
 	// presence check on the server side.
@@ -157,16 +173,16 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		markOrderPaidInPerson,
 	} = useOrders(restaurantId, queryStatuses, queryStations, selectedServiceDate);
 
-	// Exactly one station selected → that station gets its own tickets. With no
-	// filter or both stations selected the dashboard stays the whole-order
-	// overview, where money, cross-station progress, and cancel live.
-	// `awaiting_payment` never enters rail mode (ADR 008): those orders carry
-	// money actions, not station work, so the ordinary card grid stays up even
-	// with a single station selected.
+	// A rail needs one station to be about, and a status that still has station
+	// work in it. Selecting a station NO LONGER opens the rail by itself: doing
+	// that meant filtering to Kitchen on a closed status blanked the board,
+	// because a rail has nothing to show for `ready`/`served`/`cancelled` (and
+	// `awaiting_payment` must never reach one — ADR 008). Those statuses now
+	// fall back to the card grid, still filtered to the chosen station.
+	const canShowStationTickets =
+		activeStationFilters.length === 1 && isStationRailStatus(selectedStatus);
 	const ticketStation =
-		selectedStatus !== "awaiting_payment" && activeStationFilters.length === 1
-			? activeStationFilters[0]
-			: null;
+		selectedStationView === "tickets" && canShowStationTickets ? activeStationFilters[0] : null;
 
 	const handleCancelOrder = useCallback(
 		async (orderId: DashboardOrder["_id"]) => {
@@ -228,7 +244,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	}, []);
 
 	// Per-segment card counts, under the same station filter as the board.
-	const statusCounts = useOrderStatusCounts(restaurantId, queryStations, selectedServiceDate);
+	// `ticketStation` (not the station filter) decides whether counts use rail
+	// rules, and only for the statuses a rail can show — every other segment is
+	// counted as cards, because picking it drops the board back to cards.
+	const statusCounts = useOrderStatusCounts(
+		restaurantId,
+		queryStations,
+		selectedServiceDate,
+		ticketStation ?? undefined
+	);
 
 	// Pending substitution proposals for the badge + withdraw affordances on
 	// station tickets (ADR 008). Live query — a diner answering removes the
@@ -369,6 +393,23 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		[t]
 	);
 
+	const stationViewSegments = useMemo<ReadonlyArray<SegmentedControlOption<StationViewValue>>>(
+		() =>
+			ALL_STATION_VIEWS.map((view) => ({
+				value: view,
+				label: t(STATION_VIEW_LABEL_KEY[view]),
+				icon: STATION_VIEW_ICON[view],
+				// Offering a rail that would render empty is the bug this whole
+				// control exists to fix, so it is disabled rather than blank.
+				disabled: view === "tickets" && !canShowStationTickets,
+				disabledReason:
+					view === "tickets" && !canShowStationTickets
+						? t(OrdersKeys.VIEW_TICKETS_UNAVAILABLE)
+						: undefined,
+			})),
+		[t, canShowStationTickets]
+	);
+
 	const stationFilterValue = stationFilterToValue(activeStationFilters);
 
 	const handleStationFilterChange = useCallback(
@@ -391,6 +432,13 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					value={stationFilterValue}
 					onChange={handleStationFilterChange}
 					ariaLabel={t(OrdersKeys.ARIA_STATION_FILTER)}
+					size="sm"
+				/>
+				<SegmentedControl
+					options={stationViewSegments}
+					value={ticketStation ? "tickets" : "cards"}
+					onChange={setSelectedStationView}
+					ariaLabel={t(OrdersKeys.ARIA_STATION_VIEW)}
 					size="sm"
 				/>
 				<SegmentedControl

@@ -25,6 +25,14 @@ export interface SegmentedControlOption<T extends string> {
 	 * its neutral primary-button styling.
 	 */
 	readonly tone?: StatusTone;
+	/**
+	 * Renders the segment inert and dimmed. Arrow-key navigation skips it, so
+	 * a disabled option can never become the selected value by keyboard.
+	 * Pair with `disabledReason` to say why.
+	 */
+	readonly disabled?: boolean;
+	/** Tooltip explaining why a disabled segment is unavailable. */
+	readonly disabledReason?: string;
 }
 
 export interface SegmentedControlProps<T extends string> {
@@ -57,10 +65,22 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
 	const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
+	/** Next selectable index in `step` direction, wrapping, skipping disabled. */
+	const findEnabled = useCallback(
+		(from: number, step: number) => {
+			for (let hop = 1; hop <= options.length; hop += 1) {
+				const index = (from + step * hop + options.length * hop) % options.length;
+				if (!options[index]?.disabled) return index;
+			}
+			return -1;
+		},
+		[options]
+	);
+
 	const focusAndSelect = useCallback(
 		(nextIndex: number) => {
 			const next = options[nextIndex];
-			if (!next) return;
+			if (!next || next.disabled) return;
 			onChange(next.value);
 			buttonRefs.current[nextIndex]?.focus();
 		},
@@ -74,25 +94,25 @@ export function SegmentedControl<T extends string>({
 
 			if (event.key === KEY.ArrowRight || event.key === KEY.ArrowDown) {
 				event.preventDefault();
-				focusAndSelect(index === last ? 0 : index + 1);
+				focusAndSelect(findEnabled(index, 1));
 				return;
 			}
 			if (event.key === KEY.ArrowLeft || event.key === KEY.ArrowUp) {
 				event.preventDefault();
-				focusAndSelect(index === 0 ? last : index - 1);
+				focusAndSelect(findEnabled(index, -1));
 				return;
 			}
 			if (event.key === KEY.Home) {
 				event.preventDefault();
-				focusAndSelect(0);
+				focusAndSelect(findEnabled(-1, 1));
 				return;
 			}
 			if (event.key === KEY.End) {
 				event.preventDefault();
-				focusAndSelect(last);
+				focusAndSelect(findEnabled(last + 1, -1));
 			}
 		},
-		[options.length, focusAndSelect]
+		[options.length, focusAndSelect, findEnabled]
 	);
 
 	const containerStyle: CSSProperties = {
@@ -117,6 +137,7 @@ export function SegmentedControl<T extends string>({
 				const isActive = opt.value === value;
 				const Icon = opt.icon;
 				const palette = opt.tone ? getStatusToneStyle(opt.tone) : null;
+				const isDisabled = opt.disabled === true;
 				const segmentStyle: CSSProperties = isActive
 					? {
 							backgroundColor: palette?.solidBg ?? "var(--btn-primary-bg)",
@@ -135,16 +156,22 @@ export function SegmentedControl<T extends string>({
 						type="button"
 						role="radio"
 						aria-checked={isActive}
+						aria-disabled={isDisabled || undefined}
+						disabled={isDisabled}
 						aria-label={iconOnly ? opt.label : undefined}
-						title={iconOnly ? opt.label : undefined}
-						tabIndex={isActive ? 0 : -1}
-						onClick={() => onChange(opt.value)}
+						title={opt.disabledReason ?? (iconOnly ? opt.label : undefined)}
+						tabIndex={isActive && !isDisabled ? 0 : -1}
+						onClick={() => {
+							if (isDisabled) return;
+							onChange(opt.value);
+						}}
 						onKeyDown={(event) => handleKeyDown(event, index)}
 						className={[
 							"rounded-md font-medium transition-colors inline-flex items-center justify-center gap-1.5",
 							SIZE_CLASSES[size],
 							fullWidth ? "flex-1" : "",
 							iconOnly ? "min-w-9 px-2" : "",
+							isDisabled ? "opacity-40 cursor-not-allowed" : "",
 						]
 							.filter(Boolean)
 							.join(" ")}

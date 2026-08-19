@@ -117,6 +117,7 @@ function makeOrder(overrides: Partial<DashboardOrder> = {}): DashboardOrder {
 const updateOrderDashboardStatusFilter = vi.fn(() => Promise.resolve("settings1"));
 const updateOrderDashboardPrepStationFilters = vi.fn(() => Promise.resolve("settings1"));
 const updateOrderDashboardServiceDateFilter = vi.fn(() => Promise.resolve("settings1"));
+const updateOrderDashboardStationView = vi.fn(() => Promise.resolve("settings1"));
 
 function settingsWith(overrides: Record<string, unknown> = {}) {
 	return {
@@ -127,6 +128,8 @@ function settingsWith(overrides: Record<string, unknown> = {}) {
 		updateOrderDashboardPrepStationFilters,
 		orderDashboardServiceDateFilter: null,
 		updateOrderDashboardServiceDateFilter,
+		orderDashboardStationView: null,
+		updateOrderDashboardStationView,
 		...overrides,
 	};
 }
@@ -236,6 +239,94 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 	});
 });
 
+describe("OrderDashboard station view toggle", () => {
+	function viewGroup() {
+		return within(screen.getByRole("radiogroup", { name: "orders.aria.stationView" }));
+	}
+
+	it("offers cards / tickets and starts on cards", () => {
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(
+			viewGroup()
+				.getAllByRole("radio")
+				.map((radio) => radio.textContent)
+		).toEqual(["orders.view.cards", "orders.view.tickets"]);
+		expect(viewGroup().getByRole("radio", { name: "orders.view.cards" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+	});
+
+	it("disables the ticket view until one station and a rail status are picked", () => {
+		// Default settings: status `preparing`, no station filter.
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(viewGroup().getByRole("radio", { name: "orders.view.tickets" })).toBeDisabled();
+	});
+
+	it("enables the ticket view with one station on a rail status", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({
+				orderDashboardStatusFilter: "preparing",
+				orderDashboardPrepStationFilters: ["kitchen"],
+			})
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(viewGroup().getByRole("radio", { name: "orders.view.tickets" })).toBeEnabled();
+	});
+
+	it("disables it again on a status no rail can show", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({
+				orderDashboardStatusFilter: "served",
+				orderDashboardPrepStationFilters: ["kitchen"],
+			})
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(viewGroup().getByRole("radio", { name: "orders.view.tickets" })).toBeDisabled();
+	});
+
+	it("falls back to showing cards when a persisted rail cannot apply", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({
+				orderDashboardStatusFilter: "served",
+				orderDashboardPrepStationFilters: ["kitchen"],
+				orderDashboardStationView: "tickets",
+			})
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		// The stored preference stays, but the control reflects reality.
+		expect(viewGroup().getByRole("radio", { name: "orders.view.cards" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+	});
+
+	it("persists the choice and switches the counts to rail rules", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({
+				orderDashboardStatusFilter: "preparing",
+				orderDashboardPrepStationFilters: ["kitchen"],
+			})
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		fireEvent.click(viewGroup().getByRole("radio", { name: "orders.view.tickets" }));
+
+		expect(updateOrderDashboardStationView).toHaveBeenCalledWith("tickets");
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["kitchen"],
+			"all",
+			"kitchen"
+		);
+	});
+});
+
 describe("OrderDashboard service-day filter", () => {
 	function serviceDateGroup() {
 		return within(screen.getByRole("radiogroup", { name: "orders.aria.serviceDateFilter" }));
@@ -267,7 +358,12 @@ describe("OrderDashboard service-day filter", () => {
 			"today"
 		);
 		// Counts follow the same window, or the numbers would contradict the board.
-		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(RESTAURANT_ID, undefined, "today");
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			undefined,
+			"today",
+			undefined
+		);
 	});
 
 	it("restores a persisted today selection", () => {
@@ -331,7 +427,13 @@ describe("OrderDashboard segment counts", () => {
 		);
 		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
 
-		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["kitchen"], "all");
+		// No rail argument: a station filter alone is just a filter now.
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["kitchen"],
+			"all",
+			undefined
+		);
 	});
 });
 
@@ -418,7 +520,23 @@ describe("OrderDashboard awaiting-payment rail safety (ADR 008)", () => {
 		expect(screen.queryByText("orders.ticket.emptyAllDone")).not.toBeInTheDocument();
 	});
 
-	it("still enters rail mode for workflow statuses with one station selected", () => {
+	it("enters rail mode only when the ticket view is chosen too", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({
+				orderDashboardStatusFilter: "preparing",
+				orderDashboardPrepStationFilters: ["kitchen"],
+				orderDashboardStationView: "tickets",
+			})
+		);
+		useOrdersMock.mockReturnValue(ordersWith([makeOrder({ status: "preparing" })]));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		// Station tickets carry the station-scoped ready action instead of the
+		// whole-order card actions.
+		expect(screen.getByText("orders.actions.markKitchenReady")).toBeInTheDocument();
+	});
+
+	it("stays on cards when a station is filtered without choosing the rail", () => {
 		useUserSettingsMock.mockReturnValue(
 			settingsWith({
 				orderDashboardStatusFilter: "preparing",
@@ -428,8 +546,27 @@ describe("OrderDashboard awaiting-payment rail safety (ADR 008)", () => {
 		useOrdersMock.mockReturnValue(ordersWith([makeOrder({ status: "preparing" })]));
 		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
 
-		// Station tickets carry the station-scoped ready action instead of the
-		// whole-order card actions.
-		expect(screen.getByText("orders.actions.markKitchenReady")).toBeInTheDocument();
+		// 86 is a ticket-only affordance, so its absence means these are cards.
+		// (The station-scoped ready action stays on the card by design — ADR
+		// 005 — since it narrows an action rather than hiding an order.)
+		expect(screen.queryByText("orders.ticket.cancelItem")).not.toBeInTheDocument();
+		expect(screen.getByTestId("virtual-grid")).toBeInTheDocument();
+	});
+
+	it("shows the orders instead of an empty rail on a closed status (the reported bug)", () => {
+		useUserSettingsMock.mockReturnValue(
+			settingsWith({
+				orderDashboardStatusFilter: "served",
+				orderDashboardPrepStationFilters: ["bar"],
+				// Even with the rail explicitly chosen: served can't have one, so
+				// the board must fall back to cards rather than blanking.
+				orderDashboardStationView: "tickets",
+			})
+		);
+		useOrdersMock.mockReturnValue(ordersWith([makeOrder({ status: "served" })]));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(screen.queryByText("orders.ticket.emptyAllDone")).not.toBeInTheDocument();
+		expect(screen.getByTestId("virtual-grid")).toBeInTheDocument();
 	});
 });
