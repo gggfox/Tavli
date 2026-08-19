@@ -111,6 +111,29 @@ describe("deriveStationTickets", () => {
 		expect(deriveStationTickets([order], "kitchen")).toHaveLength(0);
 	});
 
+	it("does let one through where the restaurant releases cash orders (TAVLI-81)", () => {
+		const order = makeOrder({
+			status: "awaiting_payment",
+			awaitingPaymentAt: 1_000,
+			cashReleasedImmediately: true,
+		});
+
+		expect(deriveStationTickets([order], "bar")).toHaveLength(1);
+		expect(deriveStationTickets([order], "kitchen")).toHaveLength(1);
+	});
+
+	it("still bumps a released cash ticket once its station has stamped", () => {
+		const order = makeOrder({
+			status: "awaiting_payment",
+			awaitingPaymentAt: 1_000,
+			cashReleasedImmediately: true,
+			barReadyAt: 2_000,
+		});
+
+		expect(deriveStationTickets([order], "bar")).toHaveLength(0);
+		expect(deriveStationTickets([order], "kitchen")).toHaveLength(1);
+	});
+
 	it("preserves the order of the list it was given", () => {
 		const first = makeOrder({ _id: "a" as DashboardOrder["_id"] });
 		const second = makeOrder({ _id: "b" as DashboardOrder["_id"] });

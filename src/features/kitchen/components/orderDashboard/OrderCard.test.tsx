@@ -186,3 +186,85 @@ describe("OrderCard table prominence (TAVLI-80)", () => {
 		expect(screen.queryByText("orders.card.table")).not.toBeInTheDocument();
 	});
 });
+
+describe("OrderCard cash release policy (TAVLI-81)", () => {
+	/** A round the diner committed for cash, at a restaurant that releases them. */
+	function releasedCashOrder(overrides: Partial<DashboardOrder> = {}) {
+		return makeOrder({ cashReleasedImmediately: true, ...overrides });
+	}
+
+	it("gives an uncollected round the same forward action a submitted one gets", () => {
+		const { handlers } = renderCard(releasedCashOrder());
+
+		fireEvent.click(screen.getByText("orders.actions.accept"));
+		expect(handlers.onUpdateStatus).toHaveBeenCalledWith({
+			orderId: "ord1",
+			newStatus: "preparing",
+		});
+	});
+
+	it("keeps mark-paid and cancel alongside that action", () => {
+		renderCard(releasedCashOrder());
+
+		expect(screen.getByText("orders.markPaid.action")).toBeInTheDocument();
+		expect(screen.getByText("orders.actions.cancel")).toBeInTheDocument();
+	});
+
+	it.each(["submitted", "preparing", "ready"] as const)(
+		"still offers mark-paid once the round has advanced to %s",
+		(status) => {
+			renderCard(releasedCashOrder({ status }));
+
+			expect(screen.getByText("orders.markPaid.action")).toBeInTheDocument();
+			// The workflow action is untouched — money never displaces it.
+			expect(screen.queryByText("orders.actions.cancel")).toBeInTheDocument();
+		}
+	);
+
+	it("offers mark-paid on a served round, but no cancel — served is terminal", () => {
+		renderCard(releasedCashOrder({ status: "served" }));
+
+		expect(screen.getByText("orders.markPaid.action")).toBeInTheDocument();
+		expect(screen.queryByText("orders.actions.cancel")).not.toBeInTheDocument();
+	});
+
+	it("reaches the confirmation from a status past awaiting_payment", () => {
+		const order = releasedCashOrder({ status: "preparing" });
+		const { handlers } = renderCard(order, { markPaidConfirm: order._id });
+
+		fireEvent.click(screen.getByText("orders.markPaid.confirm"));
+		expect(handlers.onMarkPaidInPerson).toHaveBeenCalledWith("ord1");
+	});
+
+	it("carries the 'to collect' badge through every status until collection", () => {
+		const statuses = ["awaiting_payment", "submitted", "preparing", "ready", "served"] as const;
+		for (const status of statuses) {
+			const { view } = renderCard(releasedCashOrder({ status }));
+			expect(screen.getByText("orders.payment.toCollect")).toBeInTheDocument();
+			view.unmount();
+		}
+	});
+
+	it("drops the badge and the action once the cash is collected", () => {
+		renderCard(releasedCashOrder({ status: "preparing", paidAt: 2_000, paymentState: "paid" }));
+
+		expect(screen.queryByText("orders.payment.toCollect")).not.toBeInTheDocument();
+		expect(screen.queryByText("orders.markPaid.action")).not.toBeInTheDocument();
+		expect(screen.getByText("orders.card.paid")).toBeInTheDocument();
+	});
+
+	it("leaves a card-paid round untouched by any of this", () => {
+		renderCard(
+			makeOrder({
+				status: "preparing",
+				awaitingPaymentAt: undefined,
+				paidAt: 2_000,
+				paymentState: "paid",
+				cashReleasedImmediately: true,
+			})
+		);
+
+		expect(screen.queryByText("orders.markPaid.action")).not.toBeInTheDocument();
+		expect(screen.queryByText("orders.payment.toCollect")).not.toBeInTheDocument();
+	});
+});
