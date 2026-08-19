@@ -14,6 +14,7 @@ jobs:
   lint-and-format:
     name: Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -32,6 +33,7 @@ jobs:
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -49,6 +51,7 @@ jobs:
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -70,6 +73,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -94,6 +98,7 @@ jobs:
   unit-and-component-tests:
     name: Unit & Component Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
@@ -126,6 +131,7 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # E2E uses the staging Convex deployment; publishable/secret keys fall back to
     # syntactically valid placeholders when CLERK_SECRET_KEY_E2E is unset.
     env:
@@ -164,12 +170,21 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
 
+      # `--with-deps` shells out to apt-get, which wedged for 25+ minutes on a
+      # cache miss (the cache expires after 7 idle days, so this path is rarely
+      # exercised and fails invisibly). Split the download from the apt-get so
+      # a stuck package manager cannot swallow the browser download too, and
+      # give each half its own bound. DEBIAN_FRONTEND stops apt prompting with
+      # nobody there to answer.
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: npx playwright install chromium
 
-      - name: Install Playwright system deps only (cached browsers)
-        if: steps.pw-cache.outputs.cache-hit == 'true'
+      - name: Install Playwright system deps
+        timeout-minutes: 6
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: npx playwright install-deps chromium
 
       - name: Run E2E tests
@@ -186,6 +201,7 @@ jobs:
   promote-staging:
     name: Promote to Staging Branch
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [lint-and-format, audit, typecheck, build, unit-and-component-tests, e2e-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
