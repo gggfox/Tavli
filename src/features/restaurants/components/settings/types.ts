@@ -16,5 +16,7 @@ export interface RestaurantSettingsSectionProps {
 	readonly error: string | null;
 	/** Stable code behind `error`, so a section can pin it to the guilty field. */
 	readonly errorCode: BackendErrorCode | null;
+	/** Field the backend pinned the failure to, when one code covers many inputs. */
+	readonly errorField: string | null;
 	readonly onDismissError: () => void;
 }

@@ -4,6 +4,7 @@ import { LocationSection } from "@/features/restaurants/components/settings/Loca
 import { ManagersSection } from "@/features/restaurants/components/settings/ManagersSection";
 import { OrganizationSection } from "@/features/restaurants/components/settings/OrganizationSection";
 import { PaymentsSection } from "@/features/restaurants/components/settings/PaymentsSection";
+import { PublicProfileSection } from "@/features/restaurants/components/settings/PublicProfileSection";
 import { TaxInfoSection } from "@/features/restaurants/components/settings/TaxInfoSection";
 import { RESTAURANT_SETTINGS_SECTION } from "@/features/restaurants/constants";
 import {
@@ -50,8 +51,16 @@ export function RestaurantSettingsView({
 	const isAdmin = roles.includes(USER_ROLES.ADMIN);
 	const isFullAccess = settingsAccess === "full";
 
-	const { save, savingSection, errorSection, error, errorCode, savedSection, clearError } =
-		useRestaurantSettingsSave(restaurant);
+	const {
+		save,
+		savingSection,
+		errorSection,
+		error,
+		errorCode,
+		errorField,
+		savedSection,
+		clearError,
+	} = useRestaurantSettingsSave(restaurant);
 	const [sideEffectError, setSideEffectError] = useState<string | null>(null);
 
 	const sectionProps = (
@@ -63,6 +72,7 @@ export function RestaurantSettingsView({
 		isSaved: savedSection === section,
 		error: errorSection === section ? error : null,
 		errorCode: errorSection === section ? errorCode : null,
+		errorField: errorSection === section ? errorField : null,
 		onDismissError: clearError,
 	});
 
@@ -113,6 +123,9 @@ export function RestaurantSettingsView({
 					{...sectionProps(RESTAURANT_SETTINGS_SECTION.GENERAL)}
 					onToggleActive={isFullAccess ? onToggleActive : undefined}
 				/>
+
+				{/* Manager-visible: a restaurant's own public face is theirs to edit. */}
+				<PublicProfileSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.PUBLIC_PROFILE)} />
 
 				<HoursSection
 					{...sectionProps(RESTAURANT_SETTINGS_SECTION.HOURS)}

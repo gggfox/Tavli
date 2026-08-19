@@ -142,6 +142,7 @@ describe("RestaurantSettingsView", () => {
 			"settings-section-hours",
 			"settings-section-location",
 			"settings-section-tax",
+			"settings-section-public-profile",
 			"settings-section-organization",
 			"settings-section-managers",
 			"settings-section-payments",
@@ -160,7 +161,9 @@ describe("RestaurantSettingsView", () => {
 		expect((screen.getByLabelText("Description") as HTMLTextAreaElement).value).toBe(
 			"Comida casera"
 		);
-		expect((screen.getByLabelText("Support email") as HTMLInputElement).value).toBe(
+		// The contact email moved out of General into Public profile when its
+		// meaning widened from an ops-only address to the diner-facing one.
+		expect((screen.getByLabelText("Contact email") as HTMLInputElement).value).toBe(
 			"hola@lacocina.mx"
 		);
 		expect((screen.getByLabelText("Currency") as HTMLSelectElement).value).toBe("MXN");
@@ -213,9 +216,84 @@ describe("RestaurantSettingsView", () => {
 			name: "La Cocina Nueva",
 			slug: "la-cocina",
 			description: "Comida casera",
-			supportEmail: "hola@lacocina.mx",
 			currency: "MXN",
 		});
+	});
+
+	it("saves Public profile on its own, and stamps the review that publishes the email", async () => {
+		renderView();
+
+		fireEvent.change(screen.getByLabelText("Phone"), {
+			target: { value: "+52 81 1234 5678" },
+		});
+		fireEvent.click(screen.getByTestId("settings-save-public-profile"));
+
+		await waitFor(() => {
+			expect(hoisted.updateMock).toHaveBeenCalledTimes(1);
+		});
+		expect(hoisted.updateMock).toHaveBeenCalledWith({
+			restaurantId: "restaurants:1",
+			organizationId: "organizations:1",
+			supportEmail: "hola@lacocina.mx",
+			address: "",
+			phone: "+52 81 1234 5678",
+			phoneHasWhatsApp: false,
+			instagramUrl: "",
+			facebookUrl: "",
+			tiktokUrl: "",
+			xUrl: "",
+			youtubeUrl: "",
+			// Saving this section is what lets the contact email reach diners.
+			markPublicProfileReviewed: true,
+		});
+	});
+
+	it("pins a rejected social link to the input that caused it", async () => {
+		hoisted.updateMock.mockResolvedValue([
+			null,
+			{
+				name: "VALIDATION_ERROR",
+				message: "instagramUrl: ERROR_SOCIAL_URL_WRONG_PLATFORM",
+				fields: [{ field: "instagramUrl", message: "ERROR_SOCIAL_URL_WRONG_PLATFORM" }],
+			},
+		] as any);
+		renderView();
+
+		fireEvent.change(screen.getByLabelText("Instagram"), {
+			target: { value: "https://facebook.com/lacocina" },
+		});
+		fireEvent.click(screen.getByTestId("settings-save-public-profile"));
+
+		// All five social inputs share ERROR_SOCIAL_URL_* codes, so the code alone
+		// cannot say which one is wrong — only the field name can.
+		await waitFor(() => {
+			expect(
+				(screen.getByLabelText("Instagram") as HTMLInputElement).getAttribute("aria-invalid")
+			).toBe("true");
+		});
+		expect(screen.getByLabelText("Facebook").getAttribute("aria-invalid")).toBeNull();
+	});
+
+	it("expands a pasted social handle into a profile URL on blur", () => {
+		renderView();
+
+		const instagram = screen.getByLabelText("Instagram") as HTMLInputElement;
+		fireEvent.change(instagram, { target: { value: "@lacocina" } });
+		fireEvent.blur(instagram);
+
+		expect(instagram.value).toBe("https://instagram.com/lacocina");
+	});
+
+	it("only offers the WhatsApp flag once there is a number to reach", () => {
+		renderView();
+
+		expect(screen.queryByLabelText("This number is on WhatsApp")).toBeNull();
+
+		fireEvent.change(screen.getByLabelText("Phone"), {
+			target: { value: "+52 81 1234 5678" },
+		});
+
+		expect(screen.getByLabelText("This number is on WhatsApp")).toBeTruthy();
 	});
 
 	it("previews the public URL with the slug segment called out", () => {

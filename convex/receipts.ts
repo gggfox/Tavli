@@ -21,6 +21,7 @@ import type { RateLimitConfig } from "./_util/rateLimit";
 import { consumeRateLimit } from "./_util/rateLimit";
 import { resolveRestaurantTimezone } from "./_util/timezone";
 import { AUDIT_EVENT, ORDER_PAYMENT_STATE, PAYMENT_KIND, PAYMENT_STATUS, TABLE } from "./constants";
+import { toWhatsAppUrl } from "./publicProfileHelpers";
 
 /** Max 3 receipt emails per order per rolling hour (fixed-window approximation). */
 export const RECEIPT_EMAIL_RATE_LIMIT: RateLimitConfig = {
@@ -43,7 +44,11 @@ export type ReceiptEmailOrderContext = {
 	restaurantId: Id<"restaurants">;
 	sessionId: Id<"sessions">;
 	restaurantName: string;
+	/** Doubles as the receipt's `reply_to` and, when reviewed, the printed contact. */
 	supportEmail: string | null;
+	/** Public profile, for the contact block under the not-a-CFDI footer. */
+	contactPhone: string | null;
+	contactWhatsAppUrl: string | null;
 	timezone: string;
 	taxInfo: { rfc?: string; razonSocial?: string; fiscalAddress?: string };
 	orderNumber: number | null;
@@ -145,6 +150,9 @@ export const getReceiptEmailContextInternal = internalQuery({
 			sessionId: order.sessionId,
 			restaurantName: restaurant.name,
 			supportEmail: restaurant.supportEmail ?? null,
+			contactPhone: restaurant.phone ?? null,
+			contactWhatsAppUrl:
+				restaurant.phone && restaurant.phoneHasWhatsApp ? toWhatsAppUrl(restaurant.phone) : null,
 			timezone: resolveRestaurantTimezone(restaurant.timezone),
 			taxInfo: {
 				rfc: restaurant.rfc,

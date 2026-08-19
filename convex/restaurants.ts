@@ -34,6 +34,18 @@ import {
 } from "./constants";
 import { insertMenuForRestaurant } from "./menus";
 import {
+	isValidContactEmail,
+	MAX_ADDRESS_LENGTH,
+	normalizeRestaurantPhone,
+	normalizeSocialUrl,
+	PUBLIC_PROFILE_ERROR,
+	SOCIAL_FIELD,
+	SOCIAL_PLATFORMS,
+	toWhatsAppUrl,
+	type SocialField,
+	type SocialPlatform,
+} from "./publicProfileHelpers";
+import {
 	buildCandidateSlug,
 	normalizeRestaurantSlug,
 	SLUG_ERROR,
@@ -102,6 +114,16 @@ async function resolveCreateSlug(
 	return [null, slugError(SLUG_ERROR.TAKEN)];
 }
 
+/** The diner-visible contact details of a restaurant. Every part is optional. */
+export type PublicContact = {
+	email?: string;
+	phone?: string;
+	/** Ready-to-use `wa.me` link, derived from `phone`. Absent unless flagged. */
+	whatsAppUrl?: string;
+	address?: string;
+	socials?: Partial<Record<SocialPlatform, string>>;
+};
+
 /** Fields safe to expose to anonymous diners (ordering / public reservation pages). */
 export type PublicRestaurant = {
 	_id: Id<"restaurants">;
@@ -120,7 +142,39 @@ export type PublicRestaurant = {
 	latitude?: number;
 	longitude?: number;
 	geofenceRadiusMeters?: number;
+	/** Public profile. Absent entirely when the restaurant has published nothing. */
+	contact?: PublicContact;
 };
+
+/**
+ * Build the diner-visible contact block, or `undefined` when there is nothing
+ * to show — the info block renders nothing rather than an empty shell.
+ *
+ * `supportEmail` is gated on `publicProfileReviewedAt`: it predates the public
+ * profile and older rows may hold an internal alias. See the schema comment.
+ */
+function toPublicContact(r: Doc<"restaurants">): PublicContact | undefined {
+	const socials: Partial<Record<SocialPlatform, string>> = {};
+	for (const platform of SOCIAL_PLATFORMS) {
+		const url = r[SOCIAL_FIELD[platform]];
+		if (url) socials[platform] = url;
+	}
+	const hasSocials = Object.keys(socials).length > 0;
+
+	const email = r.publicProfileReviewedAt != null ? r.supportEmail : undefined;
+	const whatsAppUrl =
+		r.phone && r.phoneHasWhatsApp ? (toWhatsAppUrl(r.phone) ?? undefined) : undefined;
+
+	if (!email && !r.phone && !r.address && !hasSocials) return undefined;
+
+	return {
+		...(email && { email }),
+		...(r.phone && { phone: r.phone }),
+		...(whatsAppUrl && { whatsAppUrl }),
+		...(r.address && { address: r.address }),
+		...(hasSocials && { socials }),
+	};
+}
 
 export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
 	return {
@@ -138,6 +192,7 @@ export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
 		latitude: r.latitude,
 		longitude: r.longitude,
 		geofenceRadiusMeters: r.geofenceRadiusMeters,
+		contact: toPublicContact(r),
 	};
 }
 
@@ -347,6 +402,23 @@ export const update = mutation({
 		rfc: v.optional(v.string()),
 		razonSocial: v.optional(v.string()),
 		fiscalAddress: v.optional(v.string()),
+		// Public profile (diner-visible contact details). Empty string clears —
+		// the section form resubmits every input it owns, so an emptied box
+		// arrives as "" naturally, and none of these can legitimately BE "".
+		address: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		phoneHasWhatsApp: v.optional(v.boolean()),
+		instagramUrl: v.optional(v.string()),
+		facebookUrl: v.optional(v.string()),
+		tiktokUrl: v.optional(v.string()),
+		xUrl: v.optional(v.string()),
+		youtubeUrl: v.optional(v.string()),
+		/**
+		 * Set by the Public profile section on save. Stamps
+		 * `publicProfileReviewedAt`, which is what lets `supportEmail` reach
+		 * diners. Never unset — reviewing is one-way.
+		 */
+		markPublicProfileReviewed: v.optional(v.boolean()),
 		timezone: v.optional(v.string()),
 		openTime: v.optional(v.string()),
 		closeTime: v.optional(v.string()),
@@ -449,15 +521,72 @@ export const update = mutation({
 
 		if (args.supportEmail !== undefined) {
 			const raw = args.supportEmail.trim();
-			// Lightweight shape check — this value feeds a `mailto:` on the client.
-			if (raw.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+			// Lightweight shape check — this value feeds a `mailto:` on the client
+			// and, once the profile is reviewed, on the public menu page.
+			if (raw.length > 0 && !isValidContactEmail(raw)) {
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [{ field: "supportEmail", message: "Invalid email address" }],
+						fields: [
+							{ field: "supportEmail", message: PUBLIC_PROFILE_ERROR.SUPPORT_EMAIL_INVALID },
+						],
 					}).toObject(),
 				];
 			}
+		}
+
+		if (args.address !== undefined && args.address.trim().length > MAX_ADDRESS_LENGTH) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "address", message: PUBLIC_PROFILE_ERROR.ADDRESS_TOO_LONG }],
+				}).toObject(),
+			];
+		}
+
+		let nextPhone: string | undefined;
+		if (args.phone !== undefined) {
+			const result = normalizeRestaurantPhone(args.phone);
+			if (!result.ok) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "phone", message: result.code }],
+					}).toObject(),
+				];
+			}
+			nextPhone = result.value;
+		}
+
+		// A WhatsApp flag with no number is a link to nowhere. Resolve against the
+		// phone this patch *lands on*, not the one currently stored.
+		const phoneAfterPatch = nextPhone !== undefined ? nextPhone : (restaurant.phone ?? "");
+		if (args.phoneHasWhatsApp === true && phoneAfterPatch.length === 0) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{ field: "phoneHasWhatsApp", message: PUBLIC_PROFILE_ERROR.WHATSAPP_WITHOUT_PHONE },
+					],
+				}).toObject(),
+			];
+		}
+
+		const nextSocials: Partial<Record<SocialField, string | undefined>> = {};
+		for (const platform of SOCIAL_PLATFORMS) {
+			const field = SOCIAL_FIELD[platform];
+			const raw = args[field];
+			if (raw === undefined) continue;
+			const result = normalizeSocialUrl(platform, raw);
+			if (!result.ok) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field, message: result.code }],
+					}).toObject(),
+				];
+			}
+			nextSocials[field] = result.value.length > 0 ? result.value : undefined;
 		}
 
 		if (
@@ -497,6 +626,29 @@ export const update = mutation({
 			...(args.fiscalAddress !== undefined && {
 				fiscalAddress: args.fiscalAddress.trim() ? args.fiscalAddress.trim() : undefined,
 			}),
+			...(args.address !== undefined && {
+				address: args.address.trim() ? args.address.trim() : undefined,
+			}),
+			...(nextPhone !== undefined && { phone: nextPhone || undefined }),
+			// Clearing the number force-clears the flag. Otherwise a manager who
+			// deletes their phone leaves a dangling `true` that a later "add a
+			// phone" silently re-arms — for a number that may not be on WhatsApp.
+			...(nextPhone !== undefined && nextPhone.length === 0
+				? { phoneHasWhatsApp: undefined }
+				: args.phoneHasWhatsApp !== undefined && {
+						phoneHasWhatsApp: args.phoneHasWhatsApp || undefined,
+					}),
+			// Explicit per-field spreads rather than a computed object: this keeps
+			// `ctx.db.patch`'s per-field type checking, which `Object.fromEntries`
+			// would erase while still compiling. A normalized empty string means
+			// "clear", which is already `undefined` in `nextSocials`.
+			...(args.instagramUrl !== undefined && { instagramUrl: nextSocials.instagramUrl }),
+			...(args.facebookUrl !== undefined && { facebookUrl: nextSocials.facebookUrl }),
+			...(args.tiktokUrl !== undefined && { tiktokUrl: nextSocials.tiktokUrl }),
+			...(args.xUrl !== undefined && { xUrl: nextSocials.xUrl }),
+			...(args.youtubeUrl !== undefined && { youtubeUrl: nextSocials.youtubeUrl }),
+			...(args.markPublicProfileReviewed === true &&
+				restaurant.publicProfileReviewedAt == null && { publicProfileReviewedAt: Date.now() }),
 			...(args.timezone !== undefined && {
 				timezone: args.timezone.trim() ? args.timezone.trim() : undefined,
 			}),

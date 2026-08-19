@@ -35,6 +35,15 @@ ReceiptEmail.PreviewProps = {
 	totalValue: "$140.00",
 	tipLine: { label: "Tip (this visit)", value: "$20.00" },
 	paymentHint: "Paid by card",
-	footerNotCfdi: "This is not a CFDI (tax invoice). For a factura, contact the restaurant.",
+	footerNotCfdi:
+		"This is not a CFDI (tax invoice). For a factura, contact the restaurant using the details below.",
+	contactBlock: {
+		heading: "Contact La Cocina de Tavli",
+		rows: [
+			{ label: "Email", value: "hola@lacocina.mx", href: "mailto:hola@lacocina.mx" },
+			{ label: "Phone", value: "+528112345678", href: "tel:+528112345678" },
+			{ label: "WhatsApp", value: "+528112345678", href: "https://wa.me/528112345678" },
+		],
+	},
 	footerSentBy: "Sent by Tavli",
 } satisfies ReceiptEmailProps;

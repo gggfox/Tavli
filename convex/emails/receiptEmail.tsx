@@ -5,6 +5,7 @@ import {
 	Head,
 	Heading,
 	Html,
+	Link,
 	Preview,
 	Row,
 	Section,
@@ -58,7 +59,22 @@ export type ReceiptEmailProps = {
 	readonly tipLine: { readonly label: string; readonly value: string } | null;
 	readonly paymentHint: string;
 	readonly footerNotCfdi: string;
+	/**
+	 * The restaurant's contact details. Null when it has published none — the
+	 * footer then uses the wording that doesn't promise any.
+	 */
+	readonly contactBlock: {
+		readonly heading: string;
+		readonly rows: readonly ReceiptContactRow[];
+	} | null;
 	readonly footerSentBy: string;
+};
+
+/** One "Email: hola@…" line in the receipt's contact block. */
+export type ReceiptContactRow = {
+	readonly label: string;
+	readonly value: string;
+	readonly href: string;
 };
 
 const colors = {
@@ -111,6 +127,7 @@ export default function ReceiptEmail({
 	tipLine,
 	paymentHint,
 	footerNotCfdi,
+	contactBlock,
 	footerSentBy,
 }: Readonly<ReceiptEmailProps>) {
 	return (
@@ -272,6 +289,8 @@ export default function ReceiptEmail({
 						</Text>
 					</Section>
 
+					{/* The disclaimer comes first: its copy says "using the details
+					    below", so the contact rows have to follow it, not precede it. */}
 					<Text
 						style={{
 							color: colors.textSecondary,
@@ -284,6 +303,38 @@ export default function ReceiptEmail({
 					>
 						{footerNotCfdi}
 					</Text>
+
+					{contactBlock ? (
+						<Section style={{ margin: "12px 0 0" }}>
+							<Text
+								style={{
+									color: colors.text,
+									fontSize: "13px",
+									fontWeight: 600,
+									lineHeight: "19px",
+									margin: "0 0 6px",
+								}}
+							>
+								{contactBlock.heading}
+							</Text>
+							{contactBlock.rows.map((row) => (
+								<Text
+									key={row.href}
+									style={{
+										color: colors.textSecondary,
+										fontSize: "13px",
+										lineHeight: "19px",
+										margin: "0 0 2px",
+									}}
+								>
+									{`${row.label}: `}
+									<Link href={row.href} style={{ color: colors.text }}>
+										{row.value}
+									</Link>
+								</Text>
+							))}
+						</Section>
+					) : null}
 
 					<Text
 						style={{

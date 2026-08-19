@@ -37,6 +37,34 @@ A single sellable thing inside a `MenuCategory`, with a base price, optional
 options, an availability flag, and a `PrepStation`.
 _Avoid_: dish (too narrow — items can be drinks), product, SKU.
 
+**Public profile**:
+The diner-visible contact details a `Restaurant` publishes: its **Contact
+email**, one phone number (optionally reachable on WhatsApp), a street address,
+and up to five **Social links**. Rendered in exactly two places — a contact bar
+pinned below the order bar on the customer menu page, and the footer of the
+receipt email. The bar is capped at two rows; the restaurant's name is not part
+of it, because the sticky header above already carries the name.
+Every part is optional; a restaurant that has published nothing renders nothing
+rather than an empty shell.
+_Avoid_: about page, listing, storefront, contact card, "the public page".
+
+**Contact email**:
+The address a `Restaurant` publishes to diners. One address doing four jobs:
+shown to diners, `reply_to` on receipt emails, destination for dashboard error
+reports, and recipient of platform-fee billing receipts. There is no separate
+internal support address. Stored as `restaurants.supportEmail`, a name kept for
+continuity — the concept is Contact email.
+_Avoid_: support email (its old, narrower ops-only meaning), reply-to, ops inbox.
+
+**Social link**:
+One of five fixed optional slots — Instagram, Facebook, TikTok, X, YouTube —
+each holding a full canonical `https` profile URL, validated on write against
+that platform's own domain and rewritten to a param-free canonical form.
+`twitter.com` is stored as `x.com`. Shortlinks (`fb.me`, `youtu.be`) are
+rejected rather than resolved, because they are opaque redirect namespaces and
+only the canonical form is kept.
+_Avoid_: handle, username, socials array, profile.
+
 **Prep station**:
 Where a `MenuItem` is physically prepared. Two values: `kitchen` and `bar`.
 Aligned with `SHIFT_ROLE.KITCHEN` and `SHIFT_ROLE.BARTENDER` so the staff
@@ -264,6 +292,8 @@ that are already active.
 
 ## Relationships
 
+- A **Restaurant** has one **Public profile**. Every part of it is optional and
+  independently omitted from the diner-facing surfaces when unset.
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,
   each with many **MenuItems**.
 - Every **MenuItem** has exactly one **PrepStation**.
@@ -320,6 +350,15 @@ that are already active.
 - "category" sometimes shows up in old chat about orders meaning
   "**PrepStation**". In the current language, **MenuCategory** is purely
   diner-facing organization; routing is **PrepStation**.
+- "theme" means **only** the viewer's light/dark preference, and nothing else.
+  Per-restaurant visual customization (colours, fonts, logo, header image) is a
+  separate concept that will be called **Branding** when it lands — it composes
+  with theme rather than replacing it, since a restaurant's colour has to work
+  in both modes. Never say "restaurant theme".
+- "address" is overloaded. The **Public profile**'s address is where diners
+  walk in; `fiscalAddress` is the legal invoicing address printed on the
+  receipt's tax block. They are often the same string and are never the same
+  field.
 - "waiter" appears in product tickets and stakeholder language (e.g. the
   dashboard's "waiter performance"). The canonical term is **Server** — the
   `ShiftRole.SERVER` who is credited for sales via

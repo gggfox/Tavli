@@ -130,6 +130,11 @@ export const sendReceiptEmail = action({
 			totalCents: context.totalCents,
 			tipCents: context.tipCents,
 			paymentHint: context.paymentHint,
+			contact: {
+				email: context.supportEmail,
+				phone: context.contactPhone,
+				whatsAppUrl: context.contactWhatsAppUrl,
+			},
 		});
 
 		// Branded as the restaurant, sent from Tavli's verified domain. Replies

@@ -12,6 +12,7 @@ import type { SelectedOption } from "../types";
 import { GeofenceNotice } from "./GeofenceNotice";
 import { MenuBrowser } from "./MenuBrowser";
 import { MenuBrowserSkeleton } from "./MenuBrowserSkeleton";
+import { RestaurantContactBar } from "./RestaurantContactBar";
 
 interface CustomerMenuPageProps {
 	slug: string;
@@ -97,6 +98,9 @@ export function CustomerMenuPage({
 			isSubmitting={isSubmitting}
 			orderingBlocked={orderingBlocked}
 			blockedNotice={blockedNotice}
+			// Reuses the restaurant already fetched above for the geofence — the
+			// public profile rides along on the same query.
+			contactBar={restaurant ? <RestaurantContactBar restaurant={restaurant} /> : null}
 		/>
 	);
 }
