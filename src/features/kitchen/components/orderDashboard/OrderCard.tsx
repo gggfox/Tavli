@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
 import { PaymentStateBadge } from "./PaymentStateBadge";
 import { STATION_CONFIG, type DashboardPrepStation } from "./stationConfig";
+import { TableBadge } from "./TableBadge";
 import {
 	formatOrderDate,
 	formatOrderTime,
@@ -139,14 +140,17 @@ export function OrderCard({
 			<div className="px-4 py-3 shrink-0 border-b border-border">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
+						{/* Table first and loudest: a server reads the destination before
+						    anything else on the card (TAVLI-80). */}
+						<TableBadge
+							tableNumber={order.tableNumber}
+							className="shrink-0 text-xl font-bold leading-tight text-foreground"
+						/>
 						<StatusBadge
 							bgColor={getStatusToneStyle(config.tone).solidBg}
 							textColor={getStatusToneStyle(config.tone).solidFg}
 							label={t(config.labelKey)}
 						/>
-						<span className="text-sm font-medium truncate text-foreground">
-							{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
-						</span>
 						{order.dailyOrderNumber != null && (
 							<span
 								className="text-sm font-bold tabular-nums shrink-0 text-foreground"
@@ -171,13 +175,16 @@ export function OrderCard({
 						}}
 					>
 						<div className="min-w-0">
-							<span className="block text-xl font-bold tabular-nums leading-tight">
+							{/* Same swap as the header: the table leads, the order number
+							    identifies (TAVLI-80). */}
+							<TableBadge
+								tableNumber={order.tableNumber}
+								className="block truncate text-xl font-bold leading-tight"
+							/>
+							<span className="block text-xs font-medium tabular-nums truncate">
 								{order.dailyOrderNumber != null
 									? t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })
 									: `#${order._id.slice(-6)}`}
-							</span>
-							<span className="block text-xs font-medium truncate">
-								{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
 							</span>
 						</div>
 						<div className="text-right shrink-0">

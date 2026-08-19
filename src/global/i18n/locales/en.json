@@ -418,6 +418,7 @@
 		},
 		"card": {
 			"table": "Table {{number}}",
+			"tableNone": "No table",
 			"dayNumber": "#{{n}}",
 			"paid": "Paid",
 			"moreItems_one": "+1 more item",

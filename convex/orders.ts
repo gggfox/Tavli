@@ -1195,7 +1195,10 @@ export const getActiveOrdersByRestaurant = query({
 					.withIndex("by_order", (q) => q.eq("orderId", order._id))
 					.collect();
 				const table = await ctx.db.get(order.tableId);
-				return { ...order, items, tableNumber: table?.tableNumber ?? 0 };
+				// `null`, never `0`: a table that has been deleted or purged is a
+				// missing join, and the dashboard has to say so instead of sending
+				// a server to a table numbered zero (TAVLI-80).
+				return { ...order, items, tableNumber: table?.tableNumber ?? null };
 			})
 		);
 

@@ -36,7 +36,13 @@ export type DashboardOrderItem = Omit<Doc<"orderItems">, "selectedOptions"> & {
 
 export type DashboardOrder = Doc<"orders"> & {
 	readonly items: ReadonlyArray<DashboardOrderItem>;
-	readonly tableNumber: number;
+	/**
+	 * Table this order goes to, joined by the dashboard query. `null` when
+	 * that table row is gone (deleted or purged) — the cards render an
+	 * explicit "no table" rather than the old `?? 0`, which was
+	 * indistinguishable from a real table numbered 0.
+	 */
+	readonly tableNumber: number | null;
 };
 
 /**
