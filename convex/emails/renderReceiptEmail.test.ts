@@ -20,6 +20,13 @@ const baseContext: Omit<ReceiptEmailContext, "locale"> = {
 	totalCents: 14000,
 	tipCents: 2000,
 	paymentHint: "card",
+	contact: { email: null, phone: null, whatsAppUrl: null },
+};
+
+const withContact = {
+	email: "hola@lacocina.mx",
+	phone: "+528112345678",
+	whatsAppUrl: "https://wa.me/528112345678",
 };
 
 describe("renderReceiptEmail", () => {
@@ -48,7 +55,9 @@ describe("renderReceiptEmail", () => {
 		expect(html).toContain("Pedido #42");
 		expect(html).toContain("Tarifa de servicio Tavli (12%)");
 		expect(html).toContain("Cobrada por Tavli");
-		expect(html).toContain("Este documento no es un CFDI. Para facturar, contacta al restaurante.");
+		expect(html).toContain(
+			"Este documento no es un CFDI. Para solicitar tu factura, contacta al restaurante."
+		);
 	});
 
 	it("labels the fee line as Tavli's, with the charged-by attribution", async () => {
@@ -67,6 +76,80 @@ describe("renderReceiptEmail", () => {
 			"This is not a CFDI (tax invoice). For a factura, contact the restaurant."
 		);
 		expect(text).toContain("This is not a CFDI");
+	});
+
+	it("promises no contact details when the restaurant has published none", async () => {
+		const { html } = await renderReceiptEmail({ ...baseContext, locale: "en" });
+
+		// The footer must not say "using the details below" when there are none —
+		// that was the original dead end this block exists to close.
+		expect(html).not.toContain("using the details below");
+		expect(html).not.toContain("Contact La Cocina");
+	});
+
+	it("renders the contact block and points the footer at it", async () => {
+		const { html } = await renderReceiptEmail({
+			...baseContext,
+			locale: "en",
+			contact: withContact,
+		});
+
+		expect(html).toContain("using the details below");
+		expect(html).toContain("Contact La Cocina");
+		expect(html).toContain("mailto:hola@lacocina.mx");
+		expect(html).toContain("tel:+528112345678");
+		expect(html).toContain("https://wa.me/528112345678");
+	});
+
+	it("puts the contact rows after the disclaimer that points at them", async () => {
+		const { html } = await renderReceiptEmail({
+			...baseContext,
+			locale: "en",
+			contact: withContact,
+		});
+
+		// The copy literally says "using the details below", so rendering the
+		// block above it makes the sentence wrong. `toContain` alone cannot catch
+		// that — the order has to be asserted.
+		expect(html.indexOf("using the details below")).toBeLessThan(html.indexOf("Contact La Cocina"));
+	});
+
+	it("omits the WhatsApp row when the number is not on WhatsApp", async () => {
+		const { html } = await renderReceiptEmail({
+			...baseContext,
+			locale: "en",
+			contact: { ...withContact, whatsAppUrl: null },
+		});
+
+		expect(html).toContain("tel:+528112345678");
+		expect(html).not.toContain("wa.me");
+	});
+
+	it("keeps raw tel: and wa.me hrefs out of the plain-text part", async () => {
+		const { text } = await renderReceiptEmail({
+			...baseContext,
+			locale: "en",
+			contact: withContact,
+		});
+
+		// html-to-text only strips a `mailto:` prefix before deciding a link's
+		// href duplicates its text, so without explicit selectors the plain-text
+		// part reads "Phone: +52... tel:+52...".
+		expect(text).toContain("+528112345678");
+		expect(text).not.toContain("tel:+528112345678");
+		expect(text).not.toContain("https://wa.me/");
+	});
+
+	it("localizes the contact labels", async () => {
+		const { html } = await renderReceiptEmail({
+			...baseContext,
+			locale: "es",
+			contact: withContact,
+		});
+
+		expect(html).toContain("Contacta a La Cocina");
+		expect(html).toContain("Teléfono");
+		expect(html).toContain("con los datos de abajo");
 	});
 
 	it("omits the tax block entirely when the restaurant configured no tax fields", async () => {

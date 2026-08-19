@@ -16,6 +16,7 @@ export const LOCAL_STORAGE_KEY_ADMIN_SELECTED_ORGANIZATION_ID =
  */
 export const RESTAURANT_SETTINGS_SECTION = {
 	GENERAL: "general",
+	PUBLIC_PROFILE: "publicProfile",
 	HOURS: "hours",
 	LOCATION: "location",
 	TAX: "tax",

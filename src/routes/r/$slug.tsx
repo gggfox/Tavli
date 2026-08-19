@@ -63,9 +63,12 @@ function CustomerLayout() {
 	if (!isSignedIn) {
 		return (
 			<div className="flex-1 flex flex-col min-h-0">
-				<header className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-border bg-muted">
-					<CustomerNavTabs slug={slug} />
-					<CustomerAuthAction forceShow />
+				<header className="px-3 py-2 shrink-0 border-b border-border bg-muted space-y-1.5">
+					<RestaurantNameBadge slug={slug} />
+					<div className="flex items-center justify-between gap-2">
+						<CustomerNavTabs slug={slug} />
+						<CustomerAuthAction forceShow />
+					</div>
 				</header>
 				<div className="flex-1 flex items-center justify-center p-6">
 					<div className="text-center max-w-sm space-y-4">
@@ -135,16 +138,37 @@ function CustomerLayout() {
 	);
 }
 
+/**
+ * The restaurant's name in the sticky header — the diner's only persistent
+ * answer to "whose menu is this?".
+ *
+ * Reads the same `getBySlug` subscription the menu page already holds, so this
+ * is a cache hit rather than a second round trip. Renders nothing until the
+ * name resolves: a placeholder would shift the header's layout on arrival.
+ *
+ * Rendered on its own line rather than inline with the nav. At 375px the nav
+ * pills and the actions already consume the row, so an inline name truncates
+ * to nothing and pushes the auth buttons into wrapping.
+ */
+function RestaurantNameBadge({ slug }: Readonly<{ slug: string }>) {
+	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
+	if (!restaurant?.name) return null;
+	return <p className="truncate text-sm font-semibold text-foreground">{restaurant.name}</p>;
+}
+
 function CustomerHeader({
 	slug,
 	sessionId,
 }: Readonly<{ slug: string; sessionId: Id<"sessions"> | null }>) {
 	return (
-		<header className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-border bg-muted">
-			<CustomerNavTabs slug={slug} />
-			<div className="flex items-center gap-2">
-				{sessionId && <MyOrdersLink sessionId={sessionId} slug={slug} />}
-				<CustomerAuthAction />
+		<header className="px-3 py-2 shrink-0 border-b border-border bg-muted space-y-1.5">
+			<RestaurantNameBadge slug={slug} />
+			<div className="flex items-center justify-between gap-2">
+				<CustomerNavTabs slug={slug} />
+				<div className="flex items-center gap-2 shrink-0">
+					{sessionId && <MyOrdersLink sessionId={sessionId} slug={slug} />}
+					<CustomerAuthAction />
+				</div>
 			</div>
 		</header>
 	);
@@ -162,7 +186,7 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 	return (
 		<nav
 			aria-label="Customer sections"
-			className="flex items-center gap-0.5 rounded-full p-0.5 bg-background border border-border"
+			className="flex shrink-0 items-center gap-0.5 rounded-full p-0.5 bg-background border border-border"
 		>
 			{lang ? (
 				<TabLink

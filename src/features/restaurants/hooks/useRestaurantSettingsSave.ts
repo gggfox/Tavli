@@ -16,7 +16,7 @@ import type { RestaurantSettingsSection } from "@/features/restaurants/constants
 import { RestaurantsKeys } from "@/global/i18n";
 import type { BackendErrorCode } from "@/global/i18n/keys/errors";
 import { unwrapResult } from "@/global/utils";
-import { extractErrorCode, getErrorMessage } from "@/global/utils/errorMessages";
+import { extractErrorCode, extractErrorField, getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -43,6 +43,12 @@ export interface UseRestaurantSettingsSaveResult {
 	 * input, not only on the footer).
 	 */
 	errorCode: BackendErrorCode | null;
+	/**
+	 * The input the failure belongs to, when the backend pinned one. Distinct
+	 * from `errorCode`: the five social fields share their codes, so the code
+	 * alone cannot identify the guilty input.
+	 */
+	errorField: string | null;
 	/** Section that most recently saved successfully -- drives the "Saved" note. */
 	savedSection: RestaurantSettingsSection | null;
 	clearError: () => void;
@@ -59,6 +65,7 @@ export function useRestaurantSettingsSave(
 	const [errorSection, setErrorSection] = useState<RestaurantSettingsSection | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [errorCode, setErrorCode] = useState<BackendErrorCode | null>(null);
+	const [errorField, setErrorField] = useState<string | null>(null);
 	const [savedSection, setSavedSection] = useState<RestaurantSettingsSection | null>(null);
 
 	const restaurantId = restaurant._id;
@@ -68,6 +75,7 @@ export function useRestaurantSettingsSave(
 	const clearError = useCallback(() => {
 		setError(null);
 		setErrorCode(null);
+		setErrorField(null);
 		setErrorSection(null);
 	}, []);
 
@@ -77,6 +85,7 @@ export function useRestaurantSettingsSave(
 			setSavedSection(null);
 			setError(null);
 			setErrorCode(null);
+			setErrorField(null);
 			setErrorSection(null);
 			try {
 				unwrapResult(
@@ -91,6 +100,7 @@ export function useRestaurantSettingsSave(
 			} catch (err) {
 				setError(getErrorMessage(err, t, RestaurantsKeys.FORM_UPDATE_FAILED));
 				setErrorCode(extractErrorCode(err));
+				setErrorField(extractErrorField(err));
 				setErrorSection(section);
 				return false;
 			} finally {
@@ -100,5 +110,14 @@ export function useRestaurantSettingsSave(
 		[mutateAsync, restaurantId, currentOrganizationId, t]
 	);
 
-	return { save, savingSection, errorSection, error, errorCode, savedSection, clearError };
+	return {
+		save,
+		savingSection,
+		errorSection,
+		error,
+		errorCode,
+		errorField,
+		savedSection,
+		clearError,
+	};
 }

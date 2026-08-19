@@ -31,7 +31,6 @@ export function GeneralSection({
 			name: restaurant.name,
 			slug: restaurant.slug,
 			description: restaurant.description ?? "",
-			supportEmail: restaurant.supportEmail ?? "",
 			currency: restaurant.currency,
 		},
 		onSubmit: async ({ value }) => {
@@ -39,7 +38,6 @@ export function GeneralSection({
 				name: value.name,
 				slug: value.slug,
 				description: value.description,
-				supportEmail: value.supportEmail,
 				currency: value.currency,
 			});
 			if (saved) form.reset(value);
@@ -248,31 +246,6 @@ export function GeneralSection({
 								rows={3}
 								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
 							/>
-						</div>
-					)}
-				/>
-
-				<form.Field
-					name="supportEmail"
-					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-support-email"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_SUPPORT_EMAIL_LABEL)}
-							</label>
-							<input
-								id="restaurant-support-email"
-								type="email"
-								value={field.state.value}
-								onChange={(e) => field.handleChange(e.target.value)}
-								onBlur={field.handleBlur}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							/>
-							<p className="mt-1 text-xs text-faint-foreground">
-								{t(RestaurantsKeys.FORM_SUPPORT_EMAIL_HINT)}
-							</p>
 						</div>
 					)}
 				/>

@@ -139,6 +139,26 @@ function candidateStrings(error: unknown): string[] {
  *   2. The **generic** category from `.name` (`CONFLICT`, `NOT_AUTHORIZED`, …).
  *   3. `null` — the caller resolves a localized generic fallback.
  */
+/**
+ * Extracts the *field* a validation failure was pinned to, or `null`.
+ *
+ * `UserInputValidationError` builds its message as `"<field>: <CODE>"` (see
+ * `convex/_shared/errors.ts`), and `fromErrorObject` keeps only `name` and
+ * `message` — so the structured `fields` array does not survive the wire and
+ * the field name has to be read back out of the message.
+ *
+ * Needed wherever one error code can belong to more than one input: the five
+ * social-link fields all share `ERROR_SOCIAL_URL_*`, so the code alone cannot
+ * say which one to underline.
+ */
+export function extractErrorField(error: unknown): string | null {
+	for (const candidate of candidateStrings(error)) {
+		const match = /([A-Za-z][A-Za-z0-9_.]*):\s*ERROR_[A-Z_]+/.exec(candidate);
+		if (match) return match[1];
+	}
+	return null;
+}
+
 export function extractErrorCode(error: unknown): BackendErrorCode | null {
 	const candidates = candidateStrings(error);
 

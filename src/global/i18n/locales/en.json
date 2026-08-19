@@ -523,6 +523,24 @@
 		"auth": {
 			"signIn": "Sign In",
 			"signUp": "Sign up"
+		},
+		"info": {
+			"heading": "Contact",
+			"hoursLabel": "Hours",
+			"hoursValue": "{{open}} to {{close}}",
+			"addressLabel": "Address",
+			"directions": "Get directions",
+			"emailLabel": "Email",
+			"phoneLabel": "Phone",
+			"whatsappLabel": "WhatsApp",
+			"socialAria": "{{platform}} (opens in a new tab)"
+		},
+		"social": {
+			"instagram": "Instagram",
+			"facebook": "Facebook",
+			"tiktok": "TikTok",
+			"x": "X",
+			"youtube": "YouTube"
 		}
 	},
 	"roles": {
@@ -652,7 +670,16 @@
 		"ERROR_INVITE_CSV_TOO_MANY_ROWS": "That file has more than {{detail}} rows. Split it and upload it in parts.",
 		"ERROR_INVITE_CSV_TOO_LARGE": "That file is larger than {{detail}}. Split it and upload it in parts.",
 		"ERROR_INVITE_CSV_UNTERMINATED_QUOTE": "That file has a quotation mark that is never closed.",
-		"ERROR_INVITE_CSV_NOT_CSV": "That file does not look like a CSV. Export it as CSV and upload it again."
+		"ERROR_INVITE_CSV_NOT_CSV": "That file does not look like a CSV. Export it as CSV and upload it again.",
+		"ERROR_INVALID_SUPPORT_EMAIL": "That doesn't look like a valid email address.",
+		"ERROR_ADDRESS_TOO_LONG": "That address is too long. Keep it under 240 characters.",
+		"ERROR_INVALID_PHONE": "That doesn't look like a valid phone number.",
+		"ERROR_PHONE_COUNTRY_CODE_REQUIRED": "Add the country code, starting with + (for example +52 81 1234 5678).",
+		"ERROR_WHATSAPP_WITHOUT_PHONE": "Add a phone number before marking it as reachable on WhatsApp.",
+		"ERROR_SOCIAL_URL_INVALID": "That doesn't look like a profile link. Paste the address of your profile page.",
+		"ERROR_SOCIAL_URL_WRONG_PLATFORM": "That link belongs to a different platform.",
+		"ERROR_SOCIAL_URL_SHORTLINK": "That's a short link. Open it and paste the address of the profile page it leads to.",
+		"ERROR_SOCIAL_URL_INSECURE": "Only https links to the platform itself can be published."
 	},
 	"time": {
 		"relative": {
@@ -922,8 +949,6 @@
 			"slugChangeWarning": "Changing this retires the current address ({{slug}}). Printed QR codes and shared links stop working, and diners who unlocked ordering have to enter the access code again.",
 			"openTestLink": "Open Test Link",
 			"descriptionLabel": "Description",
-			"supportEmailLabel": "Support email",
-			"supportEmailHint": "Where dashboard error reports are sent. Leave blank to use the platform default.",
 			"currencyLabel": "Currency",
 			"timezoneLabel": "Timezone",
 			"timezonePlaceholder": "America/Mexico_City",
@@ -972,7 +997,9 @@
 			"geofenceMapSearchPlaceholder": "Search address…",
 			"geofenceMapSearchButton": "Search",
 			"geofenceMapSearchNotFound": "Address not found. Try a different search.",
-			"geofenceCoordinatesAdvanced": "Advanced: edit coordinates"
+			"geofenceCoordinatesAdvanced": "Advanced: edit coordinates",
+			"contactEmailLabel": "Contact email",
+			"contactEmailHint": "Shown to diners on your menu page and on emailed receipts. We also send dashboard error reports and billing receipts here."
 		},
 		"settings": {
 			"close": "Close restaurant settings",
@@ -992,7 +1019,23 @@
 			"organizationLoading": "Loading organizations…",
 			"organizationEmpty": "No organizations available yet. Create one before moving this restaurant.",
 			"organizationLoadFailed": "Could not load organizations. The current one is kept until you retry.",
-			"organizationCurrentUnresolved": "Current organization"
+			"organizationCurrentUnresolved": "Current organization",
+			"publicProfileTitle": "Public profile",
+			"publicProfileHint": "How diners reach you. Everything here appears on your menu page; the email and phone also appear on emailed receipts. Leave anything blank to hide it.",
+			"publicProfileAddressLabel": "Address",
+			"publicProfileAddressHint": "The address diners walk to. Separate from the fiscal address in Tax information.",
+			"publicProfilePhoneLabel": "Phone",
+			"publicProfilePhoneHint": "Include the country code so the number works from anywhere.",
+			"publicProfilePhonePlaceholder": "+52 81 1234 5678",
+			"publicProfileWhatsappLabel": "This number is on WhatsApp",
+			"publicProfileWhatsappHint": "Adds a WhatsApp button next to the phone number.",
+			"publicProfileSocialHeading": "Social links",
+			"publicProfileSocialHint": "Paste the address of each profile page, or just type your handle. Short links (fb.me, youtu.be) will not work — open them and paste where they lead.",
+			"publicProfileInstagramLabel": "Instagram",
+			"publicProfileFacebookLabel": "Facebook",
+			"publicProfileTiktokLabel": "TikTok",
+			"publicProfileXLabel": "X",
+			"publicProfileYoutubeLabel": "YouTube"
 		},
 		"managers": {
 			"sectionTitle": "Location managers",

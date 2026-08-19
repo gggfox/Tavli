@@ -4,7 +4,32 @@ import { PLATFORM_APPLICATION_FEE_RATE } from "../constants";
 import { interpolate } from "./copy";
 import type { InviteEmailLocale } from "./locale";
 import { getReceiptCopy } from "./receiptCopy";
-import ReceiptEmail, { type ReceiptEmailItem, type ReceiptEmailProps } from "./receiptEmail";
+import ReceiptEmail, {
+	type ReceiptContactRow,
+	type ReceiptEmailItem,
+	type ReceiptEmailProps,
+} from "./receiptEmail";
+
+/**
+ * The plain-text part needs help with the two new link schemes.
+ *
+ * react-email renders plain text through `html-to-text` with
+ * `hideLinkHrefIfSameAsText`, but that comparison strips only a `mailto:`
+ * prefix before matching href against text. So `mailto:` collapses cleanly
+ * while `tel:` and `wa.me` print their raw href right after the number —
+ * "Phone: +52 81 1234 5678 tel:+528112345678".
+ *
+ * These are new selector *keys* rather than a merge onto `a`, so they inherit
+ * none of react-email's anchor options; `ignoreHref` has to be explicit. And
+ * `format` is mandatory — html-to-text throws "Following selectors have no
+ * specified format" at render time, which would brick every receipt send.
+ */
+const PLAIN_TEXT_OPTIONS = {
+	selectors: [
+		{ selector: 'a[href^="tel:"]', format: "anchor", options: { ignoreHref: true } },
+		{ selector: 'a[href^="https://wa.me/"]', format: "anchor", options: { ignoreHref: true } },
+	],
+} as const;
 
 export type ReceiptEmailContext = {
 	locale: InviteEmailLocale;
@@ -25,6 +50,17 @@ export type ReceiptEmailContext = {
 	/** Sum of the caller's paid tips this session; null/0 hides the tip line. */
 	tipCents: number | null;
 	paymentHint: "card" | "in_person";
+	/**
+	 * The restaurant's Public profile, so the CFDI footer can actually point the
+	 * diner somewhere. Every part is optional; when all are absent the footer
+	 * falls back to the wording that promises nothing.
+	 */
+	contact: {
+		email: string | null;
+		phone: string | null;
+		/** Ready-built `wa.me` link, or null when the number isn't on WhatsApp. */
+		whatsAppUrl: string | null;
+	};
 };
 
 /**
@@ -86,6 +122,31 @@ export async function renderReceiptEmail(context: ReceiptEmailContext): Promise<
 	if (rfc) taxLines.push(interpolate(copy.rfcLabel, { rfc }));
 	if (fiscalAddress) taxLines.push(fiscalAddress);
 
+	// Built here alongside the tax lines so the email layer stays a pure
+	// presenter — it does no arithmetic, no locale math, and no link building.
+	const contactRows: ReceiptContactRow[] = [];
+	if (context.contact.email) {
+		contactRows.push({
+			label: copy.contactEmailLabel,
+			value: context.contact.email,
+			href: `mailto:${context.contact.email}`,
+		});
+	}
+	if (context.contact.phone) {
+		contactRows.push({
+			label: copy.contactPhoneLabel,
+			value: context.contact.phone,
+			href: `tel:${context.contact.phone}`,
+		});
+	}
+	if (context.contact.whatsAppUrl) {
+		contactRows.push({
+			label: copy.contactWhatsAppLabel,
+			value: context.contact.phone ?? copy.contactWhatsAppLabel,
+			href: context.contact.whatsAppUrl,
+		});
+	}
+
 	const items: ReceiptEmailItem[] = context.items.map((item) => ({
 		label: `${item.quantity}x ${item.name}`,
 		amount: formatReceiptAmount(item.lineTotalCents),
@@ -123,13 +184,18 @@ export async function renderReceiptEmail(context: ReceiptEmailContext): Promise<
 				: null,
 		paymentHint:
 			context.paymentHint === "in_person" ? copy.paymentHintInPerson : copy.paymentHintCard,
-		footerNotCfdi: copy.footerNotCfdi,
+		// Only promise contact details when there are some to show.
+		footerNotCfdi: contactRows.length > 0 ? copy.footerNotCfdiWithContact : copy.footerNotCfdi,
+		contactBlock:
+			contactRows.length > 0
+				? { heading: interpolate(copy.contactHeading, vars), rows: contactRows }
+				: null,
 		footerSentBy: copy.footerSentBy,
 	};
 
 	const element = createElement(ReceiptEmail, emailProps);
 	const html = await render(element);
-	const text = await render(element, { plainText: true });
+	const text = await render(element, { plainText: true, htmlToTextOptions: PLAIN_TEXT_OPTIONS });
 	const subject = interpolate(copy.subject, vars);
 
 	return { subject, html, text };

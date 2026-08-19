@@ -24,8 +24,18 @@ export type ReceiptEmailCopy = {
 	paymentHintInPerson: string;
 	taxBlockHeading: string;
 	rfcLabel: string;
-	/** Mandatory footer: this receipt is not a CFDI (Mexican tax invoice). */
+	/**
+	 * Mandatory footer: this receipt is not a CFDI (Mexican tax invoice). Two
+	 * variants because the original told the diner to "contact the restaurant"
+	 * without giving them any way to do so — a dead end whenever the restaurant
+	 * has published no contact details.
+	 */
 	footerNotCfdi: string;
+	footerNotCfdiWithContact: string;
+	contactHeading: string;
+	contactEmailLabel: string;
+	contactPhoneLabel: string;
+	contactWhatsAppLabel: string;
 	footerSentBy: string;
 };
 
@@ -48,6 +58,12 @@ const COPY: Record<InviteEmailLocale, ReceiptEmailCopy> = {
 		taxBlockHeading: "Tax information",
 		rfcLabel: "RFC: {{rfc}}",
 		footerNotCfdi: "This is not a CFDI (tax invoice). For a factura, contact the restaurant.",
+		footerNotCfdiWithContact:
+			"This is not a CFDI (tax invoice). For a factura, contact the restaurant using the details below.",
+		contactHeading: "Contact {{restaurantName}}",
+		contactEmailLabel: "Email",
+		contactPhoneLabel: "Phone",
+		contactWhatsAppLabel: "WhatsApp",
 		footerSentBy: "Sent by Tavli",
 	},
 	es: {
@@ -67,7 +83,16 @@ const COPY: Record<InviteEmailLocale, ReceiptEmailCopy> = {
 		paymentHintInPerson: "Pagado en persona",
 		taxBlockHeading: "Información fiscal",
 		rfcLabel: "RFC: {{rfc}}",
-		footerNotCfdi: "Este documento no es un CFDI. Para facturar, contacta al restaurante.",
+		// "Para facturar" addresses the issuer; the reader is the diner asking for
+		// one, so both variants say "Para solicitar tu factura".
+		footerNotCfdi:
+			"Este documento no es un CFDI. Para solicitar tu factura, contacta al restaurante.",
+		footerNotCfdiWithContact:
+			"Este documento no es un CFDI. Para solicitar tu factura, contacta al restaurante con los datos de abajo.",
+		contactHeading: "Contacta a {{restaurantName}}",
+		contactEmailLabel: "Correo",
+		contactPhoneLabel: "Teléfono",
+		contactWhatsAppLabel: "WhatsApp",
 		footerSentBy: "Enviado por Tavli",
 	},
 };

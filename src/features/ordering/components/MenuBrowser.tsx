@@ -23,6 +23,13 @@ interface ItemSelection {
 }
 
 const bottomBarSafePadding = "pb-[max(1rem,env(safe-area-inset-bottom))]";
+/**
+ * Whichever element renders last owns the home-indicator inset. With a contact
+ * bar present the order bar is no longer last, so it must NOT also pad for it
+ * or the two stack into a visible gap above the bar.
+ */
+const bottomBarPadding = (hasContactBar: boolean) =>
+	hasContactBar ? "pb-3" : bottomBarSafePadding;
 
 interface MenuBrowserProps {
 	restaurantId: Id<"restaurants">;
@@ -41,6 +48,12 @@ interface MenuBrowserProps {
 	orderingBlocked?: boolean;
 	/** Rendered in place of the order controls while `orderingBlocked`. */
 	blockedNotice?: React.ReactNode;
+	/**
+	 * The restaurant's public profile, pinned below the order bar so the social
+	 * links stay reachable without scrolling the whole menu. Capped at two rows
+	 * — see `RestaurantContactBar`.
+	 */
+	contactBar?: React.ReactNode;
 }
 
 export function MenuBrowser({
@@ -50,6 +63,7 @@ export function MenuBrowser({
 	isSubmitting,
 	orderingBlocked = false,
 	blockedNotice,
+	contactBar,
 }: Readonly<MenuBrowserProps>) {
 	const { t } = useTranslation();
 	const { data: paymentsEnabled } = useQuery(
@@ -216,28 +230,28 @@ export function MenuBrowser({
 			{/* Bottom bar: geofence / ordering-unavailable notice */}
 			{orderingBlocked && blockedNotice && (
 				<div
-					className={`shrink-0 px-4 pt-3 border-t border-border bg-background ${bottomBarSafePadding}`}
+					className={`shrink-0 px-4 pt-3 border-t border-border bg-background ${bottomBarPadding(Boolean(contactBar))}`}
 				>
 					{blockedNotice}
 				</div>
 			)}
 			{!orderingBlocked && paymentsEnabled === false && itemCount > 0 && (
 				<div
-					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning bg-warning-subtle ${bottomBarSafePadding}`}
+					className={`shrink-0 px-4 pt-3 text-center text-sm border-t border-border text-warning bg-warning-subtle ${bottomBarPadding(Boolean(contactBar))}`}
 				>
 					{t(OrderingKeys.MENU_NO_ONLINE_ORDERING)}
 				</div>
 			)}
 			{!orderingBlocked && itemCount === 0 && (
 				<div
-					className={`shrink-0 px-4 pt-4 text-center border-t border-border bg-background text-faint-foreground ${bottomBarSafePadding}`}
+					className={`shrink-0 px-4 pt-4 text-center border-t border-border bg-background text-faint-foreground ${bottomBarPadding(Boolean(contactBar))}`}
 				>
 					<p className="text-sm">{t(OrderingKeys.MENU_TAP_TO_START)}</p>
 				</div>
 			)}
 			{!orderingBlocked && itemCount > 0 && (
 				<div
-					className={`shrink-0 px-4 pt-3 space-y-3 border-t border-border bg-background ${bottomBarSafePadding}`}
+					className={`shrink-0 px-4 pt-3 space-y-3 border-t border-border bg-background ${bottomBarPadding(Boolean(contactBar))}`}
 				>
 					{showPayFlow ? (
 						<>
@@ -332,6 +346,8 @@ export function MenuBrowser({
 			)}
 
 			{/* Item detail bottom sheet */}
+			{contactBar}
+
 			{detailItem && (
 				<ItemDetailSheet
 					item={detailItem}

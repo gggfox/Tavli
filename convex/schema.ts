@@ -206,7 +206,16 @@ export default defineSchema({
 		slug: v.string(),
 		description: v.optional(v.string()),
 		currency: v.string(),
-		/** Where dashboard error reports are routed (TAVLI-2). Falls back to the global SUPPORT_EMAIL default when unset. */
+		/**
+		 * The restaurant's **Contact email** — one address doing four jobs: shown
+		 * to diners on the menu page and the receipt footer, the receipt
+		 * `reply_to`, the dashboard-error-report destination (TAVLI-2, falling
+		 * back to the global SUPPORT_EMAIL default), and the platform-fee billing
+		 * recipient. Field name kept for continuity; the concept is Contact email.
+		 *
+		 * Only published to diners once `publicProfileReviewedAt` is set — see
+		 * that field.
+		 */
 		supportEmail: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		/** Minutes from local midnight (0–1439) when the business “order day” starts; default 240 (04:00) in app logic. */
@@ -233,6 +242,37 @@ export default defineSchema({
 		rfc: v.optional(v.string()),
 		razonSocial: v.optional(v.string()),
 		fiscalAddress: v.optional(v.string()),
+		// ── Public profile: the diner-visible contact details. `supportEmail`
+		//    above belongs to this group too. Normalized on write by
+		//    `convex/publicProfileHelpers.ts` — these values are interpolated into
+		//    `href`s on an anonymous page, so storage is always canonical.
+		/**
+		 * Diner-facing street address. Deliberately NOT `fiscalAddress`, which is
+		 * the legal invoicing address and need not be where diners walk in.
+		 */
+		address: v.optional(v.string()),
+		/** E.164 (`+` then 8–15 digits). Machine-consumed into `tel:` and `wa.me`. */
+		phone: v.optional(v.string()),
+		/** True when `phone` is reachable on WhatsApp. Never set without `phone`. */
+		phoneHasWhatsApp: v.optional(v.boolean()),
+		/** Canonical `https` profile URLs, host- and path-validated on write. */
+		instagramUrl: v.optional(v.string()),
+		facebookUrl: v.optional(v.string()),
+		tiktokUrl: v.optional(v.string()),
+		xUrl: v.optional(v.string()),
+		youtubeUrl: v.optional(v.string()),
+		/**
+		 * Stamped the first time a manager saves the Public profile section.
+		 *
+		 * Gates publication of `supportEmail` to diners. Every row that predates
+		 * the public profile had its support email entered under copy reading
+		 * "Where dashboard error reports are sent", so some hold an internal alias
+		 * or a personal address. Publishing those to an anonymous page is
+		 * irreversible for anything scraped, so the address stays private until a
+		 * human has seen the new wording. The other public-profile fields need no
+		 * gate — they can only have been entered under the new copy.
+		 */
+		publicProfileReviewedAt: v.optional(v.number()),
 		/** Per-restaurant flag gating the 2,000 MXN/month platform subscription (ADR 008). */
 		platformSubscriptionEnabled: v.optional(v.boolean()),
 		/** Stripe Billing Customer for the platform subscription (platform account, not Connect). */

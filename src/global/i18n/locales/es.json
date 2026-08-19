@@ -523,6 +523,24 @@
 		"auth": {
 			"signIn": "Iniciar sesión",
 			"signUp": "Crear cuenta"
+		},
+		"info": {
+			"heading": "Contacto",
+			"hoursLabel": "Horario",
+			"hoursValue": "{{open}} a {{close}}",
+			"addressLabel": "Dirección",
+			"directions": "Cómo llegar",
+			"emailLabel": "Correo",
+			"phoneLabel": "Teléfono",
+			"whatsappLabel": "WhatsApp",
+			"socialAria": "{{platform}} (se abre en una pestaña nueva)"
+		},
+		"social": {
+			"instagram": "Instagram",
+			"facebook": "Facebook",
+			"tiktok": "TikTok",
+			"x": "X",
+			"youtube": "YouTube"
 		}
 	},
 	"roles": {
@@ -652,7 +670,16 @@
 		"ERROR_INVITE_CSV_TOO_MANY_ROWS": "Ese archivo tiene más de {{detail}} filas. Divídelo y súbelo por partes.",
 		"ERROR_INVITE_CSV_TOO_LARGE": "Ese archivo pesa más de {{detail}}. Divídelo y súbelo por partes.",
 		"ERROR_INVITE_CSV_UNTERMINATED_QUOTE": "Ese archivo tiene unas comillas que nunca se cierran.",
-		"ERROR_INVITE_CSV_NOT_CSV": "Ese archivo no parece un CSV. Expórtalo como CSV y vuelve a subirlo."
+		"ERROR_INVITE_CSV_NOT_CSV": "Ese archivo no parece un CSV. Expórtalo como CSV y vuelve a subirlo.",
+		"ERROR_INVALID_SUPPORT_EMAIL": "Ese correo electrónico no parece válido.",
+		"ERROR_ADDRESS_TOO_LONG": "Esa dirección es muy larga. Usa menos de 240 caracteres.",
+		"ERROR_INVALID_PHONE": "Ese número de teléfono no parece válido.",
+		"ERROR_PHONE_COUNTRY_CODE_REQUIRED": "Agrega la clave de país, empezando con + (por ejemplo +52 81 1234 5678).",
+		"ERROR_WHATSAPP_WITHOUT_PHONE": "Agrega un número de teléfono antes de marcarlo como disponible en WhatsApp.",
+		"ERROR_SOCIAL_URL_INVALID": "Ese enlace no parece un perfil. Pega la dirección de tu página de perfil.",
+		"ERROR_SOCIAL_URL_WRONG_PLATFORM": "Ese enlace pertenece a otra plataforma.",
+		"ERROR_SOCIAL_URL_SHORTLINK": "Ese es un enlace corto. Ábrelo y pega la dirección de la página de perfil a la que lleva.",
+		"ERROR_SOCIAL_URL_INSECURE": "Solo se pueden publicar enlaces https a la plataforma misma."
 	},
 	"time": {
 		"relative": {
@@ -922,8 +949,6 @@
 			"slugChangeWarning": "Al cambiarla se retira la dirección actual ({{slug}}). Los códigos QR impresos y los enlaces compartidos dejarán de funcionar, y los comensales que ya habían desbloqueado los pedidos tendrán que ingresar el código de acceso otra vez.",
 			"openTestLink": "Abrir enlace de prueba",
 			"descriptionLabel": "Descripción",
-			"supportEmailLabel": "Correo de soporte",
-			"supportEmailHint": "A dónde se envían los reportes de error del panel. Déjalo vacío para usar el valor predeterminado de la plataforma.",
 			"currencyLabel": "Moneda",
 			"timezoneLabel": "Zona horaria",
 			"timezonePlaceholder": "America/Mexico_City",
@@ -972,7 +997,9 @@
 			"geofenceMapSearchPlaceholder": "Buscar dirección…",
 			"geofenceMapSearchButton": "Buscar",
 			"geofenceMapSearchNotFound": "No se encontró la dirección. Prueba otra búsqueda.",
-			"geofenceCoordinatesAdvanced": "Avanzado: editar coordenadas"
+			"geofenceCoordinatesAdvanced": "Avanzado: editar coordenadas",
+			"contactEmailLabel": "Correo de contacto",
+			"contactEmailHint": "Se muestra a los comensales en tu página de menú y en los recibos por correo. También enviamos aquí los reportes de error del panel y los recibos de facturación."
 		},
 		"settings": {
 			"close": "Cerrar configuración del restaurante",
@@ -992,7 +1019,23 @@
 			"organizationLoading": "Cargando organizaciones…",
 			"organizationEmpty": "Aún no hay organizaciones. Crea una antes de mover este restaurante.",
 			"organizationLoadFailed": "No se pudieron cargar las organizaciones. Se conserva la actual hasta que reintentes.",
-			"organizationCurrentUnresolved": "Organización actual"
+			"organizationCurrentUnresolved": "Organización actual",
+			"publicProfileTitle": "Perfil público",
+			"publicProfileHint": "Cómo te contactan los comensales. Todo esto aparece en tu página de menú; el correo y el teléfono también aparecen en los recibos por correo. Deja en blanco lo que no quieras mostrar.",
+			"publicProfileAddressLabel": "Dirección",
+			"publicProfileAddressHint": "La dirección a la que llegan los comensales. Distinta del domicilio fiscal en Información fiscal.",
+			"publicProfilePhoneLabel": "Teléfono",
+			"publicProfilePhoneHint": "Incluye la clave de país para que el número funcione desde cualquier lugar.",
+			"publicProfilePhonePlaceholder": "+52 81 1234 5678",
+			"publicProfileWhatsappLabel": "Este número tiene WhatsApp",
+			"publicProfileWhatsappHint": "Agrega un botón de WhatsApp junto al teléfono.",
+			"publicProfileSocialHeading": "Redes sociales",
+			"publicProfileSocialHint": "Pega la dirección de cada perfil, o solo escribe tu usuario. Los enlaces cortos (fb.me, youtu.be) no funcionan — ábrelos y pega a dónde llevan.",
+			"publicProfileInstagramLabel": "Instagram",
+			"publicProfileFacebookLabel": "Facebook",
+			"publicProfileTiktokLabel": "TikTok",
+			"publicProfileXLabel": "X",
+			"publicProfileYoutubeLabel": "YouTube"
 		},
 		"managers": {
 			"sectionTitle": "Gerentes del local",

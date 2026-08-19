@@ -922,6 +922,193 @@ describe("update — receipt tax fields (TAVLI-71 Phase 3C)", () => {
 	});
 });
 
+describe("update — public profile", () => {
+	async function seedRestaurantForProfile(t: ReturnType<typeof convexTest>) {
+		const orgId = await seedOrganization(t);
+		await seedUserRole(t, { userId: "profile-owner", roles: ["owner"], organizationId: orgId });
+		const authed = t.withIdentity({ subject: "profile-owner" });
+		const [restaurantId] = await authed.mutation(api.restaurants.create, {
+			name: "Profile R",
+			slug: `profile-r-${Math.random().toString(36).slice(2, 10)}`,
+			currency: "MXN",
+			organizationId: orgId,
+		});
+		return { orgId, authed, restaurantId: restaurantId! };
+	}
+
+	it("normalizes the phone to E.164 and canonicalizes social links on write", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phone: "+52 81 1234 5678",
+			instagramUrl: "www.instagram.com/lacocina/?igshid=abc",
+			xUrl: "https://twitter.com/lacocina",
+		});
+		expect(error).toBeNull();
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc).toMatchObject({
+			phone: "+528112345678",
+			instagramUrl: "https://instagram.com/lacocina",
+			// A restaurant that pasted a twitter.com link keeps a working link,
+			// and the diner never sees the dead brand.
+			xUrl: "https://x.com/lacocina",
+		});
+	});
+
+	it("rejects a national-format phone with the country-code code, pinned to the field", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phone: "81 1234 5678",
+		});
+
+		expect(error).not.toBeNull();
+		expect(error).toMatchObject({
+			fields: [{ field: "phone", message: "ERROR_PHONE_COUNTRY_CODE_REQUIRED" }],
+		});
+	});
+
+	it("rejects a link that belongs to another platform", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			instagramUrl: "https://facebook.com/lacocina",
+		});
+
+		expect(error).toMatchObject({
+			fields: [{ field: "instagramUrl", message: "ERROR_SOCIAL_URL_WRONG_PLATFORM" }],
+		});
+	});
+
+	it("clears the WhatsApp flag when the number it pointed at is removed", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phone: "+528112345678",
+			phoneHasWhatsApp: true,
+		});
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phone: "",
+		});
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(doc?.phone).toBeUndefined();
+		// A dangling flag would silently re-arm when a new number is added.
+		expect(doc?.phoneHasWhatsApp).toBeUndefined();
+	});
+
+	it("refuses a WhatsApp flag with no number to reach", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		const [, error] = await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phoneHasWhatsApp: true,
+		});
+
+		expect(error).toMatchObject({
+			fields: [{ field: "phoneHasWhatsApp", message: "ERROR_WHATSAPP_WITHOUT_PHONE" }],
+		});
+	});
+
+	it("withholds the contact email from diners until the profile has been reviewed", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		// A pre-existing row: the email was entered under the old copy, which
+		// described it as an internal error-report address.
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			supportEmail: "it-alerts@internal.example",
+		});
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		const before = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+		expect(before?.contact).toBeUndefined();
+
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			markPublicProfileReviewed: true,
+		});
+
+		const after = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+		expect(after?.contact?.email).toBe("it-alerts@internal.example");
+	});
+
+	it("builds the wa.me link only when the number is flagged", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phone: "+528112345678",
+		});
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		const withoutFlag = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+		expect(withoutFlag?.contact?.phone).toBe("+528112345678");
+		expect(withoutFlag?.contact?.whatsAppUrl).toBeUndefined();
+
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			phoneHasWhatsApp: true,
+		});
+		const withFlag = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+		expect(withFlag?.contact?.whatsAppUrl).toBe("https://wa.me/528112345678");
+	});
+
+	it("omits the contact block entirely for a restaurant that published nothing", async () => {
+		const t = convexTest(schema, modules);
+		const { authed, restaurantId } = await seedRestaurantForProfile(t);
+		void authed;
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		const publicShape = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+
+		expect(publicShape).not.toBeNull();
+		expect(publicShape?.contact).toBeUndefined();
+	});
+
+	it("never exposes the review timestamp or raw social columns to diners", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
+		await authed.mutation(api.restaurants.update, {
+			restaurantId,
+			organizationId: orgId,
+			instagramUrl: "instagram.com/lacocina",
+			markPublicProfileReviewed: true,
+		});
+
+		const doc = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		const publicShape = await t.query(api.restaurants.getBySlug, { slug: doc!.slug });
+
+		expect(publicShape).not.toHaveProperty("publicProfileReviewedAt");
+		expect(publicShape).not.toHaveProperty("instagramUrl");
+		expect(publicShape?.contact?.socials).toEqual({
+			instagram: "https://instagram.com/lacocina",
+		});
+	});
+});
+
 describe("update — slug", () => {
 	async function seedTwoRestaurants(t: ReturnType<typeof convexTest>) {
 		const orgId = await seedOrganization(t);
