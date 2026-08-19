@@ -4,7 +4,11 @@ import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { fromErrorObject } from "./_shared/errors";
 import { getCurrentUserId, requireOrgOwnerOrAdmin } from "./_util/auth";
-import { DASHBOARD_STATUS_VALIDATOR, SERVICE_DATE_FILTER_VALIDATOR } from "./orderHelpers";
+import {
+	DASHBOARD_STATUS_VALIDATOR,
+	ORDER_SCOPE_VALIDATOR,
+	SERVICE_DATE_FILTER_VALIDATOR,
+} from "./orderHelpers";
 import { TABLE } from "./constants";
 import { stampUpdated } from "./_util/audit";
 
@@ -30,6 +34,7 @@ type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "ca
 type OrderDashboardStatusValue = "awaiting_payment" | OrderDashboardStatus;
 type OrderDashboardPrepStation = "kitchen" | "bar";
 type OrderDashboardServiceDate = "today" | "all";
+type OrderDashboardScope = "all" | "mine";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
@@ -39,6 +44,7 @@ type SettingsUpdates = {
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
 	orderDashboardPrepStationFilters?: OrderDashboardPrepStation[];
 	orderDashboardServiceDateFilter?: OrderDashboardServiceDate;
+	orderDashboardScope?: OrderDashboardScope;
 	expandedSidebarGroups?: string[];
 };
 
@@ -130,6 +136,9 @@ async function upsertUserSettings({
 		}),
 		...(updates.orderDashboardServiceDateFilter !== undefined && {
 			orderDashboardServiceDateFilter: updates.orderDashboardServiceDateFilter,
+		}),
+		...(updates.orderDashboardScope !== undefined && {
+			orderDashboardScope: updates.orderDashboardScope,
 		}),
 		...(updates.expandedSidebarGroups !== undefined && {
 			expandedSidebarGroups: updates.expandedSidebarGroups,
@@ -335,6 +344,33 @@ export const updateOrderDashboardServiceDateFilter = mutation({
 			ctx,
 			userId,
 			updates: { orderDashboardServiceDateFilter: args.serviceDate },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update whose orders the OrderDashboard shows for the authenticated user.
+ * Creates settings if they don't exist.
+ *
+ * Persisting the choice is what makes the default safe to be role-derived: a
+ * server who deliberately switches to the whole floor keeps it across
+ * reloads and devices, instead of being pulled back to their own section
+ * every time their shift is recomputed.
+ */
+export const updateOrderDashboardScope = mutation({
+	args: {
+		scope: ORDER_SCOPE_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardScope: args.scope },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
 		});
 	},

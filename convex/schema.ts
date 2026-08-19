@@ -91,6 +91,12 @@ export default defineSchema({
 		// midnight UTC); "all" is every order ever, which is the pre-existing
 		// behavior and so stays the default for a user who never picked.
 		orderDashboardServiceDateFilter: v.optional(v.union(v.literal("today"), v.literal("all"))),
+		// Whose orders the OrderDashboard shows: "all" is the whole floor,
+		// "mine" only the tables the user covers right now through their active
+		// shift's section assignments. Absent means the user has never touched
+		// the toggle, so the dashboard picks the default from their shift (a
+		// server on shift starts scoped; everyone else starts on "all").
+		orderDashboardScope: v.optional(v.union(v.literal("all"), v.literal("mine"))),
 		// Sidebar accordion groups the user has open. Identified by the group's
 		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
 		// render time so removing groups later is safe.

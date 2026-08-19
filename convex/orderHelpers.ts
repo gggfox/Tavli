@@ -216,6 +216,18 @@ export const SERVICE_DATE_FILTER_VALIDATOR = v.union(v.literal("today"), v.liter
 export type ServiceDateFilter = "today" | "all";
 
 /**
+ * Whose orders the dashboard shows (TAVLI-82).
+ *
+ * "all" is the whole floor and is always available to any staff caller — no
+ * order is ever invisible to everyone. "mine" narrows to the tables the
+ * caller covers right now through their active shift's section assignments,
+ * which is what a server carrying plates actually needs to look at.
+ */
+export const ORDER_SCOPE_VALIDATOR = v.union(v.literal("all"), v.literal("mine"));
+
+export type OrderScope = "all" | "mine";
+
+/**
  * Validator for the `prepStation` literal used in mutation/query args.
  * Matches `PREP_STATION` constant; keep them in sync.
  */
