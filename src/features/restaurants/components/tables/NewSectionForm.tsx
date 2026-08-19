@@ -6,7 +6,7 @@ import { TextInput } from "@/global/components";
 import { RestaurantsKeys } from "@/global/i18n";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
-import { Plus } from "lucide-react";
+import { Grid2x2Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { NumberStepper } from "./NumberStepper";
 
@@ -20,6 +20,13 @@ interface NewSectionFormProps {
 	}) => Promise<void>;
 }
 
+/**
+ * "Add section" form — the heavier of the two floor-plan add actions: it can
+ * create a section and up to `MAX_INITIAL_TABLE_COUNT` tables in one submit.
+ * It is deliberately styled as a filled card with a primary, grid-icon button
+ * whose label counts the tables it is about to create, so it can never be
+ * mistaken for the single-table form below it (see `NewTableForm`).
+ */
 export function NewSectionForm({ restaurantId, onCreateSection }: Readonly<NewSectionFormProps>) {
 	const { t } = useTranslation();
 
@@ -37,7 +44,7 @@ export function NewSectionForm({ restaurantId, onCreateSection }: Readonly<NewSe
 	});
 
 	return (
-		<div className="space-y-3">
+		<section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
 			<div>
 				<h3 className="text-sm font-semibold text-foreground">
 					{t(RestaurantsKeys.SECTIONS_HEADING)}
@@ -102,14 +109,21 @@ export function NewSectionForm({ restaurantId, onCreateSection }: Readonly<NewSe
 						/>
 					)}
 				/>
-				<button
-					type="submit"
-					className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-				>
-					<Plus size={16} />
-					{t(RestaurantsKeys.SECTIONS_ADD)}
-				</button>
+				<newSectionForm.Subscribe
+					selector={(state) => state.values.tableCount}
+					children={(tableCount) => (
+						<button
+							type="submit"
+							className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold hover-btn-primary"
+						>
+							<Grid2x2Plus size={18} />
+							{tableCount > 0
+								? t(RestaurantsKeys.SECTIONS_ADD_WITH_TABLES, { count: tableCount })
+								: t(RestaurantsKeys.SECTIONS_ADD)}
+						</button>
+					)}
+				/>
 			</form>
-		</div>
+		</section>
 	);
 }
