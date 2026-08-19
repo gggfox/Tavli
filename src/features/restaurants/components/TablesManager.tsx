@@ -35,6 +35,7 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 	const floorPlan = useFloorPlan(restaurantId, { showTrash, showInactive });
 	const {
 		tables,
+		occupiedTableIds,
 		sectionsList,
 		deletedTables,
 		deletedSections,
@@ -304,8 +305,10 @@ export function TablesManager({ restaurantId }: Readonly<TablesManagerProps>) {
 				selectionMode={selectionMode && isVisible}
 				isSelected={selectedTableIds.has(table._id)}
 				onToggleSelect={() => toggleTableSelected(table._id)}
+				isOccupied={occupiedTableIds.has(table._id)}
 				labels={{
 					table: t(RestaurantsKeys.TABLES_TABLE_LABEL, { number: table.tableNumber }),
+					occupied: t(RestaurantsKeys.TABLES_OCCUPIED),
 					seatsFormat:
 						table.capacity !== undefined
 							? t(RestaurantsKeys.TABLES_SEATS_FORMAT, { count: table.capacity })

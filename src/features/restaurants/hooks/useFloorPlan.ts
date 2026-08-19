@@ -20,6 +20,11 @@ export function useFloorPlan(
 
 	const { data: tables } = useQuery(convexQuery(api.tables.getByRestaurant, { restaurantId }));
 	const { data: sections } = useQuery(convexQuery(api.sections.getByRestaurant, { restaurantId }));
+	// TAVLI-83: which tables currently have an open Session, so the floor editor
+	// can flag them as occupied. Ids only — the rows come from the query above.
+	const { data: occupiedTableIdList } = useQuery(
+		convexQuery(api.tables.getOccupiedTableIds, { restaurantId })
+	);
 
 	const { data: deletedTables = [] } = useQuery({
 		...convexQuery(api.tables.getDeletedForRestaurant, { restaurantId }),
@@ -54,6 +59,11 @@ export function useFloorPlan(
 	);
 
 	const inactiveCount = useMemo(() => (tables ?? []).filter((tt) => !tt.isActive).length, [tables]);
+
+	const occupiedTableIds = useMemo(
+		() => new Set<Id<"tables">>(occupiedTableIdList ?? []),
+		[occupiedTableIdList]
+	);
 
 	const visibleTableIds = useMemo(() => {
 		const ids = new Set<Id<"tables">>();
@@ -96,6 +106,7 @@ export function useFloorPlan(
 
 	return {
 		tables: tables ?? [],
+		occupiedTableIds,
 		sectionsList,
 		deletedTables,
 		deletedSections,

@@ -91,8 +91,11 @@ export function MenuBrowser({
 		});
 	}, []);
 
+	// Occupancy-aware sibling of `getActiveByRestaurant` (TAVLI-83): a table
+	// with an open Session is shown taken, so a second diner joins that visit
+	// by its join code instead of starting a parallel one at the same table.
 	const { data: tables } = useQuery(
-		convexQuery(api.tables.getActiveByRestaurant, { restaurantId })
+		convexQuery(api.tables.getActiveWithOccupancy, { restaurantId })
 	);
 
 	const currentMenuId = selectedMenuId ?? activeMenus[0]?._id;
@@ -164,8 +167,22 @@ export function MenuBrowser({
 
 	const itemCount = selections.size;
 
+	// A table the diner's own tab already sits at stays pickable — that is the
+	// second round of the same visit, not a collision.
+	const tableOptions = useMemo(
+		() =>
+			[...(tables ?? [])]
+				.sort((a, b) => a.tableNumber - b.tableNumber)
+				.map((tb) => ({ ...tb, isTaken: tb.hasOpenSession && !tb.isOwnSession })),
+		[tables]
+	);
+	const someTableTaken = tableOptions.some((tb) => tb.isTaken);
+	// A table can be claimed between the diner picking it and confirming, so
+	// occupancy is re-read off the live row rather than trusted at pick time.
+	const selectedTableTaken = tableOptions.some((tb) => tb._id === selectedTableId && tb.isTaken);
+
 	const handleConfirmOrder = () => {
-		if (!selectedTableId) return;
+		if (!selectedTableId || selectedTableTaken) return;
 		const items = Array.from(selections.entries()).map(([menuItemId, sel]) => ({
 			menuItemId: menuItemId as Id<"menuItems">,
 			quantity: sel.quantity,
@@ -290,19 +307,29 @@ export function MenuBrowser({
 									}}
 								>
 									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
-									{(tables ?? [])
-										.sort((a, b) => a.tableNumber - b.tableNumber)
-										.map((tab) => (
-											<option key={tab._id} value={tab._id}>
-												{t(OrderingKeys.MENU_TABLE_LABEL, { number: tab.tableNumber })}
-												{tab.label ? ` – ${tab.label}` : ""}
-											</option>
-										))}
+									{tableOptions.map((tab) => (
+										<option key={tab._id} value={tab._id} disabled={tab.isTaken}>
+											{t(OrderingKeys.MENU_TABLE_LABEL, { number: tab.tableNumber })}
+											{tab.label ? ` – ${tab.label}` : ""}
+											{tab.isTaken ? ` ${t(OrderingKeys.MENU_TABLE_TAKEN)}` : ""}
+										</option>
+									))}
 								</select>
 								{!selectedTableId && (
 									<p className="text-[11px] mt-1 text-destructive">
 										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
+								)}
+								{selectedTableTaken ? (
+									<p className="text-[11px] mt-1 text-destructive">
+										{t(OrderingKeys.MENU_TABLE_TAKEN_SELECTED)}
+									</p>
+								) : (
+									someTableTaken && (
+										<p className="text-[11px] mt-1 text-muted-foreground">
+											{t(OrderingKeys.MENU_TABLE_TAKEN_HINT)}
+										</p>
+									)
 								)}
 							</div>
 
@@ -319,7 +346,12 @@ export function MenuBrowser({
 							</div>
 							<button
 								onClick={handleConfirmOrder}
-								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
+								disabled={
+									isSubmitting ||
+									!selectedTableId ||
+									selectedTableTaken ||
+									paymentsEnabled === false
+								}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
 								{isSubmitting
