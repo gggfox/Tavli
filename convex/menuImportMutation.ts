@@ -1,10 +1,12 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internalQuery, mutation } from "./_generated/server";
-import type {
-	NotAuthenticatedErrorObject,
-	NotAuthorizedErrorObject,
-	NotFoundErrorObject,
+import {
+	UserInputValidationError,
+	type NotAuthenticatedErrorObject,
+	type NotAuthorizedErrorObject,
+	type NotFoundErrorObject,
+	type UserInputValidationErrorObject,
 } from "./_shared/errors";
 import type { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
@@ -14,7 +16,8 @@ import { DEFAULT_PREP_STATION, TABLE } from "./constants";
 type BatchInsertErrors =
 	| NotAuthenticatedErrorObject
 	| NotAuthorizedErrorObject
-	| NotFoundErrorObject;
+	| NotFoundErrorObject
+	| UserInputValidationErrorObject;
 
 // =============================================================================
 // Internal query for admin check (used by the "use node" action)
@@ -39,7 +42,12 @@ export const verifyMenuImportAccess = internalQuery({
 export const batchInsertMenuCategories = mutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
-		menuId: v.id(TABLE.MENUS),
+		/**
+		 * Target menu for the extracted categories. Optional so a restaurant
+		 * with zero menus can import into a brand-new menu: pass `newMenuName`
+		 * instead and this mutation creates the menu first.
+		 */
+		menuId: v.optional(v.id(TABLE.MENUS)),
 		newMenuName: v.optional(v.string()),
 		categories: v.array(
 			v.object({
@@ -68,22 +76,23 @@ export const batchInsertMenuCategories = mutation({
 		const [, roleErr] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
 		if (roleErr) return [null, roleErr];
 
-		let menuId = args.menuId;
+		const newMenuName = args.newMenuName?.trim();
+		let menuId: Id<"menus">;
 
-		if (args.newMenuName) {
+		if (newMenuName) {
 			const existingMenus = await ctx.db
 				.query(TABLE.MENUS)
 				.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 				.collect();
 
-			const now = Date.now();
+			const createdAt = Date.now();
 			menuId = await ctx.db.insert(TABLE.MENUS, {
 				restaurantId: args.restaurantId,
-				name: args.newMenuName,
+				name: newMenuName,
 				isActive: true,
 				displayOrder: existingMenus.length,
-				createdAt: now,
-				updatedAt: now,
+				createdAt,
+				updatedAt: createdAt,
 				updatedBy: userId,
 			});
 
@@ -92,9 +101,18 @@ export const batchInsertMenuCategories = mutation({
 				aggregateId: menuId,
 				eventType: "menus.created",
 				restaurantId: args.restaurantId,
-				payload: { name: args.newMenuName, source: "menu_import" },
+				payload: { name: newMenuName, source: "menu_import" },
 				userId,
 			});
+		} else if (args.menuId) {
+			menuId = args.menuId;
+		} else {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "menuId", message: "ERROR_MENU_IMPORT_TARGET_REQUIRED" }],
+				}).toObject(),
+			];
 		}
 
 		const existingCategories = await ctx.db
