@@ -1,5 +1,6 @@
 import type {
 	OrderDashboardPrepStationFilter,
+	OrderDashboardScope,
 	OrderDashboardServiceDateFilter,
 	OrderDashboardStatusFilterValue,
 } from "@/features";
@@ -19,6 +20,29 @@ type StatusCountsValue = UnwrappedValue<
 	FunctionReturnType<typeof api.orders.getDashboardStatusCounts>
 >;
 
+type ScopeContextValue = UnwrappedValue<
+	FunctionReturnType<typeof api.orders.getDashboardScopeContext>
+>;
+
+/**
+ * Whether the caller can scope the board to their own sections, and whether
+ * it should start that way (TAVLI-82).
+ *
+ * Separate from `useOrders` because it stays meaningful exactly when the
+ * board is empty: an empty scoped board means one thing when a section is
+ * assigned and another when none is, and only this answer tells them apart.
+ * `undefined` while it loads — the dashboard treats that as "not yet known"
+ * and leaves the toggle out rather than flashing a control that may not apply.
+ */
+export function useOrderScopeContext(restaurantId: Id<"restaurants"> | undefined) {
+	const { data } = useQuery({
+		...convexQuery(api.orders.getDashboardScopeContext, restaurantId ? { restaurantId } : "skip"),
+		select: unwrapResult<ScopeContextValue>,
+	});
+
+	return data;
+}
+
 /**
  * Card count per dashboard status segment, under the given station filter.
  *
@@ -30,12 +54,13 @@ type StatusCountsValue = UnwrappedValue<
 export function useOrderStatusCounts(
 	restaurantId: Id<"restaurants"> | undefined,
 	prepStations?: OrderDashboardPrepStationFilter[],
-	serviceDate?: OrderDashboardServiceDateFilter
+	serviceDate?: OrderDashboardServiceDateFilter,
+	scope?: OrderDashboardScope
 ) {
 	const { data } = useQuery({
 		...convexQuery(
 			api.orders.getDashboardStatusCounts,
-			restaurantId ? { restaurantId, prepStations, serviceDate } : "skip"
+			restaurantId ? { restaurantId, prepStations, serviceDate, scope } : "skip"
 		),
 		select: unwrapResult<StatusCountsValue>,
 	});
@@ -47,7 +72,8 @@ export function useOrders(
 	restaurantId: Id<"restaurants"> | undefined,
 	statuses?: OrderDashboardStatusFilterValue[],
 	prepStations?: OrderDashboardPrepStationFilter[],
-	serviceDate?: OrderDashboardServiceDateFilter
+	serviceDate?: OrderDashboardServiceDateFilter,
+	scope?: OrderDashboardScope
 ) {
 	const {
 		data: orders = [],
@@ -56,7 +82,7 @@ export function useOrders(
 	} = useQuery({
 		...convexQuery(
 			api.orders.getActiveOrdersByRestaurant,
-			restaurantId ? { restaurantId, statuses, prepStations, serviceDate } : "skip"
+			restaurantId ? { restaurantId, statuses, prepStations, serviceDate, scope } : "skip"
 		),
 		select: unwrapResult<ActiveOrdersValue>,
 	});
