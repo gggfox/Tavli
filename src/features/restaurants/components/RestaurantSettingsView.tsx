@@ -2,6 +2,7 @@ import { GeneralSection } from "@/features/restaurants/components/settings/Gener
 import { HoursSection } from "@/features/restaurants/components/settings/HoursSection";
 import { LocationSection } from "@/features/restaurants/components/settings/LocationSection";
 import { ManagersSection } from "@/features/restaurants/components/settings/ManagersSection";
+import { OrdersSection } from "@/features/restaurants/components/settings/OrdersSection";
 import { OrganizationSection } from "@/features/restaurants/components/settings/OrganizationSection";
 import { PaymentsSection } from "@/features/restaurants/components/settings/PaymentsSection";
 import { PublicProfileSection } from "@/features/restaurants/components/settings/PublicProfileSection";
@@ -131,6 +132,9 @@ export function RestaurantSettingsView({
 					{...sectionProps(RESTAURANT_SETTINGS_SECTION.HOURS)}
 					canEditOrderNumberReset={isAdmin && isFullAccess}
 				/>
+
+				{/* Manager-visible: whether the kitchen waits on cash is a floor call. */}
+				<OrdersSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.ORDERS)} />
 
 				<LocationSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.LOCATION)} />
 

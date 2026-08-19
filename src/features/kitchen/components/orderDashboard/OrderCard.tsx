@@ -17,10 +17,12 @@ import { OrderItemRow } from "./OrderItemRow";
 import { PaymentStateBadge } from "./PaymentStateBadge";
 import { STATION_CONFIG, type DashboardPrepStation } from "./stationConfig";
 import { TableBadge } from "./TableBadge";
+import { owesInPersonPayment } from "convex/orderHelpers";
 import {
 	formatOrderDate,
 	formatOrderTime,
 	MAX_VISIBLE_ITEMS,
+	nextActionFor,
 	STATUS_CONFIG,
 	URGENCY_TEXT_CLASS,
 	type DashboardOrder,
@@ -96,7 +98,19 @@ export function OrderCard({
 		: order.createdAt;
 	const age = getRelativeTime(ageBasis, now);
 	const absoluteTimestamp = `${formatOrderDate(ageBasis, i18n.language)}, ${formatOrderTime(ageBasis, i18n.language)}`;
-	const hasNextAction = config.next !== null && config.nextLabelKey !== null;
+	// Where the restaurant releases cash orders immediately, an uncollected
+	// round advances exactly like `submitted` (TAVLI-81) — same borrow the
+	// backend's transition table makes, so the button and the server agree.
+	const nextAction = nextActionFor(order.status, order.cashReleasedImmediately);
+	const hasNextAction = nextAction !== null;
+	// The debt, not the status: a released cash round keeps owing through
+	// `preparing`/`ready`/`served`, and "mark paid in person" has to follow it
+	// there or collecting becomes unreachable the moment the kitchen accepts.
+	const owesCash = owesInPersonPayment(order);
+	// Cancel stays exactly where it was: on cards with a forward action, plus
+	// the awaiting-payment card. `served` and `cancelled` still offer none —
+	// `served` is terminal and the backend rejects the transition.
+	const showCancel = hasNextAction || isAwaitingPayment;
 	const isCancelling = cancelConfirm === order._id;
 	const isCancelPending = cancelPendingId === order._id;
 	const isMarkPaidConfirming = markPaidConfirm === order._id;
@@ -159,7 +173,7 @@ export function OrderCard({
 								{t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })}
 							</span>
 						)}
-						<PaymentStateBadge paymentState={order.paymentState} />
+						<PaymentStateBadge order={order} />
 					</div>
 					<span className="text-sm font-semibold shrink-0 text-foreground">
 						${formatCents(order.totalAmount)}
@@ -305,103 +319,121 @@ export function OrderCard({
 							</button>
 						</div>
 					</div>
-				) : isAwaitingPayment ? (
-					isMarkPaidConfirming ? (
-						<div
-							className="p-3 rounded-lg space-y-2"
-							style={{
-								backgroundColor: awaitingPaymentTone.tintedBg,
-								border: `1px solid ${awaitingPaymentTone.solidBg}`,
-							}}
-						>
-							<p className="text-xs font-semibold text-foreground">
-								{t(OrdersKeys.MARK_PAID_PROMPT_TITLE)}
+				) : isMarkPaidConfirming ? (
+					<div
+						className="p-3 rounded-lg space-y-2"
+						style={{
+							backgroundColor: awaitingPaymentTone.tintedBg,
+							border: `1px solid ${awaitingPaymentTone.solidBg}`,
+						}}
+					>
+						<p className="text-xs font-semibold text-foreground">
+							{t(OrdersKeys.MARK_PAID_PROMPT_TITLE)}
+						</p>
+						<p className="text-xs text-muted-foreground">
+							{t(OrdersKeys.MARK_PAID_PROMPT_BODY, {
+								amount: `$${formatCents(order.totalAmount)}`,
+							})}
+						</p>
+						{markPaidError && (
+							<p role="alert" className="text-xs font-medium text-destructive">
+								{markPaidError}
 							</p>
-							<p className="text-xs text-muted-foreground">
-								{t(OrdersKeys.MARK_PAID_PROMPT_BODY, {
-									amount: `$${formatCents(order.totalAmount)}`,
-								})}
-							</p>
-							{markPaidError && (
-								<p role="alert" className="text-xs font-medium text-destructive">
-									{markPaidError}
-								</p>
-							)}
-							<div className="flex gap-2">
-								<button
-									onClick={() => onMarkPaidInPerson(order._id)}
-									disabled={isMarkPaidPending}
-									className="flex-1 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
-									style={{
-										backgroundColor: awaitingPaymentTone.solidBg,
-										color: awaitingPaymentTone.solidFg,
-									}}
-								>
-									{isMarkPaidPending
-										? t(OrdersKeys.MARK_PAID_PENDING)
-										: t(OrdersKeys.MARK_PAID_CONFIRM)}
-								</button>
-								<button
-									onClick={onDismissMarkPaid}
-									disabled={isMarkPaidPending}
-									className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground disabled:opacity-60"
-								>
-									{t(OrdersKeys.MARK_PAID_DISMISS)}
-								</button>
-							</div>
-						</div>
-					) : (
+						)}
 						<div className="flex gap-2">
 							<button
-								onClick={() => onRequestMarkPaid(order._id)}
-								className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
+								onClick={() => onMarkPaidInPerson(order._id)}
+								disabled={isMarkPaidPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
 								style={{
 									backgroundColor: awaitingPaymentTone.solidBg,
 									color: awaitingPaymentTone.solidFg,
 								}}
 							>
-								<BadgeDollarSign size={14} />
-								{t(OrdersKeys.ACTION_MARK_PAID_IN_PERSON)}
+								{isMarkPaidPending
+									? t(OrdersKeys.MARK_PAID_PENDING)
+									: t(OrdersKeys.MARK_PAID_CONFIRM)}
 							</button>
 							<button
-								onClick={() => onRequestCancel(order._id)}
-								className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
+								onClick={onDismissMarkPaid}
+								disabled={isMarkPaidPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground disabled:opacity-60"
 							>
-								<XCircle size={14} />
-								{t(OrdersKeys.ACTION_CANCEL)}
+								{t(OrdersKeys.MARK_PAID_DISMISS)}
 							</button>
 						</div>
-					)
+					</div>
 				) : (
-					hasNextAction && (
-						<div className="flex gap-2">
-							{config.next && config.nextLabelKey && (
-								<NextActionButton
-									order={order}
-									config={config}
-									stationActionTarget={stationActionTarget}
-									onUpdateStatus={onUpdateStatus}
-									onMarkStationReady={onMarkStationReady}
-								/>
-							)}
-							<button
-								onClick={() => onRequestCancel(order._id)}
-								className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
-							>
-								<XCircle size={14} />
-								{t(OrdersKeys.ACTION_CANCEL)}
-							</button>
-						</div>
-					)
+					<>
+						{/* Money gets its own row only when the workflow row is already
+						    spoken for. A card with nothing to advance (today's
+						    awaiting-payment card) keeps the original side-by-side
+						    "Mark paid · Cancel" pair below. */}
+						{owesCash && hasNextAction && (
+							<MarkPaidButton
+								tone={awaitingPaymentTone}
+								onClick={() => onRequestMarkPaid(order._id)}
+							/>
+						)}
+						{(hasNextAction || owesCash || showCancel) && (
+							<div className="flex gap-2">
+								{hasNextAction ? (
+									<NextActionButton
+										order={order}
+										nextAction={nextAction}
+										stationActionTarget={stationActionTarget}
+										onUpdateStatus={onUpdateStatus}
+										onMarkStationReady={onMarkStationReady}
+									/>
+								) : owesCash ? (
+									<MarkPaidButton
+										tone={awaitingPaymentTone}
+										onClick={() => onRequestMarkPaid(order._id)}
+									/>
+								) : null}
+								{showCancel && (
+									<button
+										onClick={() => onRequestCancel(order._id)}
+										className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
+									>
+										<XCircle size={14} />
+										{t(OrdersKeys.ACTION_CANCEL)}
+									</button>
+								)}
+							</div>
+						)}
+					</>
 				)}
 			</div>
 		</Surface>
 	);
 }
 
+/**
+ * "Staff collected the cash." Rendered wherever a round still owes it — its
+ * own row above a workflow action, or in the workflow row's place on a card
+ * with nothing left to advance.
+ */
+function MarkPaidButton({
+	tone,
+	onClick,
+}: Readonly<{ tone: ReturnType<typeof getStatusToneStyle>; onClick: () => void }>) {
+	const { t } = useTranslation();
+	return (
+		<button
+			onClick={onClick}
+			className="flex-1 w-full flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
+			style={{ backgroundColor: tone.solidBg, color: tone.solidFg }}
+		>
+			<BadgeDollarSign size={14} />
+			{t(OrdersKeys.ACTION_MARK_PAID_IN_PERSON)}
+		</button>
+	);
+}
+
 interface NextActionButtonProps {
 	readonly order: DashboardOrder;
-	readonly config: (typeof STATUS_CONFIG)[OrderDashboardStatusFilterValue];
+	readonly nextAction: { next: NextOrderStatus; nextLabelKey: string };
 	readonly stationActionTarget: DashboardPrepStation | null;
 	readonly onUpdateStatus: (args: {
 		orderId: DashboardOrder["_id"];
@@ -424,13 +456,13 @@ interface NextActionButtonProps {
  */
 function NextActionButton({
 	order,
-	config,
+	nextAction,
 	stationActionTarget,
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<NextActionButtonProps>) {
 	const { t } = useTranslation();
-	const stationOnlyAdvance = stationActionTarget !== null && config.next === "ready";
+	const stationOnlyAdvance = stationActionTarget !== null && nextAction.next === "ready";
 
 	if (stationOnlyAdvance) {
 		const stationConfig = STATION_CONFIG[stationActionTarget];
@@ -450,21 +482,15 @@ function NextActionButton({
 		);
 	}
 
-	if (!config.next || !config.nextLabelKey) return null;
 	return (
 		<button
-			onClick={() =>
-				onUpdateStatus({
-					orderId: order._id,
-					newStatus: config.next as NextOrderStatus,
-				})
-			}
+			onClick={() => onUpdateStatus({ orderId: order._id, newStatus: nextAction.next })}
 			className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 		>
-			{config.next === "preparing" && <ChefHat size={14} />}
-			{config.next === "ready" && <CheckCircle2 size={14} />}
-			{config.next === "served" && <UtensilsCrossed size={14} />}
-			{t(config.nextLabelKey)}
+			{nextAction.next === "preparing" && <ChefHat size={14} />}
+			{nextAction.next === "ready" && <CheckCircle2 size={14} />}
+			{nextAction.next === "served" && <UtensilsCrossed size={14} />}
+			{t(nextAction.nextLabelKey)}
 		</button>
 	);
 }
