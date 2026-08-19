@@ -8,10 +8,10 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { DatabaseReader } from "./_generated/server";
+import { owesInPersonPayment } from "./orderHelpers";
 import {
 	JOIN_CODE_ALPHABET,
 	JOIN_CODE_LENGTH,
-	ORDER_STATUS,
 	SESSION_PAYMENT_STATE,
 	TAB_PAYABLE_ORDER_STATUSES,
 	TAB_SETTLEABLE_ORDER_STATUSES,
@@ -38,7 +38,15 @@ const PAYABLE_STATUSES = new Set<string>(TAB_PAYABLE_ORDER_STATUSES);
 const SETTLEABLE_STATUSES = new Set<string>(TAB_SETTLEABLE_ORDER_STATUSES);
 
 export function isPayableOrder(order: Doc<typeof TABLE.ORDERS>): boolean {
-	return PAYABLE_STATUSES.has(order.status) && order.paymentState !== "paid";
+	return (
+		PAYABLE_STATUSES.has(order.status) &&
+		order.paymentState !== "paid" &&
+		// Cash can only move in person, so it must never land in the legacy tab
+		// balance. With `releaseCashOrdersImmediately` on, an uncollected cash
+		// round reaches `submitted`/`preparing`/`ready`/`served` — squarely inside
+		// PAYABLE_STATUSES — so the status allowlist alone stopped excluding it.
+		!isAwaitingPaymentOrder(order)
+	);
 }
 
 /**
@@ -47,9 +55,14 @@ export function isPayableOrder(order: Doc<typeof TABLE.ORDERS>): boolean {
  * person (`orders.markOrderPaidInPerson`), never through a Stripe tab payment —
  * yet it is still owed, so session close, staff close, and the stale sweep all
  * have to account for it separately.
+ *
+ * Delegates to `owesInPersonPayment` so "this table still owes cash" has one
+ * definition: with `releaseCashOrdersImmediately` on (TAVLI-81) the round keeps
+ * owing after it leaves `awaiting_payment`, and a status-only test here would
+ * let the stale sweep close a walkout's session and erase the debt.
  */
 export function isAwaitingPaymentOrder(order: Doc<typeof TABLE.ORDERS>): boolean {
-	return order.status === ORDER_STATUS.AWAITING_PAYMENT;
+	return owesInPersonPayment(order);
 }
 
 /**
