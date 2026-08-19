@@ -583,6 +583,18 @@ export default defineSchema({
 		 */
 		kitchenReadyAt: v.optional(v.number()),
 		barReadyAt: v.optional(v.number()),
+		/**
+		 * When staff marked this order served. Written once, by
+		 * `updateStatus` — the only path into that terminal status — and never
+		 * cleared, because nothing transitions back out of `served`.
+		 *
+		 * Its own column rather than a reading of `updatedAt`: `updatedAt` moves
+		 * on any later write (a refund outcome, a session sweep), which would
+		 * silently pull an aged-out order back onto the dashboard's Served
+		 * segment. Orders served before this field existed fall back to
+		 * `updatedAt` at read time (`isServedOrderVisible`).
+		 */
+		servedAt: v.optional(v.number()),
 		/** Monotonic per restaurant per business day; assigned in confirmPayment only. */
 		dailyOrderNumber: v.optional(v.number()),
 		/** YYYY-MM-DD business-day label at assignment time. */

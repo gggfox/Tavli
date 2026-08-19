@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SERVED_VISIBLE_WINDOW_MS } from "convex/constants";
 import { OrderDashboard } from "./OrderDashboard";
 import type { DashboardOrder, DashboardOrderItem } from "./statusConfig";
 
@@ -431,5 +432,103 @@ describe("OrderDashboard awaiting-payment rail safety (ADR 008)", () => {
 		// Station tickets carry the station-scoped ready action instead of the
 		// whole-order card actions.
 		expect(screen.getByText("orders.actions.markKitchenReady")).toBeInTheDocument();
+	});
+});
+
+describe("OrderDashboard served visibility window (TAVLI-84)", () => {
+	function servedSettings() {
+		return settingsWith({ orderDashboardStatusFilter: "served" });
+	}
+
+	function cardCount() {
+		return screen.queryByTestId("virtual-grid")?.children.length ?? 0;
+	}
+
+	it("keeps a recently served order and drops one past the window", () => {
+		const now = Date.now();
+		useUserSettingsMock.mockReturnValue(servedSettings());
+		useOrdersMock.mockReturnValue(
+			ordersWith([
+				makeOrder({
+					_id: "recent" as DashboardOrder["_id"],
+					status: "served",
+					servedAt: now - 60_000,
+					updatedAt: now,
+				}),
+				makeOrder({
+					_id: "stale" as DashboardOrder["_id"],
+					status: "served",
+					// `updatedAt` is fresh on purpose: a later write (a refund
+					// outcome, a session sweep) must not revive an aged-out card.
+					servedAt: now - 2 * SERVED_VISIBLE_WINDOW_MS,
+					updatedAt: now,
+				}),
+			])
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(cardCount()).toBe(1);
+	});
+
+	it("ages the last card off on the clock, with no new server push", () => {
+		vi.useFakeTimers();
+		try {
+			const now = Date.now();
+			useUserSettingsMock.mockReturnValue(servedSettings());
+			// The server keeps stale rows off the wire, but a Convex query only
+			// re-runs when the data it read changes — never merely because time
+			// passed. On an idle board after close, the client half is the only
+			// thing that clears this card.
+			useOrdersMock.mockReturnValue(
+				ordersWith([
+					makeOrder({
+						status: "served",
+						servedAt: now - (SERVED_VISIBLE_WINDOW_MS - 60_000),
+						updatedAt: now,
+					}),
+				])
+			);
+			render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+			expect(cardCount()).toBe(1);
+
+			act(() => {
+				vi.advanceTimersByTime(5 * 60_000);
+			});
+
+			expect(cardCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("leaves other statuses alone however long they sit there", () => {
+		useUserSettingsMock.mockReturnValue(settingsWith({ orderDashboardStatusFilter: "preparing" }));
+		useOrdersMock.mockReturnValue(
+			ordersWith([makeOrder({ status: "preparing", createdAt: 0, updatedAt: 0 })])
+		);
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(cardCount()).toBe(1);
+	});
+
+	it("explains the window on the Served segment and nowhere else", () => {
+		useUserSettingsMock.mockReturnValue(servedSettings());
+		const { unmount } = render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+		expect(screen.getByText("orders.servedWindow.hint")).toBeInTheDocument();
+		unmount();
+
+		useUserSettingsMock.mockReturnValue(settingsWith({ orderDashboardStatusFilter: "preparing" }));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+		expect(screen.queryByText("orders.servedWindow.hint")).not.toBeInTheDocument();
+	});
+
+	it("says nothing was served recently rather than nothing matches the filters", () => {
+		useUserSettingsMock.mockReturnValue(servedSettings());
+		useOrdersMock.mockReturnValue(ordersWith([]));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		// "No orders match the selected filters" would send staff hunting
+		// through the filter bar for a segment that is working as designed.
+		expect(screen.getByText("orders.empty.noRecentServed")).toBeInTheDocument();
 	});
 });
