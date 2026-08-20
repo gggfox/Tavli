@@ -647,6 +647,9 @@
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "Category name is required.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "Category name is too long.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Enter at least one category name.",
+		"ERROR_MENU_NAME_REQUIRED": "Menu name is required.",
+		"ERROR_MENU_NAME_TOO_LONG": "Menu name is too long.",
+		"ERROR_MENU_IMPORT_TARGET_REQUIRED": "Choose a menu to import into, or name a new one.",
 		"ERROR_INVALID_PARTY_SIZE": "Please enter a valid party size.",
 		"ERROR_CONTACT_FIELD_TOO_LONG": "One of the contact fields is too long.",
 		"ERROR_INVALID_EMAIL": "Please enter a valid email address.",
@@ -1249,7 +1252,13 @@
 			"rename": "Rename",
 			"delete": "Delete menu",
 			"empty": "No menus found for this restaurant.",
-			"loadingAria": "Loading menus"
+			"loadingAria": "Loading menus",
+			"emptyCreateTitle": "Start a menu from scratch",
+			"emptyCreateDescription": "Create an empty menu, name it, and add your categories and items as you go.",
+			"createModalTitle": "New menu",
+			"createModalAria": "Create menu dialog",
+			"createModalDescription": "Name your menu now — you can add categories and items next.",
+			"createError": "We couldn't create the menu. Please try again."
 		},
 		"editor": {
 			"languagesLabel": "Languages",
@@ -1376,7 +1385,8 @@
 				"title": "Import your menu from a document",
 				"description": "Upload a PDF, Word document, or text file and we'll extract your categories and items automatically."
 			},
-			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later."
+			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later.",
+			"newMenuDefaultName": "Imported Menu"
 		}
 	},
 	"options": {

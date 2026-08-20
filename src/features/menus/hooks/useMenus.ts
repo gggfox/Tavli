@@ -9,6 +9,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 		convexQuery(api.menus.listForRestaurant, restaurantId ? { restaurantId } : "skip")
 	);
 
+	const createMenu = useConvexMutate(api.menus.createMenu);
 	const updateMenu = useConvexMutate(api.menus.updateMenu);
 
 	const createCategory = useConvexMutate(api.menus.createCategory);
@@ -19,6 +20,7 @@ export function useMenus(restaurantId: Id<"restaurants"> | undefined) {
 	return {
 		menus: menus ?? [],
 		isLoading,
+		createMenu: createMenu.mutateAsync,
 		updateMenu: updateMenu.mutateAsync,
 		createCategory: createCategory.mutateAsync,
 		createCategories: createCategories.mutateAsync,

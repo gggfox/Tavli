@@ -45,6 +45,55 @@ async function seedMenuContext(t: ReturnType<typeof convexTest>) {
 	});
 }
 
+/** A restaurant whose only member is a manager and which has no menus at all. */
+async function seedRestaurantWithoutMenus(t: ReturnType<typeof convexTest>) {
+	return await t.run(async (ctx) => {
+		const now = Date.now();
+		const orgId = await ctx.db.insert("organizations", {
+			name: "Menuless Org",
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const restaurantId = await ctx.db.insert("restaurants", {
+			ownerId: "owner-user",
+			organizationId: orgId,
+			name: "Menuless R",
+			slug: "menus-test-empty",
+			currency: "USD",
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.insert("restaurantMembers", {
+			userId: "manager-user",
+			restaurantId,
+			organizationId: orgId,
+			role: RESTAURANT_MEMBER_ROLE.MANAGER,
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+		return { restaurantId };
+	});
+}
+
+async function seedEmployee(t: ReturnType<typeof convexTest>, restaurantId: Id<"restaurants">) {
+	await t.run(async (ctx) => {
+		const restaurant = await ctx.db.get(restaurantId);
+		const now = Date.now();
+		await ctx.db.insert("restaurantMembers", {
+			userId: "employee-user",
+			restaurantId,
+			organizationId: restaurant!.organizationId,
+			role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+			isActive: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+	});
+}
+
 async function seedInactiveMenuWithCategory(
 	t: ReturnType<typeof convexTest>,
 	restaurantId: Id<"restaurants">
@@ -375,5 +424,126 @@ describe("menus.createCategories", () => {
 		expect(categories).toHaveLength(3);
 		expect(categories.map((c) => c.name).sort()).toEqual(["Appetizers", "Drinks", "Mains"]);
 		expect(categories.map((c) => c.displayOrder).sort((a, b) => a - b)).toEqual([0, 1, 2]);
+	});
+});
+
+describe("menus.createMenu", () => {
+	it("rejects unauthenticated callers", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+
+		const [menuId, err] = await t.mutation(api.menus.createMenu, {
+			restaurantId,
+			name: "Dinner Menu",
+		});
+
+		expect(menuId).toBeNull();
+		expect(err).toMatchObject({ name: "NOT_AUTHENTICATED" });
+	});
+
+	it("rejects restaurant employees", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		await seedEmployee(t, restaurantId);
+		const employee = t.withIdentity({ subject: "employee-user" });
+
+		const [menuId, err] = await employee.mutation(api.menus.createMenu, {
+			restaurantId,
+			name: "Dinner Menu",
+		});
+
+		expect(menuId).toBeNull();
+		expect(err).toMatchObject({ message: "ERROR_MANAGER_ROLE_REQUIRED" });
+
+		const menus = await t.run(async (ctx) =>
+			ctx.db
+				.query("menus")
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+				.collect()
+		);
+		expect(menus).toHaveLength(1);
+	});
+
+	it("rejects whitespace-only names", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [menuId, err] = await manager.mutation(api.menus.createMenu, {
+			restaurantId,
+			name: "   ",
+		});
+
+		expect(menuId).toBeNull();
+		expect(err).toMatchObject({
+			fields: [{ field: "name", message: "ERROR_MENU_NAME_REQUIRED" }],
+		});
+	});
+
+	it("returns the new menu id and inserts an active menu at the end of the list", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [menuId, err] = await manager.mutation(api.menus.createMenu, {
+			restaurantId,
+			name: "  Dinner Menu  ",
+		});
+
+		expect(err).toBeNull();
+		expect(menuId).toBeTruthy();
+
+		const menu = await t.run(async (ctx) => ctx.db.get(menuId as Id<"menus">));
+		expect(menu).toMatchObject({
+			restaurantId,
+			name: "Dinner Menu",
+			isActive: true,
+			// The seeded "Main" menu already holds displayOrder 0.
+			displayOrder: 1,
+			updatedBy: "manager-user",
+		});
+		expect(menu?.createdAt).toBeGreaterThan(0);
+		expect(menu?.updatedAt).toBeGreaterThan(0);
+	});
+
+	it("appends a menus.created audit event for the new menu", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedMenuContext(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [menuId] = await manager.mutation(api.menus.createMenu, {
+			restaurantId,
+			name: "Dinner Menu",
+		});
+
+		const events = await t.run(async (ctx) =>
+			ctx.db
+				.query("allEvents")
+				.filter((q) => q.eq(q.field("aggregateId"), menuId))
+				.collect()
+		);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({
+			eventType: "menus.created",
+			aggregateType: "menus",
+			restaurantId,
+			userId: "manager-user",
+			payload: { name: "Dinner Menu" },
+		});
+	});
+
+	it("creates the first menu for a restaurant that has none", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurantWithoutMenus(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [menuId, err] = await manager.mutation(api.menus.createMenu, {
+			restaurantId,
+			name: "Dinner Menu",
+		});
+
+		expect(err).toBeNull();
+		const menu = await t.run(async (ctx) => ctx.db.get(menuId as Id<"menus">));
+		expect(menu).toMatchObject({ name: "Dinner Menu", displayOrder: 0, isActive: true });
 	});
 });
