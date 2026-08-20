@@ -1114,6 +1114,8 @@
 			"newNamePlaceholder": "New section name (optional)",
 			"initialTableCountLabel": "Tables to create",
 			"initialTableSeatsLabel": "Seats per table",
+			"initialTableSeatsHint": "Every new table starts with these seats — you can change them table by table once the section exists.",
+			"initialTableSeatsIdleHint": "Seats apply to the tables created with the section — set \"{{field}}\" above to add some.",
 			"renamePlaceholder": "Section name",
 			"unnamed": "Section {{number}}",
 			"autoCreatePlaceholder": "Create on add",

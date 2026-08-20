@@ -3,7 +3,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Doc } from "convex/_generated/dataModel";
-import { Eye, EyeOff, GripVertical, Pencil, Trash2 } from "lucide-react";
+import { Eye, EyeOff, GripVertical, TextCursorInput, Trash2 } from "lucide-react";
 import { type ReactElement } from "react";
 import { SectionRenameInline } from "./SectionRenameInline";
 
@@ -159,12 +159,18 @@ export function SectionCard(props: Readonly<SectionCardProps>) {
 							>
 								<Eye size={14} />
 							</button>
+							{/*
+							 * Rename-only, so this is a text-field cursor and not a
+							 * pencil — the pencil on a table row means "edit this
+							 * table", and the two must not read as the same action.
+							 */}
 							<button
 								onClick={onStartRename}
 								className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
 								title={translations.renameTitle}
+								aria-label={translations.renameTitle}
 							>
-								<Pencil size={14} />
+								<TextCursorInput size={14} />
 							</button>
 							<button
 								onClick={onRemove}

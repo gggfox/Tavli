@@ -235,6 +235,8 @@ export const RestaurantsKeys = {
 	SECTIONS_NEW_NAME_PLACEHOLDER: "restaurants.sections.newNamePlaceholder",
 	SECTIONS_INITIAL_TABLE_COUNT_LABEL: "restaurants.sections.initialTableCountLabel",
 	SECTIONS_INITIAL_TABLE_SEATS_LABEL: "restaurants.sections.initialTableSeatsLabel",
+	SECTIONS_INITIAL_TABLE_SEATS_HINT: "restaurants.sections.initialTableSeatsHint",
+	SECTIONS_INITIAL_TABLE_SEATS_IDLE_HINT: "restaurants.sections.initialTableSeatsIdleHint",
 	SECTIONS_RENAME_PLACEHOLDER: "restaurants.sections.renamePlaceholder",
 	SECTIONS_UNNAMED: "restaurants.sections.unnamed",
 	SECTIONS_AUTO_CREATE_PLACEHOLDER: "restaurants.sections.autoCreatePlaceholder",
