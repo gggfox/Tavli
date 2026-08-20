@@ -16,16 +16,23 @@ import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { SERVED_VISIBLE_WINDOW_MS } from "convex/constants";
 import { isServedOrderVisible } from "convex/orderHelpers";
-import { ChefHat, X } from "lucide-react";
+import { ChefHat, UserCheck, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOrders, useOrderStatusCounts } from "../../hooks/useOrders";
+import { useOrders, useOrderScopeContext, useOrderStatusCounts } from "../../hooks/useOrders";
 import { OrderCard } from "./OrderCard";
 import { OrderDashboardSkeleton } from "./OrderDashboardSkeleton";
 import { OrderDetailModal } from "./OrderDetailModal";
 import { StationTicketCard } from "./StationTicketCard";
 import { SubstitutionProposalDialog, type SubstitutionTarget } from "./SubstitutionProposalDialog";
 import { deriveStationTickets, type StationTicket } from "./stationTickets";
+import {
+	ALL_SCOPE_VALUES,
+	DEFAULT_SCOPE,
+	SCOPE_ICON,
+	SCOPE_LABEL_KEY,
+	type ScopeFilterValue,
+} from "./scopeConfig";
 import {
 	ALL_SERVICE_DATE_VALUES,
 	DEFAULT_SERVICE_DATE,
@@ -84,6 +91,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		updateOrderDashboardPrepStationFilters,
 		orderDashboardServiceDateFilter,
 		updateOrderDashboardServiceDateFilter,
+		orderDashboardScope,
+		updateOrderDashboardScope,
 	} = useUserSettings();
 	const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 	const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
@@ -142,6 +151,27 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			fallback: DEFAULT_SERVICE_DATE,
 		});
 
+	// Who the caller is on the floor right now. Drives both whether the scope
+	// control appears at all and, for someone who has never touched it, which
+	// side it starts on.
+	const scopeContext = useOrderScopeContext(restaurantId);
+	const canScope = scopeContext?.canScopeToOwnSections ?? false;
+
+	// The fallback is the role-derived default: a server working a server
+	// shift opens onto their own section, everyone else onto the whole floor.
+	// It only applies until the user picks a side themselves, at which point
+	// the persisted value wins on every device.
+	const [storedScope, setStoredScope] = useOptimisticUserSetting<ScopeFilterValue>({
+		serverValue: orderDashboardScope,
+		persist: updateOrderDashboardScope,
+		fallback: scopeContext?.defaultsToMine ? "mine" : DEFAULT_SCOPE,
+	});
+
+	// A stored "mine" must not strand someone who has since left the roster on
+	// a board that can only ever be empty: without a membership there is no
+	// section to scope to, so the whole floor is the only honest answer.
+	const selectedScope: ScopeFilterValue = canScope ? storedScope : "all";
+
 	// Pass `undefined` (not `[]`) when no station filter is active so the
 	// query treats it as "no filter" and short-circuits the per-order
 	// presence check on the server side.
@@ -160,7 +190,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		cancelOrderItem,
 		cancelOrderAndRefund,
 		markOrderPaidInPerson,
-	} = useOrders(restaurantId, queryStatuses, queryStations, selectedServiceDate);
+	} = useOrders(restaurantId, queryStatuses, queryStations, selectedServiceDate, selectedScope);
 
 	// Exactly one station selected → that station gets its own tickets. With no
 	// filter or both stations selected the dashboard stays the whole-order
@@ -232,8 +262,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		setMarkPaidConfirm(null);
 	}, []);
 
-	// Per-segment card counts, under the same station filter as the board.
-	const statusCounts = useOrderStatusCounts(restaurantId, queryStations, selectedServiceDate);
+	// Per-segment card counts, under the same station filter and scope as the
+	// board — a count that disagreed with the cards behind it would read as a
+	// bug.
+	const statusCounts = useOrderStatusCounts(
+		restaurantId,
+		queryStations,
+		selectedServiceDate,
+		selectedScope
+	);
 
 	// Pending substitution proposals for the badge + withdraw affordances on
 	// station tickets (ADR 008). Live query — a diner answering removes the
@@ -362,6 +399,16 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		[t]
 	);
 
+	const scopeSegments = useMemo<ReadonlyArray<SegmentedControlOption<ScopeFilterValue>>>(
+		() =>
+			ALL_SCOPE_VALUES.map((value) => ({
+				value,
+				label: t(SCOPE_LABEL_KEY[value]),
+				icon: SCOPE_ICON[value],
+			})),
+		[t]
+	);
+
 	const serviceDateSegments = useMemo<
 		ReadonlyArray<SegmentedControlOption<ServiceDateFilterValue>>
 	>(
@@ -391,6 +438,18 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				size="sm"
 			/>
 			<div className="flex flex-wrap items-center gap-2">
+				{/* Only offered to someone the floor plan can actually scope: an
+				    owner or admin who is not on this restaurant's roster has no
+				    section, so the control would be a dead end. */}
+				{canScope && (
+					<SegmentedControl
+						options={scopeSegments}
+						value={storedScope}
+						onChange={setStoredScope}
+						ariaLabel={t(OrdersKeys.ARIA_SCOPE_FILTER)}
+						size="sm"
+					/>
+				)}
 				<SegmentedControl
 					options={stationSegments}
 					value={stationFilterValue}
@@ -472,6 +531,13 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		() => (ticketStation ? deriveStationTickets(sorted, ticketStation) : []),
 		[sorted, ticketStation]
 	);
+
+	// Scoped to a section the caller does not have. This answers for the whole
+	// board, ahead of the station-rail and card-grid branches below: "all
+	// caught up" would be a lie when the real reason the board is blank is
+	// that nobody assigned this server a section for the shift they are on.
+	const scopedWithoutSection =
+		selectedScope === "mine" && scopeContext?.hasActiveCoverage === false;
 
 	const renderStationTicket = useCallback(
 		(ticket: StationTicket) => (
@@ -558,7 +624,14 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				</p>
 			)}
 
-			{ticketStation ? (
+			{scopedWithoutSection ? (
+				<EmptyState
+					icon={UserCheck}
+					title={t(OrdersKeys.EMPTY_NO_ACTIVE_SECTION)}
+					description={t(OrdersKeys.EMPTY_NO_ACTIVE_SECTION_HINT)}
+					fill
+				/>
+			) : ticketStation ? (
 				stationTickets.length === 0 ? (
 					<EmptyState
 						icon={STATION_CONFIG[ticketStation].icon}
@@ -585,7 +658,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					title={
 						selectedStatus === "served"
 							? t(OrdersKeys.EMPTY_NO_RECENT_SERVED, { minutes: SERVED_WINDOW_MINUTES })
-							: t(OrdersKeys.EMPTY_NO_ORDERS)
+							: selectedScope === "mine"
+								? t(OrdersKeys.EMPTY_NO_ORDERS_IN_MY_SECTIONS)
+								: t(OrdersKeys.EMPTY_NO_ORDERS)
 					}
 					fill
 				/>

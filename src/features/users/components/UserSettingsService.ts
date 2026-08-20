@@ -66,6 +66,13 @@ export type OrderDashboardPrepStationFilter = "kitchen" | "bar";
 export type OrderDashboardServiceDateFilter = "today" | "all";
 
 /**
+ * Whose orders the OrderDashboard shows. Mirrors `ORDER_SCOPE_VALIDATOR` in
+ * convex/orderHelpers.ts. "mine" is the tables the user covers right now
+ * through their active shift's section assignments; "all" is the whole floor.
+ */
+export type OrderDashboardScope = "all" | "mine";
+
+/**
  * Transform raw Convex user settings to domain UserSettings.
  * Currently an identity function, but provides a hook for
  * future domain transformations if needed.
@@ -87,6 +94,7 @@ export class UserSettingsError {
 			| "updateOrderDashboardStatusFilters"
 			| "updateOrderDashboardPrepStationFilters"
 			| "updateOrderDashboardServiceDateFilter"
+			| "updateOrderDashboardScope"
 			| "setSidebarGroupExpanded",
 		readonly cause: unknown
 	) {}
@@ -213,6 +221,21 @@ export async function updateOrderDashboardServiceDateFilter(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardServiceDateFilter", error);
+	}
+}
+
+/**
+ * Update whose orders the user's OrderDashboard shows.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardScope(
+	client: ConvexReactClient,
+	scope: OrderDashboardScope
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardScope, { scope });
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardScope", error);
 	}
 }
 

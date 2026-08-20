@@ -237,6 +237,9 @@ two prep stations (`kitchen`, `bar`) deliberately reuse the
 **Section**:
 A floor zone (e.g. patio, main room) `Tables` belong to. `Servers` are
 assigned to sections for the duration of (a sub-window of) a `Shift`.
+The orders dashboard consumes that assignment: its "My section" scope
+shows only the `Orders` seated at tables in the sections the caller
+covers right now.
 _Avoid_: zone, area (use Section).
 
 **Table**:
