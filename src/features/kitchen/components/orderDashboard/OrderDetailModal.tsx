@@ -58,7 +58,7 @@ export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDeta
 										{t(OrdersKeys.CARD_DAY_NUMBER, { n: fullOrder.dailyOrderNumber })}
 									</span>
 								)}
-								<PaymentStateBadge paymentState={fullOrder.paymentState} />
+								<PaymentStateBadge order={fullOrder} />
 							</div>
 						}
 						subtitle={

@@ -227,6 +227,19 @@ export default defineSchema({
 		orderNumberResetFrequency: v.optional(
 			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
+		/**
+		 * Cash policy (TAVLI-81, ADR 008 addendum). Default/missing = **off**,
+		 * which is ADR 008 as written: an `awaiting_payment` round is money owed,
+		 * never kitchen work, and staff must collect before the kitchen sees it.
+		 *
+		 * On, the debt stops blocking the workflow: the round is workable the
+		 * moment the diner commits it, advances exactly like `submitted`, and the
+		 * uncollected cash is carried by the order's `paymentState` (a persistent
+		 * "to collect" badge) instead of by its `status`. Staff-only — deliberately
+		 * NOT exposed by `toPublicRestaurant`; a diner has no use for it and it
+		 * describes how this restaurant trusts its tables.
+		 */
+		releaseCashOrdersImmediately: v.optional(v.boolean()),
 		/** HH:MM when the restaurant opens for service. Bounds the reservation timeline. */
 		openTime: v.optional(v.string()),
 		/** HH:MM when the restaurant closes. Bounds the reservation timeline. */
