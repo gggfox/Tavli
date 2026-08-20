@@ -418,6 +418,7 @@
 		},
 		"card": {
 			"table": "Table {{number}}",
+			"tableNone": "No table",
 			"dayNumber": "#{{n}}",
 			"paid": "Paid",
 			"moreItems_one": "+1 more item",
@@ -460,6 +461,8 @@
 			"proposeSubstitution": "Propose substitution for {{name}}"
 		},
 		"payment": {
+			"toCollect": "To collect",
+			"pending": "Payment pending",
 			"refundRequested": "Refund pending",
 			"refunded": "Refunded",
 			"refundFailed": "Refund failed"
@@ -1009,6 +1012,10 @@
 			"generalHint": "Name, public link and the basics diners see.",
 			"hoursTitle": "Hours & time zone",
 			"hoursHint": "The time zone drives every report, shift and order day for this restaurant.",
+			"ordersTitle": "Orders",
+			"ordersHint": "How a round reaches the kitchen once a guest commits it.",
+			"ordersReleaseCashLabel": "Send orders marked for in-person payment straight to the kitchen",
+			"ordersReleaseCashHint": "Off, a round waiting on cash sits on the Orders board until staff mark it paid, and the kitchen never sees it. On, it goes to the prep rail immediately and carries a “To collect” badge at every stage until someone collects — the kitchen keeps working, and the walkout risk is yours.",
 			"taxTitle": "Tax information",
 			"taxHint": "Shown on diner receipt emails so guests can pass the details to their accountant. Tavli does not issue CFDIs — nothing here is filed with the SAT.",
 			"taxRfcLabel": "RFC",

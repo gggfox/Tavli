@@ -156,4 +156,22 @@ describe("StationTicketCard", () => {
 		expect(onCancelItem).not.toHaveBeenCalled();
 		expect(screen.getByText(/orders.ticket.cancelItem/)).toBeTruthy();
 	});
+
+	// TAVLI-80: a station ticket is read from across a pass, so the table it
+	// belongs to has to win the type hierarchy here too (ADR 007 view).
+	it("gives the table the loudest type on the ticket header", () => {
+		renderCard(makeTicket());
+
+		const table = screen.getByText('orders.card.table:{"number":4}');
+		expect(table.className).toContain("text-xl");
+		expect(table.className).toContain("font-bold");
+		expect(screen.getByText('orders.card.dayNumber:{"n":12}').className).toContain("text-sm");
+	});
+
+	it("says 'no table' when the order's table row is gone", () => {
+		renderCard(makeTicket({ tableNumber: null }));
+
+		expect(screen.getByText("orders.card.tableNone")).toBeTruthy();
+		expect(screen.queryByText(/orders\.card\.table:/)).toBeNull();
+	});
 });
