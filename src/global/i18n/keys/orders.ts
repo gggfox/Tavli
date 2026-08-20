@@ -88,7 +88,16 @@ export const OrdersKeys = {
 	TICKET_MARKED_READY: "orders.ticket.markedReady",
 	TICKET_EMPTY_ALL_DONE: "orders.ticket.emptyAllDone",
 
+	/**
+	 * Standing note on the Served segment: served orders age off the board
+	 * after `SERVED_VISIBLE_WINDOW_MS` and where to find the older ones.
+	 * Takes `{{ minutes }}`.
+	 */
+	SERVED_WINDOW_HINT: "orders.servedWindow.hint",
+
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
+	/** Served segment with nothing inside the window. Takes `{{ minutes }}`. */
+	EMPTY_NO_RECENT_SERVED: "orders.empty.noRecentServed",
 
 	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",
