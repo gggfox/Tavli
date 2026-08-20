@@ -418,6 +418,7 @@
 		},
 		"card": {
 			"table": "Mesa {{number}}",
+			"tableNone": "Sin mesa",
 			"dayNumber": "#{{n}}",
 			"paid": "Pagado",
 			"moreItems_one": "+1 artículo más",
@@ -460,6 +461,8 @@
 			"proposeSubstitution": "Proponer sustitución para {{name}}"
 		},
 		"payment": {
+			"toCollect": "Por cobrar",
+			"pending": "Pago pendiente",
 			"refundRequested": "Reembolso pendiente",
 			"refunded": "Reembolsado",
 			"refundFailed": "Reembolso fallido"
@@ -1012,6 +1015,10 @@
 			"generalHint": "Nombre, enlace público y lo básico que ven los comensales.",
 			"hoursTitle": "Horario y zona horaria",
 			"hoursHint": "La zona horaria determina los reportes, los turnos y el día de pedidos de este restaurante.",
+			"ordersTitle": "Pedidos",
+			"ordersHint": "Cómo llega una ronda a la cocina una vez que el comensal la confirma.",
+			"ordersReleaseCashLabel": "Mandar los pedidos marcados para pago en persona directo a la cocina",
+			"ordersReleaseCashHint": "Apagado, una ronda que espera efectivo se queda en el tablero de Pedidos hasta que el personal la marque pagada, y la cocina nunca la ve. Encendido, pasa al riel de preparación de inmediato y lleva una etiqueta «Por cobrar» en cada etapa hasta que alguien cobre — la cocina sigue trabajando y el riesgo de que se vayan sin pagar es tuyo.",
 			"taxTitle": "Información fiscal",
 			"taxHint": "Aparece en los correos de recibo para que los comensales puedan pasarle los datos a su contador. Tavli no emite CFDIs — nada de esto se declara ante el SAT.",
 			"taxRfcLabel": "RFC",

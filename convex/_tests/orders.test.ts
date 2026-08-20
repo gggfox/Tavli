@@ -1022,6 +1022,54 @@ describe("orders", () => {
 			expect(orders[0].tableNumber).toBe(1);
 		});
 
+		// TAVLI-80: the join used to collapse a missing table into `0`, which the
+		// dashboard rendered as "Table 0" — a table a server could go looking for.
+		it("returns a null tableNumber when the order's table row is gone", async () => {
+			const t = convexTest(schema, modules);
+			const {
+				organizationId,
+				sessionId,
+				restaurantId,
+				tableId,
+				authed: diner,
+			} = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const orderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+			await diner.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await diner.mutation(api.orders.submitOrder, { orderId });
+			await simulatePaymentConfirmation(t, orderId);
+
+			await t.run(async (ctx) => {
+				await ctx.db.delete(tableId);
+			});
+
+			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+
+			expect(error).toBeNull();
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			expect(orders).toHaveLength(1);
+			expect(orders[0].tableNumber).toBeNull();
+		});
+
 		it("filters out draft, served, and cancelled orders", async () => {
 			const t = convexTest(schema, modules);
 			const {

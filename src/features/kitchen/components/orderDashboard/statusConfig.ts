@@ -3,6 +3,7 @@ import type { StatusTone } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import type { Urgency } from "@/global/utils/relativeTime";
 import type { OrderPaymentState } from "convex/constants";
+import { owesInPersonPayment } from "convex/orderHelpers";
 import type { Doc } from "convex/_generated/dataModel";
 import {
 	BadgeDollarSign,
@@ -36,7 +37,21 @@ export type DashboardOrderItem = Omit<Doc<"orderItems">, "selectedOptions"> & {
 
 export type DashboardOrder = Doc<"orders"> & {
 	readonly items: ReadonlyArray<DashboardOrderItem>;
-	readonly tableNumber: number;
+	/**
+	 * Table this order goes to, joined by the dashboard query. `null` when
+	 * that table row is gone (deleted or purged) — the cards render an
+	 * explicit "no table" rather than the old `?? 0`, which was
+	 * indistinguishable from a real table numbered 0.
+	 */
+	readonly tableNumber: number | null;
+	/**
+	 * `restaurants.releaseCashOrdersImmediately`, joined per card by the
+	 * dashboard query (TAVLI-81). Carried on the order rather than fetched
+	 * separately so the card, the station rail and the action row cannot
+	 * disagree about whether this round may be worked before its cash is
+	 * collected. `false` is the ADR 008 default: collect, then cook.
+	 */
+	readonly cashReleasedImmediately: boolean;
 };
 
 /**
@@ -74,7 +89,9 @@ export const URGENCY_BG_CLASS: Record<Urgency, string> = {
 export const STATUS_CONFIG: Record<OrderDashboardStatusFilterValue, StatusConfig> = {
 	// Money owed, not workflow: the only actions are "mark paid in person"
 	// and cancel, both rendered by the OrderCard awaiting-payment variant —
-	// hence no `next` transition here (ADR 008).
+	// hence no `next` transition here (ADR 008). A restaurant that releases
+	// cash orders immediately overrides this row through `nextActionFor`,
+	// which is the frontend mirror of the backend's transition table.
 	awaiting_payment: {
 		labelKey: OrdersKeys.STATUS_AWAITING_PAYMENT,
 		tone: "urgent",
@@ -169,22 +186,74 @@ export const STATUS_SORT_PRIORITY: Record<OrderDashboardStatusFilterValue, numbe
 	cancelled: 5,
 };
 
+export interface PaymentBadgeConfig {
+	readonly labelKey: string;
+	readonly tone: StatusTone;
+	/** Defaults to a card glyph; cash owed gets the money glyph instead. */
+	readonly icon?: LucideIcon;
+}
+
 /**
  * Money states worth showing on an order card.
  *
- * Deliberately partial: `unpaid`, `pending` and `processing` are the normal
- * pre-payment lifecycle and would be noise on every open ticket. Only states a
- * staff member might need to act on get a badge — and `refund_failed` is the
- * one that must never be missed, because the diner is owed money.
+ * `unpaid` used to be omitted as pre-payment noise. It stopped being noise the
+ * moment an unpaid round could be on the rail (TAVLI-81): under pay-at-submit
+ * every order the kitchen sees is already paid, so "unpaid" on a live ticket
+ * now means one thing — this table owes cash. `processing` stays out: it is a
+ * card charge mid-flight, nothing staff can act on.
+ *
+ * `refund_failed` remains the one that must never be missed, because the diner
+ * is owed money.
  */
-export const PAYMENT_STATE_BADGE: Partial<
-	Record<OrderPaymentState, { labelKey: string; tone: StatusTone }>
-> = {
+export const PAYMENT_STATE_BADGE: Partial<Record<OrderPaymentState, PaymentBadgeConfig>> = {
+	unpaid: { labelKey: OrdersKeys.PAYMENT_TO_COLLECT, tone: "urgent", icon: BadgeDollarSign },
+	pending: { labelKey: OrdersKeys.PAYMENT_PENDING, tone: "warning" },
 	paid: { labelKey: OrdersKeys.CARD_PAID, tone: "success" },
 	refund_requested: { labelKey: OrdersKeys.PAYMENT_REFUND_REQUESTED, tone: "warning" },
 	refunded: { labelKey: OrdersKeys.PAYMENT_REFUNDED, tone: "info" },
 	refund_failed: { labelKey: OrdersKeys.PAYMENT_REFUND_FAILED, tone: "danger" },
 };
+
+/**
+ * The badge an order card shows for its money, or `undefined` for none.
+ *
+ * A round that owes cash gets the "to collect" badge regardless of what
+ * `paymentState` says, because a cash order may carry no `paymentState` at all
+ * — `requestPayInPerson` writes none — and once the restaurant releases such a
+ * round to the kitchen the badge is the ONLY thing left saying the money is
+ * still out (`status` has moved on to `preparing`/`ready`/`served`). That is
+ * the persistent sticker this ticket exists for.
+ */
+export function orderPaymentBadge(order: {
+	readonly status: string;
+	readonly paymentState?: OrderPaymentState;
+	readonly awaitingPaymentAt?: number;
+	readonly paidAt?: number;
+}): PaymentBadgeConfig | undefined {
+	if (owesInPersonPayment(order)) return PAYMENT_STATE_BADGE.unpaid;
+	return order.paymentState ? PAYMENT_STATE_BADGE[order.paymentState] : undefined;
+}
+
+/**
+ * The forward action an order card offers, mirroring the backend's
+ * `allowedOrderTransitions`.
+ *
+ * `awaiting_payment` has no forward action of its own (ADR 008), but where the
+ * restaurant releases cash orders immediately it is real kitchen work and takes
+ * `submitted`'s action verbatim — the same borrow the backend makes, so the
+ * button a station sees and the transition the server accepts cannot drift.
+ */
+export function nextActionFor(
+	status: string,
+	cashReleasedImmediately: boolean
+): { next: NextOrderStatus; nextLabelKey: string } | null {
+	const config =
+		cashReleasedImmediately && status === "awaiting_payment"
+			? STATUS_CONFIG.submitted
+			: STATUS_CONFIG[status as OrderDashboardStatusFilterValue];
+	if (!config?.next || !config.nextLabelKey) return null;
+	return { next: config.next, nextLabelKey: config.nextLabelKey };
+}
 
 export const MAX_VISIBLE_ITEMS = 7;
 

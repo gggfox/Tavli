@@ -10,6 +10,7 @@ import { OrderItemRow } from "./OrderItemRow";
 import { STATION_CONFIG } from "./stationConfig";
 import type { StationTicket } from "./stationTickets";
 import type { SubstitutionTarget } from "./SubstitutionProposalDialog";
+import { TableBadge } from "./TableBadge";
 import {
 	formatOrderDate,
 	formatOrderTime,
@@ -94,14 +95,17 @@ export function StationTicketCard({
 
 			<div className="px-4 py-3 shrink-0 border-b border-border">
 				<div className="flex items-center gap-2 min-w-0">
+					{/* Same hierarchy as the overview card: the table a runner has to
+					    walk to outranks every other fact on the ticket (TAVLI-80). */}
+					<TableBadge
+						tableNumber={order.tableNumber}
+						className="shrink-0 text-xl font-bold leading-tight text-foreground"
+					/>
 					<StatusBadge
 						bgColor={getStatusToneStyle(config.tone).solidBg}
 						textColor={getStatusToneStyle(config.tone).solidFg}
 						label={t(config.labelKey)}
 					/>
-					<span className="text-sm font-medium truncate text-foreground">
-						{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
-					</span>
 					{order.dailyOrderNumber != null && (
 						<span className="text-sm font-bold tabular-nums shrink-0 text-foreground">
 							{t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })}
