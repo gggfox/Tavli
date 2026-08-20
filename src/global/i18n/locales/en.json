@@ -448,8 +448,12 @@
 			"confirm": "Send to diner",
 			"dismiss": "Cancel"
 		},
+		"servedWindow": {
+			"hint": "Served orders leave this list {{minutes}} minutes after they are marked served. Older ones stay in Payments and in your exports."
+		},
 		"empty": {
-			"noOrders": "No orders match the selected filters."
+			"noOrders": "No orders match the selected filters.",
+			"noRecentServed": "No orders served in the last {{minutes}} minutes."
 		},
 		"aria": {
 			"statusSegments": "Show orders with status",

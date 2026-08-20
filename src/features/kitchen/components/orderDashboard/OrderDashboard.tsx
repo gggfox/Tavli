@@ -14,6 +14,8 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
+import { SERVED_VISIBLE_WINDOW_MS } from "convex/constants";
+import { isServedOrderVisible } from "convex/orderHelpers";
 import { ChefHat, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -64,6 +66,9 @@ const DEFAULT_PREP_STATION_FILTERS: OrderDashboardPrepStationFilter[] = [];
  * ticket's work.
  */
 const UNDO_WINDOW_MS = 10_000;
+
+/** The served window, in the unit the copy talks in. */
+const SERVED_WINDOW_MINUTES = Math.round(SERVED_VISIBLE_WINDOW_MS / 60_000);
 
 interface OrderDashboardProps {
 	restaurantId: Id<"restaurants">;
@@ -406,17 +411,22 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 
 	const typedOrders = orders as ReadonlyArray<DashboardOrder>;
 
+	// `now` is in the dependency list on purpose: the served window is the one
+	// filter that expires on the clock rather than on a write, and a Convex
+	// subscription only re-runs when the data it read changes. The server
+	// keeps stale served rows off the wire; this keeps the last card of the
+	// night from sitting on an idle board (TAVLI-84).
 	const sorted = useMemo(
 		() =>
 			typedOrders
-				.filter((o) => isDashboardStatus(o.status))
+				.filter((o) => isDashboardStatus(o.status) && isServedOrderVisible(o, now))
 				.slice()
 				.sort((a, b) => {
 					const aPriority = STATUS_SORT_PRIORITY[a.status as OrderDashboardStatusFilterValue];
 					const bPriority = STATUS_SORT_PRIORITY[b.status as OrderDashboardStatusFilterValue];
 					return aPriority - bPriority || a.createdAt - b.createdAt;
 				}),
-		[typedOrders]
+		[typedOrders, now]
 	);
 
 	const renderOrderCard = useCallback(
@@ -539,6 +549,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				</div>
 			)}
 
+			{/* Standing note, not only an empty state: a manager looking at two
+			    cards after a busy service needs to know the rest aged off the
+			    board rather than vanished. */}
+			{selectedStatus === "served" && (
+				<p className="mb-3 text-xs text-muted-foreground">
+					{t(OrdersKeys.SERVED_WINDOW_HINT, { minutes: SERVED_WINDOW_MINUTES })}
+				</p>
+			)}
+
 			{ticketStation ? (
 				stationTickets.length === 0 ? (
 					<EmptyState
@@ -561,7 +580,15 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					/>
 				)
 			) : sorted.length === 0 ? (
-				<EmptyState icon={ChefHat} title={t(OrdersKeys.EMPTY_NO_ORDERS)} fill />
+				<EmptyState
+					icon={ChefHat}
+					title={
+						selectedStatus === "served"
+							? t(OrdersKeys.EMPTY_NO_RECENT_SERVED, { minutes: SERVED_WINDOW_MINUTES })
+							: t(OrdersKeys.EMPTY_NO_ORDERS)
+					}
+					fill
+				/>
 			) : (
 				// Virtualized: a busy service can hold hundreds of live orders,
 				// and every one of them used to re-render on each Convex push.

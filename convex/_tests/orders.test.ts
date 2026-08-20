@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { ERROR_NAMES } from "../_shared/errors";
-import { assertPositiveIntegerQuantity } from "../orderHelpers";
+import { SERVED_VISIBLE_WINDOW_MS } from "../constants";
+import { assertPositiveIntegerQuantity, isServedOrderVisible } from "../orderHelpers";
 import { DASHBOARD_COUNT_SCAN_CAP } from "../orders";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "../orderServiceDate";
 import { insertMenuForRestaurant } from "../menus";
@@ -3315,5 +3316,207 @@ describe("dashboard service-day filter", () => {
 		});
 
 		expect(counts!.awaiting_payment.count).toBe(1);
+	});
+});
+
+describe("served visibility window (TAVLI-84)", () => {
+	/** Comfortably outside `SERVED_VISIBLE_WINDOW_MS`, still inside "today". */
+	const LONG_AGO_MS = SERVED_VISIBLE_WINDOW_MS + 60 * 60 * 1000;
+	/** Comfortably inside it. */
+	const JUST_NOW_MS = 60 * 1000;
+
+	async function seedServedOrder(
+		t: ReturnType<typeof convexTest>,
+		args: {
+			restaurantId: Id<"restaurants">;
+			sessionId: Id<"sessions">;
+			tableId: Id<"tables">;
+			/** Omitted to seed a pre-TAVLI-84 row that never got the stamp. */
+			servedAt?: number;
+			updatedAt?: number;
+		}
+	) {
+		return await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("orders", {
+				sessionId: args.sessionId,
+				restaurantId: args.restaurantId,
+				tableId: args.tableId,
+				status: "served",
+				totalAmount: 500,
+				createdAt: now,
+				updatedAt: args.updatedAt ?? now,
+				...(args.servedAt !== undefined && { servedAt: args.servedAt }),
+			});
+		});
+	}
+
+	describe("isServedOrderVisible", () => {
+		it("keeps a served order inside the window and drops it after", () => {
+			const now = Date.now();
+
+			expect(
+				isServedOrderVisible({ status: "served", servedAt: now - JUST_NOW_MS, updatedAt: now }, now)
+			).toBe(true);
+			expect(
+				isServedOrderVisible({ status: "served", servedAt: now - LONG_AGO_MS, updatedAt: now }, now)
+			).toBe(false);
+		});
+
+		it("leaves every other status alone, however old", () => {
+			const now = Date.now();
+			const ancient = now - 400 * 24 * 60 * 60 * 1000;
+
+			for (const status of ["awaiting_payment", "submitted", "preparing", "ready", "cancelled"]) {
+				expect(isServedOrderVisible({ status, updatedAt: ancient }, now)).toBe(true);
+			}
+		});
+
+		it("prefers servedAt over updatedAt, so a later write cannot revive an aged-out order", () => {
+			const now = Date.now();
+
+			// The refund/sweep case: served an hour ago, touched a second ago.
+			expect(
+				isServedOrderVisible(
+					{ status: "served", servedAt: now - LONG_AGO_MS, updatedAt: now - 1000 },
+					now
+				)
+			).toBe(false);
+		});
+
+		it("falls back to updatedAt for rows served before the stamp existed", () => {
+			const now = Date.now();
+
+			expect(isServedOrderVisible({ status: "served", updatedAt: now - JUST_NOW_MS }, now)).toBe(
+				true
+			);
+			expect(isServedOrderVisible({ status: "served", updatedAt: now - LONG_AGO_MS }, now)).toBe(
+				false
+			);
+		});
+	});
+
+	it("stamps servedAt when staff mark an order served", async () => {
+		const t = convexTest(schema, modules);
+		const { orderId, staff } = await seedMixedStationOrder(t, { status: "ready" });
+
+		const [, error] = await staff.mutation(api.orders.updateStatus, {
+			orderId,
+			newStatus: "served",
+		});
+		expect(error).toBeNull();
+
+		const stored = await t.run(async (ctx) => await ctx.db.get(orderId));
+		expect(stored!.servedAt).toBeTypeOf("number");
+		expect(Date.now() - stored!.servedAt!).toBeLessThan(SERVED_VISIBLE_WINDOW_MS);
+	});
+
+	it("excludes a served order older than the window and keeps a recent one", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		const now = Date.now();
+		const recentId = await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			servedAt: now - JUST_NOW_MS,
+		});
+		await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			servedAt: now - LONG_AGO_MS,
+		});
+		// Pre-TAVLI-84 row: no stamp, but marked served a minute ago as far as
+		// `updatedAt` knows, so the fallback keeps it visible.
+		const legacyId = await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			updatedAt: now - JUST_NOW_MS,
+		});
+
+		const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["served"],
+		});
+
+		if (!Array.isArray(orders)) throw new Error("Expected array");
+		expect(orders.map((o) => o._id).sort()).toEqual([recentId, legacyId].sort());
+	});
+
+	it("ages a served order off regardless of the service-day filter", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			servedAt: Date.now() - LONG_AGO_MS,
+		});
+
+		// "all" is a day axis and `served` is terminal, so widening the day
+		// filter must not bring an aged-out ticket back onto the board.
+		for (const serviceDate of ["all", "today"] as const) {
+			const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				statuses: ["served"],
+				serviceDate,
+			});
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			expect(orders).toHaveLength(0);
+		}
+	});
+
+	it("leaves other statuses on the board however long they sit there", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		// An unserved ticket this old is exactly the thing staff must not lose
+		// sight of — the window is for terminal work only.
+		await t.run(async (ctx) => {
+			const stale = Date.now() - LONG_AGO_MS;
+			await ctx.db.insert("orders", {
+				sessionId,
+				restaurantId,
+				tableId,
+				status: "preparing",
+				totalAmount: 500,
+				createdAt: stale,
+				updatedAt: stale,
+			});
+		});
+
+		const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["preparing", "ready"],
+		});
+
+		if (!Array.isArray(orders)) throw new Error("Expected array");
+		expect(orders).toHaveLength(2);
+	});
+
+	it("applies the same window to the Served segment count", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		const now = Date.now();
+		await seedServedOrder(t, { restaurantId, sessionId, tableId, servedAt: now - JUST_NOW_MS });
+		await seedServedOrder(t, { restaurantId, sessionId, tableId, servedAt: now - LONG_AGO_MS });
+		await seedServedOrder(t, { restaurantId, sessionId, tableId, servedAt: now - LONG_AGO_MS });
+
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, { restaurantId });
+
+		// A segment count that disagreed with the cards behind it would read as
+		// a bug, so the count routes through the same rule.
+		expect(counts!.served.count).toBe(1);
+		expect(counts!.served.capped).toBe(false);
+		expect(counts!.ready.count).toBe(1);
 	});
 });
