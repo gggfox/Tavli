@@ -1,5 +1,4 @@
-import { OptionGroupManager } from "@/features/options";
-import { EmptyState, LanguageTabBar, Modal, SearchInput } from "@/global/components";
+import { EmptyState, LanguageTabBar, SearchInput } from "@/global/components";
 import { useAdminPageToolbar } from "@/global/hooks/useAdminPageToolbar";
 import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { Languages, MenusKeys } from "@/global/i18n";
@@ -7,13 +6,14 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { ChevronsDownUp, ChevronsUpDown, Globe, LayoutGrid, X } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Globe, LayoutGrid } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCategories, useMenus } from "../hooks/useMenus";
 import { CategorySection } from "./CategorySection";
 import { MenuBulkActionBar } from "./MenuBulkActionBar";
 import { MenuLanguageSettings } from "./MenuLanguageSettings";
+import { OptionGroupManagerModal } from "./OptionGroupManagerModal";
 
 interface MenuEditorProps {
 	menuId: Id<"menus">;
@@ -316,35 +316,11 @@ export function MenuEditor({
 
 	return (
 		<div className="flex flex-col gap-6">
-			<Modal
+			<OptionGroupManagerModal
+				restaurantId={restaurantId}
 				isOpen={optionGroupsModalOpen}
 				onClose={() => setOptionGroupsModalOpen(false)}
-				ariaLabel={t(MenusKeys.EDITOR_OPTION_GROUPS_MODAL_ARIA)}
-				size="3xl"
-			>
-				<div className="rounded-xl overflow-hidden bg-background border border-border">
-					<div className="flex items-center justify-between px-6 py-4 border-b border-border">
-						<div>
-							<h2 className="text-lg font-semibold text-foreground">
-								{t(MenusKeys.EDITOR_OPTION_GROUPS_HEADING)}
-							</h2>
-							<p className="text-xs mt-1 text-muted-foreground">
-								{t(MenusKeys.EDITOR_OPTION_GROUPS_DESCRIPTION)}
-							</p>
-						</div>
-						<button
-							type="button"
-							onClick={() => setOptionGroupsModalOpen(false)}
-							className="p-1.5 rounded-lg hover:bg-hover text-faint-foreground"
-						>
-							<X size={18} />
-						</button>
-					</div>
-					<div className="p-6 max-h-[70vh] overflow-y-auto">
-						<OptionGroupManager restaurantId={restaurantId} />
-					</div>
-				</div>
-			</Modal>
+			/>
 
 			{langSettingsOpen && (
 				<MenuLanguageSettings

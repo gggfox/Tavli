@@ -1318,7 +1318,7 @@
 			"imageTitle": "Manage image",
 			"noImage": "No image",
 			"imagePreviewAria": "Preview image for {{name}}",
-			"optionsTitle": "Link option groups",
+			"optionsTitle": "Specifications (option groups)",
 			"markUnavailable": "Mark unavailable",
 			"markAvailable": "Mark available",
 			"removeTitle": "Remove item",
@@ -1350,12 +1350,15 @@
 			"imageHeader": "Item Image"
 		},
 		"picker": {
-			"noGroups": "No option groups yet. Use the Option Groups button above to create them.",
+			"noGroups": "No option groups yet. Create one below and it will be linked to this item.",
 			"loading": "Loading option groups…",
 			"error": "Could not load option groups. Try again.",
-			"linkedGroups": "Linked Option Groups",
 			"groupSingle": "· Single",
-			"groupMulti": "· Multi"
+			"groupMulti": "· Multi",
+			"hint": "Reusable choices a diner picks when ordering this item — cut, doneness, sides. Changes here save right away.",
+			"manageGroups": "Edit groups and choices",
+			"selectionTypeLabel": "Selection type",
+			"badgeLabel": "Specifications: {{names}}"
 		},
 		"lang": {
 			"defaultLabel": "Default language (used for main item names)",

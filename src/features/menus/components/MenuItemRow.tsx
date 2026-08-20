@@ -6,11 +6,13 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ItemEditForm } from "./ItemEditForm";
 import { ItemImageManager } from "./ItemImageManager";
+import { ItemOptionGroupsBadge } from "./ItemOptionGroupsBadge";
 import { MenuItemImagePreview } from "./MenuItemImagePreview";
-import { ItemOptionGroupPicker } from "./ItemOptionGroupPicker";
-import { ItemOptionsIcon } from "./ItemOptionsIcon";
 
-type ExpandedPanel = "edit" | "image" | "options" | null;
+// Option groups used to be a panel of their own, mutually exclusive with the
+// edit panel -- which is why managers could never find them while editing an
+// item. They now live inside the edit panel (TAVLI-79).
+type ExpandedPanel = "edit" | "image" | null;
 
 type PrepStation = "kitchen" | "bar";
 
@@ -79,6 +81,7 @@ export function MenuItemRow({
 						<span className="text-sm ml-3 text-muted-foreground">
 							${formatCents(item.basePrice)}
 						</span>
+						<ItemOptionGroupsBadge itemId={item._id} />
 					</div>
 				</div>
 				<div className="flex items-center gap-1">
@@ -112,13 +115,6 @@ export function MenuItemRow({
 						/>
 					</button>
 					<button
-						onClick={() => togglePanel("options")}
-						className="p-1 rounded hover:bg-hover"
-						title={t(MenusKeys.ITEM_OPTIONS_TITLE)}
-					>
-						<ItemOptionsIcon itemId={item._id} isActive={expandedPanel === "options"} />
-					</button>
-					<button
 						onClick={() => onToggleAvailability({ itemId: item._id })}
 						className="p-1 rounded hover:bg-hover text-success"
 						title={
@@ -145,6 +141,7 @@ export function MenuItemRow({
 			{expandedPanel === "edit" && (
 				<ItemEditForm
 					itemId={item._id}
+					restaurantId={item.restaurantId}
 					currentName={item.name}
 					currentDescription={item.description ?? ""}
 					currentPrice={item.basePrice}
@@ -152,9 +149,6 @@ export function MenuItemRow({
 					onSave={onUpdate}
 					onClose={() => setExpandedPanel(null)}
 				/>
-			)}
-			{expandedPanel === "options" && (
-				<ItemOptionGroupPicker itemId={item._id} restaurantId={item.restaurantId} />
 			)}
 			{expandedPanel === "image" && (
 				<ItemImageManager

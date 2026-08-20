@@ -103,9 +103,12 @@ export const MenusKeys = {
 	PICKER_NO_GROUPS: "menus.picker.noGroups",
 	PICKER_LOADING: "menus.picker.loading",
 	PICKER_ERROR: "menus.picker.error",
-	PICKER_LINKED_GROUPS: "menus.picker.linkedGroups",
 	PICKER_GROUP_SINGLE: "menus.picker.groupSingle",
 	PICKER_GROUP_MULTI: "menus.picker.groupMulti",
+	PICKER_HINT: "menus.picker.hint",
+	PICKER_MANAGE_GROUPS: "menus.picker.manageGroups",
+	PICKER_SELECTION_TYPE_LABEL: "menus.picker.selectionTypeLabel",
+	PICKER_BADGE_LABEL: "menus.picker.badgeLabel",
 
 	LANG_DEFAULT_LABEL: "menus.lang.defaultLabel",
 	LANG_ADDITIONAL_LABEL: "menus.lang.additionalLabel",

@@ -5,11 +5,14 @@ import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ItemOptionGroupPicker } from "./ItemOptionGroupPicker";
 
 type PrepStation = "kitchen" | "bar";
 
 interface ItemEditFormProps {
 	itemId: Id<"menuItems">;
+	/** Must match the owning menu item's `restaurantId`, not the navbar selection. */
+	restaurantId: Id<"restaurants">;
 	currentName: string;
 	currentDescription: string;
 	currentPrice: number;
@@ -26,6 +29,7 @@ interface ItemEditFormProps {
 
 export function ItemEditForm({
 	itemId,
+	restaurantId,
 	currentName,
 	currentDescription,
 	currentPrice,
@@ -58,98 +62,108 @@ export function ItemEditForm({
 	});
 
 	return (
-		<form
-			onSubmit={(e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				form.handleSubmit();
-			}}
-			className="px-3 py-3 rounded-b-lg space-y-2 bg-muted border-l border-border border-r border-border border-b border-border"
-		>
-			<span className="text-xs font-medium text-faint-foreground">
-				{t(MenusKeys.FORM_EDIT_HEADER)}
-			</span>
-			<div className="flex gap-2">
+		// The item's own fields and its option groups share one panel but are two
+		// sibling forms, not one: the fields are committed with Save, while the
+		// option-group toggles are junction rows that write on click. Siblings
+		// rather than nested because a <form> may not contain another <form>.
+		<div className="px-3 py-3 rounded-b-lg space-y-3 bg-muted border-l border-border border-r border-border border-b border-border">
+			<form
+				onSubmit={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					form.handleSubmit();
+				}}
+				className="space-y-2"
+			>
+				<span className="text-xs font-medium text-faint-foreground">
+					{t(MenusKeys.FORM_EDIT_HEADER)}
+				</span>
+				<div className="flex gap-2">
+					<form.Field
+						name="name"
+						children={(field) => (
+							<input
+								type="text"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								onBlur={field.handleBlur}
+								placeholder={t(MenusKeys.FORM_ITEM_NAME_PLACEHOLDER)}
+								required
+								className="flex-1 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+							/>
+						)}
+					/>
+					<form.Field
+						name="price"
+						children={(field) => (
+							<input
+								type="number"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								onBlur={field.handleBlur}
+								placeholder={t(MenusKeys.FORM_ITEM_PRICE_PLACEHOLDER)}
+								required
+								step="0.01"
+								min="0"
+								className="w-24 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+							/>
+						)}
+					/>
+				</div>
 				<form.Field
-					name="name"
+					name="description"
 					children={(field) => (
 						<input
 							type="text"
 							value={field.state.value}
 							onChange={(e) => field.handleChange(e.target.value)}
 							onBlur={field.handleBlur}
-							placeholder={t(MenusKeys.FORM_ITEM_NAME_PLACEHOLDER)}
-							required
-							className="flex-1 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+							placeholder={t(MenusKeys.FORM_ITEM_DESCRIPTION_PLACEHOLDER)}
+							className="w-full px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
 						/>
 					)}
 				/>
-				<form.Field
-					name="price"
-					children={(field) => (
-						<input
-							type="number"
-							value={field.state.value}
-							onChange={(e) => field.handleChange(e.target.value)}
-							onBlur={field.handleBlur}
-							placeholder={t(MenusKeys.FORM_ITEM_PRICE_PLACEHOLDER)}
-							required
-							step="0.01"
-							min="0"
-							className="w-24 px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
-						/>
-					)}
-				/>
-			</div>
-			<form.Field
-				name="description"
-				children={(field) => (
-					<input
-						type="text"
-						value={field.state.value}
-						onChange={(e) => field.handleChange(e.target.value)}
-						onBlur={field.handleBlur}
-						placeholder={t(MenusKeys.FORM_ITEM_DESCRIPTION_PLACEHOLDER)}
-						className="w-full px-2 py-1.5 rounded text-sm bg-background border border-border text-foreground"
+				<div className="flex items-center gap-3">
+					<span className="text-xs text-muted-foreground">
+						{t(MenusKeys.ITEM_PREP_STATION_LABEL)}
+					</span>
+					<SegmentedControl<PrepStation>
+						ariaLabel={t(MenusKeys.ITEM_PREP_STATION_LABEL)}
+						size="sm"
+						options={[
+							{ value: "kitchen", label: t(MenusKeys.ITEM_PREP_STATION_KITCHEN) },
+							{ value: "bar", label: t(MenusKeys.ITEM_PREP_STATION_BAR) },
+						]}
+						value={prepStation}
+						onChange={setPrepStation}
 					/>
-				)}
-			/>
-			<div className="flex items-center gap-3">
-				<span className="text-xs text-muted-foreground">
-					{t(MenusKeys.ITEM_PREP_STATION_LABEL)}
-				</span>
-				<SegmentedControl<PrepStation>
-					ariaLabel={t(MenusKeys.ITEM_PREP_STATION_LABEL)}
-					size="sm"
-					options={[
-						{ value: "kitchen", label: t(MenusKeys.ITEM_PREP_STATION_KITCHEN) },
-						{ value: "bar", label: t(MenusKeys.ITEM_PREP_STATION_BAR) },
-					]}
-					value={prepStation}
-					onChange={setPrepStation}
-				/>
+				</div>
+				<div className="flex gap-2">
+					<form.Subscribe
+						selector={(state) => state.isSubmitting}
+						children={(isSubmitting) => (
+							<button
+								type="submit"
+								disabled={isSubmitting}
+								className="px-3 py-1.5 rounded text-sm font-medium hover-btn-primary disabled:opacity-50"
+							>
+								{isSubmitting ? t(MenusKeys.FORM_SAVING) : t(MenusKeys.FORM_SAVE)}
+							</button>
+						)}
+					/>
+					<button
+						type="button"
+						onClick={onClose}
+						className="px-3 py-1.5 rounded text-sm hover-btn-secondary"
+					>
+						{t(MenusKeys.FORM_CANCEL)}
+					</button>
+				</div>
+			</form>
+
+			<div className="pt-3 border-t border-border">
+				<ItemOptionGroupPicker itemId={itemId} restaurantId={restaurantId} />
 			</div>
-			<div className="flex gap-2">
-				<form.Subscribe
-					selector={(state) => state.isSubmitting}
-					children={(isSubmitting) => (
-						<button
-							type="submit"
-							disabled={isSubmitting}
-							className="px-3 py-1.5 rounded text-sm font-medium hover-btn-primary disabled:opacity-50"
-						>
-							{isSubmitting ? t(MenusKeys.FORM_SAVING) : t(MenusKeys.FORM_SAVE)}
-						</button>
-					)}
-				/>
-				<button
-					type="button"
-					onClick={onClose}
-					className="px-3 py-1.5 rounded text-sm hover-btn-secondary"
-				>
-					{t(MenusKeys.FORM_CANCEL)}
-				</button>
-			</div>
-		</form>
+		</div>
 	);
 }
