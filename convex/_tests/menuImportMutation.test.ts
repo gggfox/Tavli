@@ -1,8 +1,9 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "../constants";
+import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -109,5 +110,96 @@ describe("menuImportMutation.verifyMenuImportAccess", () => {
 		});
 
 		expect(result.allowed).toBe(false);
+	});
+});
+
+describe("menuImportMutation.batchInsertMenuCategories", () => {
+	const categories = [
+		{
+			name: "Starters",
+			items: [{ name: "Bruschetta", priceInCents: 900 }],
+		},
+	];
+
+	it("creates the menu when the restaurant has none yet", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurantWithMembers(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [result, err] = await manager.mutation(api.menuImportMutation.batchInsertMenuCategories, {
+			restaurantId,
+			newMenuName: "  Imported Menu  ",
+			categories,
+		});
+
+		expect(err).toBeNull();
+		expect(result).toMatchObject({ categoriesCreated: 1, categoriesMerged: 0, itemsCreated: 1 });
+
+		const menus = await t.run(async (ctx) =>
+			ctx.db
+				.query("menus")
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+				.collect()
+		);
+		expect(menus).toHaveLength(1);
+		expect(menus[0]).toMatchObject({ name: "Imported Menu", isActive: true, displayOrder: 0 });
+
+		const items = await t.run(async (ctx) =>
+			ctx.db
+				.query("menuItems")
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+				.collect()
+		);
+		expect(items.map((item) => item.name)).toEqual(["Bruschetta"]);
+	});
+
+	it("rejects an import with neither a target menu nor a new menu name", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurantWithMembers(t);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [result, err] = await manager.mutation(api.menuImportMutation.batchInsertMenuCategories, {
+			restaurantId,
+			categories,
+		});
+
+		expect(result).toBeNull();
+		expect(err).toMatchObject({
+			fields: [{ field: "menuId", message: "ERROR_MENU_IMPORT_TARGET_REQUIRED" }],
+		});
+	});
+
+	it("imports into an existing menu when one is given", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId } = await seedRestaurantWithMembers(t);
+		const menuId = await t.run(async (ctx) =>
+			insertMenuForRestaurant(ctx, { restaurantId, name: "Main", userId: "manager-user" })
+		);
+		const manager = t.withIdentity({ subject: "manager-user" });
+
+		const [result, err] = await manager.mutation(api.menuImportMutation.batchInsertMenuCategories, {
+			restaurantId,
+			menuId,
+			categories,
+		});
+
+		expect(err).toBeNull();
+		expect(result).toMatchObject({ categoriesCreated: 1 });
+
+		const menus = await t.run(async (ctx) =>
+			ctx.db
+				.query("menus")
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+				.collect()
+		);
+		expect(menus).toHaveLength(1);
+
+		const cats = await t.run(async (ctx) =>
+			ctx.db
+				.query("menuCategories")
+				.withIndex("by_menu", (q) => q.eq("menuId", menuId))
+				.collect()
+		);
+		expect(cats.map((c) => c.name)).toEqual(["Starters"]);
 	});
 });
