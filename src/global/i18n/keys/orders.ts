@@ -20,6 +20,13 @@ export const OrdersKeys = {
 	SERVICE_DATE_TODAY: "orders.serviceDate.today",
 	SERVICE_DATE_ALL: "orders.serviceDate.all",
 	ARIA_SERVICE_DATE_FILTER: "orders.aria.serviceDateFilter",
+
+	/** Scope filter: the tables the user covers on their current shift. */
+	SCOPE_MINE: "orders.scope.mine",
+	/** Scope filter: every table in the restaurant. */
+	SCOPE_ALL: "orders.scope.all",
+	ARIA_SCOPE_FILTER: "orders.aria.scopeFilter",
+
 	STATION_ALL: "orders.station.all",
 	STATION_KITCHEN: "orders.station.kitchen",
 	STATION_BAR: "orders.station.bar",
@@ -50,11 +57,16 @@ export const OrdersKeys = {
 	CANCEL_REFUND_PENDING: "orders.cancel.refundPending",
 	CANCEL_REFUND_FAILED_BANNER: "orders.cancel.refundFailedBanner",
 
+	/** Money the table still owes in person — the badge that follows a cash round. */
+	PAYMENT_TO_COLLECT: "orders.payment.toCollect",
+	PAYMENT_PENDING: "orders.payment.pending",
 	PAYMENT_REFUND_REQUESTED: "orders.payment.refundRequested",
 	PAYMENT_REFUNDED: "orders.payment.refunded",
 	PAYMENT_REFUND_FAILED: "orders.payment.refundFailed",
 
 	CARD_TABLE: "orders.card.table",
+	/** Shown when an order's table row is gone — never render "Table 0". */
+	CARD_TABLE_NONE: "orders.card.tableNone",
 	CARD_DAY_NUMBER: "orders.card.dayNumber",
 	CARD_PAID: "orders.card.paid",
 	CARD_MORE_ITEMS: "orders.card.moreItems",
@@ -83,7 +95,22 @@ export const OrdersKeys = {
 	TICKET_MARKED_READY: "orders.ticket.markedReady",
 	TICKET_EMPTY_ALL_DONE: "orders.ticket.emptyAllDone",
 
+	/**
+	 * Standing note on the Served segment: served orders age off the board
+	 * after `SERVED_VISIBLE_WINDOW_MS` and where to find the older ones.
+	 * Takes `{{ minutes }}`.
+	 */
+	SERVED_WINDOW_HINT: "orders.servedWindow.hint",
+
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
+	/** Served segment with nothing inside the window. Takes `{{ minutes }}`. */
+	EMPTY_NO_RECENT_SERVED: "orders.empty.noRecentServed",
+	/** Scoped to "mine", with sections assigned but no orders in them. */
+	EMPTY_NO_ORDERS_IN_MY_SECTIONS: "orders.empty.noOrdersInMySections",
+	/** Scoped to "mine" with no active section assignment at all. */
+	EMPTY_NO_ACTIVE_SECTION: "orders.empty.noActiveSection",
+	/** Sits under `EMPTY_NO_ACTIVE_SECTION`; points at the All segment. */
+	EMPTY_NO_ACTIVE_SECTION_HINT: "orders.empty.noActiveSectionHint",
 
 	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",

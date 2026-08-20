@@ -91,6 +91,12 @@ export default defineSchema({
 		// midnight UTC); "all" is every order ever, which is the pre-existing
 		// behavior and so stays the default for a user who never picked.
 		orderDashboardServiceDateFilter: v.optional(v.union(v.literal("today"), v.literal("all"))),
+		// Whose orders the OrderDashboard shows: "all" is the whole floor,
+		// "mine" only the tables the user covers right now through their active
+		// shift's section assignments. Absent means the user has never touched
+		// the toggle, so the dashboard picks the default from their shift (a
+		// server on shift starts scoped; everyone else starts on "all").
+		orderDashboardScope: v.optional(v.union(v.literal("all"), v.literal("mine"))),
 		// Sidebar accordion groups the user has open. Identified by the group's
 		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
 		// render time so removing groups later is safe.
@@ -227,6 +233,19 @@ export default defineSchema({
 		orderNumberResetFrequency: v.optional(
 			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
+		/**
+		 * Cash policy (TAVLI-81, ADR 008 addendum). Default/missing = **off**,
+		 * which is ADR 008 as written: an `awaiting_payment` round is money owed,
+		 * never kitchen work, and staff must collect before the kitchen sees it.
+		 *
+		 * On, the debt stops blocking the workflow: the round is workable the
+		 * moment the diner commits it, advances exactly like `submitted`, and the
+		 * uncollected cash is carried by the order's `paymentState` (a persistent
+		 * "to collect" badge) instead of by its `status`. Staff-only — deliberately
+		 * NOT exposed by `toPublicRestaurant`; a diner has no use for it and it
+		 * describes how this restaurant trusts its tables.
+		 */
+		releaseCashOrdersImmediately: v.optional(v.boolean()),
 		/** HH:MM when the restaurant opens for service. Bounds the reservation timeline. */
 		openTime: v.optional(v.string()),
 		/** HH:MM when the restaurant closes. Bounds the reservation timeline. */
@@ -570,6 +589,18 @@ export default defineSchema({
 		 */
 		kitchenReadyAt: v.optional(v.number()),
 		barReadyAt: v.optional(v.number()),
+		/**
+		 * When staff marked this order served. Written once, by
+		 * `updateStatus` — the only path into that terminal status — and never
+		 * cleared, because nothing transitions back out of `served`.
+		 *
+		 * Its own column rather than a reading of `updatedAt`: `updatedAt` moves
+		 * on any later write (a refund outcome, a session sweep), which would
+		 * silently pull an aged-out order back onto the dashboard's Served
+		 * segment. Orders served before this field existed fall back to
+		 * `updatedAt` at read time (`isServedOrderVisible`).
+		 */
+		servedAt: v.optional(v.number()),
 		/** Monotonic per restaurant per business day; assigned in confirmPayment only. */
 		dailyOrderNumber: v.optional(v.number()),
 		/** YYYY-MM-DD business-day label at assignment time. */

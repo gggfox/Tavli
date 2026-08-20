@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	ConflictError,
@@ -13,6 +14,8 @@ import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
 import {
 	getCurrentUserId,
+	getRestaurantMembership,
+	getRestaurantMembershipByEmployeeAccount,
 	requireRestaurantManagerOrAbove,
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
@@ -35,30 +38,37 @@ import {
 	PAYMENT_STATUS,
 	PREP_STATION,
 	type PrepStation,
+	RESTAURANT_MEMBER_ROLE,
 	SETTLED_BY,
+	SHIFT_ROLE,
 	TABLE,
 } from "./constants";
 import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
-import { resolveAttributedMemberId } from "./_util/attribution";
+import { resolveAttributedMemberId, resolveMemberFloorCoverage } from "./_util/attribution";
 import {
+	allowedOrderTransitions,
 	assertPositiveIntegerQuantity,
 	DASHBOARD_STATUS_VALIDATOR,
 	DASHBOARD_STATUSES,
 	type DashboardStatusCounts,
 	getApplicableStations,
 	hasStationTicket,
+	isServedOrderVisible,
+	ORDER_SCOPE_VALIDATOR,
+	type OrderScope,
 	SERVICE_DATE_FILTER_VALIDATOR,
 	type ServiceDateFilter,
 	invalidateActivePayment,
 	loadOrderItemTranslations,
 	normalizeSelectedOptions,
+	owesInPersonPayment,
 	PREP_STATION_VALIDATOR,
 	recalculateTotal,
+	releasesCashOrdersImmediately,
 	resolvePrepStation,
 	selectedOptionValidator,
-	VALID_TRANSITIONS,
 } from "./orderHelpers";
 import {
 	cancelPendingProposalsForOrder,
@@ -816,7 +826,11 @@ export const updateStatus = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		const [staffRestaurant, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
 		if (restaurantError) return [null, restaurantError];
 
 		// Cancelling is the only transition that moves money — a paid order
@@ -832,7 +846,13 @@ export const updateStatus = mutation({
 			if (managerError) return [null, managerError];
 		}
 
-		const allowedNext = VALID_TRANSITIONS[order.status];
+		// With `releaseCashOrdersImmediately` on, an uncollected cash round is
+		// workable and advances exactly like `submitted` (TAVLI-81); off, this is
+		// the ADR 008 table verbatim and `awaiting_payment` can only be cancelled.
+		const allowedNext = allowedOrderTransitions(
+			order.status,
+			releasesCashOrdersImmediately(staffRestaurant)
+		);
 		if (!allowedNext?.includes(args.newStatus)) {
 			// Cancelling a served order is now the most likely rejection here, and
 			// the frontend needs a stable code for it — a free-text validation
@@ -890,6 +910,10 @@ export const updateStatus = mutation({
 				order.paymentState === ORDER_PAYMENT_STATE.PAID && {
 					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 				}),
+			// The only path into `served`, so the only place this is stamped.
+			// It anchors the Served segment's visibility window (TAVLI-84);
+			// `updatedAt` cannot, because later writes move it.
+			...(args.newStatus === ORDER_STATUS.SERVED && { servedAt: now }),
 			...backfilledNumberPatch,
 			updatedAt: now,
 			updatedBy: userId,
@@ -937,9 +961,18 @@ export const updateStatus = mutation({
 });
 
 /**
- * Staff collected the cash for an `awaiting_payment` order (ADR 008): stamps
- * it paid (`settledBy: "staff"`) and releases it to `submitted`, where the
- * kitchen sees it for the first time.
+ * Staff collected the cash for a round that owes it (ADR 008): stamps it paid
+ * (`settledBy: "staff"`) and, when the kitchen has not seen it yet, releases it
+ * to `submitted`.
+ *
+ * Callable at **every stage**, not only from `awaiting_payment` (TAVLI-81).
+ * Where `releaseCashOrdersImmediately` is on, the round is already being cooked
+ * while the cash is uncollected, so "mark paid in person" has to work from
+ * `preparing`, `ready` and `served` too — collecting is otherwise unreachable
+ * once the kitchen advances the ticket, which is precisely the workflow block
+ * this ticket removes. The status is only rewritten on the release step: past
+ * `awaiting_payment` the order keeps the status the kitchen gave it, and only
+ * the money fields move.
  *
  * Deliberately writes **no `payments` row** — no Stripe money moved, and a
  * synthetic row would poison every revenue aggregate that reads the payments
@@ -960,16 +993,21 @@ export const markOrderPaidInPerson = mutation({
 		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
 		if (restaurantError) return [null, restaurantError];
 
-		if (order.status !== ORDER_STATUS.AWAITING_PAYMENT) {
+		// Keeps the stable code the frontend already maps. With the toggle off
+		// this rejects exactly what the old `status !== awaiting_payment` check
+		// rejected: an order can only owe in person while it holds that status.
+		if (!owesInPersonPayment(order)) {
 			throw new ConflictError("ERROR_ORDER_NOT_AWAITING_PAYMENT");
 		}
 
+		const isRelease = order.status === ORDER_STATUS.AWAITING_PAYMENT;
 		const now = Date.now();
 		await ctx.db.patch(args.orderId, {
-			status: "submitted",
+			// Releasing is what makes `submitted` mean "the kitchen may start", so
+			// it belongs to the collection only while the kitchen has not started.
+			...(isRelease && { status: "submitted" as const, submittedAt: now }),
 			paymentState: ORDER_PAYMENT_STATE.PAID,
 			paidAt: now,
-			submittedAt: now,
 			settledBy: "staff",
 			updatedAt: now,
 			updatedBy: userId,
@@ -1036,6 +1074,155 @@ function buildServiceDatePredicate(
 }
 
 /**
+ * The member a `scope: "mine"` read is filtered against.
+ *
+ * Two ways in, matching the two kinds of `RestaurantMember` (ADR 006):
+ *
+ *   - A Clerk-backed staff user is their own membership row — no argument
+ *     needed, and none accepted, so nobody can scope as someone else by
+ *     omission.
+ *   - A managed `EmployeeAccount` has no Clerk identity of its own; it is
+ *     named explicitly by `employeeAccountId` and resolved through its shadow
+ *     membership row. This is how the shared-device surface (ADR 006) asks
+ *     "show me Ana's tables" without Ana having a login.
+ *
+ * Naming an account is a *narrowing* filter, never a grant: the caller has
+ * already cleared `requireRestaurantStaffAccess`, so every order this can
+ * return is one `scope: "all"` would hand the same caller anyway. The
+ * `restaurantId` check keeps a foreign restaurant's account out.
+ *
+ * `null` means "no membership to scope by" — an owner or admin who is not on
+ * this restaurant's roster, or an account id that does not resolve. Callers
+ * treat it the same as an empty assignment: an empty board, not an error.
+ */
+async function resolveScopeMember(
+	ctx: QueryCtx,
+	args: {
+		userId: string;
+		restaurantId: Id<"restaurants">;
+		employeeAccountId?: Id<"employeeAccounts">;
+	}
+): Promise<Doc<"restaurantMembers"> | null> {
+	const member = args.employeeAccountId
+		? await getRestaurantMembershipByEmployeeAccount(ctx, args.employeeAccountId, args.restaurantId)
+		: await getRestaurantMembership(ctx, args.userId, args.restaurantId);
+
+	if (!member?.isActive || member.removedAt != null) return null;
+	return member;
+}
+
+/**
+ * Predicate for "is this order on a table the caller is working right now".
+ *
+ * `scope: "all"` (the default, and what every caller did before TAVLI-82) lets
+ * everything through, so no order is ever invisible to everyone. `"mine"`
+ * resolves the caller's active shift → section assignments → tables, and keeps
+ * only orders seated there. No active assignment yields an empty set and thus
+ * an empty board — the state a server between shifts should see, and the
+ * dashboard says so rather than reporting an error.
+ */
+async function buildOrderScopePredicate(
+	ctx: QueryCtx,
+	args: {
+		userId: string;
+		restaurantId: Id<"restaurants">;
+		scope: OrderScope | undefined;
+		employeeAccountId?: Id<"employeeAccounts">;
+		atMs: number;
+	}
+): Promise<(order: Doc<"orders">) => boolean> {
+	if (args.scope !== "mine") return () => true;
+
+	const member = await resolveScopeMember(ctx, args);
+	if (!member) return () => false;
+
+	const { tableIds } = await resolveMemberFloorCoverage(ctx, {
+		restaurantId: args.restaurantId,
+		memberId: member._id,
+		atMs: args.atMs,
+	});
+
+	return (order) => tableIds.has(order.tableId);
+}
+
+/** What the dashboard needs to decide whether — and how — to offer "My section". */
+export type DashboardScopeContext = {
+	/**
+	 * The caller is on this restaurant's roster, so "mine" can mean something.
+	 * False for an owner or admin who reads the board without being a member;
+	 * the dashboard hides the toggle rather than offering a control that can
+	 * only ever return nothing.
+	 */
+	canScopeToOwnSections: boolean;
+	/** The caller covers at least one table right now. */
+	hasActiveCoverage: boolean;
+	/**
+	 * The toggle starts on "mine" for a caller who has never set it: an
+	 * `employee` member working a `server` shift at this moment. Managers,
+	 * owners, and off-shift staff start on the whole floor, which is what
+	 * they were looking at before this existed.
+	 */
+	defaultsToMine: boolean;
+};
+
+/**
+ * Whether the caller can scope the board to their own sections, and whether
+ * it should start that way.
+ *
+ * Its own query rather than a field on the orders read: the answer is about
+ * the caller's shift, not about orders, and it must stay available while the
+ * board itself is filtered down to nothing — that is exactly when the empty
+ * state needs to explain which case it is looking at.
+ */
+export const getDashboardScopeContext = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<DashboardScopeContext, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
+		if (accessError) return [null, accessError];
+
+		const member = await resolveScopeMember(ctx, {
+			userId,
+			restaurantId: args.restaurantId,
+			employeeAccountId: args.employeeAccountId,
+		});
+		if (!member) {
+			return [
+				{ canScopeToOwnSections: false, hasActiveCoverage: false, defaultsToMine: false },
+				null,
+			];
+		}
+
+		const { shifts, tableIds } = await resolveMemberFloorCoverage(ctx, {
+			restaurantId: args.restaurantId,
+			memberId: member._id,
+			atMs: Date.now(),
+		});
+
+		// The shift role is what the member is working right now, not their
+		// permission tier — a manager covering a section still reads as a
+		// manager, and only a `server` shift flips the default.
+		const onServerShift = shifts.some((shift) => shift.shiftRole === SHIFT_ROLE.SERVER);
+
+		return [
+			{
+				canScopeToOwnSections: true,
+				hasActiveCoverage: tableIds.size > 0,
+				defaultsToMine: member.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE && onServerShift,
+			},
+			null,
+		];
+	},
+});
+
+/**
  * Per-status card counts for the dashboard's status filter, under the
  * station filter currently applied.
  *
@@ -1049,6 +1236,8 @@ export const getDashboardStatusCounts = query({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		prepStations: v.optional(v.array(PREP_STATION_VALIDATOR)),
 		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
+		scope: v.optional(ORDER_SCOPE_VALIDATOR),
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
 	},
 	handler: async function (
 		ctx,
@@ -1064,13 +1253,29 @@ export const getDashboardStatusCounts = query({
 		if (accessError) return [null, accessError];
 
 		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
+		const now = Date.now();
+		const isInScope = await buildOrderScopePredicate(ctx, {
+			userId,
+			restaurantId: args.restaurantId,
+			scope: args.scope,
+			employeeAccountId: args.employeeAccountId,
+			atMs: now,
+		});
+		// Same rule as `getActiveOrdersByRestaurant`: a segment count has to
+		// agree with the number of cards behind it, so the served window and
+		// the server scope are both applied here too.
+		const isVisible = (order: Doc<"orders">) =>
+			isInServiceWindow(order) && isServedOrderVisible(order, now) && isInScope(order);
 
 		const stationFilter =
 			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
 		// Exactly one station selected puts the dashboard on that station's
-		// rail; `awaiting_payment` is excluded there and handled as cards.
+		// rail; `awaiting_payment` is excluded there and handled as cards —
+		// unless this restaurant releases cash orders immediately (TAVLI-81),
+		// where those rounds are ordinary rail work.
 		const railStation =
 			args.prepStations && args.prepStations.length === 1 ? args.prepStations[0] : null;
+		const cashReleasedImmediately = releasesCashOrdersImmediately(restaurant);
 
 		// Every key is filled by the loop below, which walks all statuses.
 		const counts = {} as DashboardStatusCounts;
@@ -1087,17 +1292,28 @@ export const getDashboardStatusCounts = query({
 				.order("desc")
 				.take(DASHBOARD_COUNT_SCAN_CAP);
 
-			const orders = scanned.filter(isInServiceWindow);
+			const orders = scanned.filter(isVisible);
 
 			// Hitting the ceiling only makes the count uncertain if the window
 			// was still open at the oldest row we saw. With a "today" filter
 			// whose oldest scanned order already predates the window, every
-			// unscanned order is older still — the count is exact.
+			// unscanned order is older still — the count is exact, because the
+			// scan and the filter share one axis (`createdAt`).
+			//
+			// The served window does not share that axis: it reads `servedAt`,
+			// while the scan is newest-created-first. So this is a judgement,
+			// not a proof — an order created before the 200 newest served ones
+			// but marked served in the last half hour would be missed. That takes a
+			// ticket forgotten across 200 later orders, and the alternative
+			// (calling every capped scan uncertain) would pin a permanent "+"
+			// on the Served segment of any restaurant with 200 lifetime served
+			// orders, i.e. all of them. See followUp: index served orders by
+			// `servedAt` if this ever bites.
 			const oldestScanned = scanned[scanned.length - 1];
 			const capped =
 				scanned.length === DASHBOARD_COUNT_SCAN_CAP &&
 				oldestScanned !== undefined &&
-				isInServiceWindow(oldestScanned);
+				isVisible(oldestScanned);
 
 			// No station filter: every order in the window is a card.
 			if (!stationFilter) {
@@ -1105,7 +1321,8 @@ export const getDashboardStatusCounts = query({
 				continue;
 			}
 
-			const onRail = railStation !== null && status !== "awaiting_payment";
+			const onRail =
+				railStation !== null && (status !== "awaiting_payment" || cashReleasedImmediately);
 			let count = 0;
 
 			for (const order of orders) {
@@ -1129,6 +1346,7 @@ export const getDashboardStatusCounts = query({
 							status: order.status,
 							stationStamp: stamp,
 							liveStationItemCount: liveStationItems.length,
+							cashReleasedImmediately,
 						})
 					) {
 						count += 1;
@@ -1164,6 +1382,14 @@ export const getActiveOrdersByRestaurant = query({
 		// Service-day window. Omitted / "all" keeps the original behavior of
 		// returning every order in the requested statuses.
 		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
+		// Whose floor to show. Omitted / "all" is the whole restaurant, the
+		// board's pre-TAVLI-82 behavior. "mine" narrows to the tables the
+		// caller covers right now (see `buildOrderScopePredicate`).
+		scope: v.optional(ORDER_SCOPE_VALIDATOR),
+		// Names the managed `EmployeeAccount` that "mine" belongs to, for the
+		// shared-device surface where the caller has no Clerk identity of their
+		// own (ADR 006). Ignored unless `scope` is "mine".
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
 	},
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -1176,6 +1402,12 @@ export const getActiveOrdersByRestaurant = query({
 		if (accessError) return [null, accessError];
 
 		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
+		// Joined onto every card below rather than fetched separately by the
+		// dashboard: whether an uncollected cash round may be worked is a fact
+		// the card, the station rail and the action row all have to agree on,
+		// and a second subscription to the restaurant row could disagree with
+		// this one for a frame (TAVLI-81).
+		const cashReleasedImmediately = releasesCashOrdersImmediately(restaurant);
 
 		const requestedStatuses =
 			args.statuses && args.statuses.length > 0
@@ -1196,7 +1428,26 @@ export const getActiveOrdersByRestaurant = query({
 					.collect()
 			)
 		);
-		const filteredOrders = ordersPerStatus.flat().filter(isInServiceWindow);
+		// A served order drops off the board once its window closes, regardless
+		// of the service-day filter: "all" is a day axis, and `served` is
+		// terminal, so there is no old open ticket to lose sight of. History
+		// lives in the Payments ledger and the exports (TAVLI-84).
+		const now = Date.now();
+		// Scope is resolved once and applied before the per-order item and
+		// table fan-out below, so a server's board does the work of their own
+		// section rather than the whole floor's.
+		const isInScope = await buildOrderScopePredicate(ctx, {
+			userId,
+			restaurantId: args.restaurantId,
+			scope: args.scope,
+			employeeAccountId: args.employeeAccountId,
+			atMs: now,
+		});
+		const filteredOrders = ordersPerStatus
+			.flat()
+			.filter(
+				(order) => isInServiceWindow(order) && isServedOrderVisible(order, now) && isInScope(order)
+			);
 
 		const ordersWithItems = await Promise.all(
 			filteredOrders.map(async (order) => {
@@ -1205,7 +1456,15 @@ export const getActiveOrdersByRestaurant = query({
 					.withIndex("by_order", (q) => q.eq("orderId", order._id))
 					.collect();
 				const table = await ctx.db.get(order.tableId);
-				return { ...order, items, tableNumber: table?.tableNumber ?? 0 };
+				// `null`, never `0`: a table that has been deleted or purged is a
+				// missing join, and the dashboard has to say so instead of sending
+				// a server to a table numbered zero (TAVLI-80).
+				return {
+					...order,
+					items,
+					tableNumber: table?.tableNumber ?? null,
+					cashReleasedImmediately,
+				};
 			})
 		);
 
@@ -1276,13 +1535,27 @@ export const markStationReady = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		const [stationRestaurant, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
 		if (restaurantError) return [null, restaurantError];
 
 		// A station can only mark itself ready while the order is in flight
 		// (submitted / preparing). Once "ready"/"served"/"cancelled", the
 		// per-station stamp is no longer meaningful.
-		if (order.status !== "submitted" && order.status !== "preparing") {
+		//
+		// Where the restaurant releases cash orders immediately (TAVLI-81), an
+		// uncollected `awaiting_payment` round is in flight too — it sits on the
+		// rail, so the station that cooked it must be able to stamp it. Off, that
+		// status never reaches a rail and this rejects it exactly as before.
+		const isInFlight =
+			order.status === "submitted" ||
+			order.status === "preparing" ||
+			(order.status === ORDER_STATUS.AWAITING_PAYMENT &&
+				releasesCashOrdersImmediately(stationRestaurant));
+		if (!isInFlight) {
 			throw new UserInputValidationError({
 				fields: [
 					{
@@ -1338,9 +1611,14 @@ export const markStationReady = mutation({
 				: nextBarReadyAt !== undefined
 		);
 
-		// `order.status` is narrowed to "submitted" | "preparing" by the
-		// guard above, so flipping to "ready" is always a forward step
-		// here when every applicable station has been stamped.
+		// The guard above narrowed the status to one the kitchen is actively
+		// working ("submitted" / "preparing", plus an immediately-released
+		// `awaiting_payment`), so flipping to "ready" is always a forward step
+		// here when every applicable station has been stamped. A released cash
+		// round leaves `awaiting_payment` behind at this point and never returns
+		// to it — its debt is carried by `awaitingPaymentAt` + `paidAt` from here
+		// on (`owesInPersonPayment`), which is what keeps the badge, the
+		// mark-paid action and the session guards intact.
 		const statusPatch = everyStationDone ? { status: "ready" as const } : {};
 
 		await ctx.db.patch(args.orderId, {
@@ -1377,12 +1655,25 @@ export const unmarkStationReady = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		const [unmarkRestaurant, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
 		if (restaurantError) return [null, restaurantError];
 
 		// Once served or cancelled the order has left the stations' hands, and a
 		// stamp on a still-`submitted` order is unreachable from the ticket UI.
-		if (order.status !== "preparing" && order.status !== "ready") {
+		//
+		// A released cash round (TAVLI-81) can hold a stamp while still
+		// `awaiting_payment` — one station of two done — so the undo window has
+		// to reach it, or a mistap there is unrecoverable.
+		const isUndoable =
+			order.status === "preparing" ||
+			order.status === "ready" ||
+			(order.status === ORDER_STATUS.AWAITING_PAYMENT &&
+				releasesCashOrdersImmediately(unmarkRestaurant));
+		if (!isUndoable) {
 			throw new UserInputValidationError({
 				fields: [
 					{

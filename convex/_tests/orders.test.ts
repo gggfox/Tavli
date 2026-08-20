@@ -3,7 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { ERROR_NAMES } from "../_shared/errors";
-import { assertPositiveIntegerQuantity } from "../orderHelpers";
+import {
+	RESTAURANT_MEMBER_ROLE,
+	SERVED_VISIBLE_WINDOW_MS,
+	SHIFT_ROLE,
+	SHIFT_STATUS,
+	USER_ROLES,
+} from "../constants";
+import { assertPositiveIntegerQuantity, isServedOrderVisible } from "../orderHelpers";
 import { DASHBOARD_COUNT_SCAN_CAP } from "../orders";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "../orderServiceDate";
 import { insertMenuForRestaurant } from "../menus";
@@ -1020,6 +1027,54 @@ describe("orders", () => {
 			expect(orders[0].items).toHaveLength(1);
 			expect(orders[0].items[0].menuItemName).toBe("Bruschetta");
 			expect(orders[0].tableNumber).toBe(1);
+		});
+
+		// TAVLI-80: the join used to collapse a missing table into `0`, which the
+		// dashboard rendered as "Table 0" — a table a server could go looking for.
+		it("returns a null tableNumber when the order's table row is gone", async () => {
+			const t = convexTest(schema, modules);
+			const {
+				organizationId,
+				sessionId,
+				restaurantId,
+				tableId,
+				authed: diner,
+			} = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "owner1" });
+
+			await t.run(async (ctx) => {
+				await ctx.db.insert("userRoles", {
+					userId: "owner1",
+					roles: ["owner"],
+					organizationId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+
+			const orderId = await diner.mutation(api.orders.createDraft, { sessionId, tableId });
+			await diner.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await diner.mutation(api.orders.submitOrder, { orderId });
+			await simulatePaymentConfirmation(t, orderId);
+
+			await t.run(async (ctx) => {
+				await ctx.db.delete(tableId);
+			});
+
+			const [orders, error] = await authed.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+			});
+
+			expect(error).toBeNull();
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			expect(orders).toHaveLength(1);
+			expect(orders[0].tableNumber).toBeNull();
 		});
 
 		it("filters out draft, served, and cancelled orders", async () => {
@@ -3267,5 +3322,725 @@ describe("dashboard service-day filter", () => {
 		});
 
 		expect(counts!.awaiting_payment.count).toBe(1);
+	});
+});
+
+describe("served visibility window (TAVLI-84)", () => {
+	/** Comfortably outside `SERVED_VISIBLE_WINDOW_MS`, still inside "today". */
+	const LONG_AGO_MS = SERVED_VISIBLE_WINDOW_MS + 60 * 60 * 1000;
+	/** Comfortably inside it. */
+	const JUST_NOW_MS = 60 * 1000;
+
+	async function seedServedOrder(
+		t: ReturnType<typeof convexTest>,
+		args: {
+			restaurantId: Id<"restaurants">;
+			sessionId: Id<"sessions">;
+			tableId: Id<"tables">;
+			/** Omitted to seed a pre-TAVLI-84 row that never got the stamp. */
+			servedAt?: number;
+			updatedAt?: number;
+		}
+	) {
+		return await t.run(async (ctx) => {
+			const now = Date.now();
+			return await ctx.db.insert("orders", {
+				sessionId: args.sessionId,
+				restaurantId: args.restaurantId,
+				tableId: args.tableId,
+				status: "served",
+				totalAmount: 500,
+				createdAt: now,
+				updatedAt: args.updatedAt ?? now,
+				...(args.servedAt !== undefined && { servedAt: args.servedAt }),
+			});
+		});
+	}
+
+	describe("isServedOrderVisible", () => {
+		it("keeps a served order inside the window and drops it after", () => {
+			const now = Date.now();
+
+			expect(
+				isServedOrderVisible({ status: "served", servedAt: now - JUST_NOW_MS, updatedAt: now }, now)
+			).toBe(true);
+			expect(
+				isServedOrderVisible({ status: "served", servedAt: now - LONG_AGO_MS, updatedAt: now }, now)
+			).toBe(false);
+		});
+
+		it("leaves every other status alone, however old", () => {
+			const now = Date.now();
+			const ancient = now - 400 * 24 * 60 * 60 * 1000;
+
+			for (const status of ["awaiting_payment", "submitted", "preparing", "ready", "cancelled"]) {
+				expect(isServedOrderVisible({ status, updatedAt: ancient }, now)).toBe(true);
+			}
+		});
+
+		it("prefers servedAt over updatedAt, so a later write cannot revive an aged-out order", () => {
+			const now = Date.now();
+
+			// The refund/sweep case: served an hour ago, touched a second ago.
+			expect(
+				isServedOrderVisible(
+					{ status: "served", servedAt: now - LONG_AGO_MS, updatedAt: now - 1000 },
+					now
+				)
+			).toBe(false);
+		});
+
+		it("falls back to updatedAt for rows served before the stamp existed", () => {
+			const now = Date.now();
+
+			expect(isServedOrderVisible({ status: "served", updatedAt: now - JUST_NOW_MS }, now)).toBe(
+				true
+			);
+			expect(isServedOrderVisible({ status: "served", updatedAt: now - LONG_AGO_MS }, now)).toBe(
+				false
+			);
+		});
+	});
+
+	it("stamps servedAt when staff mark an order served", async () => {
+		const t = convexTest(schema, modules);
+		const { orderId, staff } = await seedMixedStationOrder(t, { status: "ready" });
+
+		const [, error] = await staff.mutation(api.orders.updateStatus, {
+			orderId,
+			newStatus: "served",
+		});
+		expect(error).toBeNull();
+
+		const stored = await t.run(async (ctx) => await ctx.db.get(orderId));
+		expect(stored!.servedAt).toBeTypeOf("number");
+		expect(Date.now() - stored!.servedAt!).toBeLessThan(SERVED_VISIBLE_WINDOW_MS);
+	});
+
+	it("excludes a served order older than the window and keeps a recent one", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		const now = Date.now();
+		const recentId = await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			servedAt: now - JUST_NOW_MS,
+		});
+		await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			servedAt: now - LONG_AGO_MS,
+		});
+		// Pre-TAVLI-84 row: no stamp, but marked served a minute ago as far as
+		// `updatedAt` knows, so the fallback keeps it visible.
+		const legacyId = await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			updatedAt: now - JUST_NOW_MS,
+		});
+
+		const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["served"],
+		});
+
+		if (!Array.isArray(orders)) throw new Error("Expected array");
+		expect(orders.map((o) => o._id).sort()).toEqual([recentId, legacyId].sort());
+	});
+
+	it("ages a served order off regardless of the service-day filter", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		await seedServedOrder(t, {
+			restaurantId,
+			sessionId,
+			tableId,
+			servedAt: Date.now() - LONG_AGO_MS,
+		});
+
+		// "all" is a day axis and `served` is terminal, so widening the day
+		// filter must not bring an aged-out ticket back onto the board.
+		for (const serviceDate of ["all", "today"] as const) {
+			const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId,
+				statuses: ["served"],
+				serviceDate,
+			});
+			if (!Array.isArray(orders)) throw new Error("Expected array");
+			expect(orders).toHaveLength(0);
+		}
+	});
+
+	it("leaves other statuses on the board however long they sit there", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		// An unserved ticket this old is exactly the thing staff must not lose
+		// sight of — the window is for terminal work only.
+		await t.run(async (ctx) => {
+			const stale = Date.now() - LONG_AGO_MS;
+			await ctx.db.insert("orders", {
+				sessionId,
+				restaurantId,
+				tableId,
+				status: "preparing",
+				totalAmount: 500,
+				createdAt: stale,
+				updatedAt: stale,
+			});
+		});
+
+		const [orders] = await staff.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId,
+			statuses: ["preparing", "ready"],
+		});
+
+		if (!Array.isArray(orders)) throw new Error("Expected array");
+		expect(orders).toHaveLength(2);
+	});
+
+	it("applies the same window to the Served segment count", async () => {
+		const t = convexTest(schema, modules);
+		const { restaurantId, sessionId, tableId, staff } = await seedMixedStationOrder(t, {
+			status: "ready",
+		});
+		const now = Date.now();
+		await seedServedOrder(t, { restaurantId, sessionId, tableId, servedAt: now - JUST_NOW_MS });
+		await seedServedOrder(t, { restaurantId, sessionId, tableId, servedAt: now - LONG_AGO_MS });
+		await seedServedOrder(t, { restaurantId, sessionId, tableId, servedAt: now - LONG_AGO_MS });
+
+		const [counts] = await staff.query(api.orders.getDashboardStatusCounts, { restaurantId });
+
+		// A segment count that disagreed with the cards behind it would read as
+		// a bug, so the count routes through the same rule.
+		expect(counts!.served.count).toBe(1);
+		expect(counts!.served.capped).toBe(false);
+		expect(counts!.ready.count).toBe(1);
+	});
+});
+
+describe("server-scoped dashboard (TAVLI-82)", () => {
+	const HOUR = 60 * 60 * 1000;
+
+	/**
+	 * A two-section floor with one table each, one submitted order sitting at
+	 * each table, and the callers the scope has to serve: a Clerk-backed
+	 * server, a manager, an owner who is not on the roster, and a managed
+	 * EmployeeAccount with its shadow membership row (ADR 006).
+	 */
+	async function seedFloor(t: ReturnType<typeof convexTest>, key = "scope") {
+		return await t.run(async (ctx) => {
+			const now = Date.now();
+
+			const organizationId = await ctx.db.insert("organizations", {
+				name: `${key} Org`,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			const restaurantId = await ctx.db.insert("restaurants", {
+				ownerId: "scope-owner",
+				organizationId,
+				name: `${key} R`,
+				slug: `${key}-r`,
+				currency: "USD",
+				timezone: "UTC",
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			await ctx.db.insert("userRoles", {
+				userId: "scope-owner",
+				roles: [USER_ROLES.OWNER],
+				organizationId,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			const patioId = await ctx.db.insert("sections", {
+				restaurantId,
+				name: "Patio",
+				displayOrder: 0,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const mainRoomId = await ctx.db.insert("sections", {
+				restaurantId,
+				name: "Main room",
+				displayOrder: 1,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			const patioTableId = await ctx.db.insert("tables", {
+				restaurantId,
+				tableNumber: 1,
+				sectionId: patioId,
+				isActive: true,
+				createdAt: now,
+			});
+			const mainRoomTableId = await ctx.db.insert("tables", {
+				restaurantId,
+				tableNumber: 2,
+				sectionId: mainRoomId,
+				isActive: true,
+				createdAt: now,
+			});
+
+			const serverMemberId = await ctx.db.insert("restaurantMembers", {
+				userId: "scope-server",
+				restaurantId,
+				organizationId,
+				role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const managerMemberId = await ctx.db.insert("restaurantMembers", {
+				userId: "scope-manager",
+				restaurantId,
+				organizationId,
+				role: RESTAURANT_MEMBER_ROLE.MANAGER,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			const employeeAccountId = await ctx.db.insert("employeeAccounts", {
+				restaurantId,
+				organizationId,
+				firstName: "Ana",
+				paternalLastname: "Ruiz",
+				maternalLastname: "Soto",
+				pinHash: "hash",
+				pinSetAt: now,
+				pinResetCount: 0,
+				failedPinAttempts: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
+			const accountMemberId = await ctx.db.insert("restaurantMembers", {
+				employeeAccountId,
+				restaurantId,
+				organizationId,
+				role: RESTAURANT_MEMBER_ROLE.EMPLOYEE,
+				isActive: true,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			const patioSessionId = await ctx.db.insert("sessions", {
+				restaurantId,
+				tableId: patioTableId,
+				userId: "diner-patio",
+				status: "active",
+				startedAt: now,
+			});
+			const patioOrderId = await ctx.db.insert("orders", {
+				sessionId: patioSessionId,
+				restaurantId,
+				tableId: patioTableId,
+				status: "submitted",
+				totalAmount: 500,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			const mainRoomSessionId = await ctx.db.insert("sessions", {
+				restaurantId,
+				tableId: mainRoomTableId,
+				userId: "diner-main",
+				status: "active",
+				startedAt: now,
+			});
+			const mainRoomOrderId = await ctx.db.insert("orders", {
+				sessionId: mainRoomSessionId,
+				restaurantId,
+				tableId: mainRoomTableId,
+				status: "submitted",
+				totalAmount: 700,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			return {
+				organizationId,
+				restaurantId,
+				patioId,
+				mainRoomId,
+				patioTableId,
+				mainRoomTableId,
+				serverMemberId,
+				managerMemberId,
+				employeeAccountId,
+				accountMemberId,
+				patioOrderId,
+				mainRoomOrderId,
+			};
+		});
+	}
+
+	/** Puts `memberId` on a shift covering now, with optional floor coverage. */
+	async function seedShift(
+		t: ReturnType<typeof convexTest>,
+		args: {
+			restaurantId: Id<"restaurants">;
+			memberId: Id<"restaurantMembers">;
+			sectionId?: Id<"sections">;
+			tableId?: Id<"tables">;
+			shiftRole?: string;
+			status?: "scheduled" | "published" | "cancelled";
+			startsAt?: number;
+			endsAt?: number;
+		}
+	) {
+		return await t.run(async (ctx) => {
+			const now = Date.now();
+			const startsAt = args.startsAt ?? now - HOUR;
+			const endsAt = args.endsAt ?? now + HOUR;
+			const shiftId = await ctx.db.insert("shifts", {
+				memberId: args.memberId,
+				restaurantId: args.restaurantId,
+				startsAt,
+				endsAt,
+				shiftRole: args.shiftRole ?? SHIFT_ROLE.SERVER,
+				status: args.status ?? SHIFT_STATUS.PUBLISHED,
+				createdBy: "scope-manager",
+				createdAt: now,
+				updatedAt: now,
+			});
+			if (args.sectionId) {
+				await ctx.db.insert("shiftSectionAssignments", {
+					shiftId,
+					restaurantId: args.restaurantId,
+					sectionId: args.sectionId,
+					startsAt,
+					endsAt,
+					createdBy: "scope-manager",
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+			if (args.tableId) {
+				await ctx.db.insert("shiftTableAssignments", {
+					shiftId,
+					restaurantId: args.restaurantId,
+					tableId: args.tableId,
+					startsAt,
+					endsAt,
+					createdBy: "scope-manager",
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+			return shiftId;
+		});
+	}
+
+	function orderIds(result: unknown): string[] {
+		if (!Array.isArray(result)) throw new Error("Expected array");
+		return (result as Array<{ _id: string }>).map((o) => o._id).sort();
+	}
+
+	it("returns only the orders seated in the caller's assigned section", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+			sectionId: floor.patioId,
+		});
+
+		const [mine] = await t
+			.withIdentity({ subject: "scope-server" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "mine",
+			});
+
+		expect(orderIds(mine)).toEqual([floor.patioOrderId]);
+	});
+
+	it("still shows the whole floor under 'all', so no order is invisible to everyone", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+			sectionId: floor.patioId,
+		});
+
+		const server = t.withIdentity({ subject: "scope-server" });
+		const [all] = await server.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId: floor.restaurantId,
+			scope: "all",
+		});
+		const [byDefault] = await server.query(api.orders.getActiveOrdersByRestaurant, {
+			restaurantId: floor.restaurantId,
+		});
+		const [asManager] = await t
+			.withIdentity({ subject: "scope-manager" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "all",
+			});
+
+		const everything = [floor.patioOrderId, floor.mainRoomOrderId].sort();
+		expect(orderIds(all)).toEqual(everything);
+		// Omitting `scope` has to behave exactly as it did before TAVLI-82.
+		expect(orderIds(byDefault)).toEqual(everything);
+		expect(orderIds(asManager)).toEqual(everything);
+	});
+
+	it("returns an empty board — not an error — when nothing is assigned", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		// On shift, but nobody gave them a section.
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+		});
+
+		const [mine, error] = await t
+			.withIdentity({ subject: "scope-server" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "mine",
+			});
+
+		expect(error).toBeNull();
+		expect(orderIds(mine)).toEqual([]);
+	});
+
+	it("ignores assignments from a shift that is over or cancelled", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		const now = Date.now();
+		// Yesterday's shift on the patio.
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+			sectionId: floor.patioId,
+			startsAt: now - 25 * HOUR,
+			endsAt: now - 17 * HOUR,
+		});
+		// Today's shift on the main room, called off.
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+			sectionId: floor.mainRoomId,
+			status: SHIFT_STATUS.CANCELLED,
+		});
+
+		const [mine] = await t
+			.withIdentity({ subject: "scope-server" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "mine",
+			});
+
+		expect(orderIds(mine)).toEqual([]);
+	});
+
+	it("honours a legacy per-table assignment as well as a section one", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		// Pre-sections coverage: the row names the table directly.
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+			tableId: floor.mainRoomTableId,
+		});
+
+		const [mine] = await t
+			.withIdentity({ subject: "scope-server" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "mine",
+			});
+
+		expect(orderIds(mine)).toEqual([floor.mainRoomOrderId]);
+	});
+
+	it("scopes a managed EmployeeAccount through its shadow membership row", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.accountMemberId,
+			sectionId: floor.mainRoomId,
+		});
+
+		// A managed employee has no Clerk identity (ADR 006), so the account is
+		// named explicitly by the staff caller driving the shared device.
+		const [mine] = await t
+			.withIdentity({ subject: "scope-manager" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "mine",
+				employeeAccountId: floor.employeeAccountId,
+			});
+
+		expect(orderIds(mine)).toEqual([floor.mainRoomOrderId]);
+	});
+
+	it("refuses to scope by an EmployeeAccount from another restaurant", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		const other = await seedFloor(t, "other");
+		await seedShift(t, {
+			restaurantId: other.restaurantId,
+			memberId: other.accountMemberId,
+			sectionId: other.mainRoomId,
+		});
+
+		const [mine, error] = await t
+			.withIdentity({ subject: "scope-manager" })
+			.query(api.orders.getActiveOrdersByRestaurant, {
+				restaurantId: floor.restaurantId,
+				scope: "mine",
+				employeeAccountId: other.employeeAccountId,
+			});
+
+		// An unresolvable member scopes to nothing rather than leaking the
+		// other restaurant's floor or silently falling back to "all".
+		expect(error).toBeNull();
+		expect(orderIds(mine)).toEqual([]);
+	});
+
+	it("keeps the segment counts in step with the scoped board", async () => {
+		const t = convexTest(schema, modules);
+		const floor = await seedFloor(t);
+		await seedShift(t, {
+			restaurantId: floor.restaurantId,
+			memberId: floor.serverMemberId,
+			sectionId: floor.patioId,
+		});
+
+		const server = t.withIdentity({ subject: "scope-server" });
+		const [scoped] = await server.query(api.orders.getDashboardStatusCounts, {
+			restaurantId: floor.restaurantId,
+			scope: "mine",
+		});
+		const [all] = await server.query(api.orders.getDashboardStatusCounts, {
+			restaurantId: floor.restaurantId,
+		});
+
+		// A count that disagreed with the cards behind it would read as a bug.
+		expect(scoped!.submitted.count).toBe(1);
+		expect(all!.submitted.count).toBe(2);
+	});
+
+	describe("getDashboardScopeContext", () => {
+		it("starts an employee on their own section while they work a server shift", async () => {
+			const t = convexTest(schema, modules);
+			const floor = await seedFloor(t);
+			await seedShift(t, {
+				restaurantId: floor.restaurantId,
+				memberId: floor.serverMemberId,
+				sectionId: floor.patioId,
+			});
+
+			const [context] = await t
+				.withIdentity({ subject: "scope-server" })
+				.query(api.orders.getDashboardScopeContext, { restaurantId: floor.restaurantId });
+
+			expect(context).toEqual({
+				canScopeToOwnSections: true,
+				hasActiveCoverage: true,
+				defaultsToMine: true,
+			});
+		});
+
+		it("leaves a manager on the whole floor even while covering a section", async () => {
+			const t = convexTest(schema, modules);
+			const floor = await seedFloor(t);
+			await seedShift(t, {
+				restaurantId: floor.restaurantId,
+				memberId: floor.managerMemberId,
+				sectionId: floor.patioId,
+			});
+
+			const [context] = await t
+				.withIdentity({ subject: "scope-manager" })
+				.query(api.orders.getDashboardScopeContext, { restaurantId: floor.restaurantId });
+
+			expect(context).toEqual({
+				canScopeToOwnSections: true,
+				hasActiveCoverage: true,
+				defaultsToMine: false,
+			});
+		});
+
+		it("does not offer the toggle to an owner who is not on the roster", async () => {
+			const t = convexTest(schema, modules);
+			const floor = await seedFloor(t);
+
+			const [context] = await t
+				.withIdentity({ subject: "scope-owner" })
+				.query(api.orders.getDashboardScopeContext, { restaurantId: floor.restaurantId });
+
+			expect(context).toEqual({
+				canScopeToOwnSections: false,
+				hasActiveCoverage: false,
+				defaultsToMine: false,
+			});
+		});
+
+		it("reports no coverage for an employee whose shift carries no section", async () => {
+			const t = convexTest(schema, modules);
+			const floor = await seedFloor(t);
+			await seedShift(t, {
+				restaurantId: floor.restaurantId,
+				memberId: floor.serverMemberId,
+			});
+
+			const [context] = await t
+				.withIdentity({ subject: "scope-server" })
+				.query(api.orders.getDashboardScopeContext, { restaurantId: floor.restaurantId });
+
+			expect(context).toEqual({
+				canScopeToOwnSections: true,
+				hasActiveCoverage: false,
+				// The shift is what turns the toggle on; the empty state is
+				// what explains the missing assignment.
+				defaultsToMine: true,
+			});
+		});
+
+		it("reports a managed EmployeeAccount's own coverage", async () => {
+			const t = convexTest(schema, modules);
+			const floor = await seedFloor(t);
+			await seedShift(t, {
+				restaurantId: floor.restaurantId,
+				memberId: floor.accountMemberId,
+				sectionId: floor.mainRoomId,
+			});
+
+			const [context] = await t
+				.withIdentity({ subject: "scope-manager" })
+				.query(api.orders.getDashboardScopeContext, {
+					restaurantId: floor.restaurantId,
+					employeeAccountId: floor.employeeAccountId,
+				});
+
+			expect(context).toEqual({
+				canScopeToOwnSections: true,
+				hasActiveCoverage: true,
+				defaultsToMine: true,
+			});
+		});
 	});
 });

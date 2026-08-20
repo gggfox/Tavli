@@ -14,6 +14,7 @@ import {
 	URGENCY_BG_CLASS,
 	type DashboardOrder,
 } from "./statusConfig";
+import { TableBadge } from "./TableBadge";
 
 interface OrderDetailModalProps {
 	fullOrder: DashboardOrder | null;
@@ -47,7 +48,7 @@ export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDeta
 									/>
 								)}
 								<h2 className="text-lg font-semibold text-foreground">
-									{t(OrdersKeys.CARD_TABLE, { number: fullOrder.tableNumber })}
+									<TableBadge tableNumber={fullOrder.tableNumber} />
 								</h2>
 								{fullOrder.dailyOrderNumber != null && (
 									<span
@@ -57,7 +58,7 @@ export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDeta
 										{t(OrdersKeys.CARD_DAY_NUMBER, { n: fullOrder.dailyOrderNumber })}
 									</span>
 								)}
-								<PaymentStateBadge paymentState={fullOrder.paymentState} />
+								<PaymentStateBadge order={fullOrder} />
 							</div>
 						}
 						subtitle={

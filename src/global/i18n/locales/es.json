@@ -382,6 +382,10 @@
 			"today": "Hoy",
 			"all": "Todo"
 		},
+		"scope": {
+			"mine": "Mi sección",
+			"all": "Todas"
+		},
 		"station": {
 			"all": "Todo",
 			"kitchen": "Cocina",
@@ -418,6 +422,7 @@
 		},
 		"card": {
 			"table": "Mesa {{number}}",
+			"tableNone": "Sin mesa",
 			"dayNumber": "#{{n}}",
 			"paid": "Pagado",
 			"moreItems_one": "+1 artículo más",
@@ -447,19 +452,29 @@
 			"confirm": "Enviar al comensal",
 			"dismiss": "Cancelar"
 		},
+		"servedWindow": {
+			"hint": "Los pedidos entregados salen de esta lista {{minutes}} minutos después de marcarse como entregados. Los anteriores permanecen en Pagos y en tus exportaciones."
+		},
 		"empty": {
-			"noOrders": "Ningún pedido coincide con los filtros seleccionados."
+			"noOrders": "Ningún pedido coincide con los filtros seleccionados.",
+			"noRecentServed": "Ningún pedido entregado en los últimos {{minutes}} minutos.",
+			"noOrdersInMySections": "No hay pedidos en tu sección en este momento.",
+			"noActiveSection": "No tienes ninguna sección asignada en este momento.",
+			"noActiveSectionHint": "Cambia a Todas para ver todo el salón."
 		},
 		"aria": {
 			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"serviceDateFilter": "Filtrar pedidos por día de servicio",
+			"scopeFilter": "Filtrar pedidos por sección",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
 			"cancelItem": "Cancelar artículo {{name}}",
 			"proposeSubstitution": "Proponer sustitución para {{name}}"
 		},
 		"payment": {
+			"toCollect": "Por cobrar",
+			"pending": "Pago pendiente",
 			"refundRequested": "Reembolso pendiente",
 			"refunded": "Reembolsado",
 			"refundFailed": "Reembolso fallido"
@@ -1012,6 +1027,10 @@
 			"generalHint": "Nombre, enlace público y lo básico que ven los comensales.",
 			"hoursTitle": "Horario y zona horaria",
 			"hoursHint": "La zona horaria determina los reportes, los turnos y el día de pedidos de este restaurante.",
+			"ordersTitle": "Pedidos",
+			"ordersHint": "Cómo llega una ronda a la cocina una vez que el comensal la confirma.",
+			"ordersReleaseCashLabel": "Mandar los pedidos marcados para pago en persona directo a la cocina",
+			"ordersReleaseCashHint": "Apagado, una ronda que espera efectivo se queda en el tablero de Pedidos hasta que el personal la marque pagada, y la cocina nunca la ve. Encendido, pasa al riel de preparación de inmediato y lleva una etiqueta «Por cobrar» en cada etapa hasta que alguien cobre — la cocina sigue trabajando y el riesgo de que se vayan sin pagar es tuyo.",
 			"taxTitle": "Información fiscal",
 			"taxHint": "Aparece en los correos de recibo para que los comensales puedan pasarle los datos a su contador. Tavli no emite CFDIs — nada de esto se declara ante el SAT.",
 			"taxRfcLabel": "RFC",
@@ -1057,6 +1076,8 @@
 			"seatsLabel": "Asientos",
 			"sectionLabel": "Sección",
 			"add": "Agregar mesa",
+			"addHeading": "Mesa individual",
+			"addHint": "Agrega una sola mesa a una sección existente.",
 			"save": "Guardar",
 			"cancel": "Cancelar",
 			"editTitle": "Editar mesa",
@@ -1098,11 +1119,15 @@
 		},
 		"sections": {
 			"heading": "Secciones del salón",
-			"hint": "Agrupa las mesas en secciones (zonas). Los meseros se asignan a secciones por turno desde el horario.",
-			"add": "Agregar sección",
+			"hint": "Agrupa las mesas en secciones (zonas) y crea las mesas de la sección de una vez. Los meseros se asignan a secciones por turno desde el horario.",
+			"add": "Agregar sección vacía",
+			"addWithTables_one": "Agregar sección + {{count}} mesa",
+			"addWithTables_other": "Agregar sección + {{count}} mesas",
 			"newNamePlaceholder": "Nombre de la sección (opcional)",
 			"initialTableCountLabel": "Mesas a crear",
 			"initialTableSeatsLabel": "Asientos por mesa",
+			"initialTableSeatsHint": "Todas las mesas nuevas se crean con estos asientos — después puedes cambiarlos mesa por mesa.",
+			"initialTableSeatsIdleHint": "Los asientos se aplican a las mesas que se crean con la sección: ajusta \"{{field}}\" arriba para agregarlas.",
 			"renamePlaceholder": "Nombre de la sección",
 			"unnamed": "Sección {{number}}",
 			"autoCreatePlaceholder": "Crear al agregar",

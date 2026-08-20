@@ -18,6 +18,7 @@ export const RESTAURANT_SETTINGS_SECTION = {
 	GENERAL: "general",
 	PUBLIC_PROFILE: "publicProfile",
 	HOURS: "hours",
+	ORDERS: "orders",
 	LOCATION: "location",
 	TAX: "tax",
 	ORGANIZATION: "organization",

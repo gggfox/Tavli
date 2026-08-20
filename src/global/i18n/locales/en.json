@@ -382,6 +382,10 @@
 			"today": "Today",
 			"all": "All"
 		},
+		"scope": {
+			"mine": "My section",
+			"all": "All"
+		},
 		"station": {
 			"all": "All",
 			"kitchen": "Kitchen",
@@ -418,6 +422,7 @@
 		},
 		"card": {
 			"table": "Table {{number}}",
+			"tableNone": "No table",
 			"dayNumber": "#{{n}}",
 			"paid": "Paid",
 			"moreItems_one": "+1 more item",
@@ -447,19 +452,29 @@
 			"confirm": "Send to diner",
 			"dismiss": "Cancel"
 		},
+		"servedWindow": {
+			"hint": "Served orders leave this list {{minutes}} minutes after they are marked served. Older ones stay in Payments and in your exports."
+		},
 		"empty": {
-			"noOrders": "No orders match the selected filters."
+			"noOrders": "No orders match the selected filters.",
+			"noRecentServed": "No orders served in the last {{minutes}} minutes.",
+			"noOrdersInMySections": "No orders in your section right now.",
+			"noActiveSection": "You have no section assigned right now.",
+			"noActiveSectionHint": "Switch to All to see the whole floor."
 		},
 		"aria": {
 			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
 			"serviceDateFilter": "Filter orders by service day",
+			"scopeFilter": "Filter orders by section",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders",
 			"cancelItem": "Cancel item {{name}}",
 			"proposeSubstitution": "Propose substitution for {{name}}"
 		},
 		"payment": {
+			"toCollect": "To collect",
+			"pending": "Payment pending",
 			"refundRequested": "Refund pending",
 			"refunded": "Refunded",
 			"refundFailed": "Refund failed"
@@ -1012,6 +1027,10 @@
 			"generalHint": "Name, public link and the basics diners see.",
 			"hoursTitle": "Hours & time zone",
 			"hoursHint": "The time zone drives every report, shift and order day for this restaurant.",
+			"ordersTitle": "Orders",
+			"ordersHint": "How a round reaches the kitchen once a guest commits it.",
+			"ordersReleaseCashLabel": "Send orders marked for in-person payment straight to the kitchen",
+			"ordersReleaseCashHint": "Off, a round waiting on cash sits on the Orders board until staff mark it paid, and the kitchen never sees it. On, it goes to the prep rail immediately and carries a “To collect” badge at every stage until someone collects — the kitchen keeps working, and the walkout risk is yours.",
 			"taxTitle": "Tax information",
 			"taxHint": "Shown on diner receipt emails so guests can pass the details to their accountant. Tavli does not issue CFDIs — nothing here is filed with the SAT.",
 			"taxRfcLabel": "RFC",
@@ -1057,6 +1076,8 @@
 			"seatsLabel": "Seats",
 			"sectionLabel": "Section",
 			"add": "Add table",
+			"addHeading": "Single table",
+			"addHint": "Adds one table to an existing section.",
 			"save": "Save",
 			"cancel": "Cancel",
 			"editTitle": "Edit table",
@@ -1098,11 +1119,15 @@
 		},
 		"sections": {
 			"heading": "Floor sections",
-			"hint": "Group tables into sections (zones). Waiters get assigned to sections per shift in the schedule.",
-			"add": "Add section",
+			"hint": "Group tables into sections (zones), and create the section's tables in one go. Waiters get assigned to sections per shift in the schedule.",
+			"add": "Add empty section",
+			"addWithTables_one": "Add section + {{count}} table",
+			"addWithTables_other": "Add section + {{count}} tables",
 			"newNamePlaceholder": "New section name (optional)",
 			"initialTableCountLabel": "Tables to create",
 			"initialTableSeatsLabel": "Seats per table",
+			"initialTableSeatsHint": "Every new table starts with these seats — you can change them table by table once the section exists.",
+			"initialTableSeatsIdleHint": "Seats apply to the tables created with the section — set \"{{field}}\" above to add some.",
 			"renamePlaceholder": "Section name",
 			"unnamed": "Section {{number}}",
 			"autoCreatePlaceholder": "Create on add",
