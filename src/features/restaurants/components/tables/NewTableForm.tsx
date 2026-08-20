@@ -23,6 +23,10 @@ interface NewTableFormProps {
  * "Add table" form. The table number defaults to the next available integer
  * (max(tableNumber) + 1) and stays in sync as new tables are added, so a
  * single click on the Add button just works without any user typing.
+ *
+ * This is the lighter of the two floor-plan add actions — one table into one
+ * section — so it is styled as a dashed, unfilled block with a secondary
+ * button, against the filled card and primary button of `NewSectionForm`.
  */
 export function NewTableForm({
 	restaurantId,
@@ -68,58 +72,68 @@ export function NewTableForm({
 	};
 
 	return (
-		<form onSubmit={handleSubmit} className="flex gap-2 items-end flex-wrap">
-			<TextInput
-				type="number"
-				label={t(RestaurantsKeys.TABLES_NUMBER_LABEL)}
-				value={tableNumberRaw}
-				onChange={(e) => {
-					userTouchedNumberRef.current = true;
-					setTableNumberRaw(e.target.value);
-				}}
-				min={1}
-				className="w-24"
-			/>
-			<TextInput
-				type="number"
-				label={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
-				value={capacityRaw}
-				onChange={(e) => setCapacityRaw(e.target.value)}
-				min={1}
-				placeholder={String(DEFAULT_CAPACITY)}
-				className="w-24"
-			/>
+		<section className="space-y-3 rounded-xl border border-dashed border-border p-4">
 			<div>
-				<label
-					htmlFor="new-table-section"
-					className="block text-xs font-medium mb-1 text-muted-foreground"
-				>
-					{t(RestaurantsKeys.TABLES_SECTION_LABEL)}
-				</label>
-				<select
-					id="new-table-section"
-					value={sectionId}
-					onChange={(e) => setSectionId(e.target.value)}
-					className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-				>
-					{sections.length === 0 ? (
-						<option value="">{t(RestaurantsKeys.SECTIONS_AUTO_CREATE_PLACEHOLDER)}</option>
-					) : (
-						sections.map((s, idx) => (
-							<option key={s._id} value={s._id}>
-								{sectionLabel(s, idx)}
-							</option>
-						))
-					)}
-				</select>
+				<h3 className="text-sm font-medium text-muted-foreground">
+					{t(RestaurantsKeys.TABLES_ADD_HEADING)}
+				</h3>
+				<p className="text-xs text-faint-foreground max-w-md">
+					{t(RestaurantsKeys.TABLES_ADD_HINT)}
+				</p>
 			</div>
-			<button
-				type="submit"
-				className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-			>
-				<Plus size={16} />
-				{t(RestaurantsKeys.TABLES_ADD)}
-			</button>
-		</form>
+			<form onSubmit={handleSubmit} className="flex gap-2 items-end flex-wrap">
+				<TextInput
+					type="number"
+					label={t(RestaurantsKeys.TABLES_NUMBER_LABEL)}
+					value={tableNumberRaw}
+					onChange={(e) => {
+						userTouchedNumberRef.current = true;
+						setTableNumberRaw(e.target.value);
+					}}
+					min={1}
+					className="w-24"
+				/>
+				<TextInput
+					type="number"
+					label={t(RestaurantsKeys.TABLES_SEATS_LABEL)}
+					value={capacityRaw}
+					onChange={(e) => setCapacityRaw(e.target.value)}
+					min={1}
+					placeholder={String(DEFAULT_CAPACITY)}
+					className="w-24"
+				/>
+				<div>
+					<label
+						htmlFor="new-table-section"
+						className="block text-xs font-medium mb-1 text-muted-foreground"
+					>
+						{t(RestaurantsKeys.TABLES_SECTION_LABEL)}
+					</label>
+					<select
+						id="new-table-section"
+						value={sectionId}
+						onChange={(e) => setSectionId(e.target.value)}
+						className="px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+					>
+						{sections.length === 0 ? (
+							<option value="">{t(RestaurantsKeys.SECTIONS_AUTO_CREATE_PLACEHOLDER)}</option>
+						) : (
+							sections.map((s, idx) => (
+								<option key={s._id} value={s._id}>
+									{sectionLabel(s, idx)}
+								</option>
+							))
+						)}
+					</select>
+				</div>
+				<button
+					type="submit"
+					className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium border border-border hover-btn-secondary"
+				>
+					<Plus size={16} />
+					{t(RestaurantsKeys.TABLES_ADD)}
+				</button>
+			</form>
+		</section>
 	);
 }
