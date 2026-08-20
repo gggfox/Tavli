@@ -1,5 +1,5 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useQuery } from "@tanstack/react-query";
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, beforeEach, vi } from "vitest";
@@ -44,7 +44,13 @@ describe("MenuBrowser", () => {
 		"menus:getMenusByRestaurant": [
 			{ _id: "menus:test", name: "Main", isActive: true, displayOrder: 0 },
 		],
-		"tables:getActiveByRestaurant": [{ _id: "tables:test", tableNumber: 1 }],
+		// TAVLI-83: the picker reads the occupancy-aware sibling query. Table 2 is
+		// held by someone else's visit; table 3 is the caller's own tab.
+		"tables:getActiveWithOccupancy": [
+			{ _id: "tables:free", tableNumber: 1, hasOpenSession: false, isOwnSession: false },
+			{ _id: "tables:taken", tableNumber: 2, hasOpenSession: true, isOwnSession: false },
+			{ _id: "tables:mine", tableNumber: 3, hasOpenSession: true, isOwnSession: true },
+		],
 		"menus:getCategoriesByMenu": [
 			{ _id: "menuCategories:test", name: "Starters", displayOrder: 0 },
 		],
@@ -71,13 +77,26 @@ describe("MenuBrowser", () => {
 			.map((ref: any) => getFunctionName(ref));
 	}
 
+	/** Per-test query answers, layered over QUERY_DATA and cleared between tests. */
+	let overrides: Record<string, unknown> = {};
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+		overrides = {};
 		vi.mocked(useQuery).mockImplementation((options: any) => {
 			const name = options?.ref ? getFunctionName(options.ref) : "";
-			return { data: QUERY_DATA[name] } as any;
+			return { data: name in overrides ? overrides[name] : QUERY_DATA[name] } as any;
 		});
 	});
+
+	/** Adds one item and opens the review/pay panel that holds the table picker. */
+	async function openPayFlow() {
+		fireEvent.click(screen.getByText("Bruschetta"));
+		fireEvent.click(screen.getByText("Add mocked item"));
+		const cta = await screen.findAllByText("Proceed to Payment");
+		fireEvent.click(cta.at(-1) as HTMLElement);
+		return (await screen.findByRole("combobox")) as HTMLSelectElement;
+	}
 
 	it("issues exactly one item subscription for the whole menu", () => {
 		render(
@@ -163,5 +182,70 @@ describe("MenuBrowser", () => {
 			expect(screen.queryByText("Proceed to Payment")).toBeNull();
 		});
 		expect(screen.queryByText("Tap items to start your order")).toBeNull();
+	});
+
+	describe("table occupancy (TAVLI-83)", () => {
+		it("disables a table held by someone else's visit and points at the join code", async () => {
+			overrides["restaurants:getPaymentsEnabled"] = true;
+			render(
+				<MenuBrowser
+					restaurantId={"restaurants:test" as any}
+					onSubmitOrder={() => {}}
+					isSubmitting={false}
+				/>
+			);
+
+			const select = await openPayFlow();
+			const options = within(select).getAllByRole("option") as HTMLOptionElement[];
+			const byLabel = (needle: string) => options.find((o) => o.textContent?.includes(needle))!;
+
+			expect(byLabel("Table 2").disabled).toBe(true);
+			expect(byLabel("Table 2").textContent).toContain("(taken)");
+			// The diner's own tab sits at table 3 — their second round must not be
+			// locked out of their own table.
+			expect(byLabel("Table 3").disabled).toBe(false);
+			expect(byLabel("Table 3").textContent).not.toContain("(taken)");
+			expect(byLabel("Table 1").disabled).toBe(false);
+
+			expect(screen.getByText(/Ask whoever is sitting there for their join code/)).toBeTruthy();
+		});
+
+		it("blocks the order when the picked table is taken between picking and paying", async () => {
+			overrides["restaurants:getPaymentsEnabled"] = true;
+			overrides["tables:getActiveWithOccupancy"] = [
+				{ _id: "tables:free", tableNumber: 1, hasOpenSession: false, isOwnSession: false },
+			];
+			const onSubmitOrder = vi.fn();
+			const { rerender } = render(
+				<MenuBrowser
+					restaurantId={"restaurants:test" as any}
+					onSubmitOrder={onSubmitOrder}
+					isSubmitting={false}
+				/>
+			);
+
+			const select = await openPayFlow();
+			fireEvent.change(select, { target: { value: "tables:free" } });
+
+			// Someone else claims it while the diner is still reviewing.
+			overrides["tables:getActiveWithOccupancy"] = [
+				{ _id: "tables:free", tableNumber: 1, hasOpenSession: true, isOwnSession: false },
+			];
+			rerender(
+				<MenuBrowser
+					restaurantId={"restaurants:test" as any}
+					onSubmitOrder={onSubmitOrder}
+					isSubmitting={false}
+				/>
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText(/That table was just taken/)).toBeTruthy();
+			});
+			const confirm = screen.getAllByText("Proceed to Payment").at(-1) as HTMLButtonElement;
+			expect(confirm.disabled).toBe(true);
+			fireEvent.click(confirm);
+			expect(onSubmitOrder).not.toHaveBeenCalled();
+		});
 	});
 });

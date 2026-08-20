@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { DatabaseReader } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { getSoftDeletePurgeDelayMs } from "./featureFlags";
 import {
@@ -12,7 +13,8 @@ import {
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { getCurrentUserId, requireOwnerOrManager } from "./_util/auth";
-import { FALLBACK_TABLE_CAPACITY, TABLE } from "./constants";
+import { isSessionMember } from "./_util/dinerSession";
+import { FALLBACK_TABLE_CAPACITY, SESSION_STATUS, TABLE } from "./constants";
 import { ensureDefaultSection } from "./sections";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -391,23 +393,116 @@ export const getDeletedForRestaurant = query({
  */
 export const getActiveByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
-	handler: async (ctx, args) => {
+	handler: async (ctx, args): Promise<Doc<"tables">[]> =>
+		await listActiveTables(ctx, args.restaurantId),
+});
+
+/** Shared body of `getActiveByRestaurant` — see its doc comment for the filter. */
+async function listActiveTables(
+	ctx: { db: DatabaseReader },
+	restaurantId: Id<typeof TABLE.RESTAURANTS>
+): Promise<Doc<"tables">[]> {
+	const tables = await ctx.db
+		.query(TABLE.TABLES)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	const sections = await ctx.db
+		.query(TABLE.SECTIONS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	const hiddenOrDeletedSectionIds = new Set(
+		sections.filter((s) => s.deletedAt !== undefined || s.isActive === false).map((s) => s._id)
+	);
+	return tables.filter(
+		(t) =>
+			t.isActive &&
+			t.deletedAt === undefined &&
+			(t.sectionId === undefined || !hiddenOrDeletedSectionIds.has(t.sectionId))
+	);
+}
+
+/**
+ * Which `Session`s are open at this `Table` right now. Read off the
+ * `sessions.by_table_status` index, so only sessions pinned to this exact
+ * table are touched — a session at another restaurant can never match,
+ * because the table id is the first index component and a table belongs to
+ * exactly one restaurant.
+ */
+async function openSessionsAtTable(
+	ctx: { db: DatabaseReader },
+	tableId: Id<typeof TABLE.TABLES>
+): Promise<Doc<"sessions">[]> {
+	return await ctx.db
+		.query(TABLE.SESSIONS)
+		.withIndex("by_table_status", (q) =>
+			q.eq("tableId", tableId).eq("status", SESSION_STATUS.ACTIVE)
+		)
+		.collect();
+}
+
+/** A `Table` plus its live occupancy, as the diner's table picker sees it. */
+export type TableWithOccupancy = Doc<"tables"> & {
+	/** An active `Session` is pinned to this table. */
+	hasOpenSession: boolean;
+	/** That session is the caller's own — they opened it or joined it by code. */
+	isOwnSession: boolean;
+};
+
+/**
+ * The same rows as `getActiveByRestaurant`, each carrying whether a `Session`
+ * is currently open at that `Table` (TAVLI-83). A sibling query rather than an
+ * extra field on `getActiveByRestaurant`: the reservation timeline and the
+ * table-lock manager subscribe to that one and should not be re-run every time
+ * a diner opens or closes a session.
+ *
+ * Occupancy is derived from `session.status`, never stored on the table, so a
+ * session closed at Visit close-out — or by the hourly stale sweep — releases
+ * its table with no extra write.
+ *
+ * `isOwnSession` is what keeps the diner's own table selectable: their first
+ * order pins their session to it (see `orders.createDraft`), and without this
+ * their next round would find the table disabled. Membership is resolved from
+ * the caller's Clerk identity rather than a session id passed in, so nobody can
+ * probe where someone else's session is sitting.
+ */
+export const getActiveWithOccupancy = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args): Promise<TableWithOccupancy[]> => {
+		// Anonymous menu browsing is allowed, so a missing identity is normal:
+		// it just means no session can be the caller's own.
+		const [viewerUserId] = await getCurrentUserId(ctx);
+		const tables = await listActiveTables(ctx, args.restaurantId);
+		return await Promise.all(
+			tables.map(async (table) => {
+				const sessions = await openSessionsAtTable(ctx, table._id);
+				return {
+					...table,
+					hasOpenSession: sessions.length > 0,
+					isOwnSession:
+						viewerUserId !== null && sessions.some((s) => isSessionMember(s, viewerUserId)),
+				};
+			})
+		);
+	},
+});
+
+/**
+ * Ids of the restaurant's tables that currently have an open `Session`. Feeds
+ * the "occupied" badge on the staff floor editor, which lists tables through
+ * `getByRestaurant` (inactive ones included) and only needs the id set.
+ */
+export const getOccupiedTableIds = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args): Promise<Id<"tables">[]> => {
 		const tables = await ctx.db
 			.query(TABLE.TABLES)
 			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
 			.collect();
-		const sections = await ctx.db
-			.query(TABLE.SECTIONS)
-			.withIndex("by_restaurant", (q) => q.eq("restaurantId", args.restaurantId))
-			.collect();
-		const hiddenOrDeletedSectionIds = new Set(
-			sections.filter((s) => s.deletedAt !== undefined || s.isActive === false).map((s) => s._id)
-		);
-		return tables.filter(
-			(t) =>
-				t.isActive &&
-				t.deletedAt === undefined &&
-				(t.sectionId === undefined || !hiddenOrDeletedSectionIds.has(t.sectionId))
-		);
+		const occupied: Id<"tables">[] = [];
+		for (const table of tables) {
+			if (table.deletedAt !== undefined) continue;
+			if ((await openSessionsAtTable(ctx, table._id)).length > 0) occupied.push(table._id);
+		}
+		return occupied;
 	},
 });

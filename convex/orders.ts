@@ -95,6 +95,16 @@ export const createDraft = mutation({
 			throw new NotFoundError("Table not found");
 		}
 
+		// TAVLI-83: a Session is opened from the QR code, before the diner knows
+		// where they are sitting, so the table only becomes known at the first
+		// order. Pin it onto the session here — that is what makes the table read
+		// as taken on the picker and on the staff floor editor. Only when unset:
+		// a session belongs to one table, and later rounds must not move it
+		// (reservation-seated sessions already arrive with theirs set).
+		if (session.tableId === undefined) {
+			await ctx.db.patch(session._id, { tableId: args.tableId });
+		}
+
 		const existingDraft = await ctx.db
 			.query(TABLE.ORDERS)
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))

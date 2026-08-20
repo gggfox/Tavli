@@ -19,8 +19,11 @@ interface DraggableTableRowProps {
 	selectionMode?: boolean;
 	isSelected?: boolean;
 	onToggleSelect?: () => void;
+	/** A Session is open at this table right now (TAVLI-83). */
+	isOccupied?: boolean;
 	labels: {
 		table: string;
+		occupied: string;
 		seatsFormat: string;
 		editTitle: string;
 		removeTitle: string;
@@ -46,6 +49,7 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 		selectionMode = false,
 		isSelected = false,
 		onToggleSelect,
+		isOccupied = false,
 		labels,
 	} = props;
 	const draggable = useDraggable({
@@ -113,6 +117,11 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 				</span>
 				{table.label && (
 					<span className="text-xs text-faint-foreground truncate">{table.label}</span>
+				)}
+				{isOccupied && (
+					<span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap bg-warning-subtle text-warning">
+						{labels.occupied}
+					</span>
 				)}
 				<span className="text-xs text-faint-foreground">{labels.seatsFormat}</span>
 			</div>

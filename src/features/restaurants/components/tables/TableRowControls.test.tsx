@@ -38,6 +38,9 @@ const section: Doc<"sections"> = {
 
 const rowLabels = {
 	table: "Table 4",
+	// Required by TAVLI-83's occupancy indicator, which landed after this
+	// test was written — the two PRs were green apart and only met on main.
+	occupied: "Occupied",
 	seatsFormat: "2 seats",
 	editTitle: "Edit table",
 	removeTitle: "Remove",

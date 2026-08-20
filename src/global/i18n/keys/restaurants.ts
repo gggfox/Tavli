@@ -202,6 +202,7 @@ export const RestaurantsKeys = {
 	TABLES_TABLE_LABEL: "restaurants.tables.tableLabel",
 	TABLES_SEATS_FORMAT: "restaurants.tables.seatsFormat",
 	TABLES_SEATS_NOT_SET: "restaurants.tables.seatsNotSet",
+	TABLES_OCCUPIED: "restaurants.tables.occupied",
 	TABLES_EMPTY: "restaurants.tables.empty",
 	TABLES_CREATE_FAILED: "restaurants.tables.createFailed",
 	TABLES_UPDATE_FAILED: "restaurants.tables.updateFailed",
