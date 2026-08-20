@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import {
 	ConflictError,
@@ -13,6 +14,8 @@ import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
 import {
 	getCurrentUserId,
+	getRestaurantMembership,
+	getRestaurantMembershipByEmployeeAccount,
 	requireRestaurantManagerOrAbove,
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
@@ -35,13 +38,15 @@ import {
 	PAYMENT_STATUS,
 	PREP_STATION,
 	type PrepStation,
+	RESTAURANT_MEMBER_ROLE,
 	SETTLED_BY,
+	SHIFT_ROLE,
 	TABLE,
 } from "./constants";
 import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
-import { resolveAttributedMemberId } from "./_util/attribution";
+import { resolveAttributedMemberId, resolveMemberFloorCoverage } from "./_util/attribution";
 import {
 	allowedOrderTransitions,
 	assertPositiveIntegerQuantity,
@@ -51,6 +56,8 @@ import {
 	getApplicableStations,
 	hasStationTicket,
 	isServedOrderVisible,
+	ORDER_SCOPE_VALIDATOR,
+	type OrderScope,
 	SERVICE_DATE_FILTER_VALIDATOR,
 	type ServiceDateFilter,
 	invalidateActivePayment,
@@ -1057,6 +1064,155 @@ function buildServiceDatePredicate(
 }
 
 /**
+ * The member a `scope: "mine"` read is filtered against.
+ *
+ * Two ways in, matching the two kinds of `RestaurantMember` (ADR 006):
+ *
+ *   - A Clerk-backed staff user is their own membership row — no argument
+ *     needed, and none accepted, so nobody can scope as someone else by
+ *     omission.
+ *   - A managed `EmployeeAccount` has no Clerk identity of its own; it is
+ *     named explicitly by `employeeAccountId` and resolved through its shadow
+ *     membership row. This is how the shared-device surface (ADR 006) asks
+ *     "show me Ana's tables" without Ana having a login.
+ *
+ * Naming an account is a *narrowing* filter, never a grant: the caller has
+ * already cleared `requireRestaurantStaffAccess`, so every order this can
+ * return is one `scope: "all"` would hand the same caller anyway. The
+ * `restaurantId` check keeps a foreign restaurant's account out.
+ *
+ * `null` means "no membership to scope by" — an owner or admin who is not on
+ * this restaurant's roster, or an account id that does not resolve. Callers
+ * treat it the same as an empty assignment: an empty board, not an error.
+ */
+async function resolveScopeMember(
+	ctx: QueryCtx,
+	args: {
+		userId: string;
+		restaurantId: Id<"restaurants">;
+		employeeAccountId?: Id<"employeeAccounts">;
+	}
+): Promise<Doc<"restaurantMembers"> | null> {
+	const member = args.employeeAccountId
+		? await getRestaurantMembershipByEmployeeAccount(ctx, args.employeeAccountId, args.restaurantId)
+		: await getRestaurantMembership(ctx, args.userId, args.restaurantId);
+
+	if (!member?.isActive || member.removedAt != null) return null;
+	return member;
+}
+
+/**
+ * Predicate for "is this order on a table the caller is working right now".
+ *
+ * `scope: "all"` (the default, and what every caller did before TAVLI-82) lets
+ * everything through, so no order is ever invisible to everyone. `"mine"`
+ * resolves the caller's active shift → section assignments → tables, and keeps
+ * only orders seated there. No active assignment yields an empty set and thus
+ * an empty board — the state a server between shifts should see, and the
+ * dashboard says so rather than reporting an error.
+ */
+async function buildOrderScopePredicate(
+	ctx: QueryCtx,
+	args: {
+		userId: string;
+		restaurantId: Id<"restaurants">;
+		scope: OrderScope | undefined;
+		employeeAccountId?: Id<"employeeAccounts">;
+		atMs: number;
+	}
+): Promise<(order: Doc<"orders">) => boolean> {
+	if (args.scope !== "mine") return () => true;
+
+	const member = await resolveScopeMember(ctx, args);
+	if (!member) return () => false;
+
+	const { tableIds } = await resolveMemberFloorCoverage(ctx, {
+		restaurantId: args.restaurantId,
+		memberId: member._id,
+		atMs: args.atMs,
+	});
+
+	return (order) => tableIds.has(order.tableId);
+}
+
+/** What the dashboard needs to decide whether — and how — to offer "My section". */
+export type DashboardScopeContext = {
+	/**
+	 * The caller is on this restaurant's roster, so "mine" can mean something.
+	 * False for an owner or admin who reads the board without being a member;
+	 * the dashboard hides the toggle rather than offering a control that can
+	 * only ever return nothing.
+	 */
+	canScopeToOwnSections: boolean;
+	/** The caller covers at least one table right now. */
+	hasActiveCoverage: boolean;
+	/**
+	 * The toggle starts on "mine" for a caller who has never set it: an
+	 * `employee` member working a `server` shift at this moment. Managers,
+	 * owners, and off-shift staff start on the whole floor, which is what
+	 * they were looking at before this existed.
+	 */
+	defaultsToMine: boolean;
+};
+
+/**
+ * Whether the caller can scope the board to their own sections, and whether
+ * it should start that way.
+ *
+ * Its own query rather than a field on the orders read: the answer is about
+ * the caller's shift, not about orders, and it must stay available while the
+ * board itself is filtered down to nothing — that is exactly when the empty
+ * state needs to explain which case it is looking at.
+ */
+export const getDashboardScopeContext = query({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<DashboardScopeContext, StaffAuthErrors | NotFoundErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+		const [, accessError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
+		if (accessError) return [null, accessError];
+
+		const member = await resolveScopeMember(ctx, {
+			userId,
+			restaurantId: args.restaurantId,
+			employeeAccountId: args.employeeAccountId,
+		});
+		if (!member) {
+			return [
+				{ canScopeToOwnSections: false, hasActiveCoverage: false, defaultsToMine: false },
+				null,
+			];
+		}
+
+		const { shifts, tableIds } = await resolveMemberFloorCoverage(ctx, {
+			restaurantId: args.restaurantId,
+			memberId: member._id,
+			atMs: Date.now(),
+		});
+
+		// The shift role is what the member is working right now, not their
+		// permission tier — a manager covering a section still reads as a
+		// manager, and only a `server` shift flips the default.
+		const onServerShift = shifts.some((shift) => shift.shiftRole === SHIFT_ROLE.SERVER);
+
+		return [
+			{
+				canScopeToOwnSections: true,
+				hasActiveCoverage: tableIds.size > 0,
+				defaultsToMine: member.role === RESTAURANT_MEMBER_ROLE.EMPLOYEE && onServerShift,
+			},
+			null,
+		];
+	},
+});
+
+/**
  * Per-status card counts for the dashboard's status filter, under the
  * station filter currently applied.
  *
@@ -1070,6 +1226,8 @@ export const getDashboardStatusCounts = query({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		prepStations: v.optional(v.array(PREP_STATION_VALIDATOR)),
 		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
+		scope: v.optional(ORDER_SCOPE_VALIDATOR),
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
 	},
 	handler: async function (
 		ctx,
@@ -1086,11 +1244,18 @@ export const getDashboardStatusCounts = query({
 
 		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
 		const now = Date.now();
+		const isInScope = await buildOrderScopePredicate(ctx, {
+			userId,
+			restaurantId: args.restaurantId,
+			scope: args.scope,
+			employeeAccountId: args.employeeAccountId,
+			atMs: now,
+		});
 		// Same rule as `getActiveOrdersByRestaurant`: a segment count has to
-		// agree with the number of cards behind it, so the served window is
-		// applied here too.
+		// agree with the number of cards behind it, so the served window and
+		// the server scope are both applied here too.
 		const isVisible = (order: Doc<"orders">) =>
-			isInServiceWindow(order) && isServedOrderVisible(order, now);
+			isInServiceWindow(order) && isServedOrderVisible(order, now) && isInScope(order);
 
 		const stationFilter =
 			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
@@ -1207,6 +1372,14 @@ export const getActiveOrdersByRestaurant = query({
 		// Service-day window. Omitted / "all" keeps the original behavior of
 		// returning every order in the requested statuses.
 		serviceDate: v.optional(SERVICE_DATE_FILTER_VALIDATOR),
+		// Whose floor to show. Omitted / "all" is the whole restaurant, the
+		// board's pre-TAVLI-82 behavior. "mine" narrows to the tables the
+		// caller covers right now (see `buildOrderScopePredicate`).
+		scope: v.optional(ORDER_SCOPE_VALIDATOR),
+		// Names the managed `EmployeeAccount` that "mine" belongs to, for the
+		// shared-device surface where the caller has no Clerk identity of their
+		// own (ADR 006). Ignored unless `scope` is "mine".
+		employeeAccountId: v.optional(v.id(TABLE.EMPLOYEE_ACCOUNTS)),
 	},
 	handler: async function (ctx, args) {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -1250,9 +1423,21 @@ export const getActiveOrdersByRestaurant = query({
 		// terminal, so there is no old open ticket to lose sight of. History
 		// lives in the Payments ledger and the exports (TAVLI-84).
 		const now = Date.now();
+		// Scope is resolved once and applied before the per-order item and
+		// table fan-out below, so a server's board does the work of their own
+		// section rather than the whole floor's.
+		const isInScope = await buildOrderScopePredicate(ctx, {
+			userId,
+			restaurantId: args.restaurantId,
+			scope: args.scope,
+			employeeAccountId: args.employeeAccountId,
+			atMs: now,
+		});
 		const filteredOrders = ordersPerStatus
 			.flat()
-			.filter((order) => isInServiceWindow(order) && isServedOrderVisible(order, now));
+			.filter(
+				(order) => isInServiceWindow(order) && isServedOrderVisible(order, now) && isInScope(order)
+			);
 
 		const ordersWithItems = await Promise.all(
 			filteredOrders.map(async (order) => {

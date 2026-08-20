@@ -20,6 +20,13 @@ export const OrdersKeys = {
 	SERVICE_DATE_TODAY: "orders.serviceDate.today",
 	SERVICE_DATE_ALL: "orders.serviceDate.all",
 	ARIA_SERVICE_DATE_FILTER: "orders.aria.serviceDateFilter",
+
+	/** Scope filter: the tables the user covers on their current shift. */
+	SCOPE_MINE: "orders.scope.mine",
+	/** Scope filter: every table in the restaurant. */
+	SCOPE_ALL: "orders.scope.all",
+	ARIA_SCOPE_FILTER: "orders.aria.scopeFilter",
+
 	STATION_ALL: "orders.station.all",
 	STATION_KITCHEN: "orders.station.kitchen",
 	STATION_BAR: "orders.station.bar",
@@ -98,6 +105,12 @@ export const OrdersKeys = {
 	EMPTY_NO_ORDERS: "orders.empty.noOrders",
 	/** Served segment with nothing inside the window. Takes `{{ minutes }}`. */
 	EMPTY_NO_RECENT_SERVED: "orders.empty.noRecentServed",
+	/** Scoped to "mine", with sections assigned but no orders in them. */
+	EMPTY_NO_ORDERS_IN_MY_SECTIONS: "orders.empty.noOrdersInMySections",
+	/** Scoped to "mine" with no active section assignment at all. */
+	EMPTY_NO_ACTIVE_SECTION: "orders.empty.noActiveSection",
+	/** Sits under `EMPTY_NO_ACTIVE_SECTION`; points at the All segment. */
+	EMPTY_NO_ACTIVE_SECTION_HINT: "orders.empty.noActiveSectionHint",
 
 	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",

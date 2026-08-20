@@ -50,9 +50,11 @@ vi.mock("@/global/components", async (importOriginal) => {
 
 const useOrdersMock = vi.fn();
 const useOrderStatusCountsMock = vi.fn();
+const useOrderScopeContextMock = vi.fn();
 vi.mock("../../hooks/useOrders", () => ({
 	useOrders: (...args: unknown[]) => useOrdersMock(...args),
 	useOrderStatusCounts: (...args: unknown[]) => useOrderStatusCountsMock(...args),
+	useOrderScopeContext: (...args: unknown[]) => useOrderScopeContextMock(...args),
 }));
 
 // OrderDashboard now subscribes to pending substitution proposals and wires
@@ -118,6 +120,7 @@ function makeOrder(overrides: Partial<DashboardOrder> = {}): DashboardOrder {
 const updateOrderDashboardStatusFilter = vi.fn(() => Promise.resolve("settings1"));
 const updateOrderDashboardPrepStationFilters = vi.fn(() => Promise.resolve("settings1"));
 const updateOrderDashboardServiceDateFilter = vi.fn(() => Promise.resolve("settings1"));
+const updateOrderDashboardScope = vi.fn(() => Promise.resolve("settings1"));
 
 function settingsWith(overrides: Record<string, unknown> = {}) {
 	return {
@@ -128,6 +131,8 @@ function settingsWith(overrides: Record<string, unknown> = {}) {
 		updateOrderDashboardPrepStationFilters,
 		orderDashboardServiceDateFilter: null,
 		updateOrderDashboardServiceDateFilter,
+		orderDashboardScope: null,
+		updateOrderDashboardScope,
 		...overrides,
 	};
 }
@@ -154,6 +159,13 @@ beforeEach(() => {
 	// Counts are decoration; default to "not loaded yet" so the existing
 	// assertions keep matching bare labels.
 	useOrderStatusCountsMock.mockReturnValue(undefined);
+	// Most of the suite is not about the scope control; default to a caller
+	// who is not on the roster, which is exactly the pre-TAVLI-82 board.
+	useOrderScopeContextMock.mockReturnValue({
+		canScopeToOwnSections: false,
+		hasActiveCoverage: false,
+		defaultsToMine: false,
+	});
 	useUserSettingsMock.mockReturnValue(settingsWith());
 });
 
@@ -186,7 +198,13 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 	it("queries only the selected status", () => {
 		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
 
-		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["preparing"], undefined, "all");
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"all",
+			"all"
+		);
 	});
 
 	it("persists the single value and narrows the query when a segment is picked", () => {
@@ -200,6 +218,7 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 			RESTAURANT_ID,
 			["awaiting_payment"],
 			undefined,
+			"all",
 			"all"
 		);
 		expect(screen.getByRole("radio", { name: "orders.status.awaitingPayment" })).toHaveAttribute(
@@ -221,7 +240,13 @@ describe("OrderDashboard strict single-select status filter (ADR 008)", () => {
 			"aria-checked",
 			"true"
 		);
-		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["ready"], undefined, "all");
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["ready"],
+			undefined,
+			"all",
+			"all"
+		);
 	});
 
 	it("defaults to the submitted queue when nothing was ever persisted", () => {
@@ -265,10 +290,16 @@ describe("OrderDashboard service-day filter", () => {
 			RESTAURANT_ID,
 			["preparing"],
 			undefined,
-			"today"
+			"today",
+			"all"
 		);
 		// Counts follow the same window, or the numbers would contradict the board.
-		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(RESTAURANT_ID, undefined, "today");
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			undefined,
+			"today",
+			"all"
+		);
 	});
 
 	it("restores a persisted today selection", () => {
@@ -332,7 +363,12 @@ describe("OrderDashboard segment counts", () => {
 		);
 		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
 
-		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["kitchen"], "all");
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["kitchen"],
+			"all",
+			"all"
+		);
 	});
 });
 
@@ -370,6 +406,7 @@ describe("OrderDashboard station filter control", () => {
 			RESTAURANT_ID,
 			["preparing"],
 			["kitchen"],
+			"all",
 			"all"
 		);
 	});
@@ -384,7 +421,13 @@ describe("OrderDashboard station filter control", () => {
 
 		expect(updateOrderDashboardPrepStationFilters).toHaveBeenCalledWith([]);
 		// `undefined`, not `[]` — the query short-circuits its per-order check.
-		expect(useOrdersMock).toHaveBeenLastCalledWith(RESTAURANT_ID, ["preparing"], undefined, "all");
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"all",
+			"all"
+		);
 	});
 
 	it("shows a legacy both-stations array as all, since it filters nothing out", () => {
@@ -530,5 +573,138 @@ describe("OrderDashboard served visibility window (TAVLI-84)", () => {
 		// "No orders match the selected filters" would send staff hunting
 		// through the filter bar for a segment that is working as designed.
 		expect(screen.getByText("orders.empty.noRecentServed")).toBeInTheDocument();
+	});
+});
+
+describe("OrderDashboard section scope (TAVLI-82)", () => {
+	function scopeGroup() {
+		return within(screen.getByRole("radiogroup", { name: "orders.aria.scopeFilter" }));
+	}
+
+	/** A server on a server shift with the patio assigned to them. */
+	function onServerShift() {
+		useOrderScopeContextMock.mockReturnValue({
+			canScopeToOwnSections: true,
+			hasActiveCoverage: true,
+			defaultsToMine: true,
+		});
+	}
+
+	it("hides the control from a caller who is not on the restaurant's roster", () => {
+		// The default mock: an owner or admin reading the board. A toggle that
+		// could only ever empty their board is worse than no toggle.
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(
+			screen.queryByRole("radiogroup", { name: "orders.aria.scopeFilter" })
+		).not.toBeInTheDocument();
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"all",
+			"all"
+		);
+	});
+
+	it("starts a server on their own section without them setting anything", () => {
+		onServerShift();
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(scopeGroup().getByRole("radio", { name: "orders.scope.mine" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"all",
+			"mine"
+		);
+	});
+
+	it("leaves a member with no server shift on the whole floor", () => {
+		useOrderScopeContextMock.mockReturnValue({
+			canScopeToOwnSections: true,
+			hasActiveCoverage: false,
+			defaultsToMine: false,
+		});
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(scopeGroup().getByRole("radio", { name: "orders.scope.all" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+	});
+
+	it("persists the choice and narrows both queries when the whole floor is picked", () => {
+		onServerShift();
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		fireEvent.click(scopeGroup().getByRole("radio", { name: "orders.scope.all" }));
+
+		expect(updateOrderDashboardScope).toHaveBeenCalledWith("all");
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"all",
+			"all"
+		);
+		// Counts follow the same scope, or the numbers would contradict the board.
+		expect(useOrderStatusCountsMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			undefined,
+			"all",
+			"all"
+		);
+	});
+
+	it("lets a stored choice override the shift-derived default", () => {
+		onServerShift();
+		useUserSettingsMock.mockReturnValue(settingsWith({ orderDashboardScope: "all" }));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(scopeGroup().getByRole("radio", { name: "orders.scope.all" })).toHaveAttribute(
+			"aria-checked",
+			"true"
+		);
+	});
+
+	it("falls back to the whole floor when a stored 'mine' has no roster behind it", () => {
+		// The member was removed but their setting survived. Honouring it would
+		// pin them to a board that can never hold anything.
+		useUserSettingsMock.mockReturnValue(settingsWith({ orderDashboardScope: "mine" }));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(useOrdersMock).toHaveBeenLastCalledWith(
+			RESTAURANT_ID,
+			["preparing"],
+			undefined,
+			"all",
+			"all"
+		);
+	});
+
+	it("says no section is assigned rather than claiming the board is caught up", () => {
+		useOrderScopeContextMock.mockReturnValue({
+			canScopeToOwnSections: true,
+			hasActiveCoverage: false,
+			defaultsToMine: true,
+		});
+		useOrdersMock.mockReturnValue(ordersWith([]));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(screen.getByText("orders.empty.noActiveSection")).toBeInTheDocument();
+		expect(screen.getByText("orders.empty.noActiveSectionHint")).toBeInTheDocument();
+	});
+
+	it("says the section is quiet when it is assigned but empty", () => {
+		onServerShift();
+		useOrdersMock.mockReturnValue(ordersWith([]));
+		render(<OrderDashboard restaurantId={RESTAURANT_ID} />);
+
+		expect(screen.getByText("orders.empty.noOrdersInMySections")).toBeInTheDocument();
 	});
 });
