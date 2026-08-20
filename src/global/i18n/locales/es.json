@@ -1314,7 +1314,7 @@
 			"imageTitle": "Gestionar imagen",
 			"noImage": "Sin imagen",
 			"imagePreviewAria": "Vista previa de imagen de {{name}}",
-			"optionsTitle": "Vincular grupos de opciones",
+			"optionsTitle": "Especificaciones (grupos de opciones)",
 			"markUnavailable": "Marcar no disponible",
 			"markAvailable": "Marcar disponible",
 			"removeTitle": "Eliminar producto",
@@ -1346,12 +1346,15 @@
 			"imageHeader": "Imagen del producto"
 		},
 		"picker": {
-			"noGroups": "Aún no hay grupos de opciones. Usa el botón Grupos de opciones de arriba para crearlos.",
+			"noGroups": "Aún no hay grupos de opciones. Crea uno abajo y quedará vinculado a este artículo.",
 			"loading": "Cargando grupos de opciones…",
 			"error": "No se pudieron cargar los grupos de opciones. Inténtalo de nuevo.",
-			"linkedGroups": "Grupos de opciones vinculados",
 			"groupSingle": "· Único",
-			"groupMulti": "· Múltiple"
+			"groupMulti": "· Múltiple",
+			"hint": "Opciones reutilizables que el comensal elige al pedir este artículo: corte, término, guarniciones. Los cambios aquí se guardan de inmediato.",
+			"manageGroups": "Editar grupos y opciones",
+			"selectionTypeLabel": "Tipo de selección",
+			"badgeLabel": "Especificaciones: {{names}}"
 		},
 		"lang": {
 			"defaultLabel": "Idioma predeterminado (usado para los nombres principales de los productos)",
