@@ -210,6 +210,27 @@ export const TAB_SETTLEABLE_ORDER_STATUSES = [ORDER_STATUS.SERVED] as const sati
 	(typeof TAB_PAYABLE_ORDER_STATUSES)[number]
 >;
 
+/**
+ * How long an order stays on the Orders dashboard's **Served** segment after
+ * staff mark it served.
+ *
+ * `served` is terminal (see `VALID_TRANSITIONS`), so a served order is work
+ * that is finished — but the segment used to accumulate every order the
+ * restaurant had ever served, because the only time axis was the service-day
+ * filter and its default is "all".
+ *
+ * Thirty minutes is the compromise. It is far longer than the undo affordances
+ * around it (ADR 007's station-ready undo is seconds), which matters more here
+ * because `served` has no undo at all: if staff mark the wrong order served,
+ * the card staying put is the only way they notice. It also covers the lag
+ * before a diner says "this isn't what I ordered". And it is short enough that
+ * the segment is empty again well before the next service.
+ *
+ * Nothing is deleted — an aged-out order is still in the Payments ledger, the
+ * exports, and the audit log.
+ */
+export const SERVED_VISIBLE_WINDOW_MS = 30 * 60 * 1000;
+
 /** Alphabet for session join codes: no 0/O/1/I lookalikes. */
 export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;

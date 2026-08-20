@@ -448,8 +448,12 @@
 			"confirm": "Enviar al comensal",
 			"dismiss": "Cancelar"
 		},
+		"servedWindow": {
+			"hint": "Los pedidos entregados salen de esta lista {{minutes}} minutos después de marcarse como entregados. Los anteriores permanecen en Pagos y en tus exportaciones."
+		},
 		"empty": {
-			"noOrders": "Ningún pedido coincide con los filtros seleccionados."
+			"noOrders": "Ningún pedido coincide con los filtros seleccionados.",
+			"noRecentServed": "Ningún pedido entregado en los últimos {{minutes}} minutos."
 		},
 		"aria": {
 			"statusSegments": "Mostrar pedidos con estado",

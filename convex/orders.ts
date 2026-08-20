@@ -50,6 +50,7 @@ import {
 	type DashboardStatusCounts,
 	getApplicableStations,
 	hasStationTicket,
+	isServedOrderVisible,
 	SERVICE_DATE_FILTER_VALIDATOR,
 	type ServiceDateFilter,
 	invalidateActivePayment,
@@ -892,6 +893,10 @@ export const updateStatus = mutation({
 				order.paymentState === ORDER_PAYMENT_STATE.PAID && {
 					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 				}),
+			// The only path into `served`, so the only place this is stamped.
+			// It anchors the Served segment's visibility window (TAVLI-84);
+			// `updatedAt` cannot, because later writes move it.
+			...(args.newStatus === ORDER_STATUS.SERVED && { servedAt: now }),
 			...backfilledNumberPatch,
 			updatedAt: now,
 			updatedBy: userId,
@@ -1080,6 +1085,12 @@ export const getDashboardStatusCounts = query({
 		if (accessError) return [null, accessError];
 
 		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
+		const now = Date.now();
+		// Same rule as `getActiveOrdersByRestaurant`: a segment count has to
+		// agree with the number of cards behind it, so the served window is
+		// applied here too.
+		const isVisible = (order: Doc<"orders">) =>
+			isInServiceWindow(order) && isServedOrderVisible(order, now);
 
 		const stationFilter =
 			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
@@ -1106,17 +1117,28 @@ export const getDashboardStatusCounts = query({
 				.order("desc")
 				.take(DASHBOARD_COUNT_SCAN_CAP);
 
-			const orders = scanned.filter(isInServiceWindow);
+			const orders = scanned.filter(isVisible);
 
 			// Hitting the ceiling only makes the count uncertain if the window
 			// was still open at the oldest row we saw. With a "today" filter
 			// whose oldest scanned order already predates the window, every
-			// unscanned order is older still — the count is exact.
+			// unscanned order is older still — the count is exact, because the
+			// scan and the filter share one axis (`createdAt`).
+			//
+			// The served window does not share that axis: it reads `servedAt`,
+			// while the scan is newest-created-first. So this is a judgement,
+			// not a proof — an order created before the 200 newest served ones
+			// but marked served in the last half hour would be missed. That takes a
+			// ticket forgotten across 200 later orders, and the alternative
+			// (calling every capped scan uncertain) would pin a permanent "+"
+			// on the Served segment of any restaurant with 200 lifetime served
+			// orders, i.e. all of them. See followUp: index served orders by
+			// `servedAt` if this ever bites.
 			const oldestScanned = scanned[scanned.length - 1];
 			const capped =
 				scanned.length === DASHBOARD_COUNT_SCAN_CAP &&
 				oldestScanned !== undefined &&
-				isInServiceWindow(oldestScanned);
+				isVisible(oldestScanned);
 
 			// No station filter: every order in the window is a card.
 			if (!stationFilter) {
@@ -1223,7 +1245,14 @@ export const getActiveOrdersByRestaurant = query({
 					.collect()
 			)
 		);
-		const filteredOrders = ordersPerStatus.flat().filter(isInServiceWindow);
+		// A served order drops off the board once its window closes, regardless
+		// of the service-day filter: "all" is a day axis, and `served` is
+		// terminal, so there is no old open ticket to lose sight of. History
+		// lives in the Payments ledger and the exports (TAVLI-84).
+		const now = Date.now();
+		const filteredOrders = ordersPerStatus
+			.flat()
+			.filter((order) => isInServiceWindow(order) && isServedOrderVisible(order, now));
 
 		const ordersWithItems = await Promise.all(
 			filteredOrders.map(async (order) => {

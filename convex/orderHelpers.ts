@@ -9,6 +9,7 @@ import {
 	PAYMENT_STATUS,
 	PREP_STATION,
 	type PrepStation,
+	SERVED_VISIBLE_WINDOW_MS,
 	TABLE,
 } from "./constants";
 
@@ -179,6 +180,30 @@ export function hasStationTicket(args: {
 	if (!isWorkable) return false;
 	if (args.stationStamp !== undefined) return false;
 	return args.liveStationItemCount > 0;
+}
+
+/**
+ * Whether a served order is still recent enough to show on the dashboard's
+ * Served segment. Every other status is left alone.
+ *
+ * The single source of truth for the rule, shared by the two dashboard
+ * queries and the frontend: the queries evaluate it at transaction time so
+ * stale rows are never shipped over the subscription, and the dashboard
+ * re-evaluates it against its own ticking clock, because a Convex query only
+ * re-runs when the data it read changes — never merely because time passed.
+ * Without the client half, the last served order of the night would sit on an
+ * idle board until the next write.
+ *
+ * `servedAt` is the timestamp; `updatedAt` is the fallback for orders served
+ * before that column existed. Nothing is deleted — see
+ * `SERVED_VISIBLE_WINDOW_MS`.
+ */
+export function isServedOrderVisible(
+	order: { readonly status: string; readonly servedAt?: number; readonly updatedAt: number },
+	now: number
+): boolean {
+	if (order.status !== ORDER_STATUS.SERVED) return true;
+	return now - (order.servedAt ?? order.updatedAt) < SERVED_VISIBLE_WINDOW_MS;
 }
 
 /**
