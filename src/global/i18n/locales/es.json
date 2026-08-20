@@ -647,6 +647,9 @@
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "El nombre de la categoría es obligatorio.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "El nombre de la categoría es demasiado largo.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Ingresa al menos un nombre de categoría.",
+		"ERROR_MENU_NAME_REQUIRED": "El nombre del menú es obligatorio.",
+		"ERROR_MENU_NAME_TOO_LONG": "El nombre del menú es demasiado largo.",
+		"ERROR_MENU_IMPORT_TARGET_REQUIRED": "Elige un menú al cual importar o dale nombre a uno nuevo.",
 		"ERROR_INVALID_PARTY_SIZE": "Ingresa un número de personas válido.",
 		"ERROR_CONTACT_FIELD_TOO_LONG": "Uno de los campos de contacto es demasiado largo.",
 		"ERROR_INVALID_EMAIL": "Ingresa un correo electrónico válido.",
@@ -1249,7 +1252,13 @@
 			"rename": "Renombrar",
 			"delete": "Eliminar menú",
 			"empty": "No hay menús para este restaurante.",
-			"loadingAria": "Cargando menús"
+			"loadingAria": "Cargando menús",
+			"emptyCreateTitle": "Crea un menú desde cero",
+			"emptyCreateDescription": "Crea un menú vacío, ponle nombre y agrega tus categorías e ítems cuando quieras.",
+			"createModalTitle": "Nuevo menú",
+			"createModalAria": "Diálogo para crear un menú",
+			"createModalDescription": "Ponle nombre a tu menú; después podrás agregar categorías e ítems.",
+			"createError": "No pudimos crear el menú. Inténtalo de nuevo."
 		},
 		"editor": {
 			"languagesLabel": "Idiomas",
@@ -1373,7 +1382,8 @@
 				"title": "Importa tu menú desde un documento",
 				"description": "Sube un PDF, documento de Word o archivo de texto y extraeremos tus categorías e ítems automáticamente."
 			},
-			"serviceUnavailable": "La importación de menú no está disponible temporalmente. Intenta de nuevo más tarde."
+			"serviceUnavailable": "La importación de menú no está disponible temporalmente. Intenta de nuevo más tarde.",
+			"newMenuDefaultName": "Menú importado"
 		}
 	},
 	"options": {

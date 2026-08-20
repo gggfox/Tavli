@@ -18,6 +18,7 @@ import { TABLE } from "./constants";
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
 
 const MAX_CATEGORY_NAME_LENGTH = 120;
+const MAX_MENU_NAME_LENGTH = 120;
 
 function validateCategoryName(name: string, field = "name"): UserInputValidationErrorObject | null {
 	const trimmed = name.trim();
@@ -29,6 +30,21 @@ function validateCategoryName(name: string, field = "name"): UserInputValidation
 	if (trimmed.length > MAX_CATEGORY_NAME_LENGTH) {
 		return new UserInputValidationError({
 			fields: [{ field, message: "ERROR_MENU_CATEGORY_NAME_TOO_LONG" }],
+		}).toObject();
+	}
+	return null;
+}
+
+function validateMenuName(name: string): UserInputValidationErrorObject | null {
+	const trimmed = name.trim();
+	if (!trimmed) {
+		return new UserInputValidationError({
+			fields: [{ field: "name", message: "ERROR_MENU_NAME_REQUIRED" }],
+		}).toObject();
+	}
+	if (trimmed.length > MAX_MENU_NAME_LENGTH) {
+		return new UserInputValidationError({
+			fields: [{ field: "name", message: "ERROR_MENU_NAME_TOO_LONG" }],
 		}).toObject();
 	}
 	return null;
@@ -80,6 +96,43 @@ export async function insertMenuForRestaurant(
 // ============================================================================
 // Menu CRUD
 // ============================================================================
+
+/**
+ * Create an empty menu for a restaurant — the "start from scratch" path that
+ * does not require importing a document. The staff UI calls this from the
+ * menus page (header action and empty state); `menuImportMutation` keeps its
+ * own insert because its audit payload records the import as the source.
+ */
+export const createMenu = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		name: v.string(),
+		description: v.optional(v.string()),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<"menus">, AuthErrors | UserInputValidationErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [null, error2];
+
+		const nameError = validateMenuName(args.name);
+		if (nameError) return [null, nameError];
+
+		const description = args.description?.trim();
+		const menuId = await insertMenuForRestaurant(ctx, {
+			restaurantId: args.restaurantId,
+			name: args.name.trim(),
+			userId,
+			description: description || undefined,
+		});
+
+		return [menuId, null];
+	},
+});
 
 export const updateMenu = mutation({
 	args: {

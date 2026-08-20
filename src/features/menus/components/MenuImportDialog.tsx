@@ -61,15 +61,14 @@ export function MenuImportDialog({
 		if (!extraction) return;
 
 		if (targetMenuId === "__new__") {
-			const name = newMenuName.trim() || "Imported Menu";
-			const fallbackMenuId = menus[0]?._id;
-			if (fallbackMenuId) {
-				confirmImport(fallbackMenuId, name);
-			}
+			// No menuId: the mutation creates the menu from `newMenuName`. This
+			// is what makes the import work for a restaurant with zero menus.
+			const name = newMenuName.trim() || t(MenusKeys.IMPORT_NEW_MENU_DEFAULT_NAME);
+			confirmImport(undefined, name);
 		} else {
 			confirmImport(targetMenuId);
 		}
-	}, [extraction, targetMenuId, newMenuName, menus, confirmImport]);
+	}, [extraction, targetMenuId, newMenuName, confirmImport, t]);
 
 	const formatPrice = (cents: number) => {
 		if (cents === 0) return "—";
