@@ -131,6 +131,20 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 							</option>
 						))}
 					</select>
+					{/*
+					 * Editing number and seats is the most-used row action, so it sits
+					 * on the row as a visible pencil rather than behind the kebab. The
+					 * kebab keeps the rarer, destructive-ish actions.
+					 */}
+					<button
+						type="button"
+						onClick={onStartEdit}
+						className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+						title={labels.editTitle}
+						aria-label={labels.editTitle}
+					>
+						<Pencil size={16} />
+					</button>
 					<TableActionsKebab
 						isOpen={isKebabOpen}
 						onOpen={onOpenKebab}
@@ -138,17 +152,6 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 						ariaLabel={labels.rowActionsAria}
 						items={
 							<>
-								<button
-									type="button"
-									onClick={() => {
-										onCloseKebab();
-										onStartEdit();
-									}}
-									className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
-								>
-									<Pencil size={14} />
-									{labels.editTitle}
-								</button>
 								<button
 									type="button"
 									onClick={() => {

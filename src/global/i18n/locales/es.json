@@ -1110,6 +1110,8 @@
 			"newNamePlaceholder": "Nombre de la sección (opcional)",
 			"initialTableCountLabel": "Mesas a crear",
 			"initialTableSeatsLabel": "Asientos por mesa",
+			"initialTableSeatsHint": "Todas las mesas nuevas se crean con estos asientos — después puedes cambiarlos mesa por mesa.",
+			"initialTableSeatsIdleHint": "Los asientos se aplican a las mesas que se crean con la sección: ajusta \"{{field}}\" arriba para agregarlas.",
 			"renamePlaceholder": "Nombre de la sección",
 			"unnamed": "Sección {{number}}",
 			"autoCreatePlaceholder": "Crear al agregar",
