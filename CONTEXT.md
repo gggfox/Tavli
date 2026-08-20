@@ -91,9 +91,10 @@ An order is paid at submit, before the kitchen sees it, or handed to
 staff as **Awaiting payment** for in-person collection. Holds a
 `status` (`draft → submitted → preparing → ready → served`, or
 `cancelled`; the in-person path inserts `awaiting_payment` before
-`submitted`) and per-station completion timestamps (`kitchenReadyAt`,
-`barReadyAt`). `served` stays terminal — a served order cannot be
-cancelled.
+`submitted`, or — where the restaurant releases cash orders immediately
+— advances straight out of it like a submitted round) and per-station
+completion timestamps (`kitchenReadyAt`, `barReadyAt`). `served` stays
+terminal — a served order cannot be cancelled.
 _Avoid_: ticket, check, transaction.
 
 **Access code**:
@@ -108,9 +109,15 @@ _Avoid_: table code / código de mesa (old name), join code (different
 thing).
 
 **Awaiting payment**:
-An `Order` committed by the diner for in-person payment. Visible only
-to staff — never on the kitchen rail — until staff mark it paid and
-release it.
+An `Order` committed by the diner for in-person payment. By default,
+visible only to staff — never on the kitchen rail — until staff mark it
+paid and release it. A restaurant can flip
+`releaseCashOrdersImmediately` (ADR 008 addendum, TAVLI-81, default
+off), after which such a round advances exactly like a submitted one,
+appears on the rail, and carries a persistent **to collect** badge
+through every status until staff collect. It still owes money either
+way: the debt is `awaitingPaymentAt` with no `paidAt`, and it blocks
+visit close-out until settled.
 _Avoid_: pending (that is the diner-facing label for submitted), unpaid
 order on the tab.
 

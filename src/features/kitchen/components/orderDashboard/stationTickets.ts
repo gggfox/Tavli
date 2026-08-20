@@ -23,9 +23,10 @@ export interface StationTicket {
  *    has nothing left for a station to do — including one flipped straight to
  *    `ready` by the whole-order action, which leaves no station stamps behind
  *    and would otherwise strand an unactionable card here. `served` and
- *    `cancelled` are closed. `awaiting_payment` (ADR 008) must NEVER reach a
- *    station rail: the kitchen only sees an order once its cash is collected,
- *    so it is excluded here by the same status allowlist.
+ *    `cancelled` are closed. `awaiting_payment` (ADR 008) reaches a rail only
+ *    where the restaurant releases cash orders immediately (TAVLI-81); by
+ *    default the kitchen still sees an order only once its cash is collected,
+ *    and the same status allowlist excludes it.
  * 2. Items are the station's own, minus 86'd lines — a station never sees the
  *    other station's work, and never sees what it no longer has to make.
  * 3. The ticket bumps (leaves the rail) once the station has stamped ready, or
@@ -51,6 +52,7 @@ export function deriveStationTickets(
 			status: order.status,
 			stationStamp: station === "kitchen" ? order.kitchenReadyAt : order.barReadyAt,
 			liveStationItemCount: items.length,
+			cashReleasedImmediately: order.cashReleasedImmediately,
 		});
 		if (!visible) continue;
 

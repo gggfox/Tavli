@@ -428,6 +428,14 @@ export const update = mutation({
 		orderNumberResetFrequency: v.optional(
 			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
+		/**
+		 * Cash policy (TAVLI-81). Manager-or-above like the rest of this form —
+		 * deliberately NOT admin-gated the way `orderNumberResetFrequency` is:
+		 * this is the restaurant's own call about whether it trusts its tables,
+		 * and it is the whole point of the setting that the people running the
+		 * floor can flip it.
+		 */
+		releaseCashOrdersImmediately: v.optional(v.boolean()),
 		// Geofence for customer ordering (TAVLI-6). Pass null to clear.
 		latitude: v.optional(v.union(v.number(), v.null())),
 		longitude: v.optional(v.union(v.number(), v.null())),
@@ -661,6 +669,9 @@ export const update = mutation({
 			}),
 			...(args.orderNumberResetFrequency !== undefined && {
 				orderNumberResetFrequency: args.orderNumberResetFrequency,
+			}),
+			...(args.releaseCashOrdersImmediately !== undefined && {
+				releaseCashOrdersImmediately: args.releaseCashOrdersImmediately,
 			}),
 			...(args.latitude !== undefined && { latitude: args.latitude ?? undefined }),
 			...(args.longitude !== undefined && { longitude: args.longitude ?? undefined }),

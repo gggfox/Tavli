@@ -43,6 +43,7 @@ import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
 import { resolveAttributedMemberId } from "./_util/attribution";
 import {
+	allowedOrderTransitions,
 	assertPositiveIntegerQuantity,
 	DASHBOARD_STATUS_VALIDATOR,
 	DASHBOARD_STATUSES,
@@ -54,11 +55,12 @@ import {
 	invalidateActivePayment,
 	loadOrderItemTranslations,
 	normalizeSelectedOptions,
+	owesInPersonPayment,
 	PREP_STATION_VALIDATOR,
 	recalculateTotal,
+	releasesCashOrdersImmediately,
 	resolvePrepStation,
 	selectedOptionValidator,
-	VALID_TRANSITIONS,
 } from "./orderHelpers";
 import {
 	cancelPendingProposalsForOrder,
@@ -816,7 +818,11 @@ export const updateStatus = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		const [staffRestaurant, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
 		if (restaurantError) return [null, restaurantError];
 
 		// Cancelling is the only transition that moves money — a paid order
@@ -832,7 +838,13 @@ export const updateStatus = mutation({
 			if (managerError) return [null, managerError];
 		}
 
-		const allowedNext = VALID_TRANSITIONS[order.status];
+		// With `releaseCashOrdersImmediately` on, an uncollected cash round is
+		// workable and advances exactly like `submitted` (TAVLI-81); off, this is
+		// the ADR 008 table verbatim and `awaiting_payment` can only be cancelled.
+		const allowedNext = allowedOrderTransitions(
+			order.status,
+			releasesCashOrdersImmediately(staffRestaurant)
+		);
 		if (!allowedNext?.includes(args.newStatus)) {
 			// Cancelling a served order is now the most likely rejection here, and
 			// the frontend needs a stable code for it — a free-text validation
@@ -937,9 +949,18 @@ export const updateStatus = mutation({
 });
 
 /**
- * Staff collected the cash for an `awaiting_payment` order (ADR 008): stamps
- * it paid (`settledBy: "staff"`) and releases it to `submitted`, where the
- * kitchen sees it for the first time.
+ * Staff collected the cash for a round that owes it (ADR 008): stamps it paid
+ * (`settledBy: "staff"`) and, when the kitchen has not seen it yet, releases it
+ * to `submitted`.
+ *
+ * Callable at **every stage**, not only from `awaiting_payment` (TAVLI-81).
+ * Where `releaseCashOrdersImmediately` is on, the round is already being cooked
+ * while the cash is uncollected, so "mark paid in person" has to work from
+ * `preparing`, `ready` and `served` too — collecting is otherwise unreachable
+ * once the kitchen advances the ticket, which is precisely the workflow block
+ * this ticket removes. The status is only rewritten on the release step: past
+ * `awaiting_payment` the order keeps the status the kitchen gave it, and only
+ * the money fields move.
  *
  * Deliberately writes **no `payments` row** — no Stripe money moved, and a
  * synthetic row would poison every revenue aggregate that reads the payments
@@ -960,16 +981,21 @@ export const markOrderPaidInPerson = mutation({
 		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
 		if (restaurantError) return [null, restaurantError];
 
-		if (order.status !== ORDER_STATUS.AWAITING_PAYMENT) {
+		// Keeps the stable code the frontend already maps. With the toggle off
+		// this rejects exactly what the old `status !== awaiting_payment` check
+		// rejected: an order can only owe in person while it holds that status.
+		if (!owesInPersonPayment(order)) {
 			throw new ConflictError("ERROR_ORDER_NOT_AWAITING_PAYMENT");
 		}
 
+		const isRelease = order.status === ORDER_STATUS.AWAITING_PAYMENT;
 		const now = Date.now();
 		await ctx.db.patch(args.orderId, {
-			status: "submitted",
+			// Releasing is what makes `submitted` mean "the kitchen may start", so
+			// it belongs to the collection only while the kitchen has not started.
+			...(isRelease && { status: "submitted" as const, submittedAt: now }),
 			paymentState: ORDER_PAYMENT_STATE.PAID,
 			paidAt: now,
-			submittedAt: now,
 			settledBy: "staff",
 			updatedAt: now,
 			updatedBy: userId,
@@ -1068,9 +1094,12 @@ export const getDashboardStatusCounts = query({
 		const stationFilter =
 			args.prepStations && args.prepStations.length > 0 ? new Set(args.prepStations) : null;
 		// Exactly one station selected puts the dashboard on that station's
-		// rail; `awaiting_payment` is excluded there and handled as cards.
+		// rail; `awaiting_payment` is excluded there and handled as cards —
+		// unless this restaurant releases cash orders immediately (TAVLI-81),
+		// where those rounds are ordinary rail work.
 		const railStation =
 			args.prepStations && args.prepStations.length === 1 ? args.prepStations[0] : null;
+		const cashReleasedImmediately = releasesCashOrdersImmediately(restaurant);
 
 		// Every key is filled by the loop below, which walks all statuses.
 		const counts = {} as DashboardStatusCounts;
@@ -1105,7 +1134,8 @@ export const getDashboardStatusCounts = query({
 				continue;
 			}
 
-			const onRail = railStation !== null && status !== "awaiting_payment";
+			const onRail =
+				railStation !== null && (status !== "awaiting_payment" || cashReleasedImmediately);
 			let count = 0;
 
 			for (const order of orders) {
@@ -1129,6 +1159,7 @@ export const getDashboardStatusCounts = query({
 							status: order.status,
 							stationStamp: stamp,
 							liveStationItemCount: liveStationItems.length,
+							cashReleasedImmediately,
 						})
 					) {
 						count += 1;
@@ -1176,6 +1207,12 @@ export const getActiveOrdersByRestaurant = query({
 		if (accessError) return [null, accessError];
 
 		const isInServiceWindow = buildServiceDatePredicate(restaurant, args.serviceDate);
+		// Joined onto every card below rather than fetched separately by the
+		// dashboard: whether an uncollected cash round may be worked is a fact
+		// the card, the station rail and the action row all have to agree on,
+		// and a second subscription to the restaurant row could disagree with
+		// this one for a frame (TAVLI-81).
+		const cashReleasedImmediately = releasesCashOrdersImmediately(restaurant);
 
 		const requestedStatuses =
 			args.statuses && args.statuses.length > 0
@@ -1205,7 +1242,15 @@ export const getActiveOrdersByRestaurant = query({
 					.withIndex("by_order", (q) => q.eq("orderId", order._id))
 					.collect();
 				const table = await ctx.db.get(order.tableId);
-				return { ...order, items, tableNumber: table?.tableNumber ?? 0 };
+				// `null`, never `0`: a table that has been deleted or purged is a
+				// missing join, and the dashboard has to say so instead of sending
+				// a server to a table numbered zero (TAVLI-80).
+				return {
+					...order,
+					items,
+					tableNumber: table?.tableNumber ?? null,
+					cashReleasedImmediately,
+				};
 			})
 		);
 
@@ -1276,13 +1321,27 @@ export const markStationReady = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		const [stationRestaurant, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
 		if (restaurantError) return [null, restaurantError];
 
 		// A station can only mark itself ready while the order is in flight
 		// (submitted / preparing). Once "ready"/"served"/"cancelled", the
 		// per-station stamp is no longer meaningful.
-		if (order.status !== "submitted" && order.status !== "preparing") {
+		//
+		// Where the restaurant releases cash orders immediately (TAVLI-81), an
+		// uncollected `awaiting_payment` round is in flight too — it sits on the
+		// rail, so the station that cooked it must be able to stamp it. Off, that
+		// status never reaches a rail and this rejects it exactly as before.
+		const isInFlight =
+			order.status === "submitted" ||
+			order.status === "preparing" ||
+			(order.status === ORDER_STATUS.AWAITING_PAYMENT &&
+				releasesCashOrdersImmediately(stationRestaurant));
+		if (!isInFlight) {
 			throw new UserInputValidationError({
 				fields: [
 					{
@@ -1338,9 +1397,14 @@ export const markStationReady = mutation({
 				: nextBarReadyAt !== undefined
 		);
 
-		// `order.status` is narrowed to "submitted" | "preparing" by the
-		// guard above, so flipping to "ready" is always a forward step
-		// here when every applicable station has been stamped.
+		// The guard above narrowed the status to one the kitchen is actively
+		// working ("submitted" / "preparing", plus an immediately-released
+		// `awaiting_payment`), so flipping to "ready" is always a forward step
+		// here when every applicable station has been stamped. A released cash
+		// round leaves `awaiting_payment` behind at this point and never returns
+		// to it — its debt is carried by `awaitingPaymentAt` + `paidAt` from here
+		// on (`owesInPersonPayment`), which is what keeps the badge, the
+		// mark-paid action and the session guards intact.
 		const statusPatch = everyStationDone ? { status: "ready" as const } : {};
 
 		await ctx.db.patch(args.orderId, {
@@ -1377,12 +1441,25 @@ export const unmarkStationReady = mutation({
 		const order = await ctx.db.get(args.orderId);
 		if (!order) return [null, new NotFoundError("Order not found").toObject()];
 
-		const [, restaurantError] = await requireRestaurantStaffAccess(ctx, userId, order.restaurantId);
+		const [unmarkRestaurant, restaurantError] = await requireRestaurantStaffAccess(
+			ctx,
+			userId,
+			order.restaurantId
+		);
 		if (restaurantError) return [null, restaurantError];
 
 		// Once served or cancelled the order has left the stations' hands, and a
 		// stamp on a still-`submitted` order is unreachable from the ticket UI.
-		if (order.status !== "preparing" && order.status !== "ready") {
+		//
+		// A released cash round (TAVLI-81) can hold a stamp while still
+		// `awaiting_payment` — one station of two done — so the undo window has
+		// to reach it, or a mistap there is unrecoverable.
+		const isUndoable =
+			order.status === "preparing" ||
+			order.status === "ready" ||
+			(order.status === ORDER_STATUS.AWAITING_PAYMENT &&
+				releasesCashOrdersImmediately(unmarkRestaurant));
+		if (!isUndoable) {
 			throw new UserInputValidationError({
 				fields: [
 					{

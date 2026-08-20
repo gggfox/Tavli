@@ -78,6 +78,47 @@ rail. Staff collect and tap "mark paid in person", which stamps
 Awaiting-payment orders are excluded from every Stripe path, including the
 legacy tab payable set.
 
+> **2026-08-19 — addendum: `releaseCashOrdersImmediately` (TAVLI-81).** The
+> rule above makes an uncollected cash order a **workflow blocker**: the
+> kitchen cannot touch the round until someone marks it paid. Our first client
+> runs the opposite way — they cook, then collect — and reported that the app
+> stops the floor working ("que solo sea un sticker el de pago en efectivo o el
+> 'por cobrar', porque si no no se puede trabajar hasta que no se ponga que ya
+> se pagó").
+>
+> `restaurants.releaseCashOrdersImmediately` (optional boolean, **default
+> off**) lets each restaurant choose. Off is this ADR verbatim, and stays the
+> behaviour of every restaurant that predates the toggle. On, the debt stops
+> gating the workflow:
+>
+> - An `awaiting_payment` round advances **exactly like `submitted`** — the
+>   transition table is borrowed, not copied, so the two rows can never drift —
+>   reaches the station rails, and can be stamped ready.
+> - The money becomes a **badge, not a status**. Because a released round
+>   leaves `awaiting_payment` behind, "this table still owes cash" moves onto
+>   `awaitingPaymentAt` + `paidAt`, read through one predicate
+>   (`owesInPersonPayment`). The card carries a persistent "to collect" sticker
+>   at every status, and "mark paid in person" is callable from every one of
+>   them — otherwise collecting becomes unreachable the moment the kitchen
+>   accepts the ticket.
+> - Everything that must **not** change is routed through that same predicate:
+>   uncollected cash stays out of the legacy tab payable set, and diner
+>   close-out plus the stale-tab sweep still refuse to close a visit that owes
+>   it. A status-only test would have let a walkout's session close and erased
+>   the debt.
+>
+> This is deliberately a per-restaurant flag, which "Option 3" below rejected
+> for the settlement model. The reasoning does not carry over: this flag forks
+> one rule (may an uncollected round be worked?) rather than every
+> payment-adjacent surface, it is a **restaurant policy** rather than a rollout
+> mechanism, and it therefore has no deletion date. The flag is staff-only —
+> `toPublicRestaurant` does not expose it; a diner has no use for it, and it
+> describes how this restaurant trusts its tables.
+>
+> The walkout risk this ADR shrank to "cash orders only" grows back for
+> restaurants that opt in: they now cook before collecting, which is exactly
+> the trade they asked to make.
+
 ### Substitutions replace "sorry, refund" for out-of-stock on paid orders
 
 When the kitchen can't make a paid line, staff propose a substitution: an
@@ -280,11 +321,16 @@ legacy tab machinery at T+30d.
 - Commit `a1d27dd` — the TAVLI-6 tab settlement this ADR supersedes.
 - [TAVLI-71](https://linear.app/gggfox-projects/issue/TAVLI-71) — the
   settlement pivot epic.
+- [TAVLI-81](https://linear.app/gggfox-projects/issue/TAVLI-81) — the
+  `releaseCashOrdersImmediately` addendum under "Cash stays possible via
+  `awaiting_payment`".
 
 ---
 
 ## Change Log
 
-| Date       | Author     | Description     |
-| ---------- | ---------- | --------------- |
-| 2026-08-07 | Tavli team | Initial version |
+| Date       | Author     | Description                                                                         |
+| ---------- | ---------- | ----------------------------------------------------------------------------------- |
+| 2026-08-07 | Tavli team | Initial version                                                                     |
+| 2026-08-10 | Tavli team | Early execution of the staff open-tabs screen deletion                              |
+| 2026-08-19 | Tavli team | Addendum: `releaseCashOrdersImmediately`, the per-restaurant cash policy (TAVLI-81) |
