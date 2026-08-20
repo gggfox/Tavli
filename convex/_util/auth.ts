@@ -107,6 +107,29 @@ export async function getRestaurantMembership(
 		.first();
 }
 
+/**
+ * The shadow membership row backing an `EmployeeAccount` (ADR 006), scoped to
+ * one restaurant.
+ *
+ * The Clerk-backed lookup above keys on `userId`; a managed employee has none,
+ * so their row is reached through `employeeAccountId` instead. Callers that
+ * accept an account id from the client must pass `restaurantId` so a row from
+ * another restaurant can never be returned.
+ */
+export async function getRestaurantMembershipByEmployeeAccount(
+	ctx: RoleDbContext,
+	employeeAccountId: Id<"employeeAccounts">,
+	restaurantId: Id<"restaurants">
+): Promise<Doc<"restaurantMembers"> | null> {
+	const member = await ctx.db
+		.query(TABLE.RESTAURANT_MEMBERS)
+		.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", employeeAccountId))
+		.first();
+
+	if (!member || member.restaurantId !== restaurantId) return null;
+	return member;
+}
+
 function orgIdsMatch(orgIdA: string | undefined, orgIdB: Id<"organizations">): boolean {
 	if (!orgIdA) return false;
 	return orgIdA === orgIdB;

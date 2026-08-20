@@ -382,6 +382,10 @@
 			"today": "Hoy",
 			"all": "Todo"
 		},
+		"scope": {
+			"mine": "Mi sección",
+			"all": "Todas"
+		},
 		"station": {
 			"all": "Todo",
 			"kitchen": "Cocina",
@@ -453,12 +457,16 @@
 		},
 		"empty": {
 			"noOrders": "Ningún pedido coincide con los filtros seleccionados.",
-			"noRecentServed": "Ningún pedido entregado en los últimos {{minutes}} minutos."
+			"noRecentServed": "Ningún pedido entregado en los últimos {{minutes}} minutos.",
+			"noOrdersInMySections": "No hay pedidos en tu sección en este momento.",
+			"noActiveSection": "No tienes ninguna sección asignada en este momento.",
+			"noActiveSectionHint": "Cambia a Todas para ver todo el salón."
 		},
 		"aria": {
 			"statusSegments": "Mostrar pedidos con estado",
 			"stationFilter": "Filtrar pedidos por estación de preparación",
 			"serviceDateFilter": "Filtrar pedidos por día de servicio",
+			"scopeFilter": "Filtrar pedidos por sección",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
 			"cancelItem": "Cancelar artículo {{name}}",

@@ -13,6 +13,7 @@
  */
 import {
 	OrderDashboardPrepStationFilter,
+	OrderDashboardScope,
 	OrderDashboardServiceDateFilter,
 	OrderDashboardStatusFilter,
 	OrderDashboardStatusFilterValue,
@@ -24,6 +25,7 @@ import {
 	transformUserSettings,
 	updateLanguage as updateLanguageService,
 	updateOrderDashboardPrepStationFilters as updateOrderDashboardPrepStationFiltersService,
+	updateOrderDashboardScope as updateOrderDashboardScopeService,
 	updateOrderDashboardServiceDateFilter as updateOrderDashboardServiceDateFilterService,
 	updateOrderDashboardStatusFilter as updateOrderDashboardStatusFilterService,
 	updateOrderDashboardStatusFilters as updateOrderDashboardStatusFiltersService,
@@ -75,6 +77,12 @@ export type UseUserSettingsReturn = {
 	 */
 	orderDashboardServiceDateFilter: OrderDashboardServiceDateFilter | null;
 	/**
+	 * Persisted OrderDashboard scope. `null` means the user has never touched
+	 * the toggle -- callers fall back to the default their shift implies (see
+	 * `orders.getDashboardScopeContext`).
+	 */
+	orderDashboardScope: OrderDashboardScope | null;
+	/**
 	 * Sidebar accordion group keys the user has open. Empty when no
 	 * preference has been saved yet.
 	 */
@@ -94,6 +102,7 @@ export type UseUserSettingsReturn = {
 	updateOrderDashboardServiceDateFilter: (
 		serviceDate: OrderDashboardServiceDateFilter
 	) => Promise<UserSettingsId>;
+	updateOrderDashboardScope: (scope: OrderDashboardScope) => Promise<UserSettingsId>;
 	setSidebarGroupExpanded: (key: string, expanded: boolean) => Promise<UserSettingsId>;
 };
 
@@ -202,6 +211,13 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[settings]
 	);
 
+	// Persisted OrderDashboard scope. Null when never set so the dashboard can
+	// fall back to the default the caller's shift implies.
+	const orderDashboardScope = useMemo<OrderDashboardScope | null>(
+		() => settings?.orderDashboardScope ?? null,
+		[settings]
+	);
+
 	// Persisted sidebar accordion groups the user has open. Defaults to an
 	// empty list so a brand-new user starts with all groups collapsed.
 	const expandedSidebarGroups = useMemo<string[]>(
@@ -290,6 +306,11 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
+	const updateOrderDashboardScope = useCallback(
+		(scope: OrderDashboardScope) => updateOrderDashboardScopeService(client, scope),
+		[client]
+	);
+
 	const setSidebarGroupExpanded = useCallback(
 		(key: string, expanded: boolean) => setSidebarGroupExpandedService(client, key, expanded),
 		[client]
@@ -347,6 +368,7 @@ export function useUserSettings(): UseUserSettingsReturn {
 		orderDashboardStatusFilters,
 		orderDashboardPrepStationFilters,
 		orderDashboardServiceDateFilter,
+		orderDashboardScope,
 		expandedSidebarGroups,
 		updateTheme,
 		updateSidebarExpanded,
@@ -355,6 +377,7 @@ export function useUserSettings(): UseUserSettingsReturn {
 		updateOrderDashboardStatusFilters,
 		updateOrderDashboardPrepStationFilters,
 		updateOrderDashboardServiceDateFilter,
+		updateOrderDashboardScope,
 		setSidebarGroupExpanded,
 	};
 }

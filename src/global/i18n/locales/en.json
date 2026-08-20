@@ -382,6 +382,10 @@
 			"today": "Today",
 			"all": "All"
 		},
+		"scope": {
+			"mine": "My section",
+			"all": "All"
+		},
 		"station": {
 			"all": "All",
 			"kitchen": "Kitchen",
@@ -453,12 +457,16 @@
 		},
 		"empty": {
 			"noOrders": "No orders match the selected filters.",
-			"noRecentServed": "No orders served in the last {{minutes}} minutes."
+			"noRecentServed": "No orders served in the last {{minutes}} minutes.",
+			"noOrdersInMySections": "No orders in your section right now.",
+			"noActiveSection": "You have no section assigned right now.",
+			"noActiveSectionHint": "Switch to All to see the whole floor."
 		},
 		"aria": {
 			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
 			"serviceDateFilter": "Filter orders by service day",
+			"scopeFilter": "Filter orders by section",
 			"fullOrder": "Full order details",
 			"loading": "Loading orders",
 			"cancelItem": "Cancel item {{name}}",
