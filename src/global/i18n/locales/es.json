@@ -418,6 +418,7 @@
 		},
 		"card": {
 			"table": "Mesa {{number}}",
+			"tableNone": "Sin mesa",
 			"dayNumber": "#{{n}}",
 			"paid": "Pagado",
 			"moreItems_one": "+1 artículo más",

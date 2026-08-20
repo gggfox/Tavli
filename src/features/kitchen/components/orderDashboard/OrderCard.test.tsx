@@ -148,3 +148,41 @@ describe("OrderCard awaiting-payment variant (ADR 008)", () => {
 		expect(screen.getByText("orders.actions.accept")).toBeInTheDocument();
 	});
 });
+
+describe("OrderCard table prominence (TAVLI-80)", () => {
+	it("gives the table the loudest type on a served card, ahead of the order number", () => {
+		renderCard(makeOrder({ status: "served", awaitingPaymentAt: undefined }));
+
+		const table = screen.getByText("orders.card.table");
+		expect(table.className).toContain("text-xl");
+		expect(table.className).toContain("font-bold");
+		expect(screen.getByText("orders.card.dayNumber").className).toContain("text-sm");
+	});
+
+	it("keeps the table the loudest line on a ready card", () => {
+		renderCard(makeOrder({ status: "ready", awaitingPaymentAt: undefined }));
+
+		expect(screen.getByText("orders.card.table").className).toContain("text-xl");
+	});
+
+	it("leads the awaiting-payment panel with the table, not the order number", () => {
+		renderCard(makeOrder());
+
+		// Header + money panel both name the table, and both at the top scale.
+		const tables = screen.getAllByText("orders.card.table");
+		expect(tables).toHaveLength(2);
+		for (const node of tables) expect(node.className).toContain("text-xl");
+		// The order number is now the secondary line inside the panel — nothing
+		// on the card shouts it louder than the table.
+		const dayNumbers = screen.getAllByText("orders.card.dayNumber");
+		expect(dayNumbers.some((node) => node.className.includes("text-xs"))).toBe(true);
+		expect(dayNumbers.every((node) => !node.className.includes("text-xl"))).toBe(true);
+	});
+
+	it("says 'no table' instead of inventing a table when the join came back null", () => {
+		renderCard(makeOrder({ tableNumber: null }));
+
+		expect(screen.getAllByText("orders.card.tableNone")).toHaveLength(2);
+		expect(screen.queryByText("orders.card.table")).not.toBeInTheDocument();
+	});
+});
