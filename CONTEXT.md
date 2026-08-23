@@ -321,7 +321,10 @@ that are already active.
 The phone number on a `Reservation`'s `contact`, in E.164. For a customer
 reaching the **WhatsApp assistant** there is no `User` and no account, so this
 number — taken from Twilio's signature-verified sender — is their entire
-identity, and the only scope for which bookings they may see or cancel. It is
+identity, and the only scope for which bookings they may see or cancel. Stored
+canonically (E.164, via `_util/phone.ts`) on every write path, because it is
+matched by exact index lookup: `811 490 6208` typed by staff and
+`+5218114906208` delivered by WhatsApp are one customer, not three. It is
 therefore an authorization input, not just contact data: an assistant tool never
 receives a reservation id, and a booking is always resolved server-side from
 `(Restaurant, contact phone)`. _Avoid_: customer id, guest id.

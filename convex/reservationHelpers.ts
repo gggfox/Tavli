@@ -35,6 +35,7 @@ import {
 	requiredCapacityCovered,
 	resolveServiceWindow,
 } from "./_util/availability";
+import { normalizeContactPhone } from "./_util/phone";
 import { appendAuditEvent } from "./_util/audit";
 import { consumeRateLimit, type RateLimitConfig } from "./_util/rateLimit";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
@@ -412,10 +413,23 @@ export async function createReservationCore(
 		return [null, new NotFoundError("Restaurant not found").toObject()];
 	}
 
+	// Canonicalized once, here, because this is the single write path every
+	// source funnels through — staff, the public form, the reservations bot API
+	// and the WhatsApp assistant. `contact.phone` is the customer's whole
+	// identity (ADR-011) and is matched by exact index lookup, so a number stored
+	// as typed makes the same human several unrelated customers. Everything below
+	// reads `contact`, never `args.contact`, so the rate-limit keys are keyed on
+	// the identity rather than on how it happened to be punctuated.
+	const contact = {
+		...args.contact,
+		phone: normalizeContactPhone(args.contact.phone, restaurant.timezone),
+	};
+	const normalizedArgs = { ...args, contact };
+
 	const rateLimitError = await assertReservationCreateNotRateLimited(
 		ctx,
 		args.restaurantId,
-		args.contact.phone.trim()
+		contact.phone
 	);
 	if (rateLimitError) return [null, rateLimitError];
 
@@ -431,7 +445,7 @@ export async function createReservationCore(
 
 	// Attempt limiter -- gate the expensive availability scans below. Runs after
 	// the idempotency short-circuit so safe retries don't burn budget.
-	const attemptLimitError = await assertReservationCreateWithinAttemptLimit(ctx, args);
+	const attemptLimitError = await assertReservationCreateWithinAttemptLimit(ctx, normalizedArgs);
 	if (attemptLimitError) return [null, attemptLimitError];
 
 	const settings = await loadEffectiveSettings(ctx, args.restaurantId);
@@ -489,7 +503,7 @@ export async function createReservationCore(
 		tableIds: [],
 		status: RESERVATION_STATUS.PENDING,
 		source: args.source,
-		contact: args.contact,
+		contact,
 		userId: args.userId,
 		notes: args.notes,
 		idempotencyKey: args.idempotencyKey,
@@ -647,10 +661,15 @@ export async function findUpcomingByPhone(
 		sources?: CreateCoreArgs["source"][];
 	}
 ): Promise<ReservationDoc[]> {
+	// Canonicalized on the way in as well as on the way out: a caller holding a
+	// number in any other spelling would otherwise miss its own stored row.
+	const restaurant = await ctx.db.get(args.restaurantId);
+	const phone = normalizeContactPhone(args.phone, restaurant?.timezone);
+
 	const rows = await ctx.db
 		.query(TABLE.RESERVATIONS)
 		.withIndex("by_phone", (q) =>
-			q.eq("restaurantId", args.restaurantId).eq("contact.phone", args.phone)
+			q.eq("restaurantId", args.restaurantId).eq("contact.phone", phone)
 		)
 		.collect();
 
