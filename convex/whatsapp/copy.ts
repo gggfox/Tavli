@@ -19,6 +19,12 @@ type BotCopy = {
 	genericError: string;
 	/** Fallback `contact.name` when the customer gave none and Twilio sent none. */
 	guestFallbackName: string;
+	/**
+	 * Appended when the assistant hands over the menu page. `url` is composed by
+	 * the server from the restaurant's slug and the reply locale — the model is
+	 * never shown it, so it cannot mangle or invent one.
+	 */
+	menuLink: (url: string) => string;
 	/** Appended after a booking is created. `when` is a localized date+time. */
 	bookingRequested: (when: string, partySize: number) => string;
 	/** Appended when a cancellation code has been issued but nothing cancelled yet. */
@@ -52,6 +58,7 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 		genericError:
 			"Sorry — I ran into a problem answering that. Please try again in a moment, or contact the restaurant directly.",
 		guestFallbackName: "WhatsApp guest",
+		menuLink: (url) => `📋 The full menu, with photos and prices: ${url}`,
 		bookingRequested: (when, partySize) =>
 			`✅ Request sent: ${partySize} ${partySize === 1 ? "person" : "people"} on ${when}. The restaurant still has to confirm it — you are not seated yet, and they'll be in touch.`,
 		cancelRequested: (when, code) =>
@@ -79,6 +86,7 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 		genericError:
 			"Lo siento, tuve un problema para responder. Inténtalo de nuevo en un momento o contacta directamente al restaurante.",
 		guestFallbackName: "Cliente de WhatsApp",
+		menuLink: (url) => `📋 El menú completo, con fotos y precios: ${url}`,
 		bookingRequested: (when, partySize) =>
 			`✅ Solicitud enviada: ${partySize} ${partySize === 1 ? "persona" : "personas"} el ${when}. El restaurante aún debe confirmarla — todavía no hay mesa apartada y se pondrán en contacto.`,
 		cancelRequested: (when, code) =>
