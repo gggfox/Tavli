@@ -33,6 +33,8 @@ import {
 /** What every surface that shows the deep link needs, and nothing more. */
 export type WhatsappEnablement = {
 	restaurantId: Id<"restaurants">;
+	/** Named here so a diner-facing surface never needs a second query. */
+	restaurantName: string;
 	isActive: boolean;
 	/** Canonical code, e.g. `VRN8F3`. */
 	shortCode: string;
@@ -65,6 +67,7 @@ function toEnablement(
 	const locale: WhatsappLocale = resolveLocale(channel.defaultLocale, restaurant.defaultLanguage);
 	return {
 		restaurantId: restaurant._id,
+		restaurantName: restaurant.name,
 		isActive: channel.isActive,
 		shortCode: channel.shortCode,
 		formattedShortCode: formatShortCode(channel.shortCode),
