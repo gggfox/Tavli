@@ -324,10 +324,17 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: composed || getBotCopy(locale).genericError,
 				modelBody: result.text,
-				// A turn that produced neither prose nor a notice falls back to the
-				// fixed apology — which the assistant did not write, so it is not
-				// signed as the assistant.
-				sentBy: composed ? WHATSAPP_MESSAGE_SENDER.ASSISTANT : WHATSAPP_MESSAGE_SENDER.SYSTEM,
+				// Attributed by whether the MODEL wrote prose, not by whether the
+				// reply has a body. A turn that ends on a tool step — the step budget
+				// ran out, or redaction emptied a one-line reply — sends a body made
+				// entirely of notice lines: a confirmation, a cap notice, a menu link,
+				// all deterministic server copy. So is the fallback apology when there
+				// is neither prose nor a notice. The assistant wrote none of it, and
+				// `sentBy` is permanent, so signing it "assistant" would put the
+				// assistant's name on the one line it provably did not say — in the
+				// view staff read to adjudicate "but your bot told me it was booked".
+				// A mixed prose+notice reply still belongs to the assistant.
+				sentBy: result.text ? WHATSAPP_MESSAGE_SENDER.ASSISTANT : WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				mediaUrl: result.mediaUrl,
 			});
 		} catch (error) {

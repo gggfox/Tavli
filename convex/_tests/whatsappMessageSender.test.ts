@@ -18,6 +18,11 @@
  *
  * Derivation cannot tell those apart, and it has no third value for "staff" at
  * all, which is the one the next build needs.
+ *
+ * The last test pins the case the two above straddle: a reply with a body but
+ * no model prose. When a turn ends on a tool step, the notice that tool pushed
+ * IS the whole reply, and it is server copy — so attribution follows
+ * `result.text`, not whether anything was sent.
  */
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,6 +65,8 @@ function inboundBody(overrides: Record<string, string> = {}): string {
 		...overrides,
 	}).toString();
 }
+
+type ToolMap = Record<string, { execute: (i: unknown, o: unknown) => Promise<unknown> }>;
 
 async function seedChannel(t: ReturnType<typeof convexTest>): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;
@@ -205,6 +212,26 @@ describe("outbound sender", () => {
 
 		expect(await outboundRows(t)).toMatchObject([
 			{ body: getBotCopy("es").dailyLimitReached, sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM },
+		]);
+	});
+
+	it("records a notices-only reply as the system, not the assistant", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		// The turn ends on a tool step — the model spent its steps calling tools
+		// and never wrote a closing sentence — so the whole reply is the notice
+		// line the tool pushed. `WHATSAPP_MAX_LLM_STEPS` makes this ordinary, and
+		// redaction can empty a short reply the same way. Nobody but the server
+		// wrote a word of what the diner receives.
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			await tools.request_cancel.execute({}, {});
+			return { text: "", toolCalls: [{ toolName: "request_cancel" }] };
+		});
+
+		await post(t);
+
+		expect(await outboundRows(t)).toMatchObject([
+			{ body: getBotCopy("es").nothingToCancel, sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM },
 		]);
 	});
 });
