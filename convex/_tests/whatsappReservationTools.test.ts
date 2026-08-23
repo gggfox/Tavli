@@ -1030,9 +1030,9 @@ describe("what the model is shown of its own past replies", () => {
 		});
 		await post(t, { MessageSid: "SM-fab", Body: "cancela mi reservación" });
 
-		const real = (
-			await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect())
-		).find((r) => r.consumedAt === undefined)!.code;
+		const real = (await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect())).find(
+			(r) => r.consumedAt === undefined
+		)!.code;
 		const sent = (
 			await t.run((ctx) =>
 				ctx.db
@@ -1104,9 +1104,9 @@ describe("what the model is shown of its own past replies", () => {
 			return { text: "Claro.", toolCalls: [] };
 		});
 		await post(t, { MessageSid: "SM-req", Body: "cancela mi reservación" });
-		const code = (
-			await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect())
-		).find((r) => r.consumedAt === undefined)!.code;
+		const code = (await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect())).find(
+			(r) => r.consumedAt === undefined
+		)!.code;
 		mockGenerateText.mockReset().mockResolvedValue({ text: "no", toolCalls: [] });
 		await post(t, { MessageSid: "SM-code", Body: `sí, el código es ${code}` });
 
