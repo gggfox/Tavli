@@ -802,15 +802,19 @@ export const INVITE_TARGET_EMAIL_RATE_LIMIT = { windowMs: 24 * 60 * 60 * 1000, m
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ============================================================================
-// WhatsApp Chatbot (Twilio) — see ADR 010
+// WhatsApp Chatbot (Twilio) — see ADR 010, ADR 012
 // ============================================================================
 //
-// A first responder: customers message a restaurant's WhatsApp number and get
+// A first responder: customers message **Tavli's** WhatsApp number and get
 // automated menu / availability answers, and can request or cancel a booking on
 // their own behalf. A WhatsApp thread is a `Conversation` (deliberately NOT
-// reusing the ordering-domain word "Session"). Inbound routing maps the Twilio
-// "To" number to a `whatsappChannels` row. Writes are scoped to the sender's
-// verified phone number — see ADR 011.
+// reusing the ordering-domain word "Session"). Writes are scoped to the
+// sender's verified phone number — see ADR 011.
+//
+// Routing changed with ADR 012: one shared number means the Twilio "To" no
+// longer identifies anybody. An inbound message is routed by the **short code**
+// carried in the wa.me deep-link text, and a `whatsappChannels` row now means
+// "this restaurant is enabled, with this code and this default locale".
 
 /** Direction of a stored WhatsApp message relative to the restaurant. */
 export const WHATSAPP_MESSAGE_DIRECTION = {
@@ -912,6 +916,58 @@ export const WHATSAPP_LOCALE = {
 } as const;
 
 export type WhatsappLocale = (typeof WHATSAPP_LOCALE)[keyof typeof WHATSAPP_LOCALE];
+
+// ---------------------------------------------------------------------------
+// Restaurant short code — the deep-link router (ADR 012)
+// ---------------------------------------------------------------------------
+//
+// A short code is a ROUTER, not a secret. It rides visibly in the wa.me
+// prefilled text a diner can read and edit, it is printed on table tents, and
+// anyone may guess one: the worst outcome is a stranger reaching a restaurant's
+// public assistant, which is the same thing the QR code on the table offers.
+// Treating it as a credential would be theatre, so there is deliberately no
+// entropy budget, no hashing, and no rate limit around it.
+
+/** Letters taken from the restaurant name, e.g. "Vernáculo" → "VRN". */
+export const WHATSAPP_SHORT_CODE_PREFIX_LENGTH = 3;
+
+/** Random tail that disambiguates two restaurants with the same abbreviation. */
+export const WHATSAPP_SHORT_CODE_SUFFIX_LENGTH = 3;
+
+/**
+ * Characters the random tail is drawn from. `I`, `O`, `0` and `1` are absent:
+ * the code is read off a printed card and retyped, and those four are the
+ * misreads that produce a support ticket.
+ */
+export const WHATSAPP_SHORT_CODE_SUFFIX_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/**
+ * How many code-shaped tokens one inbound message may offer the router.
+ *
+ * A message can contain an accidental match ("Bar 4to"), so every candidate is
+ * tried against the table rather than the first one winning — but the count is
+ * capped so a wall of text cannot turn one message into hundreds of lookups.
+ */
+export const WHATSAPP_SHORT_CODE_MAX_CANDIDATES = 5;
+
+/** Attempts to find a free short code before falling back to a random prefix. */
+export const WHATSAPP_SHORT_CODE_MAX_ATTEMPTS = 8;
+
+/**
+ * How far back a phone's own history may bind an inbound message with no code.
+ *
+ * A diner who has been talking to exactly one restaurant this month can just
+ * keep typing. Past this window the thread is cold and the fixed "open the
+ * restaurant's link" reply is the honest answer — see `WHATSAPP_COLD_START_SCAN_LIMIT`.
+ */
+export const WHATSAPP_COLD_START_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Conversations scanned when resolving a codeless message. Bounds the query;
+ * a phone with more recent threads than this is ambiguous anyway, which is
+ * exactly the case that gets the fixed reply.
+ */
+export const WHATSAPP_COLD_START_SCAN_LIMIT = 25;
 /**
  * Longest public restaurant slug we will store. The slug is derived from the
  * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily

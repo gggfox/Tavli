@@ -17,6 +17,23 @@ import { WHATSAPP_LOCALE, type WhatsappLocale } from "../constants";
 
 type BotCopy = {
 	genericError: string;
+	/**
+	 * The sentence the `wa.me` deep link prefills into the diner's message box.
+	 * They see it and can edit it before sending, so it has to read like
+	 * something a person would write — the code rides along as a decoration.
+	 */
+	deepLinkPrefill: (restaurantName: string, formattedCode: string) => string;
+	/**
+	 * Sent when a message carried nothing but the routing code — the diner opened
+	 * the deep link and deleted the sentence. There is no customer question to
+	 * answer, so this is fixed copy rather than a model call.
+	 */
+	deepLinkWelcome: (restaurantName: string) => string;
+	/**
+	 * Sent when an inbound message cannot be routed to a restaurant at all.
+	 * See `getUnroutableGuidance` — this is never sent alone.
+	 */
+	unroutableGuidance: string;
 	/** Fallback `contact.name` when the customer gave none and Twilio sent none. */
 	guestFallbackName: string;
 	/** Appended after a booking is created. `when` is a localized date+time. */
@@ -43,6 +60,12 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 	[WHATSAPP_LOCALE.EN]: {
 		genericError:
 			"Sorry — I ran into a problem answering that. Please try again in a moment, or contact the restaurant directly.",
+		deepLinkPrefill: (restaurantName, formattedCode) =>
+			`Hi, I'd like information about ${restaurantName} · ${formattedCode}`,
+		deepLinkWelcome: (restaurantName) =>
+			`Hi! I'm the Tavli assistant for ${restaurantName}. Ask me about the menu, opening hours, or a table.`,
+		unroutableGuidance:
+			"I'm the Tavli assistant. To help you, open the restaurant's WhatsApp link or scan their QR code.",
 		guestFallbackName: "WhatsApp guest",
 		bookingRequested: (when, partySize) =>
 			`✅ Request sent: ${partySize} ${partySize === 1 ? "person" : "people"} on ${when}. The restaurant still has to confirm it — you are not seated yet, and they'll be in touch.`,
@@ -66,6 +89,12 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 	[WHATSAPP_LOCALE.ES]: {
 		genericError:
 			"Lo siento, tuve un problema para responder. Inténtalo de nuevo en un momento o contacta directamente al restaurante.",
+		deepLinkPrefill: (restaurantName, formattedCode) =>
+			`Hola, quiero información sobre ${restaurantName} · ${formattedCode}`,
+		deepLinkWelcome: (restaurantName) =>
+			`¡Hola! Soy el asistente de Tavli para ${restaurantName}. Pregúntame por el menú, los horarios o una mesa.`,
+		unroutableGuidance:
+			"Soy el asistente de Tavli. Para ayudarte, abre el enlace de WhatsApp del restaurante o escanea su código QR.",
 		guestFallbackName: "Cliente de WhatsApp",
 		bookingRequested: (when, partySize) =>
 			`✅ Solicitud enviada: ${partySize} ${partySize === 1 ? "persona" : "personas"} el ${when}. El restaurante aún debe confirmarla — todavía no hay mesa apartada y se pondrán en contacto.`,
@@ -104,4 +133,24 @@ export function resolveLocale(...candidates: (string | null | undefined)[]): Wha
 
 export function getBotCopy(locale: WhatsappLocale): BotCopy {
 	return COPY[locale];
+}
+
+/**
+ * The reply for a message Tavli cannot route to any restaurant (ADR 012).
+ *
+ * Bilingual, and deliberately so: an unroutable message has no restaurant, so
+ * there is no `defaultLocale` and no `defaultLanguage` to resolve against —
+ * every input that would normally pick a language is exactly the input that is
+ * missing. Two short lines beat guessing wrong on the first thing a stranger
+ * ever sees from Tavli.
+ *
+ * It also names no restaurant and asks no questions. Trying to match a name the
+ * diner typed against every restaurant Tavli knows would be an enumeration and
+ * spoofing surface, so the assistant simply points back at the deep link.
+ */
+export function getUnroutableGuidance(): string {
+	return [
+		COPY[WHATSAPP_LOCALE.ES].unroutableGuidance,
+		COPY[WHATSAPP_LOCALE.EN].unroutableGuidance,
+	].join("\n\n");
 }
