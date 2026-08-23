@@ -23,6 +23,9 @@ import {
 	TIP_ENTRY_SOURCE,
 	TIP_POOL_STATUS,
 	USER_ROLES,
+	WHATSAPP_CONVERSATION_STATUS,
+	WHATSAPP_PENDING_ACTION,
+	WHATSAPP_MESSAGE_DIRECTION,
 } from "./constants";
 
 const structuredName = {
@@ -1312,6 +1315,124 @@ export default defineSchema({
 		count: v.number(),
 		updatedAt: v.number(),
 	}).index("by_key", ["key"]),
+
+	// ============================================================================
+	// WhatsApp Chatbot (Twilio) — see ADR 010
+	// ============================================================================
+	//
+	// The assistant's tables. `whatsappChannels` maps a restaurant's
+	// WhatsApp sender number (the Twilio "To") to a restaurant so an inbound
+	// message can be routed. A `Conversation` is the thread with one customer
+	// phone on one channel; `whatsappMessages` is the append-only in/out log,
+	// deduped on Twilio's `messageSid`. Phone numbers are stored normalized to
+	// E.164 (no "whatsapp:" prefix).
+	[TABLE.WHATSAPP_CHANNELS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Normalized E.164 of the WhatsApp sender number (Twilio "To").
+		phoneNumber: v.string(),
+		isActive: v.boolean(),
+		// Fallback reply locale for this channel ("en" | "es") before per-message
+		// detection; falls back further to restaurant.defaultLanguage.
+		defaultLocale: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		updatedBy: v.optional(v.string()),
+	})
+		.index("by_phone_number", ["phoneNumber"])
+		.index("by_restaurant", ["restaurantId"]),
+
+	[TABLE.WHATSAPP_CONVERSATIONS]: defineTable({
+		channelId: v.id(TABLE.WHATSAPP_CHANNELS),
+		// Denormalized for direct restaurant-scoped reads.
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Normalized E.164 of the customer (Twilio "From").
+		customerPhone: v.string(),
+		status: v.union(
+			v.literal(WHATSAPP_CONVERSATION_STATUS.ACTIVE),
+			v.literal(WHATSAPP_CONVERSATION_STATUS.HANDOFF),
+			v.literal(WHATSAPP_CONVERSATION_STATUS.CLOSED)
+		),
+		// Sticky reply locale once detected for this customer.
+		locale: v.optional(v.string()),
+		// Twilio's `ProfileName` for this customer — a display name only, never an
+		// authorization input. Used so a reservation's required `contact.name` does
+		// not have to be invented by the model.
+		customerName: v.optional(v.string()),
+		// Drives the retention purge and context ordering.
+		lastMessageAt: v.number(),
+		// Last inbound timestamp — WhatsApp 24h freeform-reply window bookkeeping.
+		lastInboundAt: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_channel_customer", ["channelId", "customerPhone"])
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_last_message", ["lastMessageAt"]),
+
+	[TABLE.WHATSAPP_MESSAGES]: defineTable({
+		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		direction: v.union(
+			v.literal(WHATSAPP_MESSAGE_DIRECTION.INBOUND),
+			v.literal(WHATSAPP_MESSAGE_DIRECTION.OUTBOUND)
+		),
+		// Twilio SID: inbound MessageSid (dedupe) or the SID returned on send.
+		messageSid: v.optional(v.string()),
+		body: v.string(),
+		/**
+		 * Outbound only: the model's own words, without the server-composed notice
+		 * lines `body` also carries. This is the ONLY thing replayed as context for
+		 * an outbound row — replaying `body` taught the model to write its own ✅
+		 * confirmations and to invent confirmation codes. Absent (a row from before
+		 * this field) or empty (an entirely server-composed message) means the row
+		 * is not replayed at all; there is no fallback to `body`.
+		 */
+		modelBody: v.optional(v.string()),
+		mediaUrl: v.optional(v.string()),
+		// Set when the Twilio send failed, so the row is kept for the message log
+		// but excluded from the context replayed to the model — otherwise the
+		// assistant is told it said something the customer never received.
+		deliveryFailedAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		.index("by_conversation", ["conversationId"])
+		.index("by_message_sid", ["messageSid"])
+		.index("by_created", ["createdAt"]),
+
+	// A destructive action the customer has been offered but has NOT yet
+	// authorized. `request_cancel` writes one of these and returns a code; the
+	// cancellation only happens when the *next* inbound message carries that code,
+	// matched deterministically in `processing.ts` before the model runs.
+	//
+	// This is what makes injected text unable to cancel a booking: a forwarded
+	// message, a poisoned menu description, or an instruction buried in
+	// conversation history can each influence one turn's tool calls, but none can
+	// produce a second inbound message containing an unguessable code.
+	[TABLE.WHATSAPP_PENDING_ACTIONS]: defineTable({
+		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Re-checked on consume so a code minted for one phone cannot be redeemed
+		// by another, even if the conversation row were somehow reused.
+		customerPhone: v.string(),
+		kind: v.union(
+			v.literal(WHATSAPP_PENDING_ACTION.CANCEL_RESERVATION),
+			v.literal(WHATSAPP_PENDING_ACTION.RESCHEDULE_RESERVATION)
+		),
+		reservationId: v.id(TABLE.RESERVATIONS),
+		// Set only for `reschedule_reservation`: the move the code authorizes.
+		// Stored rather than re-derived so the customer confirms the exact time
+		// they were quoted, not whatever the model would say a second time.
+		newStartsAt: v.optional(v.number()),
+		newPartySize: v.optional(v.number()),
+		/** Short numeric code the customer echoes back. Single-use. */
+		code: v.string(),
+		expiresAt: v.number(),
+		consumedAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		.index("by_conversation_code", ["conversationId", "code"])
+		.index("by_conversation", ["conversationId"])
+		.index("by_expires", ["expiresAt"]),
 
 	// ============================================================================
 	// Unified Event Store

@@ -19,6 +19,7 @@ import type * as _util_billing from "../_util/billing.js";
 import type * as _util_dinerSession from "../_util/dinerSession.js";
 import type * as _util_env from "../_util/env.js";
 import type * as _util_idempotency from "../_util/idempotency.js";
+import type * as _util_phone from "../_util/phone.js";
 import type * as _util_rateLimit from "../_util/rateLimit.js";
 import type * as _util_reservationSettings from "../_util/reservationSettings.js";
 import type * as _util_stripe from "../_util/stripe.js";
@@ -72,6 +73,7 @@ import type * as menuImportPdfHelpers from "../menuImportPdfHelpers.js";
 import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
 import type * as migrations_backfillAllEventsRestaurantId from "../migrations/backfillAllEventsRestaurantId.js";
+import type * as migrations_backfillContactPhone from "../migrations/backfillContactPhone.js";
 import type * as migrations_backfillDailyOrderNumber from "../migrations/backfillDailyOrderNumber.js";
 import type * as migrations_backfillDefaultMenus from "../migrations/backfillDefaultMenus.js";
 import type * as migrations_backfillOrderDashboardStatusFilter from "../migrations/backfillOrderDashboardStatusFilter.js";
@@ -115,6 +117,18 @@ import type * as tableLocks from "../tableLocks.js";
 import type * as tables from "../tables.js";
 import type * as tips from "../tips.js";
 import type * as userSettings from "../userSettings.js";
+import type * as whatsapp_copy from "../whatsapp/copy.js";
+import type * as whatsapp_data from "../whatsapp/data.js";
+import type * as whatsapp_datetime from "../whatsapp/datetime.js";
+import type * as whatsapp_format from "../whatsapp/format.js";
+import type * as whatsapp_llm from "../whatsapp/llm.js";
+import type * as whatsapp_menu from "../whatsapp/menu.js";
+import type * as whatsapp_outbound from "../whatsapp/outbound.js";
+import type * as whatsapp_phone from "../whatsapp/phone.js";
+import type * as whatsapp_processing from "../whatsapp/processing.js";
+import type * as whatsapp_promptSafety from "../whatsapp/promptSafety.js";
+import type * as whatsapp_reservations from "../whatsapp/reservations.js";
+import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 
 import type {
   ApiFromModules,
@@ -134,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   "_util/dinerSession": typeof _util_dinerSession;
   "_util/env": typeof _util_env;
   "_util/idempotency": typeof _util_idempotency;
+  "_util/phone": typeof _util_phone;
   "_util/rateLimit": typeof _util_rateLimit;
   "_util/reservationSettings": typeof _util_reservationSettings;
   "_util/stripe": typeof _util_stripe;
@@ -187,6 +202,7 @@ declare const fullApi: ApiFromModules<{
   menuItems: typeof menuItems;
   menus: typeof menus;
   "migrations/backfillAllEventsRestaurantId": typeof migrations_backfillAllEventsRestaurantId;
+  "migrations/backfillContactPhone": typeof migrations_backfillContactPhone;
   "migrations/backfillDailyOrderNumber": typeof migrations_backfillDailyOrderNumber;
   "migrations/backfillDefaultMenus": typeof migrations_backfillDefaultMenus;
   "migrations/backfillOrderDashboardStatusFilter": typeof migrations_backfillOrderDashboardStatusFilter;
@@ -230,6 +246,18 @@ declare const fullApi: ApiFromModules<{
   tables: typeof tables;
   tips: typeof tips;
   userSettings: typeof userSettings;
+  "whatsapp/copy": typeof whatsapp_copy;
+  "whatsapp/data": typeof whatsapp_data;
+  "whatsapp/datetime": typeof whatsapp_datetime;
+  "whatsapp/format": typeof whatsapp_format;
+  "whatsapp/llm": typeof whatsapp_llm;
+  "whatsapp/menu": typeof whatsapp_menu;
+  "whatsapp/outbound": typeof whatsapp_outbound;
+  "whatsapp/phone": typeof whatsapp_phone;
+  "whatsapp/processing": typeof whatsapp_processing;
+  "whatsapp/promptSafety": typeof whatsapp_promptSafety;
+  "whatsapp/reservations": typeof whatsapp_reservations;
+  "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
 }>;
 
 /**

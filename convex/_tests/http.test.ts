@@ -10,6 +10,8 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
+import { DEFAULT_RESTAURANT_TIMEZONE } from "../constants";
+import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -20,10 +22,20 @@ const AUTH = { Authorization: `Bearer ${BOT_TOKEN}`, "Content-Type": "applicatio
 
 const AVAILABILITY_PATH = "/api/v1/reservations/availability";
 const CREATE_PATH = "/api/v1/reservations";
+const CANCEL_PATH = "/api/v1/reservations/cancel";
 
+/**
+ * Three days out, at 13:00 in the restaurant's timezone.
+ *
+ * Deliberately NOT `Date.now() + 3 days`: non-staff sources are gated on
+ * operating hours, and a bare relative offset inherits the current wall-clock
+ * hour — so these tests failed whenever the suite ran outside the default
+ * 10:00-23:00 window (`ERROR_OUTSIDE_OPERATING_HOURS`). Staying relative keeps
+ * the booking horizon satisfied; pinning the hour keeps it off the clock.
+ */
 function futureStartsAt(): number {
-	// Comfortably inside the default booking horizon (min advance / max advance).
-	return Date.now() + 3 * 24 * 60 * 60 * 1000;
+	const ymd = addDaysToYmd(utcMsToYmdInTimezone(Date.now(), DEFAULT_RESTAURANT_TIMEZONE), 3);
+	return ymdHmToUtcMs(ymd, 13 * 60, DEFAULT_RESTAURANT_TIMEZONE);
 }
 
 async function seedRestaurant(
@@ -275,6 +287,104 @@ describe("reservations bot HTTP routes", () => {
 			expect(res.status).toBeGreaterThanOrEqual(400);
 			const body = (await res.json()) as { error: Record<string, unknown> };
 			expect(Object.keys(body.error).sort()).toEqual(["message", "name"]);
+		});
+	});
+
+	describe("POST /api/v1/reservations/cancel", () => {
+		const phone = "+525512345678";
+
+		async function seedBotReservation(
+			t: ReturnType<typeof convexTest>,
+			restaurantId: Id<"restaurants">,
+			startsAt = futureStartsAt()
+		) {
+			return await t.run((ctx) =>
+				ctx.db.insert("reservations", {
+					restaurantId,
+					partySize: 2,
+					startsAt,
+					endsAt: startsAt + 90 * 60_000,
+					tableIds: [],
+					status: "pending",
+					source: "whatsapp",
+					contact: { name: "Ada", phone },
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				})
+			);
+		}
+
+		it("rejects an unauthenticated request", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const res = await post(t, CANCEL_PATH, { restaurantId, phone }, {});
+			expect(res.status).toBe(401);
+		});
+
+		it("requires restaurantId and phone", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			expect((await post(t, CANCEL_PATH, { phone })).status).toBe(400);
+			expect((await post(t, CANCEL_PATH, { restaurantId })).status).toBe(400);
+			expect((await post(t, CANCEL_PATH, { restaurantId, phone: "  " })).status).toBe(400);
+			expect((await post(t, CANCEL_PATH, { restaurantId, phone, startsAt: "soon" })).status).toBe(
+				400
+			);
+		});
+
+		it("404s an unknown restaurant without leaking validator internals", async () => {
+			const t = convexTest(schema, modules);
+			const res = await post(t, CANCEL_PATH, { restaurantId: "not-an-id", phone });
+			expect(res.status).toBe(404);
+			expect(JSON.stringify(await res.json())).not.toContain("ArgumentValidationError");
+		});
+
+		it("404s a phone with no upcoming booking", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const res = await post(t, CANCEL_PATH, { restaurantId, phone: "+15550000000" });
+			expect(res.status).toBe(404);
+		});
+
+		it("cancels and echoes only the booking's time and size", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const id = await seedBotReservation(t, restaurantId);
+
+			const res = await post(t, CANCEL_PATH, { restaurantId, phone });
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as Record<string, unknown>;
+			// No id, no contact details.
+			expect(Object.keys(body).sort()).toEqual(["cancelled", "partySize", "startsAt"]);
+
+			const stored = await t.run((ctx) => ctx.db.get(id));
+			expect(stored?.status).toBe("cancelled");
+		});
+
+		it("409s an ambiguous match and cancels nothing", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const first = await seedBotReservation(t, restaurantId, futureStartsAt());
+			const second = await seedBotReservation(t, restaurantId, futureStartsAt() + 86_400_000);
+
+			const res = await post(t, CANCEL_PATH, { restaurantId, phone });
+			expect(res.status).toBe(409);
+			const body = (await res.json()) as { error: { message: string } };
+			expect(body.error.message).toBe("ERROR_AMBIGUOUS_RESERVATION");
+			expect((await t.run((ctx) => ctx.db.get(first)))?.status).toBe("pending");
+			expect((await t.run((ctx) => ctx.db.get(second)))?.status).toBe("pending");
+		});
+
+		it("no longer exposes the id-in-path cancel route", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const id = await seedBotReservation(t, restaurantId);
+			// The old prefix route returned 501; accepting an id here would have been
+			// a forgeable capability, so the path is gone entirely.
+			const res = await post(t, `/api/v1/reservations/cancel/${id}`, {});
+			expect(res.status).not.toBe(200);
+			expect(res.status).not.toBe(501);
+			expect((await t.run((ctx) => ctx.db.get(id)))?.status).toBe("pending");
 		});
 	});
 });

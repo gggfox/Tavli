@@ -44,10 +44,13 @@ import {
 	computeTurnMinutes,
 	intersectsBlackout,
 	isWithinHorizon,
+	isWithinOperatingHours,
 	requiredCapacityCovered,
+	resolveServiceWindow,
 } from "./_util/availability";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import {
+	AUDIT_ACTOR,
 	AUDIT_EVENT,
 	AUDIT_SYSTEM_USER_ID,
 	NO_SHOW_SWEEP_BATCH_SIZE,
@@ -61,6 +64,7 @@ import {
 	CreateErrors,
 	applyPerBlockTableMove,
 	buildReopenToConfirmedPatch,
+	cancelReservationCore,
 	checkTablesFreeForReservation,
 	contactValidator,
 	createReservationCore,
@@ -70,6 +74,7 @@ import {
 	ensureReschedulable,
 	ensureTerminalRecoverable,
 	findSuggestedTimes,
+	findUpcomingByPhone,
 	isBookablePartySize,
 	isPartyBookableAt,
 	isTerminalRecoverable,
@@ -179,6 +184,25 @@ export const getAvailability = query({
 				suggestedTimes: [] as number[],
 			};
 		}
+		// Operating hours bound the whole reservation, not just its start: with a
+		// 90-minute turn and a 23:00 close the last bookable slot is 21:30.
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (
+			restaurant &&
+			!isWithinOperatingHours({
+				startsAt: args.startsAt,
+				endsAt,
+				window: resolveServiceWindow(restaurant),
+			})
+		) {
+			return {
+				available: false,
+				reason: "ERROR_OUTSIDE_OPERATING_HOURS" as const,
+				turnMinutes,
+				endsAt,
+				suggestedTimes: [] as number[],
+			};
+		}
 
 		const bookable = await isPartyBookableAt(
 			ctx,
@@ -265,6 +289,8 @@ export const listReservationSlotsForDay = query({
 		) {
 			return { slots: [] as number[], turnMinutes };
 		}
+		const restaurant = await ctx.db.get(args.restaurantId);
+		const serviceWindow = restaurant ? resolveServiceWindow(restaurant) : null;
 		const maxStart = args.toMs - turnMinutes * 60_000;
 		const slots: number[] = [];
 		let evaluated = 0;
@@ -277,6 +303,14 @@ export const listReservationSlotsForDay = query({
 			if (endsAt > args.toMs) break;
 			if (!isWithinHorizon({ minAdvanceMinutes, maxAdvanceDays, startsAt: t, now })) continue;
 			if (intersectsBlackout(settings, t, endsAt)) continue;
+			// Checked before `evaluated++` so out-of-hours candidates cost nothing
+			// and don't consume the probe budget.
+			if (
+				serviceWindow &&
+				!isWithinOperatingHours({ startsAt: t, endsAt, window: serviceWindow })
+			) {
+				continue;
+			}
 			// Count each availability probe; this is the expensive per-slot work.
 			evaluated++;
 			const ok = await isPartyBookableAt(ctx, args.restaurantId, args.partySize, t, endsAt);
@@ -779,35 +813,106 @@ export const cancel = mutation({
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
 		if (restError) return [null, restError];
 
-		const cancellableError = ensureCancellable(reservation.status);
-		if (cancellableError) return [null, cancellableError];
+		const statusError = ensureCancellable(reservation.status);
+		if (statusError) return [null, statusError];
 
-		const now = Date.now();
-		await ctx.db.patch(reservation._id, {
-			status: RESERVATION_STATUS.CANCELLED,
-			cancelledAt: now,
-			cancelReason: args.reason,
-			updatedAt: now,
-		});
-
-		await appendAuditEvent(ctx, {
-			aggregateType: TABLE.RESERVATIONS,
-			aggregateId: reservation._id,
-			eventType: AUDIT_EVENT.RESERVATION_CANCELLED,
-			restaurantId: reservation.restaurantId,
-			payload: {
-				restaurantId: reservation.restaurantId,
-				fromStatus: reservation.status,
-				startsAt: reservation.startsAt,
-				partySize: reservation.partySize,
-				reason: args.reason,
-			},
+		const id = await cancelReservationCore(ctx, {
+			reservation,
+			reason: args.reason,
 			userId,
+			eventType: AUDIT_EVENT.RESERVATION_CANCELLED,
 		});
-
-		return [reservation._id, null];
+		return [id, null];
 	},
 });
+
+// ============================================================================
+// Customer-initiated cancellation (WhatsApp assistant)
+// ============================================================================
+
+/**
+ * Cancel one of the caller's *own* reservations, identified by phone number.
+ *
+ * A WhatsApp customer has no Clerk identity, so the `dinerSession.ts` ownership
+ * pattern (prove a Clerk subject is a session member) has nothing to stand on.
+ * The substitute is `reservations.contact.phone` compared against Twilio's
+ * signature-verified `From` — which is why the caller must pass `phone` from a
+ * trusted source and never from user- or model-supplied text.
+ *
+ * Deliberate design constraints, each load-bearing:
+ *
+ * - **There is no `reservationId` argument.** The target is resolved server-side
+ *   from the phone-scoped index, so there is no id to forge and no id oracle to
+ *   enumerate. (Note the pre-existing leak where a guessed `idempotencyKey` on
+ *   the create route returns another customer's reservation id — accepting an id
+ *   here would promote that into a real IDOR.)
+ * - **`startsAt` is a disambiguator, not a capability.** It can only select among
+ *   rows the phone scope already returned, so at worst a caller picks the wrong
+ *   one of their own bookings.
+ * - **Every failure returns the same not-found shape**, following the 403→404
+ *   collapse in `_util/dinerSession.ts` that exists to avoid leaking whether a
+ *   row exists.
+ */
+export const internalCancelByPhone = internalMutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		phone: v.string(),
+		startsAt: v.optional(v.number()),
+		/** Audit-only pointers into the purgeable WhatsApp tables. */
+		conversationId: v.optional(v.id(TABLE.WHATSAPP_CONVERSATIONS)),
+		messageSid: v.optional(v.string()),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<ReservationDoc, NotFoundErrorObject | ConflictErrorObject> {
+		const phone = args.phone.trim();
+		if (!phone) return [null, new NotFoundError("Reservation not found").toObject()];
+
+		const candidates = await findUpcomingByPhone(ctx, {
+			restaurantId: args.restaurantId,
+			phone,
+			nowMs: Date.now(),
+			// Phase 1: bot-created rows only. See `findUpcomingByPhone`.
+			sources: [RESERVATION_SOURCE.WHATSAPP],
+		});
+
+		const matches =
+			args.startsAt === undefined
+				? candidates
+				: candidates.filter((r) => r.startsAt === args.startsAt);
+
+		if (matches.length === 0) {
+			return [null, new NotFoundError("Reservation not found").toObject()];
+		}
+		if (matches.length > 1) {
+			// The caller must narrow by time; cancelling an arbitrary one would be
+			// worse than asking.
+			return [null, new ConflictError("ERROR_AMBIGUOUS_RESERVATION").toObject()];
+		}
+
+		const reservation = matches[0];
+		await cancelReservationCore(ctx, {
+			reservation,
+			// Server-set, never customer or model text: `cancelReason` has no length
+			// bound in the schema and surfaces in the staff drawer and CSV export.
+			reason: CUSTOMER_CANCEL_REASON,
+			userId: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+			eventType: AUDIT_EVENT.RESERVATION_CANCELLED_BY_CUSTOMER,
+			auditPayload: {
+				conversationId: args.conversationId,
+				messageSid: args.messageSid,
+			},
+		});
+
+		// Return the pre-cancel doc so the caller can compose a confirmation with
+		// the booking's time and party size.
+		return [reservation, null];
+	},
+});
+
+/** Fixed `cancelReason` for the customer path. Never model-authored. */
+export const CUSTOMER_CANCEL_REASON = "customer_whatsapp";
 
 // ============================================================================
 // Mark seated / completed
@@ -1092,6 +1197,10 @@ export const listForRangeMulti = query({
 /**
  * Drives the staff "new reservation" toast. Subscribers get push updates via
  * Convex reactivity; the client tracks IDs it has already shown.
+ *
+ * Also surfaces recently *cancelled* assistant bookings. A customer cancelling
+ * a `confirmed` reservation over WhatsApp releases tables staff had already
+ * assigned, and without this the floor plan changes with no human in the loop.
  */
 export const listRecentPending = query({
 	args: {
@@ -1107,15 +1216,31 @@ export const listRecentPending = query({
 		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, args.restaurantId);
 		if (restError) return [null, restError];
 
-		const rows = await ctx.db
+		const pending = await ctx.db
 			.query(TABLE.RESERVATIONS)
 			.withIndex("by_restaurant_status_time", (q) =>
 				q.eq("restaurantId", args.restaurantId).eq("status", RESERVATION_STATUS.PENDING)
 			)
 			.collect();
 
-		// Filter to those created since `sinceMs`.
-		return [rows.filter((r) => r.createdAt >= args.sinceMs), null];
+		const cancelled = await ctx.db
+			.query(TABLE.RESERVATIONS)
+			.withIndex("by_restaurant_status_time", (q) =>
+				q.eq("restaurantId", args.restaurantId).eq("status", RESERVATION_STATUS.CANCELLED)
+			)
+			.collect();
+
+		// `createdAt` for new bookings, `cancelledAt` for withdrawn ones — both are
+		// "something changed since you last looked".
+		return [
+			[
+				...pending.filter((r) => r.createdAt >= args.sinceMs),
+				...cancelled.filter(
+					(r) => r.source === RESERVATION_SOURCE.WHATSAPP && (r.cancelledAt ?? 0) >= args.sinceMs
+				),
+			],
+			null,
+		];
 	},
 });
 

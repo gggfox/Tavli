@@ -269,7 +269,14 @@ selector.
 **Operating hours**:
 The `openTime` / `closeTime` pair on a `Restaurant` (HH:MM strings),
 expressed in the **Restaurant timezone**. Defines the visible time range
-rendered on the **Timeline**. Falls back to `10:00`–`23:00` when unset.
+rendered on the **Timeline**, and bounds which start times are **bookable**:
+a reservation must start at or after `openTime` and _end_ at or before
+`closeTime`. Because the whole reservation must fit, a 90-minute turn against
+a `23:00` close makes `21:30` the last bookable slot. Staff creates may book
+outside these hours (private events); customer and **WhatsApp assistant**
+creates may not. A close at or before the open (e.g. `18:00`–`02:00`) is an
+overnight window, and an after-midnight booking belongs to the previous
+service day. Falls back to `10:00`–`23:00` when unset.
 _Avoid_: business hours, service window.
 
 **Restaurant timezone**:
@@ -291,8 +298,18 @@ A terminal reservation status applied when a booking is still `pending` or
 availability checks. _Avoid_: autocancel.
 
 **Cancellation**:
-A terminal reservation status set by staff (with an optional reason). Frees
-the table for availability checks.
+A terminal reservation status (with an optional reason) that frees the table
+for availability checks. Reachable two ways: by **staff** from the **Timeline**
+or the detail drawer, from any non-terminal status; or by the booking's own
+**Contact phone**, through the **WhatsApp assistant**, limited to `pending` and
+`confirmed` bookings that have not yet started — a `seated` guest is at the
+table and cannot cancel from their phone. The same customer may **move** a
+booking (`reservations.rescheduledByCustomer`), which patches the existing row
+in place rather than cancelling and re-creating it; both actions need the
+customer to echo back a confirmation code. The staff path records
+`reservations.cancelled`; the customer path records
+`reservations.cancelledByCustomer` and a fixed reason, so the two are
+distinguishable when a cancellation is disputed.
 
 **Reopen**:
 A staff action that moves a terminal reservation (`cancelled` or `no_show`)
@@ -300,8 +317,55 @@ back into the active lifecycle — usually as `confirmed`, or directly as
 `seated` when the guest has arrived. Distinct from **Reschedule** on bookings
 that are already active.
 
+**Contact phone**:
+The phone number on a `Reservation`'s `contact`, in E.164. For a customer
+reaching the **WhatsApp assistant** there is no `User` and no account, so this
+number — taken from Twilio's signature-verified sender — is their entire
+identity, and the only scope for which bookings they may see or cancel. Stored
+canonically (E.164, via `_util/phone.ts`) on every write path, because it is
+matched by exact index lookup: `811 490 6208` typed by staff and
+`+5218114906208` delivered by WhatsApp are one customer, not three. It is
+therefore an authorization input, not just contact data: an assistant tool never
+receives a reservation id, and a booking is always resolved server-side from
+`(Restaurant, contact phone)`. _Avoid_: customer id, guest id.
+
+### WhatsApp assistant
+
+**WhatsApp assistant**:
+The LLM first responder on a `Restaurant`'s WhatsApp number. Answers menu
+questions, checks availability, and requests or cancels bookings on behalf of
+the customer messaging it. _Avoid_: chatbot, agent. ("bot" survives as a
+code-internal synonym — `runBotTurn`, `RESERVATIONS_BOT_TOKEN`.)
+
+**Channel**:
+The mapping from one WhatsApp sender number to one `Restaurant`. Routes an
+inbound message to the right restaurant. _Avoid_: number, line, integration.
+
+**Conversation**:
+The message thread between one customer phone and one **Channel**.
+Deliberately **not** "Session" — that word means an open ordering tab at a
+table.
+
+**Confirmation code**:
+A short server-generated number the **WhatsApp assistant** sends when a
+customer asks to cancel. The cancellation happens only when the customer
+replies with the code, and that match is made before the model is consulted —
+so a destructive action always requires a fresh act from the phone's owner.
+Single-use, expires in 10 minutes. _Avoid_: OTP, PIN (that is the employee
+credential), token.
+
+**Awaiting confirmation**:
+A booking made by the **WhatsApp assistant** is `pending` with no `tableIds`
+until staff **confirm** it and assign tables. The assistant must never tell a
+customer a table is held. Note the guest name on such a booking is
+best-effort — the name the customer stated, else their WhatsApp profile name,
+else fixed copy — so staff should not treat it as verified.
+
 ## Relationships
 
+- A **Restaurant** has many **Channels**; a **Channel** has many
+  **Conversations**. A **Conversation** relates to **Reservations** only
+  through the shared **Contact phone**, never by a foreign key.
 - A **Restaurant** has one **Public profile**. Every part of it is optional and
   independently omitted from the diner-facing surfaces when unset.
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,

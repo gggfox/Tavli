@@ -93,6 +93,10 @@ const EXPECTED_DELETED = {
 	[TABLE.TIP_ENTRIES]: 1,
 	[TABLE.DASHBOARD_LAYOUTS]: 1,
 	[TABLE.DASHBOARD_TEMPLATES]: 1,
+	[TABLE.WHATSAPP_CHANNELS]: 1,
+	[TABLE.WHATSAPP_CONVERSATIONS]: 1,
+	[TABLE.WHATSAPP_MESSAGES]: 2,
+	[TABLE.WHATSAPP_PENDING_ACTIONS]: 1,
 } as const;
 
 /**
@@ -334,7 +338,7 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			updatedAt: NOW,
 		});
 
-		await ctx.db.insert("reservations", {
+		const reservationId = await ctx.db.insert("reservations", {
 			restaurantId,
 			partySize: 2,
 			startsAt: NOW,
@@ -492,6 +496,53 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			updatedAt: NOW,
 		});
 
+		// WhatsApp assistant graph (ADR 010/011). Messages and pending actions have
+		// no restaurant index, so they only disappear if the cascade walks the
+		// conversation — seeding two messages makes a partial walk visible.
+		const channelId = await ctx.db.insert("whatsappChannels", {
+			restaurantId,
+			phoneNumber: "+14155238886",
+			isActive: true,
+			createdAt: NOW,
+			updatedAt: NOW,
+		});
+		const conversationId = await ctx.db.insert("whatsappConversations", {
+			channelId,
+			restaurantId,
+			customerPhone: "+521234567890",
+			status: "active",
+			lastInboundAt: NOW,
+			lastMessageAt: NOW,
+			createdAt: NOW,
+			updatedAt: NOW,
+		});
+		await ctx.db.insert("whatsappMessages", {
+			conversationId,
+			restaurantId,
+			direction: "inbound",
+			messageSid: "SM-purge-in",
+			body: "que hay de comer?",
+			createdAt: NOW,
+		});
+		await ctx.db.insert("whatsappMessages", {
+			conversationId,
+			restaurantId,
+			direction: "outbound",
+			messageSid: "SM-purge-out",
+			body: "*Tacos* — 90",
+			createdAt: NOW,
+		});
+		await ctx.db.insert("whatsappPendingActions", {
+			conversationId,
+			restaurantId,
+			customerPhone: "+521234567890",
+			kind: "cancel_reservation",
+			reservationId,
+			code: "123456",
+			expiresAt: NOW + 10 * 60 * 1000,
+			createdAt: NOW,
+		});
+
 		return { photoStorageId, imageStorageId, orderItemId, webhookEventIds, tipPoolShareId };
 	});
 }
@@ -555,7 +606,44 @@ describe("restaurant hard purge cascade", () => {
 				createdAt: NOW,
 				updatedAt: NOW,
 			});
-			return { memberId, employeeAccountId, sessionId, tabPaymentId, layoutId };
+			// The survivor's WhatsApp channel: the cascade walks conversations by
+			// restaurant, so a bug that queried them unscoped would take this too.
+			const channelId = await ctx.db.insert("whatsappChannels", {
+				restaurantId: bId,
+				phoneNumber: "+14155238887",
+				isActive: true,
+				createdAt: NOW,
+				updatedAt: NOW,
+			});
+			const conversationId = await ctx.db.insert("whatsappConversations", {
+				channelId,
+				restaurantId: bId,
+				customerPhone: "+521234567891",
+				status: "active",
+				lastInboundAt: NOW,
+				lastMessageAt: NOW,
+				createdAt: NOW,
+				updatedAt: NOW,
+			});
+			const messageId = await ctx.db.insert("whatsappMessages", {
+				conversationId,
+				restaurantId: bId,
+				direction: "inbound",
+				messageSid: "SM-survivor",
+				body: "hola",
+				createdAt: NOW,
+			});
+
+			return {
+				memberId,
+				employeeAccountId,
+				sessionId,
+				tabPaymentId,
+				layoutId,
+				channelId,
+				conversationId,
+				messageId,
+			};
 		});
 
 		// User-owned rows that must survive: a portfolio layout and an org role
@@ -649,6 +737,9 @@ describe("restaurant hard purge cascade", () => {
 			expect(await ctx.db.get(bRows.sessionId)).not.toBeNull();
 			expect(await ctx.db.get(bRows.tabPaymentId)).not.toBeNull();
 			expect(await ctx.db.get(bRows.layoutId)).not.toBeNull();
+			expect(await ctx.db.get(bRows.channelId)).not.toBeNull();
+			expect(await ctx.db.get(bRows.conversationId)).not.toBeNull();
+			expect(await ctx.db.get(bRows.messageId)).not.toBeNull();
 			expect(await ctx.db.get(portfolioLayoutId)).not.toBeNull();
 
 			// userRoles row survives, scrubbed down to the other restaurant.

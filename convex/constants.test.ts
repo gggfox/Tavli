@@ -46,6 +46,10 @@ describe("TABLE constants", () => {
 			"dashboardTemplates",
 			"employeeAccounts",
 			"rateLimits",
+			"whatsappChannels",
+			"whatsappConversations",
+			"whatsappMessages",
+			"whatsappPendingActions",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});

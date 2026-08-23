@@ -41,6 +41,15 @@ crons.interval(
 	internal.stripe.reconcileStuckTabPayments
 );
 
+// Confirmation codes for assistant-initiated cancellations expire in 10 minutes;
+// this only reclaims the rows. Expiry itself is enforced on redemption, so a
+// late sweep is never a security issue.
+crons.interval(
+	"whatsapp pending action purge",
+	{ hours: 1 },
+	internal.whatsapp.reservations.purgeExpiredPendingActions
+);
+
 crons.interval(
 	"restaurant soft-delete hard purge",
 	{ hours: 24 },

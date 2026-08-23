@@ -27,17 +27,23 @@ Proposed → Accepted → [Deprecated | Superseded]
 
 ## ADR Index
 
-| ADR                                                         | Title                                                   | Status     | Date       |
-| ----------------------------------------------------------- | ------------------------------------------------------- | ---------- | ---------- |
-| [001](./001-effect-ts-integration.md)                       | Effect.ts Integration Between TanStack Start and Convex | Deprecated | 2025-12-14 |
-| [002](./002-workos-authentication.md)                       | WorkOS as Authentication Provider                       | Accepted   | 2025-12-21 |
-| [003](./003-convex-backend.md)                              | Convex as Backend-as-a-Service                          | Accepted   | 2025-12-21 |
-| [004](./004-workos-convex-tanstack-integration.md)          | WorkOS + Convex + TanStack Start integration            | Accepted   | 2025-12-23 |
-| [005](./005-menu-item-prep-station.md)                      | Menu item prep station and per-station ready timestamps | Accepted   | 2026-05-15 |
-| [006](./006-managed-employee-accounts.md)                   | Managed employee accounts and shared session identity   | Accepted   | 2026-05-17 |
-| [007](./007-station-tickets-and-item-cancellation.md)       | Station tickets and item-level cancellation             | Accepted   | 2026-08-02 |
-| [008](./008-customer-borne-commission-and-pay-at-submit.md) | Customer-borne commission and pay-at-submit orders      | Accepted   | 2026-08-07 |
-| [009](./009-public-profile-and-branding.md)                 | Restaurant public profile and server-resolved branding  | Proposed   | 2026-08-13 |
+| ADR                                                         | Title                                                               | Status     | Date       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------- | ---------- | ---------- |
+| 001                                                         | Effect.ts Integration Between TanStack Start and Convex             | Deprecated | 2025-12-14 |
+| [002](./002-workos-authentication.md)                       | WorkOS as Authentication Provider                                   | Accepted   | 2025-12-21 |
+| [003](./003-convex-backend.md)                              | Convex as Backend-as-a-Service                                      | Accepted   | 2025-12-21 |
+| [004](./004-workos-convex-tanstack-integration.md)          | WorkOS + Convex + TanStack Start integration                        | Accepted   | 2025-12-23 |
+| [005](./005-menu-item-prep-station.md)                      | Menu item prep station and per-station ready timestamps             | Accepted   | 2026-05-15 |
+| [006](./006-managed-employee-accounts.md)                   | Managed employee accounts and shared session identity               | Accepted   | 2026-05-17 |
+| [007](./007-station-tickets-and-item-cancellation.md)       | Station tickets and item-level cancellation                         | Accepted   | 2026-08-02 |
+| [008](./008-customer-borne-commission-and-pay-at-submit.md) | Customer-borne commission and pay-at-submit orders                  | Accepted   | 2026-08-07 |
+| [009](./009-public-profile-and-branding.md)                 | Restaurant public profile and server-resolved branding              | Proposed   | 2026-08-13 |
+| [010](./010-whatsapp-assistant.md)                          | WhatsApp Assistant as a Twilio-Backed LLM First Responder           | Accepted   | 2026-07-25 |
+| [011](./011-whatsapp-customer-reservation-writes.md)        | Phone-Number Identity for Customer Reservation Writes over WhatsApp | Accepted   | 2026-07-25 |
+
+> ADR 001 is Deprecated and its file is no longer in the repository; the row is
+> kept so the numbering has no gap. ADR 002 records WorkOS, but the code uses
+> Clerk — see `CLAUDE.md`.
 
 ## Conventions
 

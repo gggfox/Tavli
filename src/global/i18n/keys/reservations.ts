@@ -100,6 +100,7 @@ export const ReservationsKeys = {
 	REASON_OUTSIDE_BOOKING_HORIZON: "reservations.reasons.outsideBookingHorizon",
 	REASON_BLACKOUT_WINDOW: "reservations.reasons.blackoutWindow",
 	REASON_NO_TABLES: "reservations.reasons.noTables",
+	REASON_OUTSIDE_OPERATING_HOURS: "reservations.reasons.outsideOperatingHours",
 
 	FORM_TITLE: "reservations.customerForm.title",
 	FORM_PARTY_SIZE: "reservations.customerForm.partySize",

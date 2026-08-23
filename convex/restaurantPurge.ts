@@ -84,6 +84,10 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.TIP_ENTRIES]: 0,
 		[TABLE.DASHBOARD_LAYOUTS]: 0,
 		[TABLE.DASHBOARD_TEMPLATES]: 0,
+		[TABLE.WHATSAPP_CHANNELS]: 0,
+		[TABLE.WHATSAPP_CONVERSATIONS]: 0,
+		[TABLE.WHATSAPP_MESSAGES]: 0,
+		[TABLE.WHATSAPP_PENDING_ACTIONS]: 0,
 	};
 	const patched: Record<RestaurantPurgePatchedTable, number> = {
 		[TABLE.INVITATIONS]: 0,
@@ -404,6 +408,40 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const tpl of templates) await ctx.db.delete(tpl._id);
 	deleted[TABLE.DASHBOARD_TEMPLATES] += templates.length;
+
+	// WhatsApp assistant (ADR 010/011). `whatsappMessages` and
+	// `whatsappPendingActions` carry a `restaurantId` but have no
+	// restaurant-prefixed index, so they cascade through their conversation the
+	// way order items cascade through their order.
+	const conversations = await ctx.db
+		.query(TABLE.WHATSAPP_CONVERSATIONS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const conversation of conversations) {
+		const messages = await ctx.db
+			.query(TABLE.WHATSAPP_MESSAGES)
+			.withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
+			.collect();
+		for (const m of messages) await ctx.db.delete(m._id);
+		deleted[TABLE.WHATSAPP_MESSAGES] += messages.length;
+
+		const pendingActions = await ctx.db
+			.query(TABLE.WHATSAPP_PENDING_ACTIONS)
+			.withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
+			.collect();
+		for (const a of pendingActions) await ctx.db.delete(a._id);
+		deleted[TABLE.WHATSAPP_PENDING_ACTIONS] += pendingActions.length;
+
+		await ctx.db.delete(conversation._id);
+	}
+	deleted[TABLE.WHATSAPP_CONVERSATIONS] += conversations.length;
+
+	const channels = await ctx.db
+		.query(TABLE.WHATSAPP_CHANNELS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const c of channels) await ctx.db.delete(c._id);
+	deleted[TABLE.WHATSAPP_CHANNELS] += channels.length;
 
 	return { deleted, patched, storageFilesDeleted };
 }

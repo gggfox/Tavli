@@ -43,6 +43,10 @@ export const TABLE = {
 	DASHBOARD_TEMPLATES: "dashboardTemplates",
 	EMPLOYEE_ACCOUNTS: "employeeAccounts",
 	RATE_LIMITS: "rateLimits",
+	WHATSAPP_CHANNELS: "whatsappChannels",
+	WHATSAPP_CONVERSATIONS: "whatsappConversations",
+	WHATSAPP_MESSAGES: "whatsappMessages",
+	WHATSAPP_PENDING_ACTIONS: "whatsappPendingActions",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -113,6 +117,15 @@ export const DEFAULT_ORDER_NUMBER_RESET_FREQUENCY: OrderNumberResetFrequency =
 
 /** Default IANA timezone for restaurants when unset or invalid. */
 export const DEFAULT_RESTAURANT_TIMEZONE = "America/Mexico_City";
+
+/**
+ * Operating-hours fallbacks when a restaurant leaves `openTime`/`closeTime`
+ * unset. These bound the Timeline's rendered range *and* which start times are
+ * bookable, so a restaurant that never configured hours still cannot take a
+ * 03:00 reservation.
+ */
+export const DEFAULT_RESTAURANT_OPEN_TIME = "10:00";
+export const DEFAULT_RESTAURANT_CLOSE_TIME = "23:00";
 
 /**
  * Payment state of a single **order**.
@@ -479,6 +492,18 @@ export const DEFAULT_RESERVATION_SETTINGS = {
  */
 export const FALLBACK_TABLE_CAPACITY = 4;
 
+/**
+ * Ceiling on a reservation's turn time, clamped in `computeTurnMinutes`.
+ *
+ * This is load-bearing for the conflict read, not just a sanity bound.
+ * `findOverlappingReservations` needs a *lower* bound on its index range to
+ * avoid scanning a restaurant's entire reservation history, and the only rows
+ * that can overlap `[startsAt, endsAt)` from the past are those starting within
+ * one turn before it. That argument only holds if no turn can exceed this value,
+ * so the clamp and the scan bound must stay in sync.
+ */
+export const MAX_RESERVATION_TURN_MINUTES = 12 * 60;
+
 /** Per-restaurant roles (stored on restaurantMembers). Org-level owner/admin stay on userRoles. */
 export const RESTAURANT_MEMBER_ROLE = {
 	MANAGER: "manager",
@@ -619,6 +644,27 @@ export const PIN_LOCKOUT = {
 export const AUDIT_SYSTEM_USER_ID = "system";
 
 /**
+ * Non-Clerk audit actors, used as `allEvents.userId` when a real person acted
+ * but has no account.
+ *
+ * Kept distinct from `AUDIT_SYSTEM_USER_ID`: reusing "system" would make a
+ * customer-initiated cancellation indistinguishable from the no-show cron in
+ * `allEvents.by_user`, which is exactly the question asked when a cancellation
+ * is disputed.
+ *
+ * Deliberately NOT the customer's phone number. `allEvents` is append-only,
+ * indexed on `userId`, and has no purge path, so a phone there would be
+ * permanently queryable PII that a data-erasure request could not reach. The
+ * identifying details go in `payload` as `conversationId` / `messageSid`
+ * pointers into the purgeable WhatsApp tables instead.
+ */
+export const AUDIT_ACTOR = {
+	WHATSAPP_CUSTOMER: "whatsapp_customer",
+} as const;
+
+export type AuditActor = (typeof AUDIT_ACTOR)[keyof typeof AUDIT_ACTOR];
+
+/**
  * Event names for `appendAuditEvent`. The `allEvents.eventType` column is a bare
  * `v.string()`, so nothing stops a typo from creating a silent second event
  * stream — this map is the guard.
@@ -695,6 +741,10 @@ export const AUDIT_EVENT = {
 	RESERVATION_RESCHEDULED: "reservations.rescheduled",
 	RESERVATION_RECONFIRMED: "reservations.reconfirmed",
 	RESERVATION_CANCELLED: "reservations.cancelled",
+	// Distinct from the staff cancel so the two are separable in `allEvents`:
+	// same state transition, very different provenance and dispute story.
+	RESERVATION_CANCELLED_BY_CUSTOMER: "reservations.cancelledByCustomer",
+	RESERVATION_RESCHEDULED_BY_CUSTOMER: "reservations.rescheduledByCustomer",
 	RESERVATION_SEATED: "reservations.seated",
 	RESERVATION_COMPLETED: "reservations.completed",
 	RESERVATION_NO_SHOW: "reservations.noShow",
@@ -751,6 +801,117 @@ export const INVITE_TARGET_EMAIL_RATE_LIMIT = { windowMs: 24 * 60 * 60 * 1000, m
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
+// ============================================================================
+// WhatsApp Chatbot (Twilio) — see ADR 010
+// ============================================================================
+//
+// A first responder: customers message a restaurant's WhatsApp number and get
+// automated menu / availability answers, and can request or cancel a booking on
+// their own behalf. A WhatsApp thread is a `Conversation` (deliberately NOT
+// reusing the ordering-domain word "Session"). Inbound routing maps the Twilio
+// "To" number to a `whatsappChannels` row. Writes are scoped to the sender's
+// verified phone number — see ADR 011.
+
+/** Direction of a stored WhatsApp message relative to the restaurant. */
+export const WHATSAPP_MESSAGE_DIRECTION = {
+	INBOUND: "inbound",
+	OUTBOUND: "outbound",
+} as const;
+
+export type WhatsappMessageDirection =
+	(typeof WHATSAPP_MESSAGE_DIRECTION)[keyof typeof WHATSAPP_MESSAGE_DIRECTION];
+
+/** Lifecycle of a WhatsApp `Conversation`. */
+export const WHATSAPP_CONVERSATION_STATUS = {
+	ACTIVE: "active",
+	HANDOFF: "handoff",
+	CLOSED: "closed",
+} as const;
+
+export type WhatsappConversationStatus =
+	(typeof WHATSAPP_CONVERSATION_STATUS)[keyof typeof WHATSAPP_CONVERSATION_STATUS];
+
+/** Hard cap on stored inbound message length (defensive bound on customer input). */
+export const WHATSAPP_MAX_INBOUND_BODY_CHARS = 2000;
+
+/**
+ * Hard cap on an outbound reply body. Twilio rejects a WhatsApp body over 1600
+ * characters outright (error 21617) — the whole message fails and the customer
+ * gets nothing — so clamp below that with headroom rather than risk the send.
+ */
+export const WHATSAPP_MAX_OUTBOUND_BODY_CHARS = 1500;
+
+/**
+ * OpenRouter model slug for the WhatsApp assistant. Overridable via the
+ * `WHATSAPP_MODEL` env var; shares `OPENROUTER_API_KEY` with menu import. A
+ * cheap default keeps per-message cost low (set e.g. "anthropic/claude-3.5-haiku"
+ * to prefer Claude).
+ */
+export const WHATSAPP_DEFAULT_MODEL = "openai/gpt-4o-mini";
+
+/** How many recent messages are replayed to the model as conversation context. */
+export const WHATSAPP_CONTEXT_MESSAGE_LIMIT = 12;
+
+/** Upper bound on tool-calling steps per turn (cost + latency guardrail). */
+export const WHATSAPP_MAX_LLM_STEPS = 5;
+
+/**
+ * Most items `lookup_menu` hands the model in one call. Bounds prompt tokens on
+ * a large menu; the tool reports `truncated` so the model can say there is more
+ * and narrow with a query, rather than presenting a cut menu as the whole menu.
+ */
+export const WHATSAPP_MENU_TOOL_ITEM_LIMIT = 120;
+
+/**
+ * Most WhatsApp messages one reply may be split into. A full menu genuinely
+ * needs several; anything past this is a runaway, and the last part is marked
+ * so the customer can see it stopped.
+ */
+export const WHATSAPP_MAX_REPLY_PARTS = 4;
+
+/** Kinds of destructive action that require an out-of-band confirmation code. */
+export const WHATSAPP_PENDING_ACTION = {
+	CANCEL_RESERVATION: "cancel_reservation",
+	RESCHEDULE_RESERVATION: "reschedule_reservation",
+} as const;
+
+export type WhatsappPendingAction =
+	(typeof WHATSAPP_PENDING_ACTION)[keyof typeof WHATSAPP_PENDING_ACTION];
+
+/**
+ * How long a cancellation code stays redeemable. Long enough for a customer to
+ * read the message and reply, short enough that a stale code left in a chat does
+ * not stay live.
+ */
+export const WHATSAPP_PENDING_ACTION_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Digits in a confirmation code. The security property is unguessability by
+ * *injected text*, which cannot see the code at all — brute force is not the
+ * threat model, since a code is single-use, expiring, and scoped to one
+ * conversation and phone. Six digits keeps it easy to retype on a phone.
+ */
+export const WHATSAPP_CONFIRMATION_CODE_DIGITS = 6;
+
+/**
+ * Writes the assistant may perform in a single turn.
+ *
+ * `WHATSAPP_MAX_LLM_STEPS` is NOT a write budget: one step can contain many
+ * parallel tool calls, so without this an injected loop could book or cancel
+ * repeatedly inside one message.
+ */
+export const WHATSAPP_MAX_WRITES_PER_TURN = 1;
+
+/** Assistant-driven reservation writes allowed per phone per hour. */
+export const WHATSAPP_WRITE_RATE_LIMIT = { windowMs: 60 * 60 * 1000, max: 8 } as const;
+
+/** Supported reply locales for the bot. */
+export const WHATSAPP_LOCALE = {
+	EN: "en",
+	ES: "es",
+} as const;
+
+export type WhatsappLocale = (typeof WHATSAPP_LOCALE)[keyof typeof WHATSAPP_LOCALE];
 /**
  * Longest public restaurant slug we will store. The slug is derived from the
  * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily
@@ -833,6 +994,12 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	// Dashboards
 	TABLE.DASHBOARD_LAYOUTS,
 	TABLE.DASHBOARD_TEMPLATES,
+	// WhatsApp assistant (ADR 010/011) — customer phone numbers and message
+	// bodies, so a purged restaurant must not leave them behind.
+	TABLE.WHATSAPP_CHANNELS,
+	TABLE.WHATSAPP_CONVERSATIONS,
+	TABLE.WHATSAPP_MESSAGES,
+	TABLE.WHATSAPP_PENDING_ACTIONS,
 ] as const;
 
 export type RestaurantPurgeDeletedTable = (typeof RESTAURANT_PURGE_DELETED_TABLES)[number];

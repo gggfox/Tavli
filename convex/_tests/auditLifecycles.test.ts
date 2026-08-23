@@ -11,11 +11,31 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { AUDIT_EVENT, AUDIT_SYSTEM_USER_ID, RESERVATION_STATUS } from "../constants";
+import {
+	AUDIT_EVENT,
+	AUDIT_SYSTEM_USER_ID,
+	DEFAULT_RESTAURANT_TIMEZONE,
+	RESERVATION_STATUS,
+} from "../constants";
+import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
+
+/**
+ * Three days out, at 13:00 in the restaurant's timezone.
+ *
+ * Deliberately NOT `Date.now() + 3 days`: non-staff sources are gated on
+ * operating hours, and a bare relative offset inherits the current wall-clock
+ * hour — so these tests failed whenever the suite ran outside the default
+ * 10:00-23:00 window (`ERROR_OUTSIDE_OPERATING_HOURS`). Staying relative keeps
+ * the booking horizon satisfied; pinning the hour keeps it off the clock.
+ */
+function bookableStartsAt(): number {
+	const ymd = addDaysToYmd(utcMsToYmdInTimezone(Date.now(), DEFAULT_RESTAURANT_TIMEZONE), 3);
+	return ymdHmToUtcMs(ymd, 13 * 60, DEFAULT_RESTAURANT_TIMEZONE);
+}
 
 type AuditRow = Doc<"allEvents">;
 /** `ReturnType<typeof convexTest>` erases the schema, which loses index names. */
@@ -352,7 +372,7 @@ describe("audit: reservation lifecycle", () => {
 	it("records creation once, and not again on an idempotent replay", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId } = await seedRestaurant(t);
-		const startsAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+		const startsAt = bookableStartsAt();
 
 		const args = {
 			restaurantId,
@@ -378,7 +398,7 @@ describe("audit: reservation lifecycle", () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, tableId } = await seedRestaurant(t);
 		const staff = await seedStaff(t, restaurantId);
-		const startsAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+		const startsAt = bookableStartsAt();
 
 		const [reservationId] = await t.mutation(internal.reservations.internalCreate, {
 			restaurantId,

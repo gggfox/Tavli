@@ -11,7 +11,7 @@
  */
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { DatabaseWriter } from "./_generated/server";
+import type { DatabaseReader, DatabaseWriter } from "./_generated/server";
 import {
 	ConflictError,
 	ConflictErrorObject,
@@ -31,8 +31,11 @@ import {
 	findOverlappingReservations,
 	intersectsBlackout,
 	isWithinHorizon,
+	isWithinOperatingHours,
 	requiredCapacityCovered,
+	resolveServiceWindow,
 } from "./_util/availability";
+import { normalizeContactPhone } from "./_util/phone";
 import { appendAuditEvent } from "./_util/audit";
 import { consumeRateLimit, type RateLimitConfig } from "./_util/rateLimit";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
@@ -410,10 +413,23 @@ export async function createReservationCore(
 		return [null, new NotFoundError("Restaurant not found").toObject()];
 	}
 
+	// Canonicalized once, here, because this is the single write path every
+	// source funnels through — staff, the public form, the reservations bot API
+	// and the WhatsApp assistant. `contact.phone` is the customer's whole
+	// identity (ADR-011) and is matched by exact index lookup, so a number stored
+	// as typed makes the same human several unrelated customers. Everything below
+	// reads `contact`, never `args.contact`, so the rate-limit keys are keyed on
+	// the identity rather than on how it happened to be punctuated.
+	const contact = {
+		...args.contact,
+		phone: normalizeContactPhone(args.contact.phone, restaurant.timezone),
+	};
+	const normalizedArgs = { ...args, contact };
+
 	const rateLimitError = await assertReservationCreateNotRateLimited(
 		ctx,
 		args.restaurantId,
-		args.contact.phone.trim()
+		contact.phone
 	);
 	if (rateLimitError) return [null, rateLimitError];
 
@@ -429,7 +445,7 @@ export async function createReservationCore(
 
 	// Attempt limiter -- gate the expensive availability scans below. Runs after
 	// the idempotency short-circuit so safe retries don't burn budget.
-	const attemptLimitError = await assertReservationCreateWithinAttemptLimit(ctx, args);
+	const attemptLimitError = await assertReservationCreateWithinAttemptLimit(ctx, normalizedArgs);
 	if (attemptLimitError) return [null, attemptLimitError];
 
 	const settings = await loadEffectiveSettings(ctx, args.restaurantId);
@@ -456,6 +472,19 @@ export async function createReservationCore(
 	if (intersectsBlackout(settings, args.startsAt, endsAt)) {
 		return [null, new ConflictError("ERROR_BLACKOUT_WINDOW").toObject()];
 	}
+	// Staff keep the override so they can take private-event and after-hours
+	// bookings; customers and the assistant cannot. Mirrors the source-aware
+	// `minAdvanceMinutes` decision above.
+	if (
+		args.source !== RESERVATION_SOURCE.STAFF &&
+		!isWithinOperatingHours({
+			startsAt: args.startsAt,
+			endsAt,
+			window: resolveServiceWindow(restaurant),
+		})
+	) {
+		return [null, new ConflictError("ERROR_OUTSIDE_OPERATING_HOURS").toObject()];
+	}
 
 	const availabilityError = await checkAvailabilityForCreate(
 		ctx,
@@ -474,7 +503,7 @@ export async function createReservationCore(
 		tableIds: [],
 		status: RESERVATION_STATUS.PENDING,
 		source: args.source,
-		contact: args.contact,
+		contact,
 		userId: args.userId,
 		notes: args.notes,
 		idempotencyKey: args.idempotencyKey,
@@ -515,30 +544,147 @@ export function ensureConfirmable(
 	}).toObject();
 }
 
-const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [
+// ============================================================================
+// Cancellation
+// ============================================================================
+
+/**
+ * Statuses staff may not cancel out of. Both are terminal-but-recoverable and
+ * are reopened via `reconfirm` instead.
+ *
+ * `completed` is deliberately absent: a completed reservation still occupies its
+ * table window (it is in `ACTIVE_RESERVATION_STATUSES`), so staff who marked the
+ * wrong booking completed need a way to take it out of the floor plan.
+ */
+export const STAFF_NON_CANCELLABLE_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.CANCELLED,
 	RESERVATION_STATUS.NO_SHOW,
 ];
 
 /**
- * Statuses a cancellation may not be applied to. `completed` is deliberately
- * absent: a completed reservation still occupies its table window (it is in
- * `ACTIVE_RESERVATION_STATUSES`), so staff who marked the wrong booking
- * completed need a way to take it out of the floor plan.
+ * Statuses a *customer* may cancel from, deliberately narrower than staff's
+ * rule. A `seated` guest is physically at the table, so releasing it from their
+ * phone would desync the floor from the system; staff handle that case.
  */
-const NON_CANCELLABLE_STATUSES: ReservationStatus[] = [
-	RESERVATION_STATUS.CANCELLED,
-	RESERVATION_STATUS.NO_SHOW,
+export const CUSTOMER_CANCELLABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.PENDING,
+	RESERVATION_STATUS.CONFIRMED,
 ];
 
 export function ensureCancellable(
-	status: ReservationStatus
+	status: ReservationStatus,
+	allowedStatuses?: ReservationStatus[]
 ): UserInputValidationErrorObject | null {
-	if (!NON_CANCELLABLE_STATUSES.includes(status)) return null;
+	const permitted = allowedStatuses
+		? allowedStatuses.includes(status)
+		: !STAFF_NON_CANCELLABLE_STATUSES.includes(status);
+	if (permitted) return null;
 	return new UserInputValidationError({
 		fields: [{ field: "status", message: `Cannot cancel a reservation in status ${status}` }],
 	}).toObject();
 }
+
+/**
+ * Apply the cancellation and write its audit event.
+ *
+ * Shared by the staff mutation and the customer (WhatsApp) path so the state
+ * transition is written in exactly one place. Callers differ only in who they
+ * authorize and what they record as the actor — never in what they patch.
+ */
+export async function cancelReservationCore(
+	ctx: CreateCoreCtx,
+	args: {
+		reservation: ReservationDoc;
+		reason?: string;
+		userId: string;
+		eventType: string;
+		/** Extra audit payload fields (e.g. WhatsApp conversation pointers). */
+		auditPayload?: Record<string, unknown>;
+	}
+): Promise<Id<typeof TABLE.RESERVATIONS>> {
+	const now = Date.now();
+	await ctx.db.patch(args.reservation._id, {
+		status: RESERVATION_STATUS.CANCELLED,
+		cancelledAt: now,
+		cancelReason: args.reason,
+		updatedAt: now,
+		updatedBy: args.userId,
+	});
+
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.RESERVATIONS,
+		aggregateId: args.reservation._id,
+		eventType: args.eventType,
+		// Indexed (`by_restaurant_time`) so a cancelled booking still shows up in
+		// the restaurant's history — the payload copy below is not queryable.
+		restaurantId: args.reservation.restaurantId,
+		payload: {
+			restaurantId: args.reservation.restaurantId,
+			fromStatus: args.reservation.status,
+			startsAt: args.reservation.startsAt,
+			partySize: args.reservation.partySize,
+			reason: args.reason,
+			// Kept so a released table is traceable after the fact — cancelling a
+			// confirmed booking frees whatever staff had assigned.
+			releasedTableIds: args.reservation.tableIds,
+			...args.auditPayload,
+		},
+		userId: args.userId,
+	});
+
+	return args.reservation._id;
+}
+
+/** Upper bound on how many of a customer's own bookings we ever consider. */
+export const CUSTOMER_RESERVATION_LOOKUP_LIMIT = 5;
+
+/**
+ * A customer's own upcoming, cancellable reservations at one restaurant.
+ *
+ * This is THE ownership boundary for the customer-facing cancel path, and the
+ * reason it is a single named helper: the scope must be an index equality on
+ * `(restaurantId, contact.phone)`, never a post-hoc filter over a wider read.
+ * Modelled on `requireOwnedActiveSession` in `_util/dinerSession.ts`.
+ *
+ * `source` is restricted by the caller. Phone numbers are not a reliable
+ * identity on staff-entered rows (walk-in placeholders, hotel and concierge
+ * numbers used for many guests, "booked under my partner's number"), so
+ * widening beyond bot-created rows would turn phone equality into a
+ * multi-tenant key.
+ */
+export async function findUpcomingByPhone(
+	ctx: { db: DatabaseReader },
+	args: {
+		restaurantId: Id<typeof TABLE.RESTAURANTS>;
+		phone: string;
+		nowMs: number;
+		sources?: CreateCoreArgs["source"][];
+	}
+): Promise<ReservationDoc[]> {
+	// Canonicalized on the way in as well as on the way out: a caller holding a
+	// number in any other spelling would otherwise miss its own stored row.
+	const restaurant = await ctx.db.get(args.restaurantId);
+	const phone = normalizeContactPhone(args.phone, restaurant?.timezone);
+
+	const rows = await ctx.db
+		.query(TABLE.RESERVATIONS)
+		.withIndex("by_phone", (q) =>
+			q.eq("restaurantId", args.restaurantId).eq("contact.phone", phone)
+		)
+		.collect();
+
+	return rows
+		.filter((r) => CUSTOMER_CANCELLABLE_STATUSES.includes(r.status))
+		.filter((r) => r.startsAt > args.nowMs)
+		.filter((r) => !args.sources || args.sources.includes(r.source))
+		.sort((a, b) => a.startsAt - b.startsAt)
+		.slice(0, CUSTOMER_RESERVATION_LOOKUP_LIMIT);
+}
+
+const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [
+	RESERVATION_STATUS.CANCELLED,
+	RESERVATION_STATUS.NO_SHOW,
+];
 
 /**
  * Whether the forward-looking booking horizon applies to a reschedule.
