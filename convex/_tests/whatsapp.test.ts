@@ -1105,6 +1105,35 @@ describe("redactUrls", () => {
 		);
 	});
 
+	it("does not eat a word that follows a period with no space when that word is also a TLD", () => {
+		// The capitalized variant above is safe by case alone. These are not: `me`,
+		// `es` and `us` are among the most frequent words in the bot's two
+		// languages, and `app`/`online`/`tv` are ordinary nouns. A missing space
+		// after a period must not silently delete the two words either side of it.
+		expect(redactUrls("El postre.me encanta")).toBe("El postre.me encanta");
+		expect(redactUrls("El plato fuerte.es el mole")).toBe("El plato fuerte.es el mole");
+		expect(redactUrls("Order now.us customers only")).toBe("Order now.us customers only");
+		expect(redactUrls("Está en la carta.app aparte no hay")).toBe(
+			"Está en la carta.app aparte no hay"
+		);
+		expect(redactUrls("Item 3.tv shows")).toBe("Item 3.tv shows");
+	});
+
+	it("still removes a link whose host is word-shaped once it looks like a host", () => {
+		// A path, a port, or a second label is the signal that separates a host
+		// from a typo — none of which a missing space after a period produces.
+		expect(redactUrls("Míralo en postre.me/tacos ahora")).toBe("Míralo en ahora");
+		expect(redactUrls("Pide en pedidos.taqueria.online hoy")).toBe("Pide en hoy");
+		expect(redactUrls("Entra a tavliai.es:8080 ya")).toBe("Entra a ya");
+		// A shortener is all path, and its TLD is not a word in either language.
+		expect(redactUrls("Aquí: bit.ly/abc")).toBe("Aquí:");
+	});
+
+	it("still removes a bare host whose TLD cannot be mistaken for a word", () => {
+		expect(redactUrls("Visita tavliai.com para ver el menú")).toBe("Visita para ver el menú");
+		expect(redactUrls("Estamos en taqueria.mx")).toBe("Estamos en");
+	});
+
 	it("does not eat the domain out of an email address", () => {
 		expect(redactUrls("Escríbenos a hola@taqueria.com")).toBe("Escríbenos a hola@taqueria.com");
 	});

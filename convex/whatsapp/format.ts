@@ -230,9 +230,24 @@ const WWW_URL = /(?<![A-Za-z0-9.])www\.[^\s<>]+/gi;
  * not `[a-z]{2,}`: a generic suffix turns "tacos.Tenemos" — a missing space
  * after a period, which models produce constantly — into a "host" and eats two
  * real words.
+ *
+ * The allowlist is split by how a suffix behaves when it is NOT a suffix.
+ * `PLAIN_TLDS` cannot begin a word in either of the bot's languages, so
+ * "gracias.com" can only be a host. `WORD_SHAPED_TLDS` can: `es`, `me` and `us`
+ * are among the most frequent words in Spanish and English, and `app`, `store`,
+ * `online` and `tv` are ordinary nouns — so "postre.me" is far likelier to be a
+ * missing space than a domain, and `BARE_HOST_URL` below demands corroboration
+ * before it deletes one.
  */
-const LINK_TLDS =
-	"com|net|org|info|biz|io|co|ai|app|dev|me|link|page|site|online|store|shop|xyz|tv|ly|gl|cc|mx|es|us|uk|ca";
+const PLAIN_TLDS = "com|org|biz|io|co|ai|xyz|ly|gl|cc|mx|uk|ca";
+const WORD_SHAPED_TLDS = "net|info|app|dev|me|link|page|site|online|store|shop|tv|es|us";
+const LINK_TLDS = `${PLAIN_TLDS}|${WORD_SHAPED_TLDS}`;
+
+/** One DNS label, and the port/path tail a host may carry. */
+const HOST_LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
+const HOST_TAIL = "(?::\\d{2,5})?(?:/[^\\s<>]*)?";
+/** The tail that *proves* a host: an explicit port, a path, or both. */
+const HOST_TAIL_REQUIRED = "(?::\\d{2,5}(?:/[^\\s<>]*)?|/[^\\s<>]*)";
 
 /**
  * A bare host (`tavliai.com/r/x/es/menu`), with an optional port and path.
@@ -241,9 +256,28 @@ const LINK_TLDS =
  * "bueno.Me gusta" and "delicioso.Es lo mejor" from reading as hosts while
  * still catching "Tavli.com". The lookbehind keeps the match off the domain
  * half of an email address and off the tail of a longer host.
+ *
+ * Case alone is not enough, because the typo this guards against also occurs in
+ * lower case: "el postre.me encanta" would otherwise lose *two* real words with
+ * nothing left to mark the hole. So a `label.tld` pair whose TLD is word-shaped
+ * is only read as a host when something corroborates it —
+ *
+ *   1. two or more labels before the TLD (`pedidos.taqueria.online`), or
+ *   2. an explicit port or path (`postre.me/tacos`, `tavliai.es:8080`), or
+ *   3. a TLD that cannot be a word at all (`tavliai.com`, `taqueria.mx`).
+ *
+ * A missing space after a period produces none of the three, and every link the
+ * model has actually been seen to invent produces at least one. What slips
+ * through is a bare `brand.<word-shaped-tld>` with no path — rare, and the far
+ * cheaper error: an unhelpful link beats a mangled sentence, and the scheme and
+ * `www.` forms above still strip unconditionally.
  */
 const BARE_HOST_URL = new RegExp(
-	`(?<![\\w@./-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+(?:${LINK_TLDS})(?![A-Za-z0-9-])(?::\\d{2,5})?(?:/[^\\s<>]*)?`,
+	`(?<![\\w@./-])(?:` +
+		`(?:${HOST_LABEL}\\.){2,}(?:${LINK_TLDS})(?![A-Za-z0-9-])${HOST_TAIL}` +
+		`|${HOST_LABEL}\\.(?:${LINK_TLDS})(?![A-Za-z0-9-])${HOST_TAIL_REQUIRED}` +
+		`|${HOST_LABEL}\\.(?:${PLAIN_TLDS})(?![A-Za-z0-9-])${HOST_TAIL}` +
+		`)`,
 	"g"
 );
 

@@ -110,6 +110,15 @@ export async function getSoftDeletePurgeDelayMs(ctx: QueryCtx | MutationCtx): Pr
  * visitor) is a product decision, and the assistant should start offering the
  * link the moment that decision lands — without a redeploy. Flip this on only
  * after a signed-out browser can reach the menu.
+ *
+ * What that costs, since the flag is worthless until someone pays it: the wall
+ * is **frontend-only**. Every query the menu page reads — `restaurants.getBySlug`,
+ * `menus.getMenusByRestaurant`, `menus.getCategoriesByMenu`, `menuItems.getByMenu`
+ * — already answers an unauthenticated caller; only `sessions.create` requires a
+ * diner identity, and browsing does not need a session. So lifting the wall is a
+ * change to the customer layout (render the menu child for a signed-out visitor
+ * with ordering blocked, the way the geofence already blocks it), not a backend
+ * one. Until that lands this flag stays off and the assistant sends no link.
  */
 export async function isMenuLinkEnabled(ctx: QueryCtx | MutationCtx): Promise<boolean> {
 	const flag = await ctx.db
