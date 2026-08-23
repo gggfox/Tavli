@@ -8,6 +8,7 @@ import {
 	clampInboundBody,
 	clampOutboundBody,
 	redactConfirmationCodes,
+	redactUrls,
 	splitOutboundBody,
 	toWhatsappText,
 } from "../whatsapp/format";
@@ -317,6 +318,11 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		process.env.TWILIO_ACCOUNT_SID = "ACtest";
 		process.env.TWILIO_WHATSAPP_NUMBER = SENDER;
 		process.env.OPENROUTER_API_KEY = "test-openrouter";
+		// The menu link is built from `getAppUrl()`; start every case from a known
+		// state so one test's configuration cannot decide another's outcome.
+		process.env.CONVEX_ENV = "development";
+		delete process.env.PUBLIC_APP_URL;
+		delete process.env.VITE_APP_URL;
 
 		mockValidateRequest.mockReset();
 		mockValidateRequest.mockReturnValue(true);
@@ -656,6 +662,145 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it("appends a server-composed menu link when the model calls send_menu_link", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		const slug = await t.run(async (ctx) => (await ctx.db.get(restaurantId))!.slug);
+		process.env.PUBLIC_APP_URL = "https://app.test/";
+
+		let toolResult: unknown;
+		mockGenerateText.mockImplementation(
+			async ({
+				tools,
+			}: {
+				tools: Record<string, { execute: (i: unknown, o: unknown) => Promise<unknown> }>;
+			}) => {
+				toolResult = await tools.send_menu_link.execute({}, {});
+				return { text: "Claro, te lo paso.", toolCalls: [{ toolName: "send_menu_link" }] };
+			}
+		);
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "¿me pasas el menú completo?" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		// The model must never be handed the URL — not the host, not the slug.
+		expect(toolResult).toEqual({ sent: true });
+		expect(JSON.stringify(toolResult)).not.toContain("http");
+		expect(JSON.stringify(toolResult)).not.toContain(slug);
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound).toHaveLength(1);
+		// Composed by the server, in the conversation's language, after the prose.
+		expect(outbound[0].body).toContain(`https://app.test/r/${slug}/es/menu`);
+		expect(outbound[0].body.startsWith("Claro, te lo paso.")).toBe(true);
+		// Replayed history is the prose only, so the link never re-enters context.
+		expect(outbound[0].modelBody).toBe("Claro, te lo paso.");
+	});
+
+	it("sends the menu link once even if the model calls the tool twice", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		process.env.PUBLIC_APP_URL = "https://app.test";
+
+		mockGenerateText.mockImplementation(
+			async ({
+				tools,
+			}: {
+				tools: Record<string, { execute: (i: unknown, o: unknown) => Promise<unknown> }>;
+			}) => {
+				await tools.send_menu_link.execute({}, {});
+				await tools.send_menu_link.execute({}, {});
+				return { text: "Va.", toolCalls: [{ toolName: "send_menu_link" }] };
+			}
+		);
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "mándame el menú" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound[0].body.match(/https:\/\/app\.test/g)).toHaveLength(1);
+	});
+
+	it("refuses the menu link when the app URL is not configured, and still replies", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		// Staging/production with no PUBLIC_APP_URL: `getAppUrl` throws rather than
+		// emit a dead localhost link. The turn must survive that.
+		delete process.env.PUBLIC_APP_URL;
+		delete process.env.VITE_APP_URL;
+		process.env.CONVEX_ENV = "production";
+
+		let toolResult: unknown;
+		mockGenerateText.mockImplementation(
+			async ({
+				tools,
+			}: {
+				tools: Record<string, { execute: (i: unknown, o: unknown) => Promise<unknown> }>;
+			}) => {
+				toolResult = await tools.send_menu_link.execute({}, {});
+				return { text: "Te cuento por aquí.", toolCalls: [{ toolName: "send_menu_link" }] };
+			}
+		);
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "mándame el menú" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(toolResult).toEqual({ sent: false, reason: "ERROR_MENU_LINK_UNAVAILABLE" });
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound[0].body).toBe("Te cuento por aquí.");
+	});
+
+	it("strips a link the model invented from its own prose", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		mockGenerateText.mockResolvedValue({
+			text: "Míralo en https://taqueria-vernaculo.com/menu ¡Buen provecho!",
+			toolCalls: [],
+		});
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "¿tienen menú en línea?" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound[0].body).toBe("Míralo en ¡Buen provecho!");
+	});
+
 	it("drops a message to an unknown number without invoking the model", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
@@ -831,5 +976,41 @@ describe("redactConfirmationCodes", () => {
 	it("reduces a message that was only a code to nothing", () => {
 		expect(redactConfirmationCodes("362341")).toBe("");
 		expect(redactConfirmationCodes("  362341 ")).toBe("");
+	});
+});
+
+describe("redactUrls", () => {
+	it("removes a link the model invented, keeping the sentence readable", () => {
+		expect(redactUrls("Míralo en https://taqueria.example.com/menu ¡Buen provecho!")).toBe(
+			"Míralo en ¡Buen provecho!"
+		);
+		expect(redactUrls("Visita www.tavli.com/menu para ver todo.")).toBe("Visita para ver todo.");
+		// A bare host, with the sentence's final period left where it was.
+		expect(redactUrls("Nuestro menú está en tavliai.com/r/tacos/es/menu.")).toBe(
+			"Nuestro menú está en."
+		);
+		// Emphasis the model wrapped the link in must not survive as a stray marker.
+		expect(redactUrls("Aquí: *https://tavliai.com/menu*")).toBe("Aquí:");
+	});
+
+	it("leaves the restaurant's name, prices, phone numbers and dotted words alone", () => {
+		const prose =
+			"*Taquería Vernáculo* — Rib eye 1000.00 MXN, tacos $35.50, tel +528114906208. Abrimos a las 8 p.m., etc. Pregunta por el Sr. García.";
+		expect(redactUrls(prose)).toBe(prose);
+	});
+
+	it("does not eat a word that follows a period with no space after it", () => {
+		// The classic false positive: `tacos.Tenemos` is two words, not a host.
+		expect(redactUrls("Tenemos tacos.Tenemos también quesadillas.")).toBe(
+			"Tenemos tacos.Tenemos también quesadillas."
+		);
+	});
+
+	it("does not eat the domain out of an email address", () => {
+		expect(redactUrls("Escríbenos a hola@taqueria.com")).toBe("Escríbenos a hola@taqueria.com");
+	});
+
+	it("reduces a reply that was only a link to nothing", () => {
+		expect(redactUrls("https://tavliai.com/r/tacos/es/menu")).toBe("");
 	});
 });

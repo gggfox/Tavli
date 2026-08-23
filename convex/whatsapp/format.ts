@@ -198,14 +198,89 @@ export function splitOutboundBody(text: string, limit: number, maxParts: number)
  * replayed message. Not applied to the notice lines, which carry the real code.
  */
 export function redactConfirmationCodes(text: string): string {
-	return (
-		text
-			.replace(new RegExp(`(?<!\\d)\\d{${WHATSAPP_CONFIRMATION_CODE_DIGITS}}(?!\\d)`, "g"), "")
-			// The model wraps a code in emphasis (`*281437*`); with the digits gone
-			// the empty pair would reach the customer as a stray `**`.
-			.replace(/([*_~])\s*\1/g, "")
-			.replace(/[ \t]{2,}/g, " ")
-			.replace(/ ([.,;:!?)])/g, "$1")
-			.trim()
+	return tidyAfterRedaction(
+		text.replace(new RegExp(`(?<!\\d)\\d{${WHATSAPP_CONFIRMATION_CODE_DIGITS}}(?!\\d)`, "g"), "")
+	);
+}
+
+/**
+ * Close the holes a redaction leaves behind, so the customer never sees the
+ * seam. Shared by every redactor: the model wraps the thing it invented in
+ * emphasis (`*281437*`, `*https://…*`), and with the middle gone the empty pair
+ * would reach the customer as a stray `**`.
+ */
+function tidyAfterRedaction(text: string): string {
+	return text
+		.replace(/([*_~])\s*\1/g, "")
+		.replace(/[ \t]{2,}/g, " ")
+		.replace(/ ([.,;:!?)])/g, "$1")
+		.trim();
+}
+
+/**
+ * Link-shaped tokens the model can legitimately write, in the order they are
+ * tried. A scheme or a `www.` prefix is unambiguous, so both are matched
+ * case-insensitively.
+ */
+const SCHEME_URL = /(?<![A-Za-z0-9])(?:https?|ftp):\/\/[^\s<>]+/gi;
+const WWW_URL = /(?<![A-Za-z0-9.])www\.[^\s<>]+/gi;
+
+/**
+ * Hosts a fabricated link is plausibly built from. Deliberately an allowlist,
+ * not `[a-z]{2,}`: a generic suffix turns "tacos.Tenemos" — a missing space
+ * after a period, which models produce constantly — into a "host" and eats two
+ * real words.
+ */
+const LINK_TLDS =
+	"com|net|org|info|biz|io|co|ai|app|dev|me|link|page|site|online|store|shop|xyz|tv|ly|gl|cc|mx|es|us|uk|ca";
+
+/**
+ * A bare host (`tavliai.com/r/x/es/menu`), with an optional port and path.
+ *
+ * The TLD is matched CASE-SENSITIVELY in lower case, which is what stops
+ * "bueno.Me gusta" and "delicioso.Es lo mejor" from reading as hosts while
+ * still catching "Tavli.com". The lookbehind keeps the match off the domain
+ * half of an email address and off the tail of a longer host.
+ */
+const BARE_HOST_URL = new RegExp(
+	`(?<![\\w@./-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+(?:${LINK_TLDS})(?![A-Za-z0-9-])(?::\\d{2,5})?(?:/[^\\s<>]*)?`,
+	"g"
+);
+
+/**
+ * Trailing characters that belong to the sentence, not to the link, so they are
+ * put back. The emphasis markers are here so that `*https://…*` gives its
+ * closing `*` back and `tidyAfterRedaction` can collapse the now-empty pair —
+ * dropping it instead would strand the opening one in the customer's message.
+ */
+const TRAILING_PUNCTUATION = /[.,;:!?)\]'"»…*_~]+$/;
+
+function dropLink(match: string): string {
+	return TRAILING_PUNCTUATION.exec(match)?.[0] ?? "";
+}
+
+/**
+ * Remove anything link-shaped from text the model wrote.
+ *
+ * The model has **no legitimate URL to send**. Dish photos ride as Twilio media
+ * attachments, and every real link — the menu page among them — is composed by
+ * the server and appended as a notice, which the model never sees. So a
+ * link-shaped token in its prose is invented by definition, and a customer who
+ * taps it lands nowhere.
+ *
+ * This is the same structural move as `redactConfirmationCodes`, and for the
+ * same reason: within one week the model fabricated a confirmation code, then
+ * re-fabricated one from its own earlier output, through three separate paths.
+ * Every fix that held was structural — strip it, do not replay it. Every fix
+ * that was an instruction in the system prompt failed.
+ *
+ * Applied to the model's output only. Inbound customer text is left alone: a
+ * diner pasting a link is real content, and stripping the model's output is
+ * terminal anyway, so nothing fabricated can reach the customer regardless of
+ * what sits in the history.
+ */
+export function redactUrls(text: string): string {
+	return tidyAfterRedaction(
+		text.replace(SCHEME_URL, dropLink).replace(WWW_URL, dropLink).replace(BARE_HOST_URL, dropLink)
 	);
 }
