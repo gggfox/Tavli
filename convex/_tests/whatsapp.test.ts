@@ -5,7 +5,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { clampInboundBody, clampOutboundBody, toWhatsappText } from "../whatsapp/format";
-import { matchDishByName, type BotMenuItem } from "../whatsapp/menu";
+import { buildMenuToolResult, matchDishByName, type BotMenuItem } from "../whatsapp/menu";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -677,5 +677,52 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		expect(mockGenerateText).not.toHaveBeenCalled();
 		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
 		expect(conversations).toHaveLength(0);
+	});
+});
+
+describe("buildMenuToolResult", () => {
+	function menuOf(count: number, currency = "MXN") {
+		return {
+			currency,
+			items: Array.from({ length: count }, (_, i) => ({
+				id: `id-${i}`,
+				category: "Tacos",
+				name: `Dish ${i}`,
+				description: "",
+				priceFormatted: "10.00 MXN",
+				priceCents: 1000,
+				available: true,
+				imageUrl: null,
+			})) as BotMenuItem[],
+		};
+	}
+
+	it("tells the model when the menu was cut short instead of dropping items silently", () => {
+		// The assistant answered "I have no more menu information" on a 64-item
+		// menu because the cap dropped the rest without saying so.
+		const result = buildMenuToolResult(menuOf(64), undefined, 60);
+
+		expect(result.items).toHaveLength(60);
+		expect(result.totalMatching).toBe(64);
+		expect(result.truncated).toBe(true);
+	});
+
+	it("reports no truncation when the whole menu fits", () => {
+		const result = buildMenuToolResult(menuOf(12), undefined, 60);
+
+		expect(result.items).toHaveLength(12);
+		expect(result.totalMatching).toBe(12);
+		expect(result.truncated).toBe(false);
+	});
+
+	it("narrows to a query and counts only the matches", () => {
+		const menu = menuOf(3);
+		menu.items[1].name = "Aguachile";
+
+		const result = buildMenuToolResult(menu, "aguachile", 60);
+
+		expect(result.items.map((i) => i.name)).toEqual(["Aguachile"]);
+		expect(result.totalMatching).toBe(1);
+		expect(result.truncated).toBe(false);
 	});
 });

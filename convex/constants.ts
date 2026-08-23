@@ -854,6 +854,13 @@ export const WHATSAPP_CONTEXT_MESSAGE_LIMIT = 12;
 /** Upper bound on tool-calling steps per turn (cost + latency guardrail). */
 export const WHATSAPP_MAX_LLM_STEPS = 5;
 
+/**
+ * Most items `lookup_menu` hands the model in one call. Bounds prompt tokens on
+ * a large menu; the tool reports `truncated` so the model can say there is more
+ * and narrow with a query, rather than presenting a cut menu as the whole menu.
+ */
+export const WHATSAPP_MENU_TOOL_ITEM_LIMIT = 120;
+
 /** Kinds of destructive action that require an out-of-band confirmation code. */
 export const WHATSAPP_PENDING_ACTION = {
 	CANCEL_RESERVATION: "cancel_reservation",

@@ -35,12 +35,20 @@ import type { Id } from "../_generated/dataModel";
 import {
 	WHATSAPP_DEFAULT_MODEL,
 	WHATSAPP_MAX_LLM_STEPS,
+	WHATSAPP_MENU_TOOL_ITEM_LIMIT,
 	WHATSAPP_MAX_WRITES_PER_TURN,
 } from "../constants";
 import { getBotCopy, resolveLocale } from "./copy";
 import { formatLocalDateTime, resolveRequestedStart } from "./datetime";
 import { toWhatsappText } from "./format";
-import { matchDishByName } from "./menu";
+import { buildMenuToolResult, matchDishByName } from "./menu";
+import {
+	MAX_MENU_FIELD_PROMPT_CHARS,
+	MAX_RESTAURANT_NAME_PROMPT_CHARS,
+	sanitizePromptValue,
+} from "./promptSafety";
+
+export { sanitizePromptValue } from "./promptSafety";
 
 const openrouter = createOpenAI({
 	baseURL: "https://openrouter.ai/api/v1",
@@ -52,41 +60,6 @@ function getModel() {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return openrouter.chat(modelId as any);
 }
-
-/**
- * Neutralize a staff- or import-authored string before it reaches the prompt.
- *
- * `restaurantName` is editable in the admin UI and is interpolated into the
- * *system* prompt, the highest-trust position available — a name containing
- * newlines and a fake "RULES:" block would read as instructions. Menu names and
- * descriptions are worse: they come from `menuImport.ts` parsing an uploaded PDF
- * with an LLM, so a poisoned document would reach every customer of that
- * restaurant. Both are data, so both get flattened to a single line, stripped of
- * control characters and delimiter markers, and length-capped.
- */
-export function sanitizePromptValue(raw: string, maxChars: number): string {
-	const flattened = Array.from(raw)
-		.map((c) => {
-			const code = c.codePointAt(0)!;
-			// Newlines and tabs become spaces so a value cannot open what looks like a
-			// new rule line. Other C0/C1 controls are dropped. Checked by code point
-			// rather than a character class, which keeps this source ASCII and avoids
-			// eslint's no-control-regex (same approach as `menu.ts`).
-			if (code === 0x0a || code === 0x0d || code === 0x09) return " ";
-			if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return "";
-			// Angle brackets and backticks would let a value close our delimiter or
-			// open a code fence.
-			if (c === "<" || c === ">" || c === "`") return "";
-			return c;
-		})
-		.join("")
-		.replace(/\s{2,}/g, " ")
-		.trim();
-	return Array.from(flattened).slice(0, maxChars).join("");
-}
-
-const MAX_RESTAURANT_NAME_PROMPT_CHARS = 80;
-const MAX_MENU_FIELD_PROMPT_CHARS = 200;
 
 export type BookingContext = {
 	acceptingReservations: boolean;
@@ -120,7 +93,9 @@ function buildSystemPrompt(restaurantName: string, booking: BookingContext | nul
 		"",
 		"RULES:",
 		"- Answer ONLY from the data returned by your tools. Never invent dishes, prices, descriptions, or availability. If a tool returns nothing relevant, say you don't have that information and suggest contacting the restaurant.",
-		"- Before answering anything about food, drinks, dishes, or prices, call `lookup_menu`.",
+		'- Before answering anything about food, drinks, dishes, or prices, call `lookup_menu`. Tool results are NOT carried between messages, so call it again for every follow-up — including "is that all?", "anything else?" and "show me more".',
+		"- Never claim you have no more menu information, or that a list is the whole menu, unless the last `lookup_menu` result said `truncated: false`. When `truncated` is true, tell the customer how many items there are in total and offer to look up a dish or category.",
+		"- A long menu does not fit in one WhatsApp message: give a short selection grouped by category and invite the customer to ask about a category, rather than claiming that selection is everything.",
 		"- When the customer asks what a specific dish looks like or asks for a photo, call `get_dish_photo`; the photo is attached to your reply automatically, so don't paste a URL.",
 		"- To answer whether a table is free, call `check_availability` with a date as YYYY-MM-DD and a time as HH:MM (24-hour), resolved from the CONTEXT date above. Never guess availability.",
 		"- To tell the customer about their own existing bookings, call `list_my_reservations`. It already knows who is messaging; you cannot look up anyone else's booking.",
@@ -129,7 +104,9 @@ function buildSystemPrompt(restaurantName: string, booking: BookingContext | nul
 		"- You cannot take orders or payments in this chat.",
 		"",
 		"BOOKING:",
-		"- Confirm the date, time and party size back to the customer in words before calling `book_reservation`, so a misunderstanding surfaces before it becomes a booking.",
+		"- You cannot act between messages. Your turn ends when you stop writing, so a reply that promises to do something later does nothing at all.",
+		"- NEVER write that you are booking, about to book, will book in a moment, or that the customer should wait. If you have the date, time and party size, call `book_reservation` in THIS turn. If something is still missing, ask for that one thing and nothing else.",
+		"- Restate the date, time and party size in the same reply that calls `book_reservation`, so a misunderstanding surfaces without costing the customer a second message.",
 		"- A booking you create is a REQUEST. The restaurant confirms it and assigns a table. Never say a table is held, reserved, or confirmed — say the restaurant will confirm.",
 		"- Never invent the customer's name. Pass `name` only if they stated one.",
 		"- You may make at most ONE booking or cancellation per message. If they ask for two, do the first and ask them to send a second message.",
@@ -236,7 +213,7 @@ export async function runBotTurn(
 	const tools = {
 		lookup_menu: tool({
 			description:
-				"Look up the restaurant's menu (item names, descriptions, prices). Call before answering any food, drink, or price question.",
+				'Look up the restaurant\'s menu (item names, descriptions, prices). Call before answering any food, drink, or price question, INCLUDING follow-ups like "is that everything?" — earlier results are not kept in your context. Returns `totalMatching` and `truncated`; when `truncated` is true there are more items than you were shown, so say so and call again with a `query` to narrow.',
 			inputSchema: z.object({
 				query: z
 					.string()
@@ -248,29 +225,7 @@ export async function runBotTurn(
 					restaurantId: actor.restaurantId,
 					locale: args.locale,
 				});
-				let items = menu.items;
-				if (query) {
-					const q = query.toLowerCase();
-					const filtered = items.filter(
-						(i) =>
-							i.name.toLowerCase().includes(q) ||
-							i.description.toLowerCase().includes(q) ||
-							i.category.toLowerCase().includes(q)
-					);
-					if (filtered.length > 0) items = filtered;
-				}
-				// Menu text originates from an LLM parsing an uploaded PDF
-				// (`menuImport.ts`), so it is untrusted content that reaches every
-				// customer of this restaurant. Flatten it before it enters context.
-				return {
-					currency: menu.currency,
-					items: items.slice(0, 60).map((i) => ({
-						category: sanitizePromptValue(i.category, MAX_MENU_FIELD_PROMPT_CHARS),
-						name: sanitizePromptValue(i.name, MAX_MENU_FIELD_PROMPT_CHARS),
-						description: sanitizePromptValue(i.description, MAX_MENU_FIELD_PROMPT_CHARS),
-						price: i.priceFormatted,
-					})),
-				};
+				return buildMenuToolResult(menu, query, WHATSAPP_MENU_TOOL_ITEM_LIMIT);
 			},
 		}),
 		get_dish_photo: tool({

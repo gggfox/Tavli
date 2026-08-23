@@ -13,6 +13,7 @@
 import { v } from "convex/values";
 import { internalQuery } from "../_generated/server";
 import { TABLE } from "../constants";
+import { MAX_MENU_FIELD_PROMPT_CHARS, sanitizePromptValue } from "./promptSafety";
 
 export type BotMenuItem = {
 	id: string;
@@ -114,4 +115,59 @@ export function matchDishByName(items: BotMenuItem[], dishName: string): BotMenu
 		const n = norm(i.name);
 		return n.includes(target) || target.includes(n);
 	});
+}
+
+/** What `lookup_menu` hands back to the model. */
+export type MenuToolResult = {
+	currency: string;
+	items: { category: string; name: string; description: string; price: string }[];
+	/** Items matching the query (or the whole menu), before the cap. */
+	totalMatching: number;
+	/** True when `items` is only part of `totalMatching`. */
+	truncated: boolean;
+};
+
+/**
+ * Shape a menu for the model: optional free-text narrowing, a hard cap to bound
+ * prompt tokens, and sanitization of every field.
+ *
+ * `truncated` and `totalMatching` are the point. The cap used to drop the tail
+ * silently, so on a menu larger than the cap the model could neither see the
+ * rest nor know it was missing — it told a customer "I have no more information
+ * about the menu" while most of the menu sat behind the cut.
+ */
+export function buildMenuToolResult(
+	menu: BotMenu,
+	query: string | undefined,
+	limit: number
+): MenuToolResult {
+	let items = menu.items;
+	if (query) {
+		const q = query.toLowerCase();
+		const filtered = items.filter(
+			(i) =>
+				i.name.toLowerCase().includes(q) ||
+				i.description.toLowerCase().includes(q) ||
+				i.category.toLowerCase().includes(q)
+		);
+		// An unmatched query falls back to the full menu rather than an empty
+		// answer: the model's search term is a guess, the menu is the fact.
+		if (filtered.length > 0) items = filtered;
+	}
+
+	const totalMatching = items.length;
+	return {
+		currency: menu.currency,
+		// Menu text originates from an LLM parsing an uploaded PDF
+		// (`menuImport.ts`), so it is untrusted content that reaches every
+		// customer of this restaurant. Flatten it before it enters context.
+		items: items.slice(0, limit).map((i) => ({
+			category: sanitizePromptValue(i.category, MAX_MENU_FIELD_PROMPT_CHARS),
+			name: sanitizePromptValue(i.name, MAX_MENU_FIELD_PROMPT_CHARS),
+			description: sanitizePromptValue(i.description, MAX_MENU_FIELD_PROMPT_CHARS),
+			price: i.priceFormatted,
+		})),
+		totalMatching,
+		truncated: totalMatching > limit,
+	};
 }

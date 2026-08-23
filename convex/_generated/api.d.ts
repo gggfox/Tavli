@@ -124,6 +124,7 @@ import type * as whatsapp_menu from "../whatsapp/menu.js";
 import type * as whatsapp_outbound from "../whatsapp/outbound.js";
 import type * as whatsapp_phone from "../whatsapp/phone.js";
 import type * as whatsapp_processing from "../whatsapp/processing.js";
+import type * as whatsapp_promptSafety from "../whatsapp/promptSafety.js";
 import type * as whatsapp_reservations from "../whatsapp/reservations.js";
 import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 
@@ -250,6 +251,7 @@ declare const fullApi: ApiFromModules<{
   "whatsapp/outbound": typeof whatsapp_outbound;
   "whatsapp/phone": typeof whatsapp_phone;
   "whatsapp/processing": typeof whatsapp_processing;
+  "whatsapp/promptSafety": typeof whatsapp_promptSafety;
   "whatsapp/reservations": typeof whatsapp_reservations;
   "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
 }>;
