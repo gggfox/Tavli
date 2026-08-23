@@ -15,6 +15,12 @@ export const MenusKeys = {
 	LIST_DELETE: "menus.list.delete",
 	LIST_EMPTY: "menus.list.empty",
 	LIST_LOADING_ARIA: "menus.list.loadingAria",
+	LIST_EMPTY_CREATE_TITLE: "menus.list.emptyCreateTitle",
+	LIST_EMPTY_CREATE_DESCRIPTION: "menus.list.emptyCreateDescription",
+	LIST_CREATE_MODAL_TITLE: "menus.list.createModalTitle",
+	LIST_CREATE_MODAL_ARIA: "menus.list.createModalAria",
+	LIST_CREATE_MODAL_DESCRIPTION: "menus.list.createModalDescription",
+	LIST_CREATE_ERROR: "menus.list.createError",
 
 	EDITOR_LANGUAGES_LABEL: "menus.editor.languagesLabel",
 	EDITOR_LANGUAGES_TITLE: "menus.editor.languagesTitle",
@@ -97,9 +103,12 @@ export const MenusKeys = {
 	PICKER_NO_GROUPS: "menus.picker.noGroups",
 	PICKER_LOADING: "menus.picker.loading",
 	PICKER_ERROR: "menus.picker.error",
-	PICKER_LINKED_GROUPS: "menus.picker.linkedGroups",
 	PICKER_GROUP_SINGLE: "menus.picker.groupSingle",
 	PICKER_GROUP_MULTI: "menus.picker.groupMulti",
+	PICKER_HINT: "menus.picker.hint",
+	PICKER_MANAGE_GROUPS: "menus.picker.manageGroups",
+	PICKER_SELECTION_TYPE_LABEL: "menus.picker.selectionTypeLabel",
+	PICKER_BADGE_LABEL: "menus.picker.badgeLabel",
 
 	LANG_DEFAULT_LABEL: "menus.lang.defaultLabel",
 	LANG_ADDITIONAL_LABEL: "menus.lang.additionalLabel",
@@ -127,6 +136,7 @@ export const MenusKeys = {
 	IMPORT_EMPTY_CTA_TITLE: "menus.import.emptyCta.title",
 	IMPORT_EMPTY_CTA_DESCRIPTION: "menus.import.emptyCta.description",
 	IMPORT_SERVICE_UNAVAILABLE: "menus.import.serviceUnavailable",
+	IMPORT_NEW_MENU_DEFAULT_NAME: "menus.import.newMenuDefaultName",
 } as const;
 
 export type MenusKey = (typeof MenusKeys)[keyof typeof MenusKeys];

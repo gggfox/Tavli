@@ -9,22 +9,68 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireAdminRole } from "./_util/auth";
+import {
+	fetchUserRoleRecordsByUserId,
+	getCurrentUserId,
+	isAdmin,
+	requireAdminRole,
+	requireOwnerRole,
+} from "./_util/auth";
 import type { OrganizationDoc } from "./constants";
-import { TABLE } from "./constants";
+import { TABLE, USER_ROLES } from "./constants";
 
 type AdminErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
 type MutationErrors = AdminErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
+/**
+ * The organization directory, **tiered by role** rather than admin-only.
+ *
+ * - `admin` — the platform operator — sees every organization, because the
+ *   admin surfaces (`/admin/organizations`, moving a restaurant between orgs)
+ *   are directory-wide.
+ * - `owner` sees only the organization(s) their own `userRoles` rows point at.
+ *   An owner needs this list to pick an organization when creating a
+ *   restaurant (`restaurants.create` requires owner, not admin), but has no
+ *   business enumerating other tenants' organizations — so this is scoped
+ *   rather than widened to the whole table.
+ * - everyone else (manager, employee, customer, unauthenticated) is rejected.
+ *
+ * Previously this required admin outright, so an owner-but-not-admin — who is
+ * shown the "New Restaurant" button and *is* allowed to submit the mutation —
+ * got `ERROR_ADMIN_ROLE_REQUIRED` here and ended up staring at an empty,
+ * required organization `<select>` (TAVLI-71 item 8). Keep the result shape:
+ * callers unwrap a `[value, error]` tuple.
+ */
 export const getAllOrganizations = query({
 	handler: async function (ctx): AsyncReturn<OrganizationDoc[], AdminErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
 		if (error) return [null, error];
-		const [_, error2] = await requireAdminRole(ctx, userId);
+		// `requireOwnerRole` admits admins too, so this is the "owner or above" gate.
+		const [_, error2] = await requireOwnerRole(ctx, userId);
 		if (error2) return [null, error2];
 
-		const organizations = await ctx.db.query(TABLE.ORGANIZATIONS).collect();
+		if (await isAdmin(ctx, userId)) {
+			const organizations = await ctx.db.query(TABLE.ORGANIZATIONS).collect();
+			return [organizations, null];
+		}
+
+		// `userRoles.organizationId` is a loose `v.string()` in the schema and a
+		// user may hold more than one row, so normalize each candidate instead of
+		// casting — a stale or malformed id must yield "not in the list", never a
+		// thrown query.
+		const roleRows = await fetchUserRoleRecordsByUserId(ctx, userId);
+		const seen = new Set<string>();
+		const organizations: OrganizationDoc[] = [];
+		for (const row of roleRows) {
+			if (!(row.roles ?? []).includes(USER_ROLES.OWNER)) continue;
+			if (!row.organizationId || seen.has(row.organizationId)) continue;
+			seen.add(row.organizationId);
+			const orgId = ctx.db.normalizeId(TABLE.ORGANIZATIONS, row.organizationId);
+			if (!orgId) continue;
+			const org = await ctx.db.get(orgId);
+			if (org) organizations.push(org);
+		}
 		return [organizations, null];
 	},
 });

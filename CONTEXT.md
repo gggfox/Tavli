@@ -18,6 +18,11 @@ A single physical location operated under one organization, identified by a
 public slug.
 _Avoid_: store, location, branch.
 
+**Platform subscription**:
+The 2,000 MXN/month fee a `Restaurant` pays Tavli for using the product,
+enabled per restaurant.
+_Avoid_: commission (that is the per-order **Tavli service fee**).
+
 **Menu**:
 A named, ordered collection of `MenuCategories` displayed to diners.
 _Avoid_: catalog.
@@ -32,6 +37,34 @@ A single sellable thing inside a `MenuCategory`, with a base price, optional
 options, an availability flag, and a `PrepStation`.
 _Avoid_: dish (too narrow — items can be drinks), product, SKU.
 
+**Public profile**:
+The diner-visible contact details a `Restaurant` publishes: its **Contact
+email**, one phone number (optionally reachable on WhatsApp), a street address,
+and up to five **Social links**. Rendered in exactly two places — a contact bar
+pinned below the order bar on the customer menu page, and the footer of the
+receipt email. The bar is capped at two rows; the restaurant's name is not part
+of it, because the sticky header above already carries the name.
+Every part is optional; a restaurant that has published nothing renders nothing
+rather than an empty shell.
+_Avoid_: about page, listing, storefront, contact card, "the public page".
+
+**Contact email**:
+The address a `Restaurant` publishes to diners. One address doing four jobs:
+shown to diners, `reply_to` on receipt emails, destination for dashboard error
+reports, and recipient of platform-fee billing receipts. There is no separate
+internal support address. Stored as `restaurants.supportEmail`, a name kept for
+continuity — the concept is Contact email.
+_Avoid_: support email (its old, narrower ops-only meaning), reply-to, ops inbox.
+
+**Social link**:
+One of five fixed optional slots — Instagram, Facebook, TikTok, X, YouTube —
+each holding a full canonical `https` profile URL, validated on write against
+that platform's own domain and rewritten to a param-free canonical form.
+`twitter.com` is stored as `x.com`. Shortlinks (`fb.me`, `youtu.be`) are
+rejected rather than resolved, because they are opaque redirect namespaces and
+only the canonical form is kept.
+_Avoid_: handle, username, socials array, profile.
+
 **Prep station**:
 Where a `MenuItem` is physically prepared. Two values: `kitchen` and `bar`.
 Aligned with `SHIFT_ROLE.KITCHEN` and `SHIFT_ROLE.BARTENDER` so the staff
@@ -42,14 +75,70 @@ _Avoid_: type, kind, beverage category, meal category.
 ### Ordering
 
 **Session**:
-An open service period at a `Table`. Many `Orders` may be added to a
-single session before it closes.
+An open service period at a `Table`, doubling as the group's shared
+visit. Members join by a short **join code**; each member pays for
+their own `Orders` as they place them, and each member is prompted for
+their own tip at **Visit close-out**. A session closes at Visit
+close-out, or the hourly stale sweep auto-closes it once nothing is
+owed; staff resolve cash walkouts by collecting or 86'ing
+**Awaiting payment** orders on the Orders dashboard.
+_Avoid_: check, bill; tab (pre-pivot language for the session as a
+settlement unit — see ADR 008).
 
 **Order**:
-The unit a diner pays for. Holds a `status` (`draft → submitted →
-preparing → ready → served`, or `cancelled`), a single `paymentState`,
-and per-station completion timestamps (`kitchenReadyAt`, `barReadyAt`).
+A round of items added to a `Session` — **the unit a diner pays for**.
+An order is paid at submit, before the kitchen sees it, or handed to
+staff as **Awaiting payment** for in-person collection. Holds a
+`status` (`draft → submitted → preparing → ready → served`, or
+`cancelled`; the in-person path inserts `awaiting_payment` before
+`submitted`, or — where the restaurant releases cash orders immediately
+— advances straight out of it like a submitted round) and per-station
+completion timestamps (`kitchenReadyAt`, `barReadyAt`). `served` stays
+terminal — a served order cannot be cancelled.
 _Avoid_: ticket, check, transaction.
+
+**Access code**:
+The diner-facing name ("Access code" / "Código de acceso") for the
+geofence bypass code staff hand out when a device's location check
+fails. Staff-facing settings call it by its technical name, **Geofence
+bypass code** / _Código de anulación de geocerca_ — same value,
+`restaurants.geofenceBypassCode`. It is a soft UX gate, not a security
+control: browser geolocation is spoofable. Distinct from the session's
+**join code**, which admits a friend to the visit.
+_Avoid_: table code / código de mesa (old name), join code (different
+thing).
+
+**Awaiting payment**:
+An `Order` committed by the diner for in-person payment. By default,
+visible only to staff — never on the kitchen rail — until staff mark it
+paid and release it. A restaurant can flip
+`releaseCashOrdersImmediately` (ADR 008 addendum, TAVLI-81, default
+off), after which such a round advances exactly like a submitted one,
+appears on the rail, and carries a persistent **to collect** badge
+through every status until staff collect. It still owes money either
+way: the debt is `awaitingPaymentAt` with no `paidAt`, and it blocks
+visit close-out until settled.
+_Avoid_: pending (that is the diner-facing label for submitted), unpaid
+order on the tab.
+
+**Substitution**:
+A kitchen-proposed replacement for a paid line that can't be made —
+equal or higher cost, and the diner approves on their own device. Any
+price difference plus its service-fee share is charged on approval;
+declining means the line is **86**'d and refunded.
+_Avoid_: swap-out silently, edit the order.
+
+**Tavli service fee**:
+The 12% commission on an `Order`'s subtotal, paid by the diner on top
+and itemized on receipts. The restaurant nets the full subtotal. Never
+applied to tips.
+_Avoid_: platform fee carve-out, restaurant commission.
+
+**Visit close-out**:
+The per-member end-of-visit moment: each `Session` member who paid for
+rounds is prompted to tip on their own spend. Skipping is allowed.
+_Avoid_: checkout (that is paying for an order), settle (legacy tab
+language).
 
 **Order item**:
 A single line on an `Order`, denormalized at submission time with the
@@ -59,10 +148,37 @@ from the source `MenuItem` at query time. See ADR 005.
 
 **Mark station ready**:
 The action a station's staff take to confirm their portion of an
-`Order` is done, stamping `kitchenReadyAt` or `barReadyAt`. When every
-applicable station has been stamped, the `Order`'s overall `status`
-flips to `ready`.
-_Avoid_: bump, complete.
+`Order` has left the station — those items go to the table immediately,
+without waiting for the other station. Stamps `kitchenReadyAt` or
+`barReadyAt`; when every applicable station has been stamped, the
+`Order`'s overall `status` flips to `ready`. On that station's own
+dashboard the `Station ticket` then bumps, with a short undo window.
+_Avoid_: complete. Say "mark bar ready" for the action — _bumping_ is
+what happens to the ticket afterwards, not another name for this.
+
+**Station ticket**:
+One station's portion of an `Order`, as shown on that station's
+dashboard when exactly one station is selected: only that station's
+live items, and only the actions it can take on them. A projection
+rendered at read time — there is no such document, and the `Order`
+remains the unit of payment, cancellation, and history. See ADR 007.
+_Avoid_: sub-order, chit, split order.
+
+**Bump**:
+What a `Station ticket` does when its station marks ready: it leaves
+that station's rail so the rail shows only work still to do. A short
+undo window can put it back.
+_Avoid_: clear, close (those suggest the `Order` itself ended).
+
+**86**:
+Staff cancelling a single `OrderItem` because it can't be made — the
+kitchen is out of an ingredient, the bar is out of a bottle. Stamps
+`cancelledAt` / `cancelledBy`; the line stays visible but leaves the
+`Order`'s `totalAmount`. On a paid order, the 86'd line's price and its
+share of the **Tavli service fee** are automatically refunded; on an
+unpaid (**Awaiting payment**) round it remains a free subtraction. When
+every line is 86'd, the `Order` becomes `cancelled`.
+_Avoid_: void, remove, delete (the line is kept, not erased).
 
 ### Employee management
 
@@ -121,6 +237,9 @@ two prep stations (`kitchen`, `bar`) deliberately reuse the
 **Section**:
 A floor zone (e.g. patio, main room) `Tables` belong to. `Servers` are
 assigned to sections for the duration of (a sub-window of) a `Shift`.
+The orders dashboard consumes that assignment: its "My section" scope
+shows only the `Orders` seated at tables in the sections the caller
+covers right now.
 _Avoid_: zone, area (use Section).
 
 **Table**:
@@ -241,6 +360,8 @@ else fixed copy — so staff should not treat it as verified.
 - A **Restaurant** has many **Channels**; a **Channel** has many
   **Conversations**. A **Conversation** relates to **Reservations** only
   through the shared **Contact phone**, never by a foreign key.
+- A **Restaurant** has one **Public profile**. Every part of it is optional and
+  independently omitted from the diner-facing surfaces when unset.
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,
   each with many **MenuItems**.
 - Every **MenuItem** has exactly one **PrepStation**.
@@ -248,7 +369,16 @@ else fixed copy — so staff should not treat it as verified.
   an **OrderItem** references one **MenuItem** by id (live lookup for
   `prepStation`, snapshot for everything else).
 - An **Order** is "ready" when every **PrepStation** that has at least one
-  **OrderItem** in that order has its `*ReadyAt` timestamp set.
+  non-86'd **OrderItem** in that order has its `*ReadyAt` timestamp set.
+- A **Payment** comes in kinds: an order payment settles one **Order**; a
+  tip payment records one member's tip on a **Session**; a substitution
+  payment covers one **Substitution**'s price difference; legacy tab
+  payments settle a whole pre-pivot **Session**.
+- An 86'd **OrderItem** contributes nothing to its **Order**'s
+  `totalAmount`; on a paid **Order** its price and service-fee share are
+  refunded.
+- A **Station ticket** is derived from one **Order** and one
+  **PrepStation** — it is never stored.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one
   **ShiftRole**. Two of those roles (`bartender`, `kitchen`) share their
   literal value with the two **PrepStations**.
@@ -288,6 +418,15 @@ else fixed copy — so staff should not treat it as verified.
 - "category" sometimes shows up in old chat about orders meaning
   "**PrepStation**". In the current language, **MenuCategory** is purely
   diner-facing organization; routing is **PrepStation**.
+- "theme" means **only** the viewer's light/dark preference, and nothing else.
+  Per-restaurant visual customization (colours, fonts, logo, header image) is a
+  separate concept that will be called **Branding** when it lands — it composes
+  with theme rather than replacing it, since a restaurant's colour has to work
+  in both modes. Never say "restaurant theme".
+- "address" is overloaded. The **Public profile**'s address is where diners
+  walk in; `fiscalAddress` is the legal invoicing address printed on the
+  receipt's tax block. They are often the same string and are never the same
+  field.
 - "waiter" appears in product tickets and stakeholder language (e.g. the
   dashboard's "waiter performance"). The canonical term is **Server** — the
   `ShiftRole.SERVER` who is credited for sales via

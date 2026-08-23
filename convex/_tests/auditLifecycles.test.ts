@@ -11,11 +11,31 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { AUDIT_EVENT, AUDIT_SYSTEM_USER_ID, RESERVATION_STATUS } from "../constants";
+import {
+	AUDIT_EVENT,
+	AUDIT_SYSTEM_USER_ID,
+	DEFAULT_RESTAURANT_TIMEZONE,
+	RESERVATION_STATUS,
+} from "../constants";
+import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
+
+/**
+ * Three days out, at 13:00 in the restaurant's timezone.
+ *
+ * Deliberately NOT `Date.now() + 3 days`: non-staff sources are gated on
+ * operating hours, and a bare relative offset inherits the current wall-clock
+ * hour — so these tests failed whenever the suite ran outside the default
+ * 10:00-23:00 window (`ERROR_OUTSIDE_OPERATING_HOURS`). Staying relative keeps
+ * the booking horizon satisfied; pinning the hour keeps it off the clock.
+ */
+function bookableStartsAt(): number {
+	const ymd = addDaysToYmd(utcMsToYmdInTimezone(Date.now(), DEFAULT_RESTAURANT_TIMEZONE), 3);
+	return ymdHmToUtcMs(ymd, 13 * 60, DEFAULT_RESTAURANT_TIMEZONE);
+}
 
 type AuditRow = Doc<"allEvents">;
 /** `ReturnType<typeof convexTest>` erases the schema, which loses index names. */
@@ -108,6 +128,18 @@ async function seedTabWithOrder(t: ReturnType<typeof convexTest>, dinerId = "din
 	return { restaurantId, tableId, sessionId, orderId, authed, dinerId };
 }
 
+/**
+ * Walks an order to `served` — the only status a tab payment may settle. Steps
+ * one status at a time because `VALID_TRANSITIONS` forbids skipping.
+ */
+async function serveOrder(t: ReturnType<typeof convexTest>, orderId: Id<"orders">) {
+	const staff = t.withIdentity({ subject: "owner-audit" });
+	for (const newStatus of ["preparing", "ready", "served"] as const) {
+		const [, error] = await staff.mutation(api.orders.updateStatus, { orderId, newStatus });
+		expect(error).toBeNull();
+	}
+}
+
 describe("audit: session lifecycle", () => {
 	it("records opening a tab against the diner who opened it", async () => {
 		const t = convexTest(schema, modules);
@@ -196,6 +228,7 @@ describe("audit: session lifecycle", () => {
 	it("records the payment lock, the settlement, and the system as the settling actor", async () => {
 		const t = convexTest(schema, modules);
 		const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+		await serveOrder(t, orderId);
 
 		const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 			sessionId,
@@ -236,7 +269,8 @@ describe("audit: session lifecycle", () => {
 
 	it("writes no settlement event when the webhook replays after success", async () => {
 		const t = convexTest(schema, modules);
-		const { sessionId, restaurantId } = await seedTabWithOrder(t);
+		const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+		await serveOrder(t, orderId);
 		const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 			sessionId,
 			restaurantId,
@@ -260,7 +294,8 @@ describe("audit: session lifecycle", () => {
 
 	it("records a failed tab payment with the system as actor", async () => {
 		const t = convexTest(schema, modules);
-		const { sessionId, restaurantId } = await seedTabWithOrder(t);
+		const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+		await serveOrder(t, orderId);
 		const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 			sessionId,
 			restaurantId,
@@ -337,7 +372,7 @@ describe("audit: reservation lifecycle", () => {
 	it("records creation once, and not again on an idempotent replay", async () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId } = await seedRestaurant(t);
-		const startsAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+		const startsAt = bookableStartsAt();
 
 		const args = {
 			restaurantId,
@@ -363,7 +398,7 @@ describe("audit: reservation lifecycle", () => {
 		const t = convexTest(schema, modules);
 		const { restaurantId, tableId } = await seedRestaurant(t);
 		const staff = await seedStaff(t, restaurantId);
-		const startsAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+		const startsAt = bookableStartsAt();
 
 		const [reservationId] = await t.mutation(internal.reservations.internalCreate, {
 			restaurantId,

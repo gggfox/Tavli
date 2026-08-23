@@ -97,6 +97,22 @@ async function seedTabWithOrder(t: ReturnType<typeof convexTest>, dinerId = "din
 	return { restaurantId, tableId, menuItemId, sessionId, orderId, authed, dinerId };
 }
 
+/**
+ * Walks an order to `served` — the only status a tab payment may settle. Steps
+ * one status at a time because `VALID_TRANSITIONS` forbids skipping.
+ */
+async function serveOrder(
+	t: ReturnType<typeof convexTest>,
+	orderId: Id<"orders">,
+	staffSubject = "owner1"
+) {
+	const staff = t.withIdentity({ subject: staffSubject });
+	for (const newStatus of ["preparing", "ready", "served"] as const) {
+		const [, error] = await staff.mutation(api.orders.updateStatus, { orderId, newStatus });
+		expect(error).toBeNull();
+	}
+}
+
 describe("session tabs", () => {
 	describe("create / joinByCode", () => {
 		it("creates a session with a join code that friends can join", async () => {
@@ -166,7 +182,8 @@ describe("session tabs", () => {
 	describe("tab payment lifecycle", () => {
 		it("locks the tab while a payment is in flight and blocks new orders", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId, authed } = await seedTabWithOrder(t);
+			const { sessionId, restaurantId, tableId, orderId, authed } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
 
 			await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
@@ -188,7 +205,9 @@ describe("session tabs", () => {
 
 		it("rejects beginTabPayment when the amount does not match the balance", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId } = await seedTabWithOrder(t);
+			const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+			// Serve it first, or the settlement guard fires before the amount check.
+			await serveOrder(t, orderId);
 
 			await expect(
 				t.mutation(internal.sessions.beginTabPayment, {
@@ -205,6 +224,7 @@ describe("session tabs", () => {
 		it("confirmTabPayment marks every payable order paid, records the tip, and closes the tab", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, orderId, authed } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
 
 			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
@@ -250,7 +270,8 @@ describe("session tabs", () => {
 
 		it("failTabPayment unlocks the tab so ordering can resume", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, tableId, authed } = await seedTabWithOrder(t);
+			const { sessionId, restaurantId, tableId, orderId, authed } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
 
 			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
@@ -276,7 +297,8 @@ describe("session tabs", () => {
 
 		it("cancelTabPayment abandons the in-flight attempt and unlocks", async () => {
 			const t = convexTest(schema, modules);
-			const { sessionId, restaurantId, authed } = await seedTabWithOrder(t);
+			const { sessionId, restaurantId, orderId, authed } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
 
 			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
@@ -299,44 +321,197 @@ describe("session tabs", () => {
 		});
 	});
 
-	describe("staff open tabs", () => {
-		it("lists open tabs with their unpaid balance and closes one manually", async () => {
+	// A tab may only be settled once every order on it has been served. Paying
+	// for food that never arrives is the only thing that produces a Stripe refund
+	// on this path, and refunds come out of the platform balance.
+	describe("settlement blocking", () => {
+		it("reports un-served orders on the tab summary until they are served", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, orderId, authed } = await seedTabWithOrder(t);
+
+			const blocked = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(blocked!.unservedOrderIds).toEqual([orderId]);
+			// Still billed — the running total and the staff walkout figure must
+			// not shrink just because the food hasn't landed.
+			expect(blocked!.subtotal).toBe(1800);
+
+			await serveOrder(t, orderId);
+
+			const settleable = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(settleable!.unservedOrderIds).toEqual([]);
+			expect(settleable!.subtotal).toBe(1800);
+		});
+
+		it("rejects beginTabPayment while the kitchen still holds an order", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId } = await seedTabWithOrder(t);
 
-			// Restaurant owners have staff access.
-			const staff = t.withIdentity({ subject: "owner1" });
-			const [tabs, listError] = await staff.query(api.sessions.getOpenTabsByRestaurant, {
-				restaurantId,
-			});
-			expect(listError).toBeNull();
-			expect(tabs).toHaveLength(1);
-			expect(tabs![0].unpaidTotal).toBe(1800);
-			expect(tabs![0].orderCount).toBe(1);
+			await expect(
+				t.mutation(internal.sessions.beginTabPayment, {
+					sessionId,
+					restaurantId,
+					userId: "diner1",
+					amount: 1800,
+					currency: "usd",
+					gratuityAmount: 0,
+				})
+			).rejects.toThrow(/ERROR_TAB_HAS_UNSERVED_ORDERS/);
 
-			const [closedId, closeError] = await staff.mutation(api.sessions.closeTabAsStaff, {
+			// Nothing was locked, so the diner can keep ordering.
+			const tab = await t
+				.withIdentity({ subject: "diner1" })
+				.query(api.sessions.getTabSummary, { sessionId });
+			expect(tab!.lockedForPayment).toBe(false);
+		});
+
+		it("allows settlement once every order has been served", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
+
+			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
 				sessionId,
+				restaurantId,
+				userId: "diner1",
+				amount: 1800,
+				currency: "usd",
+				gratuityAmount: 0,
 			});
-			expect(closeError).toBeNull();
-			expect(closedId).toBe(sessionId);
+			expect(paymentId).toBeDefined();
+		});
 
+		it("does not let a draft order block settlement", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId, orderId, authed } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
+			// An open cart was never sent to the kitchen.
+			await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+
+			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
+				sessionId,
+				restaurantId,
+				userId: "diner1",
+				amount: 1800,
+				currency: "usd",
+				gratuityAmount: 0,
+			});
+			expect(paymentId).toBeDefined();
+		});
+
+		it("cancelling the un-served order unblocks the tab and drops it from the bill", async () => {
+			// The escape valve, end to end. This is the whole product decision: the
+			// diner pays for what they consumed, and no money ever moves for the
+			// food that never arrived — so there is nothing to refund.
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId, menuItemId, orderId, authed } =
+				await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
+
+			const strandedOrderId = await authed.mutation(api.orders.createDraft, {
+				sessionId,
+				tableId,
+			});
+			await authed.mutation(api.orders.addItem, {
+				orderId: strandedOrderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await authed.mutation(api.orders.submitOrder, { orderId: strandedOrderId });
+
+			const blocked = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(blocked!.unservedOrderIds).toEqual([strandedOrderId]);
+			expect(blocked!.subtotal).toBe(2700);
+			await expect(
+				t.mutation(internal.sessions.beginTabPayment, {
+					sessionId,
+					restaurantId,
+					userId: "diner1",
+					amount: 2700,
+					currency: "usd",
+					gratuityAmount: 0,
+				})
+			).rejects.toThrow(/ERROR_TAB_HAS_UNSERVED_ORDERS/);
+
+			// Cancelling is a manager action and moves no money: the order was
+			// never paid for.
+			const manager = t.withIdentity({ subject: "owner1" });
+			const [, cancelError] = await manager.mutation(api.orders.updateStatus, {
+				orderId: strandedOrderId,
+				newStatus: "cancelled",
+			});
+			expect(cancelError).toBeNull();
+
+			const unblocked = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(unblocked!.unservedOrderIds).toEqual([]);
+			expect(unblocked!.subtotal).toBe(1800);
+
+			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
+				sessionId,
+				restaurantId,
+				userId: "diner1",
+				amount: 1800,
+				currency: "usd",
+				gratuityAmount: 0,
+			});
 			await t.run(async (ctx) => {
-				const session = await ctx.db.get(sessionId);
-				expect(session!.status).toBe("closed");
-				expect(session!.settledBy).toBe("staff");
+				expect((await ctx.db.get(paymentId))!.amount).toBe(1800);
+			});
+		});
+	});
+
+	describe("diner close", () => {
+		it("rejects closing a tab that still has an unpaid balance", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, authed } = await seedTabWithOrder(t);
+
+			await expect(authed.mutation(api.sessions.close, { sessionId })).rejects.toThrow(
+				/ERROR_TAB_UNPAID/
+			);
+
+			// The tab stays active, so the walkout's debt is not erased.
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(sessionId))!.status).toBe("active");
 			});
 		});
 
-		it("denies the open tabs view to unrelated users", async () => {
+		it("closes a tab that never ordered anything", async () => {
 			const t = convexTest(schema, modules);
-			const { restaurantId } = await seedTabWithOrder(t);
-
-			const stranger = t.withIdentity({ subject: "stranger1" });
-			const [tabs, error] = await stranger.query(api.sessions.getOpenTabsByRestaurant, {
-				restaurantId,
+			await seedRestaurant(t);
+			const authed = t.withIdentity({ subject: "diner1" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
 			});
-			expect(tabs).toBeNull();
-			expect(error).not.toBeNull();
+
+			await authed.mutation(api.sessions.close, { sessionId });
+
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(sessionId))!.status).toBe("closed");
+			});
+		});
+
+		it("closes a tab whose only order is an unsubmitted draft", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, tableId } = await seedRestaurant(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "diner1" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+
+			// Drafts were never sent to the kitchen, so nothing is owed.
+			await authed.mutation(api.sessions.close, { sessionId });
+
+			await t.run(async (ctx) => {
+				expect((await ctx.db.get(sessionId))!.status).toBe("closed");
+			});
 		});
 	});
 
@@ -418,6 +593,40 @@ describe("session tabs", () => {
 			});
 		});
 
+		it("flags — never closes — a stale session whose only debt is uncollected cash", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, tableId } = await seedRestaurant(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "diner-cash" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+			await authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await authed.mutation(api.orders.requestPayInPerson, { orderId });
+
+			await t.run(async (ctx) => {
+				await ctx.db.patch(sessionId, { startedAt: Date.now() - 26 * 60 * 60 * 1000 });
+			});
+
+			const result = await t.mutation(internal.sessions.sweepStaleOpenTabs, {});
+
+			// awaiting_payment is not tab-payable, but it is still owed money — the
+			// sweep must not close over it and hide the walkout.
+			expect(result.flagged).toBe(1);
+			expect(result.awaitingPaymentOrdersSeen).toBe(1);
+			await t.run(async (ctx) => {
+				const session = await ctx.db.get(sessionId);
+				expect(session!.status).toBe("active");
+				expect(session!.flaggedStaleAt).toBeDefined();
+			});
+		});
+
 		it("caps the rows it touches per run, newest-first", async () => {
 			const t = convexTest(schema, modules);
 			const { restaurantId } = await seedRestaurant(t);
@@ -446,6 +655,85 @@ describe("session tabs", () => {
 			await t.run(async (ctx) => {
 				expect((await ctx.db.get(newestId!))!.status).toBe("closed");
 			});
+		});
+	});
+
+	// ADR 008 coexistence: pay-at-submit and cash (`awaiting_payment`) orders on
+	// a session that still runs the legacy tab machinery.
+	describe("awaiting_payment awareness (ADR 008)", () => {
+		/** Adds a second round committed for cash (900) next to the 1800 tab order. */
+		async function addAwaitingPaymentRound(
+			_t: ReturnType<typeof convexTest>,
+			args: {
+				sessionId: Id<"sessions">;
+				tableId: Id<"tables">;
+				menuItemId: Id<"menuItems">;
+				authed: ReturnType<ReturnType<typeof convexTest>["withIdentity"]>;
+			}
+		) {
+			const orderId = await args.authed.mutation(api.orders.createDraft, {
+				sessionId: args.sessionId,
+				tableId: args.tableId,
+			});
+			await args.authed.mutation(api.orders.addItem, {
+				orderId,
+				menuItemId: args.menuItemId,
+				quantity: 1,
+				selectedOptions: [],
+			});
+			await args.authed.mutation(api.orders.requestPayInPerson, { orderId });
+			return orderId;
+		}
+
+		it("keeps awaiting_payment orders out of the tab balance", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, tableId, menuItemId, authed } = await seedTabWithOrder(t);
+			const cashOrderId = await addAwaitingPaymentRound(t, {
+				sessionId,
+				tableId,
+				menuItemId,
+				authed,
+			});
+
+			// Never tab-payable: the cash order is neither billed to the tab nor
+			// blocking settlement.
+			const tab = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(tab!.subtotal).toBe(1800);
+			expect(tab!.payableOrderIds).not.toContain(cashOrderId);
+			expect(tab!.unservedOrderIds).not.toContain(cashOrderId);
+		});
+
+		it("reports a zero tab balance for a new-model session whose orders are paid", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, orderId, authed } = await seedTabWithOrder(t);
+			// Simulate pay-at-submit settlement (what confirmPayment stamps).
+			await t.run(async (ctx) => {
+				await ctx.db.patch(orderId, {
+					paymentState: "paid",
+					paidAt: Date.now(),
+					settledBy: "stripe",
+				});
+			});
+
+			const tab = await authed.query(api.sessions.getTabSummary, { sessionId });
+			expect(tab!.subtotal).toBe(0);
+			expect(tab!.payableOrderIds).toHaveLength(0);
+		});
+
+		it("blocks the diner close while a cash order is uncollected", async () => {
+			const t = convexTest(schema, modules);
+			const { restaurantId, tableId } = await seedRestaurant(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			const authed = t.withIdentity({ subject: "diner-cash" });
+			const { sessionId } = await authed.mutation(api.sessions.create, {
+				restaurantSlug: "test-r",
+			});
+			await addAwaitingPaymentRound(t, { sessionId, tableId, menuItemId, authed });
+
+			// No tab balance at all — the cash order alone must hold the session open.
+			await expect(authed.mutation(api.sessions.close, { sessionId })).rejects.toThrow(
+				/ERROR_SESSION_AWAITING_PAYMENT_ORDERS/
+			);
 		});
 	});
 });

@@ -1,0 +1,22 @@
+import type { RestaurantSettingsPatch } from "@/features/restaurants/hooks/useRestaurantSettingsSave";
+import type { BackendErrorCode } from "@/global/i18n/keys/errors";
+import type { Doc } from "convex/_generated/dataModel";
+
+/**
+ * Props every self-saving section of the restaurant settings canvas takes.
+ * The parent view owns the mutation (see `useRestaurantSettingsSave`) and
+ * hands each section only its own slice of pending / error state.
+ */
+export interface RestaurantSettingsSectionProps {
+	readonly restaurant: Doc<"restaurants">;
+	/** Resolves `true` when the patch persisted, so the form can reset dirty. */
+	readonly onSave: (patch: RestaurantSettingsPatch) => Promise<boolean>;
+	readonly isSaving: boolean;
+	readonly isSaved: boolean;
+	readonly error: string | null;
+	/** Stable code behind `error`, so a section can pin it to the guilty field. */
+	readonly errorCode: BackendErrorCode | null;
+	/** Field the backend pinned the failure to, when one code covers many inputs. */
+	readonly errorField: string | null;
+	readonly onDismissError: () => void;
+}

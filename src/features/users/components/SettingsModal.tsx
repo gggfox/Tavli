@@ -1,8 +1,8 @@
 import { useCurrentUserRoles, useUserSettings } from "@/features/users/hooks";
-import { i18n, Modal, useTheme } from "@/global";
+import { Avatar, getAvatarFallback, i18n, Modal, useTheme } from "@/global";
 import { Languages, SidebarKeys, writeLanguageCookie } from "@/global/i18n";
 import { config } from "@/global/utils/config";
-import { useClerk } from "@clerk/tanstack-react-start";
+import { useClerk, useUser } from "@clerk/tanstack-react-start";
 import { api } from "convex/_generated/api";
 import { USER_ROLES } from "convex/constants";
 import { useConvex, useConvexAuth } from "convex/react";
@@ -23,6 +23,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 	const { isAuthenticated } = useConvexAuth();
 	const { theme, toggleTheme } = useTheme();
 	const { signOut } = useClerk();
+	const { user } = useUser();
 
 	const { roles: serverRoles } = useCurrentUserRoles();
 	const [optimisticRoles, setOptimisticRoles] = useState<string[] | null>(null);
@@ -114,6 +115,35 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 						<X size={20} />
 					</button>
 				</div>
+
+				{/* Account Section — full email, unlike the truncated sidebar row */}
+				{user && (
+					<div className="mb-6">
+						<h3 className="text-sm font-medium mb-3 text-muted-foreground">
+							{t(SidebarKeys.ACCOUNT)}
+						</h3>
+						<div className="flex items-center gap-3">
+							<Avatar
+								src={user.imageUrl}
+								alt={user.fullName ?? ""}
+								fallback={getAvatarFallback(
+									user.firstName,
+									user.primaryEmailAddress?.emailAddress ?? ""
+								)}
+								size="md"
+								className="shrink-0"
+							/>
+							<div className="min-w-0">
+								{user.fullName && (
+									<p className="text-sm font-medium text-foreground">{user.fullName}</p>
+								)}
+								<p className="text-xs text-muted-foreground break-all">
+									{user.primaryEmailAddress?.emailAddress}
+								</p>
+							</div>
+						</div>
+					</div>
+				)}
 
 				{/* Roles Section */}
 				{isAuthenticated && (

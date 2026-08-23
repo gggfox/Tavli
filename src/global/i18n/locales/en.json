@@ -26,8 +26,7 @@
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations",
-			"adminFeatureFlags": "Feature flags",
-			"tabs": "Open tabs"
+			"adminFeatureFlags": "Feature flags"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -55,6 +54,7 @@
 		"settings": {
 			"title": "Settings",
 			"close": "Close",
+			"account": "Account",
 			"theme": "Theme",
 			"roles": "Your Roles",
 			"noRoles": "No roles assigned",
@@ -84,6 +84,7 @@
 			"inviteSingleRoleHint": "Only this role is available for you to assign.",
 			"sendInvite": "Send invite",
 			"sending": "Sending…",
+			"inviteFailed": "Could not send the invitation. Check the details and try again.",
 			"pendingInvitations": "Pending invitations",
 			"noPendingInvitations": "No pending invitations.",
 			"revoke": "Revoke",
@@ -370,13 +371,23 @@
 			"description": "Live order dashboard. Orders update in real time."
 		},
 		"status": {
+			"awaitingPayment": "Awaiting payment",
 			"submitted": "Pending",
 			"preparing": "Preparing",
 			"ready": "Ready",
 			"served": "Served",
 			"cancelled": "Cancelled"
 		},
+		"serviceDate": {
+			"today": "Today",
+			"all": "All"
+		},
+		"scope": {
+			"mine": "My section",
+			"all": "All"
+		},
 		"station": {
+			"all": "All",
 			"kitchen": "Kitchen",
 			"bar": "Bar",
 			"readyBadge": "{{station}}: ready",
@@ -394,26 +405,79 @@
 			"keepOrder": "Keep Order",
 			"viewFullOrder": "View full order →"
 		},
+		"markPaid": {
+			"action": "Mark paid in person",
+			"promptTitle": "Mark this order as paid?",
+			"promptBody": "Confirm you collected {{amount}} in person. The order is released to the kitchen immediately.",
+			"confirm": "Confirm payment",
+			"dismiss": "Not yet",
+			"pending": "Marking paid…",
+			"amountDue": "Amount due"
+		},
 		"cancel": {
 			"prompt": "Cancel this order?",
-			"paidPrompt": "This order has been paid. Cancelling will issue a refund."
+			"paidPrompt": "This order has been paid. Cancelling refunds its amount to the diner. The tip is not refunded.",
+			"refundPending": "Cancelling and refunding…",
+			"refundFailedBanner": "Order #{{number}} was cancelled but the refund did not go through. Issue it from the Stripe dashboard."
 		},
 		"card": {
 			"table": "Table {{number}}",
+			"tableNone": "No table",
 			"dayNumber": "#{{n}}",
 			"paid": "Paid",
 			"moreItems_one": "+1 more item",
 			"moreItems_other": "+{{count}} more items"
 		},
+		"ticket": {
+			"orderNote": "Order note",
+			"itemCancelledBadge": "86'd",
+			"cancelItem": "86 item",
+			"cancelItemPrompt": "Can't make {{name}}? It comes off the diner's bill immediately.",
+			"cancelItemPaidPrompt": "Can't make {{name}}? Its price plus its service-fee share is refunded to the diner automatically.",
+			"confirmCancelItem": "Confirm 86",
+			"keepItem": "Keep item",
+			"undoReady": "Undo",
+			"markedReady": "{{station}} marked ready · #{{n}}",
+			"emptyAllDone": "All caught up — nothing waiting for the {{station}}."
+		},
+		"substitution": {
+			"propose": "Substitute",
+			"pendingBadge": "Substitution offered",
+			"cancelProposal": "Withdraw offer",
+			"dialogTitle": "Propose a substitution",
+			"dialogSubtitle": "Replace {{name}} with an item of equal or higher price. The diner approves it on their device; any difference is charged to them.",
+			"dialogEmpty": "No available items at this price or above.",
+			"deltaFree": "No extra charge",
+			"deltaPreview": "+${{amount}} (+${{fee}} service fee)",
+			"confirm": "Send to diner",
+			"dismiss": "Cancel"
+		},
+		"servedWindow": {
+			"hint": "Served orders leave this list {{minutes}} minutes after they are marked served. Older ones stay in Payments and in your exports."
+		},
 		"empty": {
-			"noFilters": "Select at least one status to view orders.",
-			"noOrders": "No orders match the selected filters."
+			"noOrders": "No orders match the selected filters.",
+			"noRecentServed": "No orders served in the last {{minutes}} minutes.",
+			"noOrdersInMySections": "No orders in your section right now.",
+			"noActiveSection": "You have no section assigned right now.",
+			"noActiveSectionHint": "Switch to All to see the whole floor."
 		},
 		"aria": {
-			"filter": "Filter orders by status",
+			"statusSegments": "Show orders with status",
 			"stationFilter": "Filter orders by prep station",
+			"serviceDateFilter": "Filter orders by service day",
+			"scopeFilter": "Filter orders by section",
 			"fullOrder": "Full order details",
-			"loading": "Loading orders"
+			"loading": "Loading orders",
+			"cancelItem": "Cancel item {{name}}",
+			"proposeSubstitution": "Propose substitution for {{name}}"
+		},
+		"payment": {
+			"toCollect": "To collect",
+			"pending": "Payment pending",
+			"refundRequested": "Refund pending",
+			"refunded": "Refunded",
+			"refundFailed": "Refund failed"
 		}
 	},
 	"payments": {
@@ -436,7 +500,9 @@
 		"summary": {
 			"totalRevenue": "Total Revenue",
 			"orders": "Orders",
-			"avgOrder": "Avg. Order"
+			"avgOrder": "Avg. Order",
+			"serviceFees": "Tavli Service Fee",
+			"tips": "Tips"
 		},
 		"empty": {
 			"noPayments": "No payments in this period."
@@ -446,14 +512,22 @@
 		"resultCount_other": "{{count}} payments",
 		"table": {
 			"dayOrderNumber": "Order # (day)",
-			"orderId": "Order ID",
 			"date": "Date",
 			"table": "Table",
 			"items": "Items",
-			"total": "Total"
+			"rowId": "ID",
+			"type": "Type",
+			"subtotal": "Subtotal",
+			"serviceFee": "Tavli fee",
+			"tip": "Tip",
+			"netToRestaurant": "Net to restaurant"
 		},
 		"tooltip": {
-			"total": "Total"
+			"subtotal": "Subtotal"
+		},
+		"rowKind": {
+			"order": "Order",
+			"tip": "Tip"
 		}
 	},
 	"customer": {
@@ -464,6 +538,24 @@
 		"auth": {
 			"signIn": "Sign In",
 			"signUp": "Sign up"
+		},
+		"info": {
+			"heading": "Contact",
+			"hoursLabel": "Hours",
+			"hoursValue": "{{open}} to {{close}}",
+			"addressLabel": "Address",
+			"directions": "Get directions",
+			"emailLabel": "Email",
+			"phoneLabel": "Phone",
+			"whatsappLabel": "WhatsApp",
+			"socialAria": "{{platform}} (opens in a new tab)"
+		},
+		"social": {
+			"instagram": "Instagram",
+			"facebook": "Facebook",
+			"tiktok": "TikTok",
+			"x": "X",
+			"youtube": "YouTube"
 		}
 	},
 	"roles": {
@@ -513,6 +605,9 @@
 		"ERROR_TAB_LOCKED": "A payment is in progress on this tab. Please wait until it finishes.",
 		"ERROR_INVALID_JOIN_CODE": "That join code didn't match an open tab. Please check it and try again.",
 		"ERROR_TAB_EMPTY": "There's nothing to pay for on this tab yet.",
+		"ERROR_TAB_UNPAID": "This tab still has unpaid orders. Pay the tab, or ask the staff to close it.",
+		"ERROR_TAB_HAS_UNSERVED_ORDERS": "Some of your order hasn't reached the table yet. You can pay once it arrives, or ask your server to cancel it.",
+		"ERROR_SESSION_AWAITING_PAYMENT_ORDERS": "Part of your table's order is still waiting to be paid in person. Ask the staff to collect it before closing out.",
 		"ERROR_DEV_ENVIRONMENT_ONLY": "This action is only available in development environments.",
 		"ERROR_DASHBOARD_RESTAURANT_REQUIRED": "Select a restaurant to view this dashboard.",
 		"ERROR_DASHBOARD_RANGE_TOO_LARGE": "The selected date range is too large. Please choose a shorter range.",
@@ -524,9 +619,37 @@
 		"ERROR_DASHBOARD_TOO_MANY_LAYOUTS": "You've reached the maximum number of saved dashboards.",
 		"ERROR_DASHBOARD_PORTFOLIO_NO_MEMBERSHIP": "You don't have access to any restaurants in this portfolio.",
 		"ERROR_EMAIL_NOT_VERIFIED": "Please verify your email address before continuing.",
+		"ERROR_ORDER_NOT_CANCELLABLE": "This order can no longer be cancelled. Orders that have been served must be refunded from the Stripe dashboard.",
+		"ERROR_ORDER_ITEM_NOT_CANCELLABLE": "This item can no longer be cancelled on its own. Use the order-level cancel instead.",
+		"ERROR_ORDER_ITEM_CANCEL_PAID": "This order's payment is already in progress or settled. Cancel the whole order to issue a refund.",
+		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "A payment is in progress on this tab. Wait for it to finish before removing items.",
+		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "A card payment is already in progress for this order. Cancel it before choosing to pay in person.",
+		"ERROR_REFUND_FAILED": "The order was cancelled, but the refund did not go through. Issue it from the Stripe dashboard.",
+		"ERROR_REFUND_PAYMENT_UNRESOLVED": "The order was cancelled, but we could not find its payment to refund. Check the Stripe dashboard.",
+		"ERROR_REFUND_ALREADY_ISSUED": "This payment has already been fully refunded.",
+		"ERROR_SUBSTITUTION_NOT_ELIGIBLE": "This line can't take a substitution — the order must be paid and still in the kitchen.",
+		"ERROR_SUBSTITUTION_ITEM_UNAVAILABLE": "That replacement item isn't available.",
+		"ERROR_SUBSTITUTION_PROPOSAL_EXISTS": "A substitution is already waiting on the diner for this item.",
+		"ERROR_SUBSTITUTION_DELTA_NEGATIVE": "The replacement must cost the same or more than the original item.",
+		"ERROR_SUBSTITUTION_NOT_PENDING": "This substitution has already been answered or withdrawn.",
+		"ERROR_SUBSTITUTION_REQUIRES_PAYMENT": "This substitution costs extra — confirm the payment to accept it.",
+		"ERROR_TIP_INVALID_AMOUNT": "That tip amount isn't valid. Enter an amount above zero.",
+		"ERROR_RECEIPT_ORDER_NOT_PAID": "This order hasn't been paid yet, so there's no receipt to send.",
+		"ERROR_RECEIPT_NO_VERIFIED_EMAIL": "Your account has no verified email address to send the receipt to.",
+		"ERROR_RECEIPT_RATE_LIMITED": "This receipt was already emailed a few times. Please wait a bit before requesting it again.",
+		"ERROR_RECEIPT_SEND_FAILED": "We couldn't send the receipt email. Please try again in a moment.",
+		"ERROR_BILLING_NOT_ENABLED": "This restaurant isn't on the Tavli subscription yet. A Tavli admin has to enable it first.",
+		"ERROR_BILLING_PRICE_NOT_CONFIGURED": "Subscription billing isn't configured on this environment yet. Please contact Tavli support.",
+		"ERROR_BILLING_SUBSCRIPTION_EXISTS": "This restaurant already has an active Tavli subscription.",
+		"ERROR_BILLING_NO_SUBSCRIPTION": "There's no active Tavli subscription to cancel.",
+		"ERROR_BILLING_CHECKOUT_FAILED": "We couldn't open the Stripe checkout page. Please try again in a moment.",
+		"ERROR_BILLING_PORTAL_UNAVAILABLE": "We couldn't open the Stripe billing portal. Please try again in a moment.",
 		"ERROR_MENU_CATEGORY_NAME_REQUIRED": "Category name is required.",
 		"ERROR_MENU_CATEGORY_NAME_TOO_LONG": "Category name is too long.",
 		"ERROR_MENU_CATEGORY_NAMES_REQUIRED": "Enter at least one category name.",
+		"ERROR_MENU_NAME_REQUIRED": "Menu name is required.",
+		"ERROR_MENU_NAME_TOO_LONG": "Menu name is too long.",
+		"ERROR_MENU_IMPORT_TARGET_REQUIRED": "Choose a menu to import into, or name a new one.",
 		"ERROR_INVALID_PARTY_SIZE": "Please enter a valid party size.",
 		"ERROR_CONTACT_FIELD_TOO_LONG": "One of the contact fields is too long.",
 		"ERROR_INVALID_EMAIL": "Please enter a valid email address.",
@@ -542,8 +665,41 @@
 		"ERROR_TABLE_LOCKED": "That table is unavailable during the selected time.",
 		"ERROR_SHARED_EMPLOYEE_SUBJECT_ALREADY_BOUND": "That shared staff session is already linked to another restaurant.",
 		"ERROR_INVALID_SHARED_EMPLOYEE_CLERK_SUBJECT": "That shared staff session identity isn't valid.",
+		"ERROR_SLUG_TAKEN": "That web address is already taken. Try another one.",
+		"ERROR_SLUG_INVALID": "That web address needs at least one letter or number.",
 		"ERROR_TABLE_HAS_RESERVATIONS": "This table has reservations and can't be changed right now.",
-		"ERROR_TABLE_NUMBER_EXISTS": "A table with that number already exists."
+		"ERROR_TABLE_NUMBER_EXISTS": "A table with that number already exists.",
+		"ERROR_INVITE_CROSS_ORG": "This person already belongs to a different organization. Accepting the invitation would move them out of it.",
+		"ERROR_INVITE_DUPLICATE_PENDING": "This person already has an invitation waiting for this organization.",
+		"ERROR_INVITE_DUPLICATE_IN_FILE": "An earlier row of this file already invites this person to this organization.",
+		"ERROR_INVITE_INVALID_EMAIL": "That isn't a valid email address.",
+		"ERROR_INVITE_INVALID_ROLE": "The role must be owner, manager or employee.",
+		"ERROR_INVITE_INVALID_ORGANIZATION": "We couldn't find that organization.",
+		"ERROR_INVITE_INVALID_ORGANIZATION_AMBIGUOUS": "More than one organization has that name. Use the organization ID instead.",
+		"ERROR_INVITE_INVALID_RESTAURANTS_REQUIRED": "Managers and employees need at least one restaurant.",
+		"ERROR_INVITE_INVALID_RESTAURANT_UNKNOWN": "We couldn't find one of those restaurants.",
+		"ERROR_INVITE_INVALID_RESTAURANT_AMBIGUOUS": "More than one restaurant has that name. Use the restaurant ID instead.",
+		"ERROR_INVITE_INVALID_RESTAURANT_OTHER_ORG": "One of those restaurants belongs to a different organization.",
+		"ERROR_INVITE_RATE_LIMITED": "You've sent a lot of invitations in the last hour. Please wait a while before sending more.",
+		"ERROR_INVITE_EMAIL_RATE_LIMITED": "This address has already been invited several times today. Please try again tomorrow.",
+		"ERROR_INVITE_BULK_TOO_MANY_ROWS": "Too many rows were sent at once. Please try again.",
+		"ERROR_INVITE_CSV_EMPTY": "That file has no rows to invite.",
+		"ERROR_INVITE_CSV_MISSING_COLUMN": "Your file is missing a required column: {{detail}}.",
+		"ERROR_INVITE_CSV_UNKNOWN_COLUMN": "Your file has a column we don't recognize: {{detail}}.",
+		"ERROR_INVITE_CSV_DUPLICATE_COLUMN": "Your file has the same column twice: {{detail}}.",
+		"ERROR_INVITE_CSV_TOO_MANY_ROWS": "That file has more than {{detail}} rows. Split it and upload it in parts.",
+		"ERROR_INVITE_CSV_TOO_LARGE": "That file is larger than {{detail}}. Split it and upload it in parts.",
+		"ERROR_INVITE_CSV_UNTERMINATED_QUOTE": "That file has a quotation mark that is never closed.",
+		"ERROR_INVITE_CSV_NOT_CSV": "That file does not look like a CSV. Export it as CSV and upload it again.",
+		"ERROR_INVALID_SUPPORT_EMAIL": "That doesn't look like a valid email address.",
+		"ERROR_ADDRESS_TOO_LONG": "That address is too long. Keep it under 240 characters.",
+		"ERROR_INVALID_PHONE": "That doesn't look like a valid phone number.",
+		"ERROR_PHONE_COUNTRY_CODE_REQUIRED": "Add the country code, starting with + (for example +52 81 1234 5678).",
+		"ERROR_WHATSAPP_WITHOUT_PHONE": "Add a phone number before marking it as reachable on WhatsApp.",
+		"ERROR_SOCIAL_URL_INVALID": "That doesn't look like a profile link. Paste the address of your profile page.",
+		"ERROR_SOCIAL_URL_WRONG_PLATFORM": "That link belongs to a different platform.",
+		"ERROR_SOCIAL_URL_SHORTLINK": "That's a short link. Open it and paste the address of the profile page it leads to.",
+		"ERROR_SOCIAL_URL_INSECURE": "Only https links to the platform itself can be published."
 	},
 	"time": {
 		"relative": {
@@ -574,6 +730,9 @@
 			"selectTable": "Select your table",
 			"tableRequired": "Please select a table to continue",
 			"tableLabel": "Table {{number}}",
+			"tableTaken": "(taken)",
+			"tableTakenHint": "Greyed-out tables already have an open visit. Ask whoever is sitting there for their join code so you order together.",
+			"tableTakenSelected": "That table was just taken. Pick another one, or join it with its code.",
 			"notesPlaceholder": "Any allergies, preferences, or notes for the kitchen? (optional)",
 			"totalLabel": "Total",
 			"totalWithCount_one": "Total (1 item)",
@@ -582,8 +741,7 @@
 			"noOnlineOrdering": "Online ordering is not available at this restaurant yet.",
 			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
-			"filterNoMatches": "No categories or items match your search.",
-			"placeOrder": "Send order to kitchen"
+			"filterNoMatches": "No categories or items match your search."
 		},
 		"item": {
 			"required": "Required",
@@ -599,9 +757,7 @@
 			"back": "Back to menu",
 			"heading": "Your Order",
 			"empty": "Your cart is empty. Add some items!",
-			"total": "Total",
-			"placeOrder": "Place Order",
-			"placingOrder": "Placing Order..."
+			"total": "Total"
 		},
 		"checkout": {
 			"heading": "Checkout",
@@ -614,7 +770,21 @@
 			"retry": "Retry",
 			"processing": "Processing...",
 			"payNow": "Pay Now",
-			"securedByStripe": "Payments secured by Stripe"
+			"securedByStripe": "Payments secured by Stripe",
+			"subtotal": "Subtotal",
+			"serviceFee": "Tavli service fee ({{rate}}%)",
+			"continueToPayment": "Continue to payment",
+			"payInPerson": "Pay in person",
+			"payByCardInstead": "Pay by card instead",
+			"orderNotFound": "We couldn't load this order. It may have already been sent or cancelled.",
+			"cashTitle": "Pay at the table",
+			"cashOrderNumber": "Order #{{n}}",
+			"cashShowServer": "Show this to your server to pay at the table.",
+			"cashKitchenNote": "Your order will go to the kitchen once the staff confirms your payment.",
+			"paidTitle": "Payment complete!",
+			"paidDesc": "Order #{{n}} was sent to the kitchen.",
+			"paidDescNoNumber": "Your order was sent to the kitchen.",
+			"viewOrders": "View my orders"
 		},
 		"orderStatus": {
 			"loading": "Loading order...",
@@ -622,12 +792,19 @@
 			"dayNumber": "Order #{{n}}",
 			"cancelled": "Order Cancelled",
 			"items": "Items",
+			"itemUnavailable": "Unavailable",
 			"summary": "${{total}} · {{count}} items",
 			"orderMore": "Order More",
 			"stepPlaced": "Order Placed",
 			"stepPreparing": "Preparing",
 			"stepReady": "Ready",
 			"stepServed": "Served"
+		},
+		"receipt": {
+			"itemRefunded": "Refunded",
+			"emailCta": "Email me a receipt",
+			"emailSending": "Sending...",
+			"emailSent": "Sent to {{email}}"
 		},
 		"orders": {
 			"header": "Your orders",
@@ -644,6 +821,9 @@
 			"lifecycleView": "View",
 			"lifecycleUnpaid": "Unpaid",
 			"lifecycleFinishCheckout": "Finish checkout",
+			"lifecycleAwaitingPayment": "Pay with your server",
+			"lifecycleContinuePayment": "Continue to payment",
+			"paidBadge": "Paid",
 			"lifecyclePlaced": "Order placed",
 			"lifecyclePreparing": "Preparing",
 			"lifecycleReady": "Ready",
@@ -656,6 +836,10 @@
 			"shareCodeLabel": "Share this code with your table",
 			"codeCopied": "Code copied!",
 			"lockedNotice": "A payment is in progress — ordering is paused until it finishes.",
+			"blockedNotice_one": "1 order hasn't reached your table yet. You can pay once it arrives.",
+			"blockedNotice_other": "{{count}} orders haven't reached your table yet. You can pay once they arrive.",
+			"blockedHeading": "Your food is still on its way",
+			"blockedBody": "You can pay as soon as everything reaches your table. If something isn't coming, ask your server to cancel it and it will come off your tab.",
 			"payCta": "Pay tab · ${{amount}}",
 			"joinHeading": "Joining a friend's tab?",
 			"joinPlaceholder": "Enter tab code",
@@ -674,13 +858,53 @@
 			"paidDesc": "Your payment went through and the tab is closed. We hope to see you again soon.",
 			"paidDone": "Done"
 		},
+		"closeout": {
+			"cta": "Close out & tip",
+			"heading": "Close out your visit",
+			"visitTotal": "Your visit total",
+			"orderCount_one": "{{count}} order",
+			"orderCount_other": "{{count}} orders",
+			"tipHeading": "Add a tip for the team",
+			"presetAria": "Tip {{percent}}%",
+			"tipCustom": "Custom",
+			"tipCustomPlaceholder": "Tip amount",
+			"addTipCta": "Add tip · ${{amount}}",
+			"skip": "Skip",
+			"tipsGiven": "Tip added · ${{amount}}",
+			"thanksTitle": "Thank you!",
+			"thanksBody": "Your ${{amount}} tip goes straight to the team.",
+			"paymentTitle": "Confirm your tip",
+			"nothingPaid": "You have nothing to settle — you didn't pay for any orders on this visit.",
+			"done": "Done"
+		},
+		"substitution": {
+			"title": "The kitchen suggests a substitution",
+			"body": "Order #{{n}}: {{original}} is unavailable.",
+			"bodyNoNumber": "{{original}} is unavailable.",
+			"originalLabel": "You ordered",
+			"proposedLabel": "Suggested instead",
+			"noExtra": "No extra charge",
+			"deltaLine": "Price difference",
+			"feeLine": "Tavli service fee",
+			"totalExtra": "Total extra",
+			"accept": "Accept substitution",
+			"decline": "No thanks, refund that item",
+			"declineConfirmTitle": "Decline this substitution?",
+			"declineConfirmBody": "{{original}} comes off your order and {{amount}} is refunded to your card.",
+			"declineConfirmBodyNoAmount": "{{original}} comes off your order and is refunded to your card.",
+			"declineConfirm": "Decline and refund",
+			"back": "Go back",
+			"oneTapSuccess": "Done! Your saved card was charged {{amount}}.",
+			"paymentTitle": "Confirm the extra charge",
+			"done": "Done"
+		},
 		"geofence": {
 			"blockedTitle": "Ordering is available at the restaurant",
-			"outside": "You seem to be outside the restaurant. You can browse the menu, and order once you arrive.",
-			"locationUnavailable": "We couldn't access your location. Allow location access, or ask the staff for a table code.",
-			"codePlaceholder": "Table code",
+			"outside": "You seem to be outside the restaurant. You can browse the menu, and order once you arrive — or ask the staff for an access code.",
+			"locationUnavailable": "We couldn't access your location. Allow location access, or ask the staff for an access code.",
+			"codePlaceholder": "Access code",
 			"codeSubmit": "Unlock",
-			"codeInvalid": "That code is not valid.",
+			"codeInvalid": "That access code is not valid. Ask the staff to check it.",
 			"retry": "Check my location again"
 		}
 	},
@@ -719,12 +943,22 @@
 		"switcher": {
 			"label": "Active restaurant"
 		},
+		"orgSwitcher": {
+			"label": "Organization",
+			"all": "All organizations",
+			"current": "Selected organization",
+			"loadFailed": "Could not load organizations. Showing every restaurant.",
+			"loadFailedFiltered": "Could not load organizations. Still showing only the one you selected — pick All organizations to clear it."
+		},
+		"canvas": {
+			"notFoundTitle": "Restaurant not found",
+			"notFoundBody": "This restaurant was deleted, or it is no longer one you can manage. The link you followed points at nothing.",
+			"notFoundBack": "Back to restaurants"
+		},
 		"modal": {
 			"createAria": "Create Restaurant",
-			"editAria": "Edit Restaurant",
 			"deleteAria": "Confirm delete restaurant",
 			"createHeading": "New Restaurant",
-			"editHeading": "Edit Restaurant",
 			"deleteHeading": "Delete this restaurant?",
 			"deleteBody": "It will go offline immediately, Stripe will be disconnected from this location, and all data stays recoverable for 30 days. After that, the system permanently removes the restaurant and related records (a deletion log is kept).",
 			"deleteConfirm": "Delete",
@@ -733,11 +967,11 @@
 		"form": {
 			"nameLabel": "Restaurant Name",
 			"slugLabel": "Slug (URL identifier)",
-			"slugHint": "Customers will visit: /r/{{slug}}/en/menu",
+			"slugHint": "Customers will visit:",
+			"slugPlaceholder": "your-restaurant",
+			"slugChangeWarning": "Changing this retires the current address ({{slug}}). Printed QR codes and shared links stop working, and diners who unlocked ordering have to enter the access code again.",
 			"openTestLink": "Open Test Link",
 			"descriptionLabel": "Description",
-			"supportEmailLabel": "Support email",
-			"supportEmailHint": "Where dashboard error reports are sent. Leave blank to use the platform default.",
 			"currencyLabel": "Currency",
 			"timezoneLabel": "Timezone",
 			"timezonePlaceholder": "America/Mexico_City",
@@ -762,6 +996,10 @@
 			"orderNumberResetOptionMonthly": "Monthly",
 			"orgLabel": "Organization",
 			"orgPlaceholder": "Select an organization",
+			"orgLoading": "Loading organizations…",
+			"orgEmpty": "No organizations are available to you. Ask an administrator to add you to one before creating a restaurant.",
+			"orgLoadFailed": "Could not load organizations, so a restaurant cannot be created right now.",
+			"orgSingleHint": "Your only organization — the restaurant will be created here.",
 			"statusLabel": "Status",
 			"toggleDeactivateTitle": "Deactivate restaurant",
 			"toggleActivateTitle": "Activate restaurant",
@@ -771,18 +1009,60 @@
 			"updateFailed": "Failed to update restaurant",
 			"createFailed": "Failed to create restaurant",
 			"geofenceSectionTitle": "Ordering geofence",
-			"geofenceSectionHint": "Customers can always browse the menu. Set a location on the map to enable online ordering — customers must be nearby (or use a staff bypass code) to place orders.",
+			"geofenceSectionHint": "Customers can always browse the menu. Set a location on the map to enable online ordering — customers must be nearby (or enter the geofence bypass code) to place orders.",
 			"geofenceLatitudeLabel": "Latitude",
 			"geofenceLongitudeLabel": "Longitude",
 			"geofenceRadiusLabel": "Radius (meters)",
-			"geofenceBypassLabel": "Table bypass code",
-			"geofenceBypassHint": "Staff share this code with customers whose location is denied or unavailable.",
+			"geofenceBypassLabel": "Geofence bypass code",
+			"geofenceBypassHint": "Diners see this as their \"access code\". Staff hand it out so a customer can still order when their device's location check is denied or unavailable. It is a convenience gate, not a security control — location can be faked — so change it if it spreads beyond your tables.",
 			"geofenceUseMyLocation": "Use my current location",
 			"geofenceMapHint": "Click the map or drag the pin to set your restaurant location. The circle shows the ordering radius.",
 			"geofenceMapSearchPlaceholder": "Search address…",
 			"geofenceMapSearchButton": "Search",
 			"geofenceMapSearchNotFound": "Address not found. Try a different search.",
-			"geofenceCoordinatesAdvanced": "Advanced: edit coordinates"
+			"geofenceCoordinatesAdvanced": "Advanced: edit coordinates",
+			"contactEmailLabel": "Contact email",
+			"contactEmailHint": "Shown to diners on your menu page and on emailed receipts. We also send dashboard error reports and billing receipts here."
+		},
+		"settings": {
+			"close": "Close restaurant settings",
+			"saving": "Saving…",
+			"saved": "Saved",
+			"generalTitle": "General",
+			"generalHint": "Name, public link and the basics diners see.",
+			"hoursTitle": "Hours & time zone",
+			"hoursHint": "The time zone drives every report, shift and order day for this restaurant.",
+			"ordersTitle": "Orders",
+			"ordersHint": "How a round reaches the kitchen once a guest commits it.",
+			"ordersReleaseCashLabel": "Send orders marked for in-person payment straight to the kitchen",
+			"ordersReleaseCashHint": "Off, a round waiting on cash sits on the Orders board until staff mark it paid, and the kitchen never sees it. On, it goes to the prep rail immediately and carries a “To collect” badge at every stage until someone collects — the kitchen keeps working, and the walkout risk is yours.",
+			"taxTitle": "Tax information",
+			"taxHint": "Shown on diner receipt emails so guests can pass the details to their accountant. Tavli does not issue CFDIs — nothing here is filed with the SAT.",
+			"taxRfcLabel": "RFC",
+			"taxRazonSocialLabel": "Legal name (razón social)",
+			"taxFiscalAddressLabel": "Fiscal address",
+			"organizationTitle": "Organization",
+			"organizationHint": "Which organization owns this restaurant. Only platform admins can move it.",
+			"organizationLoading": "Loading organizations…",
+			"organizationEmpty": "No organizations available yet. Create one before moving this restaurant.",
+			"organizationLoadFailed": "Could not load organizations. The current one is kept until you retry.",
+			"organizationCurrentUnresolved": "Current organization",
+			"publicProfileTitle": "Public profile",
+			"publicProfileHint": "How diners reach you. Everything here appears on your menu page; the email and phone also appear on emailed receipts. Leave anything blank to hide it.",
+			"publicProfileAddressLabel": "Address",
+			"publicProfileAddressHint": "The address diners walk to. Separate from the fiscal address in Tax information.",
+			"publicProfilePhoneLabel": "Phone",
+			"publicProfilePhoneHint": "Include the country code so the number works from anywhere.",
+			"publicProfilePhonePlaceholder": "+52 81 1234 5678",
+			"publicProfileWhatsappLabel": "This number is on WhatsApp",
+			"publicProfileWhatsappHint": "Adds a WhatsApp button next to the phone number.",
+			"publicProfileSocialHeading": "Social links",
+			"publicProfileSocialHint": "Paste the address of each profile page, or just type your handle. Short links (fb.me, youtu.be) will not work — open them and paste where they lead.",
+			"publicProfileInstagramLabel": "Instagram",
+			"publicProfileFacebookLabel": "Facebook",
+			"publicProfileTiktokLabel": "TikTok",
+			"publicProfileXLabel": "X",
+			"publicProfileYoutubeLabel": "YouTube"
 		},
 		"managers": {
 			"sectionTitle": "Location managers",
@@ -801,6 +1081,8 @@
 			"seatsLabel": "Seats",
 			"sectionLabel": "Section",
 			"add": "Add table",
+			"addHeading": "Single table",
+			"addHint": "Adds one table to an existing section.",
 			"save": "Save",
 			"cancel": "Cancel",
 			"editTitle": "Edit table",
@@ -812,6 +1094,7 @@
 			"seatsFormat_one": "1 seat",
 			"seatsFormat_other": "{{count}} seats",
 			"seatsNotSet": "seats not set",
+			"occupied": "Occupied",
 			"empty": "No tables yet. Add your first table above.",
 			"createFailed": "Failed to create table",
 			"updateFailed": "Failed to update table",
@@ -841,11 +1124,15 @@
 		},
 		"sections": {
 			"heading": "Floor sections",
-			"hint": "Group tables into sections (zones). Waiters get assigned to sections per shift in the schedule.",
-			"add": "Add section",
+			"hint": "Group tables into sections (zones), and create the section's tables in one go. Waiters get assigned to sections per shift in the schedule.",
+			"add": "Add empty section",
+			"addWithTables_one": "Add section + {{count}} table",
+			"addWithTables_other": "Add section + {{count}} tables",
 			"newNamePlaceholder": "New section name (optional)",
 			"initialTableCountLabel": "Tables to create",
 			"initialTableSeatsLabel": "Seats per table",
+			"initialTableSeatsHint": "Every new table starts with these seats — you can change them table by table once the section exists.",
+			"initialTableSeatsIdleHint": "Seats apply to the tables created with the section — set \"{{field}}\" above to add some.",
 			"renamePlaceholder": "Section name",
 			"unnamed": "Section {{number}}",
 			"autoCreatePlaceholder": "Create on add",
@@ -889,7 +1176,7 @@
 			"partialRequirements": "Payments are enabled but additional requirements need attention.",
 			"redirecting": "Redirecting...",
 			"continueSetup": "Continue Stripe Setup",
-			"intro": "Set up Stripe to accept credit card payments from customers. A {{rate}}% platform fee applies on top of Stripe's standard processing fees.",
+			"intro": "Set up Stripe to accept credit card payments from customers. Diners pay a {{rate}}% Tavli service fee on top of the order subtotal, so you receive the full subtotal of every order. Stripe's standard processing fees still apply to the payout.",
 			"settingUp": "Setting up...",
 			"onboard": "Onboard to collect payments",
 			"resetButton": "Reset Stripe Setup",
@@ -902,6 +1189,45 @@
 			"statusFailed": "Failed to check payment status",
 			"setupFailed": "Failed to start Stripe setup",
 			"resetFailed": "Failed to reset Stripe setup"
+		},
+		"billing": {
+			"heading": "Tavli subscription",
+			"description": "What this restaurant pays Tavli each month to use the product.",
+			"distinctNote": "This is separate from the Tavli service fee your diners pay on their own orders — that one is charged per order at checkout and never appears on this bill.",
+			"enableLabel": "Platform subscription",
+			"enableHint": "When on, this restaurant is billed the monthly Tavli subscription.",
+			"adminOnly": "Only Tavli admins can turn this on or off.",
+			"disabledState": "This restaurant isn't on the Tavli subscription.",
+			"planLabel": "Plan",
+			"planValue": "${{amount}} {{currency}} / month",
+			"statusLabel": "Status",
+			"statusNone": "Not set up",
+			"statusActive": "Active",
+			"statusTrialing": "Trial",
+			"statusPastDue": "Payment failed",
+			"statusUnpaid": "Unpaid",
+			"statusIncomplete": "Awaiting payment",
+			"statusPaused": "Paused",
+			"statusCanceled": "Cancelled",
+			"statusUnknown": "Unknown",
+			"renewsLabel": "Renews on",
+			"endsLabel": "Access until",
+			"cancelScheduled": "Cancellation scheduled — the subscription ends on {{date}} and won't renew.",
+			"setupButton": "Set up billing",
+			"setupRedirecting": "Opening Stripe...",
+			"portalButton": "Update payment method",
+			"portalFailed": "Could not open the Stripe billing portal.",
+			"pastDueHint": "The last payment didn't go through. Stripe is retrying automatically — use \"Update payment method\" to pay with a different card.",
+			"cancelButton": "Cancel subscription",
+			"cancelConfirm": "Cancel at the end of the current period? The restaurant keeps access until then — the period is already paid for.",
+			"cancelConfirmYes": "Yes, cancel at period end",
+			"cancelConfirmNo": "Keep subscription",
+			"cancelling": "Cancelling...",
+			"returnSuccess": "Subscription started. Stripe is confirming the payment — the status updates here shortly.",
+			"returnCancelled": "Checkout cancelled. Nothing was charged.",
+			"checkoutFailed": "Could not start subscription checkout.",
+			"cancelFailed": "Could not cancel the subscription.",
+			"toggleFailed": "Could not update the subscription setting."
 		}
 	},
 	"welcome": {
@@ -932,7 +1258,13 @@
 			"rename": "Rename",
 			"delete": "Delete menu",
 			"empty": "No menus found for this restaurant.",
-			"loadingAria": "Loading menus"
+			"loadingAria": "Loading menus",
+			"emptyCreateTitle": "Start a menu from scratch",
+			"emptyCreateDescription": "Create an empty menu, name it, and add your categories and items as you go.",
+			"createModalTitle": "New menu",
+			"createModalAria": "Create menu dialog",
+			"createModalDescription": "Name your menu now — you can add categories and items next.",
+			"createError": "We couldn't create the menu. Please try again."
 		},
 		"editor": {
 			"languagesLabel": "Languages",
@@ -988,7 +1320,7 @@
 			"imageTitle": "Manage image",
 			"noImage": "No image",
 			"imagePreviewAria": "Preview image for {{name}}",
-			"optionsTitle": "Link option groups",
+			"optionsTitle": "Specifications (option groups)",
 			"markUnavailable": "Mark unavailable",
 			"markAvailable": "Mark available",
 			"removeTitle": "Remove item",
@@ -1020,12 +1352,15 @@
 			"imageHeader": "Item Image"
 		},
 		"picker": {
-			"noGroups": "No option groups yet. Use the Option Groups button above to create them.",
+			"noGroups": "No option groups yet. Create one below and it will be linked to this item.",
 			"loading": "Loading option groups…",
 			"error": "Could not load option groups. Try again.",
-			"linkedGroups": "Linked Option Groups",
 			"groupSingle": "· Single",
-			"groupMulti": "· Multi"
+			"groupMulti": "· Multi",
+			"hint": "Reusable choices a diner picks when ordering this item — cut, doneness, sides. Changes here save right away.",
+			"manageGroups": "Edit groups and choices",
+			"selectionTypeLabel": "Selection type",
+			"badgeLabel": "Specifications: {{names}}"
 		},
 		"lang": {
 			"defaultLabel": "Default language (used for main item names)",
@@ -1056,7 +1391,8 @@
 				"title": "Import your menu from a document",
 				"description": "Upload a PDF, Word document, or text file and we'll extract your categories and items automatically."
 			},
-			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later."
+			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later.",
+			"newMenuDefaultName": "Imported Menu"
 		}
 	},
 	"options": {
@@ -1165,7 +1501,11 @@
 			"editEndBeforeStart": "End time must be after start time",
 			"editMinDuration": "Reservation must be at least 15 minutes long",
 			"editSeatedNeedsTable": "Seated reservations must keep at least one table",
-			"cancelReasonLabel": "Cancellation reason (optional)"
+			"cancelReasonLabel": "Cancellation reason (optional)",
+			"editCompletedHint": "This visit already happened — you can correct its times. Assigned tables stay as they were.",
+			"editTablesLocked": "Tables (locked)",
+			"cancelCompletedTitle": "Cancel a completed reservation?",
+			"cancelCompletedBody": "{{guest}}'s visit is marked completed and still holds its table. Cancelling releases the table and cannot be undone from here — you would have to reconfirm the reservation."
 		},
 		"actions": {
 			"confirm": "Confirm",
@@ -1397,7 +1737,7 @@
 			},
 			"revenueOverTime": {
 				"label": "Revenue over time",
-				"description": "Successful payment totals bucketed by day.",
+				"description": "Restaurant revenue by day: food sold, excluding the Tavli service fee and tips.",
 				"axis": "Revenue"
 			},
 			"ordersByHour": {
@@ -1430,7 +1770,7 @@
 			},
 			"tipsTotal": {
 				"label": "Tips total",
-				"description": "Tip pool entries summed over the date range with a daily sparkline."
+				"description": "Card and cash tips summed over the date range with a daily sparkline."
 			},
 			"tableOccupancy": {
 				"label": "Table occupancy",
@@ -1468,20 +1808,121 @@
 		},
 		"noYears": "No data available to export yet."
 	},
-	"tabs": {
-		"header": "Open tabs",
-		"empty": "No open tabs right now.",
-		"tableLabel": "Table {{number}}",
-		"noTable": "No table",
-		"joinCode": "Code",
-		"members": "{{count}} people",
-		"orders": "{{count}} orders",
-		"unpaidTotal": "Unpaid",
-		"openedAt": "Opened {{time}}",
-		"staleBadge": "Stale",
-		"lockedBadge": "Paying",
-		"closeTab": "Close tab",
-		"closeTabConfirm": "Close this tab? Use this when the balance was settled in person.",
-		"closeFailed": "Could not close the tab."
+	"userOnboarding": {
+		"inviteAction": "Invite user",
+		"bulkAction": "Bulk invite",
+		"cancel": "Cancel",
+		"close": "Close",
+		"back": "Back",
+		"done": "Done",
+		"role": {
+			"owner": "Owner",
+			"manager": "Manager",
+			"employee": "Employee"
+		},
+		"status": {
+			"ok": "Ready to send",
+			"alreadyMember": "Already in this organization",
+			"crossOrg": "Belongs to another organization",
+			"duplicatePending": "Already invited",
+			"duplicateInFile": "Repeated in this file",
+			"invalid": "Can't be sent"
+		},
+		"outcome": {
+			"created": "Invitation sent",
+			"skipped": "Skipped",
+			"failed": "Failed"
+		},
+		"single": {
+			"title": "Invite a user",
+			"subtitle": "Tavli sends an invitation by email. The person creates their own sign-in and accepts it — no account is created for them here.",
+			"emailLabel": "Email",
+			"emailHint": "The invitation is only valid for this address.",
+			"roleLabel": "Role",
+			"organizationLabel": "Organization",
+			"organizationPlaceholder": "Choose an organization",
+			"organizationLoading": "Loading organizations…",
+			"organizationError": "Could not load the list of organizations. Reload the page and try again.",
+			"organizationEmpty": "There are no organizations yet. Create one before inviting anybody.",
+			"restaurantsLabel": "Restaurants",
+			"restaurantsPlaceholder": "Choose at least one restaurant",
+			"restaurantsAria": "Restaurants for this invitation",
+			"restaurantsSummary_one": "1 restaurant selected",
+			"restaurantsSummary_other": "{{count}} restaurants selected",
+			"restaurantsLoading": "Loading restaurants…",
+			"restaurantsError": "Could not load the restaurants for this organization. Reload the page and try again.",
+			"restaurantsEmpty": "This organization has no restaurants yet, so it can't take a manager or an employee.",
+			"restaurantsPickOrganization": "Choose an organization first.",
+			"restaurantsRequiredHint": "Managers and employees need at least one restaurant. Owners get the whole organization.",
+			"namesSection": "Name (optional)",
+			"firstNameLabel": "First name",
+			"paternalLastnameLabel": "Paternal last name",
+			"maternalLastnameLabel": "Maternal last name",
+			"send": "Send invitation",
+			"sending": "Sending…",
+			"successTitle": "Invitation sent",
+			"successBody": "We emailed {{email}}. The invitation expires in 7 days.",
+			"successAlreadyMember": "Heads up: this person already had a role in this organization.",
+			"successReplaced": "The invitation that was already waiting for them was cancelled and replaced.",
+			"inviteAnother": "Invite another"
+		},
+		"crossOrg": {
+			"title": "This person belongs to another organization",
+			"body": "Tavli gives a person one organization at a time. If they accept this invitation they are moved here and lose their access to the organization they are in today. Nobody is moved until they accept.",
+			"acknowledge": "I understand — move this person to the new organization"
+		},
+		"replacePending": {
+			"title": "They already have an invitation waiting",
+			"body": "An invitation for this organization is still pending. Sending a new one cancels the old link so only one is ever valid.",
+			"acknowledge": "Cancel the old invitation and send a new one"
+		},
+		"bulk": {
+			"title": "Bulk invite users",
+			"subtitle": "Upload a CSV, check every row, then send. Nothing is created until you confirm.",
+			"dropzoneLabel": "Drop a CSV here, or click to choose one",
+			"dropzoneHint": "CSV only",
+			"notCsv": "That isn't a CSV file. Export your spreadsheet as CSV and try again.",
+			"templateDownload": "Download the CSV template",
+			"formatTitle": "File format",
+			"formatRequired": "Required columns: email, role, organization.",
+			"formatOptional": "Optional columns: restaurants, firstName, paternalLastname, maternalLastname.",
+			"formatRoles": "role must be owner, manager or employee.",
+			"formatOrganization": "organization takes the organization ID or its exact name.",
+			"formatRestaurants": "restaurants takes IDs or exact names separated by ; — required for managers and employees, ignored for owners.",
+			"formatLimits": "Up to {{maxRows}} rows and {{maxKilobytes}} KB per file.",
+			"uploading": "Uploading the file…",
+			"validating": "Checking every row…",
+			"committing": "Sending invitations… {{done}} of {{total}}",
+			"previewTitle": "Review before sending",
+			"previewNothingCreated": "Nothing has been created yet. Only the rows you tick are sent.",
+			"summaryTotal": "{{count}} rows read",
+			"summarySelected": "{{count}} selected to send",
+			"selectAllSafe": "Select every safe row",
+			"clearSelection": "Clear selection",
+			"acknowledgeAllCrossOrg": "Move all {{count}} of them",
+			"crossOrgBanner_one": "1 row belongs to another organization. Ticking it moves that person out of the organization they are in today.",
+			"crossOrgBanner_other": "{{count}} rows belong to another organization. Ticking one moves that person out of the organization they are in today.",
+			"colInclude": "Send",
+			"colRow": "Row",
+			"colEmail": "Email",
+			"colRole": "Role",
+			"colOrganization": "Organization",
+			"colRestaurants": "Restaurants",
+			"colStatus": "Status",
+			"colReason": "Reason",
+			"colOutcome": "Result",
+			"rowIncludeAria": "Send an invitation to {{email}}",
+			"rowNotSendable": "Fix this row in the file and upload it again.",
+			"confirm": "Send {{count}} invitations",
+			"confirmNoneSelected": "Select at least one row to send.",
+			"reportTitle": "Result of this upload",
+			"reportSummary": "{{created}} sent, {{skipped}} skipped, {{failed}} failed.",
+			"reportPartial": "The run stopped early, so some selected rows were never attempted.",
+			"reportAllGood": "Every selected row was sent.",
+			"reportCopy": "Copy the problem rows",
+			"reportCopied": "Copied",
+			"reportDownload": "Download the problem rows",
+			"retry": "Try another file"
+		}
 	}
 }

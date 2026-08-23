@@ -31,9 +31,10 @@ export type Theme = "light" | "dark";
 export type { Language } from "@/global/i18n";
 
 /**
- * Statuses the OrderDashboard is allowed to filter by. Mirrors the validator
- * in convex/userSettings.ts -- `draft` is excluded because drafts never appear
- * on the dashboard.
+ * Statuses the LEGACY multi-select OrderDashboard filter accepts. Mirrors
+ * the legacy array validator in convex/userSettings.ts -- `draft` is excluded
+ * because drafts never appear on the dashboard, and `awaiting_payment`
+ * postdates the array setting.
  */
 export type OrderDashboardStatusFilter =
 	| "submitted"
@@ -43,11 +44,33 @@ export type OrderDashboardStatusFilter =
 	| "cancelled";
 
 /**
+ * Value of the single-select OrderDashboard status filter (ADR 008).
+ * Mirrors `DASHBOARD_STATUS_VALIDATOR` in convex/orderHelpers.ts —
+ * unlike the legacy multi-select type it includes `awaiting_payment`,
+ * the staff-facing "cash owed" status.
+ */
+export type OrderDashboardStatusFilterValue = "awaiting_payment" | OrderDashboardStatusFilter;
+
+/**
  * Prep stations the OrderDashboard is allowed to filter by. Mirrors the
  * validator in convex/userSettings.ts and the PREP_STATION constant in
  * convex/constants.ts.
  */
 export type OrderDashboardPrepStationFilter = "kitchen" | "bar";
+
+/**
+ * Service-day window the OrderDashboard shows. Mirrors
+ * `SERVICE_DATE_FILTER_VALIDATOR` in convex/orderHelpers.ts. "today" is the
+ * restaurant's business day, not the calendar day.
+ */
+export type OrderDashboardServiceDateFilter = "today" | "all";
+
+/**
+ * Whose orders the OrderDashboard shows. Mirrors `ORDER_SCOPE_VALIDATOR` in
+ * convex/orderHelpers.ts. "mine" is the tables the user covers right now
+ * through their active shift's section assignments; "all" is the whole floor.
+ */
+export type OrderDashboardScope = "all" | "mine";
 
 /**
  * Transform raw Convex user settings to domain UserSettings.
@@ -67,8 +90,11 @@ export class UserSettingsError {
 			| "updateTheme"
 			| "updateSidebarExpanded"
 			| "updateLanguage"
+			| "updateOrderDashboardStatusFilter"
 			| "updateOrderDashboardStatusFilters"
 			| "updateOrderDashboardPrepStationFilters"
+			| "updateOrderDashboardServiceDateFilter"
+			| "updateOrderDashboardScope"
 			| "setSidebarGroupExpanded",
 		readonly cause: unknown
 	) {}
@@ -145,6 +171,25 @@ export async function updateOrderDashboardStatusFilters(
 }
 
 /**
+ * Update the single-select OrderDashboard status filter for the
+ * authenticated user (ADR 008). Successor of the legacy multi-select
+ * `updateOrderDashboardStatusFilters`.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardStatusFilter(
+	client: ConvexReactClient,
+	status: OrderDashboardStatusFilterValue
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardStatusFilter, {
+			status,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardStatusFilter", error);
+	}
+}
+
+/**
  * Update the OrderDashboard prep-station filters for the authenticated user.
  * Empty array = no station filter (= show all stations). See ADR 005.
  * @returns The ID of the updated settings document
@@ -159,6 +204,38 @@ export async function updateOrderDashboardPrepStationFilters(
 		});
 	} catch (error) {
 		throw new UserSettingsError("updateOrderDashboardPrepStationFilters", error);
+	}
+}
+
+/**
+ * Update the user's OrderDashboard service-day window.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardServiceDateFilter(
+	client: ConvexReactClient,
+	serviceDate: OrderDashboardServiceDateFilter
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardServiceDateFilter, {
+			serviceDate,
+		});
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardServiceDateFilter", error);
+	}
+}
+
+/**
+ * Update whose orders the user's OrderDashboard shows.
+ * @returns The ID of the updated settings document
+ */
+export async function updateOrderDashboardScope(
+	client: ConvexReactClient,
+	scope: OrderDashboardScope
+): Promise<UserSettingsId> {
+	try {
+		return await client.mutation(api.userSettings.updateOrderDashboardScope, { scope });
+	} catch (error) {
+		throw new UserSettingsError("updateOrderDashboardScope", error);
 	}
 }
 

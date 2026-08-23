@@ -10,6 +10,8 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
+import { DEFAULT_RESTAURANT_TIMEZONE } from "../constants";
+import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -22,9 +24,18 @@ const AVAILABILITY_PATH = "/api/v1/reservations/availability";
 const CREATE_PATH = "/api/v1/reservations";
 const CANCEL_PATH = "/api/v1/reservations/cancel";
 
+/**
+ * Three days out, at 13:00 in the restaurant's timezone.
+ *
+ * Deliberately NOT `Date.now() + 3 days`: non-staff sources are gated on
+ * operating hours, and a bare relative offset inherits the current wall-clock
+ * hour — so these tests failed whenever the suite ran outside the default
+ * 10:00-23:00 window (`ERROR_OUTSIDE_OPERATING_HOURS`). Staying relative keeps
+ * the booking horizon satisfied; pinning the hour keeps it off the clock.
+ */
 function futureStartsAt(): number {
-	// Comfortably inside the default booking horizon (min advance / max advance).
-	return Date.now() + 3 * 24 * 60 * 60 * 1000;
+	const ymd = addDaysToYmd(utcMsToYmdInTimezone(Date.now(), DEFAULT_RESTAURANT_TIMEZONE), 3);
+	return ymdHmToUtcMs(ymd, 13 * 60, DEFAULT_RESTAURANT_TIMEZONE);
 }
 
 async function seedRestaurant(

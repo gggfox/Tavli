@@ -1,5 +1,6 @@
 import { Modal } from "@/global/components/Modal";
 import { MenusKeys } from "@/global/i18n";
+import { formatCents } from "@/global/utils/money";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { FileUp, Loader2, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -60,19 +61,18 @@ export function MenuImportDialog({
 		if (!extraction) return;
 
 		if (targetMenuId === "__new__") {
-			const name = newMenuName.trim() || "Imported Menu";
-			const fallbackMenuId = menus[0]?._id;
-			if (fallbackMenuId) {
-				confirmImport(fallbackMenuId, name);
-			}
+			// No menuId: the mutation creates the menu from `newMenuName`. This
+			// is what makes the import work for a restaurant with zero menus.
+			const name = newMenuName.trim() || t(MenusKeys.IMPORT_NEW_MENU_DEFAULT_NAME);
+			confirmImport(undefined, name);
 		} else {
 			confirmImport(targetMenuId);
 		}
-	}, [extraction, targetMenuId, newMenuName, menus, confirmImport]);
+	}, [extraction, targetMenuId, newMenuName, confirmImport, t]);
 
 	const formatPrice = (cents: number) => {
 		if (cents === 0) return "—";
-		return `$${(cents / 100).toFixed(2)}`;
+		return `$${formatCents(cents)}`;
 	};
 
 	const totalItems = extraction?.categories.reduce((sum, cat) => sum + cat.items.length, 0) ?? 0;
@@ -84,7 +84,7 @@ export function MenuImportDialog({
 			ariaLabel={t(MenusKeys.IMPORT_MODAL_ARIA)}
 			size="3xl"
 		>
-			<div className="p-6 bg-surface rounded-xl space-y-6">
+			<div className="p-6 bg-background border border-border rounded-xl space-y-6">
 				<h2 className="text-lg font-semibold text-foreground">{t(MenusKeys.IMPORT_MODAL_TITLE)}</h2>
 
 				{(step === "idle" || step === "error") && (

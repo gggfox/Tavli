@@ -446,7 +446,7 @@ http.route({
 });
 
 // =============================================================================
-// WhatsApp Inbound Webhook (Twilio) — see ADR 007
+// WhatsApp Inbound Webhook (Twilio) — see ADR 010
 // =============================================================================
 //
 // Twilio POSTs inbound WhatsApp messages here as `application/x-www-form-

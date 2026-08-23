@@ -8,7 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { DEFAULT_TIP_PERCENT, TIP_PERCENT_PRESETS } from "convex/constants";
-import { ArrowLeft, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChefHat, CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionStore } from "../hooks/useSession";
@@ -185,6 +185,28 @@ export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPag
 		return (
 			<div className="flex flex-col items-center justify-center h-full p-8 gap-3">
 				<p className="text-sm text-faint-foreground">{t(OrderingKeys.TAB_EMPTY)}</p>
+				<button
+					onClick={onBackToTab}
+					className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+				>
+					{t(OrderingKeys.BACK_TO_MENU)}
+				</button>
+			</div>
+		);
+	}
+
+	// The tab can only be settled once every order has reached the table. Gated
+	// on `!clientSecret` so a payment already mid-confirmation is never yanked
+	// out from under Stripe Elements — the backend guard is the authority, this
+	// is only here so the diner learns the remedy before hitting an error.
+	if (tab.unservedOrderIds.length > 0 && !clientSecret) {
+		return (
+			<div className="flex flex-col items-center justify-center h-full p-8 gap-3 text-center">
+				<ChefHat size={28} className="text-faint-foreground" />
+				<p className="text-sm font-semibold text-foreground">
+					{t(OrderingKeys.TAB_BLOCKED_HEADING)}
+				</p>
+				<p className="text-sm text-faint-foreground max-w-sm">{t(OrderingKeys.TAB_BLOCKED_BODY)}</p>
 				<button
 					onClick={onBackToTab}
 					className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"

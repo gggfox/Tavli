@@ -2,6 +2,13 @@
  * Drawer shown when staff click a reservation row. Shows full
  * details, editable time/tables for active bookings, lifecycle
  * action buttons (confirm / cancel / mark seated / mark completed).
+ *
+ * `completed` reservations are corrections, not bookings: their start/end
+ * times stay editable (a wrong duration keeps holding the table, since
+ * completed counts as an active window for availability) but the table
+ * assignment is frozen — reassigning a table after the guests left would only
+ * corrupt the floor history. Cancelling one goes through an explicit
+ * confirmation modal.
  */
 import {
 	DialogHeader,
@@ -32,6 +39,7 @@ import {
 	RESERVATION_STATUS_CONFIG,
 } from "../statusConfig";
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from "../utils";
+import { ReservationCancelConfirmDialog } from "./ReservationCancelConfirmDialog";
 import type { TimelineRescheduleIntent } from "./ReservationTimeline";
 import { TablePickerForReservation } from "./TablePickerForReservation";
 
@@ -85,6 +93,7 @@ export function ReservationDetailDrawer({
 	const [editTables, setEditTables] = useState<Id<"tables">[]>([]);
 	const [cancelReason, setCancelReason] = useState("");
 	const [showCancel, setShowCancel] = useState(false);
+	const [showCancelCompleted, setShowCancelCompleted] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [saveBusy, setSaveBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -97,6 +106,7 @@ export function ReservationDetailDrawer({
 		setEditTables([]);
 		setCancelReason("");
 		setShowCancel(false);
+		setShowCancelCompleted(false);
 		setBusy(false);
 		setSaveBusy(false);
 		setError(null);
@@ -132,20 +142,24 @@ export function ReservationDetailDrawer({
 
 	const isOpen = reservation !== null;
 
-	const isEditable =
+	const isCompleted = reservation?.status === "completed";
+	/** Tables may only be reassigned while the booking is still in play. */
+	const canEditTables =
 		reservation?.status === "pending" ||
 		reservation?.status === "confirmed" ||
 		reservation?.status === "seated";
+	/** Completed visits keep editable times so a wrong duration can be fixed. */
+	const canEditTimes = canEditTables || isCompleted;
 
 	const editDirty = useMemo(() => {
-		if (!reservation || !isEditable) return false;
+		if (!reservation || !canEditTimes) return false;
 		const parsedStart = fromDateTimeLocalValue(editStart);
 		const parsedEnd = fromDateTimeLocalValue(editEnd);
 		if (Number.isNaN(parsedStart) || Number.isNaN(parsedEnd)) return false;
 		const timeChanged = parsedStart !== reservation.startsAt || parsedEnd !== reservation.endsAt;
-		const tablesChanged = !tableIdsEqual(editTables, reservation.tableIds);
+		const tablesChanged = canEditTables && !tableIdsEqual(editTables, reservation.tableIds);
 		return timeChanged || tablesChanged;
-	}, [reservation, isEditable, editStart, editEnd, editTables]);
+	}, [reservation, canEditTimes, canEditTables, editStart, editEnd, editTables]);
 
 	const handleSave = async () => {
 		if (!reservation || !editDirty) return;
@@ -171,7 +185,7 @@ export function ReservationDetailDrawer({
 
 		const timeChanged =
 			parsedStartsAt !== reservation.startsAt || parsedEndsAt !== reservation.endsAt;
-		const tablesChanged = !tableIdsEqual(editTables, reservation.tableIds);
+		const tablesChanged = canEditTables && !tableIdsEqual(editTables, reservation.tableIds);
 
 		setSaveBusy(true);
 		setError(null);
@@ -249,11 +263,16 @@ export function ReservationDetailDrawer({
 			/>
 
 			<div className="px-6 py-4 space-y-3 text-sm flex-1 overflow-y-auto text-foreground">
-				{isEditable ? (
+				{canEditTimes ? (
 					<div className="space-y-3 pb-3 border-b border-border">
 						<p className="text-sm font-medium text-foreground">
 							{t(ReservationsKeys.DRAWER_EDIT_SECTION_TITLE)}
 						</p>
+						{isCompleted && (
+							<p className="text-xs text-muted-foreground">
+								{t(ReservationsKeys.DRAWER_EDIT_COMPLETED_HINT)}
+							</p>
+						)}
 						<div className="grid grid-cols-2 gap-3">
 							<div>
 								<label
@@ -286,20 +305,35 @@ export function ReservationDetailDrawer({
 								/>
 							</div>
 						</div>
-						<div>
-							<p className="text-xs font-medium mb-2 text-muted-foreground">
-								{t(ReservationsKeys.DRAWER_EDIT_TABLES_PROMPT)}
-							</p>
-							<TablePickerForReservation
-								restaurantId={reservation.restaurantId}
-								startsAt={pickerStartsAt}
-								endsAt={pickerEndsAt}
-								partySize={reservation.partySize}
-								excludeReservationId={reservation._id}
-								value={editTables}
-								onChange={setEditTables}
-							/>
-						</div>
+						{canEditTables ? (
+							<div>
+								<p className="text-xs font-medium mb-2 text-muted-foreground">
+									{t(ReservationsKeys.DRAWER_EDIT_TABLES_PROMPT)}
+								</p>
+								<TablePickerForReservation
+									restaurantId={reservation.restaurantId}
+									startsAt={pickerStartsAt}
+									endsAt={pickerEndsAt}
+									partySize={reservation.partySize}
+									excludeReservationId={reservation._id}
+									value={editTables}
+									onChange={setEditTables}
+								/>
+							</div>
+						) : (
+							<div>
+								<p className="text-xs font-medium mb-1 text-muted-foreground">
+									{t(ReservationsKeys.DRAWER_EDIT_TABLES_LOCKED)}
+								</p>
+								<p className="text-xs text-faint-foreground">
+									{reservation.tableIds.length > 0
+										? t(ReservationsKeys.DRAWER_ASSIGNED_TABLES, {
+												count: reservation.tableIds.length,
+											})
+										: "—"}
+								</p>
+							</div>
+						)}
 						<button
 							type="button"
 							disabled={saveBusy || !editDirty}
@@ -357,23 +391,6 @@ export function ReservationDetailDrawer({
 					>
 						{reservation.notes}
 					</Surface>
-				)}
-
-				{needsTablesToReconfirm && (
-					<div className="pt-4 mt-2 space-y-3 border-t border-border">
-						<p className="text-sm font-medium text-foreground">
-							{t(ReservationsKeys.DRAWER_RECONFIRM_ASSIGN_TABLES_PROMPT)}
-						</p>
-						<TablePickerForReservation
-							restaurantId={reservation.restaurantId}
-							startsAt={reservation.startsAt}
-							endsAt={reservation.endsAt}
-							partySize={reservation.partySize}
-							excludeReservationId={reservation._id}
-							value={pickedTables}
-							onChange={setPickedTables}
-						/>
-					</div>
 				)}
 
 				{needsTablesToReconfirm && (
@@ -506,7 +523,29 @@ export function ReservationDetailDrawer({
 							{t(ReservationsKeys.ACTION_CANCEL)}
 						</button>
 					))}
+				{isCompleted && (
+					<button
+						type="button"
+						disabled={busy}
+						onClick={() => setShowCancelCompleted(true)}
+						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm border border-border text-destructive"
+					>
+						<XCircle size={14} />
+						{t(ReservationsKeys.ACTION_CANCEL)}
+					</button>
+				)}
 			</div>
+
+			<ReservationCancelConfirmDialog
+				isOpen={showCancelCompleted}
+				guestName={reservation.contact.name}
+				reason={cancelReason}
+				busy={busy}
+				error={error}
+				onReasonChange={setCancelReason}
+				onClose={() => setShowCancelCompleted(false)}
+				onConfirm={() => wrap(() => onCancel(reservation._id, cancelReason || undefined))}
+			/>
 		</Drawer>
 	);
 }

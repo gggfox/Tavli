@@ -1,7 +1,7 @@
 /**
  * VirtualGrid — responsive card grid that only mounts the rows in view.
  *
- * The staff dashboards (open orders, open tabs) render one card per record in
+ * The staff dashboards (e.g. open orders) render one card per record in
  * a `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` grid. On a busy service that
  * is hundreds of live-updating cards, all mounted, all re-rendering on every
  * Convex push. This keeps the same visual grid but mounts only the visible
@@ -37,6 +37,16 @@ export interface VirtualGridProps<T> {
 	readonly estimateRowHeight?: number;
 	readonly overscan?: number;
 	readonly className?: string;
+	/**
+	 * Give every card the height of the tallest one, across the whole grid
+	 * rather than per row.
+	 *
+	 * Rows are independently positioned, so CSS alone can only equalize within
+	 * a row — matching heights across rows means measuring. Only mounted rows
+	 * can be measured, so the shared height is the tallest seen so far and
+	 * grows if a taller card scrolls into view; it resets when `items` change.
+	 */
+	readonly uniformCardHeight?: boolean;
 }
 
 const DEFAULT_COLUMNS = { base: 1, md: 2, lg: 3 } as const;
@@ -50,6 +60,7 @@ export function VirtualGrid<T>({
 	estimateRowHeight = 220,
 	overscan = 3,
 	className = "",
+	uniformCardHeight = false,
 }: VirtualGridProps<T>) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const scrollParent = useScrollParent(containerRef);
@@ -79,6 +90,14 @@ export function VirtualGrid<T>({
 
 	const virtualRows = virtualizer.getVirtualItems();
 
+	// Tallest mounted row wins, and every row is floored to it. Derived during
+	// render rather than held in state: applying the floor makes short rows
+	// measure back at exactly this height, so the value settles in one pass
+	// instead of oscillating, and a fresh `items` list re-measures from scratch.
+	const uniformRowHeight = uniformCardHeight
+		? virtualRows.reduce((tallest, row) => Math.max(tallest, row.size), 0)
+		: 0;
+
 	return (
 		<div
 			ref={containerRef}
@@ -102,11 +121,19 @@ export function VirtualGrid<T>({
 							gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
 							gap,
 							paddingBottom: gap,
+							...(uniformRowHeight > 0 && { minHeight: uniformRowHeight }),
 						}}
 					>
 						{row.map((item, columnIndex) => {
 							const itemIndex = virtualRow.index * columnCount + columnIndex;
-							return <div key={getKey(item, itemIndex)}>{renderItem(item, itemIndex)}</div>;
+							return (
+								// `display: grid` (not block) so the single card stretches to the
+								// row's height instead of sitting content-tall against a
+								// stretched wrapper — cards in a row line up at the same height.
+								<div key={getKey(item, itemIndex)} style={{ display: "grid" }}>
+									{renderItem(item, itemIndex)}
+								</div>
+							);
 						})}
 					</div>
 				);

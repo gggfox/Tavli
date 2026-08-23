@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery, mutation, query } from "./_generated/server";
@@ -26,11 +27,30 @@ import {
 } from "./_util/auth";
 import {
 	RESTAURANT_MEMBER_ROLE,
+	RESTAURANT_SLUG_MAX_COLLISION_ATTEMPTS,
 	RESTAURANT_SOFT_DELETE_RETENTION_MS,
 	TABLE,
 	USER_ROLES,
 } from "./constants";
 import { insertMenuForRestaurant } from "./menus";
+import {
+	isValidContactEmail,
+	MAX_ADDRESS_LENGTH,
+	normalizeRestaurantPhone,
+	normalizeSocialUrl,
+	PUBLIC_PROFILE_ERROR,
+	SOCIAL_FIELD,
+	SOCIAL_PLATFORMS,
+	toWhatsAppUrl,
+	type SocialField,
+	type SocialPlatform,
+} from "./publicProfileHelpers";
+import {
+	buildCandidateSlug,
+	normalizeRestaurantSlug,
+	SLUG_ERROR,
+	slugifyRestaurantName,
+} from "./slugHelpers";
 import { isValidIanaTimezone, resolveRestaurantTimezone } from "./_util/timezone";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -39,6 +59,70 @@ function tombstoneSlug(restaurantId: Id<"restaurants">, slug: string): string {
 	const safe = slug.replace(/[^a-zA-Z0-9_-]/g, "_");
 	return `${safe}__deleted__${restaurantId}`;
 }
+
+/** Field-scoped validation error so the settings form can pin it to the input. */
+function slugError(code: string): UserInputValidationErrorObject {
+	return new UserInputValidationError({ fields: [{ field: "slug", message: code }] }).toObject();
+}
+
+/**
+ * Convex has no unique index, so slug uniqueness is a mutation-time rule.
+ * A soft-deleted row never counts as an occupant — it has been tombstoned
+ * (`slug__deleted__<id>`) and its public address is free to reuse.
+ */
+async function isSlugFree(
+	ctx: QueryCtx,
+	slug: string,
+	exceptId?: Id<"restaurants">
+): Promise<boolean> {
+	const existing = await ctx.db
+		.query(TABLE.RESTAURANTS)
+		.withIndex("by_slug", (q) => q.eq("slug", slug))
+		.first();
+	if (!existing) return true;
+	if (exceptId && existing._id === exceptId) return true;
+	return existing.deletedAt != null;
+}
+
+/**
+ * Resolves the slug a new restaurant is created with.
+ *
+ * Nothing in the product asks for a slug any more: it is derived from the
+ * name and de-duplicated with a dash counter. An explicitly supplied slug is
+ * still honoured (API clients, fixtures) but goes through the same
+ * normalization, so no un-normalized value can reach the table.
+ */
+async function resolveCreateSlug(
+	ctx: QueryCtx,
+	name: string,
+	requested: string | undefined
+): Promise<[string, null] | [null, UserInputValidationErrorObject]> {
+	if (requested !== undefined) {
+		const normalized = normalizeRestaurantSlug(requested);
+		if (!normalized) return [null, slugError(SLUG_ERROR.INVALID)];
+		if (!(await isSlugFree(ctx, normalized))) return [null, slugError(SLUG_ERROR.TAKEN)];
+		return [normalized, null];
+	}
+
+	const base = slugifyRestaurantName(name);
+	for (let attempt = 0; attempt < RESTAURANT_SLUG_MAX_COLLISION_ATTEMPTS; attempt++) {
+		const candidate = buildCandidateSlug(base, attempt);
+		if (await isSlugFree(ctx, candidate)) return [candidate, null];
+	}
+	// Every candidate up to the bound is occupied — report it as "taken", which
+	// is exactly what the operator needs to hear: pick a different name.
+	return [null, slugError(SLUG_ERROR.TAKEN)];
+}
+
+/** The diner-visible contact details of a restaurant. Every part is optional. */
+export type PublicContact = {
+	email?: string;
+	phone?: string;
+	/** Ready-to-use `wa.me` link, derived from `phone`. Absent unless flagged. */
+	whatsAppUrl?: string;
+	address?: string;
+	socials?: Partial<Record<SocialPlatform, string>>;
+};
 
 /** Fields safe to expose to anonymous diners (ordering / public reservation pages). */
 export type PublicRestaurant = {
@@ -58,7 +142,39 @@ export type PublicRestaurant = {
 	latitude?: number;
 	longitude?: number;
 	geofenceRadiusMeters?: number;
+	/** Public profile. Absent entirely when the restaurant has published nothing. */
+	contact?: PublicContact;
 };
+
+/**
+ * Build the diner-visible contact block, or `undefined` when there is nothing
+ * to show — the info block renders nothing rather than an empty shell.
+ *
+ * `supportEmail` is gated on `publicProfileReviewedAt`: it predates the public
+ * profile and older rows may hold an internal alias. See the schema comment.
+ */
+function toPublicContact(r: Doc<"restaurants">): PublicContact | undefined {
+	const socials: Partial<Record<SocialPlatform, string>> = {};
+	for (const platform of SOCIAL_PLATFORMS) {
+		const url = r[SOCIAL_FIELD[platform]];
+		if (url) socials[platform] = url;
+	}
+	const hasSocials = Object.keys(socials).length > 0;
+
+	const email = r.publicProfileReviewedAt != null ? r.supportEmail : undefined;
+	const whatsAppUrl =
+		r.phone && r.phoneHasWhatsApp ? (toWhatsAppUrl(r.phone) ?? undefined) : undefined;
+
+	if (!email && !r.phone && !r.address && !hasSocials) return undefined;
+
+	return {
+		...(email && { email }),
+		...(r.phone && { phone: r.phone }),
+		...(whatsAppUrl && { whatsAppUrl }),
+		...(r.address && { address: r.address }),
+		...(hasSocials && { socials }),
+	};
+}
 
 export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
 	return {
@@ -76,6 +192,7 @@ export function toPublicRestaurant(r: Doc<"restaurants">): PublicRestaurant {
 		latitude: r.latitude,
 		longitude: r.longitude,
 		geofenceRadiusMeters: r.geofenceRadiusMeters,
+		contact: toPublicContact(r),
 	};
 }
 
@@ -132,10 +249,25 @@ export const softDelete = mutation({
 			...stampUpdated(userId),
 		});
 
+		// Stop Tavli billing a restaurant the operator just deleted. Mutations
+		// never call Stripe, so the cancel runs as a scheduled action; it is
+		// best-effort by design (see
+		// `billing.cancelSubscriptionForDeletedRestaurant`). Without this the
+		// subscription stayed live while `billingHelpers.isBillable` refused to
+		// record any of its webhooks — invisible charges.
+		if (restaurant.stripeSubscriptionId) {
+			await ctx.scheduler.runAfter(0, internal.billing.cancelSubscriptionForDeletedRestaurant, {
+				restaurantId: args.restaurantId,
+				stripeSubscriptionId: restaurant.stripeSubscriptionId,
+				userId,
+			});
+		}
+
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.soft_deleted",
+			restaurantId: args.restaurantId,
 			payload: { slugBefore: restaurant.slug, slugAfter: newSlug },
 			userId,
 		});
@@ -192,6 +324,7 @@ export const restore = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.restored",
+			restaurantId: args.restaurantId,
 			payload: { slug: nextSlug },
 			userId,
 		});
@@ -203,7 +336,13 @@ export const restore = mutation({
 export const create = mutation({
 	args: {
 		name: v.string(),
-		slug: v.string(),
+		/**
+		 * Optional since TAVLI-71: the create form no longer asks for a slug —
+		 * it is derived from `name` and de-duplicated (`la-cocina`,
+		 * `la-cocina-2`, …). Still accepted for API callers and fixtures, and
+		 * normalized through the same rules when supplied.
+		 */
+		slug: v.optional(v.string()),
 		description: v.optional(v.string()),
 		currency: v.string(),
 		timezone: v.optional(v.string()),
@@ -218,26 +357,15 @@ export const create = mutation({
 		const [, error2] = await requireOwnerRole(ctx, userId);
 		if (error2) return [null, error2];
 
-		const existing = await ctx.db
-			.query(TABLE.RESTAURANTS)
-			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
-			.first();
-
-		if (existing && existing.deletedAt == null) {
-			return [
-				null,
-				new UserInputValidationError({
-					fields: [{ field: "slug", message: "This slug is already taken" }],
-				}).toObject(),
-			];
-		}
+		const [slug, slugErr] = await resolveCreateSlug(ctx, args.name, args.slug);
+		if (slugErr) return [null, slugErr];
 
 		const now = Date.now();
 		const id = await ctx.db.insert(TABLE.RESTAURANTS, {
 			ownerId: userId,
 			organizationId: args.organizationId,
 			name: args.name,
-			slug: args.slug,
+			slug,
 			description: args.description,
 			currency: args.currency,
 			timezone: resolveRestaurantTimezone(args.timezone),
@@ -247,9 +375,12 @@ export const create = mutation({
 			updatedBy: userId,
 		});
 
+		// Named after the restaurant, not the slug: a derived slug carries the
+		// collision counter, and "La Cocina" must not seed a menu called
+		// "la-cocina-2".
 		await insertMenuForRestaurant(ctx, {
 			restaurantId: id,
-			name: args.slug,
+			name: args.name,
 			userId,
 		});
 
@@ -265,6 +396,29 @@ export const update = mutation({
 		description: v.optional(v.string()),
 		currency: v.optional(v.string()),
 		supportEmail: v.optional(v.string()),
+		// Informational tax block for restaurant-branded receipts (ADR 008 /
+		// TAVLI-71 Phase 3C). NOT CFDI data — display-only on receipt emails.
+		// Same access tier as supportEmail (manager or above); empty string clears.
+		rfc: v.optional(v.string()),
+		razonSocial: v.optional(v.string()),
+		fiscalAddress: v.optional(v.string()),
+		// Public profile (diner-visible contact details). Empty string clears —
+		// the section form resubmits every input it owns, so an emptied box
+		// arrives as "" naturally, and none of these can legitimately BE "".
+		address: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		phoneHasWhatsApp: v.optional(v.boolean()),
+		instagramUrl: v.optional(v.string()),
+		facebookUrl: v.optional(v.string()),
+		tiktokUrl: v.optional(v.string()),
+		xUrl: v.optional(v.string()),
+		youtubeUrl: v.optional(v.string()),
+		/**
+		 * Set by the Public profile section on save. Stamps
+		 * `publicProfileReviewedAt`, which is what lets `supportEmail` reach
+		 * diners. Never unset — reviewing is one-way.
+		 */
+		markPublicProfileReviewed: v.optional(v.boolean()),
 		timezone: v.optional(v.string()),
 		openTime: v.optional(v.string()),
 		closeTime: v.optional(v.string()),
@@ -274,6 +428,14 @@ export const update = mutation({
 		orderNumberResetFrequency: v.optional(
 			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
+		/**
+		 * Cash policy (TAVLI-81). Manager-or-above like the rest of this form —
+		 * deliberately NOT admin-gated the way `orderNumberResetFrequency` is:
+		 * this is the restaurant's own call about whether it trusts its tables,
+		 * and it is the whole point of the setting that the people running the
+		 * floor can flip it.
+		 */
+		releaseCashOrdersImmediately: v.optional(v.boolean()),
 		// Geofence for customer ordering (TAVLI-6). Pass null to clear.
 		latitude: v.optional(v.union(v.number(), v.null())),
 		longitude: v.optional(v.union(v.number(), v.null())),
@@ -336,19 +498,21 @@ export const update = mutation({
 			];
 		}
 
-		if (args.slug && args.slug !== restaurant.slug) {
-			const existing = await ctx.db
-				.query(TABLE.RESTAURANTS)
-				.withIndex("by_slug", (q) => q.eq("slug", args.slug!))
-				.first();
-			if (existing && existing._id !== args.restaurantId && existing.deletedAt == null) {
-				return [
-					null,
-					new UserInputValidationError({
-						fields: [{ field: "slug", message: "This slug is already taken" }],
-					}).toObject(),
-				];
+		// Normalize BEFORE deciding anything: the previous version guarded the
+		// conflict check with `args.slug &&` but patched on `!== undefined`, so
+		// an empty string skipped the check and was written verbatim, leaving a
+		// restaurant reachable at `/r//en/menu`.
+		let nextSlug: string | undefined;
+		if (args.slug !== undefined) {
+			const normalized = normalizeRestaurantSlug(args.slug);
+			if (!normalized) return [null, slugError(SLUG_ERROR.INVALID)];
+			if (
+				normalized !== restaurant.slug &&
+				!(await isSlugFree(ctx, normalized, args.restaurantId))
+			) {
+				return [null, slugError(SLUG_ERROR.TAKEN)];
 			}
+			nextSlug = normalized;
 		}
 
 		if (args.timezone !== undefined) {
@@ -365,15 +529,72 @@ export const update = mutation({
 
 		if (args.supportEmail !== undefined) {
 			const raw = args.supportEmail.trim();
-			// Lightweight shape check — this value feeds a `mailto:` on the client.
-			if (raw.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+			// Lightweight shape check — this value feeds a `mailto:` on the client
+			// and, once the profile is reviewed, on the public menu page.
+			if (raw.length > 0 && !isValidContactEmail(raw)) {
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [{ field: "supportEmail", message: "Invalid email address" }],
+						fields: [
+							{ field: "supportEmail", message: PUBLIC_PROFILE_ERROR.SUPPORT_EMAIL_INVALID },
+						],
 					}).toObject(),
 				];
 			}
+		}
+
+		if (args.address !== undefined && args.address.trim().length > MAX_ADDRESS_LENGTH) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [{ field: "address", message: PUBLIC_PROFILE_ERROR.ADDRESS_TOO_LONG }],
+				}).toObject(),
+			];
+		}
+
+		let nextPhone: string | undefined;
+		if (args.phone !== undefined) {
+			const result = normalizeRestaurantPhone(args.phone);
+			if (!result.ok) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field: "phone", message: result.code }],
+					}).toObject(),
+				];
+			}
+			nextPhone = result.value;
+		}
+
+		// A WhatsApp flag with no number is a link to nowhere. Resolve against the
+		// phone this patch *lands on*, not the one currently stored.
+		const phoneAfterPatch = nextPhone !== undefined ? nextPhone : (restaurant.phone ?? "");
+		if (args.phoneHasWhatsApp === true && phoneAfterPatch.length === 0) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{ field: "phoneHasWhatsApp", message: PUBLIC_PROFILE_ERROR.WHATSAPP_WITHOUT_PHONE },
+					],
+				}).toObject(),
+			];
+		}
+
+		const nextSocials: Partial<Record<SocialField, string | undefined>> = {};
+		for (const platform of SOCIAL_PLATFORMS) {
+			const field = SOCIAL_FIELD[platform];
+			const raw = args[field];
+			if (raw === undefined) continue;
+			const result = normalizeSocialUrl(platform, raw);
+			if (!result.ok) {
+				return [
+					null,
+					new UserInputValidationError({
+						fields: [{ field, message: result.code }],
+					}).toObject(),
+				];
+			}
+			nextSocials[field] = result.value.length > 0 ? result.value : undefined;
 		}
 
 		if (
@@ -398,12 +619,44 @@ export const update = mutation({
 
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
-			...(args.slug !== undefined && { slug: args.slug }),
+			...(nextSlug !== undefined && { slug: nextSlug }),
 			...(args.description !== undefined && { description: args.description }),
 			...(args.currency !== undefined && { currency: args.currency }),
 			...(args.supportEmail !== undefined && {
 				supportEmail: args.supportEmail.trim() ? args.supportEmail.trim() : undefined,
 			}),
+			...(args.rfc !== undefined && {
+				rfc: args.rfc.trim() ? args.rfc.trim() : undefined,
+			}),
+			...(args.razonSocial !== undefined && {
+				razonSocial: args.razonSocial.trim() ? args.razonSocial.trim() : undefined,
+			}),
+			...(args.fiscalAddress !== undefined && {
+				fiscalAddress: args.fiscalAddress.trim() ? args.fiscalAddress.trim() : undefined,
+			}),
+			...(args.address !== undefined && {
+				address: args.address.trim() ? args.address.trim() : undefined,
+			}),
+			...(nextPhone !== undefined && { phone: nextPhone || undefined }),
+			// Clearing the number force-clears the flag. Otherwise a manager who
+			// deletes their phone leaves a dangling `true` that a later "add a
+			// phone" silently re-arms — for a number that may not be on WhatsApp.
+			...(nextPhone !== undefined && nextPhone.length === 0
+				? { phoneHasWhatsApp: undefined }
+				: args.phoneHasWhatsApp !== undefined && {
+						phoneHasWhatsApp: args.phoneHasWhatsApp || undefined,
+					}),
+			// Explicit per-field spreads rather than a computed object: this keeps
+			// `ctx.db.patch`'s per-field type checking, which `Object.fromEntries`
+			// would erase while still compiling. A normalized empty string means
+			// "clear", which is already `undefined` in `nextSocials`.
+			...(args.instagramUrl !== undefined && { instagramUrl: nextSocials.instagramUrl }),
+			...(args.facebookUrl !== undefined && { facebookUrl: nextSocials.facebookUrl }),
+			...(args.tiktokUrl !== undefined && { tiktokUrl: nextSocials.tiktokUrl }),
+			...(args.xUrl !== undefined && { xUrl: nextSocials.xUrl }),
+			...(args.youtubeUrl !== undefined && { youtubeUrl: nextSocials.youtubeUrl }),
+			...(args.markPublicProfileReviewed === true &&
+				restaurant.publicProfileReviewedAt == null && { publicProfileReviewedAt: Date.now() }),
 			...(args.timezone !== undefined && {
 				timezone: args.timezone.trim() ? args.timezone.trim() : undefined,
 			}),
@@ -416,6 +669,9 @@ export const update = mutation({
 			}),
 			...(args.orderNumberResetFrequency !== undefined && {
 				orderNumberResetFrequency: args.orderNumberResetFrequency,
+			}),
+			...(args.releaseCashOrdersImmediately !== undefined && {
+				releaseCashOrdersImmediately: args.releaseCashOrdersImmediately,
 			}),
 			...(args.latitude !== undefined && { latitude: args.latitude ?? undefined }),
 			...(args.longitude !== undefined && { longitude: args.longitude ?? undefined }),
@@ -435,7 +691,9 @@ export const update = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.updated",
-			payload: args,
+			restaurantId: args.restaurantId,
+			// Record what was written, not what was typed — the slug is normalized.
+			payload: { ...args, ...(nextSlug !== undefined && { slug: nextSlug }) },
 			userId,
 		});
 
@@ -752,6 +1010,7 @@ export const setSharedEmployeeSubject = mutation({
 			aggregateType: TABLE.RESTAURANTS,
 			aggregateId: String(args.restaurantId),
 			eventType: "restaurants.sharedEmployeeSubjectSet",
+			restaurantId: args.restaurantId,
 			payload: { clerkSubject },
 			userId,
 		});

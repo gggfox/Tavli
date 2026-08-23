@@ -9,13 +9,14 @@ Full model + rationale: **[deployment-and-secrets.md](../../../documentation/int
 
 ## First, know where a value belongs
 
-| Value                                                                           | Goes in                               | Applied                                                    |
-| ------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------- |
-| `VITE_*` (public)                                                               | Infisical, per-env                    | **build-time** (baked into the bundle) — rebuild to change |
-| Frontend SSR secret (`CLERK_SECRET_KEY`)                                        | Infisical, per-env                    | **runtime** (entrypoint injects)                           |
-| Convex-only vars (`CLERK_JWT_ISSUER_DOMAIN`, `STRIPE_*`, `RESEND_*`)            | Convex deployment env                 | read by Convex functions                                   |
-| Infisical machine creds (`INFISICAL_ENV`, `INFISICAL_MACHINE_CLIENT_ID/SECRET`) | Dokploy app → Environment Settings    | runtime                                                    |
-| DNS                                                                             | Hostinger hPanel (`tavliai.com` zone) | —                                                          |
+| Value                                                                                  | Goes in                               | Applied                                                    |
+| -------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------- |
+| `VITE_*` (public)                                                                      | Infisical, per-env                    | **build-time** (baked into the bundle) — rebuild to change |
+| Frontend SSR secret (`CLERK_SECRET_KEY`)                                               | Infisical, per-env                    | **runtime** (entrypoint injects)                           |
+| Convex-only vars (`CLERK_JWT_ISSUER_DOMAIN`, `STRIPE_*`, `RESEND_*`)                   | Convex deployment env                 | read by Convex functions                                   |
+| Infisical machine creds (`INFISICAL_ENV`, `INFISICAL_MACHINE_CLIENT_ID/SECRET`)        | Dokploy app → Environment Settings    | runtime                                                    |
+| Dokploy rollout creds (`DOKPLOY_API_URL`, `DOKPLOY_API_KEY`, `DOKPLOY_APPLICATION_ID`) | Infisical, per-env                    | CI — pins the immutable image and deploys it               |
+| DNS                                                                                    | Hostinger hPanel (`tavliai.com` zone) | —                                                          |
 
 Infisical env **slugs**: `dev` / `staging` / `prod` (NOT the "Production" display name).
 Dokploy precedence: **Service > Environment > Project > System**. Keep the **Project (shared) env empty** and Build-time Args/Secrets empty (images are prebuilt & pulled, not built by Dokploy).
@@ -45,25 +46,34 @@ Editing + **Save does NOT restart the container**. You must **Redeploy** (or Rel
 ## Verify a deploy
 
 ```sh
+curl -s https://<host>/health                                  # {"status":"ok","sha":"<deployed commit>"} — the only proof of WHICH build
 curl -s -o /dev/null -w "%{http_code}\n" https://<host>/       # 200
 curl -s https://<host>/ | grep -o 'pk_live[a-z0-9_]*'          # prod: pk_live (not pk_test)
 ```
+
+A 200 on `/` only proves _a_ container is up, not that it is the one you deployed.
 
 Dokploy → app → **Logs** → select the running container: expect `Injecting N Infisical secrets` + `Listening on http://[::]:3000`, and **no** `jwk-kid` / `no secret key` / `without Infisical` lines. For a login-gated app, do a real sign-in and confirm it sticks.
 
 ## Diagnose a broken deploy
 
-| Symptom                            | Likely cause → fix                                                                                       |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 502 Bad Gateway                    | No container → CI build failed (check Actions) or container crashed on boot                              |
-| 500 `{"unhandled":true}`           | SSR error → read container logs for the missing/mismatched secret                                        |
-| `…starting without Infisical.`     | `INFISICAL_MACHINE_CLIENT_ID/SECRET` missing in Dokploy → set + redeploy                                 |
-| "Development mode" badge on prod   | Bundle built with `pk_test` → set `pk_live` in Infisical `prod` and **rebuild**                          |
-| `jwk-kid mismatch` / redirect loop | Frontend/backend keys from different Clerk instances → make `CLERK_SECRET_KEY` match the `pk_*` instance |
-| Convex 401 for signed-in users     | `CLERK_JWT_ISSUER_DOMAIN` wrong on the Convex deployment                                                 |
+| Symptom                                               | Likely cause → fix                                                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site 200 but `/health` sha is old                     | New container died on boot; the old one still serves → test the app's `INFISICAL_MACHINE_CLIENT_SECRET` (401 = it was rotated), then `docker logs <exited container>` |
+| `/health` 404s                                        | Running build predates the route (2026-07-19) → same as above; this env is many builds behind                                                                         |
+| Deploy job red, all steps green until the health gate | Read the gate's "Deploy diagnosis" group — it names the failure class and the fix                                                                                     |
+| 502 Bad Gateway                                       | No container → CI build failed (check Actions) or container crashed on boot                                                                                           |
+| 500 `{"unhandled":true}`                              | SSR error → read container logs for the missing/mismatched secret                                                                                                     |
+| `…starting without Infisical.`                        | `INFISICAL_MACHINE_CLIENT_ID/SECRET` missing in Dokploy → set + redeploy                                                                                              |
+| "Development mode" badge on prod                      | Bundle built with `pk_test` → set `pk_live` in Infisical `prod` and **rebuild**                                                                                       |
+| `jwk-kid mismatch` / redirect loop                    | Frontend/backend keys from different Clerk instances → make `CLERK_SECRET_KEY` match the `pk_*` instance                                                              |
+| Convex 401 for signed-in users                        | `CLERK_JWT_ISSUER_DOMAIN` wrong on the Convex deployment                                                                                                              |
 
 ## Golden rules
 
 - The Docker image is **public** → no secrets baked in; only the Infisical CLI is.
 - `.dockerignore` is a **whitelist** — a new `COPY <file>` needs a matching `!<file>` line.
 - `infisical run` doesn't override existing env vars → keep the container's base env clean so Infisical wins.
+- **Machine-identity Client ID ≠ identity ID.** Universal Auth (Client ID `9e521c33-…` + Client Secrets) lives at **Organization → Access Control → Identities → the identity → Authentication**. The _project_ identity page shows a different **ID** (`6f51c471-…`) that is not an auth credential — pasting it gives the same `401 Invalid credentials` as a bad secret. Take both values from the Authentication screen.
+- **A client secret is shared by CI and the containers.** Deleting or replacing one silently breaks whichever consumer still holds it while the others keep working — CI staying green proves nothing. Adding a client secret is non-destructive; prefer adding to rotating.
+- **Dokploy returning 200 means "queued", not "deployed"** — only `/health` reporting the expected sha proves a rollout landed. A container that dies on boot leaves the previous task running, and nothing says so.

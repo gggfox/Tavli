@@ -79,6 +79,10 @@ export const ReservationsKeys = {
 	DRAWER_EDIT_MIN_DURATION: "reservations.drawer.editMinDuration",
 	DRAWER_EDIT_SEATED_NEEDS_TABLE: "reservations.drawer.editSeatedNeedsTable",
 	DRAWER_CANCEL_REASON_LABEL: "reservations.drawer.cancelReasonLabel",
+	DRAWER_EDIT_COMPLETED_HINT: "reservations.drawer.editCompletedHint",
+	DRAWER_EDIT_TABLES_LOCKED: "reservations.drawer.editTablesLocked",
+	DRAWER_CANCEL_COMPLETED_TITLE: "reservations.drawer.cancelCompletedTitle",
+	DRAWER_CANCEL_COMPLETED_BODY: "reservations.drawer.cancelCompletedBody",
 
 	ACTION_CONFIRM: "reservations.actions.confirm",
 	ACTION_RECONFIRM: "reservations.actions.reconfirm",

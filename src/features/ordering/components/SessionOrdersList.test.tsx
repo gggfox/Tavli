@@ -49,6 +49,7 @@ function baseTab(overrides: Record<string, any> = {}) {
 		paidAt: null,
 		subtotal: 2400,
 		payableOrderIds: ["orders:default"],
+		unservedOrderIds: [],
 		activePayment: null,
 		...overrides,
 	};
@@ -69,7 +70,9 @@ function renderList(
 	props: Partial<{
 		onBackToMenu: () => void;
 		onViewOrder: (id: any) => void;
+		onContinueCheckout: (id: any) => void;
 		onPayTab: () => void;
+		onCloseout: () => void;
 	}> = {}
 ) {
 	return render(
@@ -77,7 +80,9 @@ function renderList(
 			slug="test-restaurant"
 			onBackToMenu={props.onBackToMenu ?? (() => {})}
 			onViewOrder={props.onViewOrder ?? (() => {})}
+			onContinueCheckout={props.onContinueCheckout ?? (() => {})}
 			onPayTab={props.onPayTab ?? (() => {})}
+			onCloseout={props.onCloseout ?? (() => {})}
 		/>
 	);
 }
@@ -107,7 +112,7 @@ describe("SessionOrdersList", () => {
 		expect(screen.getByText("No orders yet")).toBeTruthy();
 	});
 
-	it("shows the tab balance with a pay CTA and the share code", () => {
+	it("shows the legacy tab balance with a pay CTA and the share code when the tab still owes", () => {
 		mockQueries({
 			orders: [baseOrder({})],
 			tab: baseTab({ subtotal: 2400 }),
@@ -123,16 +128,90 @@ describe("SessionOrdersList", () => {
 		expect(onPayTab).toHaveBeenCalled();
 	});
 
-	it("disables the pay CTA when the tab has no balance", () => {
+	it("hides the legacy pay-tab card entirely for a settled (post-pivot) session, keeping share/join", () => {
+		// New-model sessions always report subtotal 0 — orders pay at submit
+		// (ADR 008), so the whole-tab settlement surface must not render.
 		mockQueries({
-			orders: [],
+			orders: [baseOrder({ status: "submitted", paymentState: "paid" })],
 			tab: baseTab({ subtotal: 0, payableOrderIds: [] }),
+		});
+
+		renderList();
+
+		expect(screen.queryByText(/Pay tab/)).toBeNull();
+		// Share code and join UI survive the pivot.
+		expect(screen.getByText("ABC234")).toBeTruthy();
+		expect(screen.getByText("Joining a friend's tab?")).toBeTruthy();
+	});
+
+	it("routes a draft row to the per-order checkout with a continue-to-payment CTA", () => {
+		mockQueries({
+			orders: [baseOrder({ _id: "orders:draft", status: "draft", totalAmount: 2400 })],
+			tab: baseTab({ subtotal: 0, payableOrderIds: [] }),
+		});
+
+		const onContinueCheckout = vi.fn();
+		const onViewOrder = vi.fn();
+		renderList({ onContinueCheckout, onViewOrder });
+
+		fireEvent.click(screen.getByText(/Continue to payment/));
+		expect(onContinueCheckout).toHaveBeenCalledWith("orders:draft");
+		expect(onViewOrder).not.toHaveBeenCalled();
+	});
+
+	it("shows a paid badge on settled orders and the awaiting-payment hint on cash orders", () => {
+		mockQueries({
+			orders: [
+				baseOrder({
+					_id: "orders:paid",
+					status: "submitted",
+					paymentState: "paid",
+					dailyOrderNumber: 7,
+				}),
+				baseOrder({
+					_id: "orders:cash",
+					_creationTime: now - 60_000,
+					status: "awaiting_payment",
+					paymentState: "unpaid",
+					dailyOrderNumber: 8,
+				}),
+			],
+			tab: baseTab({ subtotal: 0, payableOrderIds: [] }),
+		});
+
+		renderList();
+
+		expect(screen.getByText("Paid")).toBeTruthy();
+		// Order number + pay-with-your-server hint for the cash path.
+		expect(screen.getByText("#8")).toBeTruthy();
+		expect(screen.getByText("Pay with your server")).toBeTruthy();
+	});
+
+	it("disables the pay CTA while an order has not reached the table", () => {
+		// The tab is still billed for it — only settlement is held back.
+		mockQueries({
+			orders: [baseOrder({ _id: "orders:cooking", status: "preparing" })],
+			tab: baseTab({ unservedOrderIds: ["orders:cooking"] }),
 		});
 
 		renderList();
 
 		const payButton = screen.getByText(/Pay tab/).closest("button");
 		expect(payButton?.disabled).toBe(true);
+		expect(screen.getByText(/hasn't reached your table yet/)).toBeTruthy();
+	});
+
+	it("keeps the locked notice when a payment is in flight, even if orders are unserved", () => {
+		// Nothing the diner can do but wait, so "ask your server" would be wrong.
+		mockQueries({
+			orders: [baseOrder({ _id: "orders:cooking", status: "preparing" })],
+			tab: baseTab({ lockedForPayment: true, unservedOrderIds: ["orders:cooking"] }),
+		});
+
+		renderList();
+
+		expect(screen.getByText(/A payment is in progress/)).toBeTruthy();
+		expect(screen.queryByText(/hasn't reached your table yet/)).toBeNull();
 	});
 
 	it("routes submitted orders to the order status page", () => {
@@ -148,6 +227,27 @@ describe("SessionOrdersList", () => {
 
 		fireEvent.click(screen.getByText("View →"));
 		expect(onViewOrder).toHaveBeenCalledWith("orders:submitted");
+	});
+
+	it("shows the close-out CTA while the session is active and routes to the closeout screen", () => {
+		mockQueries({
+			orders: [baseOrder({ status: "submitted", paymentState: "paid" })],
+			tab: baseTab({ subtotal: 0, payableOrderIds: [] }),
+		});
+
+		const onCloseout = vi.fn();
+		renderList({ onCloseout });
+
+		fireEvent.click(screen.getByText("Close out & tip"));
+		expect(onCloseout).toHaveBeenCalled();
+	});
+
+	it("hides the close-out CTA when there is no active session (tab summary null)", () => {
+		mockQueries({ orders: [baseOrder({})], tab: null });
+
+		renderList();
+
+		expect(screen.queryByText("Close out & tip")).toBeNull();
 	});
 
 	it("sorts the list by creation time, newest first", () => {

@@ -18,7 +18,7 @@ const mockStripeClient = {
 		},
 	},
 	paymentIntents: { create: vi.fn(), retrieve: vi.fn() },
-	refunds: { create: vi.fn() },
+	refunds: { create: vi.fn(), list: vi.fn() },
 	webhooks: { constructEvent: vi.fn() },
 	parseEventNotification: vi.fn(),
 };
@@ -116,6 +116,14 @@ function refundChargeEvent(args: {
 	refunded: boolean;
 	refundId?: string;
 	refundCreated?: number;
+	/**
+	 * Omit the `refunds` list entirely, mirroring what Stripe actually delivers.
+	 * Verified against a real test-mode delivery (evt_3TPVpgAdCrGPY0BG07oCiPg0,
+	 * 2026-07-19): `data.object` on `charge.refunded` has no `refunds` key at
+	 * all. The fixtures below that DO supply one are the reason this gap stayed
+	 * invisible in CI -- keep at least one case exercising the real shape.
+	 */
+	omitRefundsList?: boolean;
 }) {
 	return {
 		id: args.eventId,
@@ -130,11 +138,15 @@ function refundChargeEvent(args: {
 				amount_refunded: args.amountRefunded,
 				refunded: args.refunded,
 				currency: "usd",
-				refunds: {
-					data: args.refundId
-						? [{ id: args.refundId, created: args.refundCreated ?? 1_700_000_500 }]
-						: [],
-				},
+				...(args.omitRefundsList
+					? {}
+					: {
+							refunds: {
+								data: args.refundId
+									? [{ id: args.refundId, created: args.refundCreated ?? 1_700_000_500 }]
+									: [],
+							},
+						}),
 			},
 		},
 	};
@@ -285,6 +297,49 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 				.collect()
 		);
 		expect(audits).toHaveLength(1);
+	});
+
+	it("resolves the refund id via the API when the charge omits the refunds list", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrderPayment(t, {
+			restaurantId,
+			amount: 2400,
+			paymentIntentId: "pi_no_refunds_list",
+		});
+
+		// The shape Stripe really delivers: no `refunds` key on the charge.
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			refundChargeEvent({
+				eventId: "evt_refund_no_list",
+				paymentIntentId: "pi_no_refunds_list",
+				amountCaptured: 2400,
+				amountRefunded: 2400,
+				refunded: true,
+				omitRefundsList: true,
+			})
+		);
+		mockStripeClient.refunds.list.mockResolvedValue({
+			data: [{ id: "re_fetched", created: 1_700_000_900 }],
+		});
+
+		await t.action(internal.stripe.fulfillPayment, {
+			payloadString: "{}",
+			signatureHeader: "sig",
+		});
+
+		expect(mockStripeClient.refunds.list).toHaveBeenCalledWith({
+			payment_intent: "pi_no_refunds_list",
+			limit: 1,
+		});
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.refundStatus).toBe("succeeded");
+		expect(payment?.amountRefunded).toBe(2400);
+		// Without the fallback both of these silently regress to
+		// `undefined` / `Date.now()`.
+		expect(payment?.stripeRefundId).toBe("re_fetched");
+		expect(payment?.refundedAt).toBe(1_700_000_900_000);
 	});
 
 	it("records a partial refund without changing the order payment state", async () => {

@@ -14,12 +14,13 @@ jobs:
   lint-and-format:
     name: Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -32,12 +33,13 @@ jobs:
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -49,12 +51,13 @@ jobs:
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -70,12 +73,13 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -94,15 +98,16 @@ jobs:
   unit-and-component-tests:
     name: Unit & Component Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -113,7 +118,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage/
@@ -126,6 +131,7 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # E2E uses the staging Convex deployment; publishable/secret keys fall back to
     # syntactically valid placeholders when CLERK_SECRET_KEY_E2E is unset.
     env:
@@ -135,11 +141,11 @@ jobs:
       CLERK_PUBLISHABLE_KEY: pk_test_bW9kZWwtbXVzdGFuZy05OC5jbGVyay5hY2NvdW50cy5kZXYk
       VITE_CLERK_PUBLISHABLE_KEY: pk_test_bW9kZWwtbXVzdGFuZy05OC5jbGVyay5hY2NvdW50cy5kZXYk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -159,17 +165,35 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
 
+      # `--with-deps` shells out to apt-get, which wedged for 25+ minutes on a
+      # cache miss (the cache expires after 7 idle days, so this path is rarely
+      # exercised and fails invisibly). Split the download from the apt-get so
+      # a stuck package manager cannot swallow the browser download too, and
+      # give each half its own bound. DEBIAN_FRONTEND stops apt prompting with
+      # nobody there to answer.
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: npx playwright install chromium
 
-      - name: Install Playwright system deps only (cached browsers)
-        if: steps.pw-cache.outputs.cache-hit == 'true'
+      # Best-effort, and deliberately not allowed to fail the job. This shells
+      # out to `apt-get update`, which stalled for six minutes straight against
+      # an unreachable azure.archive.ubuntu.com mirror — an outage on GitHub's
+      # side that has nothing to do with this repo. The ubuntu-24.04 image
+      # already ships Chromium's shared libraries, so this is belt-and-braces;
+      # if a library really is missing the E2E step below fails loudly with a
+      # browser-launch error, which is a far better signal than a wedged
+      # package manager.
+      - name: Install Playwright system deps (best effort)
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: npx playwright install-deps chromium
 
       - name: Run E2E tests
@@ -177,7 +201,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/
@@ -186,10 +210,11 @@ jobs:
   promote-staging:
     name: Promote to Staging Branch
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [lint-and-format, audit, typecheck, build, unit-and-component-tests, e2e-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.PROMOTE_TOKEN }}
           fetch-depth: 0

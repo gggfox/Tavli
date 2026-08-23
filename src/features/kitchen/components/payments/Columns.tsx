@@ -5,16 +5,29 @@ import { formatCents } from "@/global/utils/money";
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { OrderItemsTooltipTrigger, type PaymentsOrder } from "./OrderItemsTooltipTrigger";
+import { OrderItemsTooltipTrigger } from "./OrderItemsTooltipTrigger";
+import type { PaymentsLedgerRow } from "./types";
 
-const columnHelper = createColumnHelper<PaymentsOrder>();
+const columnHelper = createColumnHelper<PaymentsLedgerRow>();
+
+/** Renders cents, or an em dash when the amount was never recorded. */
+function Money({ cents }: Readonly<{ cents: number | null }>) {
+	if (cents === null) return <span className="text-faint-foreground">—</span>;
+	return <span className="text-foreground tabular-nums">${formatCents(cents)}</span>;
+}
 
 /**
- * Column definitions for the payments AdminTable. Returns a memoized array
- * keyed off the active language so cells re-render with translated copy
+ * Column definitions for the payments ledger AdminTable. Returns a memoized
+ * array keyed off the active language so cells re-render with translated copy
  * when the user switches locales.
+ *
+ * ADR 008: a row is either a paid Order or a post-visit Tip payment, and the
+ * money is split into what the diner paid (subtotal + Tavli service fee) and
+ * what the restaurant nets — summing "subtotal" alone is the restaurant's
+ * revenue, which is why the fee is shown as its own column rather than folded
+ * into a single total.
  */
-export function usePaymentsColumns(): ColumnDef<PaymentsOrder, unknown>[] {
+export function usePaymentsColumns(): ColumnDef<PaymentsLedgerRow, unknown>[] {
 	const { t, i18n } = useTranslation();
 
 	return useMemo(
@@ -39,8 +52,18 @@ export function usePaymentsColumns(): ColumnDef<PaymentsOrder, unknown>[] {
 						return av - bv;
 					},
 				}),
-				columnHelper.accessor("_id", {
-					header: t(PaymentsKeys.TABLE_ORDER_ID),
+				columnHelper.accessor("rowKind", {
+					header: t(PaymentsKeys.TABLE_TYPE),
+					cell: (info) => (
+						<span className="text-foreground">
+							{info.getValue() === "tip"
+								? t(PaymentsKeys.ROW_KIND_TIP)
+								: t(PaymentsKeys.ROW_KIND_ORDER)}
+						</span>
+					),
+				}),
+				columnHelper.accessor("id", {
+					header: t(PaymentsKeys.TABLE_ROW_ID),
 					cell: (info) => <CopyableId id={info.getValue()} />,
 				}),
 				columnHelper.accessor("paidAt", {
@@ -65,17 +88,35 @@ export function usePaymentsColumns(): ColumnDef<PaymentsOrder, unknown>[] {
 				columnHelper.accessor((row) => row.items, {
 					id: "items",
 					header: t(PaymentsKeys.TABLE_ITEMS),
-					cell: (info) => <OrderItemsTooltipTrigger order={info.row.original} />,
+					cell: (info) => <OrderItemsTooltipTrigger row={info.row.original} />,
 					enableSorting: false,
 					enableGlobalFilter: false,
 				}),
-				columnHelper.accessor("totalAmount", {
-					header: t(PaymentsKeys.TABLE_TOTAL),
+				columnHelper.accessor("subtotalCents", {
+					header: t(PaymentsKeys.TABLE_SUBTOTAL),
 					cell: (info) => (
-						<span className="font-medium text-foreground">${formatCents(info.getValue())}</span>
+						<span className="font-medium text-foreground tabular-nums">
+							${formatCents(info.getValue())}
+						</span>
 					),
 				}),
-			] as ColumnDef<PaymentsOrder, unknown>[],
+				columnHelper.accessor("serviceFeeCents", {
+					header: t(PaymentsKeys.TABLE_SERVICE_FEE),
+					cell: (info) => <Money cents={info.getValue()} />,
+				}),
+				columnHelper.accessor("tipCents", {
+					header: t(PaymentsKeys.TABLE_TIP),
+					cell: (info) => <Money cents={info.getValue()} />,
+				}),
+				columnHelper.accessor("netToRestaurantCents", {
+					header: t(PaymentsKeys.TABLE_NET_TO_RESTAURANT),
+					cell: (info) => (
+						<span className="font-medium">
+							<Money cents={info.getValue()} />
+						</span>
+					),
+				}),
+			] as ColumnDef<PaymentsLedgerRow, unknown>[],
 		[t, i18n.language]
 	);
 }

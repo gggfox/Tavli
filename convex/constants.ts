@@ -18,9 +18,11 @@ export const TABLE = {
 	SESSIONS: "sessions",
 	ORDERS: "orders",
 	ORDER_ITEMS: "orderItems",
+	SUBSTITUTION_PROPOSALS: "substitutionProposals",
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
 	STRIPE_DISPUTES: "stripeDisputes",
+	STRIPE_CUSTOMERS: "stripeCustomers",
 	RESERVATIONS: "reservations",
 	TABLE_LOCKS: "tableLocks",
 	RESERVATION_SETTINGS: "reservationSettings",
@@ -80,6 +82,12 @@ export type StaffRole = (typeof STAFF_ROLES)[number];
 
 export const ORDER_STATUS = {
 	DRAFT: "draft",
+	/**
+	 * Committed by the diner for in-person (cash) payment. Visible only to
+	 * staff — never on the kitchen rail — until staff mark it paid and release
+	 * it to "submitted". See ADR 008.
+	 */
+	AWAITING_PAYMENT: "awaiting_payment",
 	SUBMITTED: "submitted",
 	PREPARING: "preparing",
 	READY: "ready",
@@ -119,6 +127,15 @@ export const DEFAULT_RESTAURANT_TIMEZONE = "America/Mexico_City";
 export const DEFAULT_RESTAURANT_OPEN_TIME = "10:00";
 export const DEFAULT_RESTAURANT_CLOSE_TIME = "23:00";
 
+/**
+ * Payment state of a single **order**.
+ *
+ * Note this is a different aggregate from `PAYMENT_REFUND_STATUS`, which
+ * describes the whole payment. An order covered by a tab can be `refunded`
+ * while the tab payment is only `partial` — the order's share came back, the
+ * rest of the tab did not. That combination is correct, not a bug: an order's
+ * share is either refunded or it isn't, so this enum needs no `partial` member.
+ */
 export const ORDER_PAYMENT_STATE = {
 	UNPAID: "unpaid",
 	PENDING: "pending",
@@ -180,21 +197,156 @@ export type SessionPaymentState =
 	(typeof SESSION_PAYMENT_STATE)[keyof typeof SESSION_PAYMENT_STATE];
 
 /**
- * Order statuses whose totals count toward the tab balance. Draft orders are
- * not yet sent to the kitchen; cancelled orders are excluded.
+ * LEGACY TAB MODEL (pre-ADR-008): order statuses whose totals count toward a
+ * tab balance. Kept for sessions opened before the pay-at-submit cutover,
+ * whose unpaid balances still settle through the tab flow. Draft orders are
+ * not yet sent to the kitchen; cancelled orders are excluded — and
+ * `awaiting_payment` must NOT appear here: those orders are collected in
+ * person, never through a tab payment.
  */
 export const TAB_PAYABLE_ORDER_STATUSES = ["submitted", "preparing", "ready", "served"] as const;
+
+/**
+ * LEGACY TAB MODEL (pre-ADR-008): order statuses a tab payment is allowed to
+ * settle. Kept for sessions opened before the pay-at-submit cutover.
+ * Everything else on the tab is billed but blocks checkout until staff serve
+ * it or cancel it.
+ *
+ * Deliberately an **allowlist**. Settling food the diner never received is the
+ * only way a Stripe refund happens on the tab path (`served` is terminal in
+ * `VALID_TRANSITIONS`, so delivered food can never be cancelled), and refunds
+ * are fronted by the platform balance. A blocklist would silently permit a
+ * newly-added status to be settled — the money-losing direction. The
+ * `satisfies` clause makes "settleable but not payable" a compile error.
+ */
+export const TAB_SETTLEABLE_ORDER_STATUSES = [ORDER_STATUS.SERVED] as const satisfies ReadonlyArray<
+	(typeof TAB_PAYABLE_ORDER_STATUSES)[number]
+>;
+
+/**
+ * How long an order stays on the Orders dashboard's **Served** segment after
+ * staff mark it served.
+ *
+ * `served` is terminal (see `VALID_TRANSITIONS`), so a served order is work
+ * that is finished — but the segment used to accumulate every order the
+ * restaurant had ever served, because the only time axis was the service-day
+ * filter and its default is "all".
+ *
+ * Thirty minutes is the compromise. It is far longer than the undo affordances
+ * around it (ADR 007's station-ready undo is seconds), which matters more here
+ * because `served` has no undo at all: if staff mark the wrong order served,
+ * the card staying put is the only way they notice. It also covers the lag
+ * before a diner says "this isn't what I ordered". And it is short enough that
+ * the segment is empty again well before the next service.
+ *
+ * Nothing is deleted — an aged-out order is still in the Payments ledger, the
+ * exports, and the audit log.
+ */
+export const SERVED_VISIBLE_WINDOW_MS = 30 * 60 * 1000;
 
 /** Alphabet for session join codes: no 0/O/1/I lookalikes. */
 export const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const JOIN_CODE_LENGTH = 6;
 
-/** Platform application fee, applied to the tab subtotal only (never the tip). */
+/**
+ * Tavli service fee, charged to the DINER on top of the order subtotal
+ * (ADR 008 — reverses the pre-pivot restaurant-borne carve-out). Applied to
+ * order subtotals and substitution deltas, never tips. The restaurant nets
+ * the full subtotal.
+ */
 export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
-/** Tip selector presets (percent of tab subtotal). Ticket TAVLI-6: default 10%. */
-export const TIP_PERCENT_PRESETS = [0, 10, 15, 20] as const;
+/** Tip selector presets (percent of the member's own spend at Visit close-out; skipping is the zero option). */
+export const TIP_PERCENT_PRESETS = [10, 15, 20] as const;
 export const DEFAULT_TIP_PERCENT = 10;
+
+/**
+ * What a `payments` row paid for (ADR 008). Rows without a `kind` are legacy
+ * (pre-pivot per-order or tab payments).
+ */
+export const PAYMENT_KIND = {
+	/** Pay-at-submit charge for one order (subtotal + service fee). */
+	ORDER: "order",
+	/** A member's post-visit tip on a session; never carries a service fee. */
+	TIP: "tip",
+	/** The price delta (+ fee on delta) of an accepted substitution. */
+	SUBSTITUTION: "substitution",
+} as const;
+
+export type PaymentKind = (typeof PAYMENT_KIND)[keyof typeof PAYMENT_KIND];
+
+/**
+ * How an Order / Session was settled (ADR 008). `stripe` means a `payments`
+ * row backs it; `staff` means it was collected in person and there is **no**
+ * `payments` row at all — analytics and exports must derive that money from
+ * `orders.totalAmount`. Absent on pre-pivot orders settled through a tab.
+ */
+export const SETTLED_BY = {
+	STRIPE: "stripe",
+	STAFF: "staff",
+} as const;
+
+export type SettledBy = (typeof SETTLED_BY)[keyof typeof SETTLED_BY];
+
+/**
+ * Lifecycle of a kitchen-proposed substitution on a paid order (ADR 008).
+ * `pending` awaits the diner's answer; `cancelled` is the kitchen retracting
+ * its own proposal before the diner responds.
+ */
+export const SUBSTITUTION_PROPOSAL_STATUS = {
+	PENDING: "pending",
+	ACCEPTED: "accepted",
+	DECLINED: "declined",
+	CANCELLED: "cancelled",
+} as const;
+
+export type SubstitutionProposalStatus =
+	(typeof SUBSTITUTION_PROPOSAL_STATUS)[keyof typeof SUBSTITUTION_PROPOSAL_STATUS];
+
+/**
+ * Monthly platform subscription (2,000 MXN) in centavos. Display only — the
+ * Stripe Price object is authoritative for what Stripe Billing charges.
+ */
+export const PLATFORM_MONTHLY_FEE_MXN_CENTS = 200000;
+
+/** Currency the platform subscription is priced in. The Stripe Price is authoritative. */
+export const PLATFORM_SUBSCRIPTION_CURRENCY = "MXN";
+
+/**
+ * Stripe subscription statuses, cached verbatim on `restaurants.billingStatus`.
+ * Listed here so app code and UI copy stop spelling them inline; Stripe may add
+ * new ones, so readers must tolerate a status that is absent from this map.
+ */
+export const BILLING_STATUS = {
+	INCOMPLETE: "incomplete",
+	INCOMPLETE_EXPIRED: "incomplete_expired",
+	TRIALING: "trialing",
+	ACTIVE: "active",
+	PAST_DUE: "past_due",
+	CANCELED: "canceled",
+	UNPAID: "unpaid",
+	PAUSED: "paused",
+} as const;
+
+export type BillingStatus = (typeof BILLING_STATUS)[keyof typeof BILLING_STATUS];
+
+/**
+ * Statuses that mean a subscription already exists for this restaurant, so a
+ * second Checkout Session would double-bill them. `past_due` / `unpaid` count:
+ * the subscription is live and Stripe is retrying, and the fix is a new payment
+ * method, not a second subscription.
+ */
+export const LIVE_BILLING_STATUSES: readonly string[] = [
+	BILLING_STATUS.TRIALING,
+	BILLING_STATUS.ACTIVE,
+	BILLING_STATUS.PAST_DUE,
+	BILLING_STATUS.UNPAID,
+];
+
+/** Whether `billingStatus` means the restaurant is currently subscribed. */
+export function isLiveBillingStatus(status: string | undefined): boolean {
+	return status !== undefined && LIVE_BILLING_STATUSES.includes(status);
+}
 
 /** Geofence radius fallback when a restaurant configured coordinates but no radius. */
 export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
@@ -217,10 +369,9 @@ export const STALE_TAB_SWEEP_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
  *
  * Newest-first matters: the actionable work is flagging tabs that *just* crossed
  * the 24h line. Already-flagged tabs sit at the old end of the window and their
- * only remaining sweep work is the close-if-settled safety net, which is rarely
- * load-bearing — both `confirmTabPayment` and `closeTabAsStaff` close the
- * session directly. Oldest-first would let a backlog of flagged tabs starve the
- * flagging of new ones.
+ * only remaining sweep work is the close-if-settled pass, which re-runs every
+ * hour and so tolerates being deferred a run. Oldest-first would let a backlog
+ * of flagged tabs starve the flagging of new ones.
  */
 export const STALE_TAB_SWEEP_BATCH_SIZE = 200;
 
@@ -533,6 +684,19 @@ export const AUDIT_EVENT = {
 	ORDER_STATUS_CHANGED: "orders.statusChanged",
 	ORDER_PAYMENT_CONFIRMED: "orders.paymentConfirmed",
 	ORDER_PAYMENT_FAILED: "orders.paymentFailed",
+	/** Diner abandoned an in-flight card intent (e.g. switching to cash). */
+	ORDER_PAYMENT_CANCELLED: "orders.paymentCancelled",
+	ORDER_REFUND_SUCCEEDED: "orders.refundSucceeded",
+	ORDER_REFUND_FAILED: "orders.refundFailed",
+	ORDER_AWAITING_PAYMENT: "orders.awaitingPayment",
+	ORDER_PAID_IN_PERSON: "orders.paidInPerson",
+	ORDER_ITEM_REFUNDED: "orders.itemRefunded",
+
+	// -- Substitutions (ADR 008) --------------------------------------------
+	SUBSTITUTION_PROPOSED: "substitutions.proposed",
+	SUBSTITUTION_ACCEPTED: "substitutions.accepted",
+	SUBSTITUTION_DECLINED: "substitutions.declined",
+	SUBSTITUTION_CANCELLED: "substitutions.cancelled",
 
 	// -- Sessions (tabs) ----------------------------------------------------
 	SESSION_OPENED: "sessions.opened",
@@ -544,6 +708,32 @@ export const AUDIT_EVENT = {
 	SESSION_PAYMENT_CANCELLED: "sessions.paymentCancelled",
 	SESSION_STALE_CLOSED: "sessions.staleClosed",
 	SESSION_STALE_FLAGGED: "sessions.staleFlagged",
+	SESSION_TIP_PAID: "sessions.tipPaid",
+
+	// -- Restaurants (platform subscription, ADR 008) -----------------------
+	RESTAURANT_SUBSCRIPTION_CREATED: "restaurants.subscriptionCreated",
+	/** Stripe told us the subscription's status or period moved (created/updated webhooks). */
+	RESTAURANT_SUBSCRIPTION_STATUS_CHANGED: "restaurants.subscriptionStatusChanged",
+	/** Staff asked to cancel; the subscription runs to the end of the paid period. */
+	RESTAURANT_SUBSCRIPTION_CANCEL_SCHEDULED: "restaurants.subscriptionCancelScheduled",
+	/** Stripe ended the subscription for good (`customer.subscription.deleted`). */
+	RESTAURANT_SUBSCRIPTION_CANCELLED: "restaurants.subscriptionCancelled",
+	RESTAURANT_SUBSCRIPTION_INVOICE_PAID: "restaurants.subscriptionInvoicePaid",
+	RESTAURANT_SUBSCRIPTION_PAYMENT_FAILED: "restaurants.subscriptionPaymentFailed",
+
+	// -- Receipts -----------------------------------------------------------
+	RECEIPT_EMAIL_SENT: "receipts.emailSent",
+
+	// -- Invitations --------------------------------------------------------
+	// NOTE: the three lifecycle strings below are HISTORICAL — `invitations.created`
+	// and `invitations.accepted` were emitted as inline literals long before these
+	// constants existed, and rows carrying them are already in `allEvents`. Rename
+	// the constant freely; never change the value.
+	INVITATION_CREATED: "invitations.created",
+	INVITATION_ACCEPTED: "invitations.accepted",
+	INVITATION_REVOKED: "invitations.revoked",
+	/** One admin bulk CSV onboarding run — counts only, never the recipient list. */
+	INVITATION_BULK_IMPORTED: "invitations.bulkImported",
 
 	// -- Reservations -------------------------------------------------------
 	RESERVATION_CREATED: "reservations.created",
@@ -561,11 +751,57 @@ export const AUDIT_EVENT = {
 
 export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
 
+// =============================================================================
+// Admin user onboarding — invitations (single + bulk CSV)
+// =============================================================================
+
+/** Longest email we will accept on an invitation (RFC 5321 path limit). */
+export const INVITE_EMAIL_MAX_LENGTH = 254;
+
+/**
+ * Row cap for one uploaded CSV. 500 covers a whole-group onboarding in a single
+ * file while keeping the preview payload (and the classification's per-row DB
+ * lookups) inside one Convex query's budget.
+ */
+export const INVITE_CSV_MAX_ROWS = 500;
+
+/**
+ * Byte cap for the uploaded blob, checked before parsing. 500 rows of the widest
+ * plausible record is well under 200 KB; 512 KB leaves generous headroom while
+ * refusing an accidental multi-megabyte export outright.
+ */
+export const INVITE_CSV_MAX_BYTES = 512 * 1024;
+
+/**
+ * Rows one `commitBulkInvitations` call may create. The preview allows 500, so
+ * the client walks the confirmed rows in chunks of this size. Each commit writes
+ * up to 3 documents per row (invitation + audit event + rate-limit counters) and
+ * schedules one email per row, so a bounded chunk keeps every transaction small
+ * and makes a mid-run failure cost one chunk rather than the whole upload.
+ */
+export const INVITE_BULK_COMMIT_MAX_ROWS = 100;
+
+/**
+ * Invitation send budget per inviter, per hour. Sized to let one admin push a
+ * full 500-row CSV through (5 chunks of 100) plus normal single invites, while
+ * capping a runaway script or a compromised admin session at a few hundred
+ * emails rather than unbounded.
+ */
+export const INVITE_SEND_RATE_LIMIT = { windowMs: 60 * 60 * 1000, max: 600 };
+
+/**
+ * Invitation budget per TARGET email address, per day — deliberately tight. The
+ * per-inviter cap alone would still let one address be mailed 600 times; this
+ * makes a single person un-spammable no matter how many admins or uploads are
+ * involved, while leaving room for a legitimate resend or two.
+ */
+export const INVITE_TARGET_EMAIL_RATE_LIMIT = { windowMs: 24 * 60 * 60 * 1000, max: 5 };
+
 /** Soft-deleted restaurants become eligible for hard delete after this interval. */
 export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ============================================================================
-// WhatsApp Chatbot (Twilio) — see ADR 007
+// WhatsApp Chatbot (Twilio) — see ADR 010
 // ============================================================================
 //
 // A first responder: customers message a restaurant's WhatsApp number and get
@@ -573,7 +809,7 @@ export const RESTAURANT_SOFT_DELETE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 // their own behalf. A WhatsApp thread is a `Conversation` (deliberately NOT
 // reusing the ordering-domain word "Session"). Inbound routing maps the Twilio
 // "To" number to a `whatsappChannels` row. Writes are scoped to the sender's
-// verified phone number — see ADR 008.
+// verified phone number — see ADR 011.
 
 /** Direction of a stored WhatsApp message relative to the restaurant. */
 export const WHATSAPP_MESSAGE_DIRECTION = {
@@ -660,3 +896,123 @@ export const WHATSAPP_LOCALE = {
 } as const;
 
 export type WhatsappLocale = (typeof WHATSAPP_LOCALE)[keyof typeof WHATSAPP_LOCALE];
+/**
+ * Longest public restaurant slug we will store. The slug is derived from the
+ * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily
+ * long, so the derivation caps them: 60 characters keeps `/r/<slug>/en/menu`
+ * readable in a QR-code target and inside export filenames without truncating
+ * any realistic restaurant name.
+ */
+export const RESTAURANT_SLUG_MAX_LENGTH = 60;
+
+/**
+ * Base used when a name yields nothing slug-able (all emoji / CJK / punctuation).
+ * Deliberately a plain word rather than a random string: the collision counter
+ * then produces `restaurant`, `restaurant-2`, … which is guessable and easy to
+ * rename, instead of an opaque hash the operator would have to copy.
+ */
+export const RESTAURANT_SLUG_FALLBACK_BASE = "restaurant";
+
+/**
+ * How many `-2`, `-3`, … candidates the create mutation tries before giving up.
+ * Bounds the loop so a pathological data set cannot spin a mutation forever;
+ * 50 same-named live restaurants in one deployment is already implausible.
+ */
+export const RESTAURANT_SLUG_MAX_COLLISION_ATTEMPTS = 50;
+
+/**
+ * Restaurant hard-purge coverage (TAVLI-66).
+ *
+ * Every table holding restaurant-scoped rows must appear in exactly one of the
+ * three lists below. `restaurantPurgeCoverage.test.ts` introspects `schema.ts`
+ * and fails when a table carrying a `restaurantId` field (or any
+ * `v.id("restaurants")` reference) is missing from all of them — so adding a
+ * restaurant-scoped table without deciding its purge behavior is a red build,
+ * not silent drift. (`stripeDisputes` was orphaned for months exactly this way:
+ * added after the purge was written, nothing failed.)
+ *
+ * `restaurantPurge.hardDeleteRestaurantDataTyped` types its per-table deletion
+ * counters as `Record<RestaurantPurgeDeletedTable, number>`, so a table added
+ * here without matching cascade code fails to typecheck.
+ */
+export const RESTAURANT_PURGE_DELETED_TABLES = [
+	// Membership & staff
+	TABLE.RESTAURANT_MEMBERS,
+	TABLE.EMPLOYEE_ACCOUNTS,
+	// Menu tree
+	TABLE.MENUS,
+	TABLE.MENU_CATEGORIES,
+	TABLE.MENU_ITEMS,
+	TABLE.OPTION_GROUPS,
+	TABLE.OPTIONS,
+	TABLE.MENU_ITEM_OPTION_GROUPS,
+	// Floor plan
+	TABLE.TABLES,
+	TABLE.SECTIONS,
+	// Dining & ordering
+	TABLE.SESSIONS,
+	TABLE.ORDERS,
+	TABLE.ORDER_ITEMS,
+	TABLE.ORDER_DAY_COUNTERS,
+	TABLE.SUBSTITUTION_PROPOSALS,
+	// Payments
+	TABLE.PAYMENTS,
+	TABLE.STRIPE_WEBHOOK_EVENTS,
+	TABLE.STRIPE_DISPUTES,
+	// Reservations
+	TABLE.RESERVATIONS,
+	TABLE.TABLE_LOCKS,
+	TABLE.RESERVATION_SETTINGS,
+	// Scheduling & attendance
+	TABLE.SHIFTS,
+	TABLE.SHIFT_TEMPLATES,
+	TABLE.SHIFT_TABLE_ASSIGNMENTS,
+	TABLE.SHIFT_SECTION_ASSIGNMENTS,
+	TABLE.SHIFT_ATTENDANCE,
+	TABLE.CLOCK_EVENTS,
+	TABLE.ABSENCES,
+	// Tips
+	TABLE.TIP_POOLS,
+	TABLE.TIP_POOL_SHARES,
+	TABLE.TIP_ENTRIES,
+	// Dashboards
+	TABLE.DASHBOARD_LAYOUTS,
+	TABLE.DASHBOARD_TEMPLATES,
+	// WhatsApp assistant (ADR 010/011) — customer phone numbers and message
+	// bodies, so a purged restaurant must not leave them behind.
+	TABLE.WHATSAPP_CHANNELS,
+	TABLE.WHATSAPP_CONVERSATIONS,
+	TABLE.WHATSAPP_MESSAGES,
+	TABLE.WHATSAPP_PENDING_ACTIONS,
+] as const;
+
+export type RestaurantPurgeDeletedTable = (typeof RESTAURANT_PURGE_DELETED_TABLES)[number];
+
+/**
+ * Tables the purge patches instead of deleting — their rows can span several
+ * restaurants, so only references to the purged restaurant are removed:
+ * - `invitations`: the `restaurantIds` array may cover other restaurants; the
+ *   purged id is filtered out and the invitation revoked only when none remain.
+ * - `userRoles`: org-scoped — a user's roles outlive any one restaurant, so
+ *   rows are never deleted. The single restaurant reference is the legacy
+ *   dev-role-switcher array `devSavedMembershipRoles`; entries pointing at the
+ *   purged restaurant are scrubbed.
+ */
+export const RESTAURANT_PURGE_PATCHED_TABLES = [TABLE.INVITATIONS, TABLE.USER_ROLES] as const;
+
+export type RestaurantPurgePatchedTable = (typeof RESTAURANT_PURGE_PATCHED_TABLES)[number];
+
+/**
+ * Restaurant-linked tables the purge intentionally leaves untouched, keyed by
+ * table name with the reason. Add entries deliberately — never to silence the
+ * coverage test.
+ */
+export const RESTAURANT_PURGE_EXEMPT_TABLES: Partial<Record<TableName, string>> = {
+	[TABLE.ALL_EVENTS]:
+		"Append-only audit trail. Carries an indexed `restaurantId` for querying a " +
+		"restaurant's history, but events must survive the purge — they are the only " +
+		"remaining record of it. The id is deliberately left dangling afterwards.",
+	[TABLE.RATE_LIMITS]:
+		"Fixed-window abuse counters whose string keys may embed restaurant ids. " +
+		"Rows are ephemeral and expire with their window; not worth a scan to purge.",
+};

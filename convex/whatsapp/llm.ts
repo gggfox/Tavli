@@ -9,7 +9,7 @@
  * The model CAN MUTATE DATA: it may request a reservation and start a
  * cancellation. It used to be read-only, and that was the whole basis of the
  * feature's safety argument — so the argument now rests on four things instead
- * (see ADR 008):
+ * (see ADR 011):
  *
  *   1. Identity comes from the transport. `customerPhone` and `restaurantId`
  *      live on the frozen per-turn `BotActor`, never in a tool argument.

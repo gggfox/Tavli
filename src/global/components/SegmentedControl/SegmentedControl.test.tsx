@@ -136,6 +136,45 @@ describe("SegmentedControl", () => {
 		);
 	});
 
+	it("fills the active segment with its tone's solid palette", () => {
+		render(
+			<SegmentedControl
+				options={[
+					{ value: "today", label: "Today", tone: "warning" },
+					{ value: "week", label: "This week", tone: "success" },
+				]}
+				value="today"
+				onChange={() => {}}
+				ariaLabel="Filter by range"
+			/>
+		);
+
+		const active = screen.getByRole("radio", { name: "Today" });
+		expect(active.style.backgroundColor).toBe("var(--accent-warning)");
+		expect(active.style.color).toBe("var(--text-on-accent)");
+
+		// Inactive toned segments keep a transparent background but take the
+		// tone's foreground, matching StatusFilterChips' inactive treatment.
+		const inactive = screen.getByRole("radio", { name: "This week" });
+		expect(inactive.style.backgroundColor).toBe("transparent");
+		expect(inactive.style.color).toBe("var(--accent-success)");
+	});
+
+	it("keeps the neutral primary-button styling when no tone is given", () => {
+		render(
+			<SegmentedControl
+				options={OPTIONS}
+				value="today"
+				onChange={() => {}}
+				ariaLabel="Filter by range"
+			/>
+		);
+
+		const active = screen.getByRole("radio", { name: "Today" });
+		expect(active.style.backgroundColor).toBe("var(--btn-primary-bg)");
+		expect(active.style.color).toBe("var(--btn-primary-text)");
+	});
+
 	it("jumps to the first option on Home and the last on End", () => {
 		function Harness() {
 			const [value, setValue] = useState<Range>("week");

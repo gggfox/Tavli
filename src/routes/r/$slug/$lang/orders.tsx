@@ -19,9 +19,22 @@ function Page() {
 					params: { slug, lang, orderId },
 				})
 			}
+			onContinueCheckout={(orderId) =>
+				navigate({
+					to: "/r/$slug/$lang/checkout",
+					params: { slug, lang },
+					search: { orderId },
+				})
+			}
 			onPayTab={() =>
 				navigate({
 					to: "/r/$slug/$lang/checkout",
+					params: { slug, lang },
+				})
+			}
+			onCloseout={() =>
+				navigate({
+					to: "/r/$slug/$lang/closeout",
 					params: { slug, lang },
 				})
 			}

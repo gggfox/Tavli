@@ -68,6 +68,7 @@ import {
 	checkTablesFreeForReservation,
 	contactValidator,
 	createReservationCore,
+	enforcesBookingHorizon,
 	ensureCancellable,
 	ensureConfirmable,
 	ensureReschedulable,
@@ -468,6 +469,7 @@ export const confirm = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_CONFIRMED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -497,6 +499,10 @@ type RescheduleErrors =
  * replace (drawer), or per-block table move via `fromTableId` / `toTableId`
  * (timeline DnD). `toTableId: null` drops the dragged table onto the
  * unassigned row.
+ *
+ * `completed` rows are reschedulable so staff can correct a wrong duration
+ * after service; the booking horizon is skipped for them (see
+ * `enforcesBookingHorizon`).
  */
 export const reschedule = mutation({
 	args: {
@@ -557,7 +563,10 @@ export const reschedule = mutation({
 			const settings = await loadEffectiveSettings(ctx, reservation.restaurantId);
 			const { maxAdvanceDays } = settings;
 			const now = Date.now();
-			if (!isWithinHorizon({ minAdvanceMinutes: 0, maxAdvanceDays, startsAt, now })) {
+			if (
+				enforcesBookingHorizon(reservation.status) &&
+				!isWithinHorizon({ minAdvanceMinutes: 0, maxAdvanceDays, startsAt, now })
+			) {
 				return [null, new ConflictError("ERROR_OUTSIDE_BOOKING_HORIZON").toObject()];
 			}
 			if (intersectsBlackout(settings, startsAt, endsAt)) {
@@ -644,6 +653,7 @@ export const reschedule = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_RESCHEDULED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -763,6 +773,7 @@ export const reconfirm = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_RECONFIRMED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -782,6 +793,12 @@ export const reconfirm = mutation({
 
 type CancelErrors = StaffAuthErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
+/**
+ * Staff cancellation, including corrections on a `completed` visit: marking
+ * the wrong reservation completed leaves it holding its table window, and
+ * cancelling is how staff release it. Already-cancelled and `no_show` rows are
+ * rejected — those reopen through `reconfirm` instead.
+ */
 export const cancel = mutation({
 	args: {
 		reservationId: v.id(TABLE.RESERVATIONS),
@@ -1004,6 +1021,7 @@ export const markSeated = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_SEATED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -1058,6 +1076,7 @@ export const markCompleted = mutation({
 			aggregateType: TABLE.RESERVATIONS,
 			aggregateId: reservation._id,
 			eventType: AUDIT_EVENT.RESERVATION_COMPLETED,
+			restaurantId: reservation.restaurantId,
 			payload: {
 				restaurantId: reservation.restaurantId,
 				fromStatus: reservation.status,
@@ -1313,6 +1332,7 @@ export const sweepNoShows = internalMutation({
 						aggregateType: TABLE.RESERVATIONS,
 						aggregateId: r._id,
 						eventType: AUDIT_EVENT.RESERVATION_NO_SHOW,
+						restaurantId: restaurant._id,
 						payload: {
 							restaurantId: restaurant._id,
 							fromStatus: status,

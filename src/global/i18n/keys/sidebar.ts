@@ -19,7 +19,6 @@ export const SidebarKeys = {
 	OPTIONS: "sidebar.nav.options",
 	ORDERS: "sidebar.nav.orders",
 	PAYMENTS: "sidebar.nav.payments",
-	TABS: "sidebar.nav.tabs",
 	RESERVATIONS: "sidebar.nav.reservations",
 	TEAM: "sidebar.nav.team",
 	TEAM_INVITES: "sidebar.nav.teamInvites",
@@ -56,6 +55,7 @@ export const SidebarKeys = {
 	// Settings
 	SETTINGS: "sidebar.settings.title",
 	CLOSE: "sidebar.settings.close",
+	ACCOUNT: "sidebar.settings.account",
 	THEME: "sidebar.settings.theme",
 	ROLES: "sidebar.settings.roles",
 	NO_ROLES: "sidebar.settings.noRoles",

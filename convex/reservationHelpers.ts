@@ -506,6 +506,7 @@ export async function createReservationCore(
 		aggregateType: TABLE.RESERVATIONS,
 		aggregateId: id,
 		eventType: AUDIT_EVENT.RESERVATION_CREATED,
+		restaurantId: args.restaurantId,
 		payload: {
 			restaurantId: args.restaurantId,
 			partySize: args.partySize,
@@ -534,13 +535,16 @@ export function ensureConfirmable(
 // ============================================================================
 
 /**
- * Statuses staff may not cancel out of. `completed` is truly terminal; the other
- * two are already terminal-but-recoverable and are reopened via `reconfirm`.
+ * Statuses staff may not cancel out of. Both are terminal-but-recoverable and
+ * are reopened via `reconfirm` instead.
+ *
+ * `completed` is deliberately absent: a completed reservation still occupies its
+ * table window (it is in `ACTIVE_RESERVATION_STATUSES`), so staff who marked the
+ * wrong booking completed need a way to take it out of the floor plan.
  */
 export const STAFF_NON_CANCELLABLE_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.CANCELLED,
 	RESERVATION_STATUS.NO_SHOW,
-	RESERVATION_STATUS.COMPLETED,
 ];
 
 /**
@@ -597,6 +601,9 @@ export async function cancelReservationCore(
 		aggregateType: TABLE.RESERVATIONS,
 		aggregateId: args.reservation._id,
 		eventType: args.eventType,
+		// Indexed (`by_restaurant_time`) so a cancelled booking still shows up in
+		// the restaurant's history — the payload copy below is not queryable.
+		restaurantId: args.reservation.restaurantId,
 		payload: {
 			restaurantId: args.reservation.restaurantId,
 			fromStatus: args.reservation.status,
@@ -659,6 +666,19 @@ const NON_RESCHEDULABLE_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.CANCELLED,
 	RESERVATION_STATUS.NO_SHOW,
 ];
+
+/**
+ * Whether the forward-looking booking horizon applies to a reschedule.
+ *
+ * A `completed` visit already happened, so its `startsAt` is always in the
+ * past and `isWithinHorizon` would reject *every* correction to it. Staff
+ * fixing a mistyped duration after service are not making a booking, so the
+ * horizon does not apply. Window length, the 15-minute minimum, blackout
+ * windows, table capacity and the double-booking check all still run.
+ */
+export function enforcesBookingHorizon(status: ReservationStatus): boolean {
+	return status !== RESERVATION_STATUS.COMPLETED;
+}
 
 export const TERMINAL_RECOVERABLE_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.CANCELLED,

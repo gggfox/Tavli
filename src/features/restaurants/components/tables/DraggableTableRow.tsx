@@ -19,8 +19,11 @@ interface DraggableTableRowProps {
 	selectionMode?: boolean;
 	isSelected?: boolean;
 	onToggleSelect?: () => void;
+	/** A Session is open at this table right now (TAVLI-83). */
+	isOccupied?: boolean;
 	labels: {
 		table: string;
+		occupied: string;
 		seatsFormat: string;
 		editTitle: string;
 		removeTitle: string;
@@ -46,6 +49,7 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 		selectionMode = false,
 		isSelected = false,
 		onToggleSelect,
+		isOccupied = false,
 		labels,
 	} = props;
 	const draggable = useDraggable({
@@ -114,6 +118,11 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 				{table.label && (
 					<span className="text-xs text-faint-foreground truncate">{table.label}</span>
 				)}
+				{isOccupied && (
+					<span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap bg-warning-subtle text-warning">
+						{labels.occupied}
+					</span>
+				)}
 				<span className="text-xs text-faint-foreground">{labels.seatsFormat}</span>
 			</div>
 			{selectionMode ? null : (
@@ -131,6 +140,20 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 							</option>
 						))}
 					</select>
+					{/*
+					 * Editing number and seats is the most-used row action, so it sits
+					 * on the row as a visible pencil rather than behind the kebab. The
+					 * kebab keeps the rarer, destructive-ish actions.
+					 */}
+					<button
+						type="button"
+						onClick={onStartEdit}
+						className="p-1.5 rounded-md hover:bg-hover text-muted-foreground"
+						title={labels.editTitle}
+						aria-label={labels.editTitle}
+					>
+						<Pencil size={16} />
+					</button>
 					<TableActionsKebab
 						isOpen={isKebabOpen}
 						onOpen={onOpenKebab}
@@ -138,17 +161,6 @@ export function DraggableTableRow(props: Readonly<DraggableTableRowProps>) {
 						ariaLabel={labels.rowActionsAria}
 						items={
 							<>
-								<button
-									type="button"
-									onClick={() => {
-										onCloseKebab();
-										onStartEdit();
-									}}
-									className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-hover text-sm text-foreground w-full text-left"
-								>
-									<Pencil size={14} />
-									{labels.editTitle}
-								</button>
 								<button
 									type="button"
 									onClick={() => {

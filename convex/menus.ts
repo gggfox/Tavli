@@ -18,6 +18,7 @@ import { TABLE } from "./constants";
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
 
 const MAX_CATEGORY_NAME_LENGTH = 120;
+const MAX_MENU_NAME_LENGTH = 120;
 
 function validateCategoryName(name: string, field = "name"): UserInputValidationErrorObject | null {
 	const trimmed = name.trim();
@@ -29,6 +30,21 @@ function validateCategoryName(name: string, field = "name"): UserInputValidation
 	if (trimmed.length > MAX_CATEGORY_NAME_LENGTH) {
 		return new UserInputValidationError({
 			fields: [{ field, message: "ERROR_MENU_CATEGORY_NAME_TOO_LONG" }],
+		}).toObject();
+	}
+	return null;
+}
+
+function validateMenuName(name: string): UserInputValidationErrorObject | null {
+	const trimmed = name.trim();
+	if (!trimmed) {
+		return new UserInputValidationError({
+			fields: [{ field: "name", message: "ERROR_MENU_NAME_REQUIRED" }],
+		}).toObject();
+	}
+	if (trimmed.length > MAX_MENU_NAME_LENGTH) {
+		return new UserInputValidationError({
+			fields: [{ field: "name", message: "ERROR_MENU_NAME_TOO_LONG" }],
 		}).toObject();
 	}
 	return null;
@@ -69,6 +85,7 @@ export async function insertMenuForRestaurant(
 		aggregateType: TABLE.MENUS,
 		aggregateId: id,
 		eventType: "menus.created",
+		restaurantId: args.restaurantId,
 		payload: { name: args.name },
 		userId: args.userId,
 	});
@@ -79,6 +96,43 @@ export async function insertMenuForRestaurant(
 // ============================================================================
 // Menu CRUD
 // ============================================================================
+
+/**
+ * Create an empty menu for a restaurant — the "start from scratch" path that
+ * does not require importing a document. The staff UI calls this from the
+ * menus page (header action and empty state); `menuImportMutation` keeps its
+ * own insert because its audit payload records the import as the source.
+ */
+export const createMenu = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		name: v.string(),
+		description: v.optional(v.string()),
+	},
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<"menus">, AuthErrors | UserInputValidationErrorObject> {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return [null, error];
+
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		if (error2) return [null, error2];
+
+		const nameError = validateMenuName(args.name);
+		if (nameError) return [null, nameError];
+
+		const description = args.description?.trim();
+		const menuId = await insertMenuForRestaurant(ctx, {
+			restaurantId: args.restaurantId,
+			name: args.name.trim(),
+			userId,
+			description: description || undefined,
+		});
+
+		return [menuId, null];
+	},
+});
 
 export const updateMenu = mutation({
 	args: {
@@ -113,6 +167,7 @@ export const updateMenu = mutation({
 			aggregateType: TABLE.MENUS,
 			aggregateId: args.menuId,
 			eventType: "menus.updated",
+			restaurantId: menu.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -159,6 +214,7 @@ export const deleteMenu = mutation({
 			aggregateType: TABLE.MENUS,
 			aggregateId: args.menuId,
 			eventType: "menus.deleted",
+			restaurantId: menu.restaurantId,
 			payload: {},
 			userId,
 		});
@@ -194,6 +250,7 @@ export const setMenuTranslation = mutation({
 			aggregateType: TABLE.MENUS,
 			aggregateId: args.menuId,
 			eventType: "menus.translation_set",
+			restaurantId: menu.restaurantId,
 			payload: { lang: args.lang },
 			userId,
 		});
@@ -300,6 +357,7 @@ export const createCategory = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: id,
 			eventType: "menuCategories.created",
+			restaurantId: args.restaurantId,
 			payload: { name: trimmedName },
 			userId,
 		});
@@ -377,6 +435,7 @@ export const createCategories = mutation({
 				aggregateType: TABLE.MENU_CATEGORIES,
 				aggregateId: id,
 				eventType: "menuCategories.created",
+				restaurantId: args.restaurantId,
 				payload: { name },
 				userId,
 			});
@@ -415,6 +474,7 @@ export const updateCategory = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: args.categoryId,
 			eventType: "menuCategories.updated",
+			restaurantId: category.restaurantId,
 			payload: args,
 			userId,
 		});
@@ -481,6 +541,7 @@ export const setCategoryTranslation = mutation({
 			aggregateType: TABLE.MENU_CATEGORIES,
 			aggregateId: args.categoryId,
 			eventType: "menuCategories.translation_set",
+			restaurantId: category.restaurantId,
 			payload: { lang: args.lang },
 			userId,
 		});

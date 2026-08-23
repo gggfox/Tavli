@@ -5,9 +5,11 @@ import { NotFoundError, UserInputValidationError } from "./_shared/errors";
 import {
 	DEFAULT_PREP_STATION,
 	ORDER_PAYMENT_STATE,
+	ORDER_STATUS,
 	PAYMENT_STATUS,
 	PREP_STATION,
 	type PrepStation,
+	SERVED_VISIBLE_WINDOW_MS,
 	TABLE,
 } from "./constants";
 
@@ -27,22 +29,203 @@ export const selectedOptionValidator = v.object({
 	priceModifier: v.number(),
 });
 
+/**
+ * `served` is terminal. Cancelling a paid order refunds the diner, and food
+ * that reached the table should not be refundable from inside the app — that
+ * decision belongs to a manager in the Stripe dashboard, with a reason.
+ *
+ * This closes an API-only hole: the dashboard already renders no Cancel button
+ * on served cards (`statusConfig.ts` sets `served.next = null`, and the button
+ * is gated on `hasNextAction`), so no staff-facing capability is lost.
+ *
+ * `awaiting_payment` (ADR 008) can only be cancelled from here: its paid flips
+ * stay encapsulated in `confirmPayment` (card) and `markOrderPaidInPerson`
+ * (cash), the same pattern as `confirmPayment`'s draft → submitted bypass.
+ */
 export const VALID_TRANSITIONS: Record<string, string[]> = {
+	awaiting_payment: ["cancelled"],
 	submitted: ["preparing", "cancelled"],
 	preparing: ["ready", "cancelled"],
 	ready: ["served", "cancelled"],
-	served: ["cancelled"],
 };
+
+/**
+ * Does this restaurant let a cash round reach the kitchen before the cash is
+ * collected? (`restaurants.releaseCashOrdersImmediately`, TAVLI-81.)
+ *
+ * A missing field is the ADR 008 default — **off** — so every restaurant that
+ * predates the toggle keeps collect-then-cook behaviour untouched.
+ */
+export function releasesCashOrdersImmediately(restaurant: {
+	readonly releaseCashOrdersImmediately?: boolean;
+}): boolean {
+	return restaurant.releaseCashOrdersImmediately === true;
+}
+
+/**
+ * Forward transitions allowed out of `status`, honouring the restaurant's cash
+ * policy.
+ *
+ * With `releaseCashOrdersImmediately` on, an `awaiting_payment` round is real
+ * kitchen work, so it advances **exactly like `submitted`** — same allowlist,
+ * deliberately shared rather than copied, so a future change to the submitted
+ * row can never leave the cash row behind. Off, this is `VALID_TRANSITIONS`
+ * verbatim: cancel is still the only way out of `awaiting_payment`.
+ */
+export function allowedOrderTransitions(
+	status: string,
+	cashReleasedImmediately: boolean
+): string[] | undefined {
+	if (cashReleasedImmediately && status === ORDER_STATUS.AWAITING_PAYMENT) {
+		return VALID_TRANSITIONS[ORDER_STATUS.SUBMITTED];
+	}
+	return VALID_TRANSITIONS[status];
+}
+
+/**
+ * A round the diner committed for in-person payment whose cash staff have not
+ * collected yet — the durable "to collect" fact (TAVLI-81, ADR 008 addendum).
+ *
+ * `status === "awaiting_payment"` alone stopped being sufficient once a
+ * restaurant can release cash orders to the kitchen: such a round advances to
+ * `preparing`/`ready`/`served` while still owing money, so the debt has to be
+ * carried by two fields that outlive the status — `awaitingPaymentAt` (stamped
+ * once, by `orders.requestPayInPerson`, never cleared) and `paidAt` (stamped by
+ * whichever settlement actually happened).
+ *
+ * `paidAt`, not `paymentState !== "paid"`, is the settled test: both settlement
+ * paths write the two together (`confirmPayment`, `markOrderPaidInPerson`), and
+ * `paidAt` survives a later refund. A refunded cash order was collected — the
+ * table owes nothing more, and a `paymentState`-only test would resurrect the
+ * debt the refund closed.
+ *
+ * With the toggle off this is exactly `status === "awaiting_payment"`: a cash
+ * order can only leave that status by being collected (→ `paidAt`), by paying
+ * by card instead (→ `paidAt`), or by being cancelled.
+ */
+export function owesInPersonPayment(order: {
+	readonly status: string;
+	readonly awaitingPaymentAt?: number;
+	readonly paidAt?: number;
+}): boolean {
+	if (order.status === ORDER_STATUS.DRAFT || order.status === ORDER_STATUS.CANCELLED) return false;
+	if (order.status === ORDER_STATUS.AWAITING_PAYMENT) return true;
+	return order.awaitingPaymentAt !== undefined && order.paidAt === undefined;
+}
 
 // Statuses the kitchen dashboard is allowed to surface. `draft` is excluded
 // because drafts are pre-submission state and never belong on the dashboard.
+// `awaiting_payment` is staff-visible (owed cash) but never appears in the
+// default active set — callers must ask for it explicitly, and station rails
+// exclude it unless the restaurant releases cash orders immediately
+// (`hasStationTicket`; ADR 008 + its TAVLI-81 addendum).
 export const DASHBOARD_STATUS_VALIDATOR = v.union(
+	v.literal("awaiting_payment"),
 	v.literal("submitted"),
 	v.literal("preparing"),
 	v.literal("ready"),
 	v.literal("served"),
 	v.literal("cancelled")
 );
+
+/** Every status the dashboard's status filter can select, in segment order. */
+export const DASHBOARD_STATUSES = [
+	"awaiting_payment",
+	"submitted",
+	"preparing",
+	"ready",
+	"served",
+	"cancelled",
+] as const;
+
+export type DashboardStatus = (typeof DASHBOARD_STATUSES)[number];
+
+/**
+ * Cards behind one status segment. `capped` means the scan hit its ceiling
+ * and the true total is higher — the UI renders it as "N+".
+ */
+export interface DashboardStatusCount {
+	readonly count: number;
+	readonly capped: boolean;
+}
+
+export type DashboardStatusCounts = Record<DashboardStatus, DashboardStatusCount>;
+
+/**
+ * Whether an order still shows a ticket on one station's rail.
+ *
+ * The single source of truth for the three rail rules, shared by the
+ * frontend projection (`deriveStationTickets`) and the backend segment
+ * counts — the count on a segment has to agree with the number of cards
+ * behind it, and two copies of this rule would eventually disagree.
+ *
+ * 1. Only `submitted` / `preparing` have station work left. `ready` has
+ *    nothing left to make, `served` / `cancelled` are closed, and
+ *    `awaiting_payment` reaches a rail only where the restaurant releases cash
+ *    orders immediately (TAVLI-81) — otherwise never (ADR 008).
+ * 2. Stamping the station bumps the ticket off that rail.
+ * 3. A station with no live items of its own has nothing to show.
+ */
+export function hasStationTicket(args: {
+	readonly status: string;
+	readonly stationStamp: number | undefined;
+	readonly liveStationItemCount: number;
+	/** `restaurants.releaseCashOrdersImmediately`. Omitted = off = ADR 008. */
+	readonly cashReleasedImmediately?: boolean;
+}): boolean {
+	const isWorkable =
+		args.status === ORDER_STATUS.SUBMITTED ||
+		args.status === ORDER_STATUS.PREPARING ||
+		(args.cashReleasedImmediately === true && args.status === ORDER_STATUS.AWAITING_PAYMENT);
+	if (!isWorkable) return false;
+	if (args.stationStamp !== undefined) return false;
+	return args.liveStationItemCount > 0;
+}
+
+/**
+ * Whether a served order is still recent enough to show on the dashboard's
+ * Served segment. Every other status is left alone.
+ *
+ * The single source of truth for the rule, shared by the two dashboard
+ * queries and the frontend: the queries evaluate it at transaction time so
+ * stale rows are never shipped over the subscription, and the dashboard
+ * re-evaluates it against its own ticking clock, because a Convex query only
+ * re-runs when the data it read changes — never merely because time passed.
+ * Without the client half, the last served order of the night would sit on an
+ * idle board until the next write.
+ *
+ * `servedAt` is the timestamp; `updatedAt` is the fallback for orders served
+ * before that column existed. Nothing is deleted — see
+ * `SERVED_VISIBLE_WINDOW_MS`.
+ */
+export function isServedOrderVisible(
+	order: { readonly status: string; readonly servedAt?: number; readonly updatedAt: number },
+	now: number
+): boolean {
+	if (order.status !== ORDER_STATUS.SERVED) return true;
+	return now - (order.servedAt ?? order.updatedAt) < SERVED_VISIBLE_WINDOW_MS;
+}
+
+/**
+ * Service-day window for the dashboard. "today" is the restaurant's own
+ * business day — its configured rollover (default 04:00 local), so a ticket
+ * opened at 01:00 still belongs to the night that is still being worked.
+ */
+export const SERVICE_DATE_FILTER_VALIDATOR = v.union(v.literal("today"), v.literal("all"));
+
+export type ServiceDateFilter = "today" | "all";
+
+/**
+ * Whose orders the dashboard shows (TAVLI-82).
+ *
+ * "all" is the whole floor and is always available to any staff caller — no
+ * order is ever invisible to everyone. "mine" narrows to the tables the
+ * caller covers right now through their active shift's section assignments,
+ * which is what a server carrying plates actually needs to look at.
+ */
+export const ORDER_SCOPE_VALIDATOR = v.union(v.literal("all"), v.literal("mine"));
+
+export type OrderScope = "all" | "mine";
 
 /**
  * Validator for the `prepStation` literal used in mutation/query args.
@@ -64,21 +247,30 @@ export function resolvePrepStation(
 	return menuItem?.prepStation ?? DEFAULT_PREP_STATION;
 }
 
+/** A line that has been 86'd is no longer prepared, billed, or counted. */
+export function isCancelledOrderItem(item: { cancelledAt?: number }): boolean {
+	return item.cancelledAt !== undefined;
+}
+
 /**
  * Compute the set of prep stations that are "applicable" to an order — i.e.
- * the distinct stations across all of its order items. Used by
+ * the distinct stations across its non-cancelled order items. Used by
  * `markStationReady` to decide when to flip `Order.status` to "ready"
  * (when every applicable station has a non-null `*ReadyAt`).
+ *
+ * Cancelled lines drop out so a station whose every item was 86'd stops
+ * blocking the order: the remaining stations alone can complete it.
  *
  * Items whose menuItem can no longer be loaded (soft-deleted) fall back to
  * the default station so they never silently block the order from completing.
  */
 export function getApplicableStations(
-	orderItems: ReadonlyArray<{ menuItemId: Id<"menuItems"> }>,
+	orderItems: ReadonlyArray<{ menuItemId: Id<"menuItems">; cancelledAt?: number }>,
 	menuItemStationMap: ReadonlyMap<Id<"menuItems"> | string, PrepStation>
 ): Set<PrepStation> {
 	const stations = new Set<PrepStation>();
 	for (const item of orderItems) {
+		if (isCancelledOrderItem(item)) continue;
 		stations.add(menuItemStationMap.get(item.menuItemId) ?? DEFAULT_PREP_STATION);
 	}
 	return stations;
@@ -99,7 +291,13 @@ export async function recalculateTotal(ctx: { db: DatabaseWriter }, orderId: Id<
 		.withIndex("by_order", (q) => q.eq("orderId", orderId))
 		.collect();
 
-	const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
+	// 86'd lines stay on the order but leave the bill, so this is also the
+	// recompute `cancelOrderItem` runs. Draft orders never carry cancelled
+	// items, so the draft callers are unaffected.
+	const total = items.reduce(
+		(sum, item) => (isCancelledOrderItem(item) ? sum : sum + item.lineTotal),
+		0
+	);
 
 	await ctx.db.patch(orderId, { totalAmount: total, updatedAt: Date.now() });
 }

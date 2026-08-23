@@ -12,25 +12,26 @@ import type { SelectedOption } from "../types";
 import { GeofenceNotice } from "./GeofenceNotice";
 import { MenuBrowser } from "./MenuBrowser";
 import { MenuBrowserSkeleton } from "./MenuBrowserSkeleton";
+import { RestaurantContactBar } from "./RestaurantContactBar";
 
 interface CustomerMenuPageProps {
 	slug: string;
 	lang?: string;
 	/**
-	 * TAVLI-6: orders go straight to the kitchen; payment happens at the end
-	 * of the visit from the tab view. Navigates to the session's tab.
+	 * ADR 008 pay-at-submit: the built draft heads to the per-order checkout,
+	 * where the diner pays (or commits to cash) before the kitchen sees it.
 	 */
-	onOrderSubmitted: (orderId: string) => void;
+	onProceedToCheckout: (orderId: string) => void;
 }
 
 export function CustomerMenuPage({
 	slug,
 	lang,
-	onOrderSubmitted,
+	onProceedToCheckout,
 }: Readonly<CustomerMenuPageProps>) {
 	const { t } = useTranslation();
 	const { sessionId, restaurantId } = useSessionStore();
-	const { createDraft, addItem, submitOrder } = useCart();
+	const { createDraft, addItem, setDraftInstructions } = useCart();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
@@ -57,11 +58,15 @@ export function CustomerMenuPage({
 			for (const item of data.items) {
 				await addItem({ orderId, ...item, ...(lang ? { lang } : {}) });
 			}
-			await submitOrder({
-				orderId,
-				specialInstructions: data.specialInstructions,
-			});
-			onOrderSubmitted(orderId);
+			// The notes must live on the draft row before checkout: pay-at-submit
+			// has no diner-side submit call to carry them (ADR 008).
+			if (data.specialInstructions !== undefined) {
+				await setDraftInstructions({
+					orderId,
+					specialInstructions: data.specialInstructions,
+				});
+			}
+			onProceedToCheckout(orderId);
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -93,6 +98,9 @@ export function CustomerMenuPage({
 			isSubmitting={isSubmitting}
 			orderingBlocked={orderingBlocked}
 			blockedNotice={blockedNotice}
+			// Reuses the restaurant already fetched above for the geofence — the
+			// public profile rides along on the same query.
+			contactBar={restaurant ? <RestaurantContactBar restaurant={restaurant} /> : null}
 		/>
 	);
 }

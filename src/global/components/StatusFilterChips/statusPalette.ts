@@ -9,7 +9,12 @@
  * domains (orders, reservations, payments, etc.).
  */
 
-export type StatusTone = "info" | "warning" | "success" | "danger" | "neutral";
+/**
+ * Severity ladder, least to most: `info` → `warning` → `urgent` → `danger`.
+ * `urgent` (orange) is for work waiting on a person right now; `warning`
+ * (yellow) merely flags something worth noticing.
+ */
+export type StatusTone = "info" | "warning" | "urgent" | "success" | "danger" | "neutral";
 
 export interface StatusToneStyle {
 	/** Saturated fill used for active/selected pills and inline badges. */
@@ -33,6 +38,12 @@ export const STATUS_TONE_PALETTE: Record<StatusTone, StatusToneStyle> = {
 		solidBg: "var(--accent-warning)",
 		tintedBg: "var(--accent-warning-light)",
 		fg: "var(--accent-warning)",
+		solidFg: "var(--text-on-accent)",
+	},
+	urgent: {
+		solidBg: "var(--accent-urgent)",
+		tintedBg: "var(--accent-urgent-light)",
+		fg: "var(--accent-urgent)",
 		solidFg: "var(--text-on-accent)",
 	},
 	success: {

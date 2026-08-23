@@ -107,6 +107,29 @@ export async function getRestaurantMembership(
 		.first();
 }
 
+/**
+ * The shadow membership row backing an `EmployeeAccount` (ADR 006), scoped to
+ * one restaurant.
+ *
+ * The Clerk-backed lookup above keys on `userId`; a managed employee has none,
+ * so their row is reached through `employeeAccountId` instead. Callers that
+ * accept an account id from the client must pass `restaurantId` so a row from
+ * another restaurant can never be returned.
+ */
+export async function getRestaurantMembershipByEmployeeAccount(
+	ctx: RoleDbContext,
+	employeeAccountId: Id<"employeeAccounts">,
+	restaurantId: Id<"restaurants">
+): Promise<Doc<"restaurantMembers"> | null> {
+	const member = await ctx.db
+		.query(TABLE.RESTAURANT_MEMBERS)
+		.withIndex("by_employee_account", (q) => q.eq("employeeAccountId", employeeAccountId))
+		.first();
+
+	if (!member || member.restaurantId !== restaurantId) return null;
+	return member;
+}
+
 function orgIdsMatch(orgIdA: string | undefined, orgIdB: Id<"organizations">): boolean {
 	if (!orgIdA) return false;
 	return orgIdA === orgIdB;
@@ -336,6 +359,36 @@ export async function requireRestaurantOwnerOrAdmin(
 	restaurantId: Id<"restaurants">
 ): AsyncReturn<Doc<"restaurants">, RestaurantAccessErrors> {
 	return requireRestaurantAccess(ctx, userId, restaurantId, "owner_admin");
+}
+
+/**
+ * Admin, or org-level owner of the given organization.
+ *
+ * For actions that target another user's org-level `userRoles` row (e.g.
+ * setting their photo from the team drawer). When `organizationId` is
+ * undefined (target row missing or legacy row without an org), only admins
+ * pass — an org owner can never match an unknown org.
+ */
+export async function requireOrgOwnerOrAdmin(
+	ctx: RoleDbContext,
+	userId: string,
+	organizationId: string | undefined
+): AsyncReturn<null, NotAuthorizedErrorObject> {
+	const rows = await fetchUserRoleRecordsByUserId(ctx, userId);
+	if (someRowHasAdmin(rows)) {
+		return [null, null];
+	}
+
+	const isOrgOwner =
+		organizationId != null &&
+		rows.some(
+			(r) => (r.roles ?? []).includes(USER_ROLES.OWNER) && r.organizationId === organizationId
+		);
+	if (isOrgOwner) {
+		return [null, null];
+	}
+
+	return [null, new NotAuthorizedError(RoleErrorMessages.OWNER_REQUIRED).toObject()];
 }
 
 /**

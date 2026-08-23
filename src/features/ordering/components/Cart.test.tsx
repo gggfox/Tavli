@@ -42,13 +42,7 @@ describe("Cart", () => {
 		} as any);
 
 		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={() => {}}
-				onSubmit={() => {}}
-				onRemoveItem={() => {}}
-				isSubmitting={false}
-			/>
+			<Cart orderId={mockOrderId} onBack={() => {}} onSubmit={() => {}} onRemoveItem={() => {}} />
 		);
 		const skeleton = screen.getByLabelText("Loading cart");
 		expect(skeleton).toBeInTheDocument();
@@ -62,13 +56,7 @@ describe("Cart", () => {
 		} as any);
 
 		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={() => {}}
-				onSubmit={() => {}}
-				onRemoveItem={() => {}}
-				isSubmitting={false}
-			/>
+			<Cart orderId={mockOrderId} onBack={() => {}} onSubmit={() => {}} onRemoveItem={() => {}} />
 		);
 		expect(screen.getByText("Your cart is empty. Add some items!")).toBeInTheDocument();
 	});
@@ -80,13 +68,7 @@ describe("Cart", () => {
 		} as any);
 
 		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={() => {}}
-				onSubmit={() => {}}
-				onRemoveItem={() => {}}
-				isSubmitting={false}
-			/>
+			<Cart orderId={mockOrderId} onBack={() => {}} onSubmit={() => {}} onRemoveItem={() => {}} />
 		);
 		expect(screen.getByText("2x Margherita Pizza")).toBeInTheDocument();
 		const priceElements = screen.getAllByText("$24.00");
@@ -100,13 +82,7 @@ describe("Cart", () => {
 		} as any);
 
 		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={() => {}}
-				onSubmit={() => {}}
-				onRemoveItem={() => {}}
-				isSubmitting={false}
-			/>
+			<Cart orderId={mockOrderId} onBack={() => {}} onSubmit={() => {}} onRemoveItem={() => {}} />
 		);
 		expect(screen.getByText("Total")).toBeInTheDocument();
 	});
@@ -119,19 +95,13 @@ describe("Cart", () => {
 
 		const onBack = vi.fn();
 		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={onBack}
-				onSubmit={() => {}}
-				onRemoveItem={() => {}}
-				isSubmitting={false}
-			/>
+			<Cart orderId={mockOrderId} onBack={onBack} onSubmit={() => {}} onRemoveItem={() => {}} />
 		);
 		fireEvent.click(screen.getByText("Back to menu"));
 		expect(onBack).toHaveBeenCalledTimes(1);
 	});
 
-	it("calls onSubmit when Place Order is clicked", () => {
+	it("calls onSubmit when Continue to payment is clicked", () => {
 		vi.mocked(useQuery).mockReturnValue({
 			data: { items: mockItems, totalAmount: 2400 },
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,36 +109,10 @@ describe("Cart", () => {
 
 		const onSubmit = vi.fn();
 		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={() => {}}
-				onSubmit={onSubmit}
-				onRemoveItem={() => {}}
-				isSubmitting={false}
-			/>
+			<Cart orderId={mockOrderId} onBack={() => {}} onSubmit={onSubmit} onRemoveItem={() => {}} />
 		);
-		fireEvent.click(screen.getByText("Place Order"));
+		fireEvent.click(screen.getByText("Continue to payment"));
 		expect(onSubmit).toHaveBeenCalledTimes(1);
-	});
-
-	it("disables submit button and shows submitting text while submitting", () => {
-		vi.mocked(useQuery).mockReturnValue({
-			data: { items: mockItems, totalAmount: 2400 },
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		} as any);
-
-		render(
-			<Cart
-				orderId={mockOrderId}
-				onBack={() => {}}
-				onSubmit={() => {}}
-				onRemoveItem={() => {}}
-				isSubmitting={true}
-			/>
-		);
-		const button = screen.getByText("Placing Order...");
-		expect(button).toBeInTheDocument();
-		expect(button).toBeDisabled();
 	});
 
 	it("calls onRemoveItem when trash button is clicked", () => {
@@ -184,7 +128,6 @@ describe("Cart", () => {
 				onBack={() => {}}
 				onSubmit={() => {}}
 				onRemoveItem={onRemoveItem}
-				isSubmitting={false}
 			/>
 		);
 		const removeButtons = screen

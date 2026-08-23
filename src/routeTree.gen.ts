@@ -18,7 +18,6 @@ import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTeamRouteImport } from './routes/admin/team'
-import { Route as AdminTabsRouteImport } from './routes/admin/tabs'
 import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
@@ -39,6 +38,7 @@ import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.i
 import { Route as RSlugOrderOrderIdRouteImport } from './routes/r/$slug/order/$orderId'
 import { Route as RSlugLangOrdersRouteImport } from './routes/r/$slug/$lang/orders'
 import { Route as RSlugLangMenuRouteImport } from './routes/r/$slug/$lang/menu'
+import { Route as RSlugLangCloseoutRouteImport } from './routes/r/$slug/$lang/closeout'
 import { Route as RSlugLangCheckoutRouteImport } from './routes/r/$slug/$lang/checkout'
 import { Route as RSlugLangCartRouteImport } from './routes/r/$slug/$lang/cart'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
@@ -89,11 +89,6 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 const AdminTeamRoute = AdminTeamRouteImport.update({
   id: '/team',
   path: '/team',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminTabsRoute = AdminTabsRouteImport.update({
-  id: '/tabs',
-  path: '/tabs',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminScheduleRoute = AdminScheduleRouteImport.update({
@@ -196,6 +191,11 @@ const RSlugLangMenuRoute = RSlugLangMenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => RSlugLangRoute,
 } as any)
+const RSlugLangCloseoutRoute = RSlugLangCloseoutRouteImport.update({
+  id: '/closeout',
+  path: '/closeout',
+  getParentRoute: () => RSlugLangRoute,
+} as any)
 const RSlugLangCheckoutRoute = RSlugLangCheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
@@ -239,7 +239,6 @@ export interface FileRoutesByFullPath {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
-  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -259,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
   '/r/$slug/$lang/checkout': typeof RSlugLangCheckoutRoute
+  '/r/$slug/$lang/closeout': typeof RSlugLangCloseoutRoute
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
@@ -277,7 +277,6 @@ export interface FileRoutesByTo {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
-  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -297,6 +296,7 @@ export interface FileRoutesByTo {
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
   '/r/$slug/$lang/checkout': typeof RSlugLangCheckoutRoute
+  '/r/$slug/$lang/closeout': typeof RSlugLangCloseoutRoute
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
@@ -316,7 +316,6 @@ export interface FileRoutesById {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
-  '/admin/tabs': typeof AdminTabsRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
   '/invites/$token': typeof InvitesTokenRoute
@@ -336,6 +335,7 @@ export interface FileRoutesById {
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/r/$slug/$lang/cart': typeof RSlugLangCartRoute
   '/r/$slug/$lang/checkout': typeof RSlugLangCheckoutRoute
+  '/r/$slug/$lang/closeout': typeof RSlugLangCloseoutRoute
   '/r/$slug/$lang/menu': typeof RSlugLangMenuRoute
   '/r/$slug/$lang/orders': typeof RSlugLangOrdersRoute
   '/r/$slug/order/$orderId': typeof RSlugOrderOrderIdRoute
@@ -356,7 +356,6 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
-    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -376,6 +375,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/spa-mode'
     | '/r/$slug/$lang/cart'
     | '/r/$slug/$lang/checkout'
+    | '/r/$slug/$lang/closeout'
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
@@ -394,7 +394,6 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
-    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -414,6 +413,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/spa-mode'
     | '/r/$slug/$lang/cart'
     | '/r/$slug/$lang/checkout'
+    | '/r/$slug/$lang/closeout'
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
@@ -432,7 +432,6 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/restaurants'
     | '/admin/schedule'
-    | '/admin/tabs'
     | '/admin/team'
     | '/admin/users'
     | '/invites/$token'
@@ -452,6 +451,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/spa-mode'
     | '/r/$slug/$lang/cart'
     | '/r/$slug/$lang/checkout'
+    | '/r/$slug/$lang/closeout'
     | '/r/$slug/$lang/menu'
     | '/r/$slug/$lang/orders'
     | '/r/$slug/order/$orderId'
@@ -532,13 +532,6 @@ declare module '@tanstack/react-router' {
       path: '/team'
       fullPath: '/admin/team'
       preLoaderRoute: typeof AdminTeamRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/tabs': {
-      id: '/admin/tabs'
-      path: '/tabs'
-      fullPath: '/admin/tabs'
-      preLoaderRoute: typeof AdminTabsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/schedule': {
@@ -681,6 +674,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RSlugLangMenuRouteImport
       parentRoute: typeof RSlugLangRoute
     }
+    '/r/$slug/$lang/closeout': {
+      id: '/r/$slug/$lang/closeout'
+      path: '/closeout'
+      fullPath: '/r/$slug/$lang/closeout'
+      preLoaderRoute: typeof RSlugLangCloseoutRouteImport
+      parentRoute: typeof RSlugLangRoute
+    }
     '/r/$slug/$lang/checkout': {
       id: '/r/$slug/$lang/checkout'
       path: '/checkout'
@@ -757,7 +757,6 @@ interface AdminRouteChildren {
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
-  AdminTabsRoute: typeof AdminTabsRoute
   AdminTeamRoute: typeof AdminTeamRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
@@ -772,7 +771,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
-  AdminTabsRoute: AdminTabsRoute,
   AdminTeamRoute: AdminTeamRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
@@ -785,6 +783,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface RSlugLangRouteChildren {
   RSlugLangCartRoute: typeof RSlugLangCartRoute
   RSlugLangCheckoutRoute: typeof RSlugLangCheckoutRoute
+  RSlugLangCloseoutRoute: typeof RSlugLangCloseoutRoute
   RSlugLangMenuRoute: typeof RSlugLangMenuRoute
   RSlugLangOrdersRoute: typeof RSlugLangOrdersRoute
   RSlugLangOrderOrderIdRoute: typeof RSlugLangOrderOrderIdRoute
@@ -793,6 +792,7 @@ interface RSlugLangRouteChildren {
 const RSlugLangRouteChildren: RSlugLangRouteChildren = {
   RSlugLangCartRoute: RSlugLangCartRoute,
   RSlugLangCheckoutRoute: RSlugLangCheckoutRoute,
+  RSlugLangCloseoutRoute: RSlugLangCloseoutRoute,
   RSlugLangMenuRoute: RSlugLangMenuRoute,
   RSlugLangOrdersRoute: RSlugLangOrdersRoute,
   RSlugLangOrderOrderIdRoute: RSlugLangOrderOrderIdRoute,

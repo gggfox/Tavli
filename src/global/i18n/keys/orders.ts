@@ -10,12 +10,24 @@ export const OrdersKeys = {
 	PAGE_TITLE: "orders.page.title",
 	PAGE_DESCRIPTION: "orders.page.description",
 
+	STATUS_AWAITING_PAYMENT: "orders.status.awaitingPayment",
 	STATUS_SUBMITTED: "orders.status.submitted",
 	STATUS_PREPARING: "orders.status.preparing",
 	STATUS_READY: "orders.status.ready",
 	STATUS_SERVED: "orders.status.served",
 	STATUS_CANCELLED: "orders.status.cancelled",
 
+	SERVICE_DATE_TODAY: "orders.serviceDate.today",
+	SERVICE_DATE_ALL: "orders.serviceDate.all",
+	ARIA_SERVICE_DATE_FILTER: "orders.aria.serviceDateFilter",
+
+	/** Scope filter: the tables the user covers on their current shift. */
+	SCOPE_MINE: "orders.scope.mine",
+	/** Scope filter: every table in the restaurant. */
+	SCOPE_ALL: "orders.scope.all",
+	ARIA_SCOPE_FILTER: "orders.aria.scopeFilter",
+
+	STATION_ALL: "orders.station.all",
 	STATION_KITCHEN: "orders.station.kitchen",
 	STATION_BAR: "orders.station.bar",
 	STATION_READY_BADGE: "orders.station.readyBadge",
@@ -32,19 +44,78 @@ export const OrdersKeys = {
 	ACTION_KEEP_ORDER: "orders.actions.keepOrder",
 	ACTION_VIEW_FULL_ORDER: "orders.actions.viewFullOrder",
 
+	ACTION_MARK_PAID_IN_PERSON: "orders.markPaid.action",
+	MARK_PAID_PROMPT_TITLE: "orders.markPaid.promptTitle",
+	MARK_PAID_PROMPT_BODY: "orders.markPaid.promptBody",
+	MARK_PAID_CONFIRM: "orders.markPaid.confirm",
+	MARK_PAID_DISMISS: "orders.markPaid.dismiss",
+	MARK_PAID_PENDING: "orders.markPaid.pending",
+	MARK_PAID_AMOUNT_DUE: "orders.markPaid.amountDue",
+
 	CANCEL_PROMPT: "orders.cancel.prompt",
 	CANCEL_PAID_PROMPT: "orders.cancel.paidPrompt",
+	CANCEL_REFUND_PENDING: "orders.cancel.refundPending",
+	CANCEL_REFUND_FAILED_BANNER: "orders.cancel.refundFailedBanner",
+
+	/** Money the table still owes in person — the badge that follows a cash round. */
+	PAYMENT_TO_COLLECT: "orders.payment.toCollect",
+	PAYMENT_PENDING: "orders.payment.pending",
+	PAYMENT_REFUND_REQUESTED: "orders.payment.refundRequested",
+	PAYMENT_REFUNDED: "orders.payment.refunded",
+	PAYMENT_REFUND_FAILED: "orders.payment.refundFailed",
 
 	CARD_TABLE: "orders.card.table",
+	/** Shown when an order's table row is gone — never render "Table 0". */
+	CARD_TABLE_NONE: "orders.card.tableNone",
 	CARD_DAY_NUMBER: "orders.card.dayNumber",
 	CARD_PAID: "orders.card.paid",
 	CARD_MORE_ITEMS: "orders.card.moreItems",
 
-	EMPTY_NO_FILTERS: "orders.empty.noFilters",
-	EMPTY_NO_ORDERS: "orders.empty.noOrders",
+	TICKET_ORDER_NOTE: "orders.ticket.orderNote",
+	TICKET_ITEM_CANCELLED_BADGE: "orders.ticket.itemCancelledBadge",
+	ACTION_CANCEL_ITEM: "orders.ticket.cancelItem",
+	CANCEL_ITEM_PROMPT: "orders.ticket.cancelItemPrompt",
+	/** Paid-line variant: 86'ing refunds the line + fee share automatically (ADR 008). */
+	CANCEL_ITEM_PAID_PROMPT: "orders.ticket.cancelItemPaidPrompt",
+	ACTION_CONFIRM_CANCEL_ITEM: "orders.ticket.confirmCancelItem",
+	ACTION_KEEP_ITEM: "orders.ticket.keepItem",
 
-	ARIA_FILTER: "orders.aria.filter",
+	// Substitutions on paid lines (ADR 008, TAVLI-71 Phase 3A)
+	SUB_ACTION_PROPOSE: "orders.substitution.propose",
+	SUB_PENDING_BADGE: "orders.substitution.pendingBadge",
+	SUB_ACTION_CANCEL_PROPOSAL: "orders.substitution.cancelProposal",
+	SUB_DIALOG_TITLE: "orders.substitution.dialogTitle",
+	SUB_DIALOG_SUBTITLE: "orders.substitution.dialogSubtitle",
+	SUB_DIALOG_EMPTY: "orders.substitution.dialogEmpty",
+	SUB_DELTA_FREE: "orders.substitution.deltaFree",
+	SUB_DELTA_PREVIEW: "orders.substitution.deltaPreview",
+	SUB_DIALOG_CONFIRM: "orders.substitution.confirm",
+	SUB_DIALOG_DISMISS: "orders.substitution.dismiss",
+	TICKET_UNDO_READY: "orders.ticket.undoReady",
+	TICKET_MARKED_READY: "orders.ticket.markedReady",
+	TICKET_EMPTY_ALL_DONE: "orders.ticket.emptyAllDone",
+
+	/**
+	 * Standing note on the Served segment: served orders age off the board
+	 * after `SERVED_VISIBLE_WINDOW_MS` and where to find the older ones.
+	 * Takes `{{ minutes }}`.
+	 */
+	SERVED_WINDOW_HINT: "orders.servedWindow.hint",
+
+	EMPTY_NO_ORDERS: "orders.empty.noOrders",
+	/** Served segment with nothing inside the window. Takes `{{ minutes }}`. */
+	EMPTY_NO_RECENT_SERVED: "orders.empty.noRecentServed",
+	/** Scoped to "mine", with sections assigned but no orders in them. */
+	EMPTY_NO_ORDERS_IN_MY_SECTIONS: "orders.empty.noOrdersInMySections",
+	/** Scoped to "mine" with no active section assignment at all. */
+	EMPTY_NO_ACTIVE_SECTION: "orders.empty.noActiveSection",
+	/** Sits under `EMPTY_NO_ACTIVE_SECTION`; points at the All segment. */
+	EMPTY_NO_ACTIVE_SECTION_HINT: "orders.empty.noActiveSectionHint",
+
+	ARIA_STATUS_SEGMENTS: "orders.aria.statusSegments",
 	ARIA_STATION_FILTER: "orders.aria.stationFilter",
+	ARIA_CANCEL_ITEM: "orders.aria.cancelItem",
+	ARIA_PROPOSE_SUBSTITUTION: "orders.aria.proposeSubstitution",
 	ARIA_FULL_ORDER: "orders.aria.fullOrder",
 	ARIA_LOADING: "orders.aria.loading",
 } as const;

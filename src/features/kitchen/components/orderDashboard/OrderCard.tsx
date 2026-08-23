@@ -1,17 +1,28 @@
-import type { OrderDashboardStatusFilter } from "@/features";
+import type { OrderDashboardStatusFilterValue } from "@/features";
 import { getStatusToneStyle, StatusBadge, Surface } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
-import { CheckCircle2, ChefHat, Clock, CreditCard, UtensilsCrossed, XCircle } from "lucide-react";
+import {
+	BadgeDollarSign,
+	CheckCircle2,
+	ChefHat,
+	Clock,
+	UtensilsCrossed,
+	XCircle,
+} from "lucide-react";
 import { type CSSProperties, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
+import { PaymentStateBadge } from "./PaymentStateBadge";
 import { STATION_CONFIG, type DashboardPrepStation } from "./stationConfig";
+import { TableBadge } from "./TableBadge";
+import { owesInPersonPayment } from "convex/orderHelpers";
 import {
 	formatOrderDate,
 	formatOrderTime,
 	MAX_VISIBLE_ITEMS,
+	nextActionFor,
 	STATUS_CONFIG,
 	URGENCY_TEXT_CLASS,
 	type DashboardOrder,
@@ -30,9 +41,21 @@ interface OrderCardProps {
 	 * selected we fall back to the whole-order action.
 	 */
 	activeStationFilters: ReadonlySet<DashboardPrepStation>;
+	/** Order id whose cancel is in flight, if any. Disables the confirm button. */
+	cancelPendingId: string | null;
+	/** Order id currently showing the mark-paid confirmation, if any (ADR 008). */
+	markPaidConfirm: string | null;
+	/** Order id whose mark-paid mutation is in flight, if any. */
+	markPaidPendingId: string | null;
+	/** Localized failure message of the last mark-paid attempt on this card. */
+	markPaidError: string | null;
 	onSelectFullOrder: (order: DashboardOrder) => void;
 	onRequestCancel: (orderId: string) => void;
 	onDismissCancel: () => void;
+	onCancelOrder: (orderId: DashboardOrder["_id"]) => void;
+	onRequestMarkPaid: (orderId: string) => void;
+	onDismissMarkPaid: () => void;
+	onMarkPaidInPerson: (orderId: DashboardOrder["_id"]) => void;
 	onUpdateStatus: (args: { orderId: DashboardOrder["_id"]; newStatus: NextOrderStatus }) => void;
 	onMarkStationReady: (args: {
 		orderId: DashboardOrder["_id"];
@@ -45,20 +68,57 @@ export function OrderCard({
 	now,
 	cancelConfirm,
 	activeStationFilters,
+	cancelPendingId,
+	markPaidConfirm,
+	markPaidPendingId,
+	markPaidError,
 	onSelectFullOrder,
 	onRequestCancel,
 	onDismissCancel,
+	onCancelOrder,
+	onRequestMarkPaid,
+	onDismissMarkPaid,
+	onMarkPaidInPerson,
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
 	const { t, i18n } = useTranslation();
-	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilter];
+	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilterValue];
+	// The money UI on an awaiting-payment card — amount due, mark-paid confirm
+	// panel, mark-paid button — takes that status's own tone, so recoloring the
+	// status never leaves the card mixing two palettes.
+	const awaitingPaymentTone = getStatusToneStyle(STATUS_CONFIG.awaiting_payment.tone);
 	const visibleItems = order.items.slice(0, MAX_VISIBLE_ITEMS);
 	const hiddenCount = order.items.length - visibleItems.length;
-	const age = getRelativeTime(order.createdAt, now);
-	const absoluteTimestamp = `${formatOrderDate(order.createdAt, i18n.language)}, ${formatOrderTime(order.createdAt, i18n.language)}`;
-	const hasNextAction = config.next !== null && config.nextLabelKey !== null;
+	const isAwaitingPayment = order.status === "awaiting_payment";
+	// For an awaiting-payment card the clock that matters is "how long has
+	// this table owed cash", not "when was the order created".
+	const ageBasis = isAwaitingPayment
+		? (order.awaitingPaymentAt ?? order.createdAt)
+		: order.createdAt;
+	const age = getRelativeTime(ageBasis, now);
+	const absoluteTimestamp = `${formatOrderDate(ageBasis, i18n.language)}, ${formatOrderTime(ageBasis, i18n.language)}`;
+	// Where the restaurant releases cash orders immediately, an uncollected
+	// round advances exactly like `submitted` (TAVLI-81) — same borrow the
+	// backend's transition table makes, so the button and the server agree.
+	const nextAction = nextActionFor(order.status, order.cashReleasedImmediately);
+	const hasNextAction = nextAction !== null;
+	// The debt, not the status: a released cash round keeps owing through
+	// `preparing`/`ready`/`served`, and "mark paid in person" has to follow it
+	// there or collecting becomes unreachable the moment the kitchen accepts.
+	const owesCash = owesInPersonPayment(order);
+	// Cancel stays exactly where it was: on cards with a forward action, plus
+	// the awaiting-payment card. `served` and `cancelled` still offer none —
+	// `served` is terminal and the backend rejects the transition.
+	const showCancel = hasNextAction || isAwaitingPayment;
 	const isCancelling = cancelConfirm === order._id;
+	const isCancelPending = cancelPendingId === order._id;
+	const isMarkPaidConfirming = markPaidConfirm === order._id;
+	const isMarkPaidPending = markPaidPendingId === order._id;
+	// `stripePaymentIntentId` is only ever set on legacy per-order payments — it
+	// is undefined for every tab-paid order, which is all of them in practice.
+	// `paymentState` is the field that actually tracks the money.
+	const isPaid = order.paymentState === "paid";
 	const moreItemsLabel =
 		hiddenCount > 0
 			? `${t(OrdersKeys.CARD_MORE_ITEMS, { count: hiddenCount })} · ${t(OrdersKeys.ACTION_VIEW_FULL_ORDER)}`
@@ -94,14 +154,17 @@ export function OrderCard({
 			<div className="px-4 py-3 shrink-0 border-b border-border">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-center gap-2 min-w-0">
+						{/* Table first and loudest: a server reads the destination before
+						    anything else on the card (TAVLI-80). */}
+						<TableBadge
+							tableNumber={order.tableNumber}
+							className="shrink-0 text-xl font-bold leading-tight text-foreground"
+						/>
 						<StatusBadge
 							bgColor={getStatusToneStyle(config.tone).solidBg}
 							textColor={getStatusToneStyle(config.tone).solidFg}
 							label={t(config.labelKey)}
 						/>
-						<span className="text-sm font-medium truncate text-foreground">
-							{t(OrdersKeys.CARD_TABLE, { number: order.tableNumber })}
-						</span>
 						{order.dailyOrderNumber != null && (
 							<span
 								className="text-sm font-bold tabular-nums shrink-0 text-foreground"
@@ -110,20 +173,44 @@ export function OrderCard({
 								{t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })}
 							</span>
 						)}
-						{order.paidAt && (
-							<span
-								className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-success"
-								style={{ color: "white" }}
-							>
-								<CreditCard size={10} />
-								{t(OrdersKeys.CARD_PAID)}
-							</span>
-						)}
+						<PaymentStateBadge order={order} />
 					</div>
 					<span className="text-sm font-semibold shrink-0 text-foreground">
 						${formatCents(order.totalAmount)}
 					</span>
 				</div>
+
+				{isAwaitingPayment && (
+					<div
+						className="flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-lg"
+						style={{
+							backgroundColor: awaitingPaymentTone.tintedBg,
+							color: awaitingPaymentTone.fg,
+						}}
+					>
+						<div className="min-w-0">
+							{/* Same swap as the header: the table leads, the order number
+							    identifies (TAVLI-80). */}
+							<TableBadge
+								tableNumber={order.tableNumber}
+								className="block truncate text-xl font-bold leading-tight"
+							/>
+							<span className="block text-xs font-medium tabular-nums truncate">
+								{order.dailyOrderNumber != null
+									? t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })
+									: `#${order._id.slice(-6)}`}
+							</span>
+						</div>
+						<div className="text-right shrink-0">
+							<span className="block text-[10px] font-medium uppercase tracking-wide">
+								{t(OrdersKeys.MARK_PAID_AMOUNT_DUE)}
+							</span>
+							<span className="block text-xl font-bold tabular-nums leading-tight">
+								${formatCents(order.totalAmount)}
+							</span>
+						</div>
+					</div>
+				)}
 
 				{orderStations.length > 0 && (
 					<div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -175,6 +262,13 @@ export function OrderCard({
 						</span>
 					</span>
 				</div>
+
+				{order.specialInstructions && (
+					<p className="mt-1.5 text-xs italic text-warning">
+						<span className="font-medium not-italic">{t(OrdersKeys.TICKET_ORDER_NOTE)}: </span>
+						{order.specialInstructions}
+					</p>
+				)}
 			</div>
 
 			<div className="p-4 space-y-2 flex-1 min-h-0 max-h-72 overflow-y-auto">
@@ -201,64 +295,145 @@ export function OrderCard({
 						}}
 					>
 						<p className="text-xs font-medium text-destructive">
-							{order.stripePaymentIntentId
-								? t(OrdersKeys.CANCEL_PAID_PROMPT)
-								: t(OrdersKeys.CANCEL_PROMPT)}
+							{isPaid ? t(OrdersKeys.CANCEL_PAID_PROMPT) : t(OrdersKeys.CANCEL_PROMPT)}
 						</p>
 						<div className="flex gap-2">
 							<button
-								onClick={() => {
-									onUpdateStatus({
-										orderId: order._id,
-										newStatus: "cancelled",
-									});
-									onDismissCancel();
-								}}
-								className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-destructive"
+								onClick={() => onCancelOrder(order._id)}
+								disabled={isCancelPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-destructive disabled:opacity-60"
 								style={{ color: "white" }}
 							>
-								{order.stripePaymentIntentId
-									? t(OrdersKeys.ACTION_CANCEL_AND_REFUND)
-									: t(OrdersKeys.ACTION_CONFIRM_CANCEL)}
+								{isCancelPending
+									? t(OrdersKeys.CANCEL_REFUND_PENDING)
+									: isPaid
+										? t(OrdersKeys.ACTION_CANCEL_AND_REFUND)
+										: t(OrdersKeys.ACTION_CONFIRM_CANCEL)}
 							</button>
 							<button
 								onClick={onDismissCancel}
-								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground"
+								disabled={isCancelPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground disabled:opacity-60"
 							>
 								{t(OrdersKeys.ACTION_KEEP_ORDER)}
 							</button>
 						</div>
 					</div>
-				) : (
-					hasNextAction && (
+				) : isMarkPaidConfirming ? (
+					<div
+						className="p-3 rounded-lg space-y-2"
+						style={{
+							backgroundColor: awaitingPaymentTone.tintedBg,
+							border: `1px solid ${awaitingPaymentTone.solidBg}`,
+						}}
+					>
+						<p className="text-xs font-semibold text-foreground">
+							{t(OrdersKeys.MARK_PAID_PROMPT_TITLE)}
+						</p>
+						<p className="text-xs text-muted-foreground">
+							{t(OrdersKeys.MARK_PAID_PROMPT_BODY, {
+								amount: `$${formatCents(order.totalAmount)}`,
+							})}
+						</p>
+						{markPaidError && (
+							<p role="alert" className="text-xs font-medium text-destructive">
+								{markPaidError}
+							</p>
+						)}
 						<div className="flex gap-2">
-							{config.next && config.nextLabelKey && (
-								<NextActionButton
-									order={order}
-									config={config}
-									stationActionTarget={stationActionTarget}
-									onUpdateStatus={onUpdateStatus}
-									onMarkStationReady={onMarkStationReady}
-								/>
-							)}
 							<button
-								onClick={() => onRequestCancel(order._id)}
-								className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
+								onClick={() => onMarkPaidInPerson(order._id)}
+								disabled={isMarkPaidPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
+								style={{
+									backgroundColor: awaitingPaymentTone.solidBg,
+									color: awaitingPaymentTone.solidFg,
+								}}
 							>
-								<XCircle size={14} />
-								{t(OrdersKeys.ACTION_CANCEL)}
+								{isMarkPaidPending
+									? t(OrdersKeys.MARK_PAID_PENDING)
+									: t(OrdersKeys.MARK_PAID_CONFIRM)}
+							</button>
+							<button
+								onClick={onDismissMarkPaid}
+								disabled={isMarkPaidPending}
+								className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground disabled:opacity-60"
+							>
+								{t(OrdersKeys.MARK_PAID_DISMISS)}
 							</button>
 						</div>
-					)
+					</div>
+				) : (
+					<>
+						{/* Money gets its own row only when the workflow row is already
+						    spoken for. A card with nothing to advance (today's
+						    awaiting-payment card) keeps the original side-by-side
+						    "Mark paid · Cancel" pair below. */}
+						{owesCash && hasNextAction && (
+							<MarkPaidButton
+								tone={awaitingPaymentTone}
+								onClick={() => onRequestMarkPaid(order._id)}
+							/>
+						)}
+						{(hasNextAction || owesCash || showCancel) && (
+							<div className="flex gap-2">
+								{hasNextAction ? (
+									<NextActionButton
+										order={order}
+										nextAction={nextAction}
+										stationActionTarget={stationActionTarget}
+										onUpdateStatus={onUpdateStatus}
+										onMarkStationReady={onMarkStationReady}
+									/>
+								) : owesCash ? (
+									<MarkPaidButton
+										tone={awaitingPaymentTone}
+										onClick={() => onRequestMarkPaid(order._id)}
+									/>
+								) : null}
+								{showCancel && (
+									<button
+										onClick={() => onRequestCancel(order._id)}
+										className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-border text-destructive"
+									>
+										<XCircle size={14} />
+										{t(OrdersKeys.ACTION_CANCEL)}
+									</button>
+								)}
+							</div>
+						)}
+					</>
 				)}
 			</div>
 		</Surface>
 	);
 }
 
+/**
+ * "Staff collected the cash." Rendered wherever a round still owes it — its
+ * own row above a workflow action, or in the workflow row's place on a card
+ * with nothing left to advance.
+ */
+function MarkPaidButton({
+	tone,
+	onClick,
+}: Readonly<{ tone: ReturnType<typeof getStatusToneStyle>; onClick: () => void }>) {
+	const { t } = useTranslation();
+	return (
+		<button
+			onClick={onClick}
+			className="flex-1 w-full flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium"
+			style={{ backgroundColor: tone.solidBg, color: tone.solidFg }}
+		>
+			<BadgeDollarSign size={14} />
+			{t(OrdersKeys.ACTION_MARK_PAID_IN_PERSON)}
+		</button>
+	);
+}
+
 interface NextActionButtonProps {
 	readonly order: DashboardOrder;
-	readonly config: (typeof STATUS_CONFIG)[OrderDashboardStatusFilter];
+	readonly nextAction: { next: NextOrderStatus; nextLabelKey: string };
 	readonly stationActionTarget: DashboardPrepStation | null;
 	readonly onUpdateStatus: (args: {
 		orderId: DashboardOrder["_id"];
@@ -281,13 +456,13 @@ interface NextActionButtonProps {
  */
 function NextActionButton({
 	order,
-	config,
+	nextAction,
 	stationActionTarget,
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<NextActionButtonProps>) {
 	const { t } = useTranslation();
-	const stationOnlyAdvance = stationActionTarget !== null && config.next === "ready";
+	const stationOnlyAdvance = stationActionTarget !== null && nextAction.next === "ready";
 
 	if (stationOnlyAdvance) {
 		const stationConfig = STATION_CONFIG[stationActionTarget];
@@ -307,21 +482,15 @@ function NextActionButton({
 		);
 	}
 
-	if (!config.next || !config.nextLabelKey) return null;
 	return (
 		<button
-			onClick={() =>
-				onUpdateStatus({
-					orderId: order._id,
-					newStatus: config.next as NextOrderStatus,
-				})
-			}
+			onClick={() => onUpdateStatus({ orderId: order._id, newStatus: nextAction.next })}
 			className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 		>
-			{config.next === "preparing" && <ChefHat size={14} />}
-			{config.next === "ready" && <CheckCircle2 size={14} />}
-			{config.next === "served" && <UtensilsCrossed size={14} />}
-			{t(config.nextLabelKey)}
+			{nextAction.next === "preparing" && <ChefHat size={14} />}
+			{nextAction.next === "ready" && <CheckCircle2 size={14} />}
+			{nextAction.next === "served" && <UtensilsCrossed size={14} />}
+			{t(nextAction.nextLabelKey)}
 		</button>
 	);
 }

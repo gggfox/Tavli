@@ -8,6 +8,7 @@ import {
 	CLOCK_EVENT_TYPE,
 	INVITATION_STATUS,
 	ORDER_PAYMENT_STATE,
+	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PREP_STATION,
@@ -16,6 +17,7 @@ import {
 	RESTAURANT_MEMBER_ROLE,
 	SESSION_PAYMENT_STATE,
 	SHIFT_STATUS,
+	SUBSTITUTION_PROPOSAL_STATUS,
 	TABLE,
 	TIP_DISTRIBUTION_RULE,
 	TIP_ENTRY_SOURCE,
@@ -52,9 +54,23 @@ export default defineSchema({
 		sidebarExpanded: v.optional(v.boolean()),
 		language: v.optional(v.union(v.literal("en"), v.literal("es"))),
 		reservationSoundEnabled: v.optional(v.boolean()),
-		// Subset of order statuses the OrderDashboard should display.
+		// Single order status the OrderDashboard should display (ADR 008).
 		// `draft` is intentionally excluded: drafts are pre-submission state
-		// and never belong on the kitchen dashboard.
+		// and never belong on the kitchen dashboard. `awaiting_payment` is a
+		// staff-facing status, so it IS a valid filter here.
+		orderDashboardStatusFilter: v.optional(
+			v.union(
+				v.literal("awaiting_payment"),
+				v.literal("submitted"),
+				v.literal("preparing"),
+				v.literal("ready"),
+				v.literal("served"),
+				v.literal("cancelled")
+			)
+		),
+		// LEGACY multi-select predecessor of `orderDashboardStatusFilter`.
+		// Removed after `migrations/backfillOrderDashboardStatusFilter` has run
+		// in every environment.
 		orderDashboardStatusFilters: v.optional(
 			v.array(
 				v.union(
@@ -73,6 +89,17 @@ export default defineSchema({
 		orderDashboardPrepStationFilters: v.optional(
 			v.array(v.union(v.literal("kitchen"), v.literal("bar")))
 		),
+		// Service-day window the OrderDashboard should display. "today" means
+		// the restaurant's current business day (its 04:00-style rollover, not
+		// midnight UTC); "all" is every order ever, which is the pre-existing
+		// behavior and so stays the default for a user who never picked.
+		orderDashboardServiceDateFilter: v.optional(v.union(v.literal("today"), v.literal("all"))),
+		// Whose orders the OrderDashboard shows: "all" is the whole floor,
+		// "mine" only the tables the user covers right now through their active
+		// shift's section assignments. Absent means the user has never touched
+		// the toggle, so the dashboard picks the default from their shift (a
+		// server on shift starts scoped; everyone else starts on "all").
+		orderDashboardScope: v.optional(v.union(v.literal("all"), v.literal("mine"))),
 		// Sidebar accordion groups the user has open. Identified by the group's
 		// translationKey (e.g. "sidebar.team"). Unknown keys are ignored at
 		// render time so removing groups later is safe.
@@ -115,7 +142,12 @@ export default defineSchema({
 		devSimulateEmployeeTier: v.optional(v.boolean()),
 	})
 		.index("by_user", ["userId"])
-		.index("by_organizationId", ["organizationId"]),
+		.index("by_organizationId", ["organizationId"])
+		// Admin onboarding classifies a prospective invitee by email (does this
+		// person already hold a role, and in which organization?). Without this
+		// index a 500-row CSV preview would full-scan `userRoles` 500 times.
+		// `email` is optional; rows without one simply sort under `undefined`.
+		.index("by_email", ["email"]),
 
 	// ============================================================================
 	// Restaurant membership (per-location manager / employee)
@@ -183,7 +215,16 @@ export default defineSchema({
 		slug: v.string(),
 		description: v.optional(v.string()),
 		currency: v.string(),
-		/** Where dashboard error reports are routed (TAVLI-2). Falls back to the global SUPPORT_EMAIL default when unset. */
+		/**
+		 * The restaurant's **Contact email** — one address doing four jobs: shown
+		 * to diners on the menu page and the receipt footer, the receipt
+		 * `reply_to`, the dashboard-error-report destination (TAVLI-2, falling
+		 * back to the global SUPPORT_EMAIL default), and the platform-fee billing
+		 * recipient. Field name kept for continuity; the concept is Contact email.
+		 *
+		 * Only published to diners once `publicProfileReviewedAt` is set — see
+		 * that field.
+		 */
 		supportEmail: v.optional(v.string()),
 		timezone: v.optional(v.string()),
 		/** Minutes from local midnight (0–1439) when the business “order day” starts; default 240 (04:00) in app logic. */
@@ -195,6 +236,19 @@ export default defineSchema({
 		orderNumberResetFrequency: v.optional(
 			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly"))
 		),
+		/**
+		 * Cash policy (TAVLI-81, ADR 008 addendum). Default/missing = **off**,
+		 * which is ADR 008 as written: an `awaiting_payment` round is money owed,
+		 * never kitchen work, and staff must collect before the kitchen sees it.
+		 *
+		 * On, the debt stops blocking the workflow: the round is workable the
+		 * moment the diner commits it, advances exactly like `submitted`, and the
+		 * uncollected cash is carried by the order's `paymentState` (a persistent
+		 * "to collect" badge) instead of by its `status`. Staff-only — deliberately
+		 * NOT exposed by `toPublicRestaurant`; a diner has no use for it and it
+		 * describes how this restaurant trusts its tables.
+		 */
+		releaseCashOrdersImmediately: v.optional(v.boolean()),
 		/** HH:MM when the restaurant opens for service. Bounds the reservation timeline. */
 		openTime: v.optional(v.string()),
 		/** HH:MM when the restaurant closes. Bounds the reservation timeline. */
@@ -203,6 +257,60 @@ export default defineSchema({
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),
 		stripeOnboardingComplete: v.optional(v.boolean()),
+		/**
+		 * Receipt tax block (ADR 008): rendered verbatim on restaurant-branded
+		 * receipt emails. Informational only — this is NOT CFDI e-invoicing.
+		 */
+		rfc: v.optional(v.string()),
+		razonSocial: v.optional(v.string()),
+		fiscalAddress: v.optional(v.string()),
+		// ── Public profile: the diner-visible contact details. `supportEmail`
+		//    above belongs to this group too. Normalized on write by
+		//    `convex/publicProfileHelpers.ts` — these values are interpolated into
+		//    `href`s on an anonymous page, so storage is always canonical.
+		/**
+		 * Diner-facing street address. Deliberately NOT `fiscalAddress`, which is
+		 * the legal invoicing address and need not be where diners walk in.
+		 */
+		address: v.optional(v.string()),
+		/** E.164 (`+` then 8–15 digits). Machine-consumed into `tel:` and `wa.me`. */
+		phone: v.optional(v.string()),
+		/** True when `phone` is reachable on WhatsApp. Never set without `phone`. */
+		phoneHasWhatsApp: v.optional(v.boolean()),
+		/** Canonical `https` profile URLs, host- and path-validated on write. */
+		instagramUrl: v.optional(v.string()),
+		facebookUrl: v.optional(v.string()),
+		tiktokUrl: v.optional(v.string()),
+		xUrl: v.optional(v.string()),
+		youtubeUrl: v.optional(v.string()),
+		/**
+		 * Stamped the first time a manager saves the Public profile section.
+		 *
+		 * Gates publication of `supportEmail` to diners. Every row that predates
+		 * the public profile had its support email entered under copy reading
+		 * "Where dashboard error reports are sent", so some hold an internal alias
+		 * or a personal address. Publishing those to an anonymous page is
+		 * irreversible for anything scraped, so the address stays private until a
+		 * human has seen the new wording. The other public-profile fields need no
+		 * gate — they can only have been entered under the new copy.
+		 */
+		publicProfileReviewedAt: v.optional(v.number()),
+		/** Per-restaurant flag gating the 2,000 MXN/month platform subscription (ADR 008). */
+		platformSubscriptionEnabled: v.optional(v.boolean()),
+		/** Stripe Billing Customer for the platform subscription (platform account, not Connect). */
+		stripeBillingCustomerId: v.optional(v.string()),
+		stripeSubscriptionId: v.optional(v.string()),
+		/** Raw Stripe subscription status, cached from Billing webhooks (not narrowed: Stripe evolves these). */
+		billingStatus: v.optional(v.string()),
+		/** Epoch ms end of the current billing period, cached from Billing webhooks. */
+		billingCurrentPeriodEnd: v.optional(v.number()),
+		/**
+		 * Cached `cancel_at_period_end`: the subscription is scheduled to end at
+		 * `billingCurrentPeriodEnd` but is still `active` until then. Without this
+		 * the settings UI would show a plain "active" after a cancellation and
+		 * only find out at the period boundary.
+		 */
+		billingCancelAtPeriodEnd: v.optional(v.boolean()),
 		/**
 		 * Geofence for customer ordering (TAVLI-6). When latitude/longitude are
 		 * unset the geofence is skipped entirely. This is a soft UX gate — browser
@@ -232,6 +340,13 @@ export default defineSchema({
 		.index("by_owner", ["ownerId"])
 		.index("by_organization", ["organizationId"])
 		.index("by_stripe_account", ["stripeAccountId"])
+		// Platform-subscription webhooks arrive keyed by Stripe Customer or
+		// Subscription id and must resolve back to the restaurant without a
+		// table scan. Two indexes because the two Billing event families carry
+		// different handles: invoices carry the customer, subscription events
+		// carry the subscription.
+		.index("by_billing_customer", ["stripeBillingCustomerId"])
+		.index("by_billing_subscription", ["stripeSubscriptionId"])
 		.index("by_hard_delete_after", ["hardDeleteAfterAt"])
 		.index("by_shared_employee_subject", ["sharedEmployeeClerkSubject"]),
 
@@ -435,6 +550,9 @@ export default defineSchema({
 		tableId: v.id(TABLE.TABLES),
 		status: v.union(
 			v.literal("draft"),
+			// Committed by the diner for in-person payment; staff-only until
+			// released to "submitted" by "mark paid in person". See ADR 008.
+			v.literal("awaiting_payment"),
 			v.literal("submitted"),
 			v.literal("preparing"),
 			v.literal("ready"),
@@ -459,6 +577,12 @@ export default defineSchema({
 		stripePaymentIntentId: v.optional(v.string()),
 		submittedAt: v.optional(v.number()),
 		paidAt: v.optional(v.number()),
+		/** Clerk subject of the session member who paid for this order (ADR 008). */
+		paidByUserId: v.optional(v.string()),
+		/** When the diner committed this order for in-person payment. */
+		awaitingPaymentAt: v.optional(v.number()),
+		/** How this order was settled: "stripe" (pay-at-submit) or "staff" (marked paid in person). Mirrors `sessions.settledBy`. */
+		settledBy: v.optional(v.union(v.literal("stripe"), v.literal("staff"))),
 		/**
 		 * Per-station "ready" timestamps. Set by `markStationReady` when the
 		 * staff at that station confirm their portion of the order is done.
@@ -468,6 +592,18 @@ export default defineSchema({
 		 */
 		kitchenReadyAt: v.optional(v.number()),
 		barReadyAt: v.optional(v.number()),
+		/**
+		 * When staff marked this order served. Written once, by
+		 * `updateStatus` — the only path into that terminal status — and never
+		 * cleared, because nothing transitions back out of `served`.
+		 *
+		 * Its own column rather than a reading of `updatedAt`: `updatedAt` moves
+		 * on any later write (a refund outcome, a session sweep), which would
+		 * silently pull an aged-out order back onto the dashboard's Served
+		 * segment. Orders served before this field existed fall back to
+		 * `updatedAt` at read time (`isServedOrderVisible`).
+		 */
+		servedAt: v.optional(v.number()),
 		/** Monotonic per restaurant per business day; assigned in confirmPayment only. */
 		dailyOrderNumber: v.optional(v.number()),
 		/** YYYY-MM-DD business-day label at assignment time. */
@@ -511,8 +647,67 @@ export default defineSchema({
 		),
 		specialInstructions: v.optional(v.string()),
 		lineTotal: v.number(),
+		/**
+		 * Set by `orders.cancelOrderItem` (86). A cancelled line stays on the
+		 * order for history but is excluded from totals, station applicability,
+		 * and analytics. `undefined` means the line is live.
+		 */
+		cancelledAt: v.optional(v.number()),
+		/** Clerk subject of the staff member who 86'd the line. */
+		cancelledBy: v.optional(v.string()),
+		/**
+		 * Set when 86'ing this line on a *paid* order produced a Stripe refund
+		 * (ADR 008). The tuple below is the per-line refund record — and the
+		 * idempotency marker `stripe.refundOrderItem` checks so a replayed
+		 * schedule can never refund the same line twice. `undefined` on lines
+		 * cancelled while unpaid (no money ever moved for them).
+		 */
+		refundedAt: v.optional(v.number()),
+		/** What came back to the diner for this line: lineTotal + its fee share, clamped/topped-up per `computeLineRefundAmount`. */
+		refundAmount: v.optional(v.number()),
+		/** Stripe refund id backing `refundAmount`. */
+		stripeRefundId: v.optional(v.string()),
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
+
+	// Kitchen-proposed replacement for a paid line that can't be made (ADR 008).
+	// `deltaAmount >= 0` is enforced in app code (equal-or-higher rule);
+	// `feeOnDelta` is the service-fee share on that delta. The proposed* fields
+	// snapshot the replacement at proposal time, mirroring the `orderItems`
+	// denormalization, so the offer the diner accepted stays legible after menu
+	// edits.
+	[TABLE.SUBSTITUTION_PROPOSALS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		sessionId: v.id(TABLE.SESSIONS),
+		orderId: v.id(TABLE.ORDERS),
+		orderItemId: v.id(TABLE.ORDER_ITEMS),
+		proposedMenuItemId: v.id(TABLE.MENU_ITEMS),
+		proposedMenuItemName: v.string(),
+		proposedUnitPrice: v.number(),
+		quantity: v.number(),
+		proposedLineTotal: v.number(),
+		/** proposedLineTotal - original lineTotal; >= 0 by the equal-or-higher rule. */
+		deltaAmount: v.number(),
+		feeOnDelta: v.number(),
+		status: v.union(
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.PENDING),
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.ACCEPTED),
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.DECLINED),
+			v.literal(SUBSTITUTION_PROPOSAL_STATUS.CANCELLED)
+		),
+		/** Payment covering deltaAmount + feeOnDelta; set when accepted with a positive delta. */
+		supplementalPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		/** Clerk subject of the staff member who proposed the substitution. */
+		proposedBy: v.string(),
+		/** Clerk subject of the diner who accepted/declined. */
+		respondedByUserId: v.optional(v.string()),
+		respondedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_order", ["orderId"])
+		.index("by_session_status", ["sessionId", "status"])
+		.index("by_restaurant_status", ["restaurantId", "status"]),
 
 	[TABLE.PAYMENTS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -521,6 +716,27 @@ export default defineSchema({
 		/** Set for tab (session-level) payments covering every payable order in the session. */
 		sessionId: v.optional(v.id(TABLE.SESSIONS)),
 		amount: v.number(),
+		/**
+		 * ADR 008 breakdown. New rows satisfy `amount === subtotalAmount +
+		 * feeAmount` (tip payments carry feeAmount 0 — the service fee never
+		 * applies to tips). Absent on legacy rows.
+		 */
+		subtotalAmount: v.optional(v.number()),
+		feeAmount: v.optional(v.number()),
+		/** What this payment paid for (PAYMENT_KIND). Absent kind = legacy row (pre-pivot per-order or tab payment). */
+		kind: v.optional(
+			v.union(
+				v.literal(PAYMENT_KIND.ORDER),
+				v.literal(PAYMENT_KIND.TIP),
+				v.literal(PAYMENT_KIND.SUBSTITUTION)
+			)
+		),
+		/** Clerk subject of the session member this payment belongs to (ADR 008). */
+		paidByUserId: v.optional(v.string()),
+		/** Saved card used for one-tap tips / substitution deltas (setup_future_usage off_session). */
+		stripePaymentMethodId: v.optional(v.string()),
+		/** Set on kind "substitution" rows: the proposal whose delta this payment covers. */
+		substitutionProposalId: v.optional(v.id(TABLE.SUBSTITUTION_PROPOSALS)),
 		currency: v.string(),
 		status: v.union(
 			v.literal(PAYMENT_STATUS.PENDING),
@@ -610,6 +826,18 @@ export default defineSchema({
 		.index("by_dispute_id", ["stripeDisputeId"])
 		.index("by_payment", ["paymentId"])
 		.index("by_restaurant", ["restaurantId"]),
+
+	// Platform-level Stripe Customer per Clerk user (ADR 008). Needed so
+	// `setup_future_usage: "off_session"` on a pay-at-submit charge can attach
+	// the payment method somewhere reusable — one-tap tips and substitution
+	// deltas charge it later. Not restaurant-scoped: the customer follows the
+	// diner across restaurants.
+	[TABLE.STRIPE_CUSTOMERS]: defineTable({
+		userId: v.string(),
+		stripeCustomerId: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_user", ["userId"]),
 
 	// ============================================================================
 	// Reservations
@@ -1026,7 +1254,11 @@ export default defineSchema({
 		updatedAt: v.number(),
 	})
 		.index("by_user_restaurant", ["userId", "restaurantId"])
-		.index("by_user_scopeKind", ["userId", "scopeKind"]),
+		.index("by_user_scopeKind", ["userId", "scopeKind"])
+		// Restaurant hard-purge cascade: find every layout bound to a restaurant
+		// without scanning per user. Portfolio layouts (restaurantId unset) sort
+		// under `undefined` and are never matched by an eq() on a real id.
+		.index("by_restaurant", ["restaurantId"]),
 
 	// Restaurant-scoped dashboard templates published by managers and cloneable
 	// by any staff member with access to that restaurant. The cloned layout is
@@ -1085,7 +1317,7 @@ export default defineSchema({
 	}).index("by_key", ["key"]),
 
 	// ============================================================================
-	// WhatsApp Chatbot (Twilio) — see ADR 007
+	// WhatsApp Chatbot (Twilio) — see ADR 010
 	// ============================================================================
 	//
 	// The assistant's tables. `whatsappChannels` maps a restaurant's
@@ -1192,6 +1424,12 @@ export default defineSchema({
 		eventType: v.string(),
 		aggregateType: v.union(...Object.values(TABLE).map((table) => v.literal(table))),
 		aggregateId: v.string(),
+		// Restaurant the event belongs to; unset for org-level events (role
+		// bootstrap, multi-restaurant invitations) and for rows predating the
+		// column (backfilled best-effort by `migrations/backfillAllEventsRestaurantId`).
+		// Deliberately allowed to dangle after a restaurant purge: events are the
+		// surviving record, and this id is their correlation key.
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
 		payload: v.any(),
 		userId: v.string(),
 		timestamp: v.number(),
@@ -1202,5 +1440,8 @@ export default defineSchema({
 		.index("by_aggregate", ["aggregateType", "aggregateId"])
 		.index("by_timestamp", ["timestamp"])
 		.index("by_user", ["userId"])
-		.index("by_aggregate_type", ["aggregateType"]),
+		.index("by_aggregate_type", ["aggregateType"])
+		// "Everything that happened at restaurant X (in a time range)" — the
+		// forensic query that used to require payload scans.
+		.index("by_restaurant_time", ["restaurantId", "timestamp"]),
 });

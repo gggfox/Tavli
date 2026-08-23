@@ -2,14 +2,22 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import { getCurrentUserId } from "./_util/auth";
+import { fromErrorObject } from "./_shared/errors";
+import { getCurrentUserId, requireOrgOwnerOrAdmin } from "./_util/auth";
+import {
+	DASHBOARD_STATUS_VALIDATOR,
+	ORDER_SCOPE_VALIDATOR,
+	SERVICE_DATE_FILTER_VALIDATOR,
+} from "./orderHelpers";
 import { TABLE } from "./constants";
 import { stampUpdated } from "./_util/audit";
 
 /**
- * Order statuses the dashboard is allowed to filter by.
- * `draft` is excluded because drafts are pre-submission and never belong
- * on the kitchen dashboard.
+ * LEGACY multi-select validator — kept only for the legacy array mutation
+ * below. `draft` is excluded because drafts are pre-submission and never
+ * belong on the kitchen dashboard. `awaiting_payment` postdates the array
+ * setting and is deliberately absent; the single-select mutation reuses
+ * `DASHBOARD_STATUS_VALIDATOR`, which includes it.
  */
 const orderDashboardStatusValidator = v.union(
 	v.literal("submitted"),
@@ -23,14 +31,20 @@ const orderDashboardStatusValidator = v.union(
 const orderDashboardPrepStationValidator = v.union(v.literal("kitchen"), v.literal("bar"));
 
 type OrderDashboardStatus = "submitted" | "preparing" | "ready" | "served" | "cancelled";
+type OrderDashboardStatusValue = "awaiting_payment" | OrderDashboardStatus;
 type OrderDashboardPrepStation = "kitchen" | "bar";
+type OrderDashboardServiceDate = "today" | "all";
+type OrderDashboardScope = "all" | "mine";
 
 type SettingsUpdates = {
 	theme?: "light" | "dark";
 	sidebarExpanded?: boolean;
 	language?: "en" | "es";
+	orderDashboardStatusFilter?: OrderDashboardStatusValue;
 	orderDashboardStatusFilters?: OrderDashboardStatus[];
 	orderDashboardPrepStationFilters?: OrderDashboardPrepStation[];
+	orderDashboardServiceDateFilter?: OrderDashboardServiceDate;
+	orderDashboardScope?: OrderDashboardScope;
 	expandedSidebarGroups?: string[];
 };
 
@@ -111,11 +125,20 @@ async function upsertUserSettings({
 		theme: updates.theme ?? defaults.theme,
 		sidebarExpanded: updates.sidebarExpanded ?? defaults.sidebarExpanded,
 		language: updates.language ?? defaults.language,
+		...(updates.orderDashboardStatusFilter !== undefined && {
+			orderDashboardStatusFilter: updates.orderDashboardStatusFilter,
+		}),
 		...(updates.orderDashboardStatusFilters !== undefined && {
 			orderDashboardStatusFilters: updates.orderDashboardStatusFilters,
 		}),
 		...(updates.orderDashboardPrepStationFilters !== undefined && {
 			orderDashboardPrepStationFilters: updates.orderDashboardPrepStationFilters,
+		}),
+		...(updates.orderDashboardServiceDateFilter !== undefined && {
+			orderDashboardServiceDateFilter: updates.orderDashboardServiceDateFilter,
+		}),
+		...(updates.orderDashboardScope !== undefined && {
+			orderDashboardScope: updates.orderDashboardScope,
 		}),
 		...(updates.expandedSidebarGroups !== undefined && {
 			expandedSidebarGroups: updates.expandedSidebarGroups,
@@ -247,6 +270,33 @@ export const updateOrderDashboardStatusFilters = mutation({
 });
 
 /**
+ * Update the single-select OrderDashboard status filter for the
+ * authenticated user (ADR 008). Creates settings if they don't exist.
+ *
+ * Successor of `updateOrderDashboardStatusFilters` (the legacy multi-select
+ * array, kept above for legacy clients). Accepts every dashboard status
+ * including `awaiting_payment` — reuses `DASHBOARD_STATUS_VALIDATOR` from
+ * `orderHelpers` so the two stay in lockstep.
+ */
+export const updateOrderDashboardStatusFilter = mutation({
+	args: {
+		status: DASHBOARD_STATUS_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardStatusFilter: args.status },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
  * Update the OrderDashboard prep-station filters for the authenticated user.
  * Creates settings if they don't exist.
  *
@@ -268,6 +318,59 @@ export const updateOrderDashboardPrepStationFilters = mutation({
 			ctx,
 			userId,
 			updates: { orderDashboardPrepStationFilters: deduped },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update the OrderDashboard service-day window for the authenticated user.
+ * Creates settings if they don't exist.
+ *
+ * "today" is the restaurant's own business day (its configured rollover, not
+ * midnight UTC); "all" keeps the board's original behavior of showing every
+ * order ever, and stays the default for anyone who never picked.
+ */
+export const updateOrderDashboardServiceDateFilter = mutation({
+	args: {
+		serviceDate: SERVICE_DATE_FILTER_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardServiceDateFilter: args.serviceDate },
+			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
+		});
+	},
+});
+
+/**
+ * Update whose orders the OrderDashboard shows for the authenticated user.
+ * Creates settings if they don't exist.
+ *
+ * Persisting the choice is what makes the default safe to be role-derived: a
+ * server who deliberately switches to the whole floor keeps it across
+ * reloads and devices, instead of being pulled back to their own section
+ * every time their shift is recomputed.
+ */
+export const updateOrderDashboardScope = mutation({
+	args: {
+		scope: ORDER_SCOPE_VALIDATOR,
+	},
+	handler: async (ctx, args) => {
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) {
+			throw error;
+		}
+		return await upsertUserSettings({
+			ctx,
+			userId,
+			updates: { orderDashboardScope: args.scope },
 			defaults: { theme: "light", sidebarExpanded: true, language: "en" },
 		});
 	},
@@ -346,6 +449,13 @@ export const generateUserPhotoUploadUrl = mutation({
 	},
 });
 
+/**
+ * Set the custom photo on a user's org-level `userRoles` row.
+ *
+ * Self-service by default (no `targetUserId`). Targeting another user is
+ * restricted to admins and org owners of the target's organization (the
+ * team drawer path).
+ */
 export const setUserPhoto = mutation({
 	args: {
 		photoStorageId: v.id("_storage"),
@@ -361,6 +471,14 @@ export const setUserPhoto = mutation({
 			.query(TABLE.USER_ROLES)
 			.withIndex("by_user", (q) => q.eq("userId", targetId))
 			.first();
+
+		if (targetId !== actorId) {
+			// Authorize before the missing-row no-op so unauthorized callers
+			// can't probe which userIds have a `userRoles` row.
+			const [, authError] = await requireOrgOwnerOrAdmin(ctx, actorId, row?.organizationId);
+			if (authError) throw fromErrorObject(authError);
+		}
+
 		if (!row) return;
 
 		await ctx.db.patch(row._id, {

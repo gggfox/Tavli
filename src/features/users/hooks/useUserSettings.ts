@@ -13,7 +13,10 @@
  */
 import {
 	OrderDashboardPrepStationFilter,
+	OrderDashboardScope,
+	OrderDashboardServiceDateFilter,
 	OrderDashboardStatusFilter,
+	OrderDashboardStatusFilterValue,
 	Theme,
 	UserSettings,
 } from "@/features";
@@ -22,6 +25,9 @@ import {
 	transformUserSettings,
 	updateLanguage as updateLanguageService,
 	updateOrderDashboardPrepStationFilters as updateOrderDashboardPrepStationFiltersService,
+	updateOrderDashboardScope as updateOrderDashboardScopeService,
+	updateOrderDashboardServiceDateFilter as updateOrderDashboardServiceDateFilterService,
+	updateOrderDashboardStatusFilter as updateOrderDashboardStatusFilterService,
 	updateOrderDashboardStatusFilters as updateOrderDashboardStatusFiltersService,
 	updateSidebarExpanded as updateSidebarExpandedService,
 	updateTheme as updateThemeService,
@@ -47,9 +53,15 @@ export type UseUserSettingsReturn = {
 	sidebarExpanded: boolean;
 	language: Language;
 	/**
-	 * Persisted OrderDashboard filter selection. `null` means the user has
-	 * never set it -- callers should fall back to a sensible default (typically
-	 * the active-status set).
+	 * Persisted single-select OrderDashboard status filter (ADR 008). `null`
+	 * means the user has never set it -- callers should fall back to the
+	 * highest-priority member of the legacy array, then to "submitted".
+	 */
+	orderDashboardStatusFilter: OrderDashboardStatusFilterValue | null;
+	/**
+	 * LEGACY persisted OrderDashboard multi-select filter. Only read to seed
+	 * the single-select value for users who never used the new control.
+	 * `null` means the user has never set it.
 	 */
 	orderDashboardStatusFilters: OrderDashboardStatusFilter[] | null;
 	/**
@@ -59,6 +71,18 @@ export type UseUserSettingsReturn = {
 	 */
 	orderDashboardPrepStationFilters: OrderDashboardPrepStationFilter[] | null;
 	/**
+	 * Persisted OrderDashboard service-day window. `null` means the user has
+	 * never set it -- callers fall back to "all", the board's original
+	 * behavior of showing every order regardless of age.
+	 */
+	orderDashboardServiceDateFilter: OrderDashboardServiceDateFilter | null;
+	/**
+	 * Persisted OrderDashboard scope. `null` means the user has never touched
+	 * the toggle -- callers fall back to the default their shift implies (see
+	 * `orders.getDashboardScopeContext`).
+	 */
+	orderDashboardScope: OrderDashboardScope | null;
+	/**
 	 * Sidebar accordion group keys the user has open. Empty when no
 	 * preference has been saved yet.
 	 */
@@ -66,12 +90,19 @@ export type UseUserSettingsReturn = {
 	updateTheme: (theme: Theme) => Promise<UserSettingsId>;
 	updateSidebarExpanded: (expanded: boolean) => Promise<UserSettingsId>;
 	updateLanguage: (language: Language) => Promise<UserSettingsId>;
+	updateOrderDashboardStatusFilter: (
+		status: OrderDashboardStatusFilterValue
+	) => Promise<UserSettingsId>;
 	updateOrderDashboardStatusFilters: (
 		statuses: OrderDashboardStatusFilter[]
 	) => Promise<UserSettingsId>;
 	updateOrderDashboardPrepStationFilters: (
 		prepStations: OrderDashboardPrepStationFilter[]
 	) => Promise<UserSettingsId>;
+	updateOrderDashboardServiceDateFilter: (
+		serviceDate: OrderDashboardServiceDateFilter
+	) => Promise<UserSettingsId>;
+	updateOrderDashboardScope: (scope: OrderDashboardScope) => Promise<UserSettingsId>;
 	setSidebarGroupExpanded: (key: string, expanded: boolean) => Promise<UserSettingsId>;
 };
 
@@ -152,8 +183,15 @@ export function useUserSettings(): UseUserSettingsReturn {
 	// Extract sidebar expanded state with default
 	const sidebarExpanded = useMemo(() => settings?.sidebarExpanded ?? true, [settings]);
 
-	// Persisted OrderDashboard filters (null when never set, so callers can
-	// distinguish "not set" from "explicitly empty").
+	// Persisted single-select OrderDashboard status filter (ADR 008). Null
+	// when never set so callers can collapse the legacy array instead.
+	const orderDashboardStatusFilter = useMemo<OrderDashboardStatusFilterValue | null>(
+		() => settings?.orderDashboardStatusFilter ?? null,
+		[settings]
+	);
+
+	// LEGACY persisted OrderDashboard filters (null when never set, so callers
+	// can distinguish "not set" from "explicitly empty").
 	const orderDashboardStatusFilters = useMemo<OrderDashboardStatusFilter[] | null>(
 		() => settings?.orderDashboardStatusFilters ?? null,
 		[settings]
@@ -163,6 +201,20 @@ export function useUserSettings(): UseUserSettingsReturn {
 	// the dashboard can fall back to "all stations".
 	const orderDashboardPrepStationFilters = useMemo<OrderDashboardPrepStationFilter[] | null>(
 		() => settings?.orderDashboardPrepStationFilters ?? null,
+		[settings]
+	);
+
+	// Persisted OrderDashboard service-day window. Null when never set so the
+	// dashboard can fall back to "all" — the board's original behavior.
+	const orderDashboardServiceDateFilter = useMemo<OrderDashboardServiceDateFilter | null>(
+		() => settings?.orderDashboardServiceDateFilter ?? null,
+		[settings]
+	);
+
+	// Persisted OrderDashboard scope. Null when never set so the dashboard can
+	// fall back to the default the caller's shift implies.
+	const orderDashboardScope = useMemo<OrderDashboardScope | null>(
+		() => settings?.orderDashboardScope ?? null,
 		[settings]
 	);
 
@@ -230,6 +282,12 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
+	const updateOrderDashboardStatusFilter = useCallback(
+		(status: OrderDashboardStatusFilterValue) =>
+			updateOrderDashboardStatusFilterService(client, status),
+		[client]
+	);
+
 	const updateOrderDashboardStatusFilters = useCallback(
 		(statuses: OrderDashboardStatusFilter[]) =>
 			updateOrderDashboardStatusFiltersService(client, statuses),
@@ -239,6 +297,17 @@ export function useUserSettings(): UseUserSettingsReturn {
 	const updateOrderDashboardPrepStationFilters = useCallback(
 		(prepStations: OrderDashboardPrepStationFilter[]) =>
 			updateOrderDashboardPrepStationFiltersService(client, prepStations),
+		[client]
+	);
+
+	const updateOrderDashboardServiceDateFilter = useCallback(
+		(serviceDate: OrderDashboardServiceDateFilter) =>
+			updateOrderDashboardServiceDateFilterService(client, serviceDate),
+		[client]
+	);
+
+	const updateOrderDashboardScope = useCallback(
+		(scope: OrderDashboardScope) => updateOrderDashboardScopeService(client, scope),
 		[client]
 	);
 
@@ -295,14 +364,20 @@ export function useUserSettings(): UseUserSettingsReturn {
 		theme,
 		sidebarExpanded,
 		language,
+		orderDashboardStatusFilter,
 		orderDashboardStatusFilters,
 		orderDashboardPrepStationFilters,
+		orderDashboardServiceDateFilter,
+		orderDashboardScope,
 		expandedSidebarGroups,
 		updateTheme,
 		updateSidebarExpanded,
 		updateLanguage,
+		updateOrderDashboardStatusFilter,
 		updateOrderDashboardStatusFilters,
 		updateOrderDashboardPrepStationFilters,
+		updateOrderDashboardServiceDateFilter,
+		updateOrderDashboardScope,
 		setSidebarGroupExpanded,
 	};
 }

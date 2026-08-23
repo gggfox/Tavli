@@ -66,8 +66,13 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 		[restaurantId, generateUploadUrl, extractAction]
 	);
 
+	/**
+	 * `menuId` is optional: with `newMenuName` set the mutation creates the
+	 * menu first, which is the only path available to a restaurant that has
+	 * no menus at all yet.
+	 */
 	const confirmImport = useCallback(
-		async (menuId: Id<"menus">, newMenuName?: string) => {
+		async (menuId: Id<"menus"> | undefined, newMenuName?: string) => {
 			if (!restaurantId || !extraction) return;
 
 			try {

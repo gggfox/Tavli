@@ -104,4 +104,17 @@ export const DINER_SESSION_ERRORS = {
 	INVALID_JOIN_CODE: "ERROR_INVALID_JOIN_CODE",
 	/** Tab has no payable balance to charge. */
 	TAB_EMPTY: "ERROR_TAB_EMPTY",
+	/** Tab still owes money — settle via checkout or have staff close it. */
+	TAB_UNPAID: "ERROR_TAB_UNPAID",
+	/**
+	 * Tab still holds food the kitchen hasn't delivered. Staff must serve it or
+	 * cancel it before the tab can be settled — see `blocksTabSettlement`.
+	 */
+	TAB_HAS_UNSERVED_ORDERS: "ERROR_TAB_HAS_UNSERVED_ORDERS",
+	/**
+	 * The session still holds an `awaiting_payment` (cash) order — money owed
+	 * outside any tab balance (ADR 008). Staff must collect it
+	 * (`markOrderPaidInPerson`) or cancel it before the session can close.
+	 */
+	AWAITING_PAYMENT_ORDERS: "ERROR_SESSION_AWAITING_PAYMENT_ORDERS",
 } as const;
