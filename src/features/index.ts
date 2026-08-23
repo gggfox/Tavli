@@ -8,3 +8,4 @@ export * from "./organizations";
 export * from "./reservations";
 export * from "./restaurants";
 export * from "./users";
+export * from "./whatsapp";

@@ -8,13 +8,15 @@
  * not bound the LLM turn. Node action because the AI SDK provider (`llm.ts`)
  * runs under `"use node"`.
  *
- * Flow: dedupe on MessageSid → route "To" → channel → record inbound → redeem a
- * confirmation code if the body carries one → otherwise run the LLM turn → send
- * the reply (model prose plus server-composed fact lines) → record outbound. Any
- * failure sends a fixed localized apology — never a silent failure (AC #6).
+ * Flow: dedupe on MessageSid → route "To" → channel → record inbound → charge
+ * the spend budgets → redeem a confirmation code if the body carries one →
+ * otherwise run the LLM turn → send the reply (model prose plus server-composed
+ * fact lines) → record outbound. Any failure sends a fixed localized apology —
+ * never a silent failure (AC #6).
  *
  * The confirmation-code check deliberately sits BEFORE the LLM: authorizing a
- * cancellation must not depend on the model reading intent correctly.
+ * cancellation must not depend on the model reading intent correctly. It sits
+ * before the spend refusals for the same reason — see `spendControls.ts`.
  */
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
@@ -64,6 +66,12 @@ async function sendAndRecord(
 		conversationId: Id<"whatsappConversations">;
 		restaurantId: Id<"restaurants">;
 		to: string;
+		/**
+		 * Canonical E.164 identity of the customer, for the outbound spend budget.
+		 * Deliberately not derived from `to`: that is a transport address, and for
+		 * a Mexican mobile the two spellings differ by WhatsApp's legacy 1.
+		 */
+		phone: string;
 		body: string;
 		/** The model's own prose, without the appended notices. "" = none. */
 		modelBody: string;
@@ -79,6 +87,18 @@ async function sendAndRecord(
 		WHATSAPP_MAX_REPLY_PARTS
 	);
 	for (const [index, body] of parts.entries()) {
+		// Charged per part, because each part is its own billed Twilio message.
+		// Checked here so no send path can be added that skips the budget.
+		const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalConsumeOutbound, {
+			phone: args.phone,
+		});
+		if (!budget.allowed) {
+			console.warn("[whatsapp.processing] outbound daily budget exhausted; dropping reply part.", {
+				conversationId: args.conversationId,
+				partIndex: index,
+			});
+			break;
+		}
 		const mediaUrl = index === 0 ? args.mediaUrl : undefined;
 		// Only the first part carries the model's prose: the notices are appended
 		// after it, so every later part is server-composed by construction.
@@ -152,6 +172,13 @@ export const handleInboundMessage = internalAction({
 			restaurant?.defaultLanguage
 		);
 
+		// Charge the spend budgets exactly once per inbound message, before any
+		// branch below can return. A refused hit does not increment the counter,
+		// so this is safe to call whatever the outcome turns out to be.
+		const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: customerPhone,
+		});
+
 		// Confirmation codes are matched HERE, before the model is involved at all.
 		// The authorization decision for a destructive action is therefore a string
 		// comparison against a server-generated, single-use, expiring value — not a
@@ -186,6 +213,7 @@ export const handleInboundMessage = internalAction({
 					conversationId,
 					restaurantId: channel.restaurantId,
 					to: replyAddress,
+					phone: customerPhone,
 					body,
 					// Entirely server-composed: the model was never consulted for the
 					// authorization decision and must not be shown this as its own line.
@@ -195,6 +223,46 @@ export const handleInboundMessage = internalAction({
 			}
 			// Not one of our codes — fall through and let the model answer normally,
 			// since a bare number is just as likely to be a party size.
+			//
+			// Note this is also why the spend refusals below must not be skipped for
+			// every code-shaped message: "481920" would otherwise be an unlimited
+			// free pass to the model. Only a code we actually minted returns above.
+		}
+
+		// The phone has spent its daily budget. Say so exactly once, then go
+		// quiet: every reply to a flood is another message Tavli pays Twilio for.
+		if (!budget.allowed) {
+			const notice = await ctx.runMutation(
+				internal.whatsapp.spendControls.internalConsumeLimitNotice,
+				{ phone: customerPhone }
+			);
+			if (notice.allowed) {
+				await sendAndRecord(ctx, {
+					conversationId,
+					restaurantId: channel.restaurantId,
+					to: replyAddress,
+					phone: customerPhone,
+					body: getBotCopy(locale).dailyLimitReached,
+					modelBody: "",
+				});
+			}
+			return;
+		}
+
+		// The whole platform has spent its daily budget. Answer with fixed copy
+		// and do not call the model — the ceiling exists to stop exactly that
+		// spend. Checked after the per-phone refusal so a flooding number stays
+		// silenced rather than collecting an apology per message.
+		if (budget.globalCeilingReached) {
+			await sendAndRecord(ctx, {
+				conversationId,
+				restaurantId: channel.restaurantId,
+				to: replyAddress,
+				phone: customerPhone,
+				body: getBotCopy(locale).platformBusy,
+				modelBody: "",
+			});
+			return;
 		}
 
 		try {
@@ -241,6 +309,7 @@ export const handleInboundMessage = internalAction({
 				conversationId,
 				restaurantId: channel.restaurantId,
 				to: replyAddress,
+				phone: customerPhone,
 				body: composed || getBotCopy(locale).genericError,
 				modelBody: result.text,
 				mediaUrl: result.mediaUrl,
@@ -258,6 +327,7 @@ export const handleInboundMessage = internalAction({
 				conversationId,
 				restaurantId: channel.restaurantId,
 				to: replyAddress,
+				phone: customerPhone,
 				body: getBotCopy(locale).genericError,
 				modelBody: "",
 			});

@@ -354,6 +354,31 @@ so a destructive action always requires a fresh act from the phone's owner.
 Single-use, expires in 10 minutes. _Avoid_: OTP, PIN (that is the employee
 credential), token.
 
+**Daily message cap**:
+The number of messages the **WhatsApp assistant** will handle for one phone in
+24 hours — 25 inbound, 75 outbound — counted per phone across every
+**Channel** it reaches, because the phone is what costs money. Past it the
+assistant sends one notice and then goes quiet. A **Confirmation code** is
+exempt: it is matched before the model runs, costs nothing, and refusing one
+would leave a booking silently un-cancelled. Separate from the hourly write
+budget, which guards reservation data rather than spend. _Avoid_: quota,
+throttle, rate limit (that is the mechanism, not the rule).
+
+**Platform ceiling**:
+The messages the assistant will handle across all **Restaurants** in 24 hours
+(5,000). Past it every customer gets fixed copy and the model is not called.
+Ops are warned by email at 80%, once per ceiling window — the warning's budget
+is anchored to that window, not to a day of its own, so a day that reaches 80%
+sooner than the last one still reports.
+
+**Spend allowlist**:
+Phones exempt from the **Daily message cap** — the operator's own handset and
+supervised testing numbers. Org-level and platform-admin-only: an entry waives
+a control on Tavli's own bill, not on anything a **Restaurant** owns. It
+exempts the caps and nothing else. The operator's own number adds itself on its
+first inbound message, so no deployment starts with it capped; removing it
+sticks. _Avoid_: whitelist, VIP list.
+
 **Awaiting confirmation**:
 A booking made by the **WhatsApp assistant** is `pending` with no `tableIds`
 until staff **confirm** it and assign tables. The assistant must never tell a

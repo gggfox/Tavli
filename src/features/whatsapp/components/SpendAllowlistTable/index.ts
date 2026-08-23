@@ -1,0 +1,1 @@
+export { SpendAllowlistTable } from "./SpendAllowlistTable";
