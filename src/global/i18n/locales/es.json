@@ -18,6 +18,7 @@
 			"orders": "Pedidos",
 			"payments": "Pagos",
 			"reservations": "Reservaciones",
+			"whatsapp": "WhatsApp",
 			"team": "Miembros",
 			"teamInvites": "Equipo",
 			"schedule": "Horarios",
@@ -1950,6 +1951,58 @@
 			"enable": "Habilitar",
 			"pause": "Pausar",
 			"publicCta": "Escríbenos por WhatsApp"
+		},
+		"page": {
+			"setupRestaurantFirst": "Primero configura tu restaurante."
+		},
+		"list": {
+			"entity": "conversaciones",
+			"searchPlaceholder": "Buscar por nombre o teléfono...",
+			"resultCount_one": "1 conversación",
+			"resultCount_other": "{{count}} conversaciones",
+			"emptyTitle": "Aún no hay conversaciones de WhatsApp",
+			"emptyDescription": "Los hilos aparecen aquí en cuanto un comensal escribe al número de WhatsApp de este restaurante.",
+			"filteredEmptyTitle": "Ninguna conversación coincide",
+			"notAuthenticated": "Inicia sesión para leer las conversaciones de WhatsApp.",
+			"truncated": "Se muestran las {{count}} conversaciones con actividad más reciente. Las más antiguas siguen accesibles desde la reservación que generaron."
+		},
+		"column": {
+			"customer": "Comensal",
+			"phone": "Teléfono",
+			"status": "Estado",
+			"lastActivity": "Última actividad",
+			"started": "Inicio"
+		},
+		"customer": {
+			"unknown": "Sin nombre"
+		},
+		"status": {
+			"active": "Activa",
+			"handoff": "Transferida",
+			"closed": "Cerrada"
+		},
+		"thread": {
+			"aria": "Conversación de WhatsApp",
+			"closeAria": "Cerrar la conversación",
+			"readOnly": "Solo lectura. Todavía no se puede responder ni tomar el hilo.",
+			"loadOlder": "Cargar mensajes anteriores",
+			"loading": "Cargando la conversación...",
+			"empty": "Esta conversación no tiene mensajes.",
+			"error": "No se pudo cargar esta conversación.",
+			"windowFull": "Se muestran los {{count}} mensajes más recientes. Lo anterior no se muestra."
+		},
+		"sender": {
+			"customer": "Comensal",
+			"assistant": "Asistente",
+			"system": "Tavli",
+			"staff": "Personal"
+		},
+		"message": {
+			"undelivered": "No entregado",
+			"attachment": "Enviado con un archivo adjunto"
+		},
+		"reservationLink": {
+			"label": "Abrir la conversación de WhatsApp"
 		}
 	}
 }

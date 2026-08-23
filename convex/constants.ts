@@ -827,6 +827,40 @@ export const WHATSAPP_MESSAGE_DIRECTION = {
 export type WhatsappMessageDirection =
 	(typeof WHATSAPP_MESSAGE_DIRECTION)[keyof typeof WHATSAPP_MESSAGE_DIRECTION];
 
+/**
+ * Who composed an outbound WhatsApp message (TAVLI-93).
+ *
+ * Stored explicitly rather than derived from `modelBody`, even though an empty
+ * `modelBody` today happens to mean "server-composed". Three reasons, any one
+ * of which is enough:
+ *
+ * 1. **`modelBody` cannot express `STAFF`.** Handover — a human replying in the
+ *    thread — is the next build, and a staff message would carry no model prose
+ *    either. A derived value has two reachable states where the domain has
+ *    three, so handover would need a backfill of every row already written.
+ * 2. **A split reply's tail parts are the assistant and carry no `modelBody`.**
+ *    Only the first part of a long reply stores the model's prose, because only
+ *    the first is replayed as context. Deriving would label the second half of
+ *    the assistant's own sentence as a system message.
+ * 3. **`modelBody` is optional.** Rows written before that field exists carry
+ *    `undefined`, which means "unknown", not "server-composed".
+ *
+ * `STAFF` is declared here and in the schema now, and nothing writes it yet:
+ * the point of doing this early is that adding the write later is a code
+ * change, not a data migration.
+ */
+export const WHATSAPP_MESSAGE_SENDER = {
+	/** The LLM assistant's own words (possibly with server notices appended). */
+	ASSISTANT: "assistant",
+	/** Deterministic server copy: an apology, a cap notice, a confirmation. */
+	SYSTEM: "system",
+	/** A human on the restaurant's side. Reserved for handover; unused today. */
+	STAFF: "staff",
+} as const;
+
+export type WhatsappMessageSender =
+	(typeof WHATSAPP_MESSAGE_SENDER)[keyof typeof WHATSAPP_MESSAGE_SENDER];
+
 /** Lifecycle of a WhatsApp `Conversation`. */
 export const WHATSAPP_CONVERSATION_STATUS = {
 	ACTIVE: "active",
@@ -857,6 +891,26 @@ export const WHATSAPP_DEFAULT_MODEL = "openai/gpt-4o-mini";
 
 /** How many recent messages are replayed to the model as conversation context. */
 export const WHATSAPP_CONTEXT_MESSAGE_LIMIT = 12;
+
+/**
+ * Staff conversation view (TAVLI-93): how many messages one "page" of a thread
+ * holds, and the hard ceiling a single read may ever reach.
+ *
+ * A thread is opened to answer one question ("what did the bot tell them?"), so
+ * the newest page is almost always the whole answer; "load older" widens the
+ * window a page at a time. The ceiling is what stops a two-year regular's
+ * thread from becoming an unbounded read — Convex caps a function at 4,096
+ * document reads, and this view must stay nowhere near it.
+ */
+export const WHATSAPP_CONVERSATION_PAGE_SIZE = 50;
+export const WHATSAPP_CONVERSATION_MAX_MESSAGES = 500;
+
+/**
+ * How many of a restaurant's threads the staff list shows, most recently active
+ * first. Bounded for the same reason as above; older threads are reachable from
+ * the reservation they produced.
+ */
+export const WHATSAPP_CONVERSATION_LIST_LIMIT = 200;
 
 /** Upper bound on tool-calling steps per turn (cost + latency guardrail). */
 export const WHATSAPP_MAX_LLM_STEPS = 5;

@@ -26,6 +26,13 @@ vi.mock("./TablePickerForReservation", () => ({
 	TablePickerForReservation: () => <div data-testid="table-picker" />,
 }));
 
+// Same reason as the picker: the WhatsApp link runs its own Convex query.
+// Its behaviour is covered in `ReservationConversationLink.test.tsx`; here it
+// only has to not drag a QueryClient into every drawer test.
+vi.mock("@/features/whatsapp", () => ({
+	ReservationConversationLink: () => <div data-testid="whatsapp-conversation-link" />,
+}));
+
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const PAST_START = new Date("2026-03-02T19:00:00").getTime();

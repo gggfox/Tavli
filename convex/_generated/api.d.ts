@@ -133,6 +133,8 @@ import type * as whatsapp_shortCode from "../whatsapp/shortCode.js";
 import type * as whatsapp_spendControls from "../whatsapp/spendControls.js";
 import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 import type * as whatsappChannels from "../whatsappChannels.js";
+import type * as whatsappConversations from "../whatsappConversations.js";
+import type * as whatsappConversationsHelpers from "../whatsappConversationsHelpers.js";
 import type * as whatsappSpendAllowlist from "../whatsappSpendAllowlist.js";
 
 import type {
@@ -267,6 +269,8 @@ declare const fullApi: ApiFromModules<{
   "whatsapp/spendControls": typeof whatsapp_spendControls;
   "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
   whatsappChannels: typeof whatsappChannels;
+  whatsappConversations: typeof whatsappConversations;
+  whatsappConversationsHelpers: typeof whatsappConversationsHelpers;
   whatsappSpendAllowlist: typeof whatsappSpendAllowlist;
 }>;
 

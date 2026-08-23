@@ -26,6 +26,7 @@ import {
 	WHATSAPP_CONVERSATION_STATUS,
 	WHATSAPP_PENDING_ACTION,
 	WHATSAPP_MESSAGE_DIRECTION,
+	WHATSAPP_MESSAGE_SENDER,
 } from "./constants";
 
 const structuredName = {
@@ -1383,15 +1384,25 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
+		// Two callers, one index — added independently by ADR 012 and TAVLI-93 with
+		// the same fields, so it is defined once here.
+		//
 		// The route (ADR 012): one conversation per (customer phone, restaurant).
 		// Replaces `by_channel_customer` — the channel row is now per-restaurant,
 		// and keying on the restaurant is what survives a channel being disabled
 		// and re-enabled.
+		//
+		// And "the conversation this reservation came from": a reservation stores
+		// the customer's canonical phone, not a conversation id, so the staff link
+		// is resolved by (restaurant, phone) — restaurant-first, so the lookup
+		// structurally cannot reach another restaurant's thread.
 		.index("by_restaurant_customer", ["restaurantId", "customerPhone"])
 		// Cold start: which restaurants has this phone talked to recently?
 		.index("by_customer_last_inbound", ["customerPhone", "lastInboundAt"])
 		.index("by_restaurant", ["restaurantId"])
-		.index("by_last_message", ["lastMessageAt"]),
+		// The staff conversation list: one restaurant's threads, most recently
+		// active first, without reading rows it will not show.
+		.index("by_restaurant_last_message", ["restaurantId", "lastMessageAt"]),
 
 	[TABLE.WHATSAPP_MESSAGES]: defineTable({
 		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
@@ -1412,6 +1423,24 @@ export default defineSchema({
 		 * is not replayed at all; there is no fallback to `body`.
 		 */
 		modelBody: v.optional(v.string()),
+		/**
+		 * Outbound only: who composed this message — the assistant, the server's
+		 * own deterministic copy, or (once handover ships) a staff member. See
+		 * `WHATSAPP_MESSAGE_SENDER` for why this is stored rather than inferred
+		 * from `modelBody`.
+		 *
+		 * Optional because rows written before TAVLI-93 have none. Those predate
+		 * any staff-reply path, so the staff conversation view reads a missing
+		 * value as the assistant — a guess that can never wrongly claim a human
+		 * wrote something.
+		 */
+		sentBy: v.optional(
+			v.union(
+				v.literal(WHATSAPP_MESSAGE_SENDER.ASSISTANT),
+				v.literal(WHATSAPP_MESSAGE_SENDER.SYSTEM),
+				v.literal(WHATSAPP_MESSAGE_SENDER.STAFF)
+			)
+		),
 		mediaUrl: v.optional(v.string()),
 		// Set when the Twilio send failed, so the row is kept for the message log
 		// but excluded from the context replayed to the model — otherwise the

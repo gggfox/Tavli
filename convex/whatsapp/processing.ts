@@ -40,6 +40,8 @@ import {
 	WHATSAPP_CONTEXT_MESSAGE_LIMIT,
 	WHATSAPP_MAX_OUTBOUND_BODY_CHARS,
 	WHATSAPP_MAX_REPLY_PARTS,
+	WHATSAPP_MESSAGE_SENDER,
+	type WhatsappMessageSender,
 } from "../constants";
 import { getBotCopy, getUnroutableGuidance, resolveLocale } from "./copy";
 import { formatLocalDateTime } from "./datetime";
@@ -87,6 +89,12 @@ async function sendAndRecord(
 		body: string;
 		/** The model's own prose, without the appended notices. "" = none. */
 		modelBody: string;
+		/**
+		 * Who is speaking. Applies to the whole reply, every part of it — a long
+		 * assistant answer split across three WhatsApp messages is one utterance
+		 * by the assistant, even though only the first part keeps `modelBody`.
+		 */
+		sentBy: WhatsappMessageSender;
 		mediaUrl?: string;
 	}
 ): Promise<void> {
@@ -121,6 +129,7 @@ async function sendAndRecord(
 			restaurantId: args.restaurantId,
 			body,
 			modelBody,
+			sentBy: args.sentBy,
 			mediaUrl,
 			messageSid: sid,
 			// `sendWhatsappMessage` never throws; a missing SID is how it reports failure.
@@ -325,6 +334,7 @@ export const handleInboundMessage = internalAction({
 					// Entirely server-composed: the model was never consulted for the
 					// authorization decision and must not be shown this as its own line.
 					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				});
 				return;
 			}
@@ -351,6 +361,7 @@ export const handleInboundMessage = internalAction({
 					phone: customerPhone,
 					body: getBotCopy(locale).dailyLimitReached,
 					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				});
 			}
 			return;
@@ -368,6 +379,7 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: getBotCopy(locale).platformBusy,
 				modelBody: "",
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 			});
 			return;
 		}
@@ -386,6 +398,9 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: getBotCopy(locale).deepLinkWelcome(restaurant?.name ?? "Tavli"),
 				modelBody: "",
+				// Fixed copy, not a model turn — the same as every other
+				// deterministic reply on this path.
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 			});
 			return;
 		}
@@ -437,6 +452,17 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: composed || getBotCopy(locale).genericError,
 				modelBody: result.text,
+				// Attributed by whether the MODEL wrote prose, not by whether the
+				// reply has a body. A turn that ends on a tool step — the step budget
+				// ran out, or redaction emptied a one-line reply — sends a body made
+				// entirely of notice lines: a confirmation, a cap notice, a menu link,
+				// all deterministic server copy. So is the fallback apology when there
+				// is neither prose nor a notice. The assistant wrote none of it, and
+				// `sentBy` is permanent, so signing it "assistant" would put the
+				// assistant's name on the one line it provably did not say — in the
+				// view staff read to adjudicate "but your bot told me it was booked".
+				// A mixed prose+notice reply still belongs to the assistant.
+				sentBy: result.text ? WHATSAPP_MESSAGE_SENDER.ASSISTANT : WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				mediaUrl: result.mediaUrl,
 			});
 		} catch (error) {
@@ -455,6 +481,7 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: getBotCopy(locale).genericError,
 				modelBody: "",
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 			});
 		}
 	},

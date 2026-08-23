@@ -18,6 +18,7 @@ import {
 	Surface,
 	toneByValue,
 } from "@/global/components";
+import { ReservationConversationLink } from "@/features/whatsapp";
 import { ReservationsKeys } from "@/global/i18n";
 import { extractErrorCode, getErrorMessage } from "@/global/utils/errorMessages";
 import type { Doc, Id } from "convex/_generated/dataModel";
@@ -382,6 +383,11 @@ export function ReservationDetailDrawer({
 						{t(ReservationsKeys.DRAWER_VIA, { source: reservation.source })}
 					</span>
 				</div>
+				{/* Only rendered for `source: "whatsapp"`, and it renders nothing when
+				    the thread is gone — see `ReservationConversationLink`. This is where
+				    "but your bot told me…" gets answered, because it is where staff
+				    already are when a diner says it. */}
+				<ReservationConversationLink reservationId={reservation._id} source={reservation.source} />
 				{reservation.notes && (
 					<Surface
 						tone="secondary"

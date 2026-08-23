@@ -18,6 +18,7 @@
 			"orders": "Orders",
 			"payments": "Payments",
 			"reservations": "Reservations",
+			"whatsapp": "WhatsApp",
 			"team": "Members",
 			"teamInvites": "Team",
 			"schedule": "Schedule",
@@ -1950,6 +1951,58 @@
 			"enable": "Enable",
 			"pause": "Pause",
 			"publicCta": "Ask on WhatsApp"
+		},
+		"page": {
+			"setupRestaurantFirst": "Please set up your restaurant first."
+		},
+		"list": {
+			"entity": "conversations",
+			"searchPlaceholder": "Search by name or phone...",
+			"resultCount_one": "1 conversation",
+			"resultCount_other": "{{count}} conversations",
+			"emptyTitle": "No WhatsApp conversations yet",
+			"emptyDescription": "Threads appear here as soon as a diner messages this restaurant's WhatsApp number.",
+			"filteredEmptyTitle": "No matching conversations",
+			"notAuthenticated": "Please sign in to read WhatsApp conversations.",
+			"truncated": "Showing the {{count}} most recently active conversations. Older ones are still reachable from the reservation they produced."
+		},
+		"column": {
+			"customer": "Customer",
+			"phone": "Phone",
+			"status": "Status",
+			"lastActivity": "Last activity",
+			"started": "Started"
+		},
+		"customer": {
+			"unknown": "No name given"
+		},
+		"status": {
+			"active": "Active",
+			"handoff": "Handed off",
+			"closed": "Closed"
+		},
+		"thread": {
+			"aria": "WhatsApp conversation",
+			"closeAria": "Close conversation",
+			"readOnly": "Read-only. Replying and taking over the thread are not available yet.",
+			"loadOlder": "Load older messages",
+			"loading": "Loading the conversation...",
+			"empty": "This conversation has no messages.",
+			"error": "Could not load this conversation.",
+			"windowFull": "Showing the {{count}} most recent messages. Anything older is not shown."
+		},
+		"sender": {
+			"customer": "Diner",
+			"assistant": "Assistant",
+			"system": "Tavli",
+			"staff": "Staff"
+		},
+		"message": {
+			"undelivered": "Not delivered",
+			"attachment": "Sent with an attachment"
+		},
+		"reservationLink": {
+			"label": "Open the WhatsApp conversation"
 		}
 	}
 }

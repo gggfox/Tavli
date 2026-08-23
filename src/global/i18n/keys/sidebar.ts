@@ -20,6 +20,7 @@ export const SidebarKeys = {
 	ORDERS: "sidebar.nav.orders",
 	PAYMENTS: "sidebar.nav.payments",
 	RESERVATIONS: "sidebar.nav.reservations",
+	WHATSAPP: "sidebar.nav.whatsapp",
 	TEAM: "sidebar.nav.team",
 	TEAM_INVITES: "sidebar.nav.teamInvites",
 	SCHEDULE: "sidebar.nav.schedule",

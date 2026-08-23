@@ -12,6 +12,7 @@ import {
 	WHATSAPP_COLD_START_SCAN_LIMIT,
 	WHATSAPP_CONVERSATION_STATUS,
 	WHATSAPP_MESSAGE_DIRECTION,
+	WHATSAPP_MESSAGE_SENDER,
 	WHATSAPP_PENDING_CODE_SCAN_LIMIT,
 	WHATSAPP_UNROUTED_CLAIM_TTL_MS,
 	WHATSAPP_UNROUTED_PURGE_BATCH,
@@ -298,13 +299,24 @@ export const ingestInbound = internalMutation({
 	},
 });
 
-/** Append an outbound reply to the conversation log and bump its activity time. */
+/**
+ * Append an outbound reply to the conversation log and bump its activity time.
+ *
+ * `sentBy` is required, not defaulted: every send path has to say who is
+ * speaking, so a new one cannot silently inherit "assistant" and put the
+ * assistant's name on copy it never wrote. See `WHATSAPP_MESSAGE_SENDER`.
+ */
 export const recordOutbound = internalMutation({
 	args: {
 		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		body: v.string(),
 		modelBody: v.optional(v.string()),
+		sentBy: v.union(
+			v.literal(WHATSAPP_MESSAGE_SENDER.ASSISTANT),
+			v.literal(WHATSAPP_MESSAGE_SENDER.SYSTEM),
+			v.literal(WHATSAPP_MESSAGE_SENDER.STAFF)
+		),
 		mediaUrl: v.optional(v.string()),
 		messageSid: v.optional(v.string()),
 		deliveryFailedAt: v.optional(v.number()),
@@ -318,6 +330,7 @@ export const recordOutbound = internalMutation({
 			messageSid: args.messageSid,
 			body: args.body,
 			modelBody: args.modelBody,
+			sentBy: args.sentBy,
 			mediaUrl: args.mediaUrl,
 			deliveryFailedAt: args.deliveryFailedAt,
 			createdAt: now,
