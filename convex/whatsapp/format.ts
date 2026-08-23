@@ -12,7 +12,11 @@
  * synchronous, so it unit-tests without a deployment.
  */
 
-import { WHATSAPP_MAX_INBOUND_BODY_CHARS, WHATSAPP_MAX_OUTBOUND_BODY_CHARS } from "../constants";
+import {
+	WHATSAPP_CONFIRMATION_CODE_DIGITS,
+	WHATSAPP_MAX_INBOUND_BODY_CHARS,
+	WHATSAPP_MAX_OUTBOUND_BODY_CHARS,
+} from "../constants";
 
 /** Blank-line runs longer than this read as a gap in a chat bubble. */
 const MAX_CONSECUTIVE_NEWLINES = 2;
@@ -176,4 +180,32 @@ export function splitOutboundBody(text: string, limit: number, maxParts: number)
 
 	parts.push(clampOutboundBody(rest, limit));
 	return parts.filter((p) => p.length > 0);
+}
+
+/**
+ * Remove anything shaped like a confirmation code from text the model wrote or
+ * will be shown.
+ *
+ * The model never legitimately holds a code — codes travel only in the
+ * server-composed notice — so a code-shaped token in its prose is fabricated,
+ * and a code-shaped token in replayed history is a worked example it will
+ * imitate. Both directions were observed: it reused a spent code a customer had
+ * sent back, and it re-invented a fresh one from its own earlier fabrication.
+ * The shape is the one `extractConfirmationCode` matches, so the two agree on
+ * what a code looks like.
+ *
+ * Applied to the model's output before it is sent or stored, and to every
+ * replayed message. Not applied to the notice lines, which carry the real code.
+ */
+export function redactConfirmationCodes(text: string): string {
+	return (
+		text
+			.replace(new RegExp(`(?<!\\d)\\d{${WHATSAPP_CONFIRMATION_CODE_DIGITS}}(?!\\d)`, "g"), "")
+			// The model wraps a code in emphasis (`*281437*`); with the digits gone
+			// the empty pair would reach the customer as a stray `**`.
+			.replace(/([*_~])\s*\1/g, "")
+			.replace(/[ \t]{2,}/g, " ")
+			.replace(/ ([.,;:!?)])/g, "$1")
+			.trim()
+	);
 }

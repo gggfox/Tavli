@@ -8,6 +8,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { TABLE, WHATSAPP_CONVERSATION_STATUS, WHATSAPP_MESSAGE_DIRECTION } from "../constants";
+import { redactConfirmationCodes } from "./format";
 import { MAX_CONTACT_NAME_LENGTH } from "../reservationHelpers";
 import { normalizePhone } from "./phone";
 
@@ -212,10 +213,23 @@ export const getConversationContext = internalQuery({
 		return (
 			recent
 				.filter((m) => m.deliveryFailedAt === undefined)
-				// The model is shown its own words only. A message with no model prose
-				// (a code confirmation, an apology) is server-composed and is dropped
-				// rather than handed back as something the assistant "said".
-				.map((m) => ({ direction: m.direction, body: m.modelBody ?? m.body }))
+				// The model is shown its own words only. Outbound rows replay
+				// `modelBody`, never `body`: `body` also carries the appended notice
+				// lines — "✅ …", and the confirmation code — and replaying those as
+				// the assistant's own prior turn taught it to write fake ✅ lines and
+				// invent codes. There is deliberately no fallback to `body` for rows
+				// that predate `modelBody`; one such row back in context was enough
+				// to make the model fabricate a six-digit code. A row with no model
+				// prose (a code confirmation, an apology) is server-composed and is
+				// dropped.
+				.map((m) => ({
+					direction: m.direction,
+					// Both directions redacted: a code the customer sent back and a code
+					// the model fabricated are each a worked example it will imitate.
+					body: redactConfirmationCodes(
+						m.direction === WHATSAPP_MESSAGE_DIRECTION.INBOUND ? m.body : (m.modelBody ?? "")
+					),
+				}))
 				.filter((m) => m.body.trim().length > 0)
 				.slice(0, args.limit)
 				.reverse()

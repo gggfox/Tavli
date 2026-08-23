@@ -1016,6 +1016,164 @@ describe("what the model is shown of its own past replies", () => {
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 	}
 
+	it("strips a code the model fabricated before the customer sees it, keeping the real one", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		// The model never holds a code, so any code-shaped token in its prose is
+		// invented. Left in, the customer sees two codes — one of which the system
+		// will reject — and the reply teaches the next turn to do it again.
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			await tools.request_cancel.execute({}, {});
+			return { text: "Claro. Responde con el código *281437* para confirmar.", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-fab", Body: "cancela mi reservación" });
+
+		const real = (
+			await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect())
+		).find((r) => r.consumedAt === undefined)!.code;
+		const sent = (
+			await t.run((ctx) =>
+				ctx.db
+					.query("whatsappMessages")
+					.filter((q) => q.eq(q.field("direction"), "outbound"))
+					.collect()
+			)
+		)[0];
+
+		expect(sent.body).not.toContain("281437");
+		expect(sent.body).toContain(real);
+		expect(sent.body).toContain("Claro.");
+		// And it is not stored as the model's prose either, so it cannot be replayed.
+		expect(sent.modelBody).not.toContain("281437");
+	});
+
+	it("does not replay a code-shaped token from the model's own earlier prose", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		// A row whose modelBody carries a code: however it got there, replaying it
+		// is a worked example and the model imitates worked examples.
+		const conversationId = await t.run(async (ctx) => {
+			const channel = (await ctx.db.query("whatsappChannels").first())!;
+			return ctx.db.insert("whatsappConversations", {
+				channelId: channel._id,
+				restaurantId,
+				customerPhone: CUSTOMER,
+				status: "active",
+				lastInboundAt: Date.now(),
+				lastMessageAt: Date.now(),
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		});
+		await t.run((ctx) =>
+			ctx.db.insert("whatsappMessages", {
+				conversationId,
+				restaurantId,
+				direction: "outbound",
+				messageSid: "SM-prev",
+				body: "Responde con el código *362341*.\n\nPara cancelar … código: 111111",
+				modelBody: "Responde con el código *362341*.",
+				createdAt: Date.now() - 60_000,
+			})
+		);
+
+		let history: { role: string; content: string }[] = [];
+		mockGenerateText.mockImplementation(async ({ messages }: { messages: typeof history }) => {
+			history = messages;
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-next", Body: "hola" });
+
+		const all = history.map((m) => m.content).join("\n");
+		expect(all).toContain("Responde con el código");
+		expect(all).not.toMatch(/(?<!\d)\d{6}(?!\d)/);
+	});
+
+	it("does not replay a confirmation code the customer sent back", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		// Issue a real code and redeem it, exactly as a customer would.
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			await tools.request_cancel.execute({}, {});
+			return { text: "Claro.", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-req", Body: "cancela mi reservación" });
+		const code = (
+			await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect())
+		).find((r) => r.consumedAt === undefined)!.code;
+		mockGenerateText.mockReset().mockResolvedValue({ text: "no", toolCalls: [] });
+		await post(t, { MessageSid: "SM-code", Body: `sí, el código es ${code}` });
+
+		// Next turn: the redeemed code must not be in the history the model sees.
+		// A customer message that is a code is a worked example of "a six-digit
+		// number ends the flow", and the model reused a spent one as if it were
+		// the next code — telling the customer to reply with a number that the
+		// system would reject.
+		let history: { role: string; content: string }[] = [];
+		mockGenerateText.mockImplementation(async ({ messages }: { messages: typeof history }) => {
+			history = messages;
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-next", Body: "gracias" });
+
+		const all = history.map((m) => m.content).join("\n");
+		expect(all).not.toContain(code);
+		expect(all).not.toMatch(/(?<!\d)\d{6}(?!\d)/);
+		// The rest of the customer's words survive; only the code is gone.
+		expect(all).toContain("cancela mi reservación");
+	});
+
+	it("does not replay an outbound row written before modelBody existed", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		// A row from before `modelBody` was recorded: its `body` is the model's
+		// prose AND the appended notice, code included. Falling back to `body`
+		// for such rows put a worked example of a code line back in context, and
+		// the model imitated it — inventing a six-digit code of its own that the
+		// customer then sent and had rejected.
+		const conversationId = await t.run(async (ctx) => {
+			const channel = (await ctx.db.query("whatsappChannels").first())!;
+			return ctx.db.insert("whatsappConversations", {
+				channelId: channel._id,
+				restaurantId,
+				customerPhone: CUSTOMER,
+				status: "active",
+				lastInboundAt: Date.now(),
+				lastMessageAt: Date.now(),
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		});
+		await t.run((ctx) =>
+			ctx.db.insert("whatsappMessages", {
+				conversationId,
+				restaurantId,
+				direction: "outbound",
+				messageSid: "SM-legacy",
+				body: "Claro.\n\nPara cancelar tu reservación, responde con este código: 140798",
+				createdAt: Date.now() - 60_000,
+			})
+		);
+
+		let history: { role: string; content: string }[] = [];
+		mockGenerateText.mockImplementation(async ({ messages }: { messages: typeof history }) => {
+			history = messages;
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-next", Body: "hola" });
+
+		const assistantTurns = history.filter((m) => m.role === "assistant").map((m) => m.content);
+		expect(assistantTurns.join("\n")).not.toMatch(/\d{6}/);
+	});
+
 	it("never replays a server-composed notice or a confirmation code as the model's own words", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedChannel(t);

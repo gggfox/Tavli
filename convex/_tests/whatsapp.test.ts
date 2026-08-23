@@ -7,6 +7,7 @@ import schema from "../schema";
 import {
 	clampInboundBody,
 	clampOutboundBody,
+	redactConfirmationCodes,
 	splitOutboundBody,
 	toWhatsappText,
 } from "../whatsapp/format";
@@ -809,5 +810,26 @@ describe("splitOutboundBody", () => {
 
 		expect(parts.length).toBeGreaterThan(1);
 		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(LIMIT);
+	});
+});
+
+describe("redactConfirmationCodes", () => {
+	it("removes a code-shaped token and the empty emphasis the model wrapped it in", () => {
+		// The model writes `*281437*`; with the digits gone, `**` must not survive.
+		expect(redactConfirmationCodes("Responde con el código *281437* para confirmar.")).toBe(
+			"Responde con el código para confirmar."
+		);
+		expect(redactConfirmationCodes("con el código *281437*.")).toBe("con el código.");
+	});
+
+	it("leaves real emphasis and longer numbers alone", () => {
+		expect(redactConfirmationCodes("*Carnes* — Rib eye 1000.00 MXN, tel +528114906208")).toBe(
+			"*Carnes* — Rib eye 1000.00 MXN, tel +528114906208"
+		);
+	});
+
+	it("reduces a message that was only a code to nothing", () => {
+		expect(redactConfirmationCodes("362341")).toBe("");
+		expect(redactConfirmationCodes("  362341 ")).toBe("");
 	});
 });

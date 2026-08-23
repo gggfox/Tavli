@@ -1381,10 +1381,11 @@ export default defineSchema({
 		body: v.string(),
 		/**
 		 * Outbound only: the model's own words, without the server-composed notice
-		 * lines `body` also carries. This is what gets replayed as context —
-		 * replaying `body` taught the model to write its own ✅ confirmations and
-		 * to invent placeholders for a code it never sees. Empty string means the
-		 * message was entirely server-composed and is not replayed at all.
+		 * lines `body` also carries. This is the ONLY thing replayed as context for
+		 * an outbound row — replaying `body` taught the model to write its own ✅
+		 * confirmations and to invent confirmation codes. Absent (a row from before
+		 * this field) or empty (an entirely server-composed message) means the row
+		 * is not replayed at all; there is no fallback to `body`.
 		 */
 		modelBody: v.optional(v.string()),
 		mediaUrl: v.optional(v.string()),

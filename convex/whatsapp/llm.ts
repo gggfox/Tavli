@@ -40,7 +40,7 @@ import {
 } from "../constants";
 import { getBotCopy, resolveLocale } from "./copy";
 import { formatLocalDateTime, resolveRequestedStart } from "./datetime";
-import { toWhatsappText } from "./format";
+import { redactConfirmationCodes, toWhatsappText } from "./format";
 import { buildMenuToolResult, matchDishByName } from "./menu";
 import {
 	MAX_MENU_FIELD_PROMPT_CHARS,
@@ -482,8 +482,11 @@ export async function runBotTurn(
 	const toolsUsed = Array.from(new Set(result.toolCalls.map((c) => c.toolName)));
 	return {
 		// The prompt asks for WhatsApp syntax; convert anyway — models drift back
-		// into Markdown and the customer sees the raw markers.
-		text: toWhatsappText(result.text),
+		// into Markdown and the customer sees the raw markers. Then strip anything
+		// code-shaped: the model never holds a code, so one in its prose is
+		// fabricated, and sent as-is the customer sees two codes of which the
+		// system rejects one. The real code arrives in the notice lines.
+		text: redactConfirmationCodes(toWhatsappText(result.text)),
 		mediaUrl: collectedMedia[0],
 		toolsUsed,
 		notices,
