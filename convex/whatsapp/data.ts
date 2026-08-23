@@ -8,6 +8,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { TABLE, WHATSAPP_CONVERSATION_STATUS, WHATSAPP_MESSAGE_DIRECTION } from "../constants";
+import { isMenuLinkEnabled } from "../featureFlags";
 import { redactConfirmationCodes } from "./format";
 import { MAX_CONTACT_NAME_LENGTH } from "../reservationHelpers";
 import { normalizePhone } from "./phone";
@@ -251,4 +252,16 @@ export const getRestaurantContext = internalQuery({
 			timezone: restaurant.timezone ?? null,
 		};
 	},
+});
+
+/**
+ * Which optional tools this turn may offer the model.
+ *
+ * Read once per inbound message, in `processing.ts`, and passed into
+ * `runBotTurn` — never read from inside a tool body, where the round trip would
+ * put an `await` in the middle of a once-per-turn claim (see `send_menu_link`).
+ */
+export const getBotFeatureFlags = internalQuery({
+	args: {},
+	handler: async (ctx) => ({ menuLinkEnabled: await isMenuLinkEnabled(ctx) }),
 });

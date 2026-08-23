@@ -45,6 +45,12 @@ export const FEATURE_FLAGS = {
 	 * `DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS`.
 	 */
 	SOFT_DELETE_PURGE_DELAY_DAYS: "softDeletePurgeDelayDays",
+	/**
+	 * Lets the WhatsApp assistant hand the diner a link to the menu page
+	 * (`send_menu_link`). OFF until `/r/:slug/:lang/menu` is viewable **signed
+	 * out** — see `isMenuLinkEnabled` below for why that precondition exists.
+	 */
+	WHATSAPP_MENU_LINK: "whatsappMenuLink",
 } as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
@@ -57,6 +63,10 @@ export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string
 	[FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS]: {
 		description:
 			"Retention window (in days) before soft-deleted sections and tables are permanently hard-deleted by the cron sweep. Set numericValue on the flag and enable it to override; otherwise the system default applies.",
+	},
+	[FEATURE_FLAGS.WHATSAPP_MENU_LINK]: {
+		description:
+			"Lets the WhatsApp assistant send diners a link to the menu page. Keep OFF until /r/:slug/:lang/menu renders for a signed-out visitor: today the customer layout shows a Clerk sign-in wall instead, so a diner messaging from home taps the link and lands on a sign-up form rather than on prices.",
 	},
 };
 
@@ -82,6 +92,31 @@ export async function getSoftDeletePurgeDelayMs(ctx: QueryCtx | MutationCtx): Pr
 			? flag.numericValue
 			: DEFAULT_SOFT_DELETE_PURGE_DELAY_DAYS;
 	return configured * MS_PER_DAY;
+}
+
+/**
+ * May the WhatsApp assistant hand a diner a link to the menu page?
+ *
+ * Default **false**, and the default is the point. The link itself is sound —
+ * `/r/:slug/:lang/menu` is the only surface that lists items with prices, and it
+ * needs no table — but the customer layout (`src/routes/r/$slug.tsx`) renders a
+ * Clerk sign-in wall in front of every child route whenever `!isSignedIn`. A
+ * diner messaging from their sofa therefore taps the link and lands on a
+ * sign-up form, which is exactly the "link that looks broken to someone at
+ * home" TAVLI-94 forbids shipping.
+ *
+ * The gate is deliberately a runtime flag rather than a code change: whether the
+ * menu becomes publicly browsable (and what ordering does for a signed-out
+ * visitor) is a product decision, and the assistant should start offering the
+ * link the moment that decision lands — without a redeploy. Flip this on only
+ * after a signed-out browser can reach the menu.
+ */
+export async function isMenuLinkEnabled(ctx: QueryCtx | MutationCtx): Promise<boolean> {
+	const flag = await ctx.db
+		.query("featureFlags")
+		.withIndex("by_key", (q) => q.eq("key", FEATURE_FLAGS.WHATSAPP_MENU_LINK))
+		.first();
+	return flag?.enabled === true;
 }
 
 const REGISTERED_FLAG_KEYS = new Set<string>(Object.values(FEATURE_FLAGS));

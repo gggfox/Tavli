@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { FEATURE_FLAGS } from "../featureFlags";
 import schema from "../schema";
 import {
 	clampInboundBody,
@@ -80,6 +81,25 @@ async function seedChannel(
 		});
 	});
 	return restaurantId!;
+}
+
+/**
+ * Turn the menu-link tool on.
+ *
+ * It ships OFF (`whatsappMenuLink` absent = disabled): `/r/:slug/:lang/menu`
+ * still sits behind the customer layout's Clerk sign-in wall, so a diner
+ * messaging from their sofa would tap the link and land on a sign-up form
+ * rather than on prices. Every test that exercises the link says so out loud.
+ */
+async function enableMenuLink(t: ReturnType<typeof convexTest>) {
+	await t.run(async (ctx) => {
+		await ctx.db.insert("featureFlags", {
+			key: FEATURE_FLAGS.WHATSAPP_MENU_LINK,
+			enabled: true,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+	});
 }
 
 async function seedMenuItem(
@@ -662,9 +682,81 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it("does not offer the menu link while the menu page still demands a sign-in", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		process.env.PUBLIC_APP_URL = "https://app.test";
+		// `whatsappMenuLink` deliberately NOT seeded — this is the shipped default.
+
+		let offeredTools: string[] = [];
+		let systemPrompt = "";
+		mockGenerateText.mockImplementation(
+			async ({ tools, system }: { tools: Record<string, unknown>; system: string }) => {
+				offeredTools = Object.keys(tools);
+				systemPrompt = system;
+				return { text: "Te cuento por aquí.", toolCalls: [] };
+			}
+		);
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "¿me pasas el menú completo?" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		// Not registered, so the model cannot call it — and not described either,
+		// so it cannot promise a link that will never arrive. Withholding one and
+		// not the other is worse than shipping neither.
+		expect(offeredTools).not.toContain("send_menu_link");
+		expect(systemPrompt).not.toContain("send_menu_link");
+		expect(systemPrompt.toLowerCase()).not.toContain("the system appends the link");
+		// The rest of the assistant is untouched: it still answers, and still may
+		// not type a URL of its own.
+		expect(offeredTools).toContain("lookup_menu");
+		expect(systemPrompt).toContain("You have NO web address of your own.");
+
+		const outbound = await t.run((ctx) =>
+			ctx.db
+				.query("whatsappMessages")
+				.filter((q) => q.eq(q.field("direction"), "outbound"))
+				.collect()
+		);
+		expect(outbound[0].body).toBe("Te cuento por aquí.");
+		expect(outbound[0].body).not.toContain("https://app.test");
+	});
+
+	it("offers the menu link once the flag says the menu page is public", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		await enableMenuLink(t);
+		process.env.PUBLIC_APP_URL = "https://app.test";
+
+		let offeredTools: string[] = [];
+		let systemPrompt = "";
+		mockGenerateText.mockImplementation(
+			async ({ tools, system }: { tools: Record<string, unknown>; system: string }) => {
+				offeredTools = Object.keys(tools);
+				systemPrompt = system;
+				return { text: "Va.", toolCalls: [] };
+			}
+		);
+
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody({ Body: "¿me pasas el menú completo?" }),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(offeredTools).toContain("send_menu_link");
+		expect(systemPrompt).toContain("send_menu_link");
+	});
+
 	it("appends a server-composed menu link when the model calls send_menu_link", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedChannel(t);
+		await enableMenuLink(t);
 		const slug = await t.run(async (ctx) => (await ctx.db.get(restaurantId))!.slug);
 		process.env.PUBLIC_APP_URL = "https://app.test/";
 
@@ -709,16 +801,22 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 	it("sends the menu link once even if the model calls the tool twice", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
+		await enableMenuLink(t);
 		process.env.PUBLIC_APP_URL = "https://app.test";
 
+		// `Promise.all`, not two awaits: the AI SDK runs the tool calls of a single
+		// step CONCURRENTLY, so the once-per-turn claim must not straddle an await.
+		// Sequential calls would pass even with a check-then-act race in the tool.
 		mockGenerateText.mockImplementation(
 			async ({
 				tools,
 			}: {
 				tools: Record<string, { execute: (i: unknown, o: unknown) => Promise<unknown> }>;
 			}) => {
-				await tools.send_menu_link.execute({}, {});
-				await tools.send_menu_link.execute({}, {});
+				await Promise.all([
+					tools.send_menu_link.execute({}, {}),
+					tools.send_menu_link.execute({}, {}),
+				]);
 				return { text: "Va.", toolCalls: [{ toolName: "send_menu_link" }] };
 			}
 		);
@@ -742,6 +840,7 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 	it("refuses the menu link when the app URL is not configured, and still replies", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
+		await enableMenuLink(t);
 		// Staging/production with no PUBLIC_APP_URL: `getAppUrl` throws rather than
 		// emit a dead localhost link. The turn must survive that.
 		delete process.env.PUBLIC_APP_URL;

@@ -206,6 +206,11 @@ export const handleInboundMessage = internalAction({
 				internal.whatsapp.reservations.internalGetBookingContextForBot,
 				{ restaurantId: channel.restaurantId }
 			);
+			// Resolved here, once, rather than inside `send_menu_link`: the tool's
+			// once-per-turn claim must not sit across an await (the AI SDK runs a
+			// step's tool calls concurrently), and the slug is already in hand from
+			// `getRestaurantContext` above.
+			const { menuLinkEnabled } = await ctx.runQuery(internal.whatsapp.data.getBotFeatureFlags, {});
 
 			const result = await runBotTurn(ctx, {
 				// Built here, from the Twilio-verified webhook fields, and frozen. The
@@ -220,6 +225,10 @@ export const handleInboundMessage = internalAction({
 				restaurantName: restaurant?.name ?? "the restaurant",
 				locale,
 				timezone: restaurant?.timezone ?? undefined,
+				// Absent unless the menu page is actually reachable by the diner who
+				// receives the link — see `isMenuLinkEnabled`. Absent also disarms
+				// the tool: `runBotTurn` does not register it.
+				menuLinkSlug: menuLinkEnabled ? (restaurant?.slug ?? undefined) : undefined,
 				bookingContext,
 				history,
 			});
