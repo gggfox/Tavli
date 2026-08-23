@@ -10,13 +10,15 @@
  */
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
+	USER_ROLES,
 	WHATSAPP_GLOBAL_DAILY_LIMIT,
 	WHATSAPP_INBOUND_DAILY_LIMIT,
 	WHATSAPP_MAX_REPLY_PARTS,
 	WHATSAPP_OUTBOUND_DAILY_LIMIT,
+	WHATSAPP_SPEND_ALLOWLIST_SEED,
 	WHATSAPP_WRITE_RATE_LIMIT,
 } from "../constants";
 import schema from "../schema";
@@ -125,6 +127,26 @@ async function allowlist(t: ReturnType<typeof convexTest>, phone: string, label 
 
 function counters(t: ReturnType<typeof convexTest>) {
 	return t.run((ctx) => ctx.db.query("rateLimits").collect());
+}
+
+/** Place a counter at an exact `(windowStart, count)`, creating the row if needed. */
+async function placeCounter(
+	t: ReturnType<typeof convexTest>,
+	key: string,
+	count: number,
+	windowStart: number
+) {
+	await t.run(async (ctx) => {
+		const existing = await ctx.db
+			.query("rateLimits")
+			.filter((q) => q.eq(q.field("key"), key))
+			.first();
+		if (existing) {
+			await ctx.db.patch(existing._id, { windowStart, count, updatedAt: windowStart });
+		} else {
+			await ctx.db.insert("rateLimits", { key, windowStart, count, updatedAt: windowStart });
+		}
+	});
 }
 
 function outboundBodies(t: ReturnType<typeof convexTest>) {
@@ -521,6 +543,36 @@ describe("platform daily ceiling", () => {
 		expect(resendCalls(fetchMock)).toHaveLength(1);
 	});
 
+	it("alerts again in the next ceiling window even when traffic ramps faster", async () => {
+		// The regression this pins: budgeting the alert against a window of its
+		// OWN opens that window when the alert is SENT, which is always later in
+		// the day than the ceiling counter's window opened. The next day's alert
+		// then only fits if that day took at least as long to reach 80% — so the
+		// one day worth warning about, the day traffic ramps faster than
+		// yesterday, is exactly the day that goes unreported.
+		const t = convexTest(schema, modules);
+		const HOUR = 60 * 60 * 1000;
+		const day1 = new Date("2026-08-23T00:00:00.000Z").getTime();
+
+		// Day 1, a slow ramp: the ceiling window opened at 00:00 and only reaches
+		// 80% twenty hours later.
+		await placeCounter(t, GLOBAL_BUDGET_KEY, globalAlertThreshold() - 1, day1);
+		vi.setSystemTime(day1 + 20 * HOUR);
+		await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, { phone: CUSTOMER });
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		expect(resendCalls(fetchMock)).toHaveLength(1);
+
+		// Day 2: the ceiling window rolls, and this time the platform reaches 80%
+		// an hour in. Ops must hear about it — this is the escalation.
+		const day2 = day1 + 25 * HOUR;
+		await placeCounter(t, GLOBAL_BUDGET_KEY, globalAlertThreshold() - 1, day2);
+		vi.setSystemTime(day2 + HOUR);
+		await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, { phone: OTHER_SENDER });
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(resendCalls(fetchMock)).toHaveLength(2);
+	});
+
 	it("stays quiet below the alert threshold", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
@@ -627,5 +679,106 @@ describe("admin allowlist", () => {
 
 		// The ceiling exists to bound Tavli's own bill; no phone spends past it.
 		expect(decision.globalCeilingReached).toBe(true);
+	});
+});
+
+// ============================================================================
+// The operator's own handset
+// ============================================================================
+
+describe("operator seed", () => {
+	const OPERATOR = WHATSAPP_SPEND_ALLOWLIST_SEED.phone;
+	const ADMIN = "admin-user";
+
+	const allowlistRows = (t: ReturnType<typeof convexTest>) =>
+		t.run((ctx) => ctx.db.query("whatsappSpendAllowlist").collect());
+
+	async function seedAdmin(t: ReturnType<typeof convexTest>) {
+		await t.run((ctx) =>
+			ctx.db.insert("userRoles", {
+				userId: ADMIN,
+				roles: [USER_ROLES.ADMIN],
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			})
+		);
+	}
+
+	it("exempts the operator's own handset on a deployment nobody has touched", async () => {
+		const t = convexTest(schema, modules);
+		// Empty allowlist, no admin signed in, no button pressed: the state every
+		// deployment starts in. The operator has already spent the inbound cap.
+		await seedCounter(t, inboundBudgetKey(OPERATOR), WHATSAPP_INBOUND_DAILY_LIMIT.max);
+
+		// Delivered the way WhatsApp spells a Mexican mobile.
+		const decision = await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: MX_WHATSAPP,
+		});
+
+		// Silencing the operator's own number reads as "the assistant is broken",
+		// not as "the cap fired" — which is the whole reason the seed exists.
+		expect(decision.allowed).toBe(true);
+	});
+
+	it("materializes the seed as a labelled row an admin can see and remove", async () => {
+		const t = convexTest(schema, modules);
+
+		await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: MX_WHATSAPP,
+		});
+
+		expect(await allowlistRows(t)).toMatchObject([
+			{ phone: OPERATOR, label: WHATSAPP_SPEND_ALLOWLIST_SEED.label },
+		]);
+	});
+
+	it("writes the seed exactly once, however many messages arrive", async () => {
+		const t = convexTest(schema, modules);
+
+		for (let i = 0; i < 3; i++) {
+			await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, {
+				phone: MX_WHATSAPP,
+			});
+		}
+
+		expect(await allowlistRows(t)).toHaveLength(1);
+		const added = await t.run((ctx) =>
+			ctx.db
+				.query("allEvents")
+				.filter((q) => q.eq(q.field("eventType"), "whatsappSpendAllowlist.added"))
+				.collect()
+		);
+		expect(added).toHaveLength(1);
+	});
+
+	it("does not resurrect the entry after an admin removes it", async () => {
+		const t = convexTest(schema, modules);
+		await seedAdmin(t);
+		await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: MX_WHATSAPP,
+		});
+		const [row] = await allowlistRows(t);
+		const [, removeError] = await t
+			.withIdentity({ subject: ADMIN })
+			.mutation(api.whatsappSpendAllowlist.remove, { allowlistId: row._id });
+		expect(removeError).toBeNull();
+
+		await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: MX_WHATSAPP,
+		});
+
+		// An admin who took the operator off the list meant it. A seed that
+		// re-appears on the next message is a control nobody can turn off.
+		expect(await allowlistRows(t)).toHaveLength(0);
+	});
+
+	it("leaves every other number under the caps", async () => {
+		const t = convexTest(schema, modules);
+
+		await t.mutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: CUSTOMER,
+		});
+
+		expect(await allowlistRows(t)).toHaveLength(0);
 	});
 });

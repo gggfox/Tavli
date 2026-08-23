@@ -367,13 +367,17 @@ throttle, rate limit (that is the mechanism, not the rule).
 **Platform ceiling**:
 The messages the assistant will handle across all **Restaurants** in 24 hours
 (5,000). Past it every customer gets fixed copy and the model is not called.
-Ops are warned by email at 80%.
+Ops are warned by email at 80%, once per ceiling window — the warning's budget
+is anchored to that window, not to a day of its own, so a day that reaches 80%
+sooner than the last one still reports.
 
 **Spend allowlist**:
 Phones exempt from the **Daily message cap** — the operator's own handset and
 supervised testing numbers. Org-level and platform-admin-only: an entry waives
 a control on Tavli's own bill, not on anything a **Restaurant** owns. It
-exempts the caps and nothing else. _Avoid_: whitelist, VIP list.
+exempts the caps and nothing else. The operator's own number adds itself on its
+first inbound message, so no deployment starts with it capped; removing it
+sticks. _Avoid_: whitelist, VIP list.
 
 **Awaiting confirmation**:
 A booking made by the **WhatsApp assistant** is `pending` with no `tableIds`

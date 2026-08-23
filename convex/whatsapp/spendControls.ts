@@ -33,7 +33,7 @@
  */
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import type { DatabaseReader } from "../_generated/server";
+import type { DatabaseReader, MutationCtx } from "../_generated/server";
 import { internalAction, internalMutation } from "../_generated/server";
 import { parseResendErrorSummary } from "../_shared/integrationLogging";
 import { normalizeContactPhone } from "../_util/phone";
@@ -47,7 +47,9 @@ import {
 	WHATSAPP_LIMIT_NOTICE_LIMIT,
 	WHATSAPP_OUTBOUND_DAILY_LIMIT,
 	WHATSAPP_SPEND_ALERT_EMAIL,
+	WHATSAPP_SPEND_ALLOWLIST_SEED,
 } from "../constants";
+import { ensureOperatorSeeded } from "../whatsappSpendAllowlist";
 
 // ============================================================================
 // Keys
@@ -71,7 +73,11 @@ export function limitNoticeKey(phone: string): string {
 /** The whole platform's daily inbound counter. */
 export const GLOBAL_BUDGET_KEY = "whatsapp_global";
 
-/** The ops warning email's own budget, so a runaway cannot become a mail flood. */
+/**
+ * The ops warning email's budget, so a runaway cannot become a mail flood. Its
+ * window is the ceiling counter's window, not one of its own — see
+ * {@link claimCeilingAlert}, which is where that matters.
+ */
 export const GLOBAL_ALERT_KEY = "whatsapp_global_alert";
 
 /** Count at which crossing the platform ceiling is still avoidable — 80% of it. */
@@ -116,6 +122,44 @@ export async function isSpendAllowlisted(
 // ============================================================================
 
 /**
+ * Claim the single ops warning this ceiling window is allowed, returning whether
+ * this caller got it.
+ *
+ * The budget is anchored to the GLOBAL COUNTER'S window — we hand
+ * `consumeRateLimit` the counter's `windowStart` as its notion of "now" — and
+ * not to a window of the alert's own. The two look equivalent and are not.
+ *
+ * An alert window of its own opens the moment the first alert is *sent*, which
+ * is always later in the day than the counter's window opened. With continuous
+ * traffic, let the counter's window N open at `G(N)` and take `d(N)` to reach
+ * 80%. The alert goes out at `G(N) + d(N)` and holds its budget until
+ * `G(N) + d(N) + 24h`, while the next candidate falls at `G(N+1) + d(N+1)`
+ * `= G(N) + 24h + d(N+1)`. It therefore only fits when `d(N+1) >= d(N)`: the
+ * alert re-fires only on a day that took at least as long to reach 80% as the
+ * day before. Every day traffic ramps *faster* — the only day the warning is
+ * worth having — is silently dropped, or arrives hours late, for as long as the
+ * ramp continues.
+ *
+ * Anchoring to the counter's window makes "at most once per day" mean "at most
+ * once per ceiling window", which is what the control is for. Two hits inside
+ * one window present the same instant, so the second is refused; the next
+ * window's start is always at least a full window later (a fresh counter window
+ * only opens once the previous one has fully elapsed), so it opens a fresh alert
+ * budget regardless of when in the day the threshold is crossed.
+ *
+ * Note the key still carries no date, so this adds no `rateLimits` row per day.
+ */
+async function claimCeilingAlert(ctx: MutationCtx, globalWindowStart: number): Promise<boolean> {
+	const decision = await consumeRateLimit(
+		ctx,
+		GLOBAL_ALERT_KEY,
+		WHATSAPP_GLOBAL_ALERT_LIMIT,
+		globalWindowStart
+	);
+	return decision.allowed;
+}
+
+/**
  * Charge one inbound message to the phone's budget — and, if that passes, to the
  * platform's — and report what the pipeline may do with it.
  *
@@ -134,6 +178,15 @@ export const internalCheckInbound = internalMutation({
 	args: { phone: v.string() },
 	handler: async (ctx, args): Promise<{ allowed: boolean; globalCeilingReached: boolean }> => {
 		const phone = canonical(args.phone);
+		// The one allowlist entry that ships with the product places itself, here,
+		// on the operator's first message — the moment before the caps could start
+		// costing them anything. A seed that waits for an admin to press a button
+		// is not seeded on any deployment where nobody presses it, and nothing in
+		// the deploy path asks anyone to. Removing it still sticks; see
+		// `ensureOperatorSeeded`. A string comparison for every other caller.
+		if (phone === WHATSAPP_SPEND_ALLOWLIST_SEED.phone) {
+			await ensureOperatorSeeded(ctx);
+		}
 		const exempt = await isSpendAllowlisted(ctx, phone);
 
 		const phoneBudget = await consumeRateLimit(
@@ -152,8 +205,8 @@ export const internalCheckInbound = internalMutation({
 
 		const global = await consumeRateLimit(ctx, GLOBAL_BUDGET_KEY, WHATSAPP_GLOBAL_DAILY_LIMIT);
 		if (global.state.count >= globalAlertThreshold()) {
-			const alert = await consumeRateLimit(ctx, GLOBAL_ALERT_KEY, WHATSAPP_GLOBAL_ALERT_LIMIT);
-			if (alert.allowed) {
+			const claimed = await claimCeilingAlert(ctx, global.state.windowStart);
+			if (claimed) {
 				await ctx.scheduler.runAfter(
 					0,
 					internal.whatsapp.spendControls.sendGlobalCeilingAlertEmail,

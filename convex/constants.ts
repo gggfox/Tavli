@@ -980,12 +980,14 @@ export const WHATSAPP_SPEND_ALERT_EMAIL = "ops@tavliai.com";
 
 /**
  * The one allowlist entry that ships with the product: the operator's own
- * handset. Kept in code, and offered as a one-click add on the admin screen
- * while it is missing, so a fresh deployment does not silence the person
- * testing the assistant after 25 messages — which reads as a bug in the
- * assistant rather than as the cap doing its job.
+ * handset. Kept in code so no deployment can silence the person testing the
+ * assistant after 25 messages — which reads as a bug in the assistant rather
+ * than as the cap doing its job.
  *
- * Not inserted automatically: removing it has to stick.
+ * Placed automatically on the operator's first inbound message
+ * (`ensureOperatorSeeded`), and offered as a one-click add on the admin screen
+ * while it is missing. Removing it still sticks: the automatic path refuses to
+ * re-insert a row whose removal is in the audit trail.
  */
 export const WHATSAPP_SPEND_ALLOWLIST_SEED = {
 	phone: "+528114906208",

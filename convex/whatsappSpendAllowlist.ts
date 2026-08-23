@@ -35,7 +35,7 @@ import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId, requireAdminRole } from "./_util/auth";
 import { normalizeContactPhone } from "./_util/phone";
-import { TABLE, WHATSAPP_SPEND_ALLOWLIST_SEED } from "./constants";
+import { AUDIT_SYSTEM_USER_ID, TABLE, WHATSAPP_SPEND_ALLOWLIST_SEED } from "./constants";
 
 type AllowlistDoc = Doc<typeof TABLE.WHATSAPP_SPEND_ALLOWLIST>;
 type AllowlistId = Id<typeof TABLE.WHATSAPP_SPEND_ALLOWLIST>;
@@ -43,6 +43,10 @@ type AdminAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
 /** Longest label we store. A note, not an essay. */
 const MAX_LABEL_LENGTH = 80;
+
+/** Audit event types written for a row here. The seed reads them back. */
+const ADDED_EVENT = "whatsappSpendAllowlist.added";
+const REMOVED_EVENT = "whatsappSpendAllowlist.removed";
 
 const { phone: OPERATOR_PHONE, label: OPERATOR_LABEL } = WHATSAPP_SPEND_ALLOWLIST_SEED;
 
@@ -152,7 +156,7 @@ export const add = mutation({
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.WHATSAPP_SPEND_ALLOWLIST,
 			aggregateId: allowlistId,
-			eventType: "whatsappSpendAllowlist.added",
+			eventType: ADDED_EVENT,
 			// Org-level: this exempts a phone from a platform-wide spend control,
 			// not from anything one restaurant owns.
 			restaurantId: null,
@@ -181,7 +185,7 @@ export const remove = mutation({
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.WHATSAPP_SPEND_ALLOWLIST,
 			aggregateId: row._id,
-			eventType: "whatsappSpendAllowlist.removed",
+			eventType: REMOVED_EVENT,
 			restaurantId: null,
 			// The row itself is gone; the event is the only remaining record of
 			// which number was exempt and under what label.
@@ -193,12 +197,83 @@ export const remove = mutation({
 	},
 });
 
+// ============================================================================
+// The operator's own handset
+// ============================================================================
+
 /**
- * Idempotently seed the operator's own number.
+ * Insert the seed row unless someone has already decided about it.
  *
- * A fresh deployment where nobody remembers to add it means the person testing
- * the assistant is silenced after 25 messages, which reads as a bug in the
- * assistant rather than as the cap working.
+ * Two things have to be true at once, and only one of them is obvious:
+ *
+ * 1. **Every deployment starts with the operator exempt, with no human action.**
+ *    A seed that has to be clicked is not seeded: until somebody signs in as a
+ *    platform admin and presses a button, the operator's own handset is silenced
+ *    after 25 inbound messages with a single notice and then nothing — which
+ *    reads as "the assistant is broken", not as "the cap fired". Nothing in the
+ *    deploy path prompts anyone to press it, so the seed has to place itself.
+ * 2. **Removing the entry sticks.** An admin who takes the operator off the list
+ *    meant it; a seed that re-appears on its own is a spend control nobody can
+ *    turn off.
+ *
+ * The marker that separates "never seeded" from "seeded and then removed" is the
+ * audit trail this module already writes for exactly this purpose. A
+ * `whatsappSpendAllowlist.removed` event naming the operator's phone is a
+ * recorded human decision, and `allEvents` is append-only, so the decision
+ * outlives the row it was about. No extra table, no `seededAt` column that a
+ * later purge could clear.
+ *
+ * Idempotent and cheap: the removal scan runs only while the row is absent, and
+ * the whole function only runs for one phone number.
+ */
+export async function ensureOperatorSeeded(ctx: MutationCtx): Promise<boolean> {
+	const existing = await ctx.db
+		.query(TABLE.WHATSAPP_SPEND_ALLOWLIST)
+		.withIndex("by_phone", (q) => q.eq("phone", OPERATOR_PHONE))
+		.first();
+	if (existing) return false;
+
+	// Bounded by the number of allowlist removals ever performed, which is a
+	// handful — not by traffic.
+	const removals = await ctx.db
+		.query(TABLE.ALL_EVENTS)
+		.withIndex("by_event_type", (q) => q.eq("eventType", REMOVED_EVENT))
+		.collect();
+	const wasRemoved = removals.some(
+		(event) => (event.payload as { phone?: unknown } | null)?.phone === OPERATOR_PHONE
+	);
+	if (wasRemoved) return false;
+
+	await insertOperatorRow(ctx, AUDIT_SYSTEM_USER_ID);
+	return true;
+}
+
+/** Shared insert + audit event for the seed row. */
+async function insertOperatorRow(ctx: MutationCtx, userId: string): Promise<void> {
+	const allowlistId = await ctx.db.insert(TABLE.WHATSAPP_SPEND_ALLOWLIST, {
+		phone: OPERATOR_PHONE,
+		label: OPERATOR_LABEL,
+		createdAt: Date.now(),
+		createdBy: userId,
+	});
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.WHATSAPP_SPEND_ALLOWLIST,
+		aggregateId: allowlistId,
+		eventType: ADDED_EVENT,
+		restaurantId: null,
+		payload: { phone: OPERATOR_PHONE, label: OPERATOR_LABEL, seeded: true },
+		userId,
+	});
+}
+
+/**
+ * Put the operator's number back, by hand.
+ *
+ * {@link ensureOperatorSeeded} already places it on first contact, so this is
+ * for an admin who wants the row on the screen before any message has arrived,
+ * or who removed it and changed their mind. Explicit, so unlike the automatic
+ * path it is *not* blocked by an earlier removal — pressing the button is itself
+ * the human decision the removal marker exists to respect.
  */
 export const seedOperatorNumber = mutation({
 	args: {},
@@ -212,21 +287,7 @@ export const seedOperatorNumber = mutation({
 			.first();
 		if (existing) return { ok: true as const, created: 0 };
 
-		const allowlistId = await ctx.db.insert(TABLE.WHATSAPP_SPEND_ALLOWLIST, {
-			phone: OPERATOR_PHONE,
-			label: OPERATOR_LABEL,
-			createdAt: Date.now(),
-			createdBy: userId,
-		});
-		await appendAuditEvent(ctx, {
-			aggregateType: TABLE.WHATSAPP_SPEND_ALLOWLIST,
-			aggregateId: allowlistId,
-			eventType: "whatsappSpendAllowlist.added",
-			restaurantId: null,
-			payload: { phone: OPERATOR_PHONE, label: OPERATOR_LABEL, seeded: true },
-			userId,
-		});
-
+		await insertOperatorRow(ctx, userId);
 		return { ok: true as const, created: 1 };
 	},
 });

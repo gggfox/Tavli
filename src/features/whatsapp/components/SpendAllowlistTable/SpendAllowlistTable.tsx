@@ -146,7 +146,7 @@ export function SpendAllowlistTable() {
 				searchPlaceholder="Search allowlisted phones..."
 				emptyIcon={ShieldCheck}
 				emptyTitle="No phones are exempt"
-				emptyDescription="Every phone is subject to the assistant's daily message caps. Add the operator's own number here so testing is not silenced after 25 messages."
+				emptyDescription="Every phone is subject to the assistant's daily message caps. The operator's own number adds itself the first time it messages the assistant; add it now, or any supervised testing number, to exempt it before then."
 				filteredEmptyTitle="No matching phones"
 				notAuthenticatedMessage="Please sign in to view the WhatsApp spend allowlist."
 				actions={
