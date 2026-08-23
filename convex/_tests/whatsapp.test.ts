@@ -30,17 +30,35 @@ vi.mock("ai", async (importOriginal) => {
 	return { ...actual, generateText: mockGenerateText };
 });
 
+/** Tavli's single shared sender number. Since ADR 012 it routes nothing. */
 const SENDER = "+14155238886";
 const CUSTOMER = "+15551230000";
+/** The seeded restaurant's deep-link short code, in stored and written form. */
+const SHORT_CODE = "TVN4K2";
+const SHORT_CODE_DISPLAY = "TVN-4K2";
 
-function inboundBody(overrides: Record<string, string> = {}): string {
-	return new URLSearchParams({
+/**
+ * A signed Twilio inbound. The short code is appended to the body exactly as the
+ * wa.me deep link prefills it, because that is now the only thing that routes;
+ * `noCode: true` is for the cases that deliberately arrive without one.
+ */
+type InboundOverrides = { noCode?: boolean } & Partial<
+	Record<"MessageSid" | "From" | "To" | "Body" | "ProfileName", string>
+>;
+
+function inboundBody(overrides: InboundOverrides = {}): string {
+	const { noCode, Body, ...rest } = overrides;
+	const body = Body ?? "hola, ¿qué tienen?";
+	const params: Record<string, string> = {
 		MessageSid: "SM1",
 		From: `whatsapp:${CUSTOMER}`,
 		To: `whatsapp:${SENDER}`,
-		Body: "hola, ¿qué tienen?",
-		...overrides,
-	}).toString();
+		Body: noCode ? body : `${body} · ${SHORT_CODE_DISPLAY}`,
+	};
+	for (const [key, value] of Object.entries(rest)) {
+		if (value !== undefined) params[key] = value;
+	}
+	return new URLSearchParams(params).toString();
 }
 
 const INBOUND_HEADERS = {
@@ -50,7 +68,7 @@ const INBOUND_HEADERS = {
 
 async function seedChannel(
 	t: ReturnType<typeof convexTest>,
-	args: { phoneNumber: string; isActive?: boolean } = { phoneNumber: SENDER }
+	args: { shortCode?: string; isActive?: boolean } = {}
 ): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;
 	await t.run(async (ctx) => {
@@ -73,7 +91,7 @@ async function seedChannel(
 		});
 		await ctx.db.insert("whatsappChannels", {
 			restaurantId,
-			phoneNumber: args.phoneNumber,
+			shortCode: args.shortCode ?? SHORT_CODE,
 			isActive: args.isActive ?? true,
 			defaultLocale: "es",
 			createdAt: Date.now(),
@@ -81,6 +99,34 @@ async function seedChannel(
 		});
 	});
 	return restaurantId!;
+}
+
+/**
+ * A thread this customer already has with the restaurant. Since ADR 012 that is
+ * what binds a message arriving with no short code in it.
+ */
+async function seedConversation(t: ReturnType<typeof convexTest>, restaurantId: Id<"restaurants">) {
+	await t.run(async (ctx) => {
+		// `.filter` rather than `.withIndex`: `t` here is the un-parameterized
+		// `ReturnType<typeof convexTest>`, so `ctx.db` has no schema and no named
+		// indexes. One row per restaurant either way.
+		const channel = await ctx.db
+			.query("whatsappChannels")
+			.filter((q) => q.eq(q.field("restaurantId"), restaurantId))
+			.first();
+		const now = Date.now();
+		await ctx.db.insert("whatsappConversations", {
+			channelId: channel!._id,
+			restaurantId,
+			customerPhone: CUSTOMER,
+			status: "active",
+			locale: "es",
+			lastMessageAt: now,
+			lastInboundAt: now,
+			createdAt: now,
+			updatedAt: now,
+		});
+	});
 }
 
 /**
@@ -496,11 +542,15 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 
 	it("clamps an oversized inbound body before storing or replaying it", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t);
+		const restaurantId = await seedChannel(t);
+		// Routed by the existing thread, not a code: a code appended to 5000
+		// characters would be clamped away before the router ever saw it, which is
+		// its own (correct) behaviour and not what this test is about.
+		await seedConversation(t, restaurantId);
 		await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: INBOUND_HEADERS,
-			body: inboundBody({ Body: "x".repeat(5000) }),
+			body: inboundBody({ Body: "x".repeat(5000), noCode: true }),
 		});
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
@@ -900,9 +950,11 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		expect(outbound[0].body).toBe("Míralo en ¡Buen provecho!");
 	});
 
-	it("drops a message to an unknown number without invoking the model", async () => {
+	it("ignores the Twilio To, which since ADR 012 identifies nobody", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
+		// Arriving at some other number of Tavli's: the code in the body is what
+		// routes, so this is answered exactly like any other deep-link message.
 		const res = await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: INBOUND_HEADERS,
@@ -911,14 +963,14 @@ describe("whatsapp inbound webhook (M2 menu Q&A)", () => {
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 		expect(res.status).toBe(200);
-		expect(mockGenerateText).not.toHaveBeenCalled();
+		expect(mockGenerateText).toHaveBeenCalledTimes(1);
 		const conversations = await t.run((ctx) => ctx.db.query("whatsappConversations").collect());
-		expect(conversations).toHaveLength(0);
+		expect(conversations).toHaveLength(1);
 	});
 
-	it("drops a message to an inactive channel", async () => {
+	it("does not route a disabled restaurant's code, and does not call the model", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, { phoneNumber: SENDER, isActive: false });
+		await seedChannel(t, { isActive: false });
 		await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: INBOUND_HEADERS,

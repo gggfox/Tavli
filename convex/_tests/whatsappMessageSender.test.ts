@@ -50,6 +50,8 @@ vi.mock("ai", async (importOriginal) => {
 
 const SENDER = "+14155238886";
 const CUSTOMER = "+15551230000";
+/** ADR 012 routes on this, not on the "To" number. */
+const SHORT_CODE = "SND4X2";
 
 const INBOUND_HEADERS = {
 	"x-twilio-signature": "test-signature",
@@ -61,7 +63,7 @@ function inboundBody(overrides: Record<string, string> = {}): string {
 		MessageSid: "SM1",
 		From: `whatsapp:${CUSTOMER}`,
 		To: `whatsapp:${SENDER}`,
-		Body: "hola, ¿qué tienen?",
+		Body: `hola, ¿qué tienen? · ${SHORT_CODE}`,
 		...overrides,
 	}).toString();
 }
@@ -91,7 +93,7 @@ async function seedChannel(t: ReturnType<typeof convexTest>): Promise<Id<"restau
 		});
 		await ctx.db.insert("whatsappChannels", {
 			restaurantId,
-			phoneNumber: SENDER,
+			shortCode: SHORT_CODE,
 			isActive: true,
 			defaultLocale: "es",
 			createdAt: Date.now(),

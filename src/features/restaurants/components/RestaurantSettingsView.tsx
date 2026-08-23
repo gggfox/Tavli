@@ -7,6 +7,7 @@ import { OrganizationSection } from "@/features/restaurants/components/settings/
 import { PaymentsSection } from "@/features/restaurants/components/settings/PaymentsSection";
 import { PublicProfileSection } from "@/features/restaurants/components/settings/PublicProfileSection";
 import { TaxInfoSection } from "@/features/restaurants/components/settings/TaxInfoSection";
+import { WhatsappAssistantSection } from "@/features/restaurants/components/settings/WhatsappAssistantSection";
 import { RESTAURANT_SETTINGS_SECTION } from "@/features/restaurants/constants";
 import {
 	useRestaurantSettingsSave,
@@ -132,6 +133,11 @@ export function RestaurantSettingsView({
 					{...sectionProps(RESTAURANT_SETTINGS_SECTION.HOURS)}
 					canEditOrderNumberReset={isAdmin && isFullAccess}
 				/>
+
+				{/* Manager-visible: staff are the ones who print the QR and put it on a
+				    table. The enable/pause and reissue controls inside are admin-only,
+				    and the backend enforces that independently. */}
+				<WhatsappAssistantSection restaurantId={restaurant._id} isAdmin={isAdmin} />
 
 				{/* Manager-visible: whether the kitchen waits on cash is a floor call. */}
 				<OrdersSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.ORDERS)} />

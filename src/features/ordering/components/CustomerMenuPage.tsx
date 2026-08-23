@@ -12,6 +12,7 @@ import type { SelectedOption } from "../types";
 import { GeofenceNotice } from "./GeofenceNotice";
 import { MenuBrowser } from "./MenuBrowser";
 import { MenuBrowserSkeleton } from "./MenuBrowserSkeleton";
+import { WhatsappAssistantLink } from "@/features/whatsapp";
 import { RestaurantContactBar } from "./RestaurantContactBar";
 
 interface CustomerMenuPageProps {
@@ -99,8 +100,17 @@ export function CustomerMenuPage({
 			orderingBlocked={orderingBlocked}
 			blockedNotice={blockedNotice}
 			// Reuses the restaurant already fetched above for the geofence — the
-			// public profile rides along on the same query.
-			contactBar={restaurant ? <RestaurantContactBar restaurant={restaurant} /> : null}
+			// public profile rides along on the same query. The assistant line sits
+			// above it and renders nothing at all when the restaurant is not enabled,
+			// so the two are independent of each other.
+			contactBar={
+				restaurant ? (
+					<>
+						<WhatsappAssistantLink slug={slug} />
+						<RestaurantContactBar restaurant={restaurant} />
+					</>
+				) : null
+			}
 		/>
 	);
 }

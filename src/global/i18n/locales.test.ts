@@ -105,6 +105,7 @@ describe("Key enums resolve in every locale", () => {
 		["OptionsKeys", OptionsKeys as Record<string, string>],
 		["RestaurantsKeys", RestaurantsKeys as Record<string, string>],
 		["WelcomeKeys", WelcomeKeys as Record<string, string>],
+		["WhatsappKeys", WhatsappKeys as Record<string, string>],
 		["OrderingKeys", OrderingKeys as Record<string, string>],
 		["DashboardKeys", DashboardKeys as Record<string, string>],
 		["ExportsKeys", ExportsKeys as Record<string, string>],

@@ -1930,6 +1930,28 @@
 		}
 	},
 	"whatsapp": {
+		"assistant": {
+			"title": "Asistente de Tavli en WhatsApp",
+			"hint": "Los comensales abren este enlace — o escanean este código en la mesa — y llegan a un chat de WhatsApp con el asistente de Tavli de este restaurante. El código del mensaje es lo que le dice a Tavli de qué restaurante se trata.",
+			"notEnabled": "Aún no está habilitado para este restaurante. Tavli activa el asistente.",
+			"paused": "En pausa",
+			"codeLabel": "Código del restaurante",
+			"prefillLabel": "Los comensales envían",
+			"openLink": "Abrir en WhatsApp",
+			"copyLink": "Copiar enlace",
+			"copied": "Copiado",
+			"printQr": "Imprimir QR",
+			"qrAlt": "Código QR que abre un chat de WhatsApp con {{name}}",
+			"scanInstruction": "Escanea para escribirnos por WhatsApp",
+			"numberMissing": "El número de WhatsApp de Tavli no está configurado en este despliegue, así que todavía no hay enlace que mostrar.",
+			"adminOnly": "Solo Tavli puede habilitar o pausar el asistente.",
+			"regenerate": "Código nuevo",
+			"regenerateHint": "Genera un código nuevo. Cada QR ya impreso y cada enlace guardado dejan de funcionar de inmediato.",
+			"actionFailed": "No se pudo completar. Inténtalo de nuevo.",
+			"enable": "Habilitar",
+			"pause": "Pausar",
+			"publicCta": "Escríbenos por WhatsApp"
+		},
 		"page": {
 			"setupRestaurantFirst": "Primero configura tu restaurante."
 		},

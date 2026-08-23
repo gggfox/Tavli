@@ -1318,28 +1318,46 @@ export default defineSchema({
 	}).index("by_key", ["key"]),
 
 	// ============================================================================
-	// WhatsApp Chatbot (Twilio) — see ADR 010
+	// WhatsApp Chatbot (Twilio) — see ADR 010, ADR 012
 	// ============================================================================
 	//
-	// The assistant's tables. `whatsappChannels` maps a restaurant's
-	// WhatsApp sender number (the Twilio "To") to a restaurant so an inbound
-	// message can be routed. A `Conversation` is the thread with one customer
-	// phone on one channel; `whatsappMessages` is the append-only in/out log,
-	// deduped on Twilio's `messageSid`. Phone numbers are stored normalized to
-	// E.164 (no "whatsapp:" prefix).
+	// The assistant's tables. Tavli is the sender on ONE shared WhatsApp number,
+	// so the Twilio "To" identifies nobody: a `whatsappChannels` row no longer
+	// maps a phone number to a restaurant, it records that a restaurant is
+	// **enabled**, with a `shortCode` that routes and a default reply locale.
+	//
+	// A `Conversation` is the thread between one customer phone and one
+	// RESTAURANT — one continuous chat with Tavli on the diner's phone, but a
+	// separate history, model context and staff view per restaurant underneath.
+	// `whatsappMessages` is the append-only in/out log, deduped on Twilio's
+	// `messageSid`. Phone numbers are stored normalized to E.164 (no
+	// "whatsapp:" prefix).
 	[TABLE.WHATSAPP_CHANNELS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
-		// Normalized E.164 of the WhatsApp sender number (Twilio "To").
-		phoneNumber: v.string(),
+		/**
+		 * The deep-link router: `VRN8F3`, shown as `VRN-8F3`. Canonical form —
+		 * uppercase, no separator (see `whatsapp/shortCode.ts`).
+		 *
+		 * Optional ONLY so rows written before ADR 012 still validate until
+		 * `migrations/backfillWhatsappShortCodes` has run. Every write path sets
+		 * it, and a row without one is simply unroutable by code.
+		 */
+		shortCode: v.optional(v.string()),
+		/**
+		 * Deprecated (ADR 012): the per-restaurant Twilio sender number, back when
+		 * the "To" was the route. Kept optional so existing rows validate; the
+		 * backfill clears it. Nothing reads it.
+		 */
+		phoneNumber: v.optional(v.string()),
 		isActive: v.boolean(),
-		// Fallback reply locale for this channel ("en" | "es") before per-message
+		// Fallback reply locale for this restaurant ("en" | "es") before per-message
 		// detection; falls back further to restaurant.defaultLanguage.
 		defaultLocale: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
 	})
-		.index("by_phone_number", ["phoneNumber"])
+		.index("by_short_code", ["shortCode"])
 		.index("by_restaurant", ["restaurantId"]),
 
 	[TABLE.WHATSAPP_CONVERSATIONS]: defineTable({
@@ -1366,16 +1384,25 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
-		.index("by_channel_customer", ["channelId", "customerPhone"])
+		// Two callers, one index — added independently by ADR 012 and TAVLI-93 with
+		// the same fields, so it is defined once here.
+		//
+		// The route (ADR 012): one conversation per (customer phone, restaurant).
+		// Replaces `by_channel_customer` — the channel row is now per-restaurant,
+		// and keying on the restaurant is what survives a channel being disabled
+		// and re-enabled.
+		//
+		// And "the conversation this reservation came from": a reservation stores
+		// the customer's canonical phone, not a conversation id, so the staff link
+		// is resolved by (restaurant, phone) — restaurant-first, so the lookup
+		// structurally cannot reach another restaurant's thread.
+		.index("by_restaurant_customer", ["restaurantId", "customerPhone"])
+		// Cold start: which restaurants has this phone talked to recently?
+		.index("by_customer_last_inbound", ["customerPhone", "lastInboundAt"])
 		.index("by_restaurant", ["restaurantId"])
 		// The staff conversation list: one restaurant's threads, most recently
 		// active first, without reading rows it will not show.
-		.index("by_restaurant_last_message", ["restaurantId", "lastMessageAt"])
-		// "The conversation this reservation came from": a reservation stores the
-		// customer's canonical phone, not a conversation id, so the link is
-		// resolved by (restaurant, phone) — scoped to the restaurant so the lookup
-		// can never reach another one's thread.
-		.index("by_restaurant_customer", ["restaurantId", "customerPhone"]),
+		.index("by_restaurant_last_message", ["restaurantId", "lastMessageAt"]),
 
 	[TABLE.WHATSAPP_MESSAGES]: defineTable({
 		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
@@ -1457,8 +1484,30 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_conversation_code", ["conversationId", "code"])
+		// Routing (ADR 012): the reply the assistant asks for — "reply with this
+		// code: 481920" — carries no short code, so on one shared number a diner
+		// who has talked to two restaurants has nothing else to bind it. Keyed on
+		// the phone as well as the code, so a code only ever reaches the phone
+		// Tavli minted it for; a code is not something the diner can name.
+		.index("by_phone_code", ["customerPhone", "code"])
 		.index("by_conversation", ["conversationId"])
 		.index("by_expires", ["expiresAt"]),
+
+	// Inbound MessageSids that resolved to no restaurant at all (ADR 012). On one
+	// shared number an inbound message can come from a phone no restaurant knows,
+	// and the fixed guidance reply has no conversation to be recorded against —
+	// so the ordinary `whatsappMessages` dedupe cannot see it, and every Twilio
+	// redelivery would be another billed message plus another budget charge.
+	// Claiming the SID here first makes a redelivery a no-op.
+	//
+	// Not a message log: no body, no phone, and reclaimed hourly by
+	// `purgeExpiredUnroutedClaims` once Twilio can no longer retry.
+	[TABLE.WHATSAPP_UNROUTED_MESSAGES]: defineTable({
+		messageSid: v.string(),
+		createdAt: v.number(),
+	})
+		.index("by_message_sid", ["messageSid"])
+		.index("by_created", ["createdAt"]),
 
 	// Phone numbers exempt from the assistant's per-phone daily message caps
 	// (TAVLI-91) — the operator's own number and any phone doing supervised

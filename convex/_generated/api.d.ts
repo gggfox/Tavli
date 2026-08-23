@@ -80,6 +80,7 @@ import type * as migrations_backfillOrderDashboardStatusFilter from "../migratio
 import type * as migrations_backfillPrepStation from "../migrations/backfillPrepStation.js";
 import type * as migrations_backfillRestaurantTimezone from "../migrations/backfillRestaurantTimezone.js";
 import type * as migrations_backfillUpdatedBy from "../migrations/backfillUpdatedBy.js";
+import type * as migrations_backfillWhatsappShortCodes from "../migrations/backfillWhatsappShortCodes.js";
 import type * as optionGroups from "../optionGroups.js";
 import type * as orderDayCounters from "../orderDayCounters.js";
 import type * as orderHelpers from "../orderHelpers.js";
@@ -128,8 +129,10 @@ import type * as whatsapp_phone from "../whatsapp/phone.js";
 import type * as whatsapp_processing from "../whatsapp/processing.js";
 import type * as whatsapp_promptSafety from "../whatsapp/promptSafety.js";
 import type * as whatsapp_reservations from "../whatsapp/reservations.js";
+import type * as whatsapp_shortCode from "../whatsapp/shortCode.js";
 import type * as whatsapp_spendControls from "../whatsapp/spendControls.js";
 import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
+import type * as whatsappChannels from "../whatsappChannels.js";
 import type * as whatsappConversations from "../whatsappConversations.js";
 import type * as whatsappConversationsHelpers from "../whatsappConversationsHelpers.js";
 import type * as whatsappSpendAllowlist from "../whatsappSpendAllowlist.js";
@@ -213,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/backfillPrepStation": typeof migrations_backfillPrepStation;
   "migrations/backfillRestaurantTimezone": typeof migrations_backfillRestaurantTimezone;
   "migrations/backfillUpdatedBy": typeof migrations_backfillUpdatedBy;
+  "migrations/backfillWhatsappShortCodes": typeof migrations_backfillWhatsappShortCodes;
   optionGroups: typeof optionGroups;
   orderDayCounters: typeof orderDayCounters;
   orderHelpers: typeof orderHelpers;
@@ -261,8 +265,10 @@ declare const fullApi: ApiFromModules<{
   "whatsapp/processing": typeof whatsapp_processing;
   "whatsapp/promptSafety": typeof whatsapp_promptSafety;
   "whatsapp/reservations": typeof whatsapp_reservations;
+  "whatsapp/shortCode": typeof whatsapp_shortCode;
   "whatsapp/spendControls": typeof whatsapp_spendControls;
   "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
+  whatsappChannels: typeof whatsappChannels;
   whatsappConversations: typeof whatsappConversations;
   whatsappConversationsHelpers: typeof whatsappConversationsHelpers;
   whatsappSpendAllowlist: typeof whatsappSpendAllowlist;

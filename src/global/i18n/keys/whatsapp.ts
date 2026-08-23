@@ -1,9 +1,36 @@
 /**
- * Translation keys for the staff-facing WhatsApp conversation view (TAVLI-93):
- * the conversation list, the read-only thread panel, and the link that gets
- * staff there from the reservation the assistant booked.
+ * Translation keys for the WhatsApp assistant's staff- and diner-facing surfaces.
+ *
+ * Two groups, added by different tickets and deliberately kept in one namespace:
+ * the distribution surfaces (the `wa.me` deep link and printable QR shown in
+ * restaurant Settings and on the public menu page, ADR 012), and the staff-facing
+ * conversation view (the list, the read-only thread panel, and the link that gets
+ * staff there from the reservation the assistant booked, TAVLI-93).
  */
 export const WhatsappKeys = {
+	// Distribution surfaces — deep link and QR (ADR 012)
+	ASSISTANT_TITLE: "whatsapp.assistant.title",
+	ASSISTANT_HINT: "whatsapp.assistant.hint",
+	ASSISTANT_NOT_ENABLED: "whatsapp.assistant.notEnabled",
+	ASSISTANT_PAUSED: "whatsapp.assistant.paused",
+	ASSISTANT_CODE_LABEL: "whatsapp.assistant.codeLabel",
+	ASSISTANT_PREFILL_LABEL: "whatsapp.assistant.prefillLabel",
+	ASSISTANT_OPEN_LINK: "whatsapp.assistant.openLink",
+	ASSISTANT_COPY_LINK: "whatsapp.assistant.copyLink",
+	ASSISTANT_COPIED: "whatsapp.assistant.copied",
+	ASSISTANT_PRINT_QR: "whatsapp.assistant.printQr",
+	ASSISTANT_QR_ALT: "whatsapp.assistant.qrAlt",
+	ASSISTANT_SCAN_INSTRUCTION: "whatsapp.assistant.scanInstruction",
+	ASSISTANT_NUMBER_MISSING: "whatsapp.assistant.numberMissing",
+	ASSISTANT_ADMIN_ONLY: "whatsapp.assistant.adminOnly",
+	ASSISTANT_REGENERATE: "whatsapp.assistant.regenerate",
+	ASSISTANT_REGENERATE_HINT: "whatsapp.assistant.regenerateHint",
+	ASSISTANT_ACTION_FAILED: "whatsapp.assistant.actionFailed",
+	ASSISTANT_ENABLE: "whatsapp.assistant.enable",
+	ASSISTANT_PAUSE: "whatsapp.assistant.pause",
+	ASSISTANT_PUBLIC_CTA: "whatsapp.assistant.publicCta",
+
+	// Staff conversation view (TAVLI-93)
 	PAGE_SETUP_RESTAURANT_FIRST: "whatsapp.page.setupRestaurantFirst",
 
 	// Conversation list
