@@ -80,6 +80,7 @@ Bilingual because an unroutable message has no restaurant, therefore no `default
 - Conversations need no backfill at all: they already carry a denormalized `restaurantId`, which is exactly what the new `by_restaurant_customer` index routes on. The stale `channelId` on an old row still points at the same (now differently-meaning) enablement row, and the next inbound message refreshes it. This was the deciding factor in keeping the old rows addressable rather than migrating them — there was nothing to migrate.
 - The `To` number is still validated at the webhook (a signed Twilio request always carries one) but is no longer forwarded to the processing action, so nothing downstream can route on it by accident.
 - WhatsApp's 24-hour freeform window is unchanged: the assistant only ever replies inside it.
+- The unroutable reply is metered by the spend controls (TAVLI-91) like any other outbound message, and the budget is charged **before** routing rather than after it. On one shared number an unroutable message can come from anyone at all, so a fixed reply to every stranger would otherwise be an unmetered relay on Tavli's own Twilio account. Over budget, or past the platform ceiling, an unroutable sender gets silence rather than a notice: there is no conversation to record one against and no relationship to preserve.
 
 ## Alternatives Considered
 

@@ -198,14 +198,123 @@ export function splitOutboundBody(text: string, limit: number, maxParts: number)
  * replayed message. Not applied to the notice lines, which carry the real code.
  */
 export function redactConfirmationCodes(text: string): string {
-	return (
-		text
-			.replace(new RegExp(`(?<!\\d)\\d{${WHATSAPP_CONFIRMATION_CODE_DIGITS}}(?!\\d)`, "g"), "")
-			// The model wraps a code in emphasis (`*281437*`); with the digits gone
-			// the empty pair would reach the customer as a stray `**`.
-			.replace(/([*_~])\s*\1/g, "")
-			.replace(/[ \t]{2,}/g, " ")
-			.replace(/ ([.,;:!?)])/g, "$1")
-			.trim()
+	return tidyAfterRedaction(
+		text.replace(new RegExp(`(?<!\\d)\\d{${WHATSAPP_CONFIRMATION_CODE_DIGITS}}(?!\\d)`, "g"), "")
+	);
+}
+
+/**
+ * Close the holes a redaction leaves behind, so the customer never sees the
+ * seam. Shared by every redactor: the model wraps the thing it invented in
+ * emphasis (`*281437*`, `*https://…*`), and with the middle gone the empty pair
+ * would reach the customer as a stray `**`.
+ */
+function tidyAfterRedaction(text: string): string {
+	return text
+		.replace(/([*_~])\s*\1/g, "")
+		.replace(/[ \t]{2,}/g, " ")
+		.replace(/ ([.,;:!?)])/g, "$1")
+		.trim();
+}
+
+/**
+ * Link-shaped tokens the model can legitimately write, in the order they are
+ * tried. A scheme or a `www.` prefix is unambiguous, so both are matched
+ * case-insensitively.
+ */
+const SCHEME_URL = /(?<![A-Za-z0-9])(?:https?|ftp):\/\/[^\s<>]+/gi;
+const WWW_URL = /(?<![A-Za-z0-9.])www\.[^\s<>]+/gi;
+
+/**
+ * Hosts a fabricated link is plausibly built from. Deliberately an allowlist,
+ * not `[a-z]{2,}`: a generic suffix turns "tacos.Tenemos" — a missing space
+ * after a period, which models produce constantly — into a "host" and eats two
+ * real words.
+ *
+ * The allowlist is split by how a suffix behaves when it is NOT a suffix.
+ * `PLAIN_TLDS` cannot begin a word in either of the bot's languages, so
+ * "gracias.com" can only be a host. `WORD_SHAPED_TLDS` can: `es`, `me` and `us`
+ * are among the most frequent words in Spanish and English, and `app`, `store`,
+ * `online` and `tv` are ordinary nouns — so "postre.me" is far likelier to be a
+ * missing space than a domain, and `BARE_HOST_URL` below demands corroboration
+ * before it deletes one.
+ */
+const PLAIN_TLDS = "com|org|biz|io|co|ai|xyz|ly|gl|cc|mx|uk|ca";
+const WORD_SHAPED_TLDS = "net|info|app|dev|me|link|page|site|online|store|shop|tv|es|us";
+const LINK_TLDS = `${PLAIN_TLDS}|${WORD_SHAPED_TLDS}`;
+
+/** One DNS label, and the port/path tail a host may carry. */
+const HOST_LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
+const HOST_TAIL = "(?::\\d{2,5})?(?:/[^\\s<>]*)?";
+/** The tail that *proves* a host: an explicit port, a path, or both. */
+const HOST_TAIL_REQUIRED = "(?::\\d{2,5}(?:/[^\\s<>]*)?|/[^\\s<>]*)";
+
+/**
+ * A bare host (`tavliai.com/r/x/es/menu`), with an optional port and path.
+ *
+ * The TLD is matched CASE-SENSITIVELY in lower case, which is what stops
+ * "bueno.Me gusta" and "delicioso.Es lo mejor" from reading as hosts while
+ * still catching "Tavli.com". The lookbehind keeps the match off the domain
+ * half of an email address and off the tail of a longer host.
+ *
+ * Case alone is not enough, because the typo this guards against also occurs in
+ * lower case: "el postre.me encanta" would otherwise lose *two* real words with
+ * nothing left to mark the hole. So a `label.tld` pair whose TLD is word-shaped
+ * is only read as a host when something corroborates it —
+ *
+ *   1. two or more labels before the TLD (`pedidos.taqueria.online`), or
+ *   2. an explicit port or path (`postre.me/tacos`, `tavliai.es:8080`), or
+ *   3. a TLD that cannot be a word at all (`tavliai.com`, `taqueria.mx`).
+ *
+ * A missing space after a period produces none of the three, and every link the
+ * model has actually been seen to invent produces at least one. What slips
+ * through is a bare `brand.<word-shaped-tld>` with no path — rare, and the far
+ * cheaper error: an unhelpful link beats a mangled sentence, and the scheme and
+ * `www.` forms above still strip unconditionally.
+ */
+const BARE_HOST_URL = new RegExp(
+	`(?<![\\w@./-])(?:` +
+		`(?:${HOST_LABEL}\\.){2,}(?:${LINK_TLDS})(?![A-Za-z0-9-])${HOST_TAIL}` +
+		`|${HOST_LABEL}\\.(?:${LINK_TLDS})(?![A-Za-z0-9-])${HOST_TAIL_REQUIRED}` +
+		`|${HOST_LABEL}\\.(?:${PLAIN_TLDS})(?![A-Za-z0-9-])${HOST_TAIL}` +
+		`)`,
+	"g"
+);
+
+/**
+ * Trailing characters that belong to the sentence, not to the link, so they are
+ * put back. The emphasis markers are here so that `*https://…*` gives its
+ * closing `*` back and `tidyAfterRedaction` can collapse the now-empty pair —
+ * dropping it instead would strand the opening one in the customer's message.
+ */
+const TRAILING_PUNCTUATION = /[.,;:!?)\]'"»…*_~]+$/;
+
+function dropLink(match: string): string {
+	return TRAILING_PUNCTUATION.exec(match)?.[0] ?? "";
+}
+
+/**
+ * Remove anything link-shaped from text the model wrote.
+ *
+ * The model has **no legitimate URL to send**. Dish photos ride as Twilio media
+ * attachments, and every real link — the menu page among them — is composed by
+ * the server and appended as a notice, which the model never sees. So a
+ * link-shaped token in its prose is invented by definition, and a customer who
+ * taps it lands nowhere.
+ *
+ * This is the same structural move as `redactConfirmationCodes`, and for the
+ * same reason: within one week the model fabricated a confirmation code, then
+ * re-fabricated one from its own earlier output, through three separate paths.
+ * Every fix that held was structural — strip it, do not replay it. Every fix
+ * that was an instruction in the system prompt failed.
+ *
+ * Applied to the model's output only. Inbound customer text is left alone: a
+ * diner pasting a link is real content, and stripping the model's output is
+ * terminal anyway, so nothing fabricated can reach the customer regardless of
+ * what sits in the history.
+ */
+export function redactUrls(text: string): string {
+	return tidyAfterRedaction(
+		text.replace(SCHEME_URL, dropLink).replace(WWW_URL, dropLink).replace(BARE_HOST_URL, dropLink)
 	);
 }

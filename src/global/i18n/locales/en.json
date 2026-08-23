@@ -26,7 +26,8 @@
 			"admin": "Admin",
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations",
-			"adminFeatureFlags": "Feature flags"
+			"adminFeatureFlags": "Feature flags",
+			"adminWhatsappAllowlist": "WhatsApp allowlist"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -669,6 +670,8 @@
 		"ERROR_SLUG_INVALID": "That web address needs at least one letter or number.",
 		"ERROR_TABLE_HAS_RESERVATIONS": "This table has reservations and can't be changed right now.",
 		"ERROR_TABLE_NUMBER_EXISTS": "A table with that number already exists.",
+		"ERROR_PHONE_ALREADY_ALLOWLISTED": "That phone number is already on the allowlist.",
+		"ERROR_ALLOWLIST_ENTRY_NOT_FOUND": "That allowlist entry no longer exists.",
 		"ERROR_INVITE_CROSS_ORG": "This person already belongs to a different organization. Accepting the invitation would move them out of it.",
 		"ERROR_INVITE_DUPLICATE_PENDING": "This person already has an invitation waiting for this organization.",
 		"ERROR_INVITE_DUPLICATE_IN_FILE": "An earlier row of this file already invites this person to this organization.",

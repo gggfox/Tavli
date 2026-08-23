@@ -32,6 +32,7 @@ import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { getAppUrl } from "../_util/env";
 import {
 	WHATSAPP_DEFAULT_MODEL,
 	WHATSAPP_MAX_LLM_STEPS,
@@ -40,7 +41,7 @@ import {
 } from "../constants";
 import { getBotCopy, resolveLocale } from "./copy";
 import { formatLocalDateTime, resolveRequestedStart } from "./datetime";
-import { redactConfirmationCodes, toWhatsappText } from "./format";
+import { redactConfirmationCodes, redactUrls, toWhatsappText } from "./format";
 import { buildMenuToolResult, matchDishByName } from "./menu";
 import {
 	MAX_MENU_FIELD_PROMPT_CHARS,
@@ -74,7 +75,17 @@ export type BookingContext = {
 	timezone: string;
 };
 
-function buildSystemPrompt(restaurantName: string, booking: BookingContext | null): string {
+function buildSystemPrompt(
+	restaurantName: string,
+	booking: BookingContext | null,
+	/**
+	 * Whether `send_menu_link` is registered this turn. The rule describing it is
+	 * omitted with the tool, never left behind: a model told to "call
+	 * `send_menu_link`" when no such tool exists announces a link the customer
+	 * never receives, which is worse than not offering the link at all.
+	 */
+	menuLinkOffered: boolean
+): string {
 	const safeName =
 		sanitizePromptValue(restaurantName, MAX_RESTAURANT_NAME_PROMPT_CHARS) || "the restaurant";
 	return [
@@ -97,6 +108,12 @@ function buildSystemPrompt(restaurantName: string, booking: BookingContext | nul
 		"- Never claim you have no more menu information, or that a list is the whole menu, unless the last `lookup_menu` result said `truncated: false`. When `truncated` is true, tell the customer how many items there are in total and offer to look up a dish or category.",
 		'- By default give a short selection grouped by category and invite the customer to ask about a category. But when they ask for the whole menu ("muéstrame todo", "show me everything", "the full menu"), list EVERY item the tool returned — long replies are split across several WhatsApp messages automatically, so length is not a reason to hold items back.',
 		"- When the customer asks what a specific dish looks like or asks for a photo, call `get_dish_photo`; the photo is attached to your reply automatically, so don't paste a URL.",
+		...(menuLinkOffered
+			? [
+					"- When they ask for the menu as a link or a page, or want to browse everything themselves, call `send_menu_link`. The system appends the link after your reply, so just say it is coming and keep your own text short.",
+				]
+			: []),
+		"- You have NO web address of your own. Never type a URL, a domain, or a `www.` — not the restaurant's, not the menu's, not an example. Any link the customer receives is put there by the system.",
 		"- To answer whether a table is free, call `check_availability` with a date as YYYY-MM-DD and a time as HH:MM (24-hour), resolved from the CONTEXT date above. Never guess availability.",
 		"- To tell the customer about their own existing bookings, call `list_my_reservations`. It already knows who is messaging; you cannot look up anyone else's booking.",
 		"- Reply in the SAME language as the customer's most recent message (Spanish or English).",
@@ -141,6 +158,26 @@ function buildSystemPrompt(restaurantName: string, booking: BookingContext | nul
 	].join("\n");
 }
 
+/**
+ * Where the assistant points a diner who asks for the whole menu.
+ *
+ * `/r/:slug/:lang/menu` is the only surface in the app that lists items with
+ * prices; `/r/:slug` on its own has no index route at all, so it renders an
+ * empty layout. The page needs no **table** — `sessions.create` takes only the
+ * slug — but it does sit behind the customer layout's Clerk sign-in wall, so a
+ * diner arriving from WhatsApp signs in before the menu appears. That is why the
+ * tool that sends this URL is gated on the `whatsappMenuLink` flag (see
+ * `isMenuLinkEnabled`): until a signed-out visitor can read the menu, the link
+ * dead-ends on a sign-up form and must not be sent at all.
+ *
+ * Composed here and never shown to the model (see `send_menu_link`). `getAppUrl`
+ * throws in staging/production when `PUBLIC_APP_URL` is unset, which is the
+ * intended behaviour — a dead localhost link is worse than no link.
+ */
+function buildMenuUrl(slug: string, locale: string): string {
+	return `${getAppUrl()}/r/${encodeURIComponent(slug)}/${locale}/menu`;
+}
+
 export type BotTurnResult = {
 	text: string;
 	mediaUrl?: string;
@@ -181,6 +218,18 @@ export async function runBotTurn(
 		locale: string;
 		/** Restaurant IANA timezone, for formatting confirmation lines. */
 		timezone?: string;
+		/**
+		 * The restaurant's slug, and with it permission to offer `send_menu_link`.
+		 *
+		 * `undefined` means the tool is not registered this turn — either the
+		 * `whatsappMenuLink` flag is off (the shipped default: the menu page still
+		 * demands a Clerk sign-in, so the link dead-ends for a diner at home) or the
+		 * restaurant row vanished between the routing read and here.
+		 *
+		 * It arrives as an argument rather than being fetched inside the tool on
+		 * purpose: the tool's once-per-turn claim must not straddle an await.
+		 */
+		menuLinkSlug?: string;
 		bookingContext: BookingContext | null;
 		history: { direction: "inbound" | "outbound"; body: string }[];
 	}
@@ -196,6 +245,10 @@ export async function runBotTurn(
 	const notices: string[] = [];
 
 	let writesRemaining = WHATSAPP_MAX_WRITES_PER_TURN;
+	// One menu link per turn. A step can carry several parallel tool calls, and
+	// the same URL twice in one bubble reads as a glitch.
+	let menuLinkSent = false;
+	const menuLinkSlug = args.menuLinkSlug;
 
 	/**
 	 * Gate every mutating tool. Returns a refusal object when the budget is spent,
@@ -270,6 +323,51 @@ export async function runBotTurn(
 					price: match.priceFormatted,
 					hasPhoto: Boolean(match.imageUrl),
 				};
+			},
+		}),
+		send_menu_link: tool({
+			description:
+				"Send the customer the restaurant's menu page, so they can browse every dish with photos and prices themselves. Use when they ask for the menu as a link or a page, when they want to see everything, or when a written list would be unwieldy. The link is appended to your reply automatically — never write a URL yourself. Takes no arguments.",
+			// Deliberately empty. The restaurant comes from the frozen actor, so
+			// there is no argument through which an injected instruction could point
+			// this at another restaurant's page.
+			inputSchema: z.object({}),
+			// SYNCHRONOUS BY CONSTRUCTION — do not add an `await` to this body.
+			// The AI SDK runs the tool calls of one step concurrently, so a
+			// once-per-turn claim that straddles an await is a check-then-act race:
+			// both callers read `menuLinkSent` as false, both pass, and the same 📋
+			// line lands twice in one bubble. The slug is therefore resolved once by
+			// `processing.ts` and passed in as `menuLinkSlug`, rather than fetched
+			// here; JS is single-threaded, so with no await in between, the read and
+			// the claim below are atomic with respect to the other tool executions.
+			// This is the rule `spendWrite` already follows for the write budget.
+			execute: async () => {
+				// Idempotent within the turn: the notice is pushed at most once.
+				if (menuLinkSent) return { sent: true };
+				// Unreachable while the tool is registered — it is dropped from the
+				// set below when there is no slug — but kept as a synchronous guard
+				// so a future caller cannot produce `/r//es/menu`.
+				if (!menuLinkSlug) return { sent: false, reason: "ERROR_MENU_LINK_UNAVAILABLE" };
+
+				let url: string;
+				try {
+					url = buildMenuUrl(menuLinkSlug, locale);
+				} catch (error) {
+					// `getAppUrl` throws when the deployment has no PUBLIC_APP_URL. Log
+					// it and refuse the link rather than let it abort the whole turn:
+					// the customer's actual question still deserves an answer, and a
+					// misconfigured deployment is visible in the logs either way.
+					console.error("[whatsapp.llm] send_menu_link: app URL not configured", error);
+					return { sent: false, reason: "ERROR_MENU_LINK_UNAVAILABLE" };
+				}
+
+				menuLinkSent = true;
+				// The URL travels ONLY in this server-composed notice. It is
+				// deliberately absent from the return value: what the model cannot see
+				// it cannot paraphrase, truncate, or reuse as a template for an
+				// invented one — the same rule the confirmation codes live under.
+				notices.push(copy.menuLink(url));
+				return { sent: true };
 			},
 		}),
 		check_availability: tool({
@@ -457,6 +555,14 @@ export async function runBotTurn(
 		}),
 	};
 
+	// When the menu page is not linkable this turn, `send_menu_link` is REMOVED
+	// from the set rather than left in place to refuse. A tool the model can see
+	// is a tool it will call and then narrate — "te mando el menú" followed by no
+	// link is the broken experience in a different costume. The matching system
+	// prompt rule is dropped with it (`menuLinkOffered` below).
+	const { send_menu_link: _menuLinkTool, ...toolsWithoutMenuLink } = tools;
+	const activeTools = menuLinkSlug ? tools : toolsWithoutMenuLink;
+
 	// Inbound bodies are wrapped in a delimiter the system prompt names as
 	// untrusted, and the closing tag is stripped from the body so a message cannot
 	// break out of its own envelope. Assistant turns are replayed unwrapped —
@@ -473,9 +579,9 @@ export async function runBotTurn(
 
 	const result = await generateText({
 		model: getModel(),
-		system: buildSystemPrompt(args.restaurantName, args.bookingContext),
+		system: buildSystemPrompt(args.restaurantName, args.bookingContext, Boolean(menuLinkSlug)),
 		messages,
-		tools,
+		tools: activeTools,
 		stopWhen: stepCountIs(WHATSAPP_MAX_LLM_STEPS),
 	});
 
@@ -483,10 +589,11 @@ export async function runBotTurn(
 	return {
 		// The prompt asks for WhatsApp syntax; convert anyway — models drift back
 		// into Markdown and the customer sees the raw markers. Then strip anything
-		// code-shaped: the model never holds a code, so one in its prose is
-		// fabricated, and sent as-is the customer sees two codes of which the
-		// system rejects one. The real code arrives in the notice lines.
-		text: redactConfirmationCodes(toWhatsappText(result.text)),
+		// link- or code-shaped: the model holds neither a URL nor a code, so one in
+		// its prose is fabricated, and sent as-is the customer taps a dead link or
+		// sees two codes of which the system rejects one. The real link and the
+		// real code both arrive in the notice lines, which are appended after this.
+		text: redactConfirmationCodes(redactUrls(toWhatsappText(result.text))),
 		mediaUrl: collectedMedia[0],
 		toolsUsed,
 		notices,

@@ -130,8 +130,10 @@ import type * as whatsapp_processing from "../whatsapp/processing.js";
 import type * as whatsapp_promptSafety from "../whatsapp/promptSafety.js";
 import type * as whatsapp_reservations from "../whatsapp/reservations.js";
 import type * as whatsapp_shortCode from "../whatsapp/shortCode.js";
+import type * as whatsapp_spendControls from "../whatsapp/spendControls.js";
 import type * as whatsapp_twilioValidation from "../whatsapp/twilioValidation.js";
 import type * as whatsappChannels from "../whatsappChannels.js";
+import type * as whatsappSpendAllowlist from "../whatsappSpendAllowlist.js";
 
 import type {
   ApiFromModules,
@@ -262,8 +264,10 @@ declare const fullApi: ApiFromModules<{
   "whatsapp/promptSafety": typeof whatsapp_promptSafety;
   "whatsapp/reservations": typeof whatsapp_reservations;
   "whatsapp/shortCode": typeof whatsapp_shortCode;
+  "whatsapp/spendControls": typeof whatsapp_spendControls;
   "whatsapp/twilioValidation": typeof whatsapp_twilioValidation;
   whatsappChannels: typeof whatsappChannels;
+  whatsappSpendAllowlist: typeof whatsappSpendAllowlist;
 }>;
 
 /**

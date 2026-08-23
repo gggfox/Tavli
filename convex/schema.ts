@@ -1458,6 +1458,25 @@ export default defineSchema({
 		.index("by_conversation", ["conversationId"])
 		.index("by_expires", ["expiresAt"]),
 
+	// Phone numbers exempt from the assistant's per-phone daily message caps
+	// (TAVLI-91) — the operator's own number and any phone doing supervised
+	// testing. Org-level and deliberately NOT restaurant-scoped: an entry here
+	// waives a control that protects Tavli's own spend, so only a platform admin
+	// may add one, and it belongs to no restaurant.
+	//
+	// It exempts the two daily caps and nothing else. The hourly write budget and
+	// the one-write-per-turn budget still apply, because those protect data
+	// integrity rather than spend — a bug that only shows up under them has to
+	// stay visible to the person testing.
+	[TABLE.WHATSAPP_SPEND_ALLOWLIST]: defineTable({
+		/** Canonical E.164, via `normalizeContactPhone` — one human, one row. */
+		phone: v.string(),
+		/** Who this is, in words. An unlabelled number nobody dares remove. */
+		label: v.string(),
+		createdAt: v.number(),
+		createdBy: v.string(),
+	}).index("by_phone", ["phone"]),
+
 	// ============================================================================
 	// Unified Event Store
 	// ============================================================================

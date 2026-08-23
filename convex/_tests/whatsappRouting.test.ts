@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { WHATSAPP_COLD_START_WINDOW_MS } from "../constants";
+import { WHATSAPP_COLD_START_WINDOW_MS, WHATSAPP_INBOUND_DAILY_LIMIT } from "../constants";
+import { inboundBudgetKey } from "../whatsapp/spendControls";
 
 /**
  * Deep-link routing on Tavli's one shared WhatsApp number (ADR 012).
@@ -323,6 +324,44 @@ describe("whatsapp deep-link routing", () => {
 		expect(bodies[0]).toContain("Vernáculo");
 		// Recorded against the conversation, unlike the unroutable reply.
 		expect(await conversations(t)).toHaveLength(1);
+	});
+
+	it("charges the unroutable reply to the sender's daily budget", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+
+		await send(t, { body: "hola" });
+
+		// One shared number means an unroutable message can come from anyone at
+		// all. A fixed reply is still a message Tavli pays Twilio for, so it is
+		// metered like any other — otherwise the guidance copy is an open relay.
+		const counter = await t.run(async (ctx) => {
+			const rows = await ctx.db.query("rateLimits").collect();
+			return rows.find((r) => r.key === inboundBudgetKey(CUSTOMER));
+		});
+		expect(counter?.count).toBe(1);
+	});
+
+	it("stays silent, not chatty, when an unroutable sender is over their cap", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+		await t.run((ctx) =>
+			ctx.db.insert("rateLimits", {
+				key: inboundBudgetKey(CUSTOMER),
+				windowStart: Date.now(),
+				count: WHATSAPP_INBOUND_DAILY_LIMIT.max,
+				updatedAt: Date.now(),
+			})
+		);
+
+		await send(t, { body: "hola" });
+		await send(t, { body: "hola??", messageSid: "SM-2" });
+
+		// No conversation to record a limit notice against, and no relationship to
+		// preserve with a number that has no restaurant. Answering a flood is
+		// paying for it.
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(mockGenerateText).not.toHaveBeenCalled();
 	});
 
 	it("keeps replying after the first deep-link message without the code", async () => {

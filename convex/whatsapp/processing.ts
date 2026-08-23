@@ -8,11 +8,11 @@
  * not bound the LLM turn. Node action because the AI SDK provider (`llm.ts`)
  * runs under `"use node"`.
  *
- * Flow: dedupe on MessageSid → resolve the restaurant → record inbound → redeem
- * a confirmation code if the body carries one → otherwise run the LLM turn →
- * send the reply (model prose plus server-composed fact lines) → record
- * outbound. Any failure sends a fixed localized apology — never a silent
- * failure (AC #6).
+ * Flow: dedupe on MessageSid → resolve the restaurant → record inbound → charge
+ * the spend budgets → redeem a confirmation code if the body carries one →
+ * otherwise run the LLM turn → send the reply (model prose plus server-composed
+ * fact lines) → record outbound. Any failure sends a fixed localized apology —
+ * never a silent failure (AC #6).
  *
  * **Routing (ADR 012).** Tavli is the sender on one shared number, so the
  * Twilio "To" identifies nobody. The restaurant comes from the short code in
@@ -23,7 +23,8 @@
  * that is an enumeration and spoofing surface.
  *
  * The confirmation-code check deliberately sits BEFORE the LLM: authorizing a
- * cancellation must not depend on the model reading intent correctly.
+ * cancellation must not depend on the model reading intent correctly. It sits
+ * before the spend refusals for the same reason — see `spendControls.ts`.
  */
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
@@ -75,6 +76,12 @@ async function sendAndRecord(
 		conversationId: Id<"whatsappConversations">;
 		restaurantId: Id<"restaurants">;
 		to: string;
+		/**
+		 * Canonical E.164 identity of the customer, for the outbound spend budget.
+		 * Deliberately not derived from `to`: that is a transport address, and for
+		 * a Mexican mobile the two spellings differ by WhatsApp's legacy 1.
+		 */
+		phone: string;
 		body: string;
 		/** The model's own prose, without the appended notices. "" = none. */
 		modelBody: string;
@@ -90,6 +97,18 @@ async function sendAndRecord(
 		WHATSAPP_MAX_REPLY_PARTS
 	);
 	for (const [index, body] of parts.entries()) {
+		// Charged per part, because each part is its own billed Twilio message.
+		// Checked here so no send path can be added that skips the budget.
+		const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalConsumeOutbound, {
+			phone: args.phone,
+		});
+		if (!budget.allowed) {
+			console.warn("[whatsapp.processing] outbound daily budget exhausted; dropping reply part.", {
+				conversationId: args.conversationId,
+				partIndex: index,
+			});
+			break;
+		}
 		const mediaUrl = index === 0 ? args.mediaUrl : undefined;
 		// Only the first part carries the model's prose: the notices are appended
 		// after it, so every later part is server-composed by construction.
@@ -179,6 +198,19 @@ export const handleInboundMessage = internalAction({
 		const replyAddress = normalizePhone(args.from);
 		const customerPhone = toCanonicalE164(args.from);
 
+		// Charge the spend budgets exactly once per inbound message, before any
+		// branch below can return — including the unroutable one.
+		//
+		// Deliberately ahead of routing rather than after it. Routing needs no
+		// budget, but *replying* does, and on one shared number an unroutable
+		// message can come from anyone at all (ADR 012). An unmetered fixed reply
+		// to every stranger who texts Tavli is an open relay on Tavli's own Twilio
+		// account — the exact spend this bounds. A refused hit does not increment
+		// its counter, so this stays safe whatever the outcome turns out to be.
+		const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: customerPhone,
+		});
+
 		const route = await resolveRoute(ctx, { body: args.body, customerPhone });
 		if (!route) {
 			// Nothing to attach this to — no restaurant means no conversation and no
@@ -187,7 +219,14 @@ export const handleInboundMessage = internalAction({
 			// case where there is no menu, no restaurant name and no locale to ground
 			// a model in, and spending a turn guessing is how a first responder
 			// starts inventing restaurants.
-			await sendWhatsappMessage({ to: replyAddress, body: getUnroutableGuidance() });
+			//
+			// Over budget, or past the platform ceiling: silence, not a notice.
+			// There is no conversation to record one against and no relationship to
+			// preserve with a number that has no restaurant, and answering a flood
+			// is paying for it.
+			if (budget.allowed && !budget.globalCeilingReached) {
+				await sendWhatsappMessage({ to: replyAddress, body: getUnroutableGuidance() });
+			}
 			return;
 		}
 
@@ -213,21 +252,6 @@ export const handleInboundMessage = internalAction({
 			route.defaultLocale,
 			restaurant?.defaultLanguage
 		);
-
-		// The whole message was the routing code — the diner opened the deep link
-		// and deleted the sentence. There is no question to answer, and an empty
-		// turn would leave the model with no user message at all, so greet them
-		// from fixed copy instead of spending a model call on nothing.
-		if (!route.body.trim()) {
-			await sendAndRecord(ctx, {
-				conversationId,
-				restaurantId: route.restaurantId,
-				to: replyAddress,
-				body: getBotCopy(locale).deepLinkWelcome(restaurant?.name ?? "Tavli"),
-				modelBody: "",
-			});
-			return;
-		}
 
 		// Confirmation codes are matched HERE, before the model is involved at all.
 		// The authorization decision for a destructive action is therefore a string
@@ -263,6 +287,7 @@ export const handleInboundMessage = internalAction({
 					conversationId,
 					restaurantId: route.restaurantId,
 					to: replyAddress,
+					phone: customerPhone,
 					body,
 					// Entirely server-composed: the model was never consulted for the
 					// authorization decision and must not be shown this as its own line.
@@ -272,6 +297,64 @@ export const handleInboundMessage = internalAction({
 			}
 			// Not one of our codes — fall through and let the model answer normally,
 			// since a bare number is just as likely to be a party size.
+			//
+			// Note this is also why the spend refusals below must not be skipped for
+			// every code-shaped message: "481920" would otherwise be an unlimited
+			// free pass to the model. Only a code we actually minted returns above.
+		}
+
+		// The phone has spent its daily budget. Say so exactly once, then go
+		// quiet: every reply to a flood is another message Tavli pays Twilio for.
+		if (!budget.allowed) {
+			const notice = await ctx.runMutation(
+				internal.whatsapp.spendControls.internalConsumeLimitNotice,
+				{ phone: customerPhone }
+			);
+			if (notice.allowed) {
+				await sendAndRecord(ctx, {
+					conversationId,
+					restaurantId: route.restaurantId,
+					to: replyAddress,
+					phone: customerPhone,
+					body: getBotCopy(locale).dailyLimitReached,
+					modelBody: "",
+				});
+			}
+			return;
+		}
+
+		// The whole platform has spent its daily budget. Answer with fixed copy
+		// and do not call the model — the ceiling exists to stop exactly that
+		// spend. Checked after the per-phone refusal so a flooding number stays
+		// silenced rather than collecting an apology per message.
+		if (budget.globalCeilingReached) {
+			await sendAndRecord(ctx, {
+				conversationId,
+				restaurantId: route.restaurantId,
+				to: replyAddress,
+				phone: customerPhone,
+				body: getBotCopy(locale).platformBusy,
+				modelBody: "",
+			});
+			return;
+		}
+
+		// The whole message was the routing code — the diner opened the deep link
+		// and deleted the sentence. There is no question to answer, and an empty
+		// turn would leave the model with no user message at all, so greet them
+		// from fixed copy instead of spending a model call on nothing. After the
+		// spend refusals above, so a flooding number does not collect a greeting
+		// per message.
+		if (!route.body.trim()) {
+			await sendAndRecord(ctx, {
+				conversationId,
+				restaurantId: route.restaurantId,
+				to: replyAddress,
+				phone: customerPhone,
+				body: getBotCopy(locale).deepLinkWelcome(restaurant?.name ?? "Tavli"),
+				modelBody: "",
+			});
+			return;
 		}
 
 		try {
@@ -283,6 +366,11 @@ export const handleInboundMessage = internalAction({
 				internal.whatsapp.reservations.internalGetBookingContextForBot,
 				{ restaurantId: route.restaurantId }
 			);
+			// Resolved here, once, rather than inside `send_menu_link`: the tool's
+			// once-per-turn claim must not sit across an await (the AI SDK runs a
+			// step's tool calls concurrently), and the slug is already in hand from
+			// `getRestaurantContext` above.
+			const { menuLinkEnabled } = await ctx.runQuery(internal.whatsapp.data.getBotFeatureFlags, {});
 
 			const result = await runBotTurn(ctx, {
 				// Built here, from the Twilio-verified webhook fields, and frozen. The
@@ -297,6 +385,10 @@ export const handleInboundMessage = internalAction({
 				restaurantName: restaurant?.name ?? "the restaurant",
 				locale,
 				timezone: restaurant?.timezone ?? undefined,
+				// Absent unless the menu page is actually reachable by the diner who
+				// receives the link — see `isMenuLinkEnabled`. Absent also disarms
+				// the tool: `runBotTurn` does not register it.
+				menuLinkSlug: menuLinkEnabled ? (restaurant?.slug ?? undefined) : undefined,
 				bookingContext,
 				history,
 			});
@@ -309,6 +401,7 @@ export const handleInboundMessage = internalAction({
 				conversationId,
 				restaurantId: route.restaurantId,
 				to: replyAddress,
+				phone: customerPhone,
 				body: composed || getBotCopy(locale).genericError,
 				modelBody: result.text,
 				mediaUrl: result.mediaUrl,
@@ -326,6 +419,7 @@ export const handleInboundMessage = internalAction({
 				conversationId,
 				restaurantId: route.restaurantId,
 				to: replyAddress,
+				phone: customerPhone,
 				body: getBotCopy(locale).genericError,
 				modelBody: "",
 			});
