@@ -44,8 +44,14 @@ vi.mock("ai", async (importOriginal) => {
 	return { ...actual, generateText: mockGenerateText };
 });
 
+/** Tavli's single shared sender number. Since ADR 012 it routes nothing. */
 const SENDER = "+14155238886";
+/** A second phone, used only where a *phone*, not a route, is the subject. */
 const OTHER_SENDER = "+14155238887";
+/** Deep-link short codes — what actually routes a message to a restaurant. */
+const SHORT_CODE = "SPN4K2";
+const OTHER_SHORT_CODE = "SPN7M3";
+const codeText = (code: string) => `${code.slice(0, 3)}-${code.slice(3)}`;
 const CUSTOMER = "+15551230000";
 /** The same human as `MX_CANONICAL`, spelled the way WhatsApp delivers it. */
 const MX_WHATSAPP = "+5218114906208";
@@ -56,19 +62,33 @@ const INBOUND_HEADERS = {
 	"content-type": "application/x-www-form-urlencoded",
 };
 
-function inboundBody(overrides: Record<string, string> = {}): string {
-	return new URLSearchParams({
+type InboundOverrides = { shortCode?: string } & Partial<
+	Record<"MessageSid" | "From" | "To" | "Body" | "ProfileName", string>
+>;
+
+/**
+ * A signed Twilio inbound. The short code rides on the body exactly as the
+ * wa.me deep link prefills it, because since ADR 012 that — not the "To" — is
+ * what routes.
+ */
+function inboundBody(overrides: InboundOverrides = {}): string {
+	const { shortCode, Body, ...rest } = overrides;
+	const body = Body ?? "hola, ¿qué tienen?";
+	const params: Record<string, string> = {
 		MessageSid: "SM1",
 		From: `whatsapp:${CUSTOMER}`,
 		To: `whatsapp:${SENDER}`,
-		Body: "hola, ¿qué tienen?",
-		...overrides,
-	}).toString();
+		Body: `${body} · ${codeText(shortCode ?? SHORT_CODE)}`,
+	};
+	for (const [key, value] of Object.entries(rest)) {
+		if (value !== undefined) params[key] = value;
+	}
+	return new URLSearchParams(params).toString();
 }
 
 async function seedChannel(
 	t: ReturnType<typeof convexTest>,
-	phoneNumber: string = SENDER
+	shortCode: string = SHORT_CODE
 ): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;
 	await t.run(async (ctx) => {
@@ -92,7 +112,7 @@ async function seedChannel(
 		});
 		await ctx.db.insert("whatsappChannels", {
 			restaurantId,
-			phoneNumber,
+			shortCode,
 			isActive: true,
 			defaultLocale: "es",
 			createdAt: Date.now(),
@@ -303,7 +323,7 @@ describe("inbound pipeline under the per-phone cap", () => {
 		vi.unstubAllGlobals();
 	});
 
-	async function post(t: ReturnType<typeof convexTest>, overrides: Record<string, string> = {}) {
+	async function post(t: ReturnType<typeof convexTest>, overrides: InboundOverrides = {}) {
 		await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: INBOUND_HEADERS,
@@ -328,12 +348,12 @@ describe("inbound pipeline under the per-phone cap", () => {
 
 	it("counts the phone in total, not per restaurant", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, SENDER);
-		await seedChannel(t, OTHER_SENDER);
+		await seedChannel(t, SHORT_CODE);
+		await seedChannel(t, OTHER_SHORT_CODE);
 		await seedCounter(t, inboundBudgetKey(CUSTOMER), WHATSAPP_INBOUND_DAILY_LIMIT.max - 1);
 
-		await post(t, { MessageSid: "SM-a", To: `whatsapp:${SENDER}` });
-		await post(t, { MessageSid: "SM-b", To: `whatsapp:${OTHER_SENDER}` });
+		await post(t, { MessageSid: "SM-a", shortCode: SHORT_CODE });
+		await post(t, { MessageSid: "SM-b", shortCode: OTHER_SHORT_CODE });
 
 		// The first message spends the last unit; the second restaurant does not
 		// hand the same number a fresh budget.
@@ -378,7 +398,7 @@ describe("confirmation codes under the cap", () => {
 		vi.unstubAllGlobals();
 	});
 
-	async function post(t: ReturnType<typeof convexTest>, overrides: Record<string, string> = {}) {
+	async function post(t: ReturnType<typeof convexTest>, overrides: InboundOverrides = {}) {
 		await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: INBOUND_HEADERS,
@@ -485,7 +505,7 @@ describe("platform daily ceiling", () => {
 		vi.unstubAllGlobals();
 	});
 
-	async function post(t: ReturnType<typeof convexTest>, overrides: Record<string, string> = {}) {
+	async function post(t: ReturnType<typeof convexTest>, overrides: InboundOverrides = {}) {
 		await t.fetch("/whatsapp/inbound", {
 			method: "POST",
 			headers: INBOUND_HEADERS,
@@ -510,11 +530,11 @@ describe("platform daily ceiling", () => {
 
 	it("counts every restaurant against one platform counter", async () => {
 		const t = convexTest(schema, modules);
-		await seedChannel(t, SENDER);
-		await seedChannel(t, OTHER_SENDER);
+		await seedChannel(t, SHORT_CODE);
+		await seedChannel(t, OTHER_SHORT_CODE);
 
-		await post(t, { MessageSid: "SM-a", To: `whatsapp:${SENDER}` });
-		await post(t, { MessageSid: "SM-b", To: `whatsapp:${OTHER_SENDER}` });
+		await post(t, { MessageSid: "SM-a", shortCode: SHORT_CODE });
+		await post(t, { MessageSid: "SM-b", shortCode: OTHER_SHORT_CODE });
 
 		const rows = (await counters(t)).filter((r) => r.key === GLOBAL_BUDGET_KEY);
 		expect(rows).toHaveLength(1);

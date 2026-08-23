@@ -7,51 +7,20 @@
  */
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { TABLE, WHATSAPP_CONVERSATION_STATUS, WHATSAPP_MESSAGE_DIRECTION } from "../constants";
+import {
+	TABLE,
+	WHATSAPP_COLD_START_SCAN_LIMIT,
+	WHATSAPP_CONVERSATION_STATUS,
+	WHATSAPP_MESSAGE_DIRECTION,
+	WHATSAPP_PENDING_CODE_SCAN_LIMIT,
+	WHATSAPP_UNROUTED_CLAIM_TTL_MS,
+	WHATSAPP_UNROUTED_PURGE_BATCH,
+} from "../constants";
+import type { Id } from "../_generated/dataModel";
 import { isMenuLinkEnabled } from "../featureFlags";
 import { redactConfirmationCodes } from "./format";
 import { MAX_CONTACT_NAME_LENGTH } from "../reservationHelpers";
-import { normalizePhone } from "./phone";
-
-/**
- * Provision (or update) the channel that maps a WhatsApp sender number to a
- * restaurant. Idempotent on the normalized phone number. This is the backend
- * primitive a future staff/admin surface will call; for now it is invoked
- * directly (e.g. via the Convex dashboard/CLI) to onboard a pilot restaurant.
- */
-export const provisionChannel = internalMutation({
-	args: {
-		restaurantId: v.id(TABLE.RESTAURANTS),
-		phoneNumber: v.string(),
-		isActive: v.optional(v.boolean()),
-		defaultLocale: v.optional(v.string()),
-	},
-	handler: async (ctx, args) => {
-		const phoneNumber = normalizePhone(args.phoneNumber);
-		const now = Date.now();
-		const existing = await ctx.db
-			.query(TABLE.WHATSAPP_CHANNELS)
-			.withIndex("by_phone_number", (q) => q.eq("phoneNumber", phoneNumber))
-			.first();
-		if (existing) {
-			await ctx.db.patch(existing._id, {
-				restaurantId: args.restaurantId,
-				isActive: args.isActive ?? true,
-				defaultLocale: args.defaultLocale,
-				updatedAt: now,
-			});
-			return existing._id;
-		}
-		return await ctx.db.insert(TABLE.WHATSAPP_CHANNELS, {
-			restaurantId: args.restaurantId,
-			phoneNumber,
-			isActive: args.isActive ?? true,
-			defaultLocale: args.defaultLocale,
-			createdAt: now,
-			updatedAt: now,
-		});
-	},
-});
+import { normalizeShortCode } from "./shortCode";
 
 /** Dedupe lookup: has this Twilio MessageSid already been ingested? */
 export const getMessageBySid = internalQuery({
@@ -64,24 +33,186 @@ export const getMessageBySid = internalQuery({
 	},
 });
 
-/** Route an inbound message: map the Twilio "To" number to an active channel. */
-export const getActiveChannelByPhone = internalQuery({
-	args: { phoneNumber: v.string() },
+/**
+ * Route an inbound message by the short code carried in the deep-link text.
+ *
+ * Takes the candidates the message yielded rather than one code, because a
+ * message can contain an accidental match — the table, not the parser, decides
+ * which token is a route. Candidate count is already capped by
+ * `extractShortCodeCandidates`, so this is a bounded number of index lookups.
+ */
+export const getEnabledChannelByShortCode = internalQuery({
+	args: { candidates: v.array(v.string()) },
 	handler: async (ctx, args) => {
-		const channel = await ctx.db
-			.query(TABLE.WHATSAPP_CHANNELS)
-			.withIndex("by_phone_number", (q) => q.eq("phoneNumber", args.phoneNumber))
+		for (const raw of args.candidates) {
+			const shortCode = normalizeShortCode(raw);
+			if (!shortCode) continue;
+			const channel = await ctx.db
+				.query(TABLE.WHATSAPP_CHANNELS)
+				.withIndex("by_short_code", (q) => q.eq("shortCode", shortCode))
+				.first();
+			// An inactive restaurant is deliberately treated as no match at all:
+			// the diner gets the same guidance as an unknown code, and learns
+			// nothing about whether that restaurant exists on Tavli.
+			if (channel?.isActive) {
+				return { channel, matchedCode: shortCode };
+			}
+		}
+		return null;
+	},
+});
+
+/**
+ * Cold start: the enabled restaurants this phone has messaged since `sinceMs`.
+ *
+ * Only ever used to bind a message that carried NO code, and only when the
+ * answer is exactly one restaurant — see `processing.ts`. Tavli deliberately
+ * does not try to match a restaurant name the diner typed: that would be an
+ * enumeration and spoofing surface (ADR 012), so a phone's own recent history
+ * is the only other thing allowed to route.
+ */
+export const getRecentRoutesForPhone = internalQuery({
+	args: { customerPhone: v.string(), sinceMs: v.number() },
+	handler: async (ctx, args) => {
+		const recent = await ctx.db
+			.query(TABLE.WHATSAPP_CONVERSATIONS)
+			.withIndex("by_customer_last_inbound", (q) =>
+				q.eq("customerPhone", args.customerPhone).gte("lastInboundAt", args.sinceMs)
+			)
+			.order("desc")
+			.take(WHATSAPP_COLD_START_SCAN_LIMIT);
+
+		const routes: { restaurantId: Id<"restaurants">; channelId: Id<"whatsappChannels"> }[] = [];
+		const seen = new Set<string>();
+		for (const conversation of recent) {
+			if (seen.has(conversation.restaurantId)) continue;
+			seen.add(conversation.restaurantId);
+			const channel = await ctx.db
+				.query(TABLE.WHATSAPP_CHANNELS)
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", conversation.restaurantId))
+				.first();
+			if (channel?.isActive) {
+				routes.push({ restaurantId: conversation.restaurantId, channelId: channel._id });
+			}
+		}
+		return routes;
+	},
+});
+
+/**
+ * Route by a confirmation code this phone was actually issued.
+ *
+ * The last resort before the fixed guidance reply, and deliberately NOT a third
+ * general routing input. The assistant's own cancellation copy tells the diner
+ * to "reply with this code: 481920" — six bare digits with no short code — so
+ * for any diner who has talked to two restaurants that reply is otherwise
+ * unroutable and the cancellation they were told to confirm silently never
+ * happens (ADR 011's second-message authorization, broken by ADR 012's shared
+ * number).
+ *
+ * This does not reopen the surface ADR 012 closes. A short code names a
+ * restaurant and is printed on a table for anyone to read; this value is
+ * server-minted, single-use, ten-minute-lived, and looked up by
+ * (customerPhone, code) — so it can only ever bind a phone to a code Tavli
+ * itself sent to that same phone. It is neither an enumeration oracle nor
+ * something the diner can type their way into.
+ */
+export const getRouteByPendingCode = internalQuery({
+	args: { customerPhone: v.string(), code: v.string() },
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		const rows = await ctx.db
+			.query(TABLE.WHATSAPP_PENDING_ACTIONS)
+			.withIndex("by_phone_code", (q) =>
+				q.eq("customerPhone", args.customerPhone).eq("code", args.code)
+			)
+			.order("desc")
+			.take(WHATSAPP_PENDING_CODE_SCAN_LIMIT);
+
+		for (const row of rows) {
+			// Spent and expired codes route nothing: redemption re-checks both, and
+			// binding to one would only reach `internalConsumeCancelCode` to be
+			// refused there.
+			if (row.consumedAt !== undefined) continue;
+			if (row.expiresAt <= now) continue;
+			const channel = await ctx.db
+				.query(TABLE.WHATSAPP_CHANNELS)
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", row.restaurantId))
+				.first();
+			// A restaurant switched off while the code was outstanding is off for
+			// this message too — same as every other route into a disabled
+			// restaurant, rather than a back door that keeps working.
+			if (channel?.isActive) {
+				return {
+					restaurantId: row.restaurantId,
+					channelId: channel._id,
+					defaultLocale: channel.defaultLocale,
+				};
+			}
+		}
+		return null;
+	},
+});
+
+/**
+ * Claim an inbound MessageSid that resolved to no restaurant, once.
+ *
+ * Returns false when this SID was already claimed — a Twilio redelivery, which
+ * must not be answered or charged a second time. The routed path dedupes on the
+ * `whatsappMessages` row `ingestInbound` stores; an unroutable message stores
+ * none by design (there is no conversation to attach it to), so this row is its
+ * only dedupe. Read-then-insert inside one Convex mutation is atomic, so two
+ * concurrent redeliveries cannot both claim.
+ */
+export const claimUnroutedMessage = internalMutation({
+	args: { messageSid: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query(TABLE.WHATSAPP_UNROUTED_MESSAGES)
+			.withIndex("by_message_sid", (q) => q.eq("messageSid", args.messageSid))
 			.first();
-		if (!channel || !channel.isActive) return null;
-		return channel;
+		if (existing) return { claimed: false };
+		await ctx.db.insert(TABLE.WHATSAPP_UNROUTED_MESSAGES, {
+			messageSid: args.messageSid,
+			createdAt: Date.now(),
+		});
+		return { claimed: true };
+	},
+});
+
+/**
+ * Reclaim unrouted-message claims older than Twilio can retry.
+ *
+ * These rows are dedupe scratch, not history: one per message from a phone no
+ * restaurant knows, which under a flood is exactly the traffic that must not
+ * leave permanent rows behind. Hourly, batched.
+ */
+export const purgeExpiredUnroutedClaims = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const stale = await ctx.db
+			.query(TABLE.WHATSAPP_UNROUTED_MESSAGES)
+			.withIndex("by_created", (q) =>
+				q.lt("createdAt", Date.now() - WHATSAPP_UNROUTED_CLAIM_TTL_MS)
+			)
+			.take(WHATSAPP_UNROUTED_PURGE_BATCH);
+		for (const row of stale) await ctx.db.delete(row._id);
+		return { deleted: stale.length };
 	},
 });
 
 /**
  * Idempotently record an inbound message: upsert the Conversation for
- * (channel, customer), then append the inbound row unless its MessageSid was
- * already stored. Returns the conversation id, the resolved reply locale, and
- * whether this delivery was a duplicate (Twilio retries the same MessageSid).
+ * (customer phone, RESTAURANT), then append the inbound row unless its
+ * MessageSid was already stored. Returns the conversation id, the resolved
+ * reply locale, and whether this delivery was a duplicate (Twilio retries the
+ * same MessageSid).
+ *
+ * Keyed on the restaurant, not the channel row (ADR 012). The diner sees one
+ * continuous thread with Tavli; underneath, each restaurant gets its own
+ * conversation. One interleaved thread was never an option: it would show one
+ * restaurant another restaurant's messages, and would replay two restaurants'
+ * menus into the model's context for a single turn.
  */
 export const ingestInbound = internalMutation({
 	args: {
@@ -103,8 +234,8 @@ export const ingestInbound = internalMutation({
 
 		const existingConversation = await ctx.db
 			.query(TABLE.WHATSAPP_CONVERSATIONS)
-			.withIndex("by_channel_customer", (q) =>
-				q.eq("channelId", args.channelId).eq("customerPhone", args.customerPhone)
+			.withIndex("by_restaurant_customer", (q) =>
+				q.eq("restaurantId", args.restaurantId).eq("customerPhone", args.customerPhone)
 			)
 			.first();
 
@@ -127,6 +258,12 @@ export const ingestInbound = internalMutation({
 				lastMessageAt: now,
 				lastInboundAt: now,
 				updatedAt: now,
+				// The thread follows the restaurant, not the enablement row: if the
+				// restaurant was disabled and re-enabled under a fresh channel, the
+				// diner keeps the same conversation and this pointer catches up.
+				...(existingConversation?.channelId !== args.channelId
+					? { channelId: args.channelId }
+					: {}),
 				// Only overwrite with a real name — Twilio omits ProfileName when the
 				// customer has no WhatsApp display name set, and a blank must not
 				// erase one we captured earlier.

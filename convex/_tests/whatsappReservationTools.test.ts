@@ -43,7 +43,10 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 const TZ = "America/Mexico_City";
+/** Tavli's single shared sender number. Since ADR 012 it routes nothing. */
 const SENDER = "+14155238886";
+/** The seeded restaurant's deep-link short code — what actually routes now. */
+const SHORT_CODE_DISPLAY = "TLS-4K2";
 const CUSTOMER = "+15551230000";
 const OTHER_CUSTOMER = "+15559990000";
 
@@ -52,13 +55,20 @@ const INBOUND_HEADERS = {
 	"content-type": "application/x-www-form-urlencoded",
 };
 
+/**
+ * A signed Twilio inbound. The short code rides on the body exactly as the
+ * wa.me deep link prefills it, because since ADR 012 that is the only thing
+ * that routes; it is stripped again before anything stores or replays the body.
+ */
 function inboundBody(overrides: Record<string, string> = {}): string {
+	const { Body, ...rest } = overrides;
+	const body = Body ?? "¿tienen mesa?";
 	return new URLSearchParams({
 		MessageSid: "SM1",
 		From: `whatsapp:${CUSTOMER}`,
 		To: `whatsapp:${SENDER}`,
-		Body: "¿tienen mesa?",
-		...overrides,
+		Body: `${body} · ${SHORT_CODE_DISPLAY}`,
+		...rest,
 	}).toString();
 }
 
@@ -96,7 +106,7 @@ async function seedChannel(t: ReturnType<typeof convexTest>): Promise<Id<"restau
 		});
 		await ctx.db.insert("whatsappChannels", {
 			restaurantId,
-			phoneNumber: SENDER,
+			shortCode: SHORT_CODE_DISPLAY.replace("-", ""),
 			isActive: true,
 			defaultLocale: "es",
 			createdAt: Date.now(),

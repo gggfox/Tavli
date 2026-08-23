@@ -332,27 +332,56 @@ receives a reservation id, and a booking is always resolved server-side from
 ### WhatsApp assistant
 
 **WhatsApp assistant**:
-The LLM first responder on a `Restaurant`'s WhatsApp number. Answers menu
-questions, checks availability, and requests or cancels bookings on behalf of
-the customer messaging it. _Avoid_: chatbot, agent. ("bot" survives as a
-code-internal synonym — `runBotTurn`, `RESERVATIONS_BOT_TOKEN`.)
+The LLM first responder on **Tavli's** WhatsApp number. Answers menu questions,
+checks availability, and requests or cancels bookings on behalf of the customer
+messaging it. Tavli is the sender for every restaurant (ADR 012), so the diner
+sees one contact — "Tavli" — however many restaurants they talk to. _Avoid_:
+chatbot, agent. ("bot" survives as a code-internal synonym — `runBotTurn`,
+`RESERVATIONS_BOT_TOKEN`.)
 
 **Channel**:
-The mapping from one WhatsApp sender number to one `Restaurant`. Routes an
-inbound message to the right restaurant. _Avoid_: number, line, integration.
+The record that a `Restaurant` is **enabled** for the **WhatsApp assistant**,
+carrying its **Restaurant code** and its default reply locale. It is **no
+longer** a phone number mapped to a restaurant: there is one shared Tavli
+number, so the number a message arrives at identifies nobody (ADR 012).
+Enabling is platform-admin only. _Avoid_: number, line, integration.
+
+**Restaurant code**:
+The six-character reference — `VRN-8F3` — that routes an inbound WhatsApp
+message to one `Restaurant`. It rides in the `wa.me` deep link's prefilled
+text, which WhatsApp shows the diner in their message box, so it reads like a
+booking reference rather than a URL fragment (which is why it is deliberately
+not the **slug**). It is a **router, not a secret**: guessing one reaches a
+restaurant's public assistant, the same thing the QR on its tables offers.
+_Avoid_: token, key, ID.
 
 **Conversation**:
-The message thread between one customer phone and one **Channel**.
+The message thread between one customer phone and one `Restaurant`.
 Deliberately **not** "Session" — that word means an open ordering tab at a
-table.
+table. The diner experiences one continuous chat with Tavli; underneath, each
+restaurant gets its own **Conversation**, so no restaurant ever sees another's
+messages and no turn replays two restaurants' menus to the model.
+
+**Cold start**:
+An inbound WhatsApp message carrying no **Restaurant code**. It binds to the
+one enabled `Restaurant` this phone has messaged in the last 30 days; failing
+that, to the `Restaurant` that minted a still-live **Confirmation code** the
+message carries; failing that, it gets fixed bilingual copy pointing back at
+the deep link, with no model call. Tavli deliberately never matches a
+restaurant _name_ the diner typed: that is an enumeration and spoofing surface
+(ADR 012).
 
 **Confirmation code**:
 A short server-generated number the **WhatsApp assistant** sends when a
 customer asks to cancel. The cancellation happens only when the customer
 replies with the code, and that match is made before the model is consulted —
 so a destructive action always requires a fresh act from the phone's owner.
-Single-use, expires in 10 minutes. _Avoid_: OTP, PIN (that is the employee
-credential), token.
+Single-use, expires in 10 minutes. Because the assistant asks for it as six
+bare digits, it also routes its own reply on a **Cold start** — but only back
+to the phone Tavli minted it for, which is why it is not the **Restaurant
+code**'s job. Not to be confused with the **Restaurant code**, which routes and
+never authorizes anything. _Avoid_: OTP, PIN (that is the employee credential),
+token.
 
 **Daily message cap**:
 The number of messages the **WhatsApp assistant** will handle for one phone in
@@ -388,9 +417,10 @@ else fixed copy — so staff should not treat it as verified.
 
 ## Relationships
 
-- A **Restaurant** has many **Channels**; a **Channel** has many
-  **Conversations**. A **Conversation** relates to **Reservations** only
-  through the shared **Contact phone**, never by a foreign key.
+- A **Restaurant** has at most one **Channel** — its WhatsApp enablement —
+  and many **Conversations**, one per customer phone. A **Conversation**
+  relates to **Reservations** only through the shared **Contact phone**, never
+  by a foreign key.
 - A **Restaurant** has one **Public profile**. Every part of it is optional and
   independently omitted from the diner-facing surfaces when unset.
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,

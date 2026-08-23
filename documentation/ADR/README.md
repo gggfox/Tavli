@@ -40,6 +40,7 @@ Proposed → Accepted → [Deprecated | Superseded]
 | [009](./009-public-profile-and-branding.md)                 | Restaurant public profile and server-resolved branding              | Proposed   | 2026-08-13 |
 | [010](./010-whatsapp-assistant.md)                          | WhatsApp Assistant as a Twilio-Backed LLM First Responder           | Accepted   | 2026-07-25 |
 | [011](./011-whatsapp-customer-reservation-writes.md)        | Phone-Number Identity for Customer Reservation Writes over WhatsApp | Accepted   | 2026-07-25 |
+| [012](./012-one-tavli-whatsapp-number.md)                   | One Tavli WhatsApp number, with per-restaurant sending later        | Accepted   | 2026-08-23 |
 
 > ADR 001 is Deprecated and its file is no longer in the repository; the row is
 > kept so the numbering has no gap. ADR 002 records WorkOS, but the code uses

@@ -446,7 +446,7 @@ http.route({
 });
 
 // =============================================================================
-// WhatsApp Inbound Webhook (Twilio) — see ADR 010
+// WhatsApp Inbound Webhook (Twilio) — see ADR 010, ADR 012
 // =============================================================================
 //
 // Twilio POSTs inbound WhatsApp messages here as `application/x-www-form-
@@ -506,10 +506,14 @@ http.route({
 			return badRequestResponse("From must be a whatsapp: address");
 		}
 
+		// `To` is validated above but deliberately NOT forwarded: Tavli is the
+		// sender on one shared number (ADR 012), so the number a message arrived
+		// at identifies nobody. Routing happens on the deep-link short code inside
+		// the body. Passing `To` on would only invite a future reader to route on
+		// it again.
 		await ctx.scheduler.runAfter(0, internal.whatsapp.processing.handleInboundMessage, {
 			messageSid: params.MessageSid,
 			from: params.From,
-			to: params.To,
 			body: clampInboundBody(params.Body ?? ""),
 			profileName: params.ProfileName,
 		});
