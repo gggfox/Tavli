@@ -1455,8 +1455,30 @@ export default defineSchema({
 		createdAt: v.number(),
 	})
 		.index("by_conversation_code", ["conversationId", "code"])
+		// Routing (ADR 012): the reply the assistant asks for — "reply with this
+		// code: 481920" — carries no short code, so on one shared number a diner
+		// who has talked to two restaurants has nothing else to bind it. Keyed on
+		// the phone as well as the code, so a code only ever reaches the phone
+		// Tavli minted it for; a code is not something the diner can name.
+		.index("by_phone_code", ["customerPhone", "code"])
 		.index("by_conversation", ["conversationId"])
 		.index("by_expires", ["expiresAt"]),
+
+	// Inbound MessageSids that resolved to no restaurant at all (ADR 012). On one
+	// shared number an inbound message can come from a phone no restaurant knows,
+	// and the fixed guidance reply has no conversation to be recorded against —
+	// so the ordinary `whatsappMessages` dedupe cannot see it, and every Twilio
+	// redelivery would be another billed message plus another budget charge.
+	// Claiming the SID here first makes a redelivery a no-op.
+	//
+	// Not a message log: no body, no phone, and reclaimed hourly by
+	// `purgeExpiredUnroutedClaims` once Twilio can no longer retry.
+	[TABLE.WHATSAPP_UNROUTED_MESSAGES]: defineTable({
+		messageSid: v.string(),
+		createdAt: v.number(),
+	})
+		.index("by_message_sid", ["messageSid"])
+		.index("by_created", ["createdAt"]),
 
 	// Phone numbers exempt from the assistant's per-phone daily message caps
 	// (TAVLI-91) — the operator's own number and any phone doing supervised

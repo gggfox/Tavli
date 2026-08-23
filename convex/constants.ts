@@ -47,6 +47,7 @@ export const TABLE = {
 	WHATSAPP_CONVERSATIONS: "whatsappConversations",
 	WHATSAPP_MESSAGES: "whatsappMessages",
 	WHATSAPP_PENDING_ACTIONS: "whatsappPendingActions",
+	WHATSAPP_UNROUTED_MESSAGES: "whatsappUnroutedMessages",
 	WHATSAPP_SPEND_ALLOWLIST: "whatsappSpendAllowlist",
 } as const;
 
@@ -1057,6 +1058,27 @@ export const WHATSAPP_COLD_START_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * exactly the case that gets the fixed reply.
  */
 export const WHATSAPP_COLD_START_SCAN_LIMIT = 25;
+
+/**
+ * Pending-action rows scanned when a codeless message carries a confirmation
+ * code instead. At most one row per (phone, code) can be live at a time — the
+ * rest are spent codes the hourly purge has not reclaimed yet — so a handful,
+ * newest first, is always enough to find the live one.
+ */
+export const WHATSAPP_PENDING_CODE_SCAN_LIMIT = 5;
+
+/**
+ * How long an unroutable inbound MessageSid is remembered so a Twilio
+ * redelivery of it is a no-op.
+ *
+ * Only long enough to outlive Twilio's own retries. These rows exist purely to
+ * dedupe a reply that has no conversation to be recorded against, and the
+ * hourly purge reclaims them — they are not a message log.
+ */
+export const WHATSAPP_UNROUTED_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Unrouted claims reclaimed per purge run. Bounds one mutation's write set. */
+export const WHATSAPP_UNROUTED_PURGE_BATCH = 200;
 /**
  * Longest public restaurant slug we will store. The slug is derived from the
  * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily

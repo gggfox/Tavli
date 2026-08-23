@@ -17,10 +17,12 @@
  * **Routing (ADR 012).** Tavli is the sender on one shared number, so the
  * Twilio "To" identifies nobody. The restaurant comes from the short code in
  * the wa.me deep-link text; failing that, from this phone's own recent history,
- * but only when that history names exactly one restaurant. Anything else gets a
- * fixed reply with no model call — Tavli deliberately does NOT try to match a
- * restaurant name the diner typed against every restaurant it knows, because
- * that is an enumeration and spoofing surface.
+ * but only when that history names exactly one restaurant; failing that, from a
+ * live confirmation code Tavli minted for this exact phone, so the second
+ * message ADR 011 requires to authorize a cancellation can still land. Anything
+ * else gets a fixed reply with no model call — Tavli deliberately does NOT try
+ * to match a restaurant name the diner typed against every restaurant it knows,
+ * because that is an enumeration and spoofing surface.
  *
  * The confirmation-code check deliberately sits BEFORE the LLM: authorizing a
  * cancellation must not depend on the model reading intent correctly. It sits
@@ -134,11 +136,13 @@ async function sendAndRecord(
  * Which restaurant this message is for, and the body with the routing token
  * removed.
  *
- * Two inputs, in order, and no third. The short code in the deep-link text is
+ * Three inputs, in order, and no fourth. The short code in the deep-link text is
  * the primary route. Its absence falls back to this phone's own recent history,
  * and only when that history names exactly one enabled restaurant — two
  * restaurants is genuinely ambiguous, and picking the most recent would silently
- * send a diner's question to the wrong kitchen.
+ * send a diner's question to the wrong kitchen. Last, and only for a message
+ * that is a confirmation code, a code Tavli itself minted for this exact phone —
+ * see `getRouteByPendingCode` for why that is not a fourth general input.
  */
 async function resolveRoute(
 	ctx: ActionCtx,
@@ -172,8 +176,22 @@ async function resolveRoute(
 		customerPhone: args.customerPhone,
 		sinceMs: Date.now() - WHATSAPP_COLD_START_WINDOW_MS,
 	});
-	if (routes.length !== 1) return null;
-	return { ...routes[0], body: args.body };
+	if (routes.length === 1) return { ...routes[0], body: args.body };
+
+	// Ambiguous history, or none. Before giving up: is this the confirmation
+	// code the assistant asked for? Its copy says "reply with this code: 481920"
+	// — six bare digits, no short code — so for a diner who has talked to two
+	// restaurants that reply lands here, and dropping it would mean the
+	// cancellation they were told to confirm silently never happens.
+	const code = extractConfirmationCode(args.body);
+	if (code) {
+		const route = await ctx.runQuery(internal.whatsapp.data.getRouteByPendingCode, {
+			customerPhone: args.customerPhone,
+			code,
+		});
+		if (route) return { ...route, body: args.body };
+	}
+	return null;
 }
 
 export const handleInboundMessage = internalAction({
@@ -198,19 +216,6 @@ export const handleInboundMessage = internalAction({
 		const replyAddress = normalizePhone(args.from);
 		const customerPhone = toCanonicalE164(args.from);
 
-		// Charge the spend budgets exactly once per inbound message, before any
-		// branch below can return — including the unroutable one.
-		//
-		// Deliberately ahead of routing rather than after it. Routing needs no
-		// budget, but *replying* does, and on one shared number an unroutable
-		// message can come from anyone at all (ADR 012). An unmetered fixed reply
-		// to every stranger who texts Tavli is an open relay on Tavli's own Twilio
-		// account — the exact spend this bounds. A refused hit does not increment
-		// its counter, so this stays safe whatever the outcome turns out to be.
-		const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalCheckInbound, {
-			phone: customerPhone,
-		});
-
 		const route = await resolveRoute(ctx, { body: args.body, customerPhone });
 		if (!route) {
 			// Nothing to attach this to — no restaurant means no conversation and no
@@ -220,11 +225,30 @@ export const handleInboundMessage = internalAction({
 			// a model in, and spending a turn guessing is how a first responder
 			// starts inventing restaurants.
 			//
+			// Claimed BEFORE anything is charged or sent. Unlogged also means
+			// undeduped: the fast path above reads the `whatsappMessages` row this
+			// branch never writes, so without a claim every Twilio redelivery of
+			// this MessageSid is another billed message to a stranger and another
+			// permanent counter increment.
+			const { claimed } = await ctx.runMutation(internal.whatsapp.data.claimUnroutedMessage, {
+				messageSid: args.messageSid,
+			});
+			if (!claimed) return;
+
+			// Replying to a stranger still costs money, and on one shared number an
+			// unroutable message can come from anyone at all (ADR 012) — an unmetered
+			// fixed reply to every one of them is an open relay on Tavli's own Twilio
+			// account. So the guidance is metered like any other reply.
+			//
 			// Over budget, or past the platform ceiling: silence, not a notice.
 			// There is no conversation to record one against and no relationship to
 			// preserve with a number that has no restaurant, and answering a flood
 			// is paying for it.
-			if (budget.allowed && !budget.globalCeilingReached) {
+			const strangerBudget = await ctx.runMutation(
+				internal.whatsapp.spendControls.internalCheckInbound,
+				{ phone: customerPhone }
+			);
+			if (strangerBudget.allowed && !strangerBudget.globalCeilingReached) {
 				await sendWhatsappMessage({ to: replyAddress, body: getUnroutableGuidance() });
 			}
 			return;
@@ -243,6 +267,15 @@ export const handleInboundMessage = internalAction({
 			profileName: args.profileName,
 		});
 		if (isDuplicate) return;
+
+		// Charged after `ingestInbound`, which is the authoritative dedupe — the
+		// fast path above can miss a redelivery that arrives while the first
+		// delivery is still in flight. Charging ahead of it would bill that race
+		// twice for one customer message. Every branch below still charges exactly
+		// once, and a refused hit does not increment its counter.
+		const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalCheckInbound, {
+			phone: customerPhone,
+		});
 
 		const restaurant = await ctx.runQuery(internal.whatsapp.data.getRestaurantContext, {
 			restaurantId: route.restaurantId,

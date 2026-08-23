@@ -12,6 +12,9 @@ import {
 	WHATSAPP_COLD_START_SCAN_LIMIT,
 	WHATSAPP_CONVERSATION_STATUS,
 	WHATSAPP_MESSAGE_DIRECTION,
+	WHATSAPP_PENDING_CODE_SCAN_LIMIT,
+	WHATSAPP_UNROUTED_CLAIM_TTL_MS,
+	WHATSAPP_UNROUTED_PURGE_BATCH,
 } from "../constants";
 import type { Id } from "../_generated/dataModel";
 import { isMenuLinkEnabled } from "../featureFlags";
@@ -93,6 +96,108 @@ export const getRecentRoutesForPhone = internalQuery({
 			}
 		}
 		return routes;
+	},
+});
+
+/**
+ * Route by a confirmation code this phone was actually issued.
+ *
+ * The last resort before the fixed guidance reply, and deliberately NOT a third
+ * general routing input. The assistant's own cancellation copy tells the diner
+ * to "reply with this code: 481920" — six bare digits with no short code — so
+ * for any diner who has talked to two restaurants that reply is otherwise
+ * unroutable and the cancellation they were told to confirm silently never
+ * happens (ADR 011's second-message authorization, broken by ADR 012's shared
+ * number).
+ *
+ * This does not reopen the surface ADR 012 closes. A short code names a
+ * restaurant and is printed on a table for anyone to read; this value is
+ * server-minted, single-use, ten-minute-lived, and looked up by
+ * (customerPhone, code) — so it can only ever bind a phone to a code Tavli
+ * itself sent to that same phone. It is neither an enumeration oracle nor
+ * something the diner can type their way into.
+ */
+export const getRouteByPendingCode = internalQuery({
+	args: { customerPhone: v.string(), code: v.string() },
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		const rows = await ctx.db
+			.query(TABLE.WHATSAPP_PENDING_ACTIONS)
+			.withIndex("by_phone_code", (q) =>
+				q.eq("customerPhone", args.customerPhone).eq("code", args.code)
+			)
+			.order("desc")
+			.take(WHATSAPP_PENDING_CODE_SCAN_LIMIT);
+
+		for (const row of rows) {
+			// Spent and expired codes route nothing: redemption re-checks both, and
+			// binding to one would only reach `internalConsumeCancelCode` to be
+			// refused there.
+			if (row.consumedAt !== undefined) continue;
+			if (row.expiresAt <= now) continue;
+			const channel = await ctx.db
+				.query(TABLE.WHATSAPP_CHANNELS)
+				.withIndex("by_restaurant", (q) => q.eq("restaurantId", row.restaurantId))
+				.first();
+			// A restaurant switched off while the code was outstanding is off for
+			// this message too — same as every other route into a disabled
+			// restaurant, rather than a back door that keeps working.
+			if (channel?.isActive) {
+				return {
+					restaurantId: row.restaurantId,
+					channelId: channel._id,
+					defaultLocale: channel.defaultLocale,
+				};
+			}
+		}
+		return null;
+	},
+});
+
+/**
+ * Claim an inbound MessageSid that resolved to no restaurant, once.
+ *
+ * Returns false when this SID was already claimed — a Twilio redelivery, which
+ * must not be answered or charged a second time. The routed path dedupes on the
+ * `whatsappMessages` row `ingestInbound` stores; an unroutable message stores
+ * none by design (there is no conversation to attach it to), so this row is its
+ * only dedupe. Read-then-insert inside one Convex mutation is atomic, so two
+ * concurrent redeliveries cannot both claim.
+ */
+export const claimUnroutedMessage = internalMutation({
+	args: { messageSid: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query(TABLE.WHATSAPP_UNROUTED_MESSAGES)
+			.withIndex("by_message_sid", (q) => q.eq("messageSid", args.messageSid))
+			.first();
+		if (existing) return { claimed: false };
+		await ctx.db.insert(TABLE.WHATSAPP_UNROUTED_MESSAGES, {
+			messageSid: args.messageSid,
+			createdAt: Date.now(),
+		});
+		return { claimed: true };
+	},
+});
+
+/**
+ * Reclaim unrouted-message claims older than Twilio can retry.
+ *
+ * These rows are dedupe scratch, not history: one per message from a phone no
+ * restaurant knows, which under a flood is exactly the traffic that must not
+ * leave permanent rows behind. Hourly, batched.
+ */
+export const purgeExpiredUnroutedClaims = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const stale = await ctx.db
+			.query(TABLE.WHATSAPP_UNROUTED_MESSAGES)
+			.withIndex("by_created", (q) =>
+				q.lt("createdAt", Date.now() - WHATSAPP_UNROUTED_CLAIM_TTL_MS)
+			)
+			.take(WHATSAPP_UNROUTED_PURGE_BATCH);
+		for (const row of stale) await ctx.db.delete(row._id);
+		return { deleted: stale.length };
 	},
 });
 

@@ -1,9 +1,13 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { WHATSAPP_COLD_START_WINDOW_MS, WHATSAPP_INBOUND_DAILY_LIMIT } from "../constants";
+import {
+	WHATSAPP_COLD_START_WINDOW_MS,
+	WHATSAPP_INBOUND_DAILY_LIMIT,
+	WHATSAPP_UNROUTED_CLAIM_TTL_MS,
+} from "../constants";
 import { inboundBudgetKey } from "../whatsapp/spendControls";
 
 /**
@@ -375,6 +379,118 @@ describe("whatsapp deep-link routing", () => {
 
 		expect(await conversations(t)).toHaveLength(1);
 		expect(mockGenerateText).toHaveBeenCalledTimes(2);
+	});
+
+	it("redelivering an unroutable MessageSid neither replies twice nor charges twice", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+
+		// Twilio retries deliver the same MessageSid. The routed path dedupes on
+		// the stored `whatsappMessages` row; an unroutable message stores none, so
+		// without its own claim every retry is another billed Twilio message to a
+		// stranger and another permanent counter increment.
+		await send(t, { body: "hola", messageSid: "SM-dup" });
+		await send(t, { body: "hola", messageSid: "SM-dup" });
+		await send(t, { body: "hola", messageSid: "SM-dup" });
+
+		expect(sentBodies(fetchMock)).toHaveLength(1);
+		const counter = await t.run(async (ctx) => {
+			const rows = await ctx.db.query("rateLimits").collect();
+			return rows.find((r) => r.key === inboundBudgetKey(CUSTOMER));
+		});
+		expect(counter?.count).toBe(1);
+	});
+
+	it("routes a bare confirmation code even when this phone talked to two restaurants", async () => {
+		const t = convexTest(schema, modules);
+		const vernaculo = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+		await seedRestaurant(t, { name: "El Sol", shortCode: "SLX2K7" });
+
+		await send(t, { body: "Hola · VRN-8F3", messageSid: "SM-a" });
+		await send(t, { body: "Hola · SLX-2K7", messageSid: "SM-b" });
+
+		// The assistant's own cancellation copy tells the diner to "reply with
+		// this code: 481920" — a bare six digits, no short code. That reply is the
+		// second inbound message ADR 011 relies on to authorize a destructive
+		// action, so it has to reach the conversation that minted the code.
+		const { reservationId, pendingId } = await t.run(async (ctx) => {
+			const conversation = await ctx.db
+				.query("whatsappConversations")
+				.filter((q) => q.eq(q.field("restaurantId"), vernaculo))
+				.first();
+			const startsAt = Date.now() + 3 * 60 * 60 * 1000;
+			const reservationId = await ctx.db.insert("reservations", {
+				restaurantId: vernaculo,
+				partySize: 2,
+				startsAt,
+				endsAt: startsAt + 90 * 60 * 1000,
+				tableIds: [],
+				status: "confirmed",
+				source: "whatsapp",
+				contact: { name: "Diner", phone: CUSTOMER },
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+			const pendingId = await ctx.db.insert("whatsappPendingActions", {
+				conversationId: conversation!._id,
+				restaurantId: vernaculo,
+				customerPhone: CUSTOMER,
+				kind: "cancel_reservation",
+				reservationId,
+				code: "481920",
+				expiresAt: Date.now() + 10 * 60 * 1000,
+				createdAt: Date.now(),
+			});
+			return { reservationId, pendingId };
+		});
+
+		await send(t, { body: "481920", messageSid: "SM-code" });
+
+		const { pending, reservation } = await t.run(async (ctx) => ({
+			pending: await ctx.db.get(pendingId),
+			reservation: await ctx.db.get(reservationId),
+		}));
+		// A server-minted, single-use, ten-minute code looked up by (phone, code)
+		// is not the "match a restaurant the diner named" surface ADR 012 closes:
+		// it binds only to a code Tavli itself issued to this exact phone.
+		expect(pending?.consumedAt).toBeDefined();
+		expect(reservation?.status).toBe("cancelled");
+		expect(sentBodies(fetchMock).at(-1)).toContain("Cancelada");
+	});
+
+	it("still refuses a six-digit message that redeems no code of this phone's", async () => {
+		const t = convexTest(schema, modules);
+		const vernaculo = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+		const sol = await seedRestaurant(t, { name: "El Sol", shortCode: "SLX2K7" });
+		await seedPriorConversation(t, vernaculo, 60_000);
+		await seedPriorConversation(t, sol, 30_000);
+
+		await send(t, { body: "481920", messageSid: "SM-guess" });
+
+		// No pending action was ever minted for this phone, so six digits are just
+		// six digits — guessing must not become a way to pick a restaurant.
+		expect(mockGenerateText).not.toHaveBeenCalled();
+		expect(sentBodies(fetchMock)[0]).toContain("Soy el asistente de Tavli");
+	});
+
+	it("reclaims unrouted claims once Twilio can no longer retry them", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+
+		await send(t, { body: "hola", messageSid: "SM-fresh" });
+		await t.run((ctx) =>
+			ctx.db.insert("whatsappUnroutedMessages", {
+				messageSid: "SM-old",
+				createdAt: Date.now() - WHATSAPP_UNROUTED_CLAIM_TTL_MS - 1,
+			})
+		);
+
+		await t.mutation(internal.whatsapp.data.purgeExpiredUnroutedClaims, {});
+
+		// Dedupe scratch, not a message log: under a flood of strangers this table
+		// must not grow without bound, and a claim past the retry window is dead.
+		const remaining = await t.run((ctx) => ctx.db.query("whatsappUnroutedMessages").collect());
+		expect(remaining.map((r) => r.messageSid)).toEqual(["SM-fresh"]);
 	});
 });
 

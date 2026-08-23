@@ -364,19 +364,24 @@ messages and no turn replays two restaurants' menus to the model.
 
 **Cold start**:
 An inbound WhatsApp message carrying no **Restaurant code**. It binds to the
-one enabled `Restaurant` this phone has messaged in the last 30 days, or — if
-that is not exactly one — gets fixed bilingual copy pointing back at the deep
-link, with no model call. Tavli deliberately never matches a restaurant _name_
-the diner typed: that is an enumeration and spoofing surface (ADR 012).
+one enabled `Restaurant` this phone has messaged in the last 30 days; failing
+that, to the `Restaurant` that minted a still-live **Confirmation code** the
+message carries; failing that, it gets fixed bilingual copy pointing back at
+the deep link, with no model call. Tavli deliberately never matches a
+restaurant _name_ the diner typed: that is an enumeration and spoofing surface
+(ADR 012).
 
 **Confirmation code**:
 A short server-generated number the **WhatsApp assistant** sends when a
 customer asks to cancel. The cancellation happens only when the customer
 replies with the code, and that match is made before the model is consulted —
 so a destructive action always requires a fresh act from the phone's owner.
-Single-use, expires in 10 minutes. Not to be confused with the **Restaurant
-code**, which routes and never authorizes anything. _Avoid_: OTP, PIN (that is
-the employee credential), token.
+Single-use, expires in 10 minutes. Because the assistant asks for it as six
+bare digits, it also routes its own reply on a **Cold start** — but only back
+to the phone Tavli minted it for, which is why it is not the **Restaurant
+code**'s job. Not to be confused with the **Restaurant code**, which routes and
+never authorizes anything. _Avoid_: OTP, PIN (that is the employee credential),
+token.
 
 **Daily message cap**:
 The number of messages the **WhatsApp assistant** will handle for one phone in

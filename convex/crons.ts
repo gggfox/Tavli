@@ -50,6 +50,16 @@ crons.interval(
 	internal.whatsapp.reservations.purgeExpiredPendingActions
 );
 
+// Dedupe scratch for inbound messages that resolved to no restaurant (ADR 012).
+// One row per message from a phone no restaurant knows, which under a flood is
+// exactly the traffic that must not leave permanent rows behind; they only need
+// to outlive Twilio's retries.
+crons.interval(
+	"whatsapp unrouted claim purge",
+	{ hours: 1 },
+	internal.whatsapp.data.purgeExpiredUnroutedClaims
+);
+
 crons.interval(
 	"restaurant soft-delete hard purge",
 	{ hours: 24 },

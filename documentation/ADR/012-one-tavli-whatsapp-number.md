@@ -44,11 +44,13 @@ The code is stripped from the stored message body and from what the model is sho
 
 **A `Conversation` is per (customer phone, restaurant).** The diner sees one continuous thread with Tavli. Underneath, each restaurant has its own conversation, its own history, its own staff view. A single interleaved thread was never an option: it would show one restaurant another restaurant's messages, and it would replay two restaurants' menus into the model's context for one turn.
 
-**Cold start — a message with no code — has exactly two outcomes.** If this phone has messaged exactly one enabled restaurant in the last 30 days, bind to it; that is the normal case from the second message onwards. Otherwise send a fixed bilingual reply, with **no model call**:
+**Cold start — a message with no code — has exactly three outcomes.** If this phone has messaged exactly one enabled restaurant in the last 30 days, bind to it; that is the normal case from the second message onwards. Failing that, if the message is a **confirmation code Tavli minted for this exact phone** and it is still live, bind to the conversation that minted it (below). Otherwise send a fixed bilingual reply, with **no model call**:
 
 > Soy el asistente de Tavli. Para ayudarte, abre el enlace de WhatsApp del restaurante o escanea su código QR.
 
 Bilingual because an unroutable message has no restaurant, therefore no `defaultLocale` and no `defaultLanguage` — every input that would normally pick a language is precisely the input that is missing.
+
+**A live confirmation code routes, and this does not weaken the rule below.** [ADR-011](./011-whatsapp-customer-reservation-writes.md) authorizes a cancellation only on a **second inbound message** carrying a server-minted code, and the assistant's own copy asks for it as six bare digits — _"responde con este código: 481920"_ — with no short code attached. On one shared number that reply is unroutable for any diner who has talked to two restaurants, so without this the destructive-action loop dead-ends: the diner does exactly what they were told and the booking stays booked. The lookup is by `(customerPhone, code)` against `whatsappPendingActions`, so it binds only to a value Tavli itself generated and sent to that same phone, single-use and ten minutes old. That is not the surface the next paragraph closes: a code is not something the diner can type their way into, an unconsumed row is the only thing that matches, and a miss is answered with the same fixed guidance as any other unroutable message. A restaurant disabled while the code was outstanding is off for this message too, exactly like every other route into a disabled restaurant.
 
 **Tavli deliberately does not match a restaurant name the diner types.** This is a hard rule, not an unimplemented nicety. Name matching across every restaurant on the platform is an enumeration oracle ("is X on Tavli?") and a spoofing surface (a near-match sends a diner's booking to a competitor). An unknown code and a disabled restaurant are answered with the same fixed copy, so neither reveals whether a restaurant exists.
 
@@ -71,7 +73,7 @@ Bilingual because an unroutable message has no restaurant, therefore no `default
 - **Quality rating and enforcement are shared, and this is accepted deliberately.** WhatsApp scores a phone number, not a tenant. One restaurant whose diners repeatedly block or report the assistant drags the rating down for every restaurant on the number, and Meta's escalation path — reduced messaging limits, then restriction of the number — applies WABA-wide. There is no per-restaurant blast radius until per-restaurant senders exist. We are taking this risk knowingly, on a small pilot, where the number of restaurants is small enough to watch by hand.
 - The diner sees "Tavli", not the restaurant's name, in their chat list. The assistant says which restaurant it is answering for, but the contact is ours.
 - A first contact that carries no code gets a fixed reply rather than an answer. Someone who saves the number and messages it cold next month is told to use the link again.
-- The 30-day binding window is a heuristic. A diner who talked to two restaurants gets the fixed reply even when what they meant is obvious to a human reader.
+- The 30-day binding window is a heuristic. A diner who talked to two restaurants gets the fixed reply even when what they meant is obvious to a human reader. The one case where that was not merely unhelpful but wrong — the bare confirmation code the assistant itself asks for — is carved out above; everything else, including a diner who names the restaurant in words, still gets the fixed reply.
 - A code printed on a table can be photographed and used by someone who never visits. That is the same exposure as the QR itself, and is accepted.
 
 ### Neutral
@@ -80,7 +82,8 @@ Bilingual because an unroutable message has no restaurant, therefore no `default
 - Conversations need no backfill at all: they already carry a denormalized `restaurantId`, which is exactly what the new `by_restaurant_customer` index routes on. The stale `channelId` on an old row still points at the same (now differently-meaning) enablement row, and the next inbound message refreshes it. This was the deciding factor in keeping the old rows addressable rather than migrating them — there was nothing to migrate.
 - The `To` number is still validated at the webhook (a signed Twilio request always carries one) but is no longer forwarded to the processing action, so nothing downstream can route on it by accident.
 - WhatsApp's 24-hour freeform window is unchanged: the assistant only ever replies inside it.
-- The unroutable reply is metered by the spend controls (TAVLI-91) like any other outbound message, and the budget is charged **before** routing rather than after it. On one shared number an unroutable message can come from anyone at all, so a fixed reply to every stranger would otherwise be an unmetered relay on Tavli's own Twilio account. Over budget, or past the platform ceiling, an unroutable sender gets silence rather than a notice: there is no conversation to record one against and no relationship to preserve.
+- The unroutable reply is metered by the spend controls (TAVLI-91) like any other outbound message. On one shared number an unroutable message can come from anyone at all, so a fixed reply to every stranger would otherwise be an unmetered relay on Tavli's own Twilio account. Over budget, or past the platform ceiling, an unroutable sender gets silence rather than a notice: there is no conversation to record one against and no relationship to preserve.
+- **An unroutable message is claimed by MessageSid before it is charged or answered.** The routed path dedupes Twilio's redeliveries on the `whatsappMessages` row `ingestInbound` writes; the unroutable branch deliberately writes none — there is no conversation to attach it to — so it needs a dedupe of its own, or every retry is another billed message to a stranger and another permanent counter row. `whatsappUnroutedMessages` holds nothing but the SID, and an hourly cron reclaims claims once Twilio can no longer retry, so a flood leaves no residue. The charge for a routed message likewise moved to **after** `ingestInbound`, which is the authoritative dedupe: the fast path can miss a redelivery that arrives while the first is still in flight, and charging ahead of it billed that race twice for one customer message.
 
 ## Alternatives Considered
 
@@ -160,29 +163,32 @@ wa.me/<tavli-number>?text=Hola, quiero información sobre Vernáculo · VRN-8F3
         └─ Twilio ──▶ /whatsapp/inbound (To validated, NOT forwarded)
                           │
                           ▼
-              handleInboundMessage ──▶ resolveRoute
-                                          │
-                    ┌─────────────────────┼──────────────────────┐
-              short code in body     no code / unknown code       │
-                    │                     │                      │
-          getEnabledChannelByShortCode   getRecentRoutesForPhone (30d)
-                    │                     │                      │
-                    │            exactly one enabled ──┘         │
-                    │                     │                 otherwise
-                    ▼                     ▼                      ▼
-              strip code from body   bind to that restaurant   fixed bilingual
-                    └──────────┬──────────┘                    copy, NO model call
+              handleInboundMessage ──▶ resolveRoute  (first match wins)
+                          │
+    ┌─────────────────────┼────────────────────┬─────────────────────┐
+    │ 1. short code       │ 2. this phone's    │ 3. a live code      │ none
+    │    in the body      │    30d history     │    minted for this  │
+    │                     │                    │    phone            │
+    ▼                     ▼                    ▼                     ▼
+getEnabledChannel   getRecentRoutes      getRouteByPending    claimUnroutedMessage
+ByShortCode         ForPhone             Code                 (dedupe the retry)
+    │               (exactly one)        (phone + code)              │
+    ▼                     │                    │              charge, then fixed
+strip code from body      │                    │              bilingual copy —
+    └─────────────────────┴────────────────────┘              NO model call
                                ▼
               ingestInbound → conversation for (phone, restaurant)
+                               ▼
+                     duplicate SID? → stop; else charge the budgets
                                ▼
                         confirmation code? → LLM turn → reply
 ```
 
-Key files: `convex/whatsapp/shortCode.ts` (generate, extract, strip, deep link), `convex/whatsapp/processing.ts` (`resolveRoute`), `convex/whatsapp/data.ts` (`getEnabledChannelByShortCode`, `getRecentRoutesForPhone`, `ingestInbound`), `convex/whatsappChannels.ts` (admin enablement, public link by slug), `convex/whatsapp/copy.ts` (`deepLinkPrefill`, `deepLinkWelcome`, `getUnroutableGuidance`), `convex/migrations/backfillWhatsappShortCodes.ts`, `whatsappChannels` / `whatsappConversations` in `convex/schema.ts`.
+Key files: `convex/whatsapp/shortCode.ts` (generate, extract, strip, deep link), `convex/whatsapp/processing.ts` (`resolveRoute`, `extractConfirmationCode`), `convex/whatsapp/data.ts` (`getEnabledChannelByShortCode`, `getRecentRoutesForPhone`, `getRouteByPendingCode`, `claimUnroutedMessage`, `purgeExpiredUnroutedClaims`, `ingestInbound`), `convex/whatsappChannels.ts` (admin enablement, public link by slug), `convex/whatsapp/copy.ts` (`deepLinkPrefill`, `deepLinkWelcome`, `getUnroutableGuidance`), `convex/migrations/backfillWhatsappShortCodes.ts`, `whatsappChannels` / `whatsappConversations` / `whatsappUnroutedMessages` and the `whatsappPendingActions.by_phone_code` index in `convex/schema.ts`.
 
 Distribution: `src/features/whatsapp/` renders the link, the code and a printable QR; mounted in restaurant Settings (`WhatsappAssistantSection`) and on the public menu page (`WhatsappAssistantLink`). QR encoding is `uqr` (MIT, zero runtime dependencies), wrapped in one `qrSvgMarkup` so the on-screen code and the printed sheet cannot drift.
 
-Tests: `convex/_tests/whatsappShortCode.test.ts` (format, extraction, stripping, round trip), `convex/_tests/whatsappRouting.test.ts` (routing, per-restaurant isolation, cold start, the name-matching refusal, the admin gate).
+Tests: `convex/_tests/whatsappShortCode.test.ts` (format, extraction, stripping, round trip), `convex/_tests/whatsappRouting.test.ts` (routing, per-restaurant isolation, cold start, the bare-confirmation-code route and the six-digit guess that must still be refused, redelivery dedupe, the name-matching refusal, the admin gate).
 
 ## References
 
@@ -196,6 +202,7 @@ Tests: `convex/_tests/whatsappShortCode.test.ts` (format, extraction, stripping,
 
 ## Change Log
 
-| Date       | Author     | Description                                                                                                                                                                                                                                                      |
-| ---------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-23 | Tavli team | Initial version. Tavli becomes the sender on one shared number; routing moves from the Twilio `To` to a per-restaurant short code in a `wa.me` deep link; conversations become per (phone, restaurant); the shared quality-rating risk is accepted deliberately. |
+| Date       | Author     | Description                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-23 | Tavli team | Initial version. Tavli becomes the sender on one shared number; routing moves from the Twilio `To` to a per-restaurant short code in a `wa.me` deep link; conversations become per (phone, restaurant); the shared quality-rating risk is accepted deliberately.                                                                                                                             |
+| 2026-08-23 | Tavli team | Cold start gains a third outcome: a live `(customerPhone, code)` pending action routes, so ADR-011's second-message cancellation loop no longer dead-ends for a diner who has talked to two restaurants. Unroutable messages claim their MessageSid before being charged or answered, and routed messages are charged after `ingestInbound` — a Twilio redelivery is now free on both paths. |
