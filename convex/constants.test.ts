@@ -50,6 +50,7 @@ describe("TABLE constants", () => {
 			"whatsappConversations",
 			"whatsappMessages",
 			"whatsappPendingActions",
+			"whatsappSpendAllowlist",
 		];
 		expect(Object.values(TABLE).sort()).toEqual(expected.sort());
 	});

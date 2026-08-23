@@ -37,6 +37,14 @@ type BotCopy = {
 	nothingToCancel: string;
 	/** Per-turn or hourly write budget exhausted. */
 	tooManyRequests: string;
+	/**
+	 * The phone's daily message cap is spent. Sent ONCE per window and then not
+	 * again — every further message goes unanswered, because replying to a flood
+	 * is paying for it.
+	 */
+	dailyLimitReached: string;
+	/** The platform-wide daily ceiling is spent. Served without calling the model. */
+	platformBusy: string;
 };
 
 const COPY: Record<WhatsappLocale, BotCopy> = {
@@ -62,6 +70,10 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"I can't find an upcoming booking under this number. If you booked another way, please contact the restaurant directly.",
 		tooManyRequests:
 			"That's a lot of booking changes in a short time. Please contact the restaurant directly so they can help.",
+		dailyLimitReached:
+			"You've reached the number of messages I can answer today. I'll be able to reply again tomorrow — for anything urgent, please contact the restaurant directly.",
+		platformBusy:
+			"I'm handling an unusually high number of messages right now and can't answer this one. Please try again later, or contact the restaurant directly.",
 	},
 	[WHATSAPP_LOCALE.ES]: {
 		genericError:
@@ -85,6 +97,10 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"No encuentro una reservación próxima con este número. Si reservaste por otro medio, contacta directamente al restaurante.",
 		tooManyRequests:
 			"Son muchos cambios de reservación en poco tiempo. Contacta directamente al restaurante para que puedan ayudarte.",
+		dailyLimitReached:
+			"Llegaste al número de mensajes que puedo responder hoy. Mañana podré contestarte de nuevo — si es algo urgente, contacta directamente al restaurante.",
+		platformBusy:
+			"Estoy atendiendo muchísimos mensajes en este momento y no puedo responder este. Inténtalo más tarde o contacta directamente al restaurante.",
 	},
 };
 

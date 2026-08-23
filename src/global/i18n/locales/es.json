@@ -26,7 +26,8 @@
 			"admin": "Administración",
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
-			"adminFeatureFlags": "Feature flags"
+			"adminFeatureFlags": "Feature flags",
+			"adminWhatsappAllowlist": "Lista de WhatsApp"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -669,6 +670,8 @@
 		"ERROR_SLUG_INVALID": "Esa dirección web necesita al menos una letra o un número.",
 		"ERROR_TABLE_HAS_RESERVATIONS": "Esta mesa tiene reservas y no se puede modificar en este momento.",
 		"ERROR_TABLE_NUMBER_EXISTS": "Ya existe una mesa con ese número.",
+		"ERROR_PHONE_ALREADY_ALLOWLISTED": "Ese número de teléfono ya está en la lista de excepciones.",
+		"ERROR_ALLOWLIST_ENTRY_NOT_FOUND": "Esa excepción ya no existe.",
 		"ERROR_INVITE_CROSS_ORG": "Esta persona ya pertenece a otra organización. Si acepta la invitación, saldrá de ella.",
 		"ERROR_INVITE_DUPLICATE_PENDING": "Esta persona ya tiene una invitación pendiente para esta organización.",
 		"ERROR_INVITE_DUPLICATE_IN_FILE": "Una fila anterior de este archivo ya invita a esta persona a esta organización.",

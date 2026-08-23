@@ -16,6 +16,7 @@ import { Route as DemoRouteRouteImport } from './routes/demo/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RSlugRouteImport } from './routes/r/$slug'
 import { Route as InvitesTokenRouteImport } from './routes/invites/$token'
+import { Route as AdminWhatsappAllowlistRouteImport } from './routes/admin/whatsapp-allowlist'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTeamRouteImport } from './routes/admin/team'
 import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
@@ -80,6 +81,11 @@ const InvitesTokenRoute = InvitesTokenRouteImport.update({
   id: '/invites/$token',
   path: '/invites/$token',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminWhatsappAllowlistRoute = AdminWhatsappAllowlistRouteImport.update({
+  id: '/whatsapp-allowlist',
+  path: '/whatsapp-allowlist',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
@@ -241,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
+  '/admin/whatsapp-allowlist': typeof AdminWhatsappAllowlistRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
@@ -279,6 +286,7 @@ export interface FileRoutesByTo {
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
+  '/admin/whatsapp-allowlist': typeof AdminWhatsappAllowlistRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
@@ -318,6 +326,7 @@ export interface FileRoutesById {
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
   '/admin/users': typeof AdminUsersRoute
+  '/admin/whatsapp-allowlist': typeof AdminWhatsappAllowlistRoute
   '/invites/$token': typeof InvitesTokenRoute
   '/r/$slug': typeof RSlugRouteWithChildren
   '/admin/menus/$menuId': typeof AdminMenusMenuIdRoute
@@ -358,6 +367,7 @@ export interface FileRouteTypes {
     | '/admin/schedule'
     | '/admin/team'
     | '/admin/users'
+    | '/admin/whatsapp-allowlist'
     | '/invites/$token'
     | '/r/$slug'
     | '/admin/menus/$menuId'
@@ -396,6 +406,7 @@ export interface FileRouteTypes {
     | '/admin/schedule'
     | '/admin/team'
     | '/admin/users'
+    | '/admin/whatsapp-allowlist'
     | '/invites/$token'
     | '/r/$slug'
     | '/admin/menus/$menuId'
@@ -434,6 +445,7 @@ export interface FileRouteTypes {
     | '/admin/schedule'
     | '/admin/team'
     | '/admin/users'
+    | '/admin/whatsapp-allowlist'
     | '/invites/$token'
     | '/r/$slug'
     | '/admin/menus/$menuId'
@@ -519,6 +531,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/invites/$token'
       preLoaderRoute: typeof InvitesTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/whatsapp-allowlist': {
+      id: '/admin/whatsapp-allowlist'
+      path: '/whatsapp-allowlist'
+      fullPath: '/admin/whatsapp-allowlist'
+      preLoaderRoute: typeof AdminWhatsappAllowlistRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/users': {
       id: '/admin/users'
@@ -759,6 +778,7 @@ interface AdminRouteChildren {
   AdminScheduleRoute: typeof AdminScheduleRoute
   AdminTeamRoute: typeof AdminTeamRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  AdminWhatsappAllowlistRoute: typeof AdminWhatsappAllowlistRoute
   AdminMenusMenuIdRoute: typeof AdminMenusMenuIdRoute
   AdminMenusIndexRoute: typeof AdminMenusIndexRoute
   AdminReservationsIndexRoute: typeof AdminReservationsIndexRoute
@@ -773,6 +793,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminScheduleRoute: AdminScheduleRoute,
   AdminTeamRoute: AdminTeamRoute,
   AdminUsersRoute: AdminUsersRoute,
+  AdminWhatsappAllowlistRoute: AdminWhatsappAllowlistRoute,
   AdminMenusMenuIdRoute: AdminMenusMenuIdRoute,
   AdminMenusIndexRoute: AdminMenusIndexRoute,
   AdminReservationsIndexRoute: AdminReservationsIndexRoute,

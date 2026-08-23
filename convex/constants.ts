@@ -47,6 +47,7 @@ export const TABLE = {
 	WHATSAPP_CONVERSATIONS: "whatsappConversations",
 	WHATSAPP_MESSAGES: "whatsappMessages",
 	WHATSAPP_PENDING_ACTIONS: "whatsappPendingActions",
+	WHATSAPP_SPEND_ALLOWLIST: "whatsappSpendAllowlist",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -866,8 +867,13 @@ export const WHATSAPP_MENU_TOOL_ITEM_LIMIT = 120;
  * Most WhatsApp messages one reply may be split into. A full menu genuinely
  * needs several; anything past this is a runaway, and the last part is marked
  * so the customer can see it stopped.
+ *
+ * Sized against the daily caps below rather than chosen alone:
+ * `WHATSAPP_INBOUND_DAILY_LIMIT.max` × this = `WHATSAPP_OUTBOUND_DAILY_LIMIT.max`,
+ * so a customer who spends their whole inbound budget on menu-sized questions
+ * can still be answered in full every time.
  */
-export const WHATSAPP_MAX_REPLY_PARTS = 4;
+export const WHATSAPP_MAX_REPLY_PARTS = 3;
 
 /** Kinds of destructive action that require an out-of-band confirmation code. */
 export const WHATSAPP_PENDING_ACTION = {
@@ -904,6 +910,87 @@ export const WHATSAPP_MAX_WRITES_PER_TURN = 1;
 
 /** Assistant-driven reservation writes allowed per phone per hour. */
 export const WHATSAPP_WRITE_RATE_LIMIT = { windowMs: 60 * 60 * 1000, max: 8 } as const;
+
+// ----------------------------------------------------------------------------
+// Spend controls (TAVLI-91)
+// ----------------------------------------------------------------------------
+//
+// A valid Twilio signature proves Twilio sent a message, not that a customer
+// did — and every inbound message that reaches the model is an LLM turn with
+// tool calls on Tavli's OpenRouter key. `WHATSAPP_WRITE_RATE_LIMIT` above
+// bounds *writes* only, so without these the assistant is an open-ended bill.
+//
+// All four are fixed-window counters (`_util/rateLimit.ts`), keyed on a stable
+// string per phone. Fixed rather than rolling on purpose: at a cap of 25 the
+// "wait for the window edge and send 50" game buys an attacker almost nothing,
+// and a rolling window would need a new primitive. A rejected hit deliberately
+// does not push the window forward, so a flood cannot hold a phone in refusal
+// past the window it started in.
+const WHATSAPP_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Inbound messages one phone may have processed per day, across every
+ * restaurant it writes to. Per phone IN TOTAL — the phone is what costs money,
+ * so a per-(phone, restaurant) budget would just multiply by the number of
+ * channels a number can reach.
+ */
+export const WHATSAPP_INBOUND_DAILY_LIMIT = { windowMs: WHATSAPP_DAY_MS, max: 25 } as const;
+
+/**
+ * Outbound WhatsApp messages one phone may be sent per day. Counted per
+ * *message*, not per reply: a reply split into three parts is three Twilio
+ * sends and three charges.
+ */
+export const WHATSAPP_OUTBOUND_DAILY_LIMIT = { windowMs: WHATSAPP_DAY_MS, max: 75 } as const;
+
+/**
+ * Refusal notices one phone may be sent per day — exactly one. Past the cap the
+ * assistant goes silent for the rest of the window: replying to a flood is
+ * funding the flood, at Twilio's per-message price.
+ *
+ * Its own window opens when the first refusal happens rather than with the
+ * inbound window, so a phone that floods early in one window and again right
+ * after the reset may get only one notice across the two. Silence is the safe
+ * side of that trade.
+ */
+export const WHATSAPP_LIMIT_NOTICE_LIMIT = { windowMs: WHATSAPP_DAY_MS, max: 1 } as const;
+
+/**
+ * Inbound messages the whole platform will process per day. The backstop for
+ * the case the per-phone caps cannot see: thousands of distinct numbers, each
+ * politely under 25.
+ */
+export const WHATSAPP_GLOBAL_DAILY_LIMIT = { windowMs: WHATSAPP_DAY_MS, max: 5000 } as const;
+
+/** Fraction of the platform ceiling that triggers the ops warning email. */
+export const WHATSAPP_GLOBAL_ALERT_FRACTION = 0.8;
+
+/**
+ * Ops warning emails per day — one. The alert exists because something is
+ * running away; a runaway that mails ops once per message is a second incident.
+ */
+export const WHATSAPP_GLOBAL_ALERT_LIMIT = { windowMs: WHATSAPP_DAY_MS, max: 1 } as const;
+
+/**
+ * Where the platform-ceiling warning goes. Deliberately a constant and not a
+ * per-restaurant address: this is Tavli's own bill, and the people who can act
+ * on it are Tavli's operators.
+ */
+export const WHATSAPP_SPEND_ALERT_EMAIL = "ops@tavliai.com";
+
+/**
+ * The one allowlist entry that ships with the product: the operator's own
+ * handset. Kept in code, and offered as a one-click add on the admin screen
+ * while it is missing, so a fresh deployment does not silence the person
+ * testing the assistant after 25 messages — which reads as a bug in the
+ * assistant rather than as the cap doing its job.
+ *
+ * Not inserted automatically: removing it has to stick.
+ */
+export const WHATSAPP_SPEND_ALLOWLIST_SEED = {
+	phone: "+528114906208",
+	label: "Tavli operator (own handset)",
+} as const;
 
 /** Supported reply locales for the bot. */
 export const WHATSAPP_LOCALE = {
@@ -1030,5 +1117,8 @@ export const RESTAURANT_PURGE_EXEMPT_TABLES: Partial<Record<TableName, string>> 
 		"remaining record of it. The id is deliberately left dangling afterwards.",
 	[TABLE.RATE_LIMITS]:
 		"Fixed-window abuse counters whose string keys may embed restaurant ids. " +
-		"Rows are ephemeral and expire with their window; not worth a scan to purge.",
+		"A row is reused forever — only its window and count reset — so the table " +
+		"grows with the number of distinct keys, not with traffic. That is why every " +
+		"key must be stable (e.g. `whatsapp_inbound:<phone>`, never a date): a key " +
+		"that varies per day would add a permanent row per day, purge or no purge.",
 };

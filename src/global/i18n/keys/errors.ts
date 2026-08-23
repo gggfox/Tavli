@@ -163,6 +163,9 @@ export const BACKEND_ERROR_CODES = [
 	// Tables & table locks — convex/tables.ts, convex/tableLocks.ts
 	"ERROR_TABLE_HAS_RESERVATIONS",
 	"ERROR_TABLE_NUMBER_EXISTS",
+	// WhatsApp spend allowlist — convex/whatsappSpendAllowlist.ts
+	"ERROR_PHONE_ALREADY_ALLOWLISTED",
+	"ERROR_ALLOWLIST_ENTRY_NOT_FOUND",
 ] as const;
 
 export type BackendErrorCode = (typeof BACKEND_ERROR_CODES)[number];
