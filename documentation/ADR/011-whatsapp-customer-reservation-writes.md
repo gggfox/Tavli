@@ -32,15 +32,17 @@ The tool object must stay inside `runBotTurn`. Convex reuses Node isolates acros
 
 **2. No tool accepts a `reservationId`.** Targets resolve server-side through `findUpcomingByPhone`, an index equality on `(restaurantId, contact.phone)`. There is no id to forge and no id oracle to probe. This also neutralizes a pre-existing leak: `idempotencyKey` is scoped only `(restaurantId, key)`, so a guessed key on the create route returns another customer's `reservationId`.
 
-**3. Destructive actions need an out-of-band code.** `request_cancel` mutates nothing. It stores a `whatsappPendingActions` row with a CSPRNG code and a 10-minute TTL, and returns the code. The cancellation happens only when a **later inbound message** carries that code, matched by string comparison in `processing.ts` _before_ the model runs.
+**3. Destructive actions need an out-of-band code.** `request_cancel` and `request_reschedule` mutate nothing. It stores a `whatsappPendingActions` row with a CSPRNG code and a 10-minute TTL, and returns the code. The cancellation happens only when a **later inbound message** carries that code, matched by string comparison in `processing.ts` _before_ the model runs.
 
 This is the rule that answers the threat above. Forwarded content, poisoned menu text, and stored injections are each a single-shot influence over one turn's tool calls; none can produce a second inbound message containing an unguessable value. A "reply YES" step would be theater — injected text can simply contain "YES".
 
-**4. Creation is a request, not an acquisition.** Bookings land `pending` with `tableIds: []`; staff `confirm` and assign tables. The assistant can ask for a table, never take one. (Cancellation _does_ release a confirmed table, which is why only cancellation carries the code.)
+**4. Creation is a request, not an acquisition.** Bookings land `pending` with `tableIds: []`; staff `confirm` and assign tables. The assistant can ask for a table, never take one. (Cancelling and moving _do_ release a confirmed table, which is why those two carry the code and booking does not.)
+
+**Moving is one operation, not cancel-then-rebook.** A customer asking to change a time must never end up with no table: cancel-then-rebook is not atomic across two WhatsApp messages, and the new slot may be gone by the time the old one is released. `request_reschedule` stores the requested `newStartsAt` on the pending row, so the code authorizes the exact move the customer was quoted, and the slot is re-validated again at redemption — a code stays live for ten minutes and the floor can fill in that time. The booking is patched in place, keeping its identity and its `pending` status, and records `reservations.rescheduledByCustomer`.
 
 **5. Tool arguments and results are both narrowed.** Results are allowlisted projections carrying local `YYYY-MM-DD`/`HH:MM` strings, never `Doc`s, ids, or epoch ms — the reasoning of `toDinerVisiblePayment`. On the input side the model may not supply `contact.email` at all: the attempt limiter keys partly on email and is shared across sources, so a model-supplied address could burn a stranger's budget and lock them out of the public web form. `cancelReason` is a server-set constant.
 
-Supporting controls: a per-turn write budget (`stepCountIs` bounds steps, and one step can carry many parallel tool calls); a per-phone hourly write limit, since cancellation had none; `idempotencyKey` derived from `messageSid` **plus the request shape**; server-composed confirmation lines appended to every reply; and `sanitizePromptValue` over `restaurantName` and menu text.
+Supporting controls: a per-turn write budget claimed **synchronously**, before the tool's first `await` (`stepCountIs` bounds steps, and one step can carry many parallel tool calls — decrementing after the round trip is a check-then-act race that hands out as many writes as are asked for); a per-phone hourly write limit, since cancellation had none; `idempotencyKey` derived from `messageSid` **plus the request shape**; server-composed confirmation lines appended to every reply; and `sanitizePromptValue` over `restaurantName` and menu text.
 
 ## Consequences
 
@@ -53,7 +55,7 @@ Supporting controls: a per-turn write budget (`stepCountIs` bounds steps, and on
 
 ### Negative
 
-- Cancelling takes two messages. Some customers will not send the code and will assume they cancelled.
+- Cancelling and moving each take two messages. Some customers will not send the code and will assume the change happened.
 - Phase 1 only lets customers cancel `source: "whatsapp"` bookings, so a booking made on the web cannot be cancelled by the same person over WhatsApp. Deliberate: see the alternatives.
 - A per-turn budget of one write means "book Friday and Saturday" needs two messages.
 - More moving parts: a new table, a cron, and a pre-LLM branch in `processing.ts`.
@@ -158,6 +160,7 @@ Audit: customer cancellations write `reservations.cancelledByCustomer` with `use
 
 ## Change Log
 
-| Date       | Author        | Description     |
-| ---------- | ------------- | --------------- |
-| 2026-07-25 | Jorge Almazan | Initial version |
+| Date       | Author        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-25 | Jorge Almazan | Initial version                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2026-08-23 | Tavli team    | `request_reschedule` added under the same code-confirmed model, so changing a booking is one in-place move rather than a cancel followed by a rebook. Customer identity is now the canonical E.164 (`toCanonicalE164`), because WhatsApp's Mexican mobile `+521` form never matched the same person's bookings from any other channel. Per-turn write budget claimed before the first `await` — parallel tool calls in one step were bypassing it. Server-composed notice lines are stored apart from the model's prose (`whatsappMessages.modelBody`) and no longer replayed as context: shown its own past replies with the ✅ lines attached, the model imitated them and invented placeholders for a code it never sees. |

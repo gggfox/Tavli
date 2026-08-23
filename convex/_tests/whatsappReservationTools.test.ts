@@ -782,3 +782,266 @@ describe("assistant cancellation via confirmation code", () => {
 		expect(await status(t)).toBe(RESERVATION_STATUS.CANCELLED);
 	});
 });
+
+describe("assistant reschedule via confirmation code", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		process.env.TWILIO_AUTH_TOKEN = "test-token";
+		process.env.TWILIO_ACCOUNT_SID = "ACtest";
+		process.env.TWILIO_WHATSAPP_NUMBER = SENDER;
+		process.env.OPENROUTER_API_KEY = "test-openrouter";
+		mockValidateRequest.mockReset().mockReturnValue(true);
+		mockGenerateText.mockReset().mockResolvedValue({ text: "listo", toolCalls: [] });
+		fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sid: "SMout" }) });
+		vi.stubGlobal("fetch", fetchMock);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	async function post(t: ReturnType<typeof convexTest>, overrides: Record<string, string> = {}) {
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody(overrides),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+	}
+
+	const reservation = async (t: ReturnType<typeof convexTest>) =>
+		(await t.run((ctx) => ctx.db.query("reservations").collect()))[0];
+
+	const liveCode = async (t: ReturnType<typeof convexTest>) => {
+		const rows = await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect());
+		return rows.find((r) => r.consumedAt === undefined)?.code;
+	};
+
+	/** Tomorrow in the restaurant's timezone, inside the 10:00-23:00 window. */
+	function targetDate(): string {
+		const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+		return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+			d.getUTCDate()
+		).padStart(2, "0")}`;
+	}
+
+	async function requestReschedule(
+		t: ReturnType<typeof convexTest>,
+		args: Record<string, unknown>
+	) {
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			await tools.request_reschedule.execute(args, {});
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-resched", Body: "cámbiala para mañana a las 6" });
+		return await liveCode(t);
+	}
+
+	it("issues a code and moves nothing yet", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		const originalStartsAt = await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		const code = await requestReschedule(t, { date: targetDate(), time: "18:00" });
+
+		expect(code).toMatch(/^\d{6}$/);
+		const row = await reservation(t);
+		expect(row.startsAt).toBe(originalStartsAt);
+		expect(row.status).toBe(RESERVATION_STATUS.PENDING);
+	});
+
+	it("moves the booking when the customer sends the code back, without cancelling it", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		const originalStartsAt = await seedReservation(t, { restaurantId, phone: CUSTOMER });
+		const code = await requestReschedule(t, { date: targetDate(), time: "18:00" });
+
+		mockGenerateText.mockReset().mockResolvedValue({ text: "no", toolCalls: [] });
+		await post(t, { MessageSid: "SM-code", Body: code! });
+
+		const row = await reservation(t);
+		// The booking moved. It must NOT have been cancelled and re-created: a
+		// customer asking to change a time must never end up with no table.
+		expect(row.startsAt).not.toBe(originalStartsAt);
+		expect(row.status).toBe(RESERVATION_STATUS.PENDING);
+		expect(await t.run((ctx) => ctx.db.query("reservations").collect())).toHaveLength(1);
+		// The model was never consulted for the authorization decision.
+		expect(mockGenerateText).not.toHaveBeenCalled();
+	});
+
+	it("keeps the code out of the model's context", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		let toolResult: Record<string, unknown> = {};
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			toolResult = (await tools.request_reschedule.execute(
+				{ date: targetDate(), time: "18:00" },
+				{}
+			)) as Record<string, unknown>;
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t);
+
+		expect(toolResult.requested).toBe(true);
+		expect(JSON.stringify(toolResult)).not.toMatch(/\d{6}/);
+	});
+
+	it("refuses a new time outside operating hours and issues no code", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		let toolResult: Record<string, unknown> = {};
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			toolResult = (await tools.request_reschedule.execute(
+				{ date: targetDate(), time: "03:00" },
+				{}
+			)) as Record<string, unknown>;
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t);
+
+		expect(toolResult).toMatchObject({ requested: false });
+		expect(await liveCode(t)).toBeUndefined();
+	});
+});
+
+describe("one write per message, under parallel tool calls", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		process.env.TWILIO_AUTH_TOKEN = "test-token";
+		process.env.TWILIO_ACCOUNT_SID = "ACtest";
+		process.env.TWILIO_WHATSAPP_NUMBER = SENDER;
+		process.env.OPENROUTER_API_KEY = "test-openrouter";
+		mockValidateRequest.mockReset().mockReturnValue(true);
+		mockGenerateText.mockReset().mockResolvedValue({ text: "listo", toolCalls: [] });
+		fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sid: "SMout" }) });
+		vi.stubGlobal("fetch", fetchMock);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	async function post(t: ReturnType<typeof convexTest>, overrides: Record<string, string> = {}) {
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody(overrides),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+	}
+
+	function bookableDate(): string {
+		const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+		return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+			d.getUTCDate()
+		).padStart(2, "0")}`;
+	}
+
+	it("issues one code when two request_cancel calls run in the same step", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		// A step can carry several tool calls, and the AI SDK runs them
+		// concurrently. The budget check must not be a check-then-act across an
+		// await, or an injected loop gets as many writes as it asks for.
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			await Promise.all([
+				tools.request_cancel.execute({}, {}),
+				tools.request_cancel.execute({}, {}),
+			]);
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t);
+
+		const codes = await t.run((ctx) => ctx.db.query("whatsappPendingActions").collect());
+		expect(codes).toHaveLength(1);
+	});
+
+	it("creates one reservation when two book_reservation calls run in the same step", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			const args = { date: bookableDate(), time: "20:00", partySize: 2, name: "Ana" };
+			await Promise.all([
+				tools.book_reservation.execute(args, {}),
+				tools.book_reservation.execute({ ...args, time: "21:00" }, {}),
+			]);
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t);
+
+		const rows = await t.run((ctx) => ctx.db.query("reservations").collect());
+		expect(rows).toHaveLength(1);
+	});
+});
+
+describe("what the model is shown of its own past replies", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		process.env.TWILIO_AUTH_TOKEN = "test-token";
+		process.env.TWILIO_ACCOUNT_SID = "ACtest";
+		process.env.TWILIO_WHATSAPP_NUMBER = SENDER;
+		process.env.OPENROUTER_API_KEY = "test-openrouter";
+		mockValidateRequest.mockReset().mockReturnValue(true);
+		mockGenerateText.mockReset().mockResolvedValue({ text: "listo", toolCalls: [] });
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sid: "SMout" }) })
+		);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	async function post(t: ReturnType<typeof convexTest>, overrides: Record<string, string> = {}) {
+		await t.fetch("/whatsapp/inbound", {
+			method: "POST",
+			headers: INBOUND_HEADERS,
+			body: inboundBody(overrides),
+		});
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+	}
+
+	it("never replays a server-composed notice or a confirmation code as the model's own words", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedReservation(t, { restaurantId, phone: CUSTOMER });
+
+		// Turn one: a cancellation offer, whose code and ✅ line the SYSTEM appends.
+		mockGenerateText.mockImplementation(async ({ tools }: { tools: ToolMap }) => {
+			await tools.request_cancel.execute({}, {});
+			return { text: "Claro, te ayudo con eso.", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-one", Body: "cancela mi reservación" });
+
+		// Turn two: capture what the model is given as history.
+		let history: { role: string; content: string }[] = [];
+		mockGenerateText.mockImplementation(async ({ messages }: { messages: typeof history }) => {
+			history = messages;
+			return { text: "ok", toolCalls: [] };
+		});
+		await post(t, { MessageSid: "SM-two", Body: "gracias" });
+
+		const assistantTurns = history.filter((m) => m.role === "assistant").map((m) => m.content);
+		expect(assistantTurns.join("\n")).toContain("Claro, te ayudo con eso.");
+		// Replayed verbatim, these are what the model copies: it starts writing its
+		// own ✅ confirmations and inventing "[código]" placeholders for a code it
+		// cannot see. Instruction alone loses to a worked example in context.
+		expect(assistantTurns.join("\n")).not.toContain("✅");
+		expect(assistantTurns.join("\n")).not.toMatch(/\d{6}/);
+	});
+});

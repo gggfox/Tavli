@@ -1379,6 +1379,14 @@ export default defineSchema({
 		// Twilio SID: inbound MessageSid (dedupe) or the SID returned on send.
 		messageSid: v.optional(v.string()),
 		body: v.string(),
+		/**
+		 * Outbound only: the model's own words, without the server-composed notice
+		 * lines `body` also carries. This is what gets replayed as context —
+		 * replaying `body` taught the model to write its own ✅ confirmations and
+		 * to invent placeholders for a code it never sees. Empty string means the
+		 * message was entirely server-composed and is not replayed at all.
+		 */
+		modelBody: v.optional(v.string()),
 		mediaUrl: v.optional(v.string()),
 		// Set when the Twilio send failed, so the row is kept for the message log
 		// but excluded from the context replayed to the model — otherwise the
@@ -1405,8 +1413,16 @@ export default defineSchema({
 		// Re-checked on consume so a code minted for one phone cannot be redeemed
 		// by another, even if the conversation row were somehow reused.
 		customerPhone: v.string(),
-		kind: v.literal(WHATSAPP_PENDING_ACTION.CANCEL_RESERVATION),
+		kind: v.union(
+			v.literal(WHATSAPP_PENDING_ACTION.CANCEL_RESERVATION),
+			v.literal(WHATSAPP_PENDING_ACTION.RESCHEDULE_RESERVATION)
+		),
 		reservationId: v.id(TABLE.RESERVATIONS),
+		// Set only for `reschedule_reservation`: the move the code authorizes.
+		// Stored rather than re-derived so the customer confirms the exact time
+		// they were quoted, not whatever the model would say a second time.
+		newStartsAt: v.optional(v.number()),
+		newPartySize: v.optional(v.number()),
 		/** Short numeric code the customer echoes back. Single-use. */
 		code: v.string(),
 		expiresAt: v.number(),

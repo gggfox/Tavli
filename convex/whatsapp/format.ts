@@ -47,12 +47,12 @@ export function clampInboundBody(raw: string): string {
  * cut with an ellipsis. Applied before the send so the delivered message and
  * the stored row are identical.
  */
-export function clampOutboundBody(text: string): string {
+export function clampOutboundBody(text: string, limit = WHATSAPP_MAX_OUTBOUND_BODY_CHARS): string {
 	const chars = Array.from(text);
-	if (chars.length <= WHATSAPP_MAX_OUTBOUND_BODY_CHARS) return text;
+	if (chars.length <= limit) return text;
 
 	// Reserve one code point for the ellipsis.
-	const budget = WHATSAPP_MAX_OUTBOUND_BODY_CHARS - 1;
+	const budget = limit - 1;
 	const clipped = chars.slice(0, budget).join("");
 	const lastBreak = clipped.search(/\s+\S*$/);
 	// Only honour a word boundary that keeps most of the budget; otherwise a
@@ -135,4 +135,45 @@ function convertInline(text: string): string {
 			// an escaped marker is never re-read as emphasis by the rules above.
 			.replace(/\\([\\`*_{}[\]()#+\-.!~>|])/g, "$1")
 	);
+}
+
+/**
+ * Break a reply into consecutive WhatsApp messages.
+ *
+ * One message cannot hold a real menu — 64 items is several thousand
+ * characters against a 1,600-character ceiling — so a single clamped send left
+ * the assistant unable to answer "show me everything" no matter how it was
+ * prompted. Splitting is the only thing that makes that request answerable.
+ *
+ * Breaks at a newline where possible so a dish and its price are never severed,
+ * falls back to a space, and only cuts mid-token when a single run of text is
+ * longer than the limit. `maxParts` bounds a runaway reply: the final part is
+ * clamped and marked, so the customer sees that it stopped rather than assuming
+ * they were shown everything.
+ */
+export function splitOutboundBody(text: string, limit: number, maxParts: number): string[] {
+	const chars = Array.from(text);
+	if (chars.length <= limit) return [text];
+
+	const parts: string[] = [];
+	let rest = text;
+
+	while (Array.from(rest).length > limit && parts.length < maxParts - 1) {
+		const window = Array.from(rest).slice(0, limit).join("");
+		// Prefer the last line break, then the last space. `> limit / 2` keeps a
+		// break from collapsing a part to almost nothing when an early newline is
+		// the only candidate.
+		let cut = window.lastIndexOf("\n");
+		if (cut <= limit / 2) cut = window.lastIndexOf(" ");
+		if (cut <= limit / 2) cut = limit;
+
+		parts.push(window.slice(0, cut).trimEnd());
+		rest = Array.from(rest)
+			.slice(cut)
+			.join("")
+			.replace(/^[ \n]+/, "");
+	}
+
+	parts.push(clampOutboundBody(rest, limit));
+	return parts.filter((p) => p.length > 0);
 }

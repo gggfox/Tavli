@@ -4,7 +4,12 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { clampInboundBody, clampOutboundBody, toWhatsappText } from "../whatsapp/format";
+import {
+	clampInboundBody,
+	clampOutboundBody,
+	splitOutboundBody,
+	toWhatsappText,
+} from "../whatsapp/format";
 import { buildMenuToolResult, matchDishByName, type BotMenuItem } from "../whatsapp/menu";
 import { toCanonicalE164 } from "../whatsapp/phone";
 
@@ -755,5 +760,54 @@ describe("toCanonicalE164", () => {
 	it("leaves a +521 number that is not 10 digits long untouched", () => {
 		// Only the 13-digit +52 1 XXXXXXXXXX shape is the known WhatsApp artifact.
 		expect(toCanonicalE164("+521811490")).toBe("+521811490");
+	});
+});
+
+describe("splitOutboundBody", () => {
+	const LIMIT = 100;
+
+	it("leaves a reply that already fits as a single message", () => {
+		expect(splitOutboundBody("hola", LIMIT, 4)).toEqual(["hola"]);
+	});
+
+	it("splits a long reply into messages that each fit", () => {
+		// A full 64-item menu is several thousand characters; capped at one
+		// message the assistant could only ever show a selection.
+		const menu = Array.from({ length: 40 }, (_, i) => `• Dish ${i} - 10.00 MXN`).join("\n");
+
+		const parts = splitOutboundBody(menu, LIMIT, 8);
+
+		expect(parts.length).toBeGreaterThan(1);
+		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(LIMIT);
+	});
+
+	it("breaks between lines so an item is never cut in half", () => {
+		const menu = Array.from({ length: 12 }, (_, i) => `• Dish ${i} - 10.00 MXN`).join("\n");
+
+		const parts = splitOutboundBody(menu, LIMIT, 8);
+
+		for (const part of parts) {
+			for (const line of part.split("\n")) {
+				expect(line === "" || /^• Dish \d+ - 10\.00 MXN$/.test(line)).toBe(true);
+			}
+		}
+		// Nothing silently dropped.
+		expect(parts.join("\n")).toBe(menu);
+	});
+
+	it("stops at the part limit and marks the cut rather than sending forever", () => {
+		const huge = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n");
+
+		const parts = splitOutboundBody(huge, LIMIT, 3);
+
+		expect(parts).toHaveLength(3);
+		expect(parts[2].endsWith("…")).toBe(true);
+	});
+
+	it("still splits text that has no line breaks at all", () => {
+		const parts = splitOutboundBody("x".repeat(250), LIMIT, 8);
+
+		expect(parts.length).toBeGreaterThan(1);
+		for (const part of parts) expect(Array.from(part).length).toBeLessThanOrEqual(LIMIT);
 	});
 });

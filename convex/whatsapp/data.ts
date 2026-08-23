@@ -165,6 +165,7 @@ export const recordOutbound = internalMutation({
 		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		body: v.string(),
+		modelBody: v.optional(v.string()),
 		mediaUrl: v.optional(v.string()),
 		messageSid: v.optional(v.string()),
 		deliveryFailedAt: v.optional(v.number()),
@@ -177,6 +178,7 @@ export const recordOutbound = internalMutation({
 			direction: WHATSAPP_MESSAGE_DIRECTION.OUTBOUND,
 			messageSid: args.messageSid,
 			body: args.body,
+			modelBody: args.modelBody,
 			mediaUrl: args.mediaUrl,
 			deliveryFailedAt: args.deliveryFailedAt,
 			createdAt: now,
@@ -207,11 +209,17 @@ export const getConversationContext = internalQuery({
 			.withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
 			.order("desc")
 			.take(args.limit * 2);
-		return recent
-			.filter((m) => m.deliveryFailedAt === undefined)
-			.slice(0, args.limit)
-			.reverse()
-			.map((m) => ({ direction: m.direction, body: m.body }));
+		return (
+			recent
+				.filter((m) => m.deliveryFailedAt === undefined)
+				// The model is shown its own words only. A message with no model prose
+				// (a code confirmation, an apology) is server-composed and is dropped
+				// rather than handed back as something the assistant "said".
+				.map((m) => ({ direction: m.direction, body: m.modelBody ?? m.body }))
+				.filter((m) => m.body.trim().length > 0)
+				.slice(0, args.limit)
+				.reverse()
+		);
 	},
 });
 

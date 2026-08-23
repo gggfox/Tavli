@@ -303,7 +303,10 @@ for availability checks. Reachable two ways: by **staff** from the **Timeline**
 or the detail drawer, from any non-terminal status; or by the booking's own
 **Contact phone**, through the **WhatsApp assistant**, limited to `pending` and
 `confirmed` bookings that have not yet started — a `seated` guest is at the
-table and cannot cancel from their phone. The staff path records
+table and cannot cancel from their phone. The same customer may **move** a
+booking (`reservations.rescheduledByCustomer`), which patches the existing row
+in place rather than cancelling and re-creating it; both actions need the
+customer to echo back a confirmation code. The staff path records
 `reservations.cancelled`; the customer path records
 `reservations.cancelledByCustomer` and a fixed reason, so the two are
 distinguishable when a cancellation is disputed.

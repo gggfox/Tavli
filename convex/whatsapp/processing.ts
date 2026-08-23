@@ -22,10 +22,15 @@ import type { ActionCtx } from "../_generated/server";
 import { internalAction } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { buildIntegrationErrorLog } from "../_shared/integrationLogging";
-import { WHATSAPP_CONFIRMATION_CODE_DIGITS, WHATSAPP_CONTEXT_MESSAGE_LIMIT } from "../constants";
+import {
+	WHATSAPP_CONFIRMATION_CODE_DIGITS,
+	WHATSAPP_CONTEXT_MESSAGE_LIMIT,
+	WHATSAPP_MAX_OUTBOUND_BODY_CHARS,
+	WHATSAPP_MAX_REPLY_PARTS,
+} from "../constants";
 import { getBotCopy, resolveLocale } from "./copy";
 import { formatLocalDateTime } from "./datetime";
-import { clampOutboundBody } from "./format";
+import { splitOutboundBody } from "./format";
 import { runBotTurn } from "./llm";
 import { sendWhatsappMessage } from "./outbound";
 import { normalizePhone, toCanonicalE164 } from "./phone";
@@ -60,20 +65,39 @@ async function sendAndRecord(
 		restaurantId: Id<"restaurants">;
 		to: string;
 		body: string;
+		/** The model's own prose, without the appended notices. "" = none. */
+		modelBody: string;
 		mediaUrl?: string;
 	}
 ): Promise<void> {
-	const body = clampOutboundBody(args.body);
-	const sid = await sendWhatsappMessage({ to: args.to, body, mediaUrl: args.mediaUrl });
-	await ctx.runMutation(internal.whatsapp.data.recordOutbound, {
-		conversationId: args.conversationId,
-		restaurantId: args.restaurantId,
-		body,
-		mediaUrl: args.mediaUrl,
-		messageSid: sid,
-		// `sendWhatsappMessage` never throws; a missing SID is how it reports failure.
-		deliveryFailedAt: sid ? undefined : Date.now(),
-	});
+	// A reply longer than one WhatsApp message becomes several, in order. Any
+	// media rides on the first part only — repeating it would send the customer
+	// the same dish photo once per chunk.
+	const parts = splitOutboundBody(
+		args.body,
+		WHATSAPP_MAX_OUTBOUND_BODY_CHARS,
+		WHATSAPP_MAX_REPLY_PARTS
+	);
+	for (const [index, body] of parts.entries()) {
+		const mediaUrl = index === 0 ? args.mediaUrl : undefined;
+		// Only the first part carries the model's prose: the notices are appended
+		// after it, so every later part is server-composed by construction.
+		const modelBody = index === 0 ? args.modelBody : "";
+		const sid = await sendWhatsappMessage({ to: args.to, body, mediaUrl });
+		await ctx.runMutation(internal.whatsapp.data.recordOutbound, {
+			conversationId: args.conversationId,
+			restaurantId: args.restaurantId,
+			body,
+			modelBody,
+			mediaUrl,
+			messageSid: sid,
+			// `sendWhatsappMessage` never throws; a missing SID is how it reports failure.
+			deliveryFailedAt: sid ? undefined : Date.now(),
+		});
+		// A failed part means the rest will fail too (bad number, closed window);
+		// stop rather than logging three identical failures.
+		if (!sid) break;
+	}
 }
 
 export const handleInboundMessage = internalAction({
@@ -140,18 +164,32 @@ export const handleInboundMessage = internalAction({
 				internal.whatsapp.reservations.internalConsumeCancelCode,
 				{ conversationId, phone: customerPhone, code }
 			);
-			if (outcome.cancelled || outcome.reason !== "ERROR_CODE_NOT_FOUND") {
+			const applied = outcome.cancelled || outcome.rescheduled;
+			if (applied || outcome.reason !== "ERROR_CODE_NOT_FOUND") {
 				const copy = getBotCopy(locale);
-				const body = outcome.cancelled
-					? copy.cancelConfirmed(
-							formatLocalDateTime(outcome.startsAt, restaurant?.timezone ?? undefined, locale)
-						)
-					: copy.cancelCodeInvalid;
+				const when = (ms: number) =>
+					formatLocalDateTime(ms, restaurant?.timezone ?? undefined, locale);
+				let body: string;
+				if (outcome.rescheduled) {
+					body = copy.rescheduleConfirmed(when(outcome.startsAt));
+				} else if (outcome.cancelled) {
+					body = copy.cancelConfirmed(when(outcome.startsAt));
+				} else if (outcome.kind === "reschedule") {
+					// The code was good; the slot went while it was outstanding. Say
+					// exactly that, because "invalid code" would send the customer round
+					// the loop again for a booking that never changed.
+					body = copy.rescheduleNoLongerAvailable;
+				} else {
+					body = copy.cancelCodeInvalid;
+				}
 				await sendAndRecord(ctx, {
 					conversationId,
 					restaurantId: channel.restaurantId,
 					to: replyAddress,
 					body,
+					// Entirely server-composed: the model was never consulted for the
+					// authorization decision and must not be shown this as its own line.
+					modelBody: "",
 				});
 				return;
 			}
@@ -195,6 +233,7 @@ export const handleInboundMessage = internalAction({
 				restaurantId: channel.restaurantId,
 				to: replyAddress,
 				body: composed || getBotCopy(locale).genericError,
+				modelBody: result.text,
 				mediaUrl: result.mediaUrl,
 			});
 		} catch (error) {
@@ -211,6 +250,7 @@ export const handleInboundMessage = internalAction({
 				restaurantId: channel.restaurantId,
 				to: replyAddress,
 				body: getBotCopy(locale).genericError,
+				modelBody: "",
 			});
 		}
 	},

@@ -744,6 +744,7 @@ export const AUDIT_EVENT = {
 	// Distinct from the staff cancel so the two are separable in `allEvents`:
 	// same state transition, very different provenance and dispute story.
 	RESERVATION_CANCELLED_BY_CUSTOMER: "reservations.cancelledByCustomer",
+	RESERVATION_RESCHEDULED_BY_CUSTOMER: "reservations.rescheduledByCustomer",
 	RESERVATION_SEATED: "reservations.seated",
 	RESERVATION_COMPLETED: "reservations.completed",
 	RESERVATION_NO_SHOW: "reservations.noShow",
@@ -861,9 +862,17 @@ export const WHATSAPP_MAX_LLM_STEPS = 5;
  */
 export const WHATSAPP_MENU_TOOL_ITEM_LIMIT = 120;
 
+/**
+ * Most WhatsApp messages one reply may be split into. A full menu genuinely
+ * needs several; anything past this is a runaway, and the last part is marked
+ * so the customer can see it stopped.
+ */
+export const WHATSAPP_MAX_REPLY_PARTS = 4;
+
 /** Kinds of destructive action that require an out-of-band confirmation code. */
 export const WHATSAPP_PENDING_ACTION = {
 	CANCEL_RESERVATION: "cancel_reservation",
+	RESCHEDULE_RESERVATION: "reschedule_reservation",
 } as const;
 
 export type WhatsappPendingAction =

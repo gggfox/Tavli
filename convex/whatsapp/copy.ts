@@ -25,6 +25,12 @@ type BotCopy = {
 	cancelRequested: (when: string, code: string) => string;
 	/** Sent when the customer replies with a valid code. */
 	cancelConfirmed: (when: string) => string;
+	/** Appended when a move has been offered but nothing has moved yet. */
+	rescheduleRequested: (from: string, to: string, code: string) => string;
+	/** Sent when the customer redeems a reschedule code. */
+	rescheduleConfirmed: (when: string) => string;
+	/** The new time went while the code was live. */
+	rescheduleNoLongerAvailable: string;
 	/** Sent when a code is wrong, already used, or expired. */
 	cancelCodeInvalid: string;
 	/** The customer asked to cancel but has nothing cancellable. */
@@ -44,6 +50,12 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			`To cancel your booking on ${when}, reply with this code: ${code}\n\nIt stays active until you send the code. The code expires in 10 minutes.`,
 		cancelConfirmed: (when) =>
 			`✅ Cancelled: your booking on ${when}. The restaurant has been notified.`,
+		rescheduleRequested: (from, to, code) =>
+			`To move your booking from ${from} to ${to}, reply with this code: ${code}\n\nNothing changes until you send it — your existing booking on ${from} is still there. The code expires in 10 minutes.`,
+		rescheduleConfirmed: (when) =>
+			`✅ Moved: your booking is now ${when}. The restaurant still has to confirm it and will be in touch.`,
+		rescheduleNoLongerAvailable:
+			"That time was taken while the code was waiting. Your original booking has not changed — tell me another time and I'll check it.",
 		cancelCodeInvalid:
 			"That code isn't valid any more — it may have expired or already been used. Ask me to cancel again and I'll send a new one.",
 		nothingToCancel:
@@ -61,6 +73,12 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			`Para cancelar tu reservación del ${when}, responde con este código: ${code}\n\nSigue activa hasta que envíes el código. El código expira en 10 minutos.`,
 		cancelConfirmed: (when) =>
 			`✅ Cancelada: tu reservación del ${when}. El restaurante ya fue notificado.`,
+		rescheduleRequested: (from, to, code) =>
+			`Para cambiar tu reservación del ${from} al ${to}, responde con este código: ${code}\n\nNada cambia hasta que lo envíes — tu reservación del ${from} sigue en pie. El código expira en 10 minutos.`,
+		rescheduleConfirmed: (when) =>
+			`✅ Cambiada: tu reservación ahora es el ${when}. El restaurante aún debe confirmarla y se pondrán en contacto.`,
+		rescheduleNoLongerAvailable:
+			"Ese horario se ocupó mientras esperaba el código. Tu reservación original no cambió — dime otro horario y lo reviso.",
 		cancelCodeInvalid:
 			"Ese código ya no es válido — pudo expirar o ya se usó. Pídeme cancelar de nuevo y te envío uno nuevo.",
 		nothingToCancel:

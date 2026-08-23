@@ -16,7 +16,9 @@
  * rather than epoch ms, so the model has no timestamp to invent variations of.
  */
 import { v } from "convex/values";
+import type { DatabaseReader } from "../_generated/server";
 import { internalMutation, internalQuery } from "../_generated/server";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
 	computeEndsAt,
 	computeTurnMinutes,
@@ -25,6 +27,7 @@ import {
 	isWithinOperatingHours,
 	resolveServiceWindow,
 } from "../_util/availability";
+import { appendAuditEvent } from "../_util/audit";
 import { consumeRateLimit } from "../_util/rateLimit";
 import { loadEffectiveSettings } from "../_util/reservationSettings";
 import { formatHm } from "../_util/timezone";
@@ -34,6 +37,7 @@ import {
 	MAX_NOTES_LENGTH,
 	MAX_PARTY_SIZE,
 	cancelReservationCore,
+	checkTablesFreeForReservation,
 	createReservationCore,
 	ensureCancellable,
 	findSuggestedTimes,
@@ -332,6 +336,192 @@ function randomCode(digits: number): string {
 }
 
 /**
+ * Is this party seatable at this instant? Shared by the reschedule request and
+ * its redemption so the answer cannot drift between quoting a time and applying
+ * it — the ten minutes a code stays live are long enough for the slot to go.
+ *
+ * `excludeReservationId` is what makes moving an *assigned* booking work: its
+ * own row holds those tables, so without the exclusion a booking would block
+ * itself out of any overlapping new time (the same reason
+ * `checkTablesFreeForReservation` takes it on the staff path).
+ */
+async function evaluateMove(
+	ctx: { db: DatabaseReader },
+	restaurant: Doc<typeof TABLE.RESTAURANTS>,
+	args: {
+		partySize: number;
+		startsAt: number;
+		excludeReservationId: Id<typeof TABLE.RESERVATIONS>;
+		assignedTableIds: Id<typeof TABLE.TABLES>[];
+	}
+): Promise<{ ok: true; endsAt: number } | { ok: false; reason: string }> {
+	if (!isBookablePartySize(args.partySize)) {
+		return { ok: false, reason: "ERROR_INVALID_PARTY_SIZE" };
+	}
+	const settings = await loadEffectiveSettings(ctx, restaurant._id);
+	const endsAt = computeEndsAt(args.startsAt, computeTurnMinutes(settings, args.partySize));
+
+	if (!settings.acceptingReservations) {
+		return { ok: false, reason: "ERROR_NOT_ACCEPTING_RESERVATIONS" };
+	}
+	if (
+		!isWithinHorizon({
+			minAdvanceMinutes: settings.minAdvanceMinutes,
+			maxAdvanceDays: settings.maxAdvanceDays,
+			startsAt: args.startsAt,
+			now: Date.now(),
+		})
+	) {
+		return { ok: false, reason: "ERROR_OUTSIDE_BOOKING_HORIZON" };
+	}
+	if (intersectsBlackout(settings, args.startsAt, endsAt)) {
+		return { ok: false, reason: "ERROR_BLACKOUT_WINDOW" };
+	}
+	if (
+		!isWithinOperatingHours({
+			startsAt: args.startsAt,
+			endsAt,
+			window: resolveServiceWindow(restaurant),
+		})
+	) {
+		return { ok: false, reason: "ERROR_OUTSIDE_OPERATING_HOURS" };
+	}
+
+	// An assigned booking is checked against its own tables (minus itself); an
+	// unassigned one — every booking the assistant makes, until staff seat it —
+	// against the floor as a whole.
+	if (args.assignedTableIds.length > 0) {
+		const tables = [];
+		for (const id of args.assignedTableIds) {
+			const table = await ctx.db.get(id);
+			if (table) tables.push(table);
+		}
+		const conflict = await checkTablesFreeForReservation(ctx, tables, {
+			_id: args.excludeReservationId,
+			startsAt: args.startsAt,
+			endsAt,
+		});
+		if (conflict) return { ok: false, reason: "ERROR_NO_TABLES_AVAILABLE" };
+		return { ok: true, endsAt };
+	}
+
+	const bookable = await isPartyBookableAt(
+		ctx,
+		restaurant._id,
+		args.partySize,
+		args.startsAt,
+		endsAt
+	);
+	return bookable ? { ok: true, endsAt } : { ok: false, reason: "ERROR_NO_TABLES_AVAILABLE" };
+}
+
+/**
+ * Offer to MOVE a booking — **without moving anything**.
+ *
+ * The same two-phase shape as `internalRequestCancel`, for the same reason: an
+ * injected instruction can steer one turn's tool calls, but it cannot produce
+ * the second inbound message carrying an unguessable code.
+ *
+ * Moving is deliberately a distinct operation rather than cancel-then-rebook.
+ * Those two are not atomic over WhatsApp — the customer would send a code, lose
+ * their table, and be left asking for a new one that may no longer exist.
+ */
+export const internalRequestReschedule = internalMutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		conversationId: v.id(TABLE.WHATSAPP_CONVERSATIONS),
+		phone: v.string(),
+		date: v.string(),
+		time: v.string(),
+		partySize: v.optional(v.number()),
+		/** Which booking, when the customer has more than one upcoming. */
+		currentStartsAt: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const restaurant = await ctx.db.get(args.restaurantId);
+		const phone = args.phone.trim();
+		if (!restaurant || !phone) return { requested: false as const, reason: "ERROR_NOT_FOUND" };
+
+		const resolved = resolveRequestedStart({
+			date: args.date,
+			time: args.time,
+			timezone: restaurant.timezone,
+		});
+		if (!resolved) return { requested: false as const, reason: "ERROR_INVALID_DATE_OR_TIME" };
+
+		const candidates = await findUpcomingByPhone(ctx, {
+			restaurantId: args.restaurantId,
+			phone,
+			nowMs: Date.now(),
+			sources: [RESERVATION_SOURCE.WHATSAPP],
+		});
+		const matches =
+			args.currentStartsAt === undefined
+				? candidates
+				: candidates.filter((r) => r.startsAt === args.currentStartsAt);
+
+		if (matches.length === 0) return { requested: false as const, reason: "ERROR_NOT_FOUND" };
+		if (matches.length > 1) {
+			return {
+				requested: false as const,
+				reason: "ERROR_AMBIGUOUS_RESERVATION",
+				options: matches.map((r) => ({
+					...toLocalDateTimeParts(r.startsAt, restaurant.timezone),
+					partySize: r.partySize,
+				})),
+			};
+		}
+
+		const reservation = matches[0];
+		const partySize = args.partySize ?? reservation.partySize;
+		const moveable = await evaluateMove(ctx, restaurant, {
+			partySize,
+			startsAt: resolved.startsAt,
+			excludeReservationId: reservation._id,
+			assignedTableIds: reservation.tableIds ?? [],
+		});
+		if (!moveable.ok) {
+			// No code is minted for a move that cannot happen: a code the customer
+			// can send that then fails is worse than being told now.
+			return { requested: false as const, reason: moveable.reason };
+		}
+
+		const now = Date.now();
+		const outstanding = await ctx.db
+			.query(TABLE.WHATSAPP_PENDING_ACTIONS)
+			.withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
+			.collect();
+		for (const row of outstanding) {
+			if (row.consumedAt === undefined) await ctx.db.patch(row._id, { consumedAt: now });
+		}
+
+		const code = randomCode(WHATSAPP_CONFIRMATION_CODE_DIGITS);
+		await ctx.db.insert(TABLE.WHATSAPP_PENDING_ACTIONS, {
+			conversationId: args.conversationId,
+			restaurantId: args.restaurantId,
+			customerPhone: phone,
+			kind: WHATSAPP_PENDING_ACTION.RESCHEDULE_RESERVATION,
+			reservationId: reservation._id,
+			newStartsAt: resolved.startsAt,
+			newPartySize: partySize,
+			code,
+			expiresAt: now + WHATSAPP_PENDING_ACTION_TTL_MS,
+			createdAt: now,
+		});
+
+		return {
+			requested: true as const,
+			code,
+			fromStartsAt: reservation.startsAt,
+			from: toLocalDateTimeParts(reservation.startsAt, restaurant.timezone),
+			toStartsAt: resolved.startsAt,
+			to: toLocalDateTimeParts(resolved.startsAt, restaurant.timezone),
+			partySize,
+		};
+	},
+});
+
+/**
  * Offer a cancellation — **without cancelling anything**.
  *
  * Resolves the target from the phone-scoped index, stores it against a fresh
@@ -460,7 +650,68 @@ export const internalConsumeCancelCode = internalMutation({
 			return { cancelled: false as const, reason: "ERROR_NOT_FOUND" };
 		}
 		const statusError = ensureCancellable(reservation.status, CUSTOMER_CANCELLABLE_STATUSES);
+		// The customer-cancellable set doubles as "still theirs to change": a
+		// seated or completed visit is the restaurant's to alter, not the guest's.
 		if (statusError) return { cancelled: false as const, reason: "ERROR_NOT_CANCELLABLE" };
+
+		if (pending.kind === WHATSAPP_PENDING_ACTION.RESCHEDULE_RESERVATION) {
+			const restaurant = await ctx.db.get(pending.restaurantId);
+			const newStartsAt = pending.newStartsAt;
+			if (!restaurant || newStartsAt === undefined) {
+				return { cancelled: false as const, reason: "ERROR_NOT_FOUND" };
+			}
+			const partySize = pending.newPartySize ?? reservation.partySize;
+
+			// Re-checked at redemption, not just when the code was minted. A code
+			// stays live for ten minutes and the floor can fill in that time; the
+			// booking must never be moved onto a slot that no longer exists.
+			const moveable = await evaluateMove(ctx, restaurant, {
+				partySize,
+				startsAt: newStartsAt,
+				excludeReservationId: reservation._id,
+				assignedTableIds: reservation.tableIds ?? [],
+			});
+			if (!moveable.ok) {
+				return {
+					rescheduled: false as const,
+					kind: "reschedule" as const,
+					reason: moveable.reason,
+				};
+			}
+
+			await ctx.db.patch(reservation._id, {
+				startsAt: newStartsAt,
+				endsAt: moveable.endsAt,
+				partySize,
+				updatedAt: now,
+				updatedBy: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+			});
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.RESERVATIONS,
+				aggregateId: reservation._id,
+				eventType: AUDIT_EVENT.RESERVATION_RESCHEDULED_BY_CUSTOMER,
+				restaurantId: reservation.restaurantId,
+				payload: {
+					restaurantId: reservation.restaurantId,
+					fromStartsAt: reservation.startsAt,
+					toStartsAt: newStartsAt,
+					fromPartySize: reservation.partySize,
+					toPartySize: partySize,
+					// The tables staff had assigned still point at the old window.
+					releasedTableIds: reservation.tableIds,
+					conversationId: args.conversationId,
+					confirmedByCode: true,
+				},
+				userId: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+			});
+
+			return {
+				rescheduled: true as const,
+				kind: "reschedule" as const,
+				startsAt: newStartsAt,
+				partySize,
+			};
+		}
 
 		await cancelReservationCore(ctx, {
 			reservation,
@@ -473,7 +724,7 @@ export const internalConsumeCancelCode = internalMutation({
 			},
 		});
 
-		return { cancelled: true as const, startsAt: reservation.startsAt };
+		return { cancelled: true as const, kind: "cancel" as const, startsAt: reservation.startsAt };
 	},
 });
 
