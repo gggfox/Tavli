@@ -28,7 +28,7 @@ import { formatLocalDateTime } from "./datetime";
 import { clampOutboundBody } from "./format";
 import { runBotTurn } from "./llm";
 import { sendWhatsappMessage } from "./outbound";
-import { normalizePhone } from "./phone";
+import { normalizePhone, toCanonicalE164 } from "./phone";
 
 /**
  * Pull a confirmation code out of a raw inbound body.
@@ -98,11 +98,16 @@ export const handleInboundMessage = internalAction({
 		// Unknown or inactive number: not one of our channels — drop silently.
 		if (!channel) return;
 
-		const customerPhone = normalizePhone(args.from);
+		// Two different things, deliberately kept apart. `replyAddress` is the
+		// transport address Twilio used and is the only thing safe to send to;
+		// `customerPhone` is the canonical E.164 identity everything else keys on
+		// (see `toCanonicalE164` — WhatsApp's Mexican mobiles carry a legacy 1 that
+		// would otherwise fork one human into two customers).
+		const replyAddress = normalizePhone(args.from);
+		const customerPhone = toCanonicalE164(args.from);
 		const {
 			conversationId,
 			locale: conversationLocale,
-			customerName,
 			isDuplicate,
 		} = await ctx.runMutation(internal.whatsapp.data.ingestInbound, {
 			channelId: channel._id,
@@ -145,7 +150,7 @@ export const handleInboundMessage = internalAction({
 				await sendAndRecord(ctx, {
 					conversationId,
 					restaurantId: channel.restaurantId,
-					to: customerPhone,
+					to: replyAddress,
 					body,
 				});
 				return;
@@ -176,7 +181,6 @@ export const handleInboundMessage = internalAction({
 				}),
 				restaurantName: restaurant?.name ?? "the restaurant",
 				locale,
-				customerName: customerName ?? undefined,
 				timezone: restaurant?.timezone ?? undefined,
 				bookingContext,
 				history,
@@ -189,7 +193,7 @@ export const handleInboundMessage = internalAction({
 			await sendAndRecord(ctx, {
 				conversationId,
 				restaurantId: channel.restaurantId,
-				to: customerPhone,
+				to: replyAddress,
 				body: composed || getBotCopy(locale).genericError,
 				mediaUrl: result.mediaUrl,
 			});
@@ -205,7 +209,7 @@ export const handleInboundMessage = internalAction({
 			await sendAndRecord(ctx, {
 				conversationId,
 				restaurantId: channel.restaurantId,
-				to: customerPhone,
+				to: replyAddress,
 				body: getBotCopy(locale).genericError,
 			});
 		}

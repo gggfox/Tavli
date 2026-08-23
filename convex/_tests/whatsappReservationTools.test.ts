@@ -467,10 +467,15 @@ describe("assistant writes", () => {
 				.collect()
 		);
 
-	it("creates a pending booking for the sender with the WhatsApp profile name", async () => {
+	it("creates a pending booking for the sender, table assignment left to staff", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
-		modelCalls("book_reservation", { date: bookableDate(), time: "20:00", partySize: 2 });
+		modelCalls("book_reservation", {
+			date: bookableDate(),
+			time: "20:00",
+			partySize: 2,
+			name: "Gerardo",
+		});
 
 		await post(t, { ProfileName: "Ada L." });
 
@@ -479,9 +484,26 @@ describe("assistant writes", () => {
 		expect(all[0].status).toBe(RESERVATION_STATUS.PENDING);
 		expect(all[0].source).toBe(RESERVATION_SOURCE.WHATSAPP);
 		expect(all[0].contact.phone).toBe(CUSTOMER);
-		expect(all[0].contact.name).toBe("Ada L.");
+		// The name the customer gave, not the one WhatsApp advertises.
+		expect(all[0].contact.name).toBe("Gerardo");
 		// Staff still assign tables.
 		expect(all[0].tableIds).toEqual([]);
+	});
+
+	it("never books under the WhatsApp profile name, which the customer never gave", async () => {
+		const t = convexTest(schema, modules);
+		await seedChannel(t);
+		// No `name`: the model booked without asking who it is for.
+		modelCalls("book_reservation", { date: bookableDate(), time: "20:00", partySize: 2 });
+
+		await post(t, { ProfileName: "Ada L." });
+
+		const all = await rows(t);
+		// A WhatsApp display name is self-chosen — a nickname, an emoji, a business
+		// name. Using it silently made the reservation look correctly named on the
+		// floor plan, which is precisely why the assistant stopped asking.
+		expect(all[0].contact.name).not.toBe("Ada L.");
+		expect(all[0].contact.name).toBe("Cliente de WhatsApp");
 	});
 
 	it("falls back to locale copy when no name is available at all", async () => {

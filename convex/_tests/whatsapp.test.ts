@@ -6,6 +6,7 @@ import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { clampInboundBody, clampOutboundBody, toWhatsappText } from "../whatsapp/format";
 import { buildMenuToolResult, matchDishByName, type BotMenuItem } from "../whatsapp/menu";
+import { toCanonicalE164 } from "../whatsapp/phone";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -724,5 +725,35 @@ describe("buildMenuToolResult", () => {
 		expect(result.items.map((i) => i.name)).toEqual(["Aguachile"]);
 		expect(result.totalMatching).toBe(1);
 		expect(result.truncated).toBe(false);
+	});
+});
+
+describe("toCanonicalE164", () => {
+	it("drops the legacy 1 WhatsApp puts in Mexican mobile numbers", () => {
+		// WhatsApp reports 811 490 6208 as +52 1 811 490 6208. Stored verbatim it
+		// never matches the same customer's booking made anywhere else, because
+		// `findUpcomingByPhone` is an exact index match on contact.phone.
+		expect(toCanonicalE164("+5218114906208")).toBe("+528114906208");
+	});
+
+	it("leaves an already-canonical Mexican number alone", () => {
+		expect(toCanonicalE164("+528114906208")).toBe("+528114906208");
+	});
+
+	it("keeps the 9 in Argentine mobiles, which is required to dial them", () => {
+		expect(toCanonicalE164("+5491123456789")).toBe("+5491123456789");
+	});
+
+	it("does not touch numbers from other countries", () => {
+		expect(toCanonicalE164("+14155238886")).toBe("+14155238886");
+	});
+
+	it("strips the whatsapp: channel prefix like normalizePhone does", () => {
+		expect(toCanonicalE164("whatsapp:+5218114906208")).toBe("+528114906208");
+	});
+
+	it("leaves a +521 number that is not 10 digits long untouched", () => {
+		// Only the 13-digit +52 1 XXXXXXXXXX shape is the known WhatsApp artifact.
+		expect(toCanonicalE164("+521811490")).toBe("+521811490");
 	});
 });

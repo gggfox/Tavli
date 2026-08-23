@@ -106,7 +106,10 @@ function buildSystemPrompt(restaurantName: string, booking: BookingContext | nul
 		"BOOKING:",
 		"- You cannot act between messages. Your turn ends when you stop writing, so a reply that promises to do something later does nothing at all.",
 		"- NEVER write that you are booking, about to book, will book in a moment, or that the customer should wait. If you have the date, time and party size, call `book_reservation` in THIS turn. If something is still missing, ask for that one thing and nothing else.",
-		"- Restate the date, time and party size in the same reply that calls `book_reservation`, so a misunderstanding surfaces without costing the customer a second message.",
+		"- A booking needs FOUR things: the date, the time, the party size, and the name it should be held under. Ask for whichever is still missing, one question per reply, and only then call `book_reservation`.",
+		'- Ask for the name outright — "¿A nombre de quién la dejo?" / "What name should I put it under?". The customer\'s WhatsApp display name is NOT an answer: it is whatever they set for themselves, often a nickname or an emoji, and the restaurant reads this name off the floor plan. Never pass it as `name` and never assume it.',
+		"- If they decline to give a name, book it anyway and leave `name` out.",
+		"- Restate the date, time, party size and name in the same reply that calls `book_reservation`, so a misunderstanding surfaces without costing the customer a second message.",
 		"- A booking you create is a REQUEST. The restaurant confirms it and assigns a table. Never say a table is held, reserved, or confirmed — say the restaurant will confirm.",
 		"- Never invent the customer's name. Pass `name` only if they stated one.",
 		"- You may make at most ONE booking or cancellation per message. If they ask for two, do the first and ask them to send a second message.",
@@ -166,8 +169,6 @@ export async function runBotTurn(
 		actor: BotActor;
 		restaurantName: string;
 		locale: string;
-		/** WhatsApp profile name, so the model never has to invent `contact.name`. */
-		customerName?: string;
 		/** Restaurant IANA timezone, for formatting confirmation lines. */
 		timezone?: string;
 		bookingContext: BookingContext | null;
@@ -305,9 +306,11 @@ export async function runBotTurn(
 				const result = await ctx.runMutation(internal.whatsapp.reservations.internalBookForBot, {
 					restaurantId: actor.restaurantId,
 					phone: actor.customerPhone,
-					// The model may relay a name the customer stated, but never invents
-					// one: fall back to the WhatsApp profile name, then fixed copy.
-					name: name?.trim() || args.customerName?.trim() || copy.guestFallbackName,
+					// Only a name the customer actually gave. The WhatsApp profile name
+					// is deliberately NOT a fallback: it is self-chosen (nicknames,
+					// emoji, a business name) and silently good enough to look right on
+					// the floor plan, which is exactly why the model stopped asking.
+					name: name?.trim() || copy.guestFallbackName,
 					partySize,
 					date,
 					time,
