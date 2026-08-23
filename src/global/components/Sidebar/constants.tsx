@@ -7,6 +7,7 @@ import {
 	DollarSign,
 	Flag,
 	LayoutDashboard,
+	MessageSquare,
 	ListOrdered,
 	Mail,
 	Settings,
@@ -55,6 +56,16 @@ export const sidebarItems: SidebarItem[] = [
 		translationKey: SidebarKeys.RESERVATIONS,
 		icon: <CalendarClock size={18} className="shrink-0" />,
 		to: "/admin/reservations",
+	},
+	{
+		// Staff-visible, so a top-level link rather than a child of the ADMIN
+		// group — that group is filtered to platform admins in `useSidebarItems`,
+		// and this screen is open to any active staff member of the restaurant.
+		type: "link",
+		translationKey: SidebarKeys.WHATSAPP,
+		icon: <MessageSquare size={18} className="shrink-0" />,
+		to: "/admin/whatsapp",
+		search: {},
 	},
 	{
 		type: "group",

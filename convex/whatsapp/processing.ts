@@ -29,6 +29,8 @@ import {
 	WHATSAPP_CONTEXT_MESSAGE_LIMIT,
 	WHATSAPP_MAX_OUTBOUND_BODY_CHARS,
 	WHATSAPP_MAX_REPLY_PARTS,
+	WHATSAPP_MESSAGE_SENDER,
+	type WhatsappMessageSender,
 } from "../constants";
 import { getBotCopy, resolveLocale } from "./copy";
 import { formatLocalDateTime } from "./datetime";
@@ -75,6 +77,12 @@ async function sendAndRecord(
 		body: string;
 		/** The model's own prose, without the appended notices. "" = none. */
 		modelBody: string;
+		/**
+		 * Who is speaking. Applies to the whole reply, every part of it — a long
+		 * assistant answer split across three WhatsApp messages is one utterance
+		 * by the assistant, even though only the first part keeps `modelBody`.
+		 */
+		sentBy: WhatsappMessageSender;
 		mediaUrl?: string;
 	}
 ): Promise<void> {
@@ -109,6 +117,7 @@ async function sendAndRecord(
 			restaurantId: args.restaurantId,
 			body,
 			modelBody,
+			sentBy: args.sentBy,
 			mediaUrl,
 			messageSid: sid,
 			// `sendWhatsappMessage` never throws; a missing SID is how it reports failure.
@@ -218,6 +227,7 @@ export const handleInboundMessage = internalAction({
 					// Entirely server-composed: the model was never consulted for the
 					// authorization decision and must not be shown this as its own line.
 					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				});
 				return;
 			}
@@ -244,6 +254,7 @@ export const handleInboundMessage = internalAction({
 					phone: customerPhone,
 					body: getBotCopy(locale).dailyLimitReached,
 					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				});
 			}
 			return;
@@ -261,6 +272,7 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: getBotCopy(locale).platformBusy,
 				modelBody: "",
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 			});
 			return;
 		}
@@ -312,6 +324,10 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: composed || getBotCopy(locale).genericError,
 				modelBody: result.text,
+				// A turn that produced neither prose nor a notice falls back to the
+				// fixed apology — which the assistant did not write, so it is not
+				// signed as the assistant.
+				sentBy: composed ? WHATSAPP_MESSAGE_SENDER.ASSISTANT : WHATSAPP_MESSAGE_SENDER.SYSTEM,
 				mediaUrl: result.mediaUrl,
 			});
 		} catch (error) {
@@ -330,6 +346,7 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 				body: getBotCopy(locale).genericError,
 				modelBody: "",
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
 			});
 		}
 	},
