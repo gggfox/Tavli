@@ -454,6 +454,27 @@ export const handleInboundMessage = internalAction({
 			// free pass to the model. Only a code we actually minted returns above.
 		}
 
+		// Restaurant status: a soft-deleted or deactivated restaurant no longer
+		// speaks — not even to greet. Routing already refuses to bind NEW traffic
+		// to a dead restaurant (see `data.ts`); this is the backstop for a thread
+		// that outlived its restaurant, so the answer is honest fixed copy rather
+		// than an assistant cheerfully taking questions for a business that is
+		// gone. Below the confirmation codes on purpose: cancelling a booking at
+		// a just-deleted restaurant is the one thing still worth doing there.
+		// Metered like any reply.
+		if (!restaurant || restaurant.unavailable) {
+			await sendAndRecord(ctx, {
+				conversationId,
+				restaurantId: route.restaurantId,
+				to: replyAddress,
+				phone: customerPhone,
+				body: getBotCopy(locale).restaurantUnavailable,
+				modelBody: "",
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
+			});
+			return;
+		}
+
 		// The phone has spent its daily budget. Say so exactly once, then go
 		// quiet: every reply to a flood is another message Tavli pays Twilio for.
 		if (!budget.allowed) {

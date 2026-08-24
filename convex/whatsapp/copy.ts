@@ -69,6 +69,12 @@ type BotCopy = {
 	/** The platform-wide daily ceiling is spent. Served without calling the model. */
 	platformBusy: string;
 	/**
+	 * The restaurant this thread belongs to is soft-deleted or deactivated.
+	 * Honest and final — never a model call, because there is no business left
+	 * to speak for.
+	 */
+	restaurantUnavailable: string;
+	/**
 	 * The ONE confirmation an opt-out transition earns (policy expects it), and
 	 * the last thing the phone hears until it opts back in. Must say how to
 	 * return. Sent bilingually via `getOptOutConfirmation` — the opt-out gate
@@ -113,6 +119,8 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"You've reached the number of messages I can answer today. I'll be able to reply again tomorrow — for anything urgent, please contact the restaurant directly.",
 		platformBusy:
 			"I'm handling an unusually high number of messages right now and can't answer this one. Please try again later, or contact the restaurant directly.",
+		restaurantUnavailable:
+			"This restaurant is no longer taking messages here. If you need to reach them, please contact the restaurant directly.",
 		optOutConfirmed:
 			"Done — you won't receive any more WhatsApp messages from Tavli on this number. Send START to resume.",
 		optInConfirmed:
@@ -151,6 +159,8 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"Llegaste al número de mensajes que puedo responder hoy. Mañana podré contestarte de nuevo — si es algo urgente, contacta directamente al restaurante.",
 		platformBusy:
 			"Estoy atendiendo muchísimos mensajes en este momento y no puedo responder este. Inténtalo más tarde o contacta directamente al restaurante.",
+		restaurantUnavailable:
+			"Este restaurante ya no recibe mensajes por aquí. Si necesitas comunicarte, contacta directamente al restaurante.",
 		optOutConfirmed:
 			"Listo — ya no recibirás más mensajes de WhatsApp de Tavli en este número. Envía ALTA para reactivar.",
 		optInConfirmed:
