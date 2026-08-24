@@ -10,6 +10,7 @@ import { internalMutation, internalQuery } from "../_generated/server";
 import {
 	AUDIT_ACTOR,
 	AUDIT_EVENT,
+	isBillingInGoodStanding,
 	TABLE,
 	WHATSAPP_COLD_START_SCAN_LIMIT,
 	WHATSAPP_CONVERSATION_STATUS,
@@ -537,6 +538,13 @@ export const getRestaurantContext = internalQuery({
 			slug: restaurant.slug,
 			timezone: restaurant.timezone ?? null,
 			unavailable: !isRestaurantMessageable(restaurant),
+			// Enrolled in the platform subscription AND no longer in good standing
+			// (TAVLI-95). Both halves matter: a restaurant outside the subscription
+			// is not gated at all, and `isBillingInGoodStanding` alone treats an
+			// unbound status as fine — see its doc comment.
+			subscriptionLapsed:
+				restaurant.platformSubscriptionEnabled === true &&
+				!isBillingInGoodStanding(restaurant.billingStatus),
 		};
 	},
 });

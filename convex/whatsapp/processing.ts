@@ -475,6 +475,26 @@ export const handleInboundMessage = internalAction({
 			return;
 		}
 
+		// Subscription gate: an enrolled restaurant whose platform subscription
+		// has lapsed must not keep spending Tavli's money on model turns — the
+		// billing semantics live in `getRestaurantContext` /
+		// `isBillingInGoodStanding`, not here. Fixed copy through the normal
+		// metered path (the spend budgets in `sendAndRecord` still apply): never
+		// silence, because the diner did nothing wrong, and never a model call,
+		// because the model call is the thing not being paid for.
+		if (restaurant.subscriptionLapsed) {
+			await sendAndRecord(ctx, {
+				conversationId,
+				restaurantId: route.restaurantId,
+				to: replyAddress,
+				phone: customerPhone,
+				body: getBotCopy(locale).subscriptionLapsed,
+				modelBody: "",
+				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
+			});
+			return;
+		}
+
 		// The phone has spent its daily budget. Say so exactly once, then go
 		// quiet: every reply to a flood is another message Tavli pays Twilio for.
 		if (!budget.allowed) {

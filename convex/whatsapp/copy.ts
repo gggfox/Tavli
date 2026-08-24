@@ -75,6 +75,13 @@ type BotCopy = {
 	 */
 	restaurantUnavailable: string;
 	/**
+	 * The restaurant's platform subscription has lapsed. Deliberately does NOT
+	 * say why — the diner is not party to the restaurant's bill — just that the
+	 * assistant is off and the restaurant itself is the way in. Never silence,
+	 * never a model call: every model turn here is Tavli's own money.
+	 */
+	subscriptionLapsed: string;
+	/**
 	 * The ONE confirmation an opt-out transition earns (policy expects it), and
 	 * the last thing the phone hears until it opts back in. Must say how to
 	 * return. Sent bilingually via `getOptOutConfirmation` — the opt-out gate
@@ -121,6 +128,8 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"I'm handling an unusually high number of messages right now and can't answer this one. Please try again later, or contact the restaurant directly.",
 		restaurantUnavailable:
 			"This restaurant is no longer taking messages here. If you need to reach them, please contact the restaurant directly.",
+		subscriptionLapsed:
+			"The assistant isn't available for this restaurant right now. Please contact the restaurant directly.",
 		optOutConfirmed:
 			"Done — you won't receive any more WhatsApp messages from Tavli on this number. Send START to resume.",
 		optInConfirmed:
@@ -161,6 +170,8 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"Estoy atendiendo muchísimos mensajes en este momento y no puedo responder este. Inténtalo más tarde o contacta directamente al restaurante.",
 		restaurantUnavailable:
 			"Este restaurante ya no recibe mensajes por aquí. Si necesitas comunicarte, contacta directamente al restaurante.",
+		subscriptionLapsed:
+			"El asistente no está disponible para este restaurante en este momento. Por favor contacta directamente al restaurante.",
 		optOutConfirmed:
 			"Listo — ya no recibirás más mensajes de WhatsApp de Tavli en este número. Envía ALTA para reactivar.",
 		optInConfirmed:

@@ -351,6 +351,33 @@ export function isLiveBillingStatus(status: string | undefined): boolean {
 	return status !== undefined && LIVE_BILLING_STATUSES.includes(status);
 }
 
+/**
+ * Statuses in which the subscription is being honored: Stripe is getting paid
+ * (or the agreed trial is running). Deliberately narrower than
+ * `LIVE_BILLING_STATUSES`: `past_due`/`unpaid` mean a live subscription whose
+ * money has stopped arriving — "don't open a second checkout" territory, but
+ * not "keep spending on this restaurant's behalf" territory.
+ */
+export const BILLING_GOOD_STANDING_STATUSES: readonly string[] = [
+	BILLING_STATUS.TRIALING,
+	BILLING_STATUS.ACTIVE,
+];
+
+/**
+ * Whether `billingStatus` means the restaurant's subscription is in good
+ * standing, for gating paid service (the WhatsApp assistant's model turns).
+ *
+ * `undefined` — no subscription has ever been bound — counts as good standing
+ * ON PURPOSE: this predicate detects LAPSE, not non-enrollment or
+ * mid-onboarding, and callers must first check `platformSubscriptionEnabled`
+ * to know whether the restaurant is in the subscription at all. A status this
+ * list doesn't know (Stripe adds new ones) is treated as lapsed: when in
+ * doubt, stop spending.
+ */
+export function isBillingInGoodStanding(status: string | undefined): boolean {
+	return status === undefined || BILLING_GOOD_STANDING_STATUSES.includes(status);
+}
+
 /** Geofence radius fallback when a restaurant configured coordinates but no radius. */
 export const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 
