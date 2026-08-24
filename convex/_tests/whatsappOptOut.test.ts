@@ -3,8 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { AUDIT_EVENT, WHATSAPP_OPT_IN_SOURCE } from "../constants";
+import {
+	AUDIT_EVENT,
+	WHATSAPP_GLOBAL_DAILY_LIMIT,
+	WHATSAPP_INBOUND_DAILY_LIMIT,
+	WHATSAPP_OPT_IN_SOURCE,
+	WHATSAPP_OUTBOUND_DAILY_LIMIT,
+} from "../constants";
 import { OPT_KEYWORD, matchOptKeyword } from "../whatsapp/optOut";
+import { GLOBAL_BUDGET_KEY, outboundBudgetKey } from "../whatsapp/spendControls";
 
 /**
  * Consent and opt-out for the WhatsApp assistant (WhatsApp Business Messaging
@@ -116,6 +123,12 @@ function optOutRows(t: ReturnType<typeof convexTest>) {
 	return t.run((ctx) => ctx.db.query("whatsappOptOuts").collect());
 }
 
+/** Every spend counter, as `key -> count`, so a message's cost is a diff. */
+async function counterCounts(t: ReturnType<typeof convexTest>): Promise<Record<string, number>> {
+	const rows = await t.run((ctx) => ctx.db.query("rateLimits").collect());
+	return Object.fromEntries(rows.map((r) => [r.key, r.count]));
+}
+
 function auditEvents(t: ReturnType<typeof convexTest>, eventType: string) {
 	return t.run(async (ctx) => {
 		const all = await ctx.db.query("allEvents").collect();
@@ -222,6 +235,10 @@ describe("whatsapp consent and opt-out", () => {
 		await seedRestaurant(t);
 		await send(t, { body: "STOP", messageSid: "SM-stop" });
 		fetchMock.mockClear();
+		// Snapshot rather than assert-empty: the STOP that opened this state is
+		// itself a metered transition, so what has to cost nothing is every
+		// message AFTER it, not the counters as a whole.
+		const before = await counterCounts(t);
 
 		// Even a perfectly routable message: valid short code, real restaurant.
 		await send(t, { body: "Hola, quiero una mesa · VRN-8F3", messageSid: "SM-after" });
@@ -229,8 +246,8 @@ describe("whatsapp consent and opt-out", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(mockGenerateText).not.toHaveBeenCalled();
 		expect(await t.run((ctx) => ctx.db.query("whatsappConversations").collect())).toHaveLength(0);
-		// Cost nothing: no budget counter was charged for the dropped message.
-		expect(await t.run((ctx) => ctx.db.query("rateLimits").collect())).toHaveLength(0);
+		// Cost nothing: no budget counter moved for the dropped message.
+		expect(await counterCounts(t)).toEqual(before);
 	});
 
 	it("ALTA from an opted-out phone clears the state, confirms once, and processes nothing else", async () => {
@@ -311,5 +328,95 @@ describe("whatsapp consent and opt-out", () => {
 
 		const after = await t.run((ctx) => ctx.db.query("whatsappMessages").collect());
 		expect(after.length).toBe(before.length);
+	});
+});
+
+/**
+ * Consent transitions are metered (TAVLI-95 review).
+ *
+ * A STOP/START confirmation is a billed Twilio message to a number that has
+ * proved nothing beyond a valid Twilio signature (ADR 012 — one shared number,
+ * anyone in the world can write to it). Unmetered, alternating the two keywords
+ * is one free send per inbound message forever, plus two permanent `allEvents`
+ * rows and a fresh unrouted claim per cycle — the same open relay the
+ * unroutable guidance is metered to prevent.
+ *
+ * What must NOT be metered is the revocation itself: the opt-out row is always
+ * written, because honoring a STOP is a policy duty, not a discretionary spend.
+ */
+describe("consent transitions are metered", () => {
+	let fetchMock: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		process.env.TWILIO_AUTH_TOKEN = "test-token";
+		process.env.TWILIO_ACCOUNT_SID = "ACtest";
+		process.env.TWILIO_WHATSAPP_NUMBER = TAVLI_NUMBER;
+		process.env.OPENROUTER_API_KEY = "test-openrouter";
+
+		mockValidateRequest.mockReset();
+		mockValidateRequest.mockReturnValue(true);
+		mockGenerateText.mockReset();
+		mockGenerateText.mockResolvedValue({ text: "¡Hola!", toolCalls: [] });
+
+		fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sid: "SMout" }) });
+		vi.stubGlobal("fetch", fetchMock);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	/** Put a counter straight at `count` so a cap is reached without N calls. */
+	async function seedCounter(t: ReturnType<typeof convexTest>, key: string, count: number) {
+		await t.run((ctx) =>
+			ctx.db.insert("rateLimits", { key, windowStart: Date.now(), count, updatedAt: Date.now() })
+		);
+	}
+
+	it("bounds STOP/START alternation by the per-phone inbound cap", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t);
+
+		// Four times the daily inbound cap, alternating: the one shape that turns
+		// a per-transition confirmation into an unbounded stream.
+		const messages = WHATSAPP_INBOUND_DAILY_LIMIT.max * 4;
+		for (let i = 0; i < messages; i++) {
+			await send(t, { body: i % 2 === 0 ? "STOP" : "ALTA", messageSid: `SM-flip-${i}` });
+		}
+
+		// Every send here is billed to Tavli, and every transition writes a
+		// permanent `allEvents` row that no purge ever removes.
+		expect(sentBodies(fetchMock).length).toBeLessThanOrEqual(WHATSAPP_INBOUND_DAILY_LIMIT.max);
+		const transitions =
+			(await auditEvents(t, AUDIT_EVENT.WHATSAPP_PHONE_OPTED_OUT)).length +
+			(await auditEvents(t, AUDIT_EVENT.WHATSAPP_PHONE_OPTED_IN)).length;
+		expect(transitions).toBeLessThanOrEqual(WHATSAPP_INBOUND_DAILY_LIMIT.max);
+	});
+
+	it("still records the opt-out when the phone's outbound budget is spent", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t);
+		await seedCounter(t, outboundBudgetKey(CUSTOMER), WHATSAPP_OUTBOUND_DAILY_LIMIT.max);
+
+		await send(t, { body: "STOP" });
+
+		// The policy duty is honored; only the courtesy confirmation is dropped.
+		expect(await optOutRows(t)).toHaveLength(1);
+		expect(sentBodies(fetchMock)).toHaveLength(0);
+	});
+
+	it("still records the opt-out during a platform ceiling emergency", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t);
+		await seedCounter(t, GLOBAL_BUDGET_KEY, WHATSAPP_GLOBAL_DAILY_LIMIT.max);
+
+		await send(t, { body: "STOP" });
+
+		expect(await optOutRows(t)).toHaveLength(1);
+		// The ceiling has shut off every model turn and every reply platform-wide;
+		// a fixed confirmation to a stranger is not the exception to that.
+		expect(sentBodies(fetchMock)).toHaveLength(0);
 	});
 });

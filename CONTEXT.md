@@ -425,10 +425,19 @@ is conversation, not consent — earns one confirmation saying how to return,
 then permanent silence: an opted-out phone costs nothing and receives nothing,
 which is why the check sits above every budget. Keyed to the canonical phone,
 never per **Restaurant** — the diner opts out of the number (ADR 012). START
-or ALTA reverses it. History is kept; only sending stops. The converse record,
-the **opt-in**, is the diner's own first message: each **Conversation** stamps
-when it happened and whether a deep link or a **Cold start** brought them.
-_Avoid_: unsubscribe, blacklist, block.
+or ALTA reverses it. History is kept; only sending stops.
+
+The revocation is recorded unconditionally — that is the policy duty — but the
+confirmation _reply_ is a billed message and is metered like any other, against
+the **Daily message cap** and the **Platform ceiling**; a transition also spends
+one inbound message. So a phone deep into its cap is opted out in silence, and
+alternating STOP and START cannot become an unbounded stream of free replies and
+permanent audit rows. Re-opting in is the one consent step a budget may refuse,
+because leaving the phone opted out is the silent direction.
+
+The converse record, the **opt-in**, is the diner's own first message: each
+**Conversation** stamps when it happened and whether a deep link or a **Cold
+start** brought them. _Avoid_: unsubscribe, blacklist, block.
 
 **Retention**:
 WhatsApp message bodies live 90 days (`WHATSAPP_MESSAGE_RETENTION_MS`), then

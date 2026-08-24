@@ -19,7 +19,10 @@
  *   1. Twilio signature (`http.ts`) — nothing unverified gets further.
  *   2. Opt-out state and opt-out/opt-in keywords — cheapest, and a policy
  *      duty: an opted-out phone must cost nothing and receive nothing, so it
- *      sits above every budget and every reply.
+ *      sits above every budget and every reply. What sits above the budgets is
+ *      the *drop* and the recording of the revocation, never a send: the
+ *      confirmation a transition earns is a billed Twilio message and is
+ *      metered like any other (`confirmConsentTransition`).
  *   3. Confirmation codes — authorizing a cancellation must not depend on the
  *      model, and must survive the refusals below it.
  *   4. Routing.
@@ -181,6 +184,53 @@ async function sendAndRecord(
 }
 
 /**
+ * Send the single confirmation a consent transition earns — metered, like every
+ * other reply Tavli pays for.
+ *
+ * The transition itself is never gated on this: `recordOptOut` has already run
+ * unconditionally by the time this is called, because honoring a STOP is a
+ * policy duty. What is gated is the *message*, and only the message.
+ *
+ * It has to be. A consent confirmation is a billed Twilio send to a number that
+ * has proved nothing beyond a valid Twilio signature — which "proves nothing
+ * about whether a real customer sent it" (`spendControls.ts`) — on one shared
+ * number anyone in the world can write to (ADR 012). Unmetered, alternating
+ * STOP and START is one free send per inbound message, forever, from any phone:
+ * the same open relay `getUnroutableGuidance` is metered to prevent, and it
+ * would keep flowing during a platform-wide spend emergency that had already
+ * shut off every model turn and every reply. So the gate is exactly that one:
+ * the phone's inbound cap, the platform ceiling, and the phone's outbound cap.
+ *
+ * Deliberately NOT routed through `sendAndRecord`: there is no conversation and
+ * no restaurant to record a consent message against — opting out is opting out
+ * of the NUMBER, across every restaurant it reaches.
+ */
+async function confirmConsentTransition(
+	ctx: ActionCtx,
+	args: {
+		/** Canonical E.164 identity, for the budgets. Not the transport address. */
+		phone: string;
+		to: string;
+		body: string;
+		/** The inbound verdict for the message that caused this transition. */
+		inbound: { allowed: boolean; globalCeilingReached: boolean };
+	}
+): Promise<void> {
+	if (!args.inbound.allowed || args.inbound.globalCeilingReached) {
+		console.warn("[whatsapp.processing] over budget or past the ceiling; consent reply dropped.");
+		return;
+	}
+	const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalConsumeOutbound, {
+		phone: args.phone,
+	});
+	if (!budget.allowed) {
+		console.warn("[whatsapp.processing] outbound daily budget exhausted; consent reply dropped.");
+		return;
+	}
+	await sendWhatsappMessage({ to: args.to, body: args.body });
+}
+
+/**
  * Which restaurant this message is for, and the body with the routing token
  * removed.
  *
@@ -285,18 +335,32 @@ export const handleInboundMessage = internalAction({
 		let sidClaimedByConsentGate = false;
 		const optKeyword = matchOptKeyword(args.body);
 		if (optKeyword === OPT_KEYWORD.OPT_OUT) {
+			// The revocation itself is written unconditionally, above every budget:
+			// honoring a STOP is a policy duty, not a discretionary spend. Nothing
+			// below may refuse it.
 			const { transitioned } = await ctx.runMutation(internal.whatsapp.data.recordOptOut, {
 				phone: customerPhone,
 				messageSid: args.messageSid,
 			});
+			// Repeating STOP while already opted out (or a Twilio redelivery of this
+			// one) writes nothing, sends nothing and charges nothing: replying to a
+			// phone that asked for silence is the exact thing being switched off.
+			if (!transitioned) return;
+			// A transition is an inbound message that ends here having written
+			// permanent state and earned a billed reply, so it is charged like any
+			// other — see `confirmConsentTransition` for why that matters.
+			const inbound = await ctx.runMutation(internal.whatsapp.spendControls.internalCheckInbound, {
+				phone: customerPhone,
+			});
 			// The transition earns the ONE confirmation the policy expects — it must
-			// say how to come back. Repeating STOP while already opted out (or a
-			// Twilio redelivery of this one) is silence: replying to a phone that
-			// asked for silence is the exact thing being switched off. Unrecorded,
-			// like the unroutable guidance — this send belongs to no restaurant.
-			if (transitioned) {
-				await sendWhatsappMessage({ to: replyAddress, body: getOptOutConfirmation() });
-			}
+			// say how to come back. Unrecorded, like the unroutable guidance: this
+			// send belongs to no restaurant.
+			await confirmConsentTransition(ctx, {
+				phone: customerPhone,
+				to: replyAddress,
+				body: getOptOutConfirmation(),
+				inbound,
+			});
 			return;
 		}
 		if (optKeyword === OPT_KEYWORD.OPT_IN) {
@@ -307,13 +371,45 @@ export const handleInboundMessage = internalAction({
 				messageSid: args.messageSid,
 			});
 			if (!claimed) return;
-			const { transitioned } = await ctx.runMutation(internal.whatsapp.data.recordOptIn, {
+			// Read before writing, because the two outcomes are charged differently:
+			// a transition ends here and pays for itself, while "START" from a phone
+			// that never opted out is an ordinary message and is charged below, after
+			// `ingestInbound` — the authoritative dedupe. Charging both here would
+			// bill that second case twice.
+			const { optedOut } = await ctx.runQuery(internal.whatsapp.data.getOptOutState, {
 				phone: customerPhone,
-				messageSid: args.messageSid,
 			});
-			if (transitioned) {
+			if (optedOut) {
+				const inbound = await ctx.runMutation(
+					internal.whatsapp.spendControls.internalCheckInbound,
+					{ phone: customerPhone }
+				);
+				// Unlike a STOP, an opt-in IS refusable, and refusing it is the only
+				// thing that bounds STOP, START, STOP, START…: every transition writes
+				// a permanent `allEvents` row (append-only, no purge path, exempt from
+				// the restaurant purge) and a fresh unrouted claim, so an unbounded
+				// alternation grows tables nothing ever reclaims. Leaving the phone
+				// opted out is the silent direction and costs Tavli nothing; honoring
+				// the revocation is the policy duty, guaranteeing an immediate
+				// re-subscription to a phone that has already spent its whole daily
+				// inbound cap is not. The window rolls in a day.
+				if (!inbound.allowed) {
+					console.warn("[whatsapp.processing] inbound daily budget exhausted; deferring opt-in.");
+					return;
+				}
+				const { transitioned } = await ctx.runMutation(internal.whatsapp.data.recordOptIn, {
+					phone: customerPhone,
+					messageSid: args.messageSid,
+				});
 				// One confirmation, and nothing else processed from this message.
-				await sendWhatsappMessage({ to: replyAddress, body: getOptInConfirmation() });
+				if (transitioned) {
+					await confirmConsentTransition(ctx, {
+						phone: customerPhone,
+						to: replyAddress,
+						body: getOptInConfirmation(),
+						inbound,
+					});
+				}
 				return;
 			}
 			// Never opted out: "START"/"ALTA" is just a message — process normally.
