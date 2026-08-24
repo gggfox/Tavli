@@ -49,6 +49,7 @@ export const TABLE = {
 	WHATSAPP_PENDING_ACTIONS: "whatsappPendingActions",
 	WHATSAPP_UNROUTED_MESSAGES: "whatsappUnroutedMessages",
 	WHATSAPP_SPEND_ALLOWLIST: "whatsappSpendAllowlist",
+	WHATSAPP_OPT_OUTS: "whatsappOptOuts",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -750,6 +751,13 @@ export const AUDIT_EVENT = {
 	RESERVATION_SEATED: "reservations.seated",
 	RESERVATION_COMPLETED: "reservations.completed",
 	RESERVATION_NO_SHOW: "reservations.noShow",
+
+	// -- WhatsApp consent (WhatsApp Business Messaging Policy) ---------------
+	// Keyed to the opt-out ROW id, never the phone: `allEvents` is append-only
+	// with no purge path, so a phone here would be un-erasable PII (see
+	// `AUDIT_ACTOR`). The row id correlates an opt-out with its later opt-in.
+	WHATSAPP_PHONE_OPTED_OUT: "whatsapp.phoneOptedOut",
+	WHATSAPP_PHONE_OPTED_IN: "whatsapp.phoneOptedIn",
 } as const;
 
 export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
@@ -870,6 +878,33 @@ export const WHATSAPP_CONVERSATION_STATUS = {
 
 export type WhatsappConversationStatus =
 	(typeof WHATSAPP_CONVERSATION_STATUS)[keyof typeof WHATSAPP_CONVERSATION_STATUS];
+
+/**
+ * Opt-out / opt-in keywords (WhatsApp Business Messaging Policy).
+ *
+ * A message opts a phone out only when the TRIMMED MESSAGE IS one of these
+ * words — case- and accent-insensitive, trailing punctuation allowed. "alto"
+ * and "baja" are everyday Spanish words, so a keyword buried in prose is
+ * conversation, not consent revocation; the matching lives in
+ * `whatsapp/optOut.ts`. STOP/START are what WhatsApp's own docs teach users;
+ * BAJA/ALTA are their Mexican-Spanish equivalents; ALTO is the literal "stop".
+ */
+export const WHATSAPP_OPT_OUT_KEYWORDS = ["STOP", "BAJA", "ALTO"] as const;
+export const WHATSAPP_OPT_IN_KEYWORDS = ["START", "ALTA"] as const;
+
+/**
+ * How a `Conversation` obtained consent when it was created: the diner's own
+ * first inbound message is the opt-in event (user-initiated conversation), and
+ * this records what got them there — the wa.me deep link with a short code, or
+ * a codeless cold start.
+ */
+export const WHATSAPP_OPT_IN_SOURCE = {
+	DEEP_LINK: "deep_link",
+	COLD_START: "cold_start",
+} as const;
+
+export type WhatsappOptInSource =
+	(typeof WHATSAPP_OPT_IN_SOURCE)[keyof typeof WHATSAPP_OPT_IN_SOURCE];
 
 /** Hard cap on stored inbound message length (defensive bound on customer input). */
 export const WHATSAPP_MAX_INBOUND_BODY_CHARS = 2000;

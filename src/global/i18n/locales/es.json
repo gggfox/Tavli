@@ -1950,7 +1950,8 @@
 			"actionFailed": "No se pudo completar. Inténtalo de nuevo.",
 			"enable": "Habilitar",
 			"pause": "Pausar",
-			"publicCta": "Escríbenos por WhatsApp"
+			"publicCta": "Escríbenos por WhatsApp",
+			"consentNote": "Al escribirnos aceptas recibir respuestas por WhatsApp. Envía BAJA cuando quieras dejar de recibirlas."
 		},
 		"page": {
 			"setupRestaurantFirst": "Primero configura tu restaurante."

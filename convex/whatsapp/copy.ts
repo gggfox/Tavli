@@ -68,6 +68,15 @@ type BotCopy = {
 	dailyLimitReached: string;
 	/** The platform-wide daily ceiling is spent. Served without calling the model. */
 	platformBusy: string;
+	/**
+	 * The ONE confirmation an opt-out transition earns (policy expects it), and
+	 * the last thing the phone hears until it opts back in. Must say how to
+	 * return. Sent bilingually via `getOptOutConfirmation` — the opt-out gate
+	 * runs before routing, so there is no restaurant and no locale to resolve.
+	 */
+	optOutConfirmed: string;
+	/** The one confirmation an opt-in (START/ALTA) transition earns. */
+	optInConfirmed: string;
 };
 
 const COPY: Record<WhatsappLocale, BotCopy> = {
@@ -104,6 +113,10 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"You've reached the number of messages I can answer today. I'll be able to reply again tomorrow — for anything urgent, please contact the restaurant directly.",
 		platformBusy:
 			"I'm handling an unusually high number of messages right now and can't answer this one. Please try again later, or contact the restaurant directly.",
+		optOutConfirmed:
+			"Done — you won't receive any more WhatsApp messages from Tavli on this number. Send START to resume.",
+		optInConfirmed:
+			"You're back — Tavli will answer you on WhatsApp again. Send STOP whenever you want to leave.",
 	},
 	[WHATSAPP_LOCALE.ES]: {
 		genericError:
@@ -138,6 +151,10 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"Llegaste al número de mensajes que puedo responder hoy. Mañana podré contestarte de nuevo — si es algo urgente, contacta directamente al restaurante.",
 		platformBusy:
 			"Estoy atendiendo muchísimos mensajes en este momento y no puedo responder este. Inténtalo más tarde o contacta directamente al restaurante.",
+		optOutConfirmed:
+			"Listo — ya no recibirás más mensajes de WhatsApp de Tavli en este número. Envía ALTA para reactivar.",
+		optInConfirmed:
+			"De vuelta — Tavli volverá a responderte por WhatsApp. Envía BAJA cuando quieras dejar de recibir mensajes.",
 	},
 };
 
@@ -177,4 +194,24 @@ export function getUnroutableGuidance(): string {
 		COPY[WHATSAPP_LOCALE.ES].unroutableGuidance,
 		COPY[WHATSAPP_LOCALE.EN].unroutableGuidance,
 	].join("\n\n");
+}
+
+/**
+ * The single confirmation an opt-out transition earns, bilingual for the same
+ * reason as `getUnroutableGuidance`: the consent gate runs before routing, so
+ * every input that would pick a language is exactly the input that is missing.
+ * It must tell the person how to come back — after this, the phone hears
+ * nothing at all until it does.
+ */
+export function getOptOutConfirmation(): string {
+	return [COPY[WHATSAPP_LOCALE.ES].optOutConfirmed, COPY[WHATSAPP_LOCALE.EN].optOutConfirmed].join(
+		"\n\n"
+	);
+}
+
+/** The single confirmation an opt-in (START/ALTA) transition earns. Bilingual, as above. */
+export function getOptInConfirmation(): string {
+	return [COPY[WHATSAPP_LOCALE.ES].optInConfirmed, COPY[WHATSAPP_LOCALE.EN].optInConfirmed].join(
+		"\n\n"
+	);
 }

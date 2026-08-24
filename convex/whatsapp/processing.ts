@@ -8,11 +8,26 @@
  * not bound the LLM turn. Node action because the AI SDK provider (`llm.ts`)
  * runs under `"use node"`.
  *
- * Flow: dedupe on MessageSid → resolve the restaurant → record inbound → charge
- * the spend budgets → redeem a confirmation code if the body carries one →
- * otherwise run the LLM turn → send the reply (model prose plus server-composed
- * fact lines) → record outbound. Any failure sends a fixed localized apology —
- * never a silent failure (AC #6).
+ * Flow: dedupe on MessageSid → consent (opt-out state and STOP/START keywords)
+ * → resolve the restaurant → record inbound → charge the spend budgets →
+ * redeem a confirmation code if the body carries one → otherwise run the LLM
+ * turn → send the reply (model prose plus server-composed fact lines) → record
+ * outbound. Any failure sends a fixed localized apology — never a silent
+ * failure (AC #6).
+ *
+ * **Gate order (TAVLI-95), and why it is this order:**
+ *   1. Twilio signature (`http.ts`) — nothing unverified gets further.
+ *   2. Opt-out state and opt-out/opt-in keywords — cheapest, and a policy
+ *      duty: an opted-out phone must cost nothing and receive nothing, so it
+ *      sits above every budget and every reply.
+ *   3. Confirmation codes — authorizing a cancellation must not depend on the
+ *      model, and must survive the refusals below it.
+ *   4. Routing.
+ *   5. Restaurant status (deleted / inactive) — a dead restaurant answers
+ *      honestly instead of chatting.
+ *   6. Subscription gate — a lapsed restaurant must not spend Tavli's money on
+ *      model turns.
+ *   7. Spend budgets, then the model.
  *
  * **Routing (ADR 012).** Tavli is the sender on one shared number, so the
  * Twilio "To" identifies nobody. The restaurant comes from the short code in
@@ -41,12 +56,21 @@ import {
 	WHATSAPP_MAX_OUTBOUND_BODY_CHARS,
 	WHATSAPP_MAX_REPLY_PARTS,
 	WHATSAPP_MESSAGE_SENDER,
+	WHATSAPP_OPT_IN_SOURCE,
 	type WhatsappMessageSender,
+	type WhatsappOptInSource,
 } from "../constants";
-import { getBotCopy, getUnroutableGuidance, resolveLocale } from "./copy";
+import {
+	getBotCopy,
+	getOptInConfirmation,
+	getOptOutConfirmation,
+	getUnroutableGuidance,
+	resolveLocale,
+} from "./copy";
 import { formatLocalDateTime } from "./datetime";
 import { splitOutboundBody } from "./format";
 import { runBotTurn } from "./llm";
+import { OPT_KEYWORD, matchOptKeyword } from "./optOut";
 import { sendWhatsappMessage } from "./outbound";
 import { normalizePhone, toCanonicalE164 } from "./phone";
 import { extractShortCodeCandidates, stripShortCode } from "./shortCode";
@@ -98,6 +122,21 @@ async function sendAndRecord(
 		mediaUrl?: string;
 	}
 ): Promise<void> {
+	// Consent, checked structurally at the point of send — not only at the top
+	// of the inbound path — so no future caller (a staff reply, a scheduled
+	// notice) can message an opted-out phone by forgetting to ask. Same
+	// reasoning as the budget check in the loop below: make the forbidden send
+	// unproducible instead of relying on callers to remember.
+	const consent = await ctx.runQuery(internal.whatsapp.data.getOptOutState, {
+		phone: args.phone,
+	});
+	if (consent.optedOut) {
+		console.warn("[whatsapp.processing] dropping reply to an opted-out phone.", {
+			conversationId: args.conversationId,
+		});
+		return;
+	}
+
 	// A reply longer than one WhatsApp message becomes several, in order. Any
 	// media rides on the first part only — repeating it would send the customer
 	// the same dish photo once per chunk.
@@ -161,6 +200,12 @@ async function resolveRoute(
 	channelId: Id<"whatsappChannels">;
 	defaultLocale?: string;
 	body: string;
+	/**
+	 * The consent provenance `ingestInbound` stamps if this message creates the
+	 * conversation: a short code means the diner came through the wa.me deep
+	 * link; everything else is a cold start.
+	 */
+	optInSource: WhatsappOptInSource;
 } | null> {
 	const candidates = extractShortCodeCandidates(args.body);
 	if (candidates.length > 0) {
@@ -175,6 +220,7 @@ async function resolveRoute(
 				// Stripped only now that the token has actually resolved: a word that
 				// merely looked like a code stays in the diner's own words.
 				body: stripShortCode(args.body, match.matchedCode),
+				optInSource: WHATSAPP_OPT_IN_SOURCE.DEEP_LINK,
 			};
 		}
 		// An unrecognized code is not an error the diner can act on — fall through
@@ -185,7 +231,9 @@ async function resolveRoute(
 		customerPhone: args.customerPhone,
 		sinceMs: Date.now() - WHATSAPP_COLD_START_WINDOW_MS,
 	});
-	if (routes.length === 1) return { ...routes[0], body: args.body };
+	if (routes.length === 1) {
+		return { ...routes[0], body: args.body, optInSource: WHATSAPP_OPT_IN_SOURCE.COLD_START };
+	}
 
 	// Ambiguous history, or none. Before giving up: is this the confirmation
 	// code the assistant asked for? Its copy says "reply with this code: 481920"
@@ -198,7 +246,7 @@ async function resolveRoute(
 			customerPhone: args.customerPhone,
 			code,
 		});
-		if (route) return { ...route, body: args.body };
+		if (route) return { ...route, body: args.body, optInSource: WHATSAPP_OPT_IN_SOURCE.COLD_START };
 	}
 	return null;
 }
@@ -225,6 +273,59 @@ export const handleInboundMessage = internalAction({
 		const replyAddress = normalizePhone(args.from);
 		const customerPhone = toCanonicalE164(args.from);
 
+		// Consent, directly after the signature (WhatsApp Business Messaging
+		// Policy) and deliberately ABOVE routing and the spend budgets: an
+		// opted-out phone must cost nothing and receive nothing, and honoring a
+		// STOP is a policy duty, not a discretionary spend. The transitions are
+		// matched like `extractConfirmationCode` — deterministically, before any
+		// model — because consent must never be a language-understanding problem.
+		//
+		// Tracks whether this branch already claimed the MessageSid, so the
+		// unroutable branch below doesn't mistake its own claim for a redelivery.
+		let sidClaimedByConsentGate = false;
+		const optKeyword = matchOptKeyword(args.body);
+		if (optKeyword === OPT_KEYWORD.OPT_OUT) {
+			const { transitioned } = await ctx.runMutation(internal.whatsapp.data.recordOptOut, {
+				phone: customerPhone,
+				messageSid: args.messageSid,
+			});
+			// The transition earns the ONE confirmation the policy expects — it must
+			// say how to come back. Repeating STOP while already opted out (or a
+			// Twilio redelivery of this one) is silence: replying to a phone that
+			// asked for silence is the exact thing being switched off. Unrecorded,
+			// like the unroutable guidance — this send belongs to no restaurant.
+			if (transitioned) {
+				await sendWhatsappMessage({ to: replyAddress, body: getOptOutConfirmation() });
+			}
+			return;
+		}
+		if (optKeyword === OPT_KEYWORD.OPT_IN) {
+			// Claimed first: an opt-in transition stores no `whatsappMessages` row,
+			// so without this a Twilio redelivery of the same START would fall
+			// through below as an ordinary message and reach the model.
+			const { claimed } = await ctx.runMutation(internal.whatsapp.data.claimUnroutedMessage, {
+				messageSid: args.messageSid,
+			});
+			if (!claimed) return;
+			const { transitioned } = await ctx.runMutation(internal.whatsapp.data.recordOptIn, {
+				phone: customerPhone,
+				messageSid: args.messageSid,
+			});
+			if (transitioned) {
+				// One confirmation, and nothing else processed from this message.
+				await sendWhatsappMessage({ to: replyAddress, body: getOptInConfirmation() });
+				return;
+			}
+			// Never opted out: "START"/"ALTA" is just a message — process normally.
+			sidClaimedByConsentGate = true;
+		} else {
+			const { optedOut } = await ctx.runQuery(internal.whatsapp.data.getOptOutState, {
+				phone: customerPhone,
+			});
+			// Permanent silence: dropped before any budget, routing, or model work.
+			if (optedOut) return;
+		}
+
 		const route = await resolveRoute(ctx, { body: args.body, customerPhone });
 		if (!route) {
 			// Nothing to attach this to — no restaurant means no conversation and no
@@ -239,10 +340,16 @@ export const handleInboundMessage = internalAction({
 			// branch never writes, so without a claim every Twilio redelivery of
 			// this MessageSid is another billed message to a stranger and another
 			// permanent counter increment.
-			const { claimed } = await ctx.runMutation(internal.whatsapp.data.claimUnroutedMessage, {
-				messageSid: args.messageSid,
-			});
-			if (!claimed) return;
+			//
+			// The consent gate may already hold this SID's claim (a "START" from a
+			// phone that was never opted out) — that is this same delivery, not a
+			// redelivery.
+			if (!sidClaimedByConsentGate) {
+				const { claimed } = await ctx.runMutation(internal.whatsapp.data.claimUnroutedMessage, {
+					messageSid: args.messageSid,
+				});
+				if (!claimed) return;
+			}
 
 			// Replying to a stranger still costs money, and on one shared number an
 			// unroutable message can come from anyone at all (ADR 012) — an unmetered
@@ -274,6 +381,7 @@ export const handleInboundMessage = internalAction({
 			body: route.body,
 			messageSid: args.messageSid,
 			profileName: args.profileName,
+			optInSource: route.optInSource,
 		});
 		if (isDuplicate) return;
 

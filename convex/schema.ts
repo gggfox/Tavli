@@ -24,6 +24,7 @@ import {
 	TIP_POOL_STATUS,
 	USER_ROLES,
 	WHATSAPP_CONVERSATION_STATUS,
+	WHATSAPP_OPT_IN_SOURCE,
 	WHATSAPP_PENDING_ACTION,
 	WHATSAPP_MESSAGE_DIRECTION,
 	WHATSAPP_MESSAGE_SENDER,
@@ -1381,6 +1382,20 @@ export default defineSchema({
 		lastMessageAt: v.number(),
 		// Last inbound timestamp — WhatsApp 24h freeform-reply window bookkeeping.
 		lastInboundAt: v.number(),
+		/**
+		 * Consent record (WhatsApp Business Messaging Policy): the diner's own
+		 * first inbound message IS the opt-in — user-initiated conversation — and
+		 * these two fields stamp when it happened and what got them here (the
+		 * wa.me deep link, or a codeless cold start). Optional only because rows
+		 * predate the fields; every conversation created since sets both.
+		 */
+		optedInAt: v.optional(v.number()),
+		optedInSource: v.optional(
+			v.union(
+				v.literal(WHATSAPP_OPT_IN_SOURCE.DEEP_LINK),
+				v.literal(WHATSAPP_OPT_IN_SOURCE.COLD_START)
+			)
+		),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
@@ -1526,6 +1541,24 @@ export default defineSchema({
 		label: v.string(),
 		createdAt: v.number(),
 		createdBy: v.string(),
+	}).index("by_phone", ["phone"]),
+
+	// Phones that revoked consent (WhatsApp Business Messaging Policy). A row
+	// here means "send this phone nothing, spend nothing on it": the inbound
+	// pipeline drops its messages before budget, routing, or model work, and the
+	// outbound path refuses to address it. Keyed by the CANONICAL phone and
+	// deliberately NOT restaurant-scoped — the diner is opting out of the
+	// number, and the number is one identity however many restaurants they
+	// talked to (ADR 012). The row is deleted on opt-in (START/ALTA); both
+	// transitions leave `allEvents` rows keyed to this row's id.
+	//
+	// Opt-out does NOT delete conversation history: the staff view and the
+	// retention sweep own that lifecycle.
+	[TABLE.WHATSAPP_OPT_OUTS]: defineTable({
+		/** Canonical E.164, via `toCanonicalE164` — one human, one row. */
+		phone: v.string(),
+		optedOutAt: v.number(),
+		createdAt: v.number(),
 	}).index("by_phone", ["phone"]),
 
 	// ============================================================================

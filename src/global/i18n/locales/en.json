@@ -1950,7 +1950,8 @@
 			"actionFailed": "That didn't work. Please try again.",
 			"enable": "Enable",
 			"pause": "Pause",
-			"publicCta": "Ask on WhatsApp"
+			"publicCta": "Ask on WhatsApp",
+			"consentNote": "By messaging us you agree to receive replies on WhatsApp. Send STOP to opt out at any time."
 		},
 		"page": {
 			"setupRestaurantFirst": "Please set up your restaurant first."

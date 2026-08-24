@@ -8,15 +8,19 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import {
+	AUDIT_ACTOR,
+	AUDIT_EVENT,
 	TABLE,
 	WHATSAPP_COLD_START_SCAN_LIMIT,
 	WHATSAPP_CONVERSATION_STATUS,
 	WHATSAPP_MESSAGE_DIRECTION,
 	WHATSAPP_MESSAGE_SENDER,
+	WHATSAPP_OPT_IN_SOURCE,
 	WHATSAPP_PENDING_CODE_SCAN_LIMIT,
 	WHATSAPP_UNROUTED_CLAIM_TTL_MS,
 	WHATSAPP_UNROUTED_PURGE_BATCH,
 } from "../constants";
+import { appendAuditEvent } from "../_util/audit";
 import type { Id } from "../_generated/dataModel";
 import { isMenuLinkEnabled } from "../featureFlags";
 import { redactConfirmationCodes } from "./format";
@@ -31,6 +35,90 @@ export const getMessageBySid = internalQuery({
 			.query(TABLE.WHATSAPP_MESSAGES)
 			.withIndex("by_message_sid", (q) => q.eq("messageSid", args.messageSid))
 			.first();
+	},
+});
+
+/**
+ * Has this canonical phone revoked consent? (WhatsApp Business Messaging
+ * Policy.) Checked at the top of the inbound pipeline — an opted-out phone
+ * must cost nothing and receive nothing — and again inside `sendAndRecord`,
+ * so no future outbound path can message an opted-out phone by forgetting to
+ * ask.
+ */
+export const getOptOutState = internalQuery({
+	args: { phone: v.string() },
+	handler: async (ctx, args) => {
+		const row = await ctx.db
+			.query(TABLE.WHATSAPP_OPT_OUTS)
+			.withIndex("by_phone", (q) => q.eq("phone", args.phone))
+			.first();
+		return { optedOut: row !== null };
+	},
+});
+
+/**
+ * Record an opt-out (STOP/BAJA/ALTO). Returns whether this message actually
+ * transitioned the phone: the transition is what earns the single
+ * policy-required confirmation, so a repeated STOP — or a Twilio redelivery of
+ * the same one — returns `transitioned: false` and the caller stays silent.
+ *
+ * The audit event is keyed to the row id, never the phone: `allEvents` is
+ * append-only with no purge path, and a phone there would be un-erasable PII
+ * (see `AUDIT_ACTOR`). Not restaurant-scoped — the diner is opting out of the
+ * NUMBER, across every restaurant it reaches (ADR 012).
+ */
+export const recordOptOut = internalMutation({
+	args: { phone: v.string(), messageSid: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query(TABLE.WHATSAPP_OPT_OUTS)
+			.withIndex("by_phone", (q) => q.eq("phone", args.phone))
+			.first();
+		if (existing) return { transitioned: false };
+
+		const now = Date.now();
+		const id = await ctx.db.insert(TABLE.WHATSAPP_OPT_OUTS, {
+			phone: args.phone,
+			optedOutAt: now,
+			createdAt: now,
+		});
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.WHATSAPP_OPT_OUTS,
+			aggregateId: id,
+			restaurantId: null,
+			eventType: AUDIT_EVENT.WHATSAPP_PHONE_OPTED_OUT,
+			payload: { messageSid: args.messageSid },
+			userId: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+		});
+		return { transitioned: true };
+	},
+});
+
+/**
+ * Clear an opt-out (START/ALTA). Deleting the row is the reactivation — the
+ * audit events keep the history, correlated by the row id the opt-out event
+ * also carried. `transitioned: false` means the phone was never opted out, in
+ * which case "ALTA" is just a message and the caller processes it normally.
+ */
+export const recordOptIn = internalMutation({
+	args: { phone: v.string(), messageSid: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query(TABLE.WHATSAPP_OPT_OUTS)
+			.withIndex("by_phone", (q) => q.eq("phone", args.phone))
+			.first();
+		if (!existing) return { transitioned: false };
+
+		await ctx.db.delete(existing._id);
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.WHATSAPP_OPT_OUTS,
+			aggregateId: existing._id,
+			restaurantId: null,
+			eventType: AUDIT_EVENT.WHATSAPP_PHONE_OPTED_IN,
+			payload: { messageSid: args.messageSid, optedOutAt: existing.optedOutAt },
+			userId: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+		});
+		return { transitioned: true };
 	},
 });
 
@@ -223,6 +311,16 @@ export const ingestInbound = internalMutation({
 		body: v.string(),
 		messageSid: v.string(),
 		profileName: v.optional(v.string()),
+		/**
+		 * How this phone reached this restaurant, stamped as the consent record
+		 * when the conversation is created — the diner's first inbound message IS
+		 * the opt-in (user-initiated conversation). Required, not defaulted: every
+		 * route has to say what it was, like `sentBy` on the outbound side.
+		 */
+		optInSource: v.union(
+			v.literal(WHATSAPP_OPT_IN_SOURCE.DEEP_LINK),
+			v.literal(WHATSAPP_OPT_IN_SOURCE.COLD_START)
+		),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
@@ -251,6 +349,10 @@ export const ingestInbound = internalMutation({
 				customerName: profileName,
 				lastMessageAt: now,
 				lastInboundAt: now,
+				// The first inbound message is the opt-in event — stamped on
+				// creation only, so the record keeps the ORIGINAL consent moment.
+				optedInAt: now,
+				optedInSource: args.optInSource,
 				createdAt: now,
 				updatedAt: now,
 			});
