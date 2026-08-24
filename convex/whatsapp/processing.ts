@@ -580,35 +580,49 @@ export const handleInboundMessage = internalAction({
 		// a just-deleted restaurant is the one thing still worth doing there.
 		// Metered like any reply.
 		if (!restaurant || restaurant.unavailable) {
-			await sendAndRecord(ctx, {
-				conversationId,
-				restaurantId: route.restaurantId,
-				to: replyAddress,
-				phone: customerPhone,
-				body: getBotCopy(locale).restaurantUnavailable,
-				modelBody: "",
-				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
-			});
+			// Only while the sender still has budget. Fixed copy costs no model
+			// call, but it is still a Twilio message Tavli pays for, and placed
+			// above the per-phone refusal it escaped the flood brake entirely.
+			// Same rule the unroutable guidance and the deep-link welcome follow.
+			if (budget.allowed && !budget.globalCeilingReached) {
+				await sendAndRecord(ctx, {
+					conversationId,
+					restaurantId: route.restaurantId,
+					to: replyAddress,
+					phone: customerPhone,
+					body: getBotCopy(locale).restaurantUnavailable,
+					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
+				});
+			}
 			return;
 		}
 
 		// Subscription gate: an enrolled restaurant whose platform subscription
 		// has lapsed must not keep spending Tavli's money on model turns — the
 		// billing semantics live in `getRestaurantContext` /
-		// `isBillingInGoodStanding`, not here. Fixed copy through the normal
-		// metered path (the spend budgets in `sendAndRecord` still apply): never
-		// silence, because the diner did nothing wrong, and never a model call,
-		// because the model call is the thing not being paid for.
+		// `isBillingInGoodStanding`, not here. Fixed copy, metered by the caller's
+		// inbound budget below: never a model call, because the model call is the
+		// thing not being paid for, and never an unmetered send, because
+		// `sendAndRecord`'s own cap is the 75/day outbound one — three times the
+		// per-phone inbound cap this reply should be answering to.
 		if (restaurant.subscriptionLapsed) {
-			await sendAndRecord(ctx, {
-				conversationId,
-				restaurantId: route.restaurantId,
-				to: replyAddress,
-				phone: customerPhone,
-				body: getBotCopy(locale).subscriptionLapsed,
-				modelBody: "",
-				sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
-			});
+			// Budget-gated for the same reason as above, and the reason bites
+			// hardest here: without it the restaurant that is by definition NOT
+			// PAYING raised Tavli's exposure per flooding phone from ~26 messages
+			// a day to the 75 outbound cap — the exact inverse of what this gate
+			// is for.
+			if (budget.allowed && !budget.globalCeilingReached) {
+				await sendAndRecord(ctx, {
+					conversationId,
+					restaurantId: route.restaurantId,
+					to: replyAddress,
+					phone: customerPhone,
+					body: getBotCopy(locale).subscriptionLapsed,
+					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
+				});
+			}
 			return;
 		}
 

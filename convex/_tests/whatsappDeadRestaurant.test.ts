@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import { WHATSAPP_INBOUND_DAILY_LIMIT } from "../constants";
+import { inboundBudgetKey } from "../whatsapp/spendControls";
 
 /**
  * A deleted or deactivated restaurant must stop answering (TAVLI-95).
@@ -261,5 +263,26 @@ describe("whatsapp and dead restaurants", () => {
 			return all.filter((m) => m.conversationId === deadConversation);
 		});
 		expect(messages.some((m) => m.direction === "outbound")).toBe(true);
+	});
+
+	it("stays silent once the sender has spent their daily cap", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t, { deletedAt: Date.now() });
+		// The unavailable reply is fixed copy, so it costs no model call — but it
+		// is still a Twilio message. Placed above the per-phone refusal it escaped
+		// the flood brake, so a dead restaurant became a cheaper thing to flood
+		// than a live one.
+		await t.run(async (ctx) => {
+			await ctx.db.insert("rateLimits", {
+				key: inboundBudgetKey(CUSTOMER),
+				windowStart: Date.now(),
+				count: WHATSAPP_INBOUND_DAILY_LIMIT.max,
+				updatedAt: Date.now(),
+			});
+		});
+
+		await send(t, { body: "Hola · VRN-8F3" });
+
+		expect(sentBodies(fetchMock)).toHaveLength(0);
 	});
 });

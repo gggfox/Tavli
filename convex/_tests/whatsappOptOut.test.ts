@@ -162,6 +162,30 @@ describe("opt-out keyword matching", () => {
 		expect(matchOptKeyword("Alta.")).toBe(OPT_KEYWORD.OPT_IN);
 	});
 
+	it("recognises Spanish inverted punctuation around the keyword", () => {
+		// iOS Spanish autocorrect inserts the opening mark automatically, so
+		// "¡ALTO!" is what a Mexican diner actually sends. A missed opt-out is a
+		// policy violation; a false positive only silences someone whose entire
+		// message was "¡alto!", which is them saying stop anyway.
+		expect(matchOptKeyword("¡ALTO!")).toBe(OPT_KEYWORD.OPT_OUT);
+		expect(matchOptKeyword("¡Alto!")).toBe(OPT_KEYWORD.OPT_OUT);
+		expect(matchOptKeyword("¡BAJA!")).toBe(OPT_KEYWORD.OPT_OUT);
+		expect(matchOptKeyword("¿ALTA?")).toBe(OPT_KEYWORD.OPT_IN);
+	});
+
+	it("recognises a keyword the diner quoted", () => {
+		expect(matchOptKeyword('"STOP"')).toBe(OPT_KEYWORD.OPT_OUT);
+		expect(matchOptKeyword("«STOP»")).toBe(OPT_KEYWORD.OPT_OUT);
+		expect(matchOptKeyword("'alta'")).toBe(OPT_KEYWORD.OPT_IN);
+	});
+
+	it("still refuses a keyword with a leading WORD, not just leading punctuation", () => {
+		// Stripping leading punctuation must not become stripping leading words —
+		// "por favor alto" is prose asking politely, not a consent keyword.
+		expect(matchOptKeyword("por favor alto")).toBeNull();
+		expect(matchOptKeyword("¡por favor alto!")).toBeNull();
+	});
+
 	it("never treats a keyword buried in prose as an opt-out", () => {
 		// "alto" is an everyday Spanish word; prose is conversation, not consent.
 		expect(matchOptKeyword("el volumen está muy alto")).toBeNull();

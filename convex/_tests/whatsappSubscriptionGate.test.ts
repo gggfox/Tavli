@@ -2,7 +2,8 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { BILLING_STATUS } from "../constants";
+import { BILLING_STATUS, WHATSAPP_INBOUND_DAILY_LIMIT } from "../constants";
+import { inboundBudgetKey } from "../whatsapp/spendControls";
 
 /**
  * Subscription gating for the WhatsApp assistant (TAVLI-95).
@@ -201,5 +202,31 @@ describe("whatsapp subscription gating", () => {
 		await send(t, { body: "Hola · VRN-8F3" });
 
 		expect(mockGenerateText).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not answer a phone that has already spent its daily cap", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t, {
+			platformSubscriptionEnabled: true,
+			billingStatus: BILLING_STATUS.CANCELED,
+		});
+		// The lapsed reply is fixed copy, so it costs no model call — but it is
+		// still a Twilio message Tavli pays for. Placed above the per-phone
+		// refusal it escaped the flood brake entirely, which made a NON-PAYING
+		// restaurant cost ~3x more per flooding phone than a paying one. That
+		// inverts the gate's whole purpose.
+		await t.run(async (ctx) => {
+			await ctx.db.insert("rateLimits", {
+				key: inboundBudgetKey(CUSTOMER),
+				windowStart: Date.now(),
+				count: WHATSAPP_INBOUND_DAILY_LIMIT.max,
+				updatedAt: Date.now(),
+			});
+		});
+
+		await send(t, { body: "Hola · VRN-8F3" });
+
+		expect(mockGenerateText).not.toHaveBeenCalled();
+		expect(sentBodies(fetchMock)).toHaveLength(0);
 	});
 });

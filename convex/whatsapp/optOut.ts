@@ -24,20 +24,33 @@ export const OPT_KEYWORD = {
 export type OptKeyword = (typeof OPT_KEYWORD)[keyof typeof OPT_KEYWORD];
 
 /**
- * Case-fold, strip accents, and drop trailing punctuation — leading words are
- * deliberately NOT dropped, so "por favor alto" stays prose while "ALTO!!" is
- * still the keyword.
+ * Punctuation that may wrap a keyword without changing what the diner meant.
+ *
+ * Stripped from BOTH ends. `¡` and `¿` are Spanish *opening* marks, so a
+ * trailing-only strip never sees them — and "¡ALTO!" is exactly what a Mexican
+ * diner sends, because iOS Spanish autocorrect inserts the opening mark for
+ * them. Quotes are here for the same reason: someone echoing the word we told
+ * them to send often quotes it.
+ */
+const EDGE_PUNCTUATION = /^[\s.,;:!?¡¿·…\-–—"'«»“”‘’]+|[\s.,;:!?¡¿·…\-–—"'«»“”‘’]+$/gu;
+
+/**
+ * Case-fold, strip accents, and drop punctuation at either end.
+ *
+ * Leading *words* are deliberately still NOT dropped — "por favor alto" stays
+ * prose while "¡ALTO!" is the keyword. That distinction is the whole point:
+ * only a message that IS the keyword opts someone out, and the asymmetry is
+ * chosen on purpose. A missed opt-out is a WhatsApp policy violation; a false
+ * positive only silences someone whose entire message was "¡alto!", which is
+ * them saying stop anyway.
  */
 function normalizeCandidate(body: string): string {
-	return (
-		body
-			.trim()
-			// Trailing punctuation/whitespace only: "Alta." is a keyword, "alto ahí" is not.
-			.replace(/[\s.,;:!?¡¿·…\-–—]+$/u, "")
-			.normalize("NFD")
-			.replace(/\p{M}/gu, "")
-			.toUpperCase()
-	);
+	return body
+		.trim()
+		.replace(EDGE_PUNCTUATION, "")
+		.normalize("NFD")
+		.replace(/\p{M}/gu, "")
+		.toUpperCase();
 }
 
 /** Which consent transition, if any, this whole message is. */
