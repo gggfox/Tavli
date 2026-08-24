@@ -1,5 +1,4 @@
-import type { OrderDashboardStatusFilterValue } from "@/features";
-import { getStatusToneStyle, StatusBadge, Surface } from "@/global/components";
+import { getStatusToneStyle, Surface } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
 import { getRelativeTime } from "@/global/utils/relativeTime";
@@ -23,6 +22,7 @@ import {
 	formatOrderTime,
 	MAX_VISIBLE_ITEMS,
 	nextActionFor,
+	orderPaymentBadge,
 	STATUS_CONFIG,
 	URGENCY_TEXT_CLASS,
 	type DashboardOrder,
@@ -83,7 +83,6 @@ export function OrderCard({
 	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
 	const { t, i18n } = useTranslation();
-	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilterValue];
 	// The money UI on an awaiting-payment card — amount due, mark-paid confirm
 	// panel, mark-paid button — takes that status's own tone, so recoloring the
 	// status never leaves the card mixing two palettes.
@@ -119,6 +118,10 @@ export function OrderCard({
 	// is undefined for every tab-paid order, which is all of them in practice.
 	// `paymentState` is the field that actually tracks the money.
 	const isPaid = order.paymentState === "paid";
+	// Whether the money badge has anything to say — it renders next to the
+	// station chips, so the chip row has to exist for it even when the order
+	// has no station chips of its own.
+	const paymentBadge = orderPaymentBadge(order);
 	const moreItemsLabel =
 		hiddenCount > 0
 			? `${t(OrdersKeys.CARD_MORE_ITEMS, { count: hiddenCount })} · ${t(OrdersKeys.ACTION_VIEW_FULL_ORDER)}`
@@ -153,28 +156,15 @@ export function OrderCard({
 		<Surface tone="secondary" rounded="xl" className="overflow-hidden flex flex-col">
 			<div className="px-4 py-3 shrink-0 border-b border-border">
 				<div className="flex items-center justify-between gap-2">
-					<div className="flex items-center gap-2 min-w-0">
-						{/* Table first and loudest: a server reads the destination before
-						    anything else on the card (TAVLI-80). */}
-						<TableBadge
-							tableNumber={order.tableNumber}
-							className="shrink-0 text-xl font-bold leading-tight text-foreground"
-						/>
-						<StatusBadge
-							bgColor={getStatusToneStyle(config.tone).solidBg}
-							textColor={getStatusToneStyle(config.tone).solidFg}
-							label={t(config.labelKey)}
-						/>
-						{order.dailyOrderNumber != null && (
-							<span
-								className="text-sm font-bold tabular-nums shrink-0 text-foreground"
-								title={order._id}
-							>
-								{t(OrdersKeys.CARD_DAY_NUMBER, { n: order.dailyOrderNumber })}
-							</span>
-						)}
-						<PaymentStateBadge order={order} />
-					</div>
+					{/* Table first and loudest: a server reads the destination before
+					    anything else on the card (TAVLI-80). The status pill is gone —
+					    the dashboard's status segmented control already says which
+					    bucket every visible card is in, and the day number lives once,
+					    on the identity line at the foot of this header. */}
+					<TableBadge
+						tableNumber={order.tableNumber}
+						className="min-w-0 truncate text-xl font-bold leading-tight text-foreground"
+					/>
 					<span className="text-sm font-semibold shrink-0 text-foreground">
 						${formatCents(order.totalAmount)}
 					</span>
@@ -212,35 +202,39 @@ export function OrderCard({
 					</div>
 				)}
 
-				{orderStations.length > 0 && (
-					<div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-						{orderStations.map((station) => {
-							const stationConfig = STATION_CONFIG[station];
-							const isReady = stationStamps[station] !== undefined;
-							const Icon = stationConfig.icon;
-							const chipStyle: CSSProperties = isReady
-								? {
-										backgroundColor: stationConfig.visual.solidBg,
-										color: stationConfig.visual.solidFg,
-									}
-								: {
-										backgroundColor: stationConfig.visual.tintedBg,
-										color: stationConfig.visual.fg,
-									};
-							const labelKey = isReady
-								? OrdersKeys.STATION_READY_BADGE
-								: OrdersKeys.STATION_PENDING_BADGE;
-							return (
-								<span
-									key={station}
-									className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-									style={chipStyle}
-								>
-									<Icon size={10} />
-									{t(labelKey, { station: t(stationConfig.labelKey) })}
-								</span>
-							);
-						})}
+				{(orderStations.length > 0 || paymentBadge) && (
+					<div className="flex items-start justify-between gap-2 mt-1.5">
+						<div className="flex items-center gap-1.5 flex-wrap min-w-0">
+							{orderStations.map((station) => {
+								const stationConfig = STATION_CONFIG[station];
+								const isReady = stationStamps[station] !== undefined;
+								const Icon = stationConfig.icon;
+								const chipStyle: CSSProperties = isReady
+									? {
+											backgroundColor: stationConfig.visual.solidBg,
+											color: stationConfig.visual.solidFg,
+										}
+									: {
+											backgroundColor: stationConfig.visual.tintedBg,
+											color: stationConfig.visual.fg,
+										};
+								const labelKey = isReady
+									? OrdersKeys.STATION_READY_BADGE
+									: OrdersKeys.STATION_PENDING_BADGE;
+								return (
+									<span
+										key={station}
+										className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+										style={chipStyle}
+									>
+										<Icon size={10} />
+										{t(labelKey, { station: t(stationConfig.labelKey) })}
+									</span>
+								);
+							})}
+						</div>
+						{/* Money state sits under the total it describes, on the chip row. */}
+						<PaymentStateBadge order={order} />
 					</div>
 				)}
 

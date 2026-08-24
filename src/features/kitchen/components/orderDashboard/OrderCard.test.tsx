@@ -156,7 +156,17 @@ describe("OrderCard table prominence (TAVLI-80)", () => {
 		const table = screen.getByText("orders.card.table");
 		expect(table.className).toContain("text-xl");
 		expect(table.className).toContain("font-bold");
-		expect(screen.getByText("orders.card.dayNumber").className).toContain("text-sm");
+		// The day number now lives only on the identity line under the header,
+		// at the smallest scale on the card.
+		const identity = screen.getByText(/orders\.card\.dayNumber/);
+		expect(identity.className).toContain("text-[11px]");
+	});
+
+	it("names the day number once — the header pill that duplicated it is gone", () => {
+		renderCard(makeOrder({ status: "served", awaitingPaymentAt: undefined }));
+
+		expect(screen.queryByText("orders.card.dayNumber")).not.toBeInTheDocument();
+		expect(screen.getAllByText(/orders\.card\.dayNumber/)).toHaveLength(1);
 	});
 
 	it("keeps the table the loudest line on a ready card", () => {
@@ -174,7 +184,7 @@ describe("OrderCard table prominence (TAVLI-80)", () => {
 		for (const node of tables) expect(node.className).toContain("text-xl");
 		// The order number is now the secondary line inside the panel — nothing
 		// on the card shouts it louder than the table.
-		const dayNumbers = screen.getAllByText("orders.card.dayNumber");
+		const dayNumbers = screen.getAllByText(/orders\.card\.dayNumber/);
 		expect(dayNumbers.some((node) => node.className.includes("text-xs"))).toBe(true);
 		expect(dayNumbers.every((node) => !node.className.includes("text-xl"))).toBe(true);
 	});
