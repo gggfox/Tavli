@@ -195,11 +195,26 @@ async function sendAndRecord(
  * has proved nothing beyond a valid Twilio signature — which "proves nothing
  * about whether a real customer sent it" (`spendControls.ts`) — on one shared
  * number anyone in the world can write to (ADR 012). Unmetered, alternating
- * STOP and START is one free send per inbound message, forever, from any phone:
- * the same open relay `getUnroutableGuidance` is metered to prevent, and it
- * would keep flowing during a platform-wide spend emergency that had already
- * shut off every model turn and every reply. So the gate is exactly that one:
- * the phone's inbound cap, the platform ceiling, and the phone's outbound cap.
+ * STOP and START would be one free send per inbound message, forever, from any
+ * phone: the same open relay `getUnroutableGuidance` is metered to prevent.
+ *
+ * Two gates, and deliberately not a third:
+ *
+ * - **The platform ceiling.** During a spend emergency that has already shut off
+ *   every model turn and every reply platform-wide, a fixed confirmation to a
+ *   stranger is not the exception.
+ * - **The phone's outbound cap.** 75 sends a day is an absolute brake on what
+ *   one number can cost, whatever it says.
+ * - **NOT the phone's inbound cap.** That one reads like a third brake and is
+ *   not one, because the alternation it looks like it bounds is already bounded
+ *   above it: an opt-out confirmation is only ever earned by a transition
+ *   (`recordOptOut` returns `transitioned: false` when the row exists), so a
+ *   second one requires an opt-in first — and the opt-in branch refuses outright
+ *   once the inbound cap is spent. Past the cap a phone can therefore buy at
+ *   most ONE more confirmation and then stays opted out. Adding the condition
+ *   here bounds nothing further; it only silences the STOP of the person 25
+ *   messages deep — precisely the one most likely to send it, and the one the
+ *   policy most needs to reach with how to come back.
  *
  * Deliberately NOT routed through `sendAndRecord`: there is no conversation and
  * no restaurant to record a consent message against — opting out is opting out
@@ -212,12 +227,16 @@ async function confirmConsentTransition(
 		phone: string;
 		to: string;
 		body: string;
-		/** The inbound verdict for the message that caused this transition. */
-		inbound: { allowed: boolean; globalCeilingReached: boolean };
+		/**
+		 * Whether the message that caused this transition found the platform past
+		 * its daily ceiling. Only that half of the inbound verdict: see above for
+		 * why `allowed` is deliberately not consulted.
+		 */
+		globalCeilingReached: boolean;
 	}
 ): Promise<void> {
-	if (!args.inbound.allowed || args.inbound.globalCeilingReached) {
-		console.warn("[whatsapp.processing] over budget or past the ceiling; consent reply dropped.");
+	if (args.globalCeilingReached) {
+		console.warn("[whatsapp.processing] past the platform ceiling; consent reply dropped.");
 		return;
 	}
 	const budget = await ctx.runMutation(internal.whatsapp.spendControls.internalConsumeOutbound, {
@@ -353,13 +372,15 @@ export const handleInboundMessage = internalAction({
 				phone: customerPhone,
 			});
 			// The transition earns the ONE confirmation the policy expects — it must
-			// say how to come back. Unrecorded, like the unroutable guidance: this
-			// send belongs to no restaurant.
+			// say how to come back, and it is owed even to a phone that has spent
+			// its inbound cap, which is the phone most likely to be sending STOP.
+			// Unrecorded, like the unroutable guidance: this send belongs to no
+			// restaurant.
 			await confirmConsentTransition(ctx, {
 				phone: customerPhone,
 				to: replyAddress,
 				body: getOptOutConfirmation(),
-				inbound,
+				globalCeilingReached: inbound.globalCeilingReached,
 			});
 			return;
 		}
@@ -407,7 +428,7 @@ export const handleInboundMessage = internalAction({
 						phone: customerPhone,
 						to: replyAddress,
 						body: getOptInConfirmation(),
-						inbound,
+						globalCeilingReached: inbound.globalCeilingReached,
 					});
 				}
 				return;

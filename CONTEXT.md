@@ -427,13 +427,17 @@ which is why the check sits above every budget. Keyed to the canonical phone,
 never per **Restaurant** — the diner opts out of the number (ADR 012). START
 or ALTA reverses it. History is kept; only sending stops.
 
-The revocation is recorded unconditionally — that is the policy duty — but the
-confirmation _reply_ is a billed message and is metered like any other, against
-the **Daily message cap** and the **Platform ceiling**; a transition also spends
-one inbound message. So a phone deep into its cap is opted out in silence, and
-alternating STOP and START cannot become an unbounded stream of free replies and
-permanent audit rows. Re-opting in is the one consent step a budget may refuse,
-because leaving the phone opted out is the silent direction.
+The revocation is recorded unconditionally — that is the policy duty — and so
+is the confirmation that says how to return, because the phone most likely to
+send STOP is the one already deep into its **Daily message cap**. That reply is
+still a billed message: it stops at the **Platform ceiling** and at the phone's
+outbound cap, and a transition still spends one inbound message. What it does
+not do is wait for inbound headroom. Alternating STOP and START stays bounded
+one step higher instead: a second opt-out confirmation needs an opt-in first,
+and re-opting in is refused once the phone's inbound cap is spent — the one
+consent step a budget may refuse, because leaving the phone opted out is the
+silent direction. Past the cap a phone therefore buys at most one more
+confirmation, not an unbounded stream of free replies and permanent audit rows.
 
 The converse record, the **opt-in**, is the diner's own first message: each
 **Conversation** stamps when it happened and whether a deep link or a **Cold

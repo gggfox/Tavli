@@ -11,7 +11,7 @@ import {
 	WHATSAPP_OUTBOUND_DAILY_LIMIT,
 } from "../constants";
 import { OPT_KEYWORD, matchOptKeyword } from "../whatsapp/optOut";
-import { GLOBAL_BUDGET_KEY, outboundBudgetKey } from "../whatsapp/spendControls";
+import { GLOBAL_BUDGET_KEY, inboundBudgetKey, outboundBudgetKey } from "../whatsapp/spendControls";
 
 /**
  * Consent and opt-out for the WhatsApp assistant (WhatsApp Business Messaging
@@ -405,6 +405,39 @@ describe("consent transitions are metered", () => {
 		// The policy duty is honored; only the courtesy confirmation is dropped.
 		expect(await optOutRows(t)).toHaveLength(1);
 		expect(sentBodies(fetchMock)).toHaveLength(0);
+	});
+
+	it("confirms the opt-out even when the phone has spent its inbound cap", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t);
+		// The exact phone most likely to send STOP: one already drowning in
+		// messages. Refusing it the confirmation drops the one line the policy
+		// requires — how to come back — from the person who needs it most.
+		await seedCounter(t, inboundBudgetKey(CUSTOMER), WHATSAPP_INBOUND_DAILY_LIMIT.max);
+
+		await send(t, { body: "STOP" });
+
+		expect(await optOutRows(t)).toHaveLength(1);
+		const sent = sentBodies(fetchMock);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toContain("ALTA");
+		expect(sent[0]).toContain("START");
+	});
+
+	it("lets a spent inbound cap buy exactly one more confirmation, not a stream", async () => {
+		const t = convexTest(schema, modules);
+		await seedRestaurant(t);
+		await seedCounter(t, inboundBudgetKey(CUSTOMER), WHATSAPP_INBOUND_DAILY_LIMIT.max);
+
+		// The alternation that would be unbounded if BOTH confirmations were
+		// free. Only the opt-out one is: the opt-in refusal above leaves the
+		// phone opted out, and a repeated STOP transitions nothing.
+		for (let i = 0; i < WHATSAPP_INBOUND_DAILY_LIMIT.max * 4; i++) {
+			await send(t, { body: i % 2 === 0 ? "STOP" : "ALTA", messageSid: `SM-flip-${i}` });
+		}
+
+		expect(sentBodies(fetchMock)).toHaveLength(1);
+		expect(await optOutRows(t)).toHaveLength(1);
 	});
 
 	it("still records the opt-out during a platform ceiling emergency", async () => {
