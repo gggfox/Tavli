@@ -335,9 +335,12 @@ receives a reservation id, and a booking is always resolved server-side from
 The LLM first responder on **Tavli's** WhatsApp number. Answers menu questions,
 checks availability, and requests or cancels bookings on behalf of the customer
 messaging it. Tavli is the sender for every restaurant (ADR 012), so the diner
-sees one contact — "Tavli" — however many restaurants they talk to. _Avoid_:
-chatbot, agent. ("bot" survives as a code-internal synonym — `runBotTurn`,
-`RESERVATIONS_BOT_TOKEN`.)
+sees one contact — "Tavli" — however many restaurants they talk to. An inbound
+message passes a fixed **gate order** before the model is ever called: Twilio
+signature → **Opt-out** state and keywords → **Confirmation code** → routing →
+restaurant status (deleted/inactive) → subscription standing → **Daily message
+cap** / **Platform ceiling** → the model. _Avoid_: chatbot, agent. ("bot"
+survives as a code-internal synonym — `runBotTurn`, `RESERVATIONS_BOT_TOKEN`.)
 
 **Channel**:
 The record that a `Restaurant` is **enabled** for the **WhatsApp assistant**,
@@ -414,6 +417,26 @@ until staff **confirm** it and assign tables. The assistant must never tell a
 customer a table is held. Note the guest name on such a booking is
 best-effort — the name the customer stated, else their WhatsApp profile name,
 else fixed copy — so staff should not treat it as verified.
+
+**Opt-out**:
+A phone's standing revocation of consent (WhatsApp Business Messaging Policy).
+Sending STOP, BAJA, or ALTO as the whole message — a keyword buried in prose
+is conversation, not consent — earns one confirmation saying how to return,
+then permanent silence: an opted-out phone costs nothing and receives nothing,
+which is why the check sits above every budget. Keyed to the canonical phone,
+never per **Restaurant** — the diner opts out of the number (ADR 012). START
+or ALTA reverses it. History is kept; only sending stops. The converse record,
+the **opt-in**, is the diner's own first message: each **Conversation** stamps
+when it happened and whether a deep link or a **Cold start** brought them.
+_Avoid_: unsubscribe, blacklist, block.
+
+**Retention**:
+WhatsApp message bodies live 90 days (`WHATSAPP_MESSAGE_RETENTION_MS`), then
+an hourly batched sweep deletes them — LFPDPPP data minimization; the number
+is a product/legal decision held in one place. Messages only: the
+**Conversation** outlives its messages because it carries the opt-in consent
+record and is the spine of the staff view. _Avoid_: archive, cleanup (this is
+a legal lifetime, not tidying).
 
 ## Relationships
 
