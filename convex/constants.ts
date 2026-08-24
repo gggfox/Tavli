@@ -1195,6 +1195,24 @@ export const WHATSAPP_UNROUTED_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Unrouted claims reclaimed per purge run. Bounds one mutation's write set. */
 export const WHATSAPP_UNROUTED_PURGE_BATCH = 200;
+
+/**
+ * How long WhatsApp MESSAGE bodies are kept before the hourly retention sweep
+ * deletes them: 90 days.
+ *
+ * This exists for data minimization under Mexico's LFPDPPP — chat transcripts
+ * are personal data with no business purpose past the dispute window, so they
+ * age out. Messages only: the `Conversation` stays, because it carries the
+ * opt-in consent record (which must OUTLIVE the chat it came from) and is the
+ * spine of the staff view.
+ *
+ * The number itself is a product/legal decision, not an engineering one —
+ * change it here and nowhere else.
+ */
+export const WHATSAPP_MESSAGE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Messages the retention sweep deletes per run. Bounds one mutation's write set. */
+export const WHATSAPP_MESSAGE_RETENTION_PURGE_BATCH = 200;
 /**
  * Longest public restaurant slug we will store. The slug is derived from the
  * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily

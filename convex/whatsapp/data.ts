@@ -15,6 +15,8 @@ import {
 	WHATSAPP_COLD_START_SCAN_LIMIT,
 	WHATSAPP_CONVERSATION_STATUS,
 	WHATSAPP_MESSAGE_DIRECTION,
+	WHATSAPP_MESSAGE_RETENTION_MS,
+	WHATSAPP_MESSAGE_RETENTION_PURGE_BATCH,
 	WHATSAPP_MESSAGE_SENDER,
 	WHATSAPP_OPT_IN_SOURCE,
 	WHATSAPP_PENDING_CODE_SCAN_LIMIT,
@@ -313,6 +315,29 @@ export const purgeExpiredUnroutedClaims = internalMutation({
 			.take(WHATSAPP_UNROUTED_PURGE_BATCH);
 		for (const row of stale) await ctx.db.delete(row._id);
 		return { deleted: stale.length };
+	},
+});
+
+/**
+ * Retention sweep: delete `whatsappMessages` older than
+ * `WHATSAPP_MESSAGE_RETENTION_MS` (LFPDPPP data minimization, TAVLI-95).
+ *
+ * Messages ONLY. The `Conversation` deliberately survives its messages: it
+ * carries the opt-in consent record — which must outlive the chat it came
+ * from — and it is the spine of the staff conversation view. Batched off the
+ * `by_created` index exactly like `purgeExpiredUnroutedClaims` above: take a
+ * bounded bite, delete, and let the next hourly run continue, so a backlog
+ * can never balloon one mutation past its limits.
+ */
+export const purgeExpiredMessages = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const expired = await ctx.db
+			.query(TABLE.WHATSAPP_MESSAGES)
+			.withIndex("by_created", (q) => q.lt("createdAt", Date.now() - WHATSAPP_MESSAGE_RETENTION_MS))
+			.take(WHATSAPP_MESSAGE_RETENTION_PURGE_BATCH);
+		for (const row of expired) await ctx.db.delete(row._id);
+		return { deleted: expired.length };
 	},
 });
 
