@@ -7,10 +7,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCart } from "../hooks/useCart";
 import { useGeofence } from "../hooks/useGeofence";
+import { useBranding } from "../hooks/useBranding";
 import { useSessionStore } from "../hooks/useSession";
 import type { SelectedOption } from "../types";
 import { GeofenceNotice } from "./GeofenceNotice";
 import { MenuBrowser } from "./MenuBrowser";
+import { MenuHero } from "./MenuHero";
 import { MenuBrowserSkeleton } from "./MenuBrowserSkeleton";
 import { WhatsappAssistantLink } from "@/features/whatsapp";
 import { RestaurantContactBar } from "./RestaurantContactBar";
@@ -36,6 +38,9 @@ export function CustomerMenuPage({
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
+	// From the route loader, so the hero's dimensions are known before the
+	// first paint rather than after the query settles.
+	const branding = useBranding();
 	// undefined = still loading (keeps status "checking"); a missing restaurant
 	// behaves as unconfigured — the session layer already handles that error.
 	const geofence = useGeofence(slug, restaurant === null ? {} : restaurant);
@@ -103,6 +108,7 @@ export function CustomerMenuPage({
 			// public profile rides along on the same query. The assistant line sits
 			// above it and renders nothing at all when the restaurant is not enabled,
 			// so the two are independent of each other.
+			hero={<MenuHero branding={branding} restaurantName={restaurant?.name ?? ""} />}
 			contactBar={
 				restaurant ? (
 					<>

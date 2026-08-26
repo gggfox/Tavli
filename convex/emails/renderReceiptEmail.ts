@@ -1,5 +1,6 @@
 import { render } from "@react-email/render";
 import { createElement } from "react";
+import { deriveBrandTokens } from "../_shared/brandColor";
 import { PLATFORM_APPLICATION_FEE_RATE } from "../constants";
 import { interpolate } from "./copy";
 import type { InviteEmailLocale } from "./locale";
@@ -34,6 +35,13 @@ const PLAIN_TEXT_OPTIONS = {
 export type ReceiptEmailContext = {
 	locale: InviteEmailLocale;
 	restaurantName: string;
+	/**
+	 * Raw stored brand colour, or undefined. Adjusted for a light surface here
+	 * rather than by the caller, so every receipt is derived the same way — an
+	 * email has no dark-mode variant to pick between, and the card the band
+	 * sits on is always light.
+	 */
+	brandColor?: string;
 	/** Informational tax block (NOT a CFDI). Omitted entirely when every field is unset. */
 	taxInfo: { rfc?: string; razonSocial?: string; fiscalAddress?: string };
 	/** Daily order number, when the order has one. */
@@ -107,6 +115,12 @@ export async function renderReceiptEmail(context: ReceiptEmailContext): Promise<
 	const copy = getReceiptCopy(context.locale);
 	const dateFormatted = formatReceiptDate(context.orderDateMs, context.locale, context.timezone);
 
+	// Derived, not the raw hex: a near-black navy would vanish against the
+	// receipt card exactly as it vanishes against the dark menu, and email has
+	// no second mode to catch it in.
+	const brandTokens = context.brandColor ? deriveBrandTokens(context.brandColor, "light") : null;
+	const brandColor = brandTokens?.bg ?? null;
+
 	const vars = {
 		restaurantName: context.restaurantName,
 		n: context.orderNumber !== null ? String(context.orderNumber) : "",
@@ -157,6 +171,7 @@ export async function renderReceiptEmail(context: ReceiptEmailContext): Promise<
 		locale: context.locale,
 		previewText: interpolate(copy.preview, vars),
 		restaurantName: context.restaurantName,
+		brandColor,
 		title: copy.title,
 		orderLine:
 			context.orderNumber !== null

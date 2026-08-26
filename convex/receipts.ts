@@ -44,6 +44,11 @@ export type ReceiptEmailOrderContext = {
 	restaurantId: Id<"restaurants">;
 	sessionId: Id<"sessions">;
 	restaurantName: string;
+	/**
+	 * Raw stored brand colour. The renderer adjusts it for the light receipt
+	 * card; a receipt has no dark variant to choose between.
+	 */
+	brandColor: string | null;
 	/** Doubles as the receipt's `reply_to` and, when reviewed, the printed contact. */
 	supportEmail: string | null;
 	/** Public profile, for the contact block under the not-a-CFDI footer. */
@@ -149,6 +154,7 @@ export const getReceiptEmailContextInternal = internalQuery({
 			restaurantId: order.restaurantId,
 			sessionId: order.sessionId,
 			restaurantName: restaurant.name,
+			brandColor: restaurant.brandingColor ?? null,
 			supportEmail: restaurant.supportEmail ?? null,
 			contactPhone: restaurant.phone ?? null,
 			contactWhatsAppUrl:
