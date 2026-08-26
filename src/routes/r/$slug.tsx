@@ -265,6 +265,18 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 	const params = useParams({ strict: false });
 	const lang = (params as { lang?: string }).lang;
 
+	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
+	const { data: bookable } = useQuery(
+		convexQuery(
+			api.reservations.isBookableByDiners,
+			restaurant ? { restaurantId: restaurant._id } : "skip"
+		)
+	);
+	// Hidden while the answer is still loading, not shown-then-removed: a tab
+	// that appears and vanishes invites the tap that lands on a 404. The route
+	// refuses independently, so this is presentation, never the gate.
+	const showReserve = bookable === true;
+
 	const isReserveActive = pathname.endsWith("/reserve");
 	const isMenuActive = !isReserveActive;
 
@@ -290,13 +302,15 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 					label={t(CustomerKeys.MENU)}
 				/>
 			)}
-			<TabLink
-				to="/r/$slug/reserve"
-				params={{ slug }}
-				active={isReserveActive}
-				icon={<CalendarClock size={14} />}
-				label={t(CustomerKeys.RESERVE)}
-			/>
+			{showReserve ? (
+				<TabLink
+					to="/r/$slug/reserve"
+					params={{ slug }}
+					active={isReserveActive}
+					icon={<CalendarClock size={14} />}
+					label={t(CustomerKeys.RESERVE)}
+				/>
+			) : null}
 		</nav>
 	);
 }

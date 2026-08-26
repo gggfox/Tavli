@@ -234,13 +234,21 @@ export function MenuBrowser({
 				.map((tb) => ({ ...tb, isTaken: tb.hasOpenSession && !tb.isOwnSession })),
 		[tables]
 	);
-	const someTableTaken = tableOptions.some((tb) => tb.isTaken);
-	// A table can be claimed between the diner picking it and confirming, so
-	// occupancy is re-read off the live row rather than trusted at pick time.
-	const selectedTableTaken = tableOptions.some((tb) => tb._id === selectedTableId && tb.isTaken);
+	/**
+	 * Is the chosen table already in use by someone else's visit?
+	 *
+	 * Informational as of TAVLI-100 — it no longer blocks. It used to, because
+	 * the intended path for a second diner was to join by code; with the code
+	 * gone, blocking is a dead end for the ordinary case of two parties sharing
+	 * a long table, and the staff timeline now groups by table anyway.
+	 *
+	 * Kept as a signal so the diner gets a nudge to check they picked the right
+	 * one — a mis-picked table sends food to the wrong people.
+	 */
+	const selectedTableInUse = tableOptions.some((tb) => tb._id === selectedTableId && tb.isTaken);
 
 	const handleConfirmOrder = () => {
-		if (!selectedTableId || selectedTableTaken) return;
+		if (!selectedTableId) return;
 		const items = Array.from(selections.entries()).map(([menuItemId, sel]) => ({
 			menuItemId: menuItemId as Id<"menuItems">,
 			quantity: sel.quantity,
@@ -415,11 +423,23 @@ export function MenuBrowser({
 									}}
 								>
 									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
+									{/*
+									 * Occupied tables stay selectable (TAVLI-100). The block
+									 * existed because the intended path for a second diner
+									 * was to join by code, and there is no code any more —
+									 * with it gone, a disabled option is a dead end for
+									 * someone sitting at a table that already has people at
+									 * it, which is the normal case at a shared table.
+									 *
+									 * The marker stays: it confirms to the diner that they
+									 * picked the right table, and tells staff the picker is
+									 * describing reality.
+									 */}
 									{tableOptions.map((tab) => (
-										<option key={tab._id} value={tab._id} disabled={tab.isTaken}>
+										<option key={tab._id} value={tab._id}>
 											{t(OrderingKeys.MENU_TABLE_LABEL, { number: tab.tableNumber })}
 											{tab.label ? ` – ${tab.label}` : ""}
-											{tab.isTaken ? ` ${t(OrderingKeys.MENU_TABLE_TAKEN)}` : ""}
+											{tab.isTaken ? ` ${t(OrderingKeys.MENU_TABLE_IN_USE)}` : ""}
 										</option>
 									))}
 								</select>
@@ -428,17 +448,14 @@ export function MenuBrowser({
 										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
 								)}
-								{selectedTableTaken ? (
-									<p className="text-[11px] mt-1 text-destructive">
-										{t(OrderingKeys.MENU_TABLE_TAKEN_SELECTED)}
+								{selectedTableInUse ? (
+									// Muted, not destructive: sitting at a table that already
+									// has people at it is normal, and colouring it as an
+									// error tells the diner they did something wrong.
+									<p className="text-[11px] mt-1 text-muted-foreground">
+										{t(OrderingKeys.MENU_TABLE_IN_USE_SELECTED)}
 									</p>
-								) : (
-									someTableTaken && (
-										<p className="text-[11px] mt-1 text-muted-foreground">
-											{t(OrderingKeys.MENU_TABLE_TAKEN_HINT)}
-										</p>
-									)
-								)}
+								) : null}
 							</div>
 
 							<textarea
@@ -454,12 +471,7 @@ export function MenuBrowser({
 							</div>
 							<button
 								onClick={handleConfirmOrder}
-								disabled={
-									isSubmitting ||
-									!selectedTableId ||
-									selectedTableTaken ||
-									paymentsEnabled === false
-								}
+								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
 								{isSubmitting

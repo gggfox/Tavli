@@ -35,6 +35,7 @@ import {
 	requiredCapacityCovered,
 	resolveServiceWindow,
 } from "./_util/availability";
+import { isReservationsEnabled } from "./featureFlags";
 import { normalizeContactPhone } from "./_util/phone";
 import { appendAuditEvent } from "./_util/audit";
 import { consumeRateLimit, type RateLimitConfig } from "./_util/rateLimit";
@@ -447,6 +448,18 @@ export async function createReservationCore(
 	// the idempotency short-circuit so safe retries don't burn budget.
 	const attemptLimitError = await assertReservationCreateWithinAttemptLimit(ctx, normalizedArgs);
 	if (attemptLimitError) return [null, attemptLimitError];
+
+	// The platform switch comes first, and it applies to every diner-facing
+	// source (TAVLI-100). A UI gate on an anonymous page is not a gate: the
+	// mutation name is in the client bundle, so hiding the Reserve tab stops
+	// navigation and nothing else.
+	//
+	// Staff-created bookings are deliberately exempt — see `createAsStaff`.
+	// Switching the product's reservations off must not stop a manager writing
+	// down the party standing in front of them.
+	if (args.source !== RESERVATION_SOURCE.STAFF && !(await isReservationsEnabled(ctx))) {
+		return [null, new ConflictError("ERROR_NOT_ACCEPTING_RESERVATIONS").toObject()];
+	}
 
 	const settings = await loadEffectiveSettings(ctx, args.restaurantId);
 	if (!settings.acceptingReservations) {

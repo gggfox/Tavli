@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { recordWalkInOccupancyForOrder } from "./walkInOccupancy";
 import {
 	ConflictError,
 	NotAuthenticatedErrorObject,
@@ -114,7 +115,7 @@ export const createDraft = mutation({
 		if (draft) return draft._id;
 
 		const now = Date.now();
-		return await ctx.db.insert(TABLE.ORDERS, {
+		const orderId = await ctx.db.insert(TABLE.ORDERS, {
 			sessionId: args.sessionId,
 			restaurantId: session.restaurantId,
 			tableId: args.tableId,
@@ -124,6 +125,26 @@ export const createDraft = mutation({
 			createdAt: now,
 			updatedAt: now,
 		});
+
+		// The table is occupied from the moment someone starts ordering at it, not
+		// from when they pay (TAVLI-100).
+		//
+		// Inline, in this transaction, so the order and the occupancy commit
+		// together — scheduling would let an order exist for a moment with its
+		// table unmarked, and permanently if the scheduled job then failed.
+		//
+		// Caught, because the timeline being briefly wrong is a far smaller
+		// problem than a menu that will not take an order. The occupancy write
+		// happens before any reservation is moved, so a mid-way failure leaves
+		// an unresolved collision — the exact state the timeline already shows
+		// in red — rather than anything inconsistent.
+		try {
+			await recordWalkInOccupancyForOrder(ctx, orderId);
+		} catch (error) {
+			console.error("[orders.createDraft] walk-in occupancy failed", { orderId, error });
+		}
+
+		return orderId;
 	},
 });
 

@@ -558,7 +558,8 @@
 			"tiktok": "TikTok",
 			"x": "X",
 			"youtube": "YouTube"
-		}
+		},
+		"reservationsUnavailable": "This restaurant isn't taking reservations right now."
 	},
 	"roles": {
 		"admin": "Admin",
@@ -751,7 +752,9 @@
 			"filterPlaceholder": "Search menu",
 			"filterNoMatches": "No categories or items match your search.",
 			"popularHeading": "Most popular",
-			"backToTop": "Back to top"
+			"backToTop": "Back to top",
+			"tableInUse": "· in use",
+			"tableInUseSelected": "Someone else is already ordering at this table. That's fine — just make sure it's yours."
 		},
 		"item": {
 			"required": "Required",
