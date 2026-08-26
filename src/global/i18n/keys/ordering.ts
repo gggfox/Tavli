@@ -37,6 +37,8 @@ export const OrderingKeys = {
 	CHECKOUT_TIP_LABEL: "ordering.checkout.checkoutTipLabel",
 	CHECKOUT_TIP_CHANGE: "ordering.checkout.checkoutTipChange",
 	CHECKOUT_TIP_SLIDER_ARIA: "ordering.checkout.checkoutTipSliderAria",
+	MENU_TABLE_IN_USE: "ordering.menu.tableInUse",
+	MENU_TABLE_IN_USE_SELECTED: "ordering.menu.tableInUseSelected",
 	MENU_POPULAR_HEADING: "ordering.menu.popularHeading",
 	MENU_BACK_TO_TOP: "ordering.menu.backToTop",
 	MENU_FILTER_PLACEHOLDER: "ordering.menu.filterPlaceholder",
