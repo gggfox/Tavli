@@ -54,6 +54,12 @@ interface MenuBrowserProps {
 	 * — see `RestaurantContactBar`.
 	 */
 	contactBar?: React.ReactNode;
+	/**
+	 * The restaurant's header image, rendered as the first child of the menu
+	 * scroll container. Passed in rather than resolved here so `MenuBrowser`
+	 * stays free of route/loader coupling and remains renderable in isolation.
+	 */
+	hero?: React.ReactNode;
 }
 
 export function MenuBrowser({
@@ -64,6 +70,7 @@ export function MenuBrowser({
 	orderingBlocked = false,
 	blockedNotice,
 	contactBar,
+	hero,
 }: Readonly<MenuBrowserProps>) {
 	const { t } = useTranslation();
 	const { data: paymentsEnabled } = useQuery(
@@ -228,6 +235,9 @@ export function MenuBrowser({
 			</div>
 
 			<div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-6">
+				{/* First child of the scroll container: the hero scrolls away with
+				    the menu rather than pinning to the top of the viewport. */}
+				{hero}
 				{showFilterNoMatches ? (
 					<p className="text-sm text-muted-foreground">{t(OrderingKeys.MENU_FILTER_NO_MATCHES)}</p>
 				) : null}

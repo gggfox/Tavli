@@ -10,41 +10,14 @@
  */
 import { OrderingKeys } from "@/global/i18n";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { loadStripe, type Appearance } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import { CreditCard, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	STRIPE_BORDER_RADIUS,
-	STRIPE_DARK_TOKENS,
-	STRIPE_LIGHT_TOKENS,
-	type StripeThemeTokens,
-} from "../stripeAppearanceTokens";
+import { useBrandColor } from "../hooks/useBranding";
+import { buildStripeAppearance } from "../stripeAppearanceTokens";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
-
-/**
- * Stripe Elements renders in a cross-origin iframe and therefore cannot read
- * our CSS custom properties, so this is the one surface that has to be handed
- * literal colours (see `../stripeAppearanceTokens`).
- */
-function toAppearance(theme: Appearance["theme"], tokens: StripeThemeTokens): Appearance {
-	return {
-		theme,
-		variables: {
-			colorPrimary: tokens.primary,
-			colorBackground: tokens.background,
-			colorText: tokens.text,
-			colorTextSecondary: tokens.textSecondary,
-			colorTextPlaceholder: tokens.textPlaceholder,
-			colorDanger: tokens.danger,
-			borderRadius: STRIPE_BORDER_RADIUS,
-		},
-	};
-}
-
-const LIGHT_APPEARANCE: Appearance = toAppearance("stripe", STRIPE_LIGHT_TOKENS);
-const DARK_APPEARANCE: Appearance = toAppearance("night", STRIPE_DARK_TOKENS);
 
 export function useIsDarkTheme(): boolean {
 	const [isDark, setIsDark] = useState(() => {
@@ -75,19 +48,33 @@ interface StripePaymentSectionProps {
 	readonly submitLabel?: string;
 }
 
-/** Theme-aware Elements wrapper around {@link StripePaymentForm}. */
+/** Theme- and brand-aware Elements wrapper around {@link StripePaymentForm}. */
 export function StripePaymentSection({ clientSecret, submitLabel }: StripePaymentSectionProps) {
 	const isDark = useIsDarkTheme();
+	const brandColor = useBrandColor();
+	// Was two module-level constants. It has to be a memo now because the
+	// appearance depends on the restaurant, which a module constant computed
+	// once at import time cannot know.
 	const elementsOptions = useMemo(
-		() => ({
-			clientSecret,
-			appearance: isDark ? DARK_APPEARANCE : LIGHT_APPEARANCE,
-		}),
-		[clientSecret, isDark]
+		() => ({ clientSecret, appearance: buildStripeAppearance(brandColor, isDark) }),
+		[clientSecret, isDark, brandColor]
 	);
 
 	return (
-		<Elements key={isDark ? "dark" : "light"} stripe={stripePromise} options={elementsOptions}>
+		// The key includes the brand colour because Elements reads `appearance`
+		// once at mount and ignores later changes — without it a colour change
+		// would leave a stale form on screen.
+		//
+		// Remounting Elements mid-payment would be a serious bug (it discards
+		// entered card details), and this is only safe because the brand colour
+		// comes from the route loader: it is fixed for the life of the page, so
+		// this key cannot change while a diner is typing. Do not extend it to
+		// anything that can change during a session.
+		<Elements
+			key={`${isDark ? "dark" : "light"}:${brandColor ?? "platform"}`}
+			stripe={stripePromise}
+			options={elementsOptions}
+		>
 			<StripePaymentForm submitLabel={submitLabel} />
 		</Elements>
 	);

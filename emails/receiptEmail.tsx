@@ -8,6 +8,7 @@ ReceiptEmail.PreviewProps = {
 	locale: "en",
 	previewText: "Your receipt from La Cocina de Tavli",
 	restaurantName: "La Cocina de Tavli",
+	brandColor: "#0f7b6c",
 	title: "Receipt",
 	orderLine: "Order #42 · June 6, 2026 at 3:00 PM",
 	taxBlock: {

@@ -120,6 +120,7 @@ export const sendReceiptEmail = action({
 		const { subject, html, text } = await renderReceiptEmail({
 			locale: args.locale,
 			restaurantName: context.restaurantName,
+			...(context.brandColor ? { brandColor: context.brandColor } : {}),
 			taxInfo: context.taxInfo,
 			orderNumber: context.orderNumber,
 			orderDateMs: context.orderDateMs,
