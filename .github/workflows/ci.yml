@@ -3,8 +3,19 @@ name: CI
 on:
   push:
     branches: [main]
+  # Deliberately unfiltered by base branch.
+  #
+  # `branches: [main]` here meant a PR targeting anything else never ran CI at
+  # all — and because `main` requires these six checks, "never ran" reads as
+  # "missing", not as "passing". Every PR in a stack except the bottom one was
+  # therefore blocked with nothing a reviewer could act on: no failing check to
+  # look at, just an absence.
+  #
+  # Unfiltered, each PR is verified against its own base, which is what makes a
+  # stack reviewable one link at a time. The cost is real — a stack of six is
+  # six CI runs — and it is the price of every link being independently green
+  # rather than only the last merge being tested.
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

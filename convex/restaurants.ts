@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { normalizeBrandColor } from "./_shared/brandColor";
+import { BRANDING_ERROR, resolvePublicBranding, type PublicBranding } from "./brandingHelpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery, mutation, query } from "./_generated/server";
@@ -144,6 +146,16 @@ export type PublicRestaurant = {
 	geofenceRadiusMeters?: number;
 	/** Public profile. Absent entirely when the restaurant has published nothing. */
 	contact?: PublicContact;
+	/**
+	 * Visual identity (TAVLI-88). Absent entirely when the restaurant has set
+	 * nothing, so the SSR emitter can skip its `<style>` and the header renders
+	 * the name rather than an empty logo slot.
+	 *
+	 * Only populated by the async `getBySlug` path — resolving it costs storage
+	 * URL lookups, and `toPublicRestaurant` is also called from synchronous
+	 * contexts that have no use for the images.
+	 */
+	branding?: PublicBranding;
 };
 
 /**
@@ -441,6 +453,23 @@ export const update = mutation({
 		longitude: v.optional(v.union(v.number(), v.null())),
 		geofenceRadiusMeters: v.optional(v.union(v.number(), v.null())),
 		geofenceBypassCode: v.optional(v.union(v.string(), v.null())),
+		// ── Branding (TAVLI-88). Colour and font only, and that boundary is
+		//    load-bearing: images never travel through this mutation. They go
+		//    bytes-through-`setBrandingImage`, which authorizes before it touches
+		//    the bytes and validates magic bytes server-side. Accepting an
+		//    `Id<"_storage">` here would recreate the cross-tenant blob-delete
+		//    primitive TAVLI-68 documents on `menuItems` — a caller could point a
+		//    restaurant they manage at another tenant's blob and have the replace
+		//    path delete it. `restaurants.update.test.ts` asserts this statically.
+		//
+		//    `null` clears; `undefined` leaves untouched. Unlike the public-profile
+		//    fields above, empty string is NOT the clear signal — a colour input
+		//    that is mid-edit legitimately reads "" and must not wipe the stored
+		//    brand on an autosave.
+		brandingColor: v.optional(v.union(v.string(), v.null())),
+		brandingFontId: v.optional(
+			v.union(v.literal("inter"), v.literal("fraunces"), v.literal("spaceGrotesk"), v.null())
+		),
 		organizationId: v.id(TABLE.ORGANIZATIONS),
 	},
 	handler: async function (
@@ -617,6 +646,28 @@ export const update = mutation({
 			];
 		}
 
+		// Normalize the brand colour here rather than at read time. It is
+		// interpolated into an SSR'd `<style>` on an anonymous page, so storage
+		// must be canonical — a value that reaches the emitter unvalidated is a
+		// CSS injection with a restaurant manager holding the pen.
+		let nextBrandingColor: string | null | undefined;
+		if (args.brandingColor !== undefined) {
+			if (args.brandingColor === null) {
+				nextBrandingColor = null;
+			} else {
+				const normalized = normalizeBrandColor(args.brandingColor);
+				if (normalized === null) {
+					return [
+						null,
+						new UserInputValidationError({
+							fields: [{ field: "brandingColor", message: BRANDING_ERROR.COLOR_INVALID }],
+						}).toObject(),
+					];
+				}
+				nextBrandingColor = normalized;
+			}
+		}
+
 		await ctx.db.patch(args.restaurantId, {
 			...(args.name !== undefined && { name: args.name }),
 			...(nextSlug !== undefined && { slug: nextSlug }),
@@ -677,6 +728,12 @@ export const update = mutation({
 			...(args.longitude !== undefined && { longitude: args.longitude ?? undefined }),
 			...(args.geofenceRadiusMeters !== undefined && {
 				geofenceRadiusMeters: args.geofenceRadiusMeters ?? undefined,
+			}),
+			...(nextBrandingColor !== undefined && {
+				brandingColor: nextBrandingColor ?? undefined,
+			}),
+			...(args.brandingFontId !== undefined && {
+				brandingFontId: args.brandingFontId ?? undefined,
 			}),
 			...(args.geofenceBypassCode !== undefined && {
 				geofenceBypassCode: args.geofenceBypassCode?.trim()
@@ -764,6 +821,14 @@ export const getManageableForStripe = query({
 	},
 });
 
+/**
+ * The diner-facing restaurant record, branding included.
+ *
+ * Branding is composed in here rather than exposed as its own query on
+ * purpose: the SSR loader on `/r/$slug` awaits this before first byte, and a
+ * second query would put a second Convex round-trip on the TTFB critical path
+ * of every customer page.
+ */
 export const getBySlug = query({
 	args: { slug: v.string() },
 	handler: async (ctx, args): Promise<PublicRestaurant | null> => {
@@ -772,7 +837,8 @@ export const getBySlug = query({
 			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
 			.first();
 		if (!r || r.deletedAt != null) return null;
-		return toPublicRestaurant(r);
+		const branding = await resolvePublicBranding(ctx.storage, r);
+		return { ...toPublicRestaurant(r), ...(branding !== undefined && { branding }) };
 	},
 });
 
