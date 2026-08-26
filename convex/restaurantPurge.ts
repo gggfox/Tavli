@@ -15,6 +15,7 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./_generated/server";
 import { appendAuditEvent } from "./_util/audit";
+import { BRANDING_IMAGE_SLOTS, BRANDING_SLOT_SPECS } from "./brandingImageHelpers";
 import {
 	AUDIT_SYSTEM_USER_ID,
 	INVITATION_STATUS,
@@ -94,6 +95,26 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.USER_ROLES]: 0,
 	};
 	let storageFilesDeleted = 0;
+
+	// Branding blobs live on the restaurants row itself, which the coverage
+	// guard in `restaurantPurgeCoverage.test.ts` deliberately skips — it
+	// introspects *tables* that reference restaurants, and the root table
+	// references nothing. So these files have no automatic safety net: without
+	// this loop four blobs per deleted restaurant leak forever, with a green
+	// suite. `brandingPurgeCoverage.test.ts` is the field-level guard that
+	// makes the omission fail instead.
+	const brandingRestaurant = await ctx.db.get(restaurantId);
+	if (brandingRestaurant) {
+		for (const slot of BRANDING_IMAGE_SLOTS) {
+			const storageId = brandingRestaurant[
+				BRANDING_SLOT_SPECS[slot].columns.storageId as keyof typeof brandingRestaurant
+			] as Id<"_storage"> | undefined;
+			if (storageId) {
+				await ctx.storage.delete(storageId);
+				storageFilesDeleted++;
+			}
+		}
+	}
 
 	// Invitations can span several restaurants: drop the purged id, revoke when
 	// none remain. Patched, never deleted.
