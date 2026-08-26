@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as _shared_brandColor from "../_shared/brandColor.js";
+import type * as _shared_brandFonts from "../_shared/brandFonts.js";
 import type * as _shared_errors from "../_shared/errors.js";
 import type * as _shared_integrationLogging from "../_shared/integrationLogging.js";
 import type * as _shared_types from "../_shared/types.js";
@@ -41,6 +43,9 @@ import type * as analytics_topMenuItems from "../analytics/topMenuItems.js";
 import type * as attendance from "../attendance.js";
 import type * as billing from "../billing.js";
 import type * as billingHelpers from "../billingHelpers.js";
+import type * as branding from "../branding.js";
+import type * as brandingHelpers from "../brandingHelpers.js";
+import type * as brandingImageHelpers from "../brandingImageHelpers.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
 import type * as dashboardLayouts from "../dashboardLayouts.js";
@@ -144,6 +149,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "_shared/brandColor": typeof _shared_brandColor;
+  "_shared/brandFonts": typeof _shared_brandFonts;
   "_shared/errors": typeof _shared_errors;
   "_shared/integrationLogging": typeof _shared_integrationLogging;
   "_shared/types": typeof _shared_types;
@@ -177,6 +184,9 @@ declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
   billing: typeof billing;
   billingHelpers: typeof billingHelpers;
+  branding: typeof branding;
+  brandingHelpers: typeof brandingHelpers;
+  brandingImageHelpers: typeof brandingImageHelpers;
   constants: typeof constants;
   crons: typeof crons;
   dashboardLayouts: typeof dashboardLayouts;

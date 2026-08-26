@@ -5,6 +5,7 @@ import { ManagersSection } from "@/features/restaurants/components/settings/Mana
 import { OrdersSection } from "@/features/restaurants/components/settings/OrdersSection";
 import { OrganizationSection } from "@/features/restaurants/components/settings/OrganizationSection";
 import { PaymentsSection } from "@/features/restaurants/components/settings/PaymentsSection";
+import { BrandingSection } from "@/features/restaurants/components/settings/BrandingSection";
 import { PublicProfileSection } from "@/features/restaurants/components/settings/PublicProfileSection";
 import { TaxInfoSection } from "@/features/restaurants/components/settings/TaxInfoSection";
 import { WhatsappAssistantSection } from "@/features/restaurants/components/settings/WhatsappAssistantSection";
@@ -90,7 +91,10 @@ export function RestaurantSettingsView({
 				>
 					<ChevronLeft size={16} />
 				</button>
-				<div className="flex items-center gap-3 min-w-0 flex-1">
+				<div
+					data-testid="restaurant-settings-header"
+					className="flex items-center gap-3 min-w-0 flex-1"
+				>
 					<h2 className="text-xl font-semibold text-foreground truncate">{restaurant.name}</h2>
 					<StatusBadge
 						bgColor={restaurant.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
@@ -128,6 +132,11 @@ export function RestaurantSettingsView({
 
 				{/* Manager-visible: a restaurant's own public face is theirs to edit. */}
 				<PublicProfileSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.PUBLIC_PROFILE)} />
+
+				{/* Directly below Public profile: the two halves of the same job.
+				    That one makes the restaurant reachable, this one makes its
+				    pages look like theirs. */}
+				<BrandingSection {...sectionProps(RESTAURANT_SETTINGS_SECTION.BRANDING)} />
 
 				<HoursSection
 					{...sectionProps(RESTAURANT_SETTINGS_SECTION.HOURS)}

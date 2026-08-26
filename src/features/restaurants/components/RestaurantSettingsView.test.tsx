@@ -1,5 +1,5 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => ({
@@ -580,11 +580,14 @@ describe("RestaurantSettingsView", () => {
 		setViewportMatches(true);
 		renderView();
 
-		expect(screen.getByText("La Cocina")).toBeTruthy();
+		// Scoped to the page header: the Branding preview panes also render the
+		// restaurant name (that is what they are previewing), so a bare
+		// `getByText` here matches three elements.
+		const header = screen.getByTestId("restaurant-settings-header");
+		expect(within(header).getByText("La Cocina")).toBeTruthy();
 		expect(screen.getByTestId("settings-section-general")).toBeTruthy();
 		expect(screen.getByTestId("settings-section-tax")).toBeTruthy();
 		// The header currency chip is the one thing the narrow header drops.
-		const header = screen.getByText("La Cocina").parentElement;
-		expect(header?.textContent).not.toContain("MXN");
+		expect(header.textContent).not.toContain("MXN");
 	});
 });
