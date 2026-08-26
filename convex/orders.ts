@@ -765,6 +765,15 @@ export const getOrderWithItems = query({
 	},
 });
 
+/**
+ * Every order on a session, each with its lines.
+ *
+ * The lines ride along for the hover/long-press summary card (TAVLI-99). One
+ * query per order looks like the N+1 shape TAVLI-89 is about, and it is — but
+ * bounded by *orders in one visit*, which is a handful. The alternative, a
+ * second round-trip when a diner hovers a card, would put a spinner inside a
+ * tooltip.
+ */
 export const getOrdersBySession = query({
 	args: { sessionId: v.id(TABLE.SESSIONS) },
 	handler: async (ctx, args) => {
@@ -774,10 +783,20 @@ export const getOrdersBySession = query({
 			return [];
 		}
 
-		return await ctx.db
+		const orders = await ctx.db
 			.query(TABLE.ORDERS)
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
 			.collect();
+
+		return await Promise.all(
+			orders.map(async (order) => ({
+				...order,
+				items: await ctx.db
+					.query(TABLE.ORDER_ITEMS)
+					.withIndex("by_order", (q) => q.eq("orderId", order._id))
+					.collect(),
+			}))
+		);
 	},
 });
 
