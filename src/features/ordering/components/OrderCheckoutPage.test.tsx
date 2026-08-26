@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useConvexAction } from "@convex-dev/react-query";
 import { getFunctionName } from "convex/server";
-import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
+import { DEFAULT_TIP_PERCENT, PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { OrderCheckoutPage } from "./OrderCheckoutPage";
 
@@ -107,7 +107,7 @@ describe("OrderCheckoutPage", () => {
 		callLog.length = 0;
 	});
 
-	it("itemizes the draft with the customer-borne service fee on top (10000 → 1200 → 11200)", () => {
+	it("itemizes the draft: subtotal, fee, and the pre-applied tip (10000 → 1200 → 1000 → 12200)", () => {
 		mockBackend(baseOrder({ totalAmount: 10000 }));
 
 		renderPage();
@@ -119,9 +119,58 @@ describe("OrderCheckoutPage", () => {
 			screen.getByText(`Tavli service fee (${PLATFORM_APPLICATION_FEE_RATE * 100}%)`)
 		).toBeTruthy();
 		expect(screen.getByText("$12.00")).toBeTruthy();
-		expect(screen.getByText("$112.00")).toBeTruthy();
+		// The tip is 10% of the SUBTOTAL, not of the fee-inclusive total: 10% of
+		// $112 would be $11.20, which quietly tips on Tavli's service fee.
+		expect(screen.getByText(`Tip (${DEFAULT_TIP_PERCENT}%)`)).toBeTruthy();
+		expect(screen.getByText("$10.00")).toBeTruthy();
+		expect(screen.getByText("$122.00")).toBeTruthy();
 		expect(screen.getByText("Continue to payment")).toBeTruthy();
 		expect(screen.getByText("Pay in person")).toBeTruthy();
+	});
+
+	it("lets the diner reach a zero tip, and charges what the slider says", async () => {
+		// A pre-applied tip with no visible way to remove it is the pattern that
+		// generates chargebacks from diners who did not notice.
+		mockBackend(baseOrder({ totalAmount: 10000 }));
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: /change/i }));
+		const slider = screen.getByRole("slider");
+		fireEvent.change(slider, { target: { value: "0" } });
+
+		expect(screen.getByText("$112.00")).toBeTruthy();
+
+		fireEvent.click(screen.getByText("Continue to payment"));
+		await waitFor(() =>
+			expect(createIntentMock).toHaveBeenCalledWith({
+				orderId: "orders:checkout",
+				tipPercent: 0,
+			})
+		);
+	});
+
+	it("announces the tip in words as well as emoji", async () => {
+		// A slider whose only feedback is a picture says nothing to a screen
+		// reader, or to anyone whose font stack renders the emoji as a box.
+		mockBackend(baseOrder({ totalAmount: 10000 }));
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: /change/i }));
+		expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toBe("10% — $10.00");
+	});
+
+	it("locks the tip once a payment sheet is mounted", async () => {
+		// Stripe fixes the amount when the intent is created. A tip changed
+		// after that point would be displayed but not charged — the diner told
+		// one number and billed another.
+		mockBackend(baseOrder({ totalAmount: 10000 }));
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: /change/i }));
+		fireEvent.click(screen.getByText("Continue to payment"));
+
+		await waitFor(() => expect(screen.getByTestId("payment-element")).toBeTruthy());
+		expect((screen.getByRole("slider") as HTMLInputElement).disabled).toBe(true);
 	});
 
 	it("starts the card flow via createPaymentIntent and mounts the payment element", async () => {
@@ -131,7 +180,10 @@ describe("OrderCheckoutPage", () => {
 		fireEvent.click(screen.getByText("Continue to payment"));
 
 		await waitFor(() => {
-			expect(createIntentMock).toHaveBeenCalledWith({ orderId: "orders:checkout" });
+			expect(createIntentMock).toHaveBeenCalledWith({
+				orderId: "orders:checkout",
+				tipPercent: DEFAULT_TIP_PERCENT,
+			});
 			expect(screen.getByTestId("payment-element")).toBeTruthy();
 		});
 		// The cash switch stays available while the card form is mounted.

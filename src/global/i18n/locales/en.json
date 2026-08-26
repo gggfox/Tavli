@@ -794,7 +794,10 @@
 			"paidTitle": "Payment complete!",
 			"paidDesc": "Order #{{n}} was sent to the kitchen.",
 			"paidDescNoNumber": "Your order was sent to the kitchen.",
-			"viewOrders": "View my orders"
+			"viewOrders": "View my orders",
+			"checkoutTipLabel": "Tip ({{percent}}%)",
+			"checkoutTipChange": "Change",
+			"checkoutTipSliderAria": "Tip percentage"
 		},
 		"orderStatus": {
 			"loading": "Loading order...",
@@ -838,7 +841,9 @@
 			"lifecyclePreparing": "Preparing",
 			"lifecycleReady": "Ready",
 			"lifecycleServed": "Served",
-			"lifecycleCancelled": "Cancelled"
+			"lifecycleCancelled": "Cancelled",
+			"orderSummaryAria": "Order summary",
+			"orderSummaryViewStatus": "View status"
 		},
 		"tab": {
 			"heading": "Table tab",

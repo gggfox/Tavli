@@ -794,7 +794,10 @@
 			"paidTitle": "¡Pago completado!",
 			"paidDesc": "El pedido #{{n}} se envió a la cocina.",
 			"paidDescNoNumber": "Tu pedido se envió a la cocina.",
-			"viewOrders": "Ver mis pedidos"
+			"viewOrders": "Ver mis pedidos",
+			"checkoutTipLabel": "Propina ({{percent}}%)",
+			"checkoutTipChange": "Cambiar",
+			"checkoutTipSliderAria": "Porcentaje de propina"
 		},
 		"orderStatus": {
 			"loading": "Cargando pedido...",
@@ -838,7 +841,9 @@
 			"lifecyclePreparing": "Preparando",
 			"lifecycleReady": "Listo",
 			"lifecycleServed": "Entregado",
-			"lifecycleCancelled": "Cancelado"
+			"lifecycleCancelled": "Cancelado",
+			"orderSummaryAria": "Resumen del pedido",
+			"orderSummaryViewStatus": "Ver estado"
 		},
 		"tab": {
 			"heading": "Cuenta de la mesa",
