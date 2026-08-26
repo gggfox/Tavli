@@ -32,6 +32,8 @@ export const OrderingKeys = {
 	MENU_TAP_TO_START: "ordering.menu.tapToStart",
 	MENU_NO_ONLINE_ORDERING: "ordering.menu.noOnlineOrdering",
 	MENU_ORDERING_UNAVAILABLE: "ordering.menu.orderingUnavailable",
+	MENU_POPULAR_HEADING: "ordering.menu.popularHeading",
+	MENU_BACK_TO_TOP: "ordering.menu.backToTop",
 	MENU_FILTER_PLACEHOLDER: "ordering.menu.filterPlaceholder",
 	MENU_FILTER_NO_MATCHES: "ordering.menu.filterNoMatches",
 

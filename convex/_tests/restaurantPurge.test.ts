@@ -66,6 +66,7 @@ const EXPECTED_DELETED = {
 	[TABLE.MENUS]: 1,
 	[TABLE.MENU_CATEGORIES]: 1,
 	[TABLE.MENU_ITEMS]: 2,
+	[TABLE.MENU_ITEM_POPULARITY]: 1,
 	[TABLE.OPTION_GROUPS]: 1,
 	[TABLE.OPTIONS]: 1,
 	[TABLE.MENU_ITEM_OPTION_GROUPS]: 1,
@@ -542,6 +543,18 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			code: "123456",
 			expiresAt: NOW + 10 * 60 * 1000,
 			createdAt: NOW,
+		});
+
+		// A materialised popularity row (TAVLI-98). It points at `menuItems`, so
+		// the purge has to delete it *before* the menu tree, or it is briefly a
+		// ranking of ids that no longer resolve.
+		await ctx.db.insert("menuItemPopularity", {
+			restaurantId,
+			menuItemId,
+			quantity: 12,
+			rank: 1,
+			windowStartAt: NOW - 30 * 24 * 60 * 60 * 1000,
+			computedAt: NOW,
 		});
 
 		// Branding blobs (TAVLI-96). These hang off the restaurants row itself,

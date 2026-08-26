@@ -749,7 +749,9 @@
 			"noOnlineOrdering": "Este restaurante aún no tiene pedidos en línea.",
 			"orderingUnavailable": "Los pedidos en línea aún no están disponibles aquí.",
 			"filterPlaceholder": "Buscar en el menú",
-			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda."
+			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
+			"popularHeading": "Lo más pedido",
+			"backToTop": "Volver arriba"
 		},
 		"item": {
 			"required": "Obligatorio",
