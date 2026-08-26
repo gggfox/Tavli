@@ -3,17 +3,13 @@ body {
 	height: 100dvh;
 	overflow: hidden;
 	margin: 0;
-	font-family:
-		ui-sans-serif,
-		-apple-system,
-		BlinkMacSystemFont,
-		"Segoe UI",
-		Helvetica,
-		"Apple Color Emoji",
-		Arial,
-		sans-serif,
-		"Segoe UI Emoji",
-		"Segoe UI Symbol";
+	/* Points at the token rather than a literal stack so a `/r/` page can be
+	 * retyped by the SSR loader overriding one custom property. Unset,
+	 * `--font-body` falls back to `--font-system`, which is this exact stack —
+	 * see `theme.css`. The `sans-serif` tail is a belt-and-braces literal: this
+	 * declaration is app-wide, and a context that somehow inherits neither
+	 * token would otherwise land on the browser default serif. */
+	font-family: var(--font-body, var(--font-system, sans-serif));
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	background-color: var(--bg-primary);
@@ -66,7 +62,17 @@ html.theme-ready {
    its outline clipped) can override it without `!important`. */
 @layer base {
 	:focus-visible {
-		outline: 2px solid var(--btn-primary-bg);
+		/* Not `--btn-primary-bg`: on a branded page that token *is* the brand
+		 * colour, so a focused primary button would draw a brand ring on a
+		 * brand fill — invisible, on the one element a keyboard user most needs
+		 * to find. `--focus-ring` defaults to the same platform blue this used
+		 * to hard-code, so unbranded pages are unchanged.
+		 *
+		 * `outline-offset` is load-bearing for the derivation: it puts a ring of
+		 * page background between button and outline, which is why
+		 * `deriveFocusRing` treats contrast against the *surface* as the hard
+		 * constraint. Changing it to 0 invalidates that reasoning. */
+		outline: 2px solid var(--focus-ring);
 		outline-offset: 1px;
 	}
 }
