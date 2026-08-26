@@ -460,6 +460,36 @@ export default defineSchema({
 		.index("by_category", ["categoryId"])
 		.index("by_restaurant", ["restaurantId"]),
 
+	/**
+	 * Materialised "most popular items" ranking, one row per ranked item
+	 * (TAVLI-98).
+	 *
+	 * **Why materialised rather than computed on read.** The diner menu is the
+	 * most-loaded page in the product, and computing this live means walking
+	 * every paid order in the window on every menu view — an unbounded read
+	 * that hits Convex's 4,096-document ceiling on a busy restaurant. This is
+	 * the same class of problem TAVLI-89 tracks, so it is not one to introduce
+	 * on purpose.
+	 *
+	 * **Why a trailing window rather than all-time counts.** All-time counts
+	 * ossify: the dish that sold well at launch stays on the carousel forever
+	 * and a new special can never surface, which makes the carousel a worse
+	 * recommendation every month it runs.
+	 */
+	[TABLE.MENU_ITEM_POPULARITY]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		menuItemId: v.id(TABLE.MENU_ITEMS),
+		/** Units sold in the window. Cancelled (86'd) lines are excluded. */
+		quantity: v.number(),
+		/** 1-based, so the carousel can order without re-sorting. */
+		rank: v.number(),
+		/** Start of the window this row was computed over, epoch ms. */
+		windowStartAt: v.number(),
+		computedAt: v.number(),
+	})
+		// The carousel reads by restaurant and renders in rank order.
+		.index("by_restaurant_rank", ["restaurantId", "rank"]),
+
 	[TABLE.OPTION_GROUPS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		name: v.string(),

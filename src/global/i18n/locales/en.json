@@ -749,7 +749,9 @@
 			"noOnlineOrdering": "Online ordering is not available at this restaurant yet.",
 			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
-			"filterNoMatches": "No categories or items match your search."
+			"filterNoMatches": "No categories or items match your search.",
+			"popularHeading": "Most popular",
+			"backToTop": "Back to top"
 		},
 		"item": {
 			"required": "Required",

@@ -57,6 +57,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.MENUS]: 0,
 		[TABLE.MENU_CATEGORIES]: 0,
 		[TABLE.MENU_ITEMS]: 0,
+		[TABLE.MENU_ITEM_POPULARITY]: 0,
 		[TABLE.OPTION_GROUPS]: 0,
 		[TABLE.OPTIONS]: 0,
 		[TABLE.MENU_ITEM_OPTION_GROUPS]: 0,
@@ -176,6 +177,15 @@ export async function hardDeleteRestaurantDataTyped(
 		await ctx.db.delete(acc._id);
 	}
 	deleted[TABLE.EMPLOYEE_ACCOUNTS] += employeeAccounts.length;
+
+	// Before the menu tree: these rows point at `menuItems`, and deleting the
+	// items first would leave a ranking referencing ids that no longer resolve.
+	const popularity = await ctx.db
+		.query(TABLE.MENU_ITEM_POPULARITY)
+		.withIndex("by_restaurant_rank", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const row of popularity) await ctx.db.delete(row._id);
+	deleted[TABLE.MENU_ITEM_POPULARITY] += popularity.length;
 
 	const menus = await ctx.db
 		.query(TABLE.MENUS)
