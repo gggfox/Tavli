@@ -7,7 +7,7 @@
  */
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { ymdHmToUtcMs } from "../_util/timezone";
 import { RESERVATION_STATUS } from "../constants";
@@ -183,5 +183,52 @@ describe("availability agrees with what booking will do", () => {
 		expect(created).toBeNull();
 		expect(createError?.message).toBe("ERROR_NO_TABLES_AVAILABLE");
 		expect(availability.available).toBe(false);
+	});
+});
+
+/**
+ * When the assistant cannot book, it must be able to say *why* and offer
+ * something in the same breath. Returning a bare error code would leave the
+ * model to either guess alternatives or make a second tool call — and a model
+ * inventing times is exactly what the tool boundary exists to prevent.
+ */
+describe("the assistant's booking failure carries alternatives", () => {
+	it("returns nearby times when the requested one is full", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedWithBookedTable(t);
+
+		const result = await t.mutation(internal.whatsapp.reservations.internalBookForBot, {
+			restaurantId,
+			phone: "+15551230000",
+			name: "Ada",
+			partySize: 4,
+			date: tomorrowYmd(),
+			time: "20:00",
+			idempotencyKey: `test-${Math.random()}`,
+		});
+
+		expect(result.booked).toBe(false);
+		expect(result.reason).toBe("ERROR_NO_TABLES_AVAILABLE");
+		// Local wall-clock strings, never epoch ms — the model must have no
+		// timestamp to invent variations of.
+		expect(result.alternatives).toContainEqual({ date: tomorrowYmd(), time: "18:30" });
+	});
+
+	it("offers nothing to invent when the failure is not about capacity", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedWithBookedTable(t);
+
+		const result = await t.mutation(internal.whatsapp.reservations.internalBookForBot, {
+			restaurantId,
+			phone: "+15551230000",
+			name: "Ada",
+			partySize: 4,
+			date: tomorrowYmd(),
+			time: "03:00",
+			idempotencyKey: `test-${Math.random()}`,
+		});
+
+		expect(result.booked).toBe(false);
+		expect(result.alternatives).toEqual([]);
 	});
 });

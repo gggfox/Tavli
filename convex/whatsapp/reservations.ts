@@ -275,7 +275,9 @@ export const internalBookForBot = internalMutation({
 	},
 	handler: async (ctx, args) => {
 		const restaurant = await ctx.db.get(args.restaurantId);
-		if (!restaurant) return { booked: false as const, reason: "ERROR_NOT_FOUND" };
+		if (!restaurant) {
+			return { booked: false as const, reason: "ERROR_NOT_FOUND", alternatives: [] };
+		}
 
 		const resolved = resolveRequestedStart({
 			date: args.date,
@@ -283,7 +285,7 @@ export const internalBookForBot = internalMutation({
 			timezone: restaurant.timezone,
 		});
 		if (!resolved) {
-			return { booked: false as const, reason: "ERROR_INVALID_DATE_OR_TIME" };
+			return { booked: false as const, reason: "ERROR_INVALID_DATE_OR_TIME", alternatives: [] };
 		}
 
 		const [reservationId, error] = await createReservationCore(ctx, {
@@ -303,7 +305,31 @@ export const internalBookForBot = internalMutation({
 			// Project to the stable code only. The raw error object can carry a
 			// `fields` array naming internal paths, and everything returned here
 			// enters model context and may be echoed to the customer.
-			return { booked: false as const, reason: error.message };
+			//
+			// Capacity failures carry alternatives so the assistant can apologise
+			// and offer something in one turn. Anything else gets an empty list: a
+			// blackout or an out-of-hours request has no nearby slot to suggest, and
+			// the model must never be handed material to improvise one from.
+			if (error.message !== "ERROR_NO_TABLES_AVAILABLE") {
+				return { booked: false as const, reason: error.message, alternatives: [] };
+			}
+
+			const settings = await loadEffectiveSettings(ctx, args.restaurantId);
+			const suggested = await findSuggestedTimes(ctx, {
+				restaurant,
+				settings,
+				partySize: args.partySize,
+				startsAt: resolved.startsAt,
+				turnMinutes: computeTurnMinutes(settings, args.partySize),
+			});
+			return {
+				booked: false as const,
+				reason: error.message,
+				// Local wall-clock strings, not epoch ms -- see the module docstring.
+				alternatives: suggested
+					.slice(0, MAX_ALTERNATIVES)
+					.map((ms) => toLocalDateTimeParts(ms, restaurant.timezone)),
+			};
 		}
 
 		return {

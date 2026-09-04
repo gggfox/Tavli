@@ -286,11 +286,48 @@ layout (now line, blocks, drag/create), **Schedule** week grid, and
 order-day numbering. Distinct from the staff device’s local timezone.
 _Avoid_: locale, UTC offset string.
 
+**Placement**:
+Choosing which table (or tables) seat a party. Performed by `placeParty` at
+booking time on every create path: smallest table that fits, ties broken by
+table number, splitting across tables when no single one is big enough.
+Placement and the availability check are deliberately the **same** decision —
+a reservation is admitted only if a table was actually found for it, so an
+admitted booking nobody can seat is impossible by construction.
+_Avoid_: allocation, seating (that is **Mark seated**), holding a table.
+
+**Automatic vs. staff placement**:
+`tableAssignedBy` on a reservation. `auto` is a provisional placement the
+system made that no human has reviewed; `staff` is a decision a person took.
+Any staff write touching `tableIds` (**confirm**, **Reschedule**, **Mark
+seated**) promotes `auto` to `staff`. The distinction is load-bearing:
+**Reschedule** may freely re-place an `auto` reservation onto a different
+table, but never moves a `staff` one.
+_Avoid_: auto-assigned flag, system booking.
+
+**Queue** (formerly the Unassigned row):
+The **Timeline** row holding reservations with no `tableIds`, ordered by
+`startsAt`. Since **Placement** happens at booking time, only rows a staff
+member deliberately left unassigned land here. `placeFromQueue` finds a table
+for one of them as capacity frees up during a service.
+_Avoid_: waitlist (that is a different, unbuilt feature), on-hold row,
+unassigned row.
+
+**Collision**:
+Two active reservations overlapping on the same table. The **Timeline** paints
+the later-_starting_ card red and shows managers a banner. Every write path
+already refuses to double-book, so a collision means legacy data or a bypassed
+path — the detector is a safety net, not the defence. An exact handover (one
+ends as the next begins) is not a collision.
+_Avoid_: conflict (that is the backend error code), overlap, double-booking
+when referring to the UI marker.
+
 **Reschedule**:
 A staff action that changes a reservation’s `startsAt`, `endsAt`, and/or
 `tableIds` from the **Timeline** (for example by dragging a block) or the
 reservation detail drawer. Distinct from **confirm**, which is the initial
-table assignment for a pending booking.
+table assignment for a pending booking. For an `auto` **Placement** a time
+change re-runs `placeParty` rather than dragging the old table into the new
+window; a `staff` placement is never re-picked.
 
 **No-show**:
 A terminal reservation status applied when a booking is still `pending` or
