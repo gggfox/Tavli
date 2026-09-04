@@ -133,6 +133,7 @@ import type * as whatsapp_datetime from "../whatsapp/datetime.js";
 import type * as whatsapp_format from "../whatsapp/format.js";
 import type * as whatsapp_llm from "../whatsapp/llm.js";
 import type * as whatsapp_menu from "../whatsapp/menu.js";
+import type * as whatsapp_optOut from "../whatsapp/optOut.js";
 import type * as whatsapp_outbound from "../whatsapp/outbound.js";
 import type * as whatsapp_phone from "../whatsapp/phone.js";
 import type * as whatsapp_processing from "../whatsapp/processing.js";
@@ -278,6 +279,7 @@ declare const fullApi: ApiFromModules<{
   "whatsapp/format": typeof whatsapp_format;
   "whatsapp/llm": typeof whatsapp_llm;
   "whatsapp/menu": typeof whatsapp_menu;
+  "whatsapp/optOut": typeof whatsapp_optOut;
   "whatsapp/outbound": typeof whatsapp_outbound;
   "whatsapp/phone": typeof whatsapp_phone;
   "whatsapp/processing": typeof whatsapp_processing;

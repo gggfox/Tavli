@@ -50,6 +50,7 @@ export const TABLE = {
 	WHATSAPP_PENDING_ACTIONS: "whatsappPendingActions",
 	WHATSAPP_UNROUTED_MESSAGES: "whatsappUnroutedMessages",
 	WHATSAPP_SPEND_ALLOWLIST: "whatsappSpendAllowlist",
+	WHATSAPP_OPT_OUTS: "whatsappOptOuts",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -349,6 +350,33 @@ export const LIVE_BILLING_STATUSES: readonly string[] = [
 /** Whether `billingStatus` means the restaurant is currently subscribed. */
 export function isLiveBillingStatus(status: string | undefined): boolean {
 	return status !== undefined && LIVE_BILLING_STATUSES.includes(status);
+}
+
+/**
+ * Statuses in which the subscription is being honored: Stripe is getting paid
+ * (or the agreed trial is running). Deliberately narrower than
+ * `LIVE_BILLING_STATUSES`: `past_due`/`unpaid` mean a live subscription whose
+ * money has stopped arriving — "don't open a second checkout" territory, but
+ * not "keep spending on this restaurant's behalf" territory.
+ */
+export const BILLING_GOOD_STANDING_STATUSES: readonly string[] = [
+	BILLING_STATUS.TRIALING,
+	BILLING_STATUS.ACTIVE,
+];
+
+/**
+ * Whether `billingStatus` means the restaurant's subscription is in good
+ * standing, for gating paid service (the WhatsApp assistant's model turns).
+ *
+ * `undefined` — no subscription has ever been bound — counts as good standing
+ * ON PURPOSE: this predicate detects LAPSE, not non-enrollment or
+ * mid-onboarding, and callers must first check `platformSubscriptionEnabled`
+ * to know whether the restaurant is in the subscription at all. A status this
+ * list doesn't know (Stripe adds new ones) is treated as lapsed: when in
+ * doubt, stop spending.
+ */
+export function isBillingInGoodStanding(status: string | undefined): boolean {
+	return status === undefined || BILLING_GOOD_STANDING_STATUSES.includes(status);
 }
 
 /** Geofence radius fallback when a restaurant configured coordinates but no radius. */
@@ -751,6 +779,13 @@ export const AUDIT_EVENT = {
 	RESERVATION_SEATED: "reservations.seated",
 	RESERVATION_COMPLETED: "reservations.completed",
 	RESERVATION_NO_SHOW: "reservations.noShow",
+
+	// -- WhatsApp consent (WhatsApp Business Messaging Policy) ---------------
+	// Keyed to the opt-out ROW id, never the phone: `allEvents` is append-only
+	// with no purge path, so a phone here would be un-erasable PII (see
+	// `AUDIT_ACTOR`). The row id correlates an opt-out with its later opt-in.
+	WHATSAPP_PHONE_OPTED_OUT: "whatsapp.phoneOptedOut",
+	WHATSAPP_PHONE_OPTED_IN: "whatsapp.phoneOptedIn",
 } as const;
 
 export type AuditEvent = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
@@ -871,6 +906,33 @@ export const WHATSAPP_CONVERSATION_STATUS = {
 
 export type WhatsappConversationStatus =
 	(typeof WHATSAPP_CONVERSATION_STATUS)[keyof typeof WHATSAPP_CONVERSATION_STATUS];
+
+/**
+ * Opt-out / opt-in keywords (WhatsApp Business Messaging Policy).
+ *
+ * A message opts a phone out only when the TRIMMED MESSAGE IS one of these
+ * words — case- and accent-insensitive, trailing punctuation allowed. "alto"
+ * and "baja" are everyday Spanish words, so a keyword buried in prose is
+ * conversation, not consent revocation; the matching lives in
+ * `whatsapp/optOut.ts`. STOP/START are what WhatsApp's own docs teach users;
+ * BAJA/ALTA are their Mexican-Spanish equivalents; ALTO is the literal "stop".
+ */
+export const WHATSAPP_OPT_OUT_KEYWORDS = ["STOP", "BAJA", "ALTO"] as const;
+export const WHATSAPP_OPT_IN_KEYWORDS = ["START", "ALTA"] as const;
+
+/**
+ * How a `Conversation` obtained consent when it was created: the diner's own
+ * first inbound message is the opt-in event (user-initiated conversation), and
+ * this records what got them there — the wa.me deep link with a short code, or
+ * a codeless cold start.
+ */
+export const WHATSAPP_OPT_IN_SOURCE = {
+	DEEP_LINK: "deep_link",
+	COLD_START: "cold_start",
+} as const;
+
+export type WhatsappOptInSource =
+	(typeof WHATSAPP_OPT_IN_SOURCE)[keyof typeof WHATSAPP_OPT_IN_SOURCE];
 
 /** Hard cap on stored inbound message length (defensive bound on customer input). */
 export const WHATSAPP_MAX_INBOUND_BODY_CHARS = 2000;
@@ -1134,6 +1196,24 @@ export const WHATSAPP_UNROUTED_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Unrouted claims reclaimed per purge run. Bounds one mutation's write set. */
 export const WHATSAPP_UNROUTED_PURGE_BATCH = 200;
+
+/**
+ * How long WhatsApp MESSAGE bodies are kept before the hourly retention sweep
+ * deletes them: 90 days.
+ *
+ * This exists for data minimization under Mexico's LFPDPPP — chat transcripts
+ * are personal data with no business purpose past the dispute window, so they
+ * age out. Messages only: the `Conversation` stays, because it carries the
+ * opt-in consent record (which must OUTLIVE the chat it came from) and is the
+ * spine of the staff view.
+ *
+ * The number itself is a product/legal decision, not an engineering one —
+ * change it here and nowhere else.
+ */
+export const WHATSAPP_MESSAGE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Messages the retention sweep deletes per run. Bounds one mutation's write set. */
+export const WHATSAPP_MESSAGE_RETENTION_PURGE_BATCH = 200;
 /**
  * Longest public restaurant slug we will store. The slug is derived from the
  * restaurant name (see `convex/slugHelpers.ts`), and names can be arbitrarily

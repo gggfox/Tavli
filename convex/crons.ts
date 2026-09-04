@@ -71,6 +71,16 @@ crons.interval(
 	internal.whatsapp.data.purgeExpiredUnroutedClaims
 );
 
+// Retention (Mexico LFPDPPP): WhatsApp message bodies age out after
+// WHATSAPP_MESSAGE_RETENTION_MS. Messages only — conversations carry the
+// opt-in consent record and stay. Hourly and batched, so the daily volume is
+// spread across 24 small bites instead of one unbounded mutation.
+crons.interval(
+	"whatsapp message retention purge",
+	{ hours: 1 },
+	internal.whatsapp.data.purgeExpiredMessages
+);
+
 crons.interval(
 	"restaurant soft-delete hard purge",
 	{ hours: 24 },

@@ -50,6 +50,7 @@ describe("TABLE constants", () => {
 			"whatsappChannels",
 			"whatsappConversations",
 			"whatsappMessages",
+			"whatsappOptOuts",
 			"whatsappPendingActions",
 			"whatsappSpendAllowlist",
 			"whatsappUnroutedMessages",
