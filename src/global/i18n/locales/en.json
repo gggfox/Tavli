@@ -1575,7 +1575,7 @@
 		"tableLabelPrefix": "Table",
 		"timeline": {
 			"createDrawerTitle": "New reservation — {{tableLabel}}",
-			"unassignedRow": "Unassigned",
+			"unassignedRow": "Queue",
 			"sectionToggleAria": "Toggle {{section}} section",
 			"blockAria": "{{guest}} at {{time}}",
 			"lockBlockAria": "Table locked: {{reason}}",
@@ -1593,7 +1593,15 @@
 			"reopenConfirmTitle": "Reopen reservation?",
 			"reopenConfirmBody": "{{guest}} will move to the new time or table and reopen as confirmed.",
 			"reopenConfirmButton": "Reopen and move",
-			"nowLineAria": "Current time"
+			"nowLineAria": "Current time",
+			"queueHint": "Waiting for a table",
+			"queuePlace": "Find a table",
+			"queuePlaceFailed": "No table free for this party at that time.",
+			"collisionTooltip": "Double-booked: overlaps an earlier reservation on this table",
+			"collisionBanner_one": "{{count}} double-booking on the floor",
+			"collisionBanner_other": "{{count}} double-bookings on the floor",
+			"collisionJump": "Show me",
+			"autoPlacement": "Table chosen automatically — not yet reviewed"
 		}
 	},
 	"reservationSettings": {

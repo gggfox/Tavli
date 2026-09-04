@@ -178,3 +178,80 @@ describe("auto-assignment on create", () => {
 		expect(row?.tableAssignedBy).toBeUndefined();
 	});
 });
+
+/**
+ * Working the queue. Capacity frees up through a service as cancellations come
+ * in, so a row a manager deliberately left unassigned at noon often has an
+ * obvious table by 19:00 — without this they can only find it by hand.
+ */
+describe("placing a queued reservation", () => {
+	it("finds a table for a queued row and marks the placement automatic", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, [{ tableNumber: 1, capacity: 4 }]);
+		const staff = t.withIdentity({ subject: "staff-placement" });
+
+		const [reservationId] = await staff.mutation(api.reservations.createAsStaff, {
+			restaurantId,
+			partySize: 2,
+			startsAt: localAt(tomorrowYmd(), "19:00"),
+			contact: { name: "Ada", phone: "+525512345678" },
+			leaveUnassigned: true,
+		});
+
+		const [, error] = await staff.mutation(api.reservations.placeFromQueue, {
+			reservationId: reservationId!,
+		});
+
+		expect(error).toBeNull();
+		const row = await t.run((ctx) => ctx.db.get(reservationId!));
+		expect(row?.tableIds).toHaveLength(1);
+		// The machine chose it, so it stays provisional and re-placeable even
+		// though a human clicked the button.
+		expect(row?.tableAssignedBy).toBe(TABLE_ASSIGNED_BY.AUTO);
+		expect(row?.status).toBe(RESERVATION_STATUS.PENDING);
+	});
+
+	it("reports back when the floor is still full", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, [{ tableNumber: 1, capacity: 4 }]);
+		const staff = t.withIdentity({ subject: "staff-placement" });
+
+		const [queued] = await staff.mutation(api.reservations.createAsStaff, {
+			restaurantId,
+			partySize: 4,
+			startsAt: localAt(tomorrowYmd(), "19:00"),
+			contact: { name: "Ada", phone: "+525512345678" },
+			leaveUnassigned: true,
+		});
+		// Someone else takes the only table for that window.
+		await book(t, restaurantId, 4, "19:00", "+525500000002");
+
+		const [, error] = await staff.mutation(api.reservations.placeFromQueue, {
+			reservationId: queued!,
+		});
+
+		expect(error?.message).toBe("ERROR_NO_TABLES_AVAILABLE");
+		const row = await t.run((ctx) => ctx.db.get(queued!));
+		expect(row?.tableIds).toEqual([]);
+	});
+
+	it("refuses a caller without access to the restaurant", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, [{ tableNumber: 1, capacity: 4 }]);
+		const staff = t.withIdentity({ subject: "staff-placement" });
+
+		const [queued] = await staff.mutation(api.reservations.createAsStaff, {
+			restaurantId,
+			partySize: 2,
+			startsAt: localAt(tomorrowYmd(), "19:00"),
+			contact: { name: "Ada", phone: "+525512345678" },
+			leaveUnassigned: true,
+		});
+
+		const [, error] = await t
+			.withIdentity({ subject: "outsider" })
+			.mutation(api.reservations.placeFromQueue, { reservationId: queued! });
+
+		expect(error).not.toBeNull();
+	});
+});

@@ -15,7 +15,8 @@ type ReservationsValue = UnwrappedValue<FunctionReturnType<typeof api.reservatio
  * Uses `listForRange` when exactly one id is passed; otherwise
  * `listForRangeMulti`. Optional `statuses` is applied on the server so the
  * client does not load unneeded rows (keeps the table responsive).
- * Exposes the standard mutation surface (confirm, cancel, mark seated, mark completed).
+ * Exposes the standard mutation surface (confirm, cancel, mark seated, mark
+ * completed, and placing a reservation that is sitting in the unassigned queue).
  */
 export function useReservations(
 	restaurantIds: readonly Id<"restaurants">[] | undefined,
@@ -94,6 +95,9 @@ export function useReservations(
 	const reconfirmMutation = useMutation({
 		mutationFn: useConvexMutation(api.reservations.reconfirm),
 	});
+	const placeFromQueueMutation = useMutation({
+		mutationFn: useConvexMutation(api.reservations.placeFromQueue),
+	});
 
 	return {
 		reservations: reservations ?? [],
@@ -111,5 +115,7 @@ export function useReservations(
 			unwrapResult(await rescheduleMutation.mutateAsync(args)),
 		reconfirm: async (args: Parameters<typeof reconfirmMutation.mutateAsync>[0]) =>
 			unwrapResult(await reconfirmMutation.mutateAsync(args)),
+		placeFromQueue: async (args: Parameters<typeof placeFromQueueMutation.mutateAsync>[0]) =>
+			unwrapResult(await placeFromQueueMutation.mutateAsync(args)),
 	};
 }

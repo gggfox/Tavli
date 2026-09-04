@@ -341,6 +341,64 @@ export const listReservationSlotsForDay = query({
 	},
 });
 
+/**
+ * Find a table for a reservation sitting in the unassigned queue.
+ *
+ * Capacity frees up as a service runs, so a row staff deliberately left
+ * unassigned at noon often has an obvious table by 19:00. Without this the queue
+ * is a list you can only work by hand.
+ *
+ * The placement stays `auto`: staff asked for a table, they did not choose one.
+ * It therefore remains provisional and re-placeable, and confirming it is what
+ * turns it into a human decision.
+ */
+export const placeFromQueue = mutation({
+	args: { reservationId: v.id(TABLE.RESERVATIONS) },
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, RescheduleErrors> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+
+		const reservation = await ctx.db.get(args.reservationId);
+		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
+
+		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
+		if (restError) return [null, restError];
+
+		const stateError = ensureReschedulable(reservation.status);
+		if (stateError) return [null, stateError];
+
+		const window = await loadPlacementWindow(
+			ctx,
+			reservation.restaurantId,
+			reservation.startsAt,
+			reservation.endsAt
+		);
+		const placement = placeParty({
+			...window,
+			partySize: reservation.partySize,
+			startsAt: reservation.startsAt,
+			endsAt: reservation.endsAt,
+			excludeReservationId: reservation._id,
+		});
+		if (placement === null) {
+			return [null, new ConflictError("ERROR_NO_TABLES_AVAILABLE").toObject()];
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(reservation._id, {
+			tableIds: placement.map((table) => table._id),
+			tableAssignedBy: TABLE_ASSIGNED_BY.AUTO,
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		return [reservation._id, null];
+	},
+});
+
 // ============================================================================
 // Create
 // ============================================================================

@@ -1,3 +1,4 @@
+import { findCollidingReservationIds } from "@/features/reservations/utils/collisions";
 import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
 import { resolveRestaurantTimezone } from "@/global/utils/timezone";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
@@ -24,6 +25,8 @@ export interface TimelineData {
 	sections: TimelineSection[];
 	reservationsByTable: Map<string, ReservationDoc[]>;
 	unassignedReservations: ReservationDoc[];
+	/** Reservations double-booked against an earlier one on the same table. */
+	collidingReservationIds: Set<Id<"reservations">>;
 	locksByTable: Map<string, TableLockDoc[]>;
 	openHour: number;
 	closeHour: number;
@@ -134,7 +137,7 @@ export function useTimelineData(
 		return result;
 	}, [sectionsQuery.data, tablesQuery.data, restaurantId]);
 
-	const { reservationsByTable, unassignedReservations } = useMemo(() => {
+	const { reservationsByTable, unassignedReservations, collidingReservationIds } = useMemo(() => {
 		const reservations = reservationsQuery.data ?? [];
 		const byTable = new Map<string, ReservationDoc[]>();
 		const unassigned: ReservationDoc[] = [];
@@ -157,7 +160,20 @@ export function useTimelineData(
 			list.sort((a, b) => a.startsAt - b.startsAt);
 		}
 
-		return { reservationsByTable: byTable, unassignedReservations: unassigned };
+		// Safety net over the whole floor: every write path already refuses to
+		// double-book, so anything surfacing here is legacy data or a bypassed
+		// path. Computed from the rows the timeline already holds -- no extra
+		// query, and it clears itself the moment the overlap is resolved.
+		const colliding = new Set<Id<"reservations">>();
+		for (const list of byTable.values()) {
+			for (const id of findCollidingReservationIds(list)) colliding.add(id);
+		}
+
+		return {
+			reservationsByTable: byTable,
+			unassignedReservations: unassigned,
+			collidingReservationIds: colliding,
+		};
 	}, [reservationsQuery.data]);
 
 	const locksByTable = useMemo(() => {
@@ -179,6 +195,7 @@ export function useTimelineData(
 		sections,
 		reservationsByTable,
 		unassignedReservations,
+		collidingReservationIds,
 		locksByTable,
 		openHour,
 		closeHour,
