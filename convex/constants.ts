@@ -462,6 +462,26 @@ export const ACTIVE_RESERVATION_STATUSES: ReservationStatus[] = [
 	RESERVATION_STATUS.COMPLETED,
 ];
 
+/**
+ * Who chose the tables on a reservation.
+ *
+ * `auto` is a **provisional** placement made by `placeParty` at booking time —
+ * no human has looked at it, and any staff write that touches `tableIds`
+ * promotes it to `staff`. The distinction matters twice: the timeline shows
+ * staff which placements are unreviewed, and `reschedule` may freely re-place an
+ * `auto` row while a `staff` row's table is a human decision it must not
+ * silently overwrite.
+ *
+ * Rows created before auto-assignment existed are backfilled to `staff`: their
+ * tables were, in fact, all chosen by hand.
+ */
+export const TABLE_ASSIGNED_BY = {
+	AUTO: "auto",
+	STAFF: "staff",
+} as const;
+
+export type TableAssignedBy = (typeof TABLE_ASSIGNED_BY)[keyof typeof TABLE_ASSIGNED_BY];
+
 export const RESERVATION_SOURCE = {
 	UI: "ui",
 	WHATSAPP: "whatsapp",

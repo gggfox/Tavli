@@ -19,7 +19,12 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import { RESERVATION_SOURCE, RESERVATION_STATUS, type ReservationStatus } from "../constants";
+import {
+	RESERVATION_SOURCE,
+	RESERVATION_STATUS,
+	TABLE_ASSIGNED_BY,
+	type ReservationStatus,
+} from "../constants";
 import schema from "../schema";
 import {
 	nowInRestaurant,
@@ -477,7 +482,7 @@ describe("assistant writes", () => {
 				.collect()
 		);
 
-	it("creates a pending booking for the sender, table assignment left to staff", async () => {
+	it("creates a pending booking for the sender on an auto-assigned table", async () => {
 		const t = convexTest(schema, modules);
 		await seedChannel(t);
 		modelCalls("book_reservation", {
@@ -496,8 +501,12 @@ describe("assistant writes", () => {
 		expect(all[0].contact.phone).toBe(CUSTOMER);
 		// The name the customer gave, not the one WhatsApp advertises.
 		expect(all[0].contact.name).toBe("Gerardo");
-		// Staff still assign tables.
-		expect(all[0].tableIds).toEqual([]);
+		// A table is now taken at booking time so the slot stops being sellable
+		// twice (TAVLI-101) -- but the placement is provisional, and the booking
+		// stays `pending` because staff still confirm.
+		expect(all[0].tableIds).toHaveLength(1);
+		expect(all[0].tableAssignedBy).toBe(TABLE_ASSIGNED_BY.AUTO);
+		expect(all[0].confirmedAt).toBeUndefined();
 	});
 
 	it("never books under the WhatsApp profile name, which the customer never gave", async () => {

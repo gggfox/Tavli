@@ -176,13 +176,13 @@ export const internalCheckAvailabilityForBot = internalQuery({
 			return { ...base, available: true, reason: null, alternatives: [] };
 		}
 
-		const suggested = await findSuggestedTimes(
-			ctx,
-			args.restaurantId,
-			args.partySize,
-			resolved.startsAt,
-			turnMinutes
-		);
+		const suggested = await findSuggestedTimes(ctx, {
+			restaurant,
+			settings,
+			partySize: args.partySize,
+			startsAt: resolved.startsAt,
+			turnMinutes,
+		});
 		return {
 			...base,
 			available: false,

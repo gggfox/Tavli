@@ -23,16 +23,15 @@ import {
 	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
+import { loadPlacementWindow, placeParty, symmetricCandidateTimes } from "./_util/tablePlacement";
 import {
 	computeEndsAt,
 	computeTurnMinutes,
-	findFreeTablesForParty,
 	findOverlappingLocks,
 	findOverlappingReservations,
 	intersectsBlackout,
 	isWithinHorizon,
 	isWithinOperatingHours,
-	requiredCapacityCovered,
 	resolveServiceWindow,
 } from "./_util/availability";
 import { normalizeContactPhone } from "./_util/phone";
@@ -44,6 +43,7 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
+	TABLE_ASSIGNED_BY,
 	ReservationStatus,
 	TABLE,
 } from "./constants";
@@ -207,6 +207,13 @@ export type CreateCoreArgs = {
 	userId?: string;
 	notes?: string;
 	idempotencyKey?: string;
+	/**
+	 * Staff-only escape: clear the capacity check but take no table, sending the
+	 * row to the unassigned queue for a human to place. Customer-facing paths
+	 * never set this -- a booking nobody has a table for is the bug this whole
+	 * change exists to remove.
+	 */
+	leaveUnassigned?: boolean;
 };
 
 // Create runs inside a mutation: it inserts the reservation row and (via the
@@ -228,64 +235,112 @@ export const sourceValidator = v.union(
 );
 
 /**
- * Look 3 hours forward at 30-minute increments and return the first three
- * slots where capacity covers the party. Cheap heuristic; staff can override.
- */
-type ReservationReadDb = Parameters<typeof loadEffectiveSettings>[0]["db"];
-
-/**
  * True if the party can be seated at [startsAt, endsAt) using one or more
  * active tables (same rules as the public availability query).
  */
+/**
+ * Can this party be seated in this window?
+ *
+ * Delegates to `placeParty` rather than reimplementing the search. That is the
+ * whole point: this predicate answers the customer ("is 20:00 free?") while
+ * `createReservationCore` answers the booking, and if the two ever disagreed the
+ * assistant would promise a table that booking then refuses — the customer hears
+ * the slot vanished mid-sentence.
+ */
 export async function isPartyBookableAt(
-	ctx: { db: ReservationReadDb },
+	ctx: { db: DatabaseReader },
 	restaurantId: Id<typeof TABLE.RESTAURANTS>,
 	partySize: number,
 	startsAt: number,
 	endsAt: number
 ): Promise<boolean> {
-	const free = await findFreeTablesForParty(ctx, restaurantId, partySize, startsAt, endsAt);
-	if (free.length > 0) return true;
-
-	const allActive = await ctx.db
-		.query(TABLE.TABLES)
-		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
-		.collect();
-	const candidates: typeof allActive = [];
-	for (const t of allActive.filter((x) => x.isActive)) {
-		const reservations = await findOverlappingReservations(ctx, t._id, startsAt, endsAt);
-		if (reservations.length > 0) continue;
-		const locks = await findOverlappingLocks(ctx, t._id, startsAt, endsAt);
-		if (locks.length > 0) continue;
-		candidates.push(t);
-	}
-	candidates.sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
-	return requiredCapacityCovered(candidates, partySize);
+	const window = await loadPlacementWindow(ctx, restaurantId, startsAt, endsAt);
+	return placeParty({ ...window, partySize, startsAt, endsAt }) !== null;
 }
 
+/** How many alternatives we ever return. Keeps the reply short. */
+export const MAX_SUGGESTED_TIMES = 3;
+/** Half-hour granularity, three hours out in each direction. */
+const SUGGESTION_STEP_MS = 30 * 60_000;
+const SUGGESTION_MAX_STEPS = 6;
+
+/**
+ * Times near `startsAt` that this party could actually be seated at.
+ *
+ * Searches **outward in both directions**, nearest first. It used to walk
+ * forward only, so a customer asking for 20:00 with 19:30 free was offered
+ * 21:30 and gave up -- half of "close to the time you asked for" was
+ * unreachable.
+ *
+ * Going backwards is what makes the gates below mandatory rather than nice to
+ * have: forward-only drift stays inside service, but searching earlier runs
+ * straight into opening time and the minimum-advance window. A suggestion the
+ * customer cannot book is worse than no suggestion.
+ *
+ * All candidates share **one** windowed read. Twelve probes through the old
+ * per-table helpers would have issued twelve full scans of every table.
+ */
 export async function findSuggestedTimes(
-	ctx: { db: ReservationReadDb },
-	restaurantId: Id<typeof TABLE.RESTAURANTS>,
-	partySize: number,
-	startsAt: number,
-	turnMinutes: number
-): Promise<number[]> {
-	const STEP_MS = 30 * 60_000;
-	const HORIZON_STEPS = 6;
-	const suggestions: number[] = [];
-	for (let i = 1; i <= HORIZON_STEPS; i++) {
-		const candidate = startsAt + i * STEP_MS;
-		const candidateEnd = computeEndsAt(candidate, turnMinutes);
-		const free = await findFreeTablesForParty(
-			ctx,
-			restaurantId,
-			partySize,
-			candidate,
-			candidateEnd
-		);
-		if (free.length > 0) suggestions.push(candidate);
-		if (suggestions.length >= 3) break;
+	ctx: { db: DatabaseReader },
+	params: {
+		restaurant: Doc<typeof TABLE.RESTAURANTS>;
+		settings: Pick<
+			Doc<typeof TABLE.RESERVATION_SETTINGS>,
+			"minAdvanceMinutes" | "maxAdvanceDays" | "blackoutWindows"
+		>;
+		partySize: number;
+		startsAt: number;
+		turnMinutes: number;
 	}
+): Promise<number[]> {
+	const candidates = symmetricCandidateTimes(
+		params.startsAt,
+		SUGGESTION_STEP_MS,
+		SUGGESTION_MAX_STEPS
+	);
+	if (candidates.length === 0) return [];
+
+	const earliest = Math.min(...candidates);
+	const latest = Math.max(...candidates) + params.turnMinutes * 60_000;
+	const window = await loadPlacementWindow(ctx, params.restaurant._id, earliest, latest);
+	const serviceWindow = resolveServiceWindow(params.restaurant);
+	const now = Date.now();
+
+	const suggestions: number[] = [];
+	for (const candidate of candidates) {
+		if (suggestions.length >= MAX_SUGGESTED_TIMES) break;
+		const candidateEnd = computeEndsAt(candidate, params.turnMinutes);
+
+		if (
+			!isWithinHorizon({
+				minAdvanceMinutes: params.settings.minAdvanceMinutes,
+				maxAdvanceDays: params.settings.maxAdvanceDays,
+				startsAt: candidate,
+				now,
+			})
+		) {
+			continue;
+		}
+		if (intersectsBlackout(params.settings, candidate, candidateEnd)) continue;
+		if (
+			!isWithinOperatingHours({
+				startsAt: candidate,
+				endsAt: candidateEnd,
+				window: serviceWindow,
+			})
+		) {
+			continue;
+		}
+
+		const placement = placeParty({
+			...window,
+			partySize: params.partySize,
+			startsAt: candidate,
+			endsAt: candidateEnd,
+		});
+		if (placement !== null) suggestions.push(candidate);
+	}
+
 	return suggestions;
 }
 
@@ -363,36 +418,6 @@ async function assertReservationCreateWithinAttemptLimit(
 	for (const key of keys) {
 		const decision = await consumeRateLimit(ctx, key, config, now);
 		if (!decision.allowed) return new RateLimitedError().toObject();
-	}
-	return null;
-}
-
-export async function checkAvailabilityForCreate(
-	ctx: CreateCoreCtx,
-	restaurantId: Id<typeof TABLE.RESTAURANTS>,
-	partySize: number,
-	startsAt: number,
-	endsAt: number
-): Promise<ConflictErrorObject | null> {
-	const free = await findFreeTablesForParty(ctx, restaurantId, partySize, startsAt, endsAt);
-	if (free.length > 0) return null;
-
-	// Multi-table feasibility fallback (party of 12 may need 6+6).
-	const allTables = await ctx.db
-		.query(TABLE.TABLES)
-		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
-		.collect();
-	const freeMulti: typeof allTables = [];
-	for (const t of allTables) {
-		if (!t.isActive) continue;
-		const conflicts = await findOverlappingReservations(ctx, t._id, startsAt, endsAt);
-		if (conflicts.length > 0) continue;
-		const locks = await findOverlappingLocks(ctx, t._id, startsAt, endsAt);
-		if (locks.length > 0) continue;
-		freeMulti.push(t);
-	}
-	if (!requiredCapacityCovered(freeMulti, partySize)) {
-		return new ConflictError("ERROR_NO_TABLES_AVAILABLE").toObject();
 	}
 	return null;
 }
@@ -486,21 +511,34 @@ export async function createReservationCore(
 		return [null, new ConflictError("ERROR_OUTSIDE_OPERATING_HOURS").toObject()];
 	}
 
-	const availabilityError = await checkAvailabilityForCreate(
-		ctx,
-		args.restaurantId,
-		args.partySize,
-		args.startsAt,
-		endsAt
-	);
-	if (availabilityError) return [null, availabilityError];
+	// Admission IS placement. Asking `placeParty` for actual tables, rather than
+	// asking a separate function whether tables *could* exist, is what makes
+	// "admitted but unplaceable" impossible: if this returns a selection, those
+	// are the tables the row is created on.
+	//
+	// The one exception is a staff member who explicitly defers the choice. That
+	// row still has to clear the capacity check -- it just goes to the queue with
+	// no tables rather than taking a specific one.
+	const window = await loadPlacementWindow(ctx, args.restaurantId, args.startsAt, endsAt);
+	const placement = placeParty({
+		...window,
+		partySize: args.partySize,
+		startsAt: args.startsAt,
+		endsAt,
+	});
+	if (placement === null) {
+		return [null, new ConflictError("ERROR_NO_TABLES_AVAILABLE").toObject()];
+	}
+
+	const assigned = args.leaveUnassigned ? [] : placement;
 
 	const id = await ctx.db.insert(TABLE.RESERVATIONS, {
 		restaurantId: args.restaurantId,
 		partySize: args.partySize,
 		startsAt: args.startsAt,
 		endsAt,
-		tableIds: [],
+		tableIds: assigned.map((t) => t._id),
+		...(assigned.length > 0 && { tableAssignedBy: TABLE_ASSIGNED_BY.AUTO }),
 		status: RESERVATION_STATUS.PENDING,
 		source: args.source,
 		contact,
