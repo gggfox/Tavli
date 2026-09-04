@@ -21,7 +21,15 @@
  * 3. **Admin allowlist** — `whatsappSpendAllowlist` waives (1) for a listed
  *    phone. It waives neither (2) nor either write budget.
  *
- * Two properties are worth stating because they are easy to break later:
+ * Three properties are worth stating because they are easy to break later:
+ *
+ * - **Every send is metered, including the fixed ones.** The unroutable
+ *   guidance and the STOP/START confirmations are deterministic copy, cost no
+ *   model turn, and are therefore tempting to send for free. They are still
+ *   billed Twilio messages to a number that has proved nothing beyond a valid
+ *   signature, on one shared number anyone can write to (ADR 012) — so an
+ *   unmetered one is an open relay, and a keyword pair that can be alternated
+ *   makes it unbounded. A fixed reply is not an exempt reply.
  *
  * - **Keys are stable per phone.** `whatsapp_inbound:+528114906208`, with no
  *   date in it. `rateLimits` rows are never deleted and the table is exempt from

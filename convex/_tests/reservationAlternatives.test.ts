@@ -12,6 +12,7 @@ import type { Id } from "../_generated/dataModel";
 import { ymdHmToUtcMs } from "../_util/timezone";
 import { RESERVATION_STATUS } from "../constants";
 import schema from "../schema";
+import { enableReservationsFlag } from "./helpers/reservationsFlag";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -59,6 +60,8 @@ async function seedWithBookedTable(t: ReturnType<typeof convexTest>) {
 			isActive: true,
 			createdAt: Date.now(),
 		});
+		// TAVLI-100 gates customer-facing reservations behind a flag that ships OFF.
+		await enableReservationsFlag(ctx.db);
 		await ctx.db.insert("reservations", {
 			restaurantId,
 			partySize: 4,
@@ -154,6 +157,8 @@ describe("availability agrees with what booking will do", () => {
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
 			});
+			// TAVLI-100 gates customer-facing reservations behind a flag that ships OFF.
+			await enableReservationsFlag(ctx.db);
 			// Removed from the floor, but `tables.remove` leaves `isActive: true`.
 			await ctx.db.insert("tables", {
 				restaurantId,

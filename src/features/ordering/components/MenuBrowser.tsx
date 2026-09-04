@@ -8,10 +8,14 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, UtensilsCrossed, X } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
+import { POPULARITY_MIN_ITEMS } from "convex/menuItemPopularity";
+import { CategoryPills, categorySectionId } from "./CategoryPills";
 import type { MenuItemWithImage } from "./ItemDetailSheet";
+import { PopularItemsCarousel } from "./PopularItemsCarousel";
+import { ScrollToTopButton } from "./ScrollToTopButton";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export type { SelectedOption } from "../types";
@@ -54,7 +58,27 @@ interface MenuBrowserProps {
 	 * — see `RestaurantContactBar`.
 	 */
 	contactBar?: React.ReactNode;
+	/**
+	 * The restaurant's header image, rendered as the first child of the menu
+	 * scroll container. Passed in rather than resolved here so `MenuBrowser`
+	 * stays free of route/loader coupling and remains renderable in isolation.
+	 */
+	hero?: React.ReactNode;
 }
+
+/**
+ * Height reserved for the sticky search + pills bar, in px.
+ *
+ * Used as `scroll-margin-top` on every category heading. Without it
+ * `scrollIntoView` aligns a heading with the top of the scroll container —
+ * which is *underneath* the sticky bar — so tapping a pill lands the diner
+ * past the heading, on the third dish of the section they asked for.
+ *
+ * A constant rather than a measurement: the bar is a fixed two-row layout, and
+ * measuring it would mean a layout read on every render of every heading to
+ * chase a number that does not change.
+ */
+const STICKY_BAR_HEIGHT_PX = 104;
 
 export function MenuBrowser({
 	restaurantId,
@@ -64,6 +88,7 @@ export function MenuBrowser({
 	orderingBlocked = false,
 	blockedNotice,
 	contactBar,
+	hero,
 }: Readonly<MenuBrowserProps>) {
 	const { t } = useTranslation();
 	const { data: paymentsEnabled } = useQuery(
@@ -114,6 +139,39 @@ export function MenuBrowser({
 	const { data: menuItems } = useQuery(
 		convexQuery(api.menuItems.getByMenu, currentMenuId ? { menuId: currentMenuId } : "skip")
 	);
+
+	/**
+	 * The scroll container, not the window.
+	 *
+	 * The menu scrolls inside this div; the document never moves. Both the
+	 * jump-to-section pills and the back-to-top button need *this* element —
+	 * `window.scrollY` reads 0 here forever and a `window` scroll listener
+	 * never fires, so the obvious implementation of either produces something
+	 * that silently does nothing.
+	 */
+	const scrollRef = useRef<HTMLDivElement>(null);
+
+	// Ranked ids only; the objects are resolved from the menu items already
+	// loaded above, which is what makes a carousel tap open the very same
+	// detail sheet a grid tap opens.
+	const { data: popularIds } = useQuery(
+		convexQuery(api.menuItemPopularity.getPopularItemIds, { restaurantId })
+	);
+	const popularItems = useMemo(() => {
+		if (!popularIds || !menuItems) return [];
+		const byId = new Map(menuItems.map((item) => [item._id as string, item]));
+		const resolved = popularIds
+			.map((id) => byId.get(id as string))
+			.filter((item): item is (typeof menuItems)[number] => item !== undefined)
+			// Availability and photographs are read here rather than baked into
+			// the nightly ranking, because both change without the ranking
+			// changing: a dish 86'd at lunch must leave the strip immediately,
+			// and one that gains a photo this morning should be able to appear.
+			.filter((item) => item.isAvailable && item.imageUrl);
+		// All-or-nothing below the floor. Two cards do not read as "our most
+		// popular" — they read as a strip that failed to load.
+		return resolved.length >= POPULARITY_MIN_ITEMS ? resolved : [];
+	}, [popularIds, menuItems]);
 	const categoryCount = categories?.length ?? 0;
 	const reportedCount = Object.keys(filterVisibility).length;
 	const hasFilterMatch = !isFilterActive || Object.values(filterVisibility).some(Boolean);
@@ -176,13 +234,21 @@ export function MenuBrowser({
 				.map((tb) => ({ ...tb, isTaken: tb.hasOpenSession && !tb.isOwnSession })),
 		[tables]
 	);
-	const someTableTaken = tableOptions.some((tb) => tb.isTaken);
-	// A table can be claimed between the diner picking it and confirming, so
-	// occupancy is re-read off the live row rather than trusted at pick time.
-	const selectedTableTaken = tableOptions.some((tb) => tb._id === selectedTableId && tb.isTaken);
+	/**
+	 * Is the chosen table already in use by someone else's visit?
+	 *
+	 * Informational as of TAVLI-100 — it no longer blocks. It used to, because
+	 * the intended path for a second diner was to join by code; with the code
+	 * gone, blocking is a dead end for the ordinary case of two parties sharing
+	 * a long table, and the staff timeline now groups by table anyway.
+	 *
+	 * Kept as a signal so the diner gets a nudge to check they picked the right
+	 * one — a mis-picked table sends food to the wrong people.
+	 */
+	const selectedTableInUse = tableOptions.some((tb) => tb._id === selectedTableId && tb.isTaken);
 
 	const handleConfirmOrder = () => {
-		if (!selectedTableId || selectedTableTaken) return;
+		if (!selectedTableId) return;
 		const items = Array.from(selections.entries()).map(([menuItemId, sel]) => ({
 			menuItemId: menuItemId as Id<"menuItems">,
 			quantity: sel.quantity,
@@ -196,53 +262,103 @@ export function MenuBrowser({
 	};
 
 	return (
-		<div className="flex flex-col h-full min-h-0">
-			{activeMenus.length > 1 && (
-				<div className="flex gap-2 px-4 pt-4 overflow-x-auto">
-					{activeMenus.map((menu) => (
-						<button
-							key={menu._id}
-							onClick={() => setSelectedMenuId(menu._id)}
-							className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-colors ${
-								currentMenuId === menu._id ? "font-medium" : ""
-							}`}
-							style={{
-								backgroundColor:
-									currentMenuId === menu._id ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-								color:
-									currentMenuId === menu._id ? "var(--btn-primary-text)" : "var(--text-secondary)",
-							}}
-						>
-							{getTranslatedField(menu, lang)}
-						</button>
-					))}
-				</div>
-			)}
+		<div className="flex flex-col h-full min-h-0 relative">
+			{/*
+			 * Everything above the sticky bar now lives INSIDE the scroll
+			 * container so it scrolls away: the hero has done its job by the time
+			 * a diner is reading dishes, and the menu switcher is rare enough
+			 * (most restaurants have one menu) that pinning it would cost every
+			 * diner height to serve a few.
+			 *
+			 * Search and pills are the two controls you want reachable from
+			 * anywhere in a long menu, so those — and only those — stick.
+			 */}
+			<div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+				{hero}
 
-			<div className="px-4 pt-4">
-				<SearchInput
-					placeholder={t(OrderingKeys.MENU_FILTER_PLACEHOLDER)}
-					value={searchQuery}
-					onChange={setSearchQuery}
-				/>
-			</div>
-
-			<div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-6">
-				{showFilterNoMatches ? (
-					<p className="text-sm text-muted-foreground">{t(OrderingKeys.MENU_FILTER_NO_MATCHES)}</p>
+				{popularItems.length > 0 && !isFilterActive ? (
+					<div className="px-4 pt-4">
+						{/* Hidden during a search for the same reason the pills are:
+						    the diner has told us what they are looking for, and a
+						    strip of unrelated dishes is in the way of the answer. */}
+						<PopularItemsCarousel
+							items={popularItems}
+							{...(lang ? { lang } : {})}
+							onOpenDetail={handleOpenDetail}
+						/>
+					</div>
 				) : null}
-				{currentMenuId && (
-					<MenuCategories
-						categories={categories}
-						items={menuItems}
-						lang={lang}
-						selections={selections}
-						onOpenDetail={handleOpenDetail}
-						searchQuery={deferredSearchQuery}
-						onFilterVisibility={handleFilterVisibility}
-					/>
+
+				{activeMenus.length > 1 && (
+					<div className="flex gap-2 px-4 pt-4 overflow-x-auto">
+						{activeMenus.map((menu) => (
+							<button
+								key={menu._id}
+								onClick={() => setSelectedMenuId(menu._id)}
+								className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-colors ${
+									currentMenuId === menu._id ? "font-medium" : ""
+								}`}
+								style={{
+									backgroundColor:
+										currentMenuId === menu._id ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
+									color:
+										currentMenuId === menu._id
+											? "var(--btn-primary-text)"
+											: "var(--text-secondary)",
+								}}
+							>
+								{getTranslatedField(menu, lang)}
+							</button>
+						))}
+					</div>
 				)}
+
+				{/*
+				 * Opaque background is load-bearing: a translucent sticky bar lets
+				 * dish cards scroll visibly through the search box.
+				 */}
+				<div className="sticky top-0 z-10 bg-background pt-4">
+					<div className="px-4 pb-2">
+						<SearchInput
+							placeholder={t(OrderingKeys.MENU_FILTER_PLACEHOLDER)}
+							value={searchQuery}
+							onChange={setSearchQuery}
+						/>
+					</div>
+					{/* Jumping to a section the search has hidden scrolls to
+					    nothing, so the index goes away while the filter is on. */}
+					{!isFilterActive && categories ? (
+						<CategoryPills
+							categories={categories}
+							scrollRef={scrollRef}
+							{...(lang ? { lang } : {})}
+						/>
+					) : null}
+				</div>
+
+				<div className="px-4 pb-4 space-y-6">
+					{showFilterNoMatches ? (
+						<p className="text-sm text-muted-foreground">
+							{t(OrderingKeys.MENU_FILTER_NO_MATCHES)}
+						</p>
+					) : null}
+					{currentMenuId && (
+						<MenuCategories
+							categories={categories}
+							items={menuItems}
+							lang={lang}
+							selections={selections}
+							onOpenDetail={handleOpenDetail}
+							searchQuery={deferredSearchQuery}
+							onFilterVisibility={handleFilterVisibility}
+						/>
+					)}
+				</div>
 			</div>
+
+			{/* Anchored above whatever bottom bar is showing — the cart CTA is the
+			    revenue button on this page and must never be covered. */}
+			<ScrollToTopButton scrollRef={scrollRef} bottomOffset={16} />
 
 			{/* Bottom bar: geofence / ordering-unavailable notice */}
 			{orderingBlocked && blockedNotice && (
@@ -307,11 +423,23 @@ export function MenuBrowser({
 									}}
 								>
 									<option value="">{t(OrderingKeys.MENU_SELECT_TABLE)}</option>
+									{/*
+									 * Occupied tables stay selectable (TAVLI-100). The block
+									 * existed because the intended path for a second diner
+									 * was to join by code, and there is no code any more —
+									 * with it gone, a disabled option is a dead end for
+									 * someone sitting at a table that already has people at
+									 * it, which is the normal case at a shared table.
+									 *
+									 * The marker stays: it confirms to the diner that they
+									 * picked the right table, and tells staff the picker is
+									 * describing reality.
+									 */}
 									{tableOptions.map((tab) => (
-										<option key={tab._id} value={tab._id} disabled={tab.isTaken}>
+										<option key={tab._id} value={tab._id}>
 											{t(OrderingKeys.MENU_TABLE_LABEL, { number: tab.tableNumber })}
 											{tab.label ? ` – ${tab.label}` : ""}
-											{tab.isTaken ? ` ${t(OrderingKeys.MENU_TABLE_TAKEN)}` : ""}
+											{tab.isTaken ? ` ${t(OrderingKeys.MENU_TABLE_IN_USE)}` : ""}
 										</option>
 									))}
 								</select>
@@ -320,17 +448,14 @@ export function MenuBrowser({
 										{t(OrderingKeys.MENU_TABLE_REQUIRED)}
 									</p>
 								)}
-								{selectedTableTaken ? (
-									<p className="text-[11px] mt-1 text-destructive">
-										{t(OrderingKeys.MENU_TABLE_TAKEN_SELECTED)}
+								{selectedTableInUse ? (
+									// Muted, not destructive: sitting at a table that already
+									// has people at it is normal, and colouring it as an
+									// error tells the diner they did something wrong.
+									<p className="text-[11px] mt-1 text-muted-foreground">
+										{t(OrderingKeys.MENU_TABLE_IN_USE_SELECTED)}
 									</p>
-								) : (
-									someTableTaken && (
-										<p className="text-[11px] mt-1 text-muted-foreground">
-											{t(OrderingKeys.MENU_TABLE_TAKEN_HINT)}
-										</p>
-									)
-								)}
+								) : null}
 							</div>
 
 							<textarea
@@ -346,12 +471,7 @@ export function MenuBrowser({
 							</div>
 							<button
 								onClick={handleConfirmOrder}
-								disabled={
-									isSubmitting ||
-									!selectedTableId ||
-									selectedTableTaken ||
-									paymentsEnabled === false
-								}
+								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
 								className="w-full max-w-sm mx-auto block py-3 rounded-xl text-sm font-medium hover-btn-primary disabled:opacity-50"
 							>
 								{isSubmitting
@@ -510,7 +630,17 @@ function CategoryItems({
 
 	return (
 		<div>
-			<h3 className="text-lg font-semibold mb-3 text-foreground">
+			<h3
+				id={categorySectionId(category._id)}
+				data-category-id={category._id}
+				// `scroll-margin-top` is what stops a jump parking this heading
+				// *behind* the sticky search+pills bar. `scrollIntoView` aligns the
+				// element with the top of the scroll container, which is underneath
+				// that bar — without this the diner taps "Tacos" and lands on the
+				// third taco.
+				style={{ scrollMarginTop: `${STICKY_BAR_HEIGHT_PX}px` }}
+				className="text-lg font-semibold mb-3 text-foreground"
+			>
 				{getTranslatedField(category, lang)}
 			</h3>
 			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

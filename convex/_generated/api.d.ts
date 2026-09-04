@@ -8,9 +8,13 @@
  * @module
  */
 
+import type * as _shared_brandColor from "../_shared/brandColor.js";
+import type * as _shared_brandFonts from "../_shared/brandFonts.js";
 import type * as _shared_errors from "../_shared/errors.js";
 import type * as _shared_integrationLogging from "../_shared/integrationLogging.js";
+import type * as _shared_tip from "../_shared/tip.js";
 import type * as _shared_types from "../_shared/types.js";
+import type * as _tests_helpers_reservationsFlag from "../_tests/helpers/reservationsFlag.js";
 import type * as _util_attribution from "../_util/attribution.js";
 import type * as _util_audit from "../_util/audit.js";
 import type * as _util_auth from "../_util/auth.js";
@@ -42,6 +46,9 @@ import type * as analytics_topMenuItems from "../analytics/topMenuItems.js";
 import type * as attendance from "../attendance.js";
 import type * as billing from "../billing.js";
 import type * as billingHelpers from "../billingHelpers.js";
+import type * as branding from "../branding.js";
+import type * as brandingHelpers from "../brandingHelpers.js";
+import type * as brandingImageHelpers from "../brandingImageHelpers.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
 import type * as dashboardLayouts from "../dashboardLayouts.js";
@@ -71,6 +78,7 @@ import type * as invites from "../invites.js";
 import type * as menuImport from "../menuImport.js";
 import type * as menuImportMutation from "../menuImportMutation.js";
 import type * as menuImportPdfHelpers from "../menuImportPdfHelpers.js";
+import type * as menuItemPopularity from "../menuItemPopularity.js";
 import type * as menuItems from "../menuItems.js";
 import type * as menus from "../menus.js";
 import type * as migrations_backfillAllEventsRestaurantId from "../migrations/backfillAllEventsRestaurantId.js";
@@ -120,12 +128,14 @@ import type * as tableLocks from "../tableLocks.js";
 import type * as tables from "../tables.js";
 import type * as tips from "../tips.js";
 import type * as userSettings from "../userSettings.js";
+import type * as walkInOccupancy from "../walkInOccupancy.js";
 import type * as whatsapp_copy from "../whatsapp/copy.js";
 import type * as whatsapp_data from "../whatsapp/data.js";
 import type * as whatsapp_datetime from "../whatsapp/datetime.js";
 import type * as whatsapp_format from "../whatsapp/format.js";
 import type * as whatsapp_llm from "../whatsapp/llm.js";
 import type * as whatsapp_menu from "../whatsapp/menu.js";
+import type * as whatsapp_optOut from "../whatsapp/optOut.js";
 import type * as whatsapp_outbound from "../whatsapp/outbound.js";
 import type * as whatsapp_phone from "../whatsapp/phone.js";
 import type * as whatsapp_processing from "../whatsapp/processing.js";
@@ -146,9 +156,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "_shared/brandColor": typeof _shared_brandColor;
+  "_shared/brandFonts": typeof _shared_brandFonts;
   "_shared/errors": typeof _shared_errors;
   "_shared/integrationLogging": typeof _shared_integrationLogging;
+  "_shared/tip": typeof _shared_tip;
   "_shared/types": typeof _shared_types;
+  "_tests/helpers/reservationsFlag": typeof _tests_helpers_reservationsFlag;
   "_util/attribution": typeof _util_attribution;
   "_util/audit": typeof _util_audit;
   "_util/auth": typeof _util_auth;
@@ -180,6 +194,9 @@ declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
   billing: typeof billing;
   billingHelpers: typeof billingHelpers;
+  branding: typeof branding;
+  brandingHelpers: typeof brandingHelpers;
+  brandingImageHelpers: typeof brandingImageHelpers;
   constants: typeof constants;
   crons: typeof crons;
   dashboardLayouts: typeof dashboardLayouts;
@@ -209,6 +226,7 @@ declare const fullApi: ApiFromModules<{
   menuImport: typeof menuImport;
   menuImportMutation: typeof menuImportMutation;
   menuImportPdfHelpers: typeof menuImportPdfHelpers;
+  menuItemPopularity: typeof menuItemPopularity;
   menuItems: typeof menuItems;
   menus: typeof menus;
   "migrations/backfillAllEventsRestaurantId": typeof migrations_backfillAllEventsRestaurantId;
@@ -258,12 +276,14 @@ declare const fullApi: ApiFromModules<{
   tables: typeof tables;
   tips: typeof tips;
   userSettings: typeof userSettings;
+  walkInOccupancy: typeof walkInOccupancy;
   "whatsapp/copy": typeof whatsapp_copy;
   "whatsapp/data": typeof whatsapp_data;
   "whatsapp/datetime": typeof whatsapp_datetime;
   "whatsapp/format": typeof whatsapp_format;
   "whatsapp/llm": typeof whatsapp_llm;
   "whatsapp/menu": typeof whatsapp_menu;
+  "whatsapp/optOut": typeof whatsapp_optOut;
   "whatsapp/outbound": typeof whatsapp_outbound;
   "whatsapp/phone": typeof whatsapp_phone;
   "whatsapp/processing": typeof whatsapp_processing;

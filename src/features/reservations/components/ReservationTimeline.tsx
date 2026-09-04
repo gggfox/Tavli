@@ -62,13 +62,14 @@ const ROW_PREFIX = "row";
 const UNASSIGNED_ROW_KEY = "unassigned";
 
 /**
- * Ids of the double-booked reservations on this timeline.
+ * Ids of the reservations flagged as clashing on this timeline -- double-booked
+ * against another booking, or overlapping walk-in occupancy.
  *
  * Context rather than props: the flag is a pure display concern that would
  * otherwise be threaded through five layers of row components that have no
  * other reason to know about collisions.
  */
-const CollisionContext = createContext<ReadonlySet<Id<"reservations">>>(new Set());
+const CollisionContext = createContext<ReadonlySet<string>>(new Set());
 const TERMINAL_RECOVERABLE_STATUSES = new Set(["cancelled", "no_show"]);
 
 export interface TimelineRescheduleIntent {
@@ -159,8 +160,8 @@ export function ReservationTimeline({
 		sections,
 		reservationsByTable,
 		unassignedReservations,
-		collidingReservationIds,
 		locksByTable,
+		collisions,
 		openHour,
 		closeHour,
 		minAdvanceMinutes,
@@ -481,9 +482,9 @@ export function ReservationTimeline({
 	);
 
 	return (
-		<CollisionContext.Provider value={collidingReservationIds}>
+		<CollisionContext.Provider value={collisions.collidingReservationIds}>
 			<CollisionBanner
-				count={collidingReservationIds.size}
+				count={collisions.collidingReservationIds.size}
 				restaurantId={restaurantId}
 				onJump={jumpToFirstCollision}
 			/>
@@ -1033,7 +1034,7 @@ function DraggableTimelineBlock({
 	canDrag,
 	onOpen,
 }: DraggableTimelineBlockProps) {
-	const isColliding = useContext(CollisionContext).has(reservation._id);
+	const isColliding = useContext(CollisionContext).has(reservation._id as string);
 	const dragId = makeDragId(reservation._id, fromTableKey);
 	const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
 		id: dragId,
@@ -1099,7 +1100,7 @@ function TimelineBlockContent({
 }: TimelineBlockContentProps) {
 	const { t } = useTranslation();
 	const collidingIds = useContext(CollisionContext);
-	const isColliding = collidingIds.has(reservation._id);
+	const isColliding = collidingIds.has(reservation._id as string);
 	const config = getReservationStatusConfig(reservation.status);
 	const tone: StatusTone = config?.tone ?? RESERVATION_FALLBACK_TONE;
 	const palette = getStatusToneStyle(tone);

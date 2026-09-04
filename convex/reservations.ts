@@ -48,6 +48,7 @@ import {
 	requiredCapacityCovered,
 	resolveServiceWindow,
 } from "./_util/availability";
+import { isReservationsEnabled } from "./featureFlags";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
 import { loadPlacementWindow, placeParty } from "./_util/tablePlacement";
 import {
@@ -274,7 +275,11 @@ export const listReservationSlotsForDay = query({
 		const turnMinutes = computeTurnMinutes(settings, args.partySize);
 		const { minAdvanceMinutes, maxAdvanceDays, acceptingReservations } = settings;
 		const now = Date.now();
-		if (!acceptingReservations) {
+		// Both switches. This query is unauthenticated and feeds the public
+		// booking form, so it must agree with what `create` will accept —
+		// offering slots that the create path refuses is worse than offering
+		// none.
+		if (!acceptingReservations || !(await isReservationsEnabled(ctx))) {
 			return { slots: [] as number[], turnMinutes };
 		}
 		// Out-of-range party sizes have no slots; skip the scan entirely.
@@ -1542,5 +1547,27 @@ export const internalListReservationsForExportYear = internalQuery({
 		);
 
 		return denormRows;
+	},
+});
+
+/**
+ * May this restaurant's diners reach the reservation surfaces at all?
+ *
+ * Both switches in one anonymous-safe read, so the Reserve tab and
+ * `/r/$slug/reserve` cannot disagree with each other or with what
+ * `reservations.create` will accept (TAVLI-100).
+ *
+ * Deliberately says nothing about *why*. A diner does not need to know
+ * whether the platform or the restaurant turned it off, and the two answers
+ * are different kinds of information — one is a business fact about this
+ * restaurant, the other is a fact about Tavli's rollout.
+ */
+export const isBookableByDiners = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	returns: v.boolean(),
+	handler: async (ctx, args): Promise<boolean> => {
+		if (!(await isReservationsEnabled(ctx))) return false;
+		const settings = await loadEffectiveSettings(ctx, args.restaurantId);
+		return settings.acceptingReservations;
 	},
 });

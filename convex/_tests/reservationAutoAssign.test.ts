@@ -18,6 +18,7 @@ import type { Id } from "../_generated/dataModel";
 import { ymdHmToUtcMs } from "../_util/timezone";
 import { RESERVATION_STATUS, TABLE_ASSIGNED_BY } from "../constants";
 import schema from "../schema";
+import { enableReservationsFlag } from "./helpers/reservationsFlag";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -71,6 +72,8 @@ async function seedRestaurant(
 				createdAt: Date.now(),
 			});
 		}
+		// TAVLI-100 gates customer-facing reservations behind a flag that ships OFF.
+		await enableReservationsFlag(ctx.db);
 		await ctx.db.insert("restaurantMembers", {
 			restaurantId,
 			organizationId,

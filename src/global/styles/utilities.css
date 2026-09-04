@@ -145,3 +145,35 @@
 		color-mix(in oklch, var(--border-strong) 50%, transparent) 4px
 	);
 }
+
+/*
+ * Marquee for the diner menu's "most popular" strip (TAVLI-98).
+ *
+ * The track is rendered twice and translated by exactly -50%, so when the
+ * first copy has fully left the viewport the second sits precisely where the
+ * first began — the loop repeats with no seam and no jump back.
+ *
+ * `translate3d` rather than `translateX` to keep the animation on the
+ * compositor: a menu is a long scrolling page, and a main-thread transform
+ * would contend with the diner's own scrolling on exactly the low-end phones
+ * where that is most noticeable.
+ *
+ * Consumers apply this through Tailwind's `motion-safe:` variant, so it never
+ * runs for a reader who has asked for reduced motion — they get a plain
+ * snap-scroll rail instead, with the same cards in the same order.
+ */
+@keyframes marquee {
+	from {
+		transform: translate3d(0, 0, 0);
+	}
+	to {
+		transform: translate3d(-50%, 0, 0);
+	}
+}
+
+.animate-marquee {
+	/* Slow enough to read a dish name in passing. Faster reads as a ticker. */
+	animation: marquee 40s linear infinite;
+	/* Hint the compositor without pinning a layer forever. */
+	will-change: transform;
+}

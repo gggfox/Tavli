@@ -3,6 +3,7 @@
  */
 export const CustomerKeys = {
 	MENU: "customer.nav.menu",
+	RESERVATIONS_UNAVAILABLE: "customer.reservationsUnavailable",
 	RESERVE: "customer.nav.reserve",
 	SIGN_IN: "customer.auth.signIn",
 	SIGN_UP: "customer.auth.signUp",

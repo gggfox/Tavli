@@ -77,6 +77,11 @@ export function WhatsappAssistantPanel({
 					</p>
 				</div>
 
+				{/* Consent line (WhatsApp Business Messaging Policy): the diner's own
+				    message is the opt-in, and the surface that invites the message is
+				    where that has to be said. */}
+				<p className="text-xs text-faint-foreground">{t(WhatsappKeys.ASSISTANT_CONSENT_NOTE)}</p>
+
 				<div className="flex flex-wrap items-center gap-2">
 					<a
 						href={deepLinkUrl}

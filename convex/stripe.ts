@@ -42,6 +42,7 @@
 import { v } from "convex/values";
 import type Stripe from "stripe";
 import { api, internal } from "./_generated/api";
+import { computeOrderCharge } from "./_shared/tip";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction } from "./_generated/server";
@@ -1337,6 +1338,11 @@ export const refundOrderItem = internalAction({
 export const createPaymentIntent = action({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
+		/**
+		 * Tip as a whole percentage of the **subtotal** (TAVLI-99). Omitted
+		 * means no tip, which keeps every pre-existing caller working.
+		 */
+		tipPercent: v.optional(v.number()),
 	},
 	handler: async (
 		ctx,
@@ -1376,9 +1382,11 @@ export const createPaymentIntent = action({
 		// Integer cents throughout: the fee rounds half-up on the subtotal, and
 		// the diner's charge is the sum. `payments` rows record the split so
 		// revenue aggregates read `subtotalAmount`, never `amount` (ADR 008).
-		const subtotalAmount = order.totalAmount;
-		const feeAmount = Math.round(subtotalAmount * PLATFORM_APPLICATION_FEE_RATE);
-		const amount = subtotalAmount + feeAmount;
+		const { subtotalAmount, feeAmount, gratuityAmount, amount } = computeOrderCharge(
+			order.totalAmount,
+			PLATFORM_APPLICATION_FEE_RATE,
+			args.tipPercent ?? 0
+		);
 		const currency = restaurant.currency.toLowerCase();
 
 		const stripeClient = getStripeClient();
@@ -1398,6 +1406,13 @@ export const createPaymentIntent = action({
 			latestPayment?.status === PAYMENT_STATUS.PROCESSING &&
 			latestPayment.orderUpdatedAtSnapshot === order.updatedAt &&
 			latestPayment.subtotalAmount === order.totalAmount &&
+			// The tip has to be part of this or changing it silently pays the
+			// old amount: the order has not been edited, so `updatedAt` and the
+			// subtotal both still match, and the stale intent looks reusable.
+			// The diner moves the slider, watches the total update, taps Pay,
+			// and is charged what the slider said a minute ago. `?? 0` because
+			// rows written before this feature carry no gratuity at all.
+			(latestPayment.gratuityAmount ?? 0) === gratuityAmount &&
 			latestPayment.currency === currency &&
 			!!latestPayment.stripePaymentIntentId;
 
@@ -1443,6 +1458,7 @@ export const createPaymentIntent = action({
 			amount,
 			subtotalAmount,
 			feeAmount,
+			...(gratuityAmount > 0 && { gratuityAmount }),
 			kind: PAYMENT_KIND.ORDER,
 			paidByUserId: identity.subject,
 			currency,
@@ -1465,6 +1481,12 @@ export const createPaymentIntent = action({
 					currency,
 					customer: customerId,
 					setup_future_usage: "off_session",
+					// Deliberately NOT `amount`. The tip is inside `amount` and
+					// must not be inside the fee: the schema's invariant is that
+					// the service fee never applies to tips, so 100% of a
+					// gratuity reaches the restaurant through the destination
+					// charge — exactly as it did when tips were their own charge
+					// at close-out.
 					application_fee_amount: feeAmount,
 					transfer_data: {
 						destination: restaurant.stripeAccountId,
@@ -1478,6 +1500,7 @@ export const createPaymentIntent = action({
 						kind: PAYMENT_KIND.ORDER,
 						subtotalAmount: String(subtotalAmount),
 						feeAmount: String(feeAmount),
+						gratuityAmount: String(gratuityAmount),
 					},
 				},
 				{

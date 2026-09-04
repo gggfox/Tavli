@@ -45,6 +45,7 @@ import {
 	isBookablePartySize,
 	isPartyBookableAt,
 } from "../reservationHelpers";
+import { isReservationsEnabled } from "../featureFlags";
 import { CUSTOMER_CANCEL_REASON } from "../reservations";
 import {
 	AUDIT_ACTOR,
@@ -75,8 +76,14 @@ export const internalGetBookingContextForBot = internalQuery({
 		const window = resolveServiceWindow(restaurant);
 		const now = nowInRestaurant(restaurant.timezone, Date.now());
 
+		// The platform switch AND the restaurant's own setting. Reporting only
+		// the latter would have the assistant cheerfully offer times that
+		// `reservations.create` then refuses — the diner is told yes, then no,
+		// by the same conversation.
+		const reservationsEnabled = await isReservationsEnabled(ctx);
+
 		return {
-			acceptingReservations: settings.acceptingReservations,
+			acceptingReservations: reservationsEnabled && settings.acceptingReservations,
 			minAdvanceMinutes: settings.minAdvanceMinutes,
 			maxAdvanceDays: settings.maxAdvanceDays,
 			maxPartySize: MAX_PARTY_SIZE,
@@ -124,7 +131,7 @@ export const internalCheckAvailabilityForBot = internalQuery({
 		const endsAt = computeEndsAt(resolved.startsAt, turnMinutes);
 		const base = { date: resolved.date, time: resolved.time, turnMinutes };
 
-		if (!settings.acceptingReservations) {
+		if (!settings.acceptingReservations || !(await isReservationsEnabled(ctx))) {
 			return {
 				...base,
 				available: false,

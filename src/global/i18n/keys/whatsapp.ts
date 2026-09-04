@@ -29,6 +29,8 @@ export const WhatsappKeys = {
 	ASSISTANT_ENABLE: "whatsapp.assistant.enable",
 	ASSISTANT_PAUSE: "whatsapp.assistant.pause",
 	ASSISTANT_PUBLIC_CTA: "whatsapp.assistant.publicCta",
+	/** Consent line (WhatsApp Business Messaging Policy): messaging is the opt-in. */
+	ASSISTANT_CONSENT_NOTE: "whatsapp.assistant.consentNote",
 
 	// Staff conversation view (TAVLI-93)
 	PAGE_SETUP_RESTAURANT_FIRST: "whatsapp.page.setupRestaurantFirst",

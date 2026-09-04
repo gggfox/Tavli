@@ -16,6 +16,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { BRANDING_IMAGE_SLOTS, BRANDING_SLOT_SPECS } from "../brandingImageHelpers";
 import { RESTAURANT_PURGE_DELETED_TABLES, TABLE } from "../constants";
 import schema from "../schema";
 
@@ -65,6 +66,7 @@ const EXPECTED_DELETED = {
 	[TABLE.MENUS]: 1,
 	[TABLE.MENU_CATEGORIES]: 1,
 	[TABLE.MENU_ITEMS]: 2,
+	[TABLE.MENU_ITEM_POPULARITY]: 1,
 	[TABLE.OPTION_GROUPS]: 1,
 	[TABLE.OPTIONS]: 1,
 	[TABLE.MENU_ITEM_OPTION_GROUPS]: 1,
@@ -543,7 +545,43 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			createdAt: NOW,
 		});
 
-		return { photoStorageId, imageStorageId, orderItemId, webhookEventIds, tipPoolShareId };
+		// A materialised popularity row (TAVLI-98). It points at `menuItems`, so
+		// the purge has to delete it *before* the menu tree, or it is briefly a
+		// ranking of ids that no longer resolve.
+		await ctx.db.insert("menuItemPopularity", {
+			restaurantId,
+			menuItemId,
+			quantity: 12,
+			rank: 1,
+			windowStartAt: NOW - 30 * 24 * 60 * 60 * 1000,
+			computedAt: NOW,
+		});
+
+		// Branding blobs (TAVLI-96). These hang off the restaurants row itself,
+		// which the table-level coverage guard deliberately skips — so unlike
+		// every other blob here, nothing structural would notice if the purge
+		// forgot them. `brandingPurgeCoverage.test.ts` is the field-level guard;
+		// this seeds real files so the *behaviour* is asserted too.
+		const brandingStorageIds: Record<string, Id<"_storage">> = {};
+		for (const slot of BRANDING_IMAGE_SLOTS) {
+			const columns = BRANDING_SLOT_SPECS[slot].columns;
+			const storageId = await ctx.storage.store(new NodeBlob([`branding-${slot}`]) as Blob);
+			brandingStorageIds[slot] = storageId;
+			await ctx.db.patch(restaurantId, {
+				[columns.storageId]: storageId,
+				[columns.width]: BRANDING_SLOT_SPECS[slot].width,
+				[columns.height]: BRANDING_SLOT_SPECS[slot].height,
+			});
+		}
+
+		return {
+			photoStorageId,
+			imageStorageId,
+			brandingStorageIds,
+			orderItemId,
+			webhookEventIds,
+			tipPoolShareId,
+		};
 	});
 }
 
@@ -707,7 +745,8 @@ describe("restaurant hard purge cascade", () => {
 			[TABLE.INVITATIONS]: 2,
 			[TABLE.USER_ROLES]: 1,
 		});
-		expect(result.purged && result.summary?.storageFilesDeleted).toBe(2);
+		// 2 pre-existing (employee photo, menu-item image) + 4 branding slots.
+		expect(result.purged && result.summary?.storageFilesDeleted).toBe(6);
 
 		// No row in any purge-covered table still references the purged restaurant.
 		await t.run(async (ctx) => {
@@ -727,6 +766,11 @@ describe("restaurant hard purge cascade", () => {
 			// Storage files are gone.
 			expect(await ctx.storage.getUrl(aGraph.photoStorageId)).toBeNull();
 			expect(await ctx.storage.getUrl(aGraph.imageStorageId)).toBeNull();
+			// Every branding blob 404s. This is the assertion the ticket's
+			// "hard-delete a branded restaurant → both blobs 404" describes.
+			for (const [slot, storageId] of Object.entries(aGraph.brandingStorageIds)) {
+				expect(await ctx.storage.getUrl(storageId), `${slot} blob outlived the purge`).toBeNull();
+			}
 		});
 
 		// The surviving restaurant and user-owned rows are untouched.
@@ -784,7 +828,7 @@ describe("restaurant hard purge cascade", () => {
 		expect(payload.name).toBe("purged");
 		expect(payload.counts).toEqual({ [TABLE.RESTAURANTS]: 1, ...EXPECTED_DELETED });
 		expect(payload.patched).toEqual({ [TABLE.INVITATIONS]: 2, [TABLE.USER_ROLES]: 1 });
-		expect(payload.storageFilesDeleted).toBe(2);
+		expect(payload.storageFilesDeleted).toBe(6);
 		expect(payload.tablesCovered).toEqual([TABLE.RESTAURANTS, ...RESTAURANT_PURGE_DELETED_TABLES]);
 	});
 

@@ -25,6 +25,7 @@ import {
 	TIP_POOL_STATUS,
 	USER_ROLES,
 	WHATSAPP_CONVERSATION_STATUS,
+	WHATSAPP_OPT_IN_SOURCE,
 	WHATSAPP_PENDING_ACTION,
 	WHATSAPP_MESSAGE_DIRECTION,
 	WHATSAPP_MESSAGE_SENDER,
@@ -297,6 +298,63 @@ export default defineSchema({
 		 * gate — they can only have been entered under the new copy.
 		 */
 		publicProfileReviewedAt: v.optional(v.number()),
+		// ── Branding (TAVLI-88, ADR 009): the diner-visible visual identity.
+		//    "Branding" is the concept; "Theme" keeps its existing meaning of
+		//    light/dark and nothing else.
+		//
+		//    **Stored flat, nested only in the public projection.** `ctx.db.patch`
+		//    is a shallow merge and every settings section resubmits every field
+		//    it owns, so a nested `branding: {...}` column would make each stale
+		//    browser tab a lost-update machine: saving Public profile from a tab
+		//    opened before a colour change would write back the whole old object.
+		/**
+		 * The one stored brand colour, canonical `#rrggbb` (see
+		 * `convex/_shared/brandColor.ts`). Hover shade, readable ink and the
+		 * per-mode contrast adjustment are all *derived* — storing them would
+		 * multiply the combinations a restaurant can break, and none of it is
+		 * recoverable by a derivation.
+		 */
+		brandingColor: v.optional(v.string()),
+		/**
+		 * Chosen face from the curated shortlist, or absent for the system
+		 * stack. A closed union rather than a free string: a manager-controlled
+		 * family name would flow into an SSR'd `<style>` and a preload on an
+		 * anonymous page — an out-of-bound fetch from every diner's phone.
+		 * Keep in sync with `BRAND_FONT_IDS` in `convex/_shared/brandFonts.ts`.
+		 */
+		brandingFontId: v.optional(
+			v.union(v.literal("inter"), v.literal("fraunces"), v.literal("spaceGrotesk"))
+		),
+		/**
+		 * Logo, shown in the sticky customer header on every `/r/` page. Scaled
+		 * to fit, never cropped — a square crop beheads a wordmark.
+		 *
+		 * Dimensions are stored alongside the blob because the renderer needs
+		 * them at first paint: preflight's `img { height: auto }` means an
+		 * `<img>` with no intrinsic size *causes* the layout shift that explicit
+		 * width/height prevents.
+		 */
+		brandingLogoStorageId: v.optional(v.id("_storage")),
+		brandingLogoWidth: v.optional(v.number()),
+		brandingLogoHeight: v.optional(v.number()),
+		/**
+		 * Header image, a hero on the menu page only. Three slots so the
+		 * `<picture>` can art-direct per breakpoint: a 16:9 slice of a dining
+		 * room is 90% ceiling on a phone. The manager uploads the desktop file
+		 * and the client derives the other two; either smaller slot can be
+		 * overridden with its own crop.
+		 *
+		 * Cover-cropped at render, unlike the logo.
+		 */
+		brandingHeaderDesktopStorageId: v.optional(v.id("_storage")),
+		brandingHeaderDesktopWidth: v.optional(v.number()),
+		brandingHeaderDesktopHeight: v.optional(v.number()),
+		brandingHeaderTabletStorageId: v.optional(v.id("_storage")),
+		brandingHeaderTabletWidth: v.optional(v.number()),
+		brandingHeaderTabletHeight: v.optional(v.number()),
+		brandingHeaderPhoneStorageId: v.optional(v.id("_storage")),
+		brandingHeaderPhoneWidth: v.optional(v.number()),
+		brandingHeaderPhoneHeight: v.optional(v.number()),
 		/** Per-restaurant flag gating the 2,000 MXN/month platform subscription (ADR 008). */
 		platformSubscriptionEnabled: v.optional(v.boolean()),
 		/** Stripe Billing Customer for the platform subscription (platform account, not Connect). */
@@ -403,6 +461,36 @@ export default defineSchema({
 	})
 		.index("by_category", ["categoryId"])
 		.index("by_restaurant", ["restaurantId"]),
+
+	/**
+	 * Materialised "most popular items" ranking, one row per ranked item
+	 * (TAVLI-98).
+	 *
+	 * **Why materialised rather than computed on read.** The diner menu is the
+	 * most-loaded page in the product, and computing this live means walking
+	 * every paid order in the window on every menu view — an unbounded read
+	 * that hits Convex's 4,096-document ceiling on a busy restaurant. This is
+	 * the same class of problem TAVLI-89 tracks, so it is not one to introduce
+	 * on purpose.
+	 *
+	 * **Why a trailing window rather than all-time counts.** All-time counts
+	 * ossify: the dish that sold well at launch stays on the carousel forever
+	 * and a new special can never surface, which makes the carousel a worse
+	 * recommendation every month it runs.
+	 */
+	[TABLE.MENU_ITEM_POPULARITY]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		menuItemId: v.id(TABLE.MENU_ITEMS),
+		/** Units sold in the window. Cancelled (86'd) lines are excluded. */
+		quantity: v.number(),
+		/** 1-based, so the carousel can order without re-sorting. */
+		rank: v.number(),
+		/** Start of the window this row was computed over, epoch ms. */
+		windowStartAt: v.number(),
+		computedAt: v.number(),
+	})
+		// The carousel reads by restaurant and renders in rank order.
+		.index("by_restaurant_rank", ["restaurantId", "rank"]),
 
 	[TABLE.OPTION_GROUPS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -1389,6 +1477,20 @@ export default defineSchema({
 		lastMessageAt: v.number(),
 		// Last inbound timestamp — WhatsApp 24h freeform-reply window bookkeeping.
 		lastInboundAt: v.number(),
+		/**
+		 * Consent record (WhatsApp Business Messaging Policy): the diner's own
+		 * first inbound message IS the opt-in — user-initiated conversation — and
+		 * these two fields stamp when it happened and what got them here (the
+		 * wa.me deep link, or a codeless cold start). Optional only because rows
+		 * predate the fields; every conversation created since sets both.
+		 */
+		optedInAt: v.optional(v.number()),
+		optedInSource: v.optional(
+			v.union(
+				v.literal(WHATSAPP_OPT_IN_SOURCE.DEEP_LINK),
+				v.literal(WHATSAPP_OPT_IN_SOURCE.COLD_START)
+			)
+		),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
@@ -1534,6 +1636,24 @@ export default defineSchema({
 		label: v.string(),
 		createdAt: v.number(),
 		createdBy: v.string(),
+	}).index("by_phone", ["phone"]),
+
+	// Phones that revoked consent (WhatsApp Business Messaging Policy). A row
+	// here means "send this phone nothing, spend nothing on it": the inbound
+	// pipeline drops its messages before budget, routing, or model work, and the
+	// outbound path refuses to address it. Keyed by the CANONICAL phone and
+	// deliberately NOT restaurant-scoped — the diner is opting out of the
+	// number, and the number is one identity however many restaurants they
+	// talked to (ADR 012). The row is deleted on opt-in (START/ALTA); both
+	// transitions leave `allEvents` rows keyed to this row's id.
+	//
+	// Opt-out does NOT delete conversation history: the staff view and the
+	// retention sweep own that lifecycle.
+	[TABLE.WHATSAPP_OPT_OUTS]: defineTable({
+		/** Canonical E.164, via `toCanonicalE164` — one human, one row. */
+		phone: v.string(),
+		optedOutAt: v.number(),
+		createdAt: v.number(),
 	}).index("by_phone", ["phone"]),
 
 	// ============================================================================

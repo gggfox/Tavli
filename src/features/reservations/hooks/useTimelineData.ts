@@ -1,5 +1,5 @@
-import { findCollidingReservationIds } from "@/features/reservations/utils/collisions";
 import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
+import { findCollisions, type CollisionResult } from "@/features/reservations/utils/collisions";
 import { resolveRestaurantTimezone } from "@/global/utils/timezone";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
@@ -25,9 +25,9 @@ export interface TimelineData {
 	sections: TimelineSection[];
 	reservationsByTable: Map<string, ReservationDoc[]>;
 	unassignedReservations: ReservationDoc[];
-	/** Reservations double-booked against an earlier one on the same table. */
-	collidingReservationIds: Set<Id<"reservations">>;
 	locksByTable: Map<string, TableLockDoc[]>;
+	/** Ids on both sides of every booking-vs-walk-in clash. Derived, not stored. */
+	collisions: CollisionResult;
 	openHour: number;
 	closeHour: number;
 	minAdvanceMinutes: number;
@@ -137,7 +137,7 @@ export function useTimelineData(
 		return result;
 	}, [sectionsQuery.data, tablesQuery.data, restaurantId]);
 
-	const { reservationsByTable, unassignedReservations, collidingReservationIds } = useMemo(() => {
+	const { reservationsByTable, unassignedReservations } = useMemo(() => {
 		const reservations = reservationsQuery.data ?? [];
 		const byTable = new Map<string, ReservationDoc[]>();
 		const unassigned: ReservationDoc[] = [];
@@ -160,20 +160,7 @@ export function useTimelineData(
 			list.sort((a, b) => a.startsAt - b.startsAt);
 		}
 
-		// Safety net over the whole floor: every write path already refuses to
-		// double-book, so anything surfacing here is legacy data or a bypassed
-		// path. Computed from the rows the timeline already holds -- no extra
-		// query, and it clears itself the moment the overlap is resolved.
-		const colliding = new Set<Id<"reservations">>();
-		for (const list of byTable.values()) {
-			for (const id of findCollidingReservationIds(list)) colliding.add(id);
-		}
-
-		return {
-			reservationsByTable: byTable,
-			unassignedReservations: unassigned,
-			collidingReservationIds: colliding,
-		};
+		return { reservationsByTable: byTable, unassignedReservations: unassigned };
 	}, [reservationsQuery.data]);
 
 	const locksByTable = useMemo(() => {
@@ -188,6 +175,20 @@ export function useTimelineData(
 		return byTable;
 	}, [locksQuery.data]);
 
+	/**
+	 * Clashes on the floor, recomputed from the windows on every render: a
+	 * booking against walk-in occupancy (TAVLI-100), and a booking against
+	 * another booking on the same table (TAVLI-101).
+	 *
+	 * Derived rather than stored: a persisted flag goes stale the moment a
+	 * manager resolves the clash by hand, and the red bar that never clears is
+	 * the one that teaches everyone to ignore red bars.
+	 */
+	const collisions = useMemo(
+		() => findCollisions(reservationsByTable, locksByTable),
+		[reservationsByTable, locksByTable]
+	);
+
 	// Staff timeline skips min-advance shading and drag clamp; server reschedule does too.
 	const minAdvanceMinutes = 0;
 
@@ -195,8 +196,8 @@ export function useTimelineData(
 		sections,
 		reservationsByTable,
 		unassignedReservations,
-		collidingReservationIds,
 		locksByTable,
+		collisions,
 		openHour,
 		closeHour,
 		minAdvanceMinutes,

@@ -31,6 +31,16 @@ function baseOrder(overrides: Record<string, any>) {
 		status: "submitted",
 		totalAmount: 2400,
 		paymentState: "unpaid",
+		// `getOrdersBySession` now returns each order with its lines, so the
+		// hover summary card has them without a second round-trip (TAVLI-99).
+		items: [
+			{
+				_id: "orderItems:default",
+				menuItemName: "Tacos al pastor",
+				quantity: 2,
+				lineTotal: 2400,
+			},
+		],
 		createdAt: now,
 		updatedAt: now,
 		...overrides,
@@ -77,7 +87,6 @@ function renderList(
 ) {
 	return render(
 		<SessionOrdersList
-			slug="test-restaurant"
 			onBackToMenu={props.onBackToMenu ?? (() => {})}
 			onViewOrder={props.onViewOrder ?? (() => {})}
 			onContinueCheckout={props.onContinueCheckout ?? (() => {})}
@@ -112,7 +121,7 @@ describe("SessionOrdersList", () => {
 		expect(screen.getByText("No orders yet")).toBeTruthy();
 	});
 
-	it("shows the legacy tab balance with a pay CTA and the share code when the tab still owes", () => {
+	it("shows the legacy tab balance with a pay CTA when the tab still owes", () => {
 		mockQueries({
 			orders: [baseOrder({})],
 			tab: baseTab({ subtotal: 2400 }),
@@ -121,14 +130,12 @@ describe("SessionOrdersList", () => {
 		const onPayTab = vi.fn();
 		renderList({ onPayTab });
 
-		expect(screen.getByText("ABC234")).toBeTruthy();
-
 		const payButton = screen.getByText(/Pay tab/);
 		fireEvent.click(payButton);
 		expect(onPayTab).toHaveBeenCalled();
 	});
 
-	it("hides the legacy pay-tab card entirely for a settled (post-pivot) session, keeping share/join", () => {
+	it("hides the legacy pay-tab card entirely for a settled (post-pivot) session", () => {
 		// New-model sessions always report subtotal 0 — orders pay at submit
 		// (ADR 008), so the whole-tab settlement surface must not render.
 		mockQueries({
@@ -139,9 +146,18 @@ describe("SessionOrdersList", () => {
 		renderList();
 
 		expect(screen.queryByText(/Pay tab/)).toBeNull();
-		// Share code and join UI survive the pivot.
-		expect(screen.getByText("ABC234")).toBeTruthy();
-		expect(screen.getByText("Joining a friend's tab?")).toBeTruthy();
+	});
+
+	it("shows no join code and no join form", () => {
+		// Retired by TAVLI-99. Grouping a table's orders is a staff-side concern
+		// now (TAVLI-100), not something a diner arranges by reading a code
+		// aloud. `sessions.joinByCode` stays on the backend for sessions that
+		// were already shared, so this is a UI removal, not a migration.
+		mockQueries({ orders: [baseOrder({})], tab: baseTab({ subtotal: 2400 }) });
+		renderList();
+
+		expect(screen.queryByText("ABC234")).toBeNull();
+		expect(screen.queryByText("Joining a friend's tab?")).toBeNull();
 	});
 
 	it("routes a draft row to the per-order checkout with a continue-to-payment CTA", () => {

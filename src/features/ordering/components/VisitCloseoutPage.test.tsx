@@ -1,7 +1,7 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useQuery } from "@tanstack/react-query";
-import { useConvexAction, useConvexMutation } from "@convex-dev/react-query";
+import { useConvexMutation } from "@convex-dev/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useSessionStore } from "../hooks/useSession";
 import { VisitCloseoutPage } from "./VisitCloseoutPage";
@@ -13,24 +13,9 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@convex-dev/react-query", () => ({
 	convexQuery: vi.fn((ref, args) => ({ ref, args })),
-	useConvexAction: vi.fn(),
 	useConvexMutation: vi.fn(),
 }));
 
-vi.mock("@stripe/stripe-js", () => ({
-	loadStripe: vi.fn(() => Promise.resolve(null)),
-}));
-
-vi.mock("@stripe/react-stripe-js", () => ({
-	Elements: ({ children }: any) => <div data-testid="stripe-elements">{children}</div>,
-	PaymentElement: () => <div data-testid="payment-element" />,
-	useStripe: () => null,
-	useElements: () => null,
-}));
-
-const createTipChargeMock = vi.fn<
-	() => Promise<{ clientSecret: string | null; paymentId: string }>
->(async () => ({ clientSecret: null, paymentId: "payments:tip1" }));
 const closeMock = vi.fn(async () => null);
 
 /** Caller-scoped visit summary as `sessions.getVisitSummary` returns it. */
@@ -40,7 +25,6 @@ function baseSummary(overrides: Record<string, any> = {}) {
 		restaurantId: "restaurants:test",
 		sessionStatus: "active",
 		currency: "USD",
-		// 25000 → presets 2500 / 3750 / 5000 (the spec's math case).
 		myPaidTotal: 25000,
 		myOrderCount: 2,
 		myTipPayments: [],
@@ -54,7 +38,6 @@ function baseSummary(overrides: Record<string, any> = {}) {
 
 function mockBackend(summary: Record<string, any> | null | undefined) {
 	vi.mocked(useQuery).mockReturnValue({ data: summary, isLoading: false } as any);
-	vi.mocked(useConvexAction).mockReturnValue(createTipChargeMock as any);
 	vi.mocked(useConvexMutation).mockReturnValue(closeMock as any);
 }
 
@@ -76,160 +59,84 @@ describe("VisitCloseoutPage", () => {
 		});
 	});
 
-	it("shows the caller's visit total, order count, and preset amounts computed on it", () => {
+	it("shows the caller's own visit total and order count", () => {
+		// `getVisitSummary` is caller-scoped: two friends on one tab each see
+		// only their own spend, and this screen must not leak the other's.
 		mockBackend(baseSummary());
 		renderPage();
 
-		expect(screen.getByText("$250.00")).toBeTruthy();
-		expect(screen.getByText("2 orders")).toBeTruthy();
-		// 25000 → 10% = 2500, 15% = 3750, 20% = 5000.
-		expect(screen.getByText("$25.00")).toBeTruthy();
-		expect(screen.getByText("$37.50")).toBeTruthy();
-		expect(screen.getByText("$50.00")).toBeTruthy();
-		// Default selection is 10%, reflected in the CTA amount.
-		expect(screen.getByText(/Add tip · \$25\.00/)).toBeTruthy();
-		// No 0% preset — Skip / custom 0 cover it.
-		expect(screen.queryByText("0%")).toBeNull();
+		// The \$ is a sibling text node, so match the number itself.
+		expect(screen.getByText(/250\.00/)).toBeTruthy();
+		// `/2/` alone matches the total too — scope to the order-count copy.
+		expect(screen.getByText(/\b2\b.*order|order.*\b2\b/i)).toBeTruthy();
 	});
 
-	it("recomputes the CTA when another preset is selected", () => {
+	it("offers no tip control at all", () => {
+		// The tip moved to the per-order payment page (TAVLI-99). A tip control
+		// surviving here would charge a diner twice for the same intent.
 		mockBackend(baseSummary());
 		renderPage();
 
-		fireEvent.click(screen.getByLabelText("Tip 20%"));
-		expect(screen.getByText(/Add tip · \$50\.00/)).toBeTruthy();
+		expect(screen.queryByRole("slider")).toBeNull();
+		expect(screen.queryByTestId("stripe-elements")).toBeNull();
+		expect(screen.queryByTestId("payment-element")).toBeNull();
 	});
 
-	it("one-taps the saved card and shows the thank-you card with the tip amount", async () => {
-		mockBackend(baseSummary());
-		createTipChargeMock.mockResolvedValueOnce({ clientSecret: null, paymentId: "payments:tip1" });
-		renderPage();
-
-		fireEvent.click(screen.getByText(/Add tip · \$25\.00/));
-
-		await waitFor(() => {
-			expect(createTipChargeMock).toHaveBeenCalledWith({
-				sessionId: "sessions:test",
-				tipAmount: 2500,
-			});
-			expect(screen.getByText("Thank you!")).toBeTruthy();
-			expect(screen.getByText(/\$25\.00 tip goes straight to the team/)).toBeTruthy();
-		});
-		// The tip never closes the session by itself.
-		expect(closeMock).not.toHaveBeenCalled();
-	});
-
-	it("mounts the Elements fallback when the charge needs the payment sheet", async () => {
-		mockBackend(baseSummary({ hasSavedCard: false }));
-		createTipChargeMock.mockResolvedValueOnce({
-			clientSecret: "cs_tip_test",
-			paymentId: "payments:tip1",
-		});
-		renderPage();
-
-		fireEvent.click(screen.getByText(/Add tip · \$25\.00/));
-
-		await waitFor(() => {
-			expect(screen.getByTestId("payment-element")).toBeTruthy();
-			expect(screen.getByText("Confirm your tip")).toBeTruthy();
-		});
-	});
-
-	it("skip closes the session, clears the local session, and navigates without charging", async () => {
-		mockBackend(baseSummary());
+	it("closes the session, clears it locally, and navigates", async () => {
 		const onDone = vi.fn();
+		mockBackend(baseSummary());
 		renderPage({ onDone });
 
-		fireEvent.click(screen.getByText("Skip"));
+		fireEvent.click(screen.getByRole("button", { name: /done/i }));
 
-		await waitFor(() => {
-			expect(closeMock).toHaveBeenCalledWith({ sessionId: "sessions:test" });
-			expect(onDone).toHaveBeenCalled();
-		});
-		expect(createTipChargeMock).not.toHaveBeenCalled();
+		await waitFor(() => expect(closeMock).toHaveBeenCalledWith({ sessionId: "sessions:test" }));
+		expect(onDone).toHaveBeenCalled();
 		expect(useSessionStore.getState().sessionId).toBeNull();
 	});
 
-	it("a custom tip of 0 is allowed and behaves as skip (never charges)", async () => {
-		mockBackend(baseSummary());
+	it("surfaces a blocked close and does not close or navigate", async () => {
+		// An uncollected cash order needs staff, not another tap. Closing anyway
+		// would strand money owed with no record that anyone was told.
 		const onDone = vi.fn();
-		renderPage({ onDone });
-
-		fireEvent.click(screen.getByText("Custom"));
-		fireEvent.change(screen.getByPlaceholderText("Tip amount"), { target: { value: "0" } });
-		fireEvent.click(screen.getByText(/Add tip · \$0\.00/));
-
-		await waitFor(() => {
-			expect(closeMock).toHaveBeenCalledWith({ sessionId: "sessions:test" });
-			expect(onDone).toHaveBeenCalled();
-		});
-		expect(createTipChargeMock).not.toHaveBeenCalled();
-	});
-
-	it("a blocked close surfaces the reason and does not close or navigate", async () => {
 		mockBackend(
 			baseSummary({
 				canClose: false,
 				closeBlockedReason: "ERROR_SESSION_AWAITING_PAYMENT_ORDERS",
 			})
 		);
-		const onDone = vi.fn();
 		renderPage({ onDone });
 
-		// The reason is explained proactively…
-		expect(screen.getAllByText(/waiting to be paid in person/).length).toBeGreaterThan(0);
+		fireEvent.click(screen.getByRole("button", { name: /done/i }));
 
-		// …and the walk-away path refuses to close while blocked.
-		fireEvent.click(screen.getByText("Skip"));
-		await waitFor(() => {
-			expect(closeMock).not.toHaveBeenCalled();
-		});
+		await waitFor(() => expect(closeMock).not.toHaveBeenCalled());
 		expect(onDone).not.toHaveBeenCalled();
-		expect(useSessionStore.getState().sessionId).toBe("sessions:test");
 	});
 
-	it("a member who paid nothing sees no tip UI, just the close path", async () => {
-		mockBackend(baseSummary({ myPaidTotal: 0, myOrderCount: 0 }));
+	it("still shows tips already given this visit", () => {
+		// A diner who tipped per order should see it here rather than a screen
+		// that quietly forgot.
+		mockBackend(baseSummary({ myTipPayments: [{ amount: 3000 }] }));
+		renderPage();
+		expect(screen.getByText(/30\.00/)).toBeTruthy();
+	});
+
+	it("shows the close path to a member who paid nothing", async () => {
 		const onDone = vi.fn();
+		mockBackend(baseSummary({ myPaidTotal: 0, myOrderCount: 0 }));
 		renderPage({ onDone });
 
-		expect(screen.queryByText("Add a tip for the team")).toBeNull();
-		expect(screen.queryByText(/Add tip ·/)).toBeNull();
-		expect(screen.getByText(/didn't pay for any orders/)).toBeTruthy();
-
-		fireEvent.click(screen.getByText("Done"));
-		await waitFor(() => {
-			expect(closeMock).toHaveBeenCalledWith({ sessionId: "sessions:test" });
-			expect(onDone).toHaveBeenCalled();
-		});
-	});
-
-	it("shows tips already given and still allows adding another", () => {
-		mockBackend(
-			baseSummary({
-				myTipPayments: [
-					{ paymentId: "payments:tipA", amount: 1500 },
-					{ paymentId: "payments:tipB", amount: 500 },
-				],
-			})
-		);
-		renderPage();
-
-		expect(screen.getByText(/Tip added · \$20\.00/)).toBeTruthy();
-		// The selector stays available for a re-tip.
-		expect(screen.getByText(/Add tip · \$25\.00/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: /done/i }));
+		await waitFor(() => expect(onDone).toHaveBeenCalled());
 	});
 
 	it("an already-closed session skips the close call but still clears and navigates", async () => {
-		mockBackend(baseSummary({ sessionStatus: "closed", canClose: false }));
 		const onDone = vi.fn();
+		mockBackend(baseSummary({ sessionStatus: "closed" }));
 		renderPage({ onDone });
 
-		fireEvent.click(screen.getByText("Skip"));
-		await waitFor(() => {
-			expect(onDone).toHaveBeenCalled();
-		});
+		fireEvent.click(screen.getByRole("button", { name: /done/i }));
+
+		await waitFor(() => expect(onDone).toHaveBeenCalled());
 		expect(closeMock).not.toHaveBeenCalled();
-		expect(useSessionStore.getState().sessionId).toBeNull();
 	});
 });

@@ -20,6 +20,7 @@ import {
 import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
+import { enableReservationsFlag } from "./helpers/reservationsFlag";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -70,6 +71,11 @@ async function seedRestaurant(t: ReturnType<typeof convexTest>) {
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		});
+
+		// The platform reservations switch ships default OFF (TAVLI-100), so a
+		// suite exercising the booking paths has to enable it the way a real
+		// deployment does.
+		await enableReservationsFlag(ctx.db);
 		await insertMenuForRestaurant(ctx, { restaurantId, name: "audit-r", userId: "owner-audit" });
 		tableId = await ctx.db.insert("tables", {
 			restaurantId,

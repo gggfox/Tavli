@@ -1,58 +1,181 @@
-import type { Id } from "../../../../convex/_generated/dataModel";
+/**
+ * Collision detection for the reservations timeline (TAVLI-100, TAVLI-101).
+ *
+ * Two kinds of clash, both surfaced through one `CollisionResult` so the
+ * timeline has a single thing to read: a booking against a **walk-in** (the
+ * floor disagreeing with the book) and a booking against **another booking on
+ * the same table** (the book disagreeing with itself).
+ *
+ * ## Derived, never stored
+ *
+ * A stored `hasCollision` flag goes stale the instant a manager resolves the
+ * clash by hand — dragging the booking somewhere else, or clearing the table.
+ * Clearing it would need a second pass over every row that might have been
+ * affected, and the one that gets missed is the one that erodes trust in the
+ * colour: a manager who sees a red bar with nothing wrong learns to ignore red
+ * bars.
+ *
+ * Recomputing from the windows costs a pass over one day's rows and is correct
+ * by construction — fix the clash and the red disappears with no second action.
+ *
+ * ## Both sides go red
+ *
+ * A collision is a *relationship*, not a property of one bar. Colouring only
+ * the booking leaves a manager looking at a red reservation with no visible
+ * reason; colouring only the walk-in says a table is occupied without saying
+ * what that costs. Both, and the walk-in is drawn hatched so it is obvious at a
+ * glance which side is a booking and which is someone already eating.
+ */
+
+export interface TimeWindow {
+	readonly startsAt: number;
+	readonly endsAt: number;
+}
+
+/** Half-open overlap: each starts before the other ends. */
+export function windowsOverlap(a: TimeWindow, b: TimeWindow): boolean {
+	return a.startsAt < b.endsAt && b.startsAt < a.endsAt;
+}
 
 /**
- * Double-bookings on a single table row.
- *
- * This is a **safety net, not the primary defence**. Every write path
- * (`confirm`, `reschedule`, `markSeated`) already calls
- * `checkTablesFreeForReservation`, and creates now go through `placeParty`. A
- * collision that survives all of that means legacy data or a path that bypassed
- * the check — which is exactly the kind of thing worth showing staff rather than
- * discovering at service time.
- *
- * The predicate deliberately mirrors the backend's canonical conflict read: only
- * active statuses collide, and an exact handover (one ends as the next begins)
- * does not. A detector that disagreed with the writers would raise alarms nobody
- * could act on, because the system would happily re-create the state it just
- * flagged.
+ * The lock `reason` the walk-in recorder writes. Kept in step with
+ * `convex/walkInOccupancy.ts`; a lock a human created has their own reason (or
+ * none) and is never treated as a collision, because a manager blocking a
+ * table has already decided what happens to anything on it.
  */
+export const WALK_IN_LOCK_REASON = "walk-in";
+
+/**
+ * A reservation as this module needs to see it.
+ *
+ * `status` is optional because the walk-in pass below does not consult it,
+ * while the double-booking pass does. A row without one is treated as active.
+ */
+export interface CollidableReservation extends TimeWindow {
+	readonly _id: string;
+	readonly status?: string;
+}
+
+export interface CollisionInput {
+	readonly reservations: ReadonlyArray<CollidableReservation>;
+	readonly locks: ReadonlyArray<{ _id: string; reason?: string } & TimeWindow>;
+}
+
+export interface CollisionResult {
+	/** Reservation ids overlapping a walk-in lock on the same table. */
+	readonly collidingReservationIds: ReadonlySet<string>;
+	/** Walk-in lock ids overlapping a reservation on the same table. */
+	readonly collidingLockIds: ReadonlySet<string>;
+}
+
+const EMPTY: CollisionResult = {
+	collidingReservationIds: new Set(),
+	collidingLockIds: new Set(),
+};
+
+/**
+ * Find the clashes on **one table**.
+ *
+ * Only walk-in locks count. A manager who blocked a table for a private event
+ * and then booked it anyway has made a decision; flagging that as a system
+ * problem would be the software second-guessing the person holding the floor
+ * plan.
+ */
+export function findCollisionsForTable(input: CollisionInput): CollisionResult {
+	const walkIns = input.locks.filter((lock) => lock.reason === WALK_IN_LOCK_REASON);
+	if (walkIns.length === 0 || input.reservations.length === 0) return EMPTY;
+
+	const collidingReservationIds = new Set<string>();
+	const collidingLockIds = new Set<string>();
+
+	for (const reservation of input.reservations) {
+		for (const lock of walkIns) {
+			if (!windowsOverlap(reservation, lock)) continue;
+			collidingReservationIds.add(reservation._id);
+			collidingLockIds.add(lock._id);
+		}
+	}
+
+	return { collidingReservationIds, collidingLockIds };
+}
 
 /** Matches `ACTIVE_RESERVATION_STATUSES` in `convex/constants.ts`. */
 const ACTIVE_STATUSES = new Set(["pending", "confirmed", "seated", "completed"]);
 
-interface CollidableReservation {
-	_id: Id<"reservations">;
-	startsAt: number;
-	endsAt: number;
-	status: string;
-}
-
 /**
- * Ids of the reservations to flag among cards sharing one table.
+ * Bookings double-booked against an **earlier booking on the same table**
+ * (TAVLI-101).
  *
- * Of an overlapping pair the **later-starting** card is flagged — the next one
- * rightward on the timeline. In a pile-up every card that starts inside an
- * earlier card's window is flagged, so a three-way overlap surfaces two
- * problems, not one: flagging only the last would leave the middle card looking
- * clean while it is equally half of a double-booking.
+ * The other kind of clash this module finds is a booking against a walk-in.
+ * This one is two bookings against each other, and it means something
+ * different: a walk-in collision is the floor disagreeing with the book, while
+ * a double-booking means the book disagrees with itself.
+ *
+ * It is a **safety net, not the defence**. Every write path already refuses to
+ * double-book and creates go through `placeParty`, so a survivor here is legacy
+ * data or a path that bypassed the check.
+ *
+ * Of an overlapping pair the **later-starting** booking is flagged — the next
+ * one rightward on the timeline. In a pile-up every booking that starts inside
+ * an earlier one's window is flagged, because flagging only the last would
+ * leave the middle one looking clean while it is equally half of the problem.
+ *
+ * Unlike the walk-in pass, this one skips cancelled and no-show rows: they are
+ * already drawn struck through, and they release their table for every booking
+ * check the backend makes.
  */
-export function findCollidingReservationIds(
-	reservations: CollidableReservation[]
-): Set<Id<"reservations">> {
+export function findDoubleBookedReservationIds(
+	reservations: ReadonlyArray<CollidableReservation>
+): Set<string> {
 	const active = reservations
-		.filter((r) => ACTIVE_STATUSES.has(r.status))
+		.filter((r) => r.status === undefined || ACTIVE_STATUSES.has(r.status))
+		.slice()
 		.sort((a, b) => a.startsAt - b.startsAt);
 
-	const colliding = new Set<Id<"reservations">>();
+	const colliding = new Set<string>();
 	for (let i = 0; i < active.length; i++) {
 		for (let j = 0; j < i; j++) {
 			// Sorted by start, so `active[j]` starts no later than `active[i]`.
-			// Half-open on purpose: `endsAt === startsAt` is a handover, not a clash.
-			if (active[j].endsAt > active[i].startsAt) {
+			// `windowsOverlap` is half-open, so an exact handover is not a clash.
+			if (windowsOverlap(active[j], active[i])) {
 				colliding.add(active[i]._id);
 				break;
 			}
 		}
 	}
 	return colliding;
+}
+
+/**
+ * Roll the per-table result up across the whole timeline.
+ *
+ * Keyed by table because a walk-in on table 4 has nothing to say about a
+ * booking on table 9 — comparing across tables would flag every busy service
+ * as one enormous collision.
+ */
+export function findCollisions(
+	reservationsByTable: ReadonlyMap<string, ReadonlyArray<CollidableReservation>>,
+	locksByTable: ReadonlyMap<string, ReadonlyArray<{ _id: string; reason?: string } & TimeWindow>>
+): CollisionResult {
+	const collidingReservationIds = new Set<string>();
+	const collidingLockIds = new Set<string>();
+
+	for (const [tableId, locks] of locksByTable) {
+		const reservations = reservationsByTable.get(tableId);
+		if (!reservations || reservations.length === 0) continue;
+		const result = findCollisionsForTable({ reservations, locks });
+		for (const id of result.collidingReservationIds) collidingReservationIds.add(id);
+		for (const id of result.collidingLockIds) collidingLockIds.add(id);
+	}
+
+	// Second pass, over reservations rather than locks: a table can be
+	// double-booked without carrying any lock at all, so it would never appear in
+	// the loop above.
+	for (const reservations of reservationsByTable.values()) {
+		for (const id of findDoubleBookedReservationIds(reservations)) {
+			collidingReservationIds.add(id);
+		}
+	}
+
+	return { collidingReservationIds, collidingLockIds };
 }

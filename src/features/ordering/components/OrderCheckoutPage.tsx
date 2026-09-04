@@ -5,7 +5,7 @@ import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/rea
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
+import { DEFAULT_TIP_PERCENT, PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
 import {
 	ArrowLeft,
 	CheckCircle2,
@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { computeOrderCharge } from "convex/_shared/tip";
 import { EmailReceiptButton } from "./EmailReceiptButton";
+import { TipSlider } from "./TipSlider";
 import { StripePaymentSection } from "./StripePaymentSection";
 
 /** Customer-borne service-fee rate as a display percentage (e.g. 12). */
@@ -33,8 +35,18 @@ interface OrderCheckoutPageProps {
  * Per-order pay-at-submit checkout (ADR 008): the diner pays
  * `subtotal + {@link PLATFORM_APPLICATION_FEE_RATE} service fee` for one draft
  * order before the kitchen sees it, or commits it for in-person (cash)
- * payment (`awaiting_payment`). No tip UI here — tips happen at Visit
- * close-out (Phase 3B).
+ * payment (`awaiting_payment`).
+ *
+ * The tip lives here as of TAVLI-99, pre-applied at
+ * {@link DEFAULT_TIP_PERCENT} and adjustable through {@link TipSlider}. That
+ * reverses ADR 008 Phase 3B, which put the tip after the visit: diners were
+ * not reaching close-out, so they were not tipping. The cost taken knowingly
+ * is that tipping now happens before the food arrives, which is when people
+ * tip less.
+ *
+ * The **cash path shows no tip control at all** — the diner tips the server in
+ * cash at the table, and charging a card for an order that is not being paid
+ * by card is a different transaction with different consent.
  *
  * Success is detected by subscription: the Stripe webhook flips the order's
  * `paymentState` to "paid", which this page observes through
@@ -53,6 +65,9 @@ export function OrderCheckoutPage({
 	});
 
 	const [clientSecret, setClientSecret] = useState<string | null>(null);
+	// Pre-applied, which is the point: a diner who does not care about the tip
+	// sees it in the total and never opens the slider.
+	const [tipPercent, setTipPercent] = useState<number>(DEFAULT_TIP_PERCENT);
 	const [initializing, setInitializing] = useState(false);
 	const [cashSubmitting, setCashSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -72,7 +87,7 @@ export function OrderCheckoutPage({
 		setInitializing(true);
 		setError(null);
 		try {
-			const result = await createPaymentIntent({ orderId });
+			const result = await createPaymentIntent({ orderId, tipPercent });
 			setClientSecret(result?.clientSecret ?? null);
 		} catch (err) {
 			setError(getErrorMessage(err, t, OrderingKeys.CHECKOUT_INIT_FAILED));
@@ -144,9 +159,13 @@ export function OrderCheckoutPage({
 	}
 
 	const liveItems = order.items.filter((item) => item.cancelledAt === undefined);
-	const subtotal = order.totalAmount;
-	const feeAmount = Math.round(subtotal * PLATFORM_APPLICATION_FEE_RATE);
-	const total = subtotal + feeAmount;
+	// One shared computation with the server, so the number on screen is the
+	// number charged — see `convex/_shared/tip.ts`.
+	const {
+		subtotalAmount: subtotal,
+		feeAmount,
+		amount: total,
+	} = computeOrderCharge(order.totalAmount, PLATFORM_APPLICATION_FEE_RATE, tipPercent);
 
 	// Cash commitment confirmed (and no card retry mounted): show the diner the
 	// number to call out. `clientSecret` wins so a cash→card switch keeps the
@@ -206,6 +225,18 @@ export function OrderCheckoutPage({
 						<span>{t(OrderingKeys.CHECKOUT_SERVICE_FEE, { rate: SERVICE_FEE_PERCENT })}</span>
 						<span>${formatCents(feeAmount)}</span>
 					</div>
+					{/*
+					 * Locked once a payment sheet is mounted. Stripe fixes the
+					 * amount when the intent is created, so a tip changed after
+					 * that point would be shown but not charged — the diner would
+					 * be told one number and billed another.
+					 */}
+					<TipSlider
+						subtotalAmount={subtotal}
+						tipPercent={tipPercent}
+						onChange={setTipPercent}
+						disabled={clientSecret !== null}
+					/>
 					<div className="flex justify-between pt-2 text-sm font-semibold border-t border-border text-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
 						<span>${formatCents(total)}</span>

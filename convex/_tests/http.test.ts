@@ -13,6 +13,7 @@ import type { Id } from "../_generated/dataModel";
 import { DEFAULT_RESTAURANT_TIMEZONE } from "../constants";
 import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 import schema from "../schema";
+import { enableReservationsFlag } from "./helpers/reservationsFlag";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -61,6 +62,11 @@ async function seedRestaurant(
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		});
+
+		// The platform reservations switch ships default OFF (TAVLI-100), so a
+		// suite exercising the booking paths has to enable it the way a real
+		// deployment does.
+		await enableReservationsFlag(ctx.db);
 		// Without at least one active table every create is a capacity conflict,
 		// which would mask the boundary behaviour these tests are about.
 		await ctx.db.insert("tables", {
