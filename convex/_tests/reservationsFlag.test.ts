@@ -14,6 +14,8 @@ import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { FEATURE_FLAGS } from "../featureFlags";
 import { WALK_IN_LOCK_REASON } from "../walkInOccupancy";
+import { DEFAULT_RESTAURANT_TIMEZONE } from "../constants";
+import { addDaysToYmd, utcMsToYmdInTimezone, ymdHmToUtcMs } from "../_util/timezone";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -26,11 +28,21 @@ type T = ReturnType<typeof harness>;
 const NOW = 1_750_000_000_000;
 
 /**
- * Booking times are relative to the real clock, because the horizon check is.
- * A fixed past constant here reads as ERROR_OUTSIDE_BOOKING_HORIZON, which
- * looks like a flag bug and is not one.
+ * Tomorrow at 13:00 in the restaurant's timezone.
+ *
+ * Relative to the real clock, because the horizon check is — a fixed past
+ * constant reads as ERROR_OUTSIDE_BOOKING_HORIZON, which looks like a flag bug
+ * and is not one. But the *hour* is pinned, which a bare `Date.now() + 3h` is
+ * not: that inherits the current wall-clock hour, so from about 19:30 local the
+ * booking's 90-minute turn ran past the seeded 23:59 close and every one of
+ * these tests failed with ERROR_OUTSIDE_OPERATING_HOURS. The seed already tries
+ * to dodge that with a round-the-clock window, but 23:59 is not round the clock
+ * for a booking whose turn crosses midnight.
  */
-const soon = () => Date.now() + 3 * 60 * 60 * 1000;
+const soon = () => {
+	const tomorrow = addDaysToYmd(utcMsToYmdInTimezone(Date.now(), DEFAULT_RESTAURANT_TIMEZONE), 1);
+	return ymdHmToUtcMs(tomorrow, 13 * 60, DEFAULT_RESTAURANT_TIMEZONE);
+};
 const DINER = "diner-user";
 
 async function seed(t: T, options: { reservationsFlag?: boolean } = {}) {
