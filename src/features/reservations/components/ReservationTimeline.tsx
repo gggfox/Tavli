@@ -31,6 +31,9 @@ import {
 	type DragEndEvent,
 	type DragStartEvent,
 } from "@dnd-kit/core";
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import {
 	ChevronDown,
@@ -38,16 +41,35 @@ import {
 	Globe,
 	GripVertical,
 	MessageCircle,
+	TriangleAlert,
 	UserPlus,
 	Users,
 } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { TimelineReopenConfirmDialog } from "./TimelineReopenConfirmDialog";
 
 const RESERVATION_DRAG_PREFIX = "reservation-drag";
 const ROW_PREFIX = "row";
 const UNASSIGNED_ROW_KEY = "unassigned";
+
+/**
+ * Ids of the reservations flagged as clashing on this timeline -- double-booked
+ * against another booking, or overlapping walk-in occupancy.
+ *
+ * Context rather than props: the flag is a pure display concern that would
+ * otherwise be threaded through five layers of row components that have no
+ * other reason to know about collisions.
+ */
+const CollisionContext = createContext<ReadonlySet<string>>(new Set());
 const TERMINAL_RECOVERABLE_STATUSES = new Set(["cancelled", "no_show"]);
 
 export interface TimelineRescheduleIntent {
@@ -139,6 +161,7 @@ export function ReservationTimeline({
 		reservationsByTable,
 		unassignedReservations,
 		locksByTable,
+		collisions,
 		openHour,
 		closeHour,
 		minAdvanceMinutes,
@@ -306,6 +329,11 @@ export function ReservationTimeline({
 
 	const timelineCanDrag = Boolean(onReschedule) && selectedDay >= todayYmd;
 
+	const jumpToFirstCollision = useCallback(() => {
+		const first = scrollContainerRef.current?.querySelector('[data-colliding="true"]');
+		first?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+	}, []);
+
 	const gridRowPlan = useMemo(() => {
 		let row = 2;
 		const unassignedRow = unassignedReservations.length > 0 ? { gridRow: row++ } : null;
@@ -454,7 +482,12 @@ export function ReservationTimeline({
 	);
 
 	return (
-		<>
+		<CollisionContext.Provider value={collisions.collidingReservationIds}>
+			<CollisionBanner
+				count={collisions.collidingReservationIds.size}
+				restaurantId={restaurantId}
+				onJump={jumpToFirstCollision}
+			/>
 			<TimelineReopenConfirmDialog
 				isOpen={pendingReopen !== null}
 				guestName={pendingReopen?.guestName ?? ""}
@@ -486,7 +519,59 @@ export function ReservationTimeline({
 					grid
 				)}
 			</div>
-		</>
+		</CollisionContext.Provider>
+	);
+}
+
+/* ============================================================================
+ * Collision banner
+ * ============================================================================ */
+
+/**
+ * The "someone needs to fix this" nudge, for managers and above only.
+ *
+ * The red cards themselves stay visible to every staff member -- hiding a
+ * double-booking from the employee standing at that table would be absurd. This
+ * banner is the escalation prompt, and escalating is a manager's call.
+ *
+ * Derived from rows the timeline already holds, so it costs no query and clears
+ * itself the moment the overlap is resolved. The durable, cross-restaurant view
+ * of "collisions detected" belongs in the invariants dashboard (TAVLI-9), which
+ * is where a persisted alert would actually pay for itself.
+ */
+function CollisionBanner({
+	count,
+	restaurantId,
+	onJump,
+}: {
+	readonly count: number;
+	readonly restaurantId: Id<"restaurants"> | null;
+	readonly onJump: () => void;
+}) {
+	const { t } = useTranslation();
+	const { data: access } = useQuery({
+		...convexQuery(api.restaurantMembers.myAccessLevel, restaurantId ? { restaurantId } : "skip"),
+	});
+
+	if (count === 0 || !access?.isManagerOrAbove) return null;
+
+	return (
+		<div
+			role="status"
+			className="mb-3 flex items-center gap-2 rounded-lg border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+		>
+			<TriangleAlert size={16} className="shrink-0" />
+			<span className="font-medium">
+				{t(ReservationsKeys.TIMELINE_COLLISION_BANNER, { count })}
+			</span>
+			<button
+				type="button"
+				onClick={onJump}
+				className="ml-auto shrink-0 underline underline-offset-2 hover:no-underline"
+			>
+				{t(ReservationsKeys.TIMELINE_COLLISION_JUMP)}
+			</button>
+		</div>
 	);
 }
 
@@ -949,6 +1034,7 @@ function DraggableTimelineBlock({
 	canDrag,
 	onOpen,
 }: DraggableTimelineBlockProps) {
+	const isColliding = useContext(CollisionContext).has(reservation._id as string);
 	const dragId = makeDragId(reservation._id, fromTableKey);
 	const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
 		id: dragId,
@@ -959,6 +1045,9 @@ function DraggableTimelineBlock({
 	return (
 		<div
 			ref={setNodeRef}
+			// Read by the collision banner's "Show me" to scroll to the first
+			// problem without threading refs through every row component.
+			data-colliding={isColliding ? "true" : undefined}
 			className={`absolute top-1 bottom-1 z-10${isDragging ? " opacity-30" : ""}`}
 			style={{ left: style.left, width: style.width }}
 		>
@@ -1010,6 +1099,8 @@ function TimelineBlockContent({
 	dragHandleProps,
 }: TimelineBlockContentProps) {
 	const { t } = useTranslation();
+	const collidingIds = useContext(CollisionContext);
+	const isColliding = collidingIds.has(reservation._id as string);
 	const config = getReservationStatusConfig(reservation.status);
 	const tone: StatusTone = config?.tone ?? RESERVATION_FALLBACK_TONE;
 	const palette = getStatusToneStyle(tone);
@@ -1022,6 +1113,11 @@ function TimelineBlockContent({
 	const multiTableLabel =
 		reservation.tableIds.length > 1 ? `T${reservation.tableIds.length}` : null;
 
+	// A placement nothing human has reviewed yet. Dashed rather than coloured so
+	// it reads as "provisional" without competing with the status palette --
+	// status is what staff scan the row for.
+	const isProvisional = reservation.tableAssignedBy === "auto" && !isColliding;
+
 	return (
 		<button
 			type="button"
@@ -1030,11 +1126,13 @@ function TimelineBlockContent({
 				guest: reservation.contact.name,
 				time: `${startTime}–${endTime}`,
 			})}
-			className={`h-full w-full rounded px-1.5 py-0.5 flex items-center gap-1 overflow-hidden cursor-pointer border text-left transition-opacity hover:opacity-90${isDimmed ? " opacity-40" : ""}`}
+			className={`h-full w-full rounded px-1.5 py-0.5 flex items-center gap-1 overflow-hidden cursor-pointer border text-left transition-opacity hover:opacity-90${isDimmed ? " opacity-40" : ""}${isColliding ? " border-2 ring-1 ring-destructive" : ""}${isProvisional ? " border-dashed" : ""}`}
 			style={{
-				backgroundColor: palette.tintedBg,
-				borderColor: isDimmed ? "var(--border)" : palette.fg,
-				color: palette.fg,
+				backgroundColor: isColliding
+					? "var(--destructive-tinted, var(--destructive))"
+					: palette.tintedBg,
+				borderColor: isColliding ? "var(--destructive)" : isDimmed ? "var(--border)" : palette.fg,
+				color: isColliding ? "var(--destructive-foreground, var(--destructive))" : palette.fg,
 			}}
 		>
 			{dragHandleProps && (
@@ -1058,6 +1156,15 @@ function TimelineBlockContent({
 				<Users size={9} />
 				{reservation.partySize}
 			</span>
+			{isColliding && (
+				<span
+					className="shrink-0"
+					title={t(ReservationsKeys.TIMELINE_COLLISION_TOOLTIP)}
+					aria-label={t(ReservationsKeys.TIMELINE_COLLISION_TOOLTIP)}
+				>
+					<TriangleAlert size={10} />
+				</span>
+			)}
 			{sourceIcon && <span className="shrink-0 opacity-60">{sourceIcon}</span>}
 			{multiTableLabel && (
 				<span className="shrink-0 text-[8px] font-medium opacity-70 bg-black/10 dark:bg-white/10 rounded px-0.5">

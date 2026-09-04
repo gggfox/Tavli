@@ -176,8 +176,9 @@ export function useTimelineData(
 	}, [locksQuery.data]);
 
 	/**
-	 * Collisions between bookings and walk-in occupancy, recomputed from the
-	 * windows on every render (TAVLI-100).
+	 * Clashes on the floor, recomputed from the windows on every render: a
+	 * booking against walk-in occupancy (TAVLI-100), and a booking against
+	 * another booking on the same table (TAVLI-101).
 	 *
 	 * Derived rather than stored: a persisted flag goes stale the moment a
 	 * manager resolves the clash by hand, and the red bar that never clears is

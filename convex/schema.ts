@@ -19,6 +19,7 @@ import {
 	SHIFT_STATUS,
 	SUBSTITUTION_PROPOSAL_STATUS,
 	TABLE,
+	TABLE_ASSIGNED_BY,
 	TIP_DISTRIBUTION_RULE,
 	TIP_ENTRY_SOURCE,
 	TIP_POOL_STATUS,
@@ -946,9 +947,16 @@ export default defineSchema({
 		partySize: v.number(),
 		startsAt: v.number(),
 		endsAt: v.number(),
-		// Empty until staff confirm and pick tables. Multi-table to support
-		// large parties spanning two or more physical tables.
+		// Assigned at create time by `placeParty` (TAVLI-101), or left empty when
+		// staff deliberately defer the choice. Multi-table to support large
+		// parties spanning two or more physical tables.
 		tableIds: v.array(v.id(TABLE.TABLES)),
+		// Who chose those tables -- see TABLE_ASSIGNED_BY. Optional because rows
+		// predating auto-assignment carry no marker until the backfill runs, and
+		// because a row sitting in the unassigned queue has no assignment at all.
+		tableAssignedBy: v.optional(
+			v.union(v.literal(TABLE_ASSIGNED_BY.AUTO), v.literal(TABLE_ASSIGNED_BY.STAFF))
+		),
 		status: v.union(
 			v.literal(RESERVATION_STATUS.PENDING),
 			v.literal(RESERVATION_STATUS.CONFIRMED),

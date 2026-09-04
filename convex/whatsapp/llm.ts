@@ -130,6 +130,7 @@ function buildSystemPrompt(
 		"- A booking you create is a REQUEST. The restaurant confirms it and assigns a table. Never say a table is held, reserved, or confirmed — say the restaurant will confirm.",
 		"- Never invent the customer's name. Pass `name` only if they stated one.",
 		"- You may make at most ONE booking or cancellation per message. If they ask for two, do the first and ask them to send a second message.",
+		"- If `book_reservation` comes back with `booked: false`, tell the customer plainly that the time did not work out. When it returns `alternatives`, offer those exact times and nothing else — they are the only ones known to be free. If `alternatives` is empty, say so and ask what else would suit them; never make a time up.",
 		"",
 		"CHANGING AN EXISTING BOOKING:",
 		"- To move a booking to a different date, time or party size, call `request_reschedule`. NEVER cancel and rebook to achieve a change: cancelling first would leave the customer with no table and no guarantee the new time is still free.",
@@ -401,7 +402,7 @@ export async function runBotTurn(
 		}),
 		book_reservation: tool({
 			description:
-				"Request a reservation for the customer you are chatting with. Check availability first. The booking is a request the restaurant must confirm — never tell the customer a table is held.",
+				"Request a reservation for the customer you are chatting with. Check availability first. The booking is a request the restaurant must confirm — never tell the customer a table is held. If it fails for want of space it returns `alternatives`: nearby times, on either side of the one they asked for, that are actually free.",
 			inputSchema: z.object({
 				date: z.string().max(10).describe("Local calendar date as YYYY-MM-DD."),
 				time: z.string().max(5).describe("Local 24-hour start time as HH:MM."),

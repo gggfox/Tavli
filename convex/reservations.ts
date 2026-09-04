@@ -50,6 +50,7 @@ import {
 } from "./_util/availability";
 import { isReservationsEnabled } from "./featureFlags";
 import { loadEffectiveSettings } from "./_util/reservationSettings";
+import { loadPlacementWindow, placeParty } from "./_util/tablePlacement";
 import {
 	AUDIT_ACTOR,
 	AUDIT_EVENT,
@@ -58,6 +59,7 @@ import {
 	NO_SHOW_SWEEP_LOOKBACK_MS,
 	RESERVATION_SOURCE,
 	RESERVATION_STATUS,
+	TABLE_ASSIGNED_BY,
 	ReservationStatus,
 	TABLE,
 } from "./constants";
@@ -228,13 +230,17 @@ export const getAvailability = query({
 			reason: "ERROR_NO_TABLES_AVAILABLE" as const,
 			turnMinutes,
 			endsAt,
-			suggestedTimes: await findSuggestedTimes(
-				ctx,
-				args.restaurantId,
-				args.partySize,
-				args.startsAt,
-				turnMinutes
-			),
+			// No restaurant means no service window to search inside, so there is
+			// nothing honest to suggest.
+			suggestedTimes: restaurant
+				? await findSuggestedTimes(ctx, {
+						restaurant,
+						settings,
+						partySize: args.partySize,
+						startsAt: args.startsAt,
+						turnMinutes,
+					})
+				: [],
 		};
 	},
 });
@@ -297,6 +303,16 @@ export const listReservationSlotsForDay = query({
 		const restaurant = await ctx.db.get(args.restaurantId);
 		const serviceWindow = restaurant ? resolveServiceWindow(restaurant) : null;
 		const maxStart = args.toMs - turnMinutes * 60_000;
+		// One read for the whole day. The per-slot probe this replaces issued an
+		// indexed query per table, per slot -- roughly fifty slots' worth on a full
+		// service, which is how a busy restaurant approaches the per-function read
+		// limit and takes its own booking page down.
+		const placementWindow = await loadPlacementWindow(
+			ctx,
+			args.restaurantId,
+			args.fromMs,
+			args.toMs
+		);
 		const slots: number[] = [];
 		let evaluated = 0;
 		for (
@@ -318,10 +334,73 @@ export const listReservationSlotsForDay = query({
 			}
 			// Count each availability probe; this is the expensive per-slot work.
 			evaluated++;
-			const ok = await isPartyBookableAt(ctx, args.restaurantId, args.partySize, t, endsAt);
-			if (ok) slots.push(t);
+			const placed = placeParty({
+				...placementWindow,
+				partySize: args.partySize,
+				startsAt: t,
+				endsAt,
+			});
+			if (placed !== null) slots.push(t);
 		}
 		return { slots, turnMinutes };
+	},
+});
+
+/**
+ * Find a table for a reservation sitting in the unassigned queue.
+ *
+ * Capacity frees up as a service runs, so a row staff deliberately left
+ * unassigned at noon often has an obvious table by 19:00. Without this the queue
+ * is a list you can only work by hand.
+ *
+ * The placement stays `auto`: staff asked for a table, they did not choose one.
+ * It therefore remains provisional and re-placeable, and confirming it is what
+ * turns it into a human decision.
+ */
+export const placeFromQueue = mutation({
+	args: { reservationId: v.id(TABLE.RESERVATIONS) },
+	handler: async function (
+		ctx,
+		args
+	): AsyncReturn<Id<typeof TABLE.RESERVATIONS>, RescheduleErrors> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+
+		const reservation = await ctx.db.get(args.reservationId);
+		if (!reservation) return [null, new NotFoundError("Reservation not found").toObject()];
+
+		const [, restError] = await requireRestaurantStaffAccess(ctx, userId, reservation.restaurantId);
+		if (restError) return [null, restError];
+
+		const stateError = ensureReschedulable(reservation.status);
+		if (stateError) return [null, stateError];
+
+		const window = await loadPlacementWindow(
+			ctx,
+			reservation.restaurantId,
+			reservation.startsAt,
+			reservation.endsAt
+		);
+		const placement = placeParty({
+			...window,
+			partySize: reservation.partySize,
+			startsAt: reservation.startsAt,
+			endsAt: reservation.endsAt,
+			excludeReservationId: reservation._id,
+		});
+		if (placement === null) {
+			return [null, new ConflictError("ERROR_NO_TABLES_AVAILABLE").toObject()];
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(reservation._id, {
+			tableIds: placement.map((table) => table._id),
+			tableAssignedBy: TABLE_ASSIGNED_BY.AUTO,
+			updatedAt: now,
+			updatedBy: userId,
+		});
+
+		return [reservation._id, null];
 	},
 });
 
@@ -384,6 +463,10 @@ export const createAsStaff = mutation({
 		startsAt: v.number(),
 		contact: contactValidator,
 		notes: v.optional(v.string()),
+		// Take the booking but defer the table choice to a human -- the row lands
+		// in the unassigned queue. Staff-only on purpose: every customer-facing
+		// path must leave with a table.
+		leaveUnassigned: v.optional(v.boolean()),
 	},
 	handler: async function (
 		ctx,
@@ -465,6 +548,8 @@ export const confirm = mutation({
 		const now = Date.now();
 		await ctx.db.patch(reservation._id, {
 			tableIds: args.tableIds,
+			// A human has now looked at this placement, whatever chose it first.
+			tableAssignedBy: TABLE_ASSIGNED_BY.STAFF,
 			status: RESERVATION_STATUS.CONFIRMED,
 			confirmedAt: now,
 			updatedAt: now,
@@ -637,6 +722,34 @@ export const reschedule = mutation({
 			}
 		}
 
+		// A machine-picked table is provisional. Carrying it into a new time slot
+		// and then rejecting the move because *that one table* is busy would refuse
+		// reschedules the restaurant can plainly accommodate -- so re-place instead.
+		// A `staff` placement is a human decision and is never re-picked: if a
+		// manager put this party on table 6, moving the time must not move them.
+		let replaced = false;
+		if (
+			hasTimeChange &&
+			!hasTableChange &&
+			reservation.tableAssignedBy === TABLE_ASSIGNED_BY.AUTO &&
+			newTableIds.length > 0
+		) {
+			const window = await loadPlacementWindow(ctx, reservation.restaurantId, startsAt, endsAt);
+			const placement = placeParty({
+				...window,
+				partySize: reservation.partySize,
+				startsAt,
+				endsAt,
+				excludeReservationId: reservation._id,
+			});
+			if (placement === null) {
+				return [null, new ConflictError("ERROR_TABLE_UNAVAILABLE").toObject()];
+			}
+			newTableIds = placement.map((table) => table._id);
+			loadedTables = placement;
+			replaced = true;
+		}
+
 		const conflictError = await checkTablesFreeForReservation(ctx, loadedTables, {
 			_id: reservation._id,
 			startsAt,
@@ -647,7 +760,10 @@ export const reschedule = mutation({
 		const now = Date.now();
 		await ctx.db.patch(reservation._id, {
 			...(hasTimeChange && { startsAt, endsAt }),
-			...(hasTableChange && { tableIds: newTableIds }),
+			...((hasTableChange || replaced) && { tableIds: newTableIds }),
+			// An explicit table change is a staff decision; a re-placement is still
+			// the machine's, and stays re-placeable next time.
+			...(hasTableChange && { tableAssignedBy: TABLE_ASSIGNED_BY.STAFF }),
 			...(reopening && buildReopenToConfirmedPatch(reservation, now)),
 			updatedAt: now,
 		});
@@ -1010,6 +1126,8 @@ export const markSeated = mutation({
 		const fromTerminal = isTerminalRecoverable(reservation.status);
 		await ctx.db.patch(reservation._id, {
 			status: RESERVATION_STATUS.SEATED,
+			// They are physically at this table; nothing may move them off it.
+			tableAssignedBy: TABLE_ASSIGNED_BY.STAFF,
 			sessionId,
 			seatedAt: now,
 			updatedAt: now,

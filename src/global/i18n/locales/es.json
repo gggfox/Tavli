@@ -1623,7 +1623,7 @@
 		"tableLabelPrefix": "Mesa",
 		"timeline": {
 			"createDrawerTitle": "Nueva reservación — {{tableLabel}}",
-			"unassignedRow": "Sin asignar",
+			"unassignedRow": "Cola",
 			"sectionToggleAria": "Alternar sección {{section}}",
 			"blockAria": "{{guest}} a las {{time}}",
 			"lockBlockAria": "Mesa bloqueada: {{reason}}",
@@ -1641,7 +1641,15 @@
 			"reopenConfirmTitle": "¿Reabrir reservación?",
 			"reopenConfirmBody": "{{guest}} se moverá al nuevo horario o mesa y volverá a confirmada.",
 			"reopenConfirmButton": "Reabrir y mover",
-			"nowLineAria": "Hora actual"
+			"nowLineAria": "Hora actual",
+			"queueHint": "Esperando mesa",
+			"queuePlace": "Buscar mesa",
+			"queuePlaceFailed": "No hay mesa libre para este grupo a esa hora.",
+			"collisionTooltip": "Doble reserva: se encima con una reserva anterior en esta mesa",
+			"collisionBanner_one": "{{count}} doble reserva en el salón",
+			"collisionBanner_other": "{{count}} dobles reservas en el salón",
+			"collisionJump": "Ver",
+			"autoPlacement": "Mesa asignada automáticamente — sin revisar"
 		}
 	},
 	"reservationSettings": {
