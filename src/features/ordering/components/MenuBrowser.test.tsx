@@ -185,7 +185,12 @@ describe("MenuBrowser", () => {
 	});
 
 	describe("table occupancy (TAVLI-83)", () => {
-		it("disables a table held by someone else's visit and points at the join code", async () => {
+		it("marks a table held by someone else's visit without blocking it", async () => {
+			// Lifted by TAVLI-100. The block existed because a second diner was
+			// meant to join by code, and there is no code any more — so blocking
+			// is a dead end for the ordinary case of two parties at one long
+			// table. The marker stays: it confirms the diner picked the right
+			// table, and a mis-picked table sends food to the wrong people.
 			overrides["restaurants:getPaymentsEnabled"] = true;
 			render(
 				<MenuBrowser
@@ -199,18 +204,20 @@ describe("MenuBrowser", () => {
 			const options = within(select).getAllByRole("option") as HTMLOptionElement[];
 			const byLabel = (needle: string) => options.find((o) => o.textContent?.includes(needle))!;
 
-			expect(byLabel("Table 2").disabled).toBe(true);
-			expect(byLabel("Table 2").textContent).toContain("(taken)");
-			// The diner's own tab sits at table 3 — their second round must not be
-			// locked out of their own table.
-			expect(byLabel("Table 3").disabled).toBe(false);
-			expect(byLabel("Table 3").textContent).not.toContain("(taken)");
+			expect(byLabel("Table 2").disabled).toBe(false);
+			expect(byLabel("Table 2").textContent).toContain("in use");
+			// The diner's own tab sits at table 3 — never marked as someone
+			// else's.
+			expect(byLabel("Table 3").textContent).not.toContain("in use");
 			expect(byLabel("Table 1").disabled).toBe(false);
-
-			expect(screen.getByText(/Ask whoever is sitting there for their join code/)).toBeTruthy();
 		});
 
-		it("blocks the order when the picked table is taken between picking and paying", async () => {
+		it("lets the order through when the picked table fills up between picking and paying", async () => {
+			// Previously this blocked. With the join code gone, a table claimed
+			// between picking and confirming is the second party sitting down —
+			// refusing their order at the last step, with no way to proceed, is
+			// worse than two visits sharing a table number, which the staff
+			// timeline now groups anyway (TAVLI-100).
 			overrides["restaurants:getPaymentsEnabled"] = true;
 			overrides["tables:getActiveWithOccupancy"] = [
 				{ _id: "tables:free", tableNumber: 1, hasOpenSession: false, isOwnSession: false },
@@ -227,7 +234,7 @@ describe("MenuBrowser", () => {
 			const select = await openPayFlow();
 			fireEvent.change(select, { target: { value: "tables:free" } });
 
-			// Someone else claims it while the diner is still reviewing.
+			// Someone else claims it before the diner confirms.
 			overrides["tables:getActiveWithOccupancy"] = [
 				{ _id: "tables:free", tableNumber: 1, hasOpenSession: true, isOwnSession: false },
 			];
@@ -239,13 +246,8 @@ describe("MenuBrowser", () => {
 				/>
 			);
 
-			await waitFor(() => {
-				expect(screen.getByText(/That table was just taken/)).toBeTruthy();
-			});
-			const confirm = screen.getAllByText("Proceed to Payment").at(-1) as HTMLButtonElement;
-			expect(confirm.disabled).toBe(true);
-			fireEvent.click(confirm);
-			expect(onSubmitOrder).not.toHaveBeenCalled();
+			fireEvent.click(screen.getByText(/Proceed to Payment/i));
+			expect(onSubmitOrder).toHaveBeenCalled();
 		});
 	});
 });

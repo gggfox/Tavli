@@ -19,6 +19,17 @@ crons.interval("reservation no-show sweep", { minutes: 15 }, internal.reservatio
 
 crons.interval("invitation expiry sweep", { hours: 1 }, internal.invites.expirePendingInvitations);
 
+// Rebuild the diner menu's "most popular" ranking (TAVLI-98). Nightly is the
+// right cadence for a trailing-30-day window: the ranking barely moves in an
+// hour, and computing it on read would walk every paid order in the window on
+// the most-loaded page in the product.
+crons.interval(
+	"menu item popularity ranking",
+	{ hours: 24 },
+	internal.menuItemPopularity.sweepPopularity,
+	{}
+);
+
 crons.interval(
 	"shift attendance no-clockout sweep",
 	{ hours: 1 },

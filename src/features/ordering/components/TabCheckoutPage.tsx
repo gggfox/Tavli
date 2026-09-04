@@ -3,7 +3,7 @@ import { getErrorMessage } from "@/global/utils/errorMessages";
 import { formatCents } from "@/global/utils/money";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { loadStripe, type Appearance } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -12,39 +12,10 @@ import { ArrowLeft, CheckCircle2, ChefHat, CreditCard, Loader2, ShieldCheck } fr
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionStore } from "../hooks/useSession";
-import {
-	STRIPE_BORDER_RADIUS,
-	STRIPE_DARK_TOKENS,
-	STRIPE_LIGHT_TOKENS,
-	type StripeThemeTokens,
-} from "../stripeAppearanceTokens";
+import { useBrandColor } from "../hooks/useBranding";
+import { buildStripeAppearance } from "../stripeAppearanceTokens";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
-
-/**
- * Stripe Elements renders in a cross-origin iframe and therefore cannot read
- * our CSS custom properties, so this is the one surface that has to be handed
- * literal colours. They come from a single token map rather than being
- * hand-copied out of theme.css at each call site — see
- * `../stripeAppearanceTokens`.
- */
-function toAppearance(theme: Appearance["theme"], tokens: StripeThemeTokens): Appearance {
-	return {
-		theme,
-		variables: {
-			colorPrimary: tokens.primary,
-			colorBackground: tokens.background,
-			colorText: tokens.text,
-			colorTextSecondary: tokens.textSecondary,
-			colorTextPlaceholder: tokens.textPlaceholder,
-			colorDanger: tokens.danger,
-			borderRadius: STRIPE_BORDER_RADIUS,
-		},
-	};
-}
-
-const LIGHT_APPEARANCE: Appearance = toAppearance("stripe", STRIPE_LIGHT_TOKENS);
-const DARK_APPEARANCE: Appearance = toAppearance("night", STRIPE_DARK_TOKENS);
 
 function useIsDarkTheme(): boolean {
 	const [isDark, setIsDark] = useState(() => {
@@ -377,16 +348,24 @@ function TabPaymentSection({
 	onSuccess: () => void;
 }>) {
 	const isDark = useIsDarkTheme();
+	const brandColor = useBrandColor();
 	const elementsOptions = useMemo(
-		() => ({
-			clientSecret,
-			appearance: isDark ? DARK_APPEARANCE : LIGHT_APPEARANCE,
-		}),
-		[clientSecret, isDark]
+		() => ({ clientSecret, appearance: buildStripeAppearance(brandColor, isDark) }),
+		[clientSecret, isDark, brandColor]
 	);
 
 	return (
-		<Elements key={isDark ? "dark" : "light"} stripe={stripePromise} options={elementsOptions}>
+		// Only the *appearance* is shared with `StripePaymentSection`.
+		// `TabPaymentForm` below is NOT interchangeable with that component's
+		// form: it subscribes to `getTabSummary` and completes when the tab
+		// flips to `paid`, whereas the other confirms and returns. Swapping it
+		// in charges the card and then spins on "Processing…" forever, because
+		// nothing is watching for the signal it waits on.
+		<Elements
+			key={`${isDark ? "dark" : "light"}:${brandColor ?? "platform"}`}
+			stripe={stripePromise}
+			options={elementsOptions}
+		>
 			<TabPaymentForm sessionId={sessionId} onSuccess={onSuccess} />
 		</Elements>
 	);

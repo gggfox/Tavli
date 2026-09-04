@@ -1,4 +1,5 @@
 import { useCustomerSession } from "@/features/ordering";
+import { BrandingProvider } from "@/features/ordering/hooks/useBranding";
 import { ErrorFallback, RouteErrorComponent } from "@/global/components";
 import { CustomerKeys, OrderingKeys } from "@/global/i18n";
 import { SignInButton, SignUpButton, useAuth } from "@clerk/tanstack-react-start";
@@ -15,10 +16,54 @@ import {
 } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
+import { brandFontPreloadHref } from "convex/_shared/brandFonts";
+import { buildBrandingCss } from "@/features/ordering/brandingCss";
+import { loadBranding } from "@/features/ordering/brandingLoader";
 import { CalendarClock, LogIn, Receipt, UserPlus, UtensilsCrossed } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/r/$slug")({
+	/**
+	 * Resolve branding before the first byte (TAVLI-97). Applying it after
+	 * hydration was rejected: the diner would watch platform blue repaint into
+	 * the restaurant's colour on the first frame of the one screen this feature
+	 * exists to make feel like theirs.
+	 *
+	 * `loadBranding` never throws — every failure degrades to unbranded — so
+	 * this cannot turn a Convex blip into an error page for a diner mid-order.
+	 */
+	loader: async ({ context, params }) => loadBranding(context.queryClient, params.slug),
+
+	/**
+	 * **A pure function of `loaderData`.** TanStack re-runs `head()` on
+	 * hydration and does not set `suppressHydrationWarning` on `style`, so
+	 * anything non-deterministic here (a timestamp, a `document` read) is a
+	 * hydration mismatch on every customer page load.
+	 */
+	head: ({ loaderData }) => {
+		const css = buildBrandingCss(loaderData?.branding);
+		const fontId = loaderData?.branding?.fontId;
+		return {
+			...(css ? { styles: [{ children: css }] } : {}),
+			...(fontId
+				? {
+						links: [
+							{
+								rel: "preload",
+								as: "font",
+								type: "font/woff2",
+								href: brandFontPreloadHref(fontId),
+								// Fonts are always fetched in CORS mode, even
+								// same-origin. Without this the preload succeeds and is
+								// then discarded as a different request, so the file is
+								// downloaded twice and the preload achieves nothing.
+								crossOrigin: "anonymous",
+							},
+						],
+					}
+				: {}),
+		};
+	},
 	component: CustomerLayout,
 	errorComponent: CustomerErrorComponent,
 });
@@ -47,7 +92,24 @@ function CustomerErrorComponent(props: Readonly<ErrorComponentProps>) {
 	);
 }
 
+/**
+ * Publishes the loader's branding to the whole customer tree.
+ *
+ * Wrapping here rather than inside each branch is deliberate: the signed-out
+ * state renders its own header with its own logo, and the error and
+ * no-session states are still the restaurant's pages. A provider per branch
+ * would be four chances to forget one.
+ */
 function CustomerLayout() {
+	const { branding } = Route.useLoaderData();
+	return (
+		<BrandingProvider branding={branding}>
+			<CustomerLayoutContent />
+		</BrandingProvider>
+	);
+}
+
+function CustomerLayoutContent() {
 	const { t } = useTranslation();
 	const { slug } = Route.useParams();
 	const { isLoaded, isSignedIn, sessionId, errorKey, retry } = useCustomerSession(slug);
@@ -153,6 +215,29 @@ function CustomerLayout() {
 function RestaurantNameBadge({ slug }: Readonly<{ slug: string }>) {
 	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
 	if (!restaurant?.name) return null;
+
+	const logo = restaurant.branding?.logo;
+	if (logo) {
+		return (
+			// The logo *replaces* the name line rather than sitting beside it: a
+			// logo almost always contains the name, and showing both reads as a
+			// rendering bug. The name survives as `alt`, so a blocked or slow
+			// image still says which restaurant this is — and a screen reader
+			// gets the same line it got before branding existed.
+			<img
+				src={logo.url}
+				alt={restaurant.name}
+				width={logo.width}
+				height={logo.height}
+				// Explicit dimensions plus a fixed rendered height. Preflight sets
+				// `img { height: auto }`, so an image with no intrinsic size
+				// collapses to nothing and then shoves the header open when it
+				// decodes — the exact shift the stored dimensions exist to stop.
+				className="h-8 w-auto max-w-40 object-contain object-left"
+			/>
+		);
+	}
+
 	return <p className="truncate text-sm font-semibold text-foreground">{restaurant.name}</p>;
 }
 
@@ -180,6 +265,18 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 	const params = useParams({ strict: false });
 	const lang = (params as { lang?: string }).lang;
 
+	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
+	const { data: bookable } = useQuery(
+		convexQuery(
+			api.reservations.isBookableByDiners,
+			restaurant ? { restaurantId: restaurant._id } : "skip"
+		)
+	);
+	// Hidden while the answer is still loading, not shown-then-removed: a tab
+	// that appears and vanishes invites the tap that lands on a 404. The route
+	// refuses independently, so this is presentation, never the gate.
+	const showReserve = bookable === true;
+
 	const isReserveActive = pathname.endsWith("/reserve");
 	const isMenuActive = !isReserveActive;
 
@@ -205,13 +302,15 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 					label={t(CustomerKeys.MENU)}
 				/>
 			)}
-			<TabLink
-				to="/r/$slug/reserve"
-				params={{ slug }}
-				active={isReserveActive}
-				icon={<CalendarClock size={14} />}
-				label={t(CustomerKeys.RESERVE)}
-			/>
+			{showReserve ? (
+				<TabLink
+					to="/r/$slug/reserve"
+					params={{ slug }}
+					active={isReserveActive}
+					icon={<CalendarClock size={14} />}
+					label={t(CustomerKeys.RESERVE)}
+				/>
+			) : null}
 		</nav>
 	);
 }

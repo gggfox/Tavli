@@ -29,6 +29,7 @@ import {
 	toLocalDateTimeParts,
 } from "../whatsapp/datetime";
 import { sanitizePromptValue } from "../whatsapp/llm";
+import { enableReservationsFlag } from "./helpers/reservationsFlag";
 
 const modules = import.meta.glob("../**/*.ts");
 
@@ -97,6 +98,11 @@ async function seedChannel(t: ReturnType<typeof convexTest>): Promise<Id<"restau
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		});
+
+		// The platform reservations switch ships default OFF (TAVLI-100), so a
+		// suite exercising the booking paths has to enable it the way a real
+		// deployment does.
+		await enableReservationsFlag(ctx.db);
 		await ctx.db.insert("tables", {
 			restaurantId,
 			tableNumber: 1,

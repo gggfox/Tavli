@@ -11,7 +11,6 @@ function Page() {
 
 	return (
 		<SessionOrdersList
-			slug={slug}
 			onBackToMenu={() => navigate({ to: "/r/$slug/$lang/menu", params: { slug, lang } })}
 			onViewOrder={(orderId) =>
 				navigate({

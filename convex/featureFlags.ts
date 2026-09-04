@@ -51,6 +51,20 @@ export const FEATURE_FLAGS = {
 	 * out** — see `isMenuLinkEnabled` below for why that precondition exists.
 	 */
 	WHATSAPP_MENU_LINK: "whatsappMenuLink",
+	/**
+	 * Platform-wide master switch for **diner-facing** reservations (TAVLI-100).
+	 *
+	 * Two levels, and they are different tools. This one is the platform's:
+	 * admin-only, and it decides whether the product offers reservations at
+	 * all. `reservationSettings.acceptingReservations` is the restaurant's:
+	 * manager-editable, and it decides whether *this* restaurant is taking
+	 * bookings today. A diner must clear both.
+	 *
+	 * Staff surfaces are deliberately untouched. A manager still has to see and
+	 * manage the bookings they already have after the switch goes off — hiding
+	 * those would strand real guests with nobody able to look them up.
+	 */
+	RESERVATIONS: "reservations",
 } as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
@@ -63,6 +77,14 @@ export const FEATURE_FLAG_METADATA: Record<FeatureFlagKey, { description: string
 	[FEATURE_FLAGS.SOFT_DELETE_PURGE_DELAY_DAYS]: {
 		description:
 			"Retention window (in days) before soft-deleted sections and tables are permanently hard-deleted by the cron sweep. Set numericValue on the flag and enable it to override; otherwise the system default applies.",
+	},
+	[FEATURE_FLAGS.RESERVATIONS]: {
+		description:
+			"Platform-wide switch for diner-facing reservations: the Reserve tab, /r/:slug/reserve, " +
+			"reservations.create, and the WhatsApp assistant's booking path. OFF hides and refuses all " +
+			"four for every restaurant. ON hands control back to each restaurant's own " +
+			"'accepting reservations' setting. The staff reservations dashboard is never affected — " +
+			"existing bookings still have to be manageable after the switch goes off.",
 	},
 	[FEATURE_FLAGS.WHATSAPP_MENU_LINK]: {
 		description:
@@ -124,6 +146,31 @@ export async function isMenuLinkEnabled(ctx: QueryCtx | MutationCtx): Promise<bo
 	const flag = await ctx.db
 		.query("featureFlags")
 		.withIndex("by_key", (q) => q.eq("key", FEATURE_FLAGS.WHATSAPP_MENU_LINK))
+		.first();
+	return flag?.enabled === true;
+}
+
+/**
+ * May diners see and use reservations at all?
+ *
+ * Read as **explicitly seeded**, not as absent-means-false. `seedDefaultFeatureFlags`
+ * creates this row ON, so the flag's state is legible in the admin table from
+ * day one rather than being an invisible default nobody can point at.
+ *
+ * The fallback here is `false` to match `isFeatureEnabled`'s contract for a
+ * key with no row — which is why the seed matters: a deployment that never
+ * runs it has reservations dark, and that is a deliberate dark-launch posture,
+ * not an accident. Flip it in `/admin/feature-flags` when ready.
+ */
+export async function isReservationsEnabled(ctx: {
+	// Narrower than `QueryCtx | MutationCtx` on purpose: this reads one row and
+	// nothing else, and the reservation-create path threads a db-only context.
+	// Demanding the full ctx would force callers to widen theirs for no reason.
+	db: Pick<QueryCtx["db"], "query">;
+}): Promise<boolean> {
+	const flag = await ctx.db
+		.query("featureFlags")
+		.withIndex("by_key", (q) => q.eq("key", FEATURE_FLAGS.RESERVATIONS))
 		.first();
 	return flag?.enabled === true;
 }
@@ -307,7 +354,16 @@ export const seedDefaultFeatureFlags = mutation({
 		const now = Date.now();
 		const results = { created: 0, skipped: 0 };
 
-		const defaultFlags: Array<{ key: string; enabled: boolean; description: string }> = [];
+		const defaultFlags: Array<{ key: string; enabled: boolean; description: string }> = [
+			{
+				key: FEATURE_FLAGS.RESERVATIONS,
+				// Seeded ON so an existing deployment does not lose a live feature
+				// the moment this ships. A fresh deployment that never runs the
+				// seed has it off, which is the intended dark-launch posture.
+				enabled: true,
+				description: FEATURE_FLAG_METADATA[FEATURE_FLAGS.RESERVATIONS].description,
+			},
+		];
 
 		for (const flag of defaultFlags) {
 			const existing = await ctx.db

@@ -1,4 +1,5 @@
 import { dashboardReservationBounds, type ReservationRange } from "@/features/reservations/utils";
+import { findCollisions, type CollisionResult } from "@/features/reservations/utils/collisions";
 import { resolveRestaurantTimezone } from "@/global/utils/timezone";
 import { unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
@@ -25,6 +26,8 @@ export interface TimelineData {
 	reservationsByTable: Map<string, ReservationDoc[]>;
 	unassignedReservations: ReservationDoc[];
 	locksByTable: Map<string, TableLockDoc[]>;
+	/** Ids on both sides of every booking-vs-walk-in clash. Derived, not stored. */
+	collisions: CollisionResult;
 	openHour: number;
 	closeHour: number;
 	minAdvanceMinutes: number;
@@ -172,6 +175,19 @@ export function useTimelineData(
 		return byTable;
 	}, [locksQuery.data]);
 
+	/**
+	 * Collisions between bookings and walk-in occupancy, recomputed from the
+	 * windows on every render (TAVLI-100).
+	 *
+	 * Derived rather than stored: a persisted flag goes stale the moment a
+	 * manager resolves the clash by hand, and the red bar that never clears is
+	 * the one that teaches everyone to ignore red bars.
+	 */
+	const collisions = useMemo(
+		() => findCollisions(reservationsByTable, locksByTable),
+		[reservationsByTable, locksByTable]
+	);
+
 	// Staff timeline skips min-advance shading and drag clamp; server reschedule does too.
 	const minAdvanceMinutes = 0;
 
@@ -180,6 +196,7 @@ export function useTimelineData(
 		reservationsByTable,
 		unassignedReservations,
 		locksByTable,
+		collisions,
 		openHour,
 		closeHour,
 		minAdvanceMinutes,

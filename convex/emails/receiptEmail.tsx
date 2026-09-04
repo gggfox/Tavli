@@ -34,6 +34,19 @@ export type ReceiptEmailProps = {
 	readonly previewText: string;
 	/** The restaurant's name — the receipt is branded as theirs, not Tavli's. */
 	readonly restaurantName: string;
+	/**
+	 * Canonical `#rrggbb`, contrast-adjusted for a **light** surface, or null.
+	 *
+	 * Light only, and not because email dark mode does not exist — it does, and
+	 * that is the problem. Gmail and Outlook invert *backgrounds* without
+	 * reliably inverting inline text colours, so a colour chosen to work in
+	 * both directions has to survive being flipped. The band and the rule below
+	 * are the two places where that is true, because neither carries text.
+	 *
+	 * This is also a **one-way door**: changing the derivation changes every
+	 * future receipt, with no preview and no per-restaurant rollback.
+	 */
+	readonly brandColor: string | null;
 	readonly title: string;
 	/** "Order #12 · June 6, 2026, 3:00 PM" (already localized + restaurant-timezone). */
 	readonly orderLine: string;
@@ -113,6 +126,7 @@ function AmountRow({
 export default function ReceiptEmail({
 	previewText,
 	restaurantName,
+	brandColor,
 	title,
 	orderLine,
 	taxBlock,
@@ -151,6 +165,34 @@ export default function ReceiptEmail({
 						maxWidth: "520px",
 					}}
 				>
+					{/*
+					 * The brand band. A background, never text.
+					 *
+					 * Every text colour in this template stays on the platform
+					 * palette on purpose: email dark-mode inversion recolours
+					 * backgrounds without recolouring inline text, so branded text
+					 * is legible in exactly one of the two renderings and nobody
+					 * can tell which one a given recipient will see. A band has no
+					 * such failure mode — worst case it is a slightly different
+					 * shade of the restaurant's colour.
+					 */}
+					{brandColor ? (
+						<Section
+							style={{
+								backgroundColor: brandColor,
+								height: "6px",
+								lineHeight: "6px",
+								fontSize: "1px",
+								borderRadius: "3px",
+								margin: "0 0 20px",
+							}}
+						>
+							{/* Outlook collapses an empty element regardless of its
+							    height, so the band needs a character to hold it open. */}
+							&nbsp;
+						</Section>
+					) : null}
+
 					<Heading
 						as="h1"
 						style={{
@@ -254,7 +296,11 @@ export default function ReceiptEmail({
 
 					<Section
 						style={{
-							borderTop: `1px solid ${colors.border}`,
+							// The second and last place the brand colour appears: the
+							// rule above the money. Two pixels rather than one so it
+							// reads as deliberate rather than as the default hairline
+							// that every other divider in this template uses.
+							borderTop: brandColor ? `2px solid ${brandColor}` : `1px solid ${colors.border}`,
 							marginTop: "12px",
 							paddingTop: "12px",
 						}}
