@@ -7,7 +7,8 @@ import type { Id } from "convex/_generated/dataModel";
 import { ClipboardPaste, ImagePlus, Trash2 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getImageFromClipboard, uploadImage } from "../utils/imageUtils";
+import { uploadImage } from "../utils/imageUtils";
+import { getImageFromClipboard } from "@/global/utils";
 
 interface ItemImageManagerProps {
 	itemId: Id<"menuItems">;
