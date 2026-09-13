@@ -43,6 +43,9 @@ export const OrderingKeys = {
 	MENU_BACK_TO_TOP: "ordering.menu.backToTop",
 	MENU_FILTER_PLACEHOLDER: "ordering.menu.filterPlaceholder",
 	MENU_FILTER_NO_MATCHES: "ordering.menu.filterNoMatches",
+	MENU_EXPLORE: "ordering.menu.explore",
+	MENU_FULL_MENU: "ordering.menu.fullMenu",
+	MENU_FULL_MENU_CLOSE: "ordering.menu.fullMenuClose",
 
 	ITEM_REQUIRED: "ordering.item.required",
 	ITEM_PICK_ONE: "ordering.item.pickOne",
@@ -206,6 +209,7 @@ export const OrderingKeys = {
 	GEOFENCE_BLOCKED_TITLE: "ordering.geofence.blockedTitle",
 	GEOFENCE_OUTSIDE: "ordering.geofence.outside",
 	GEOFENCE_LOCATION_UNAVAILABLE: "ordering.geofence.locationUnavailable",
+	GEOFENCE_LOCATION_BLOCKED: "ordering.geofence.locationBlocked",
 	GEOFENCE_CODE_PLACEHOLDER: "ordering.geofence.codePlaceholder",
 	GEOFENCE_CODE_SUBMIT: "ordering.geofence.codeSubmit",
 	GEOFENCE_CODE_INVALID: "ordering.geofence.codeInvalid",

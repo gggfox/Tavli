@@ -19,8 +19,21 @@ export type GeofenceStatus =
 	| "inside"
 	/** Device located but outside the radius. */
 	| "outside"
-	/** Geolocation denied or unavailable. */
-	| "unavailable";
+	/** Geolocation failed for a reason a retry could plausibly fix. */
+	| "unavailable"
+	/**
+	 * The diner refused location, or the browser has it blocked for this site.
+	 * Split from `unavailable` because the remedy is different and the usual
+	 * advice is actively wrong: once denied, `getCurrentPosition` fails without
+	 * re-prompting, so a "try again" button can never succeed. Only browser
+	 * settings — or the staff bypass code — get past this.
+	 */
+	| "blocked";
+
+/** Statuses `GeofenceNotice` has something useful to say about. */
+export function showsGeofenceNotice(status: GeofenceStatus): boolean {
+	return status === "blocked" || status === "outside" || status === "unavailable";
+}
 
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -110,8 +123,13 @@ export function useGeofence(
 				);
 				setStatus(meters <= radius ? "inside" : "outside");
 			},
-			() => {
-				if (!cancelled) setStatus("unavailable");
+			(error: GeolocationPositionError) => {
+				if (cancelled) return;
+				// `PERMISSION_DENIED` is 1 in the spec; read it off the error when
+				// the browser supplies the constant, since the object handed to
+				// this callback is not always a real GeolocationPositionError.
+				const denied = error?.code === (error?.PERMISSION_DENIED ?? 1);
+				setStatus(denied ? "blocked" : "unavailable");
 			},
 			{ enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
 		);

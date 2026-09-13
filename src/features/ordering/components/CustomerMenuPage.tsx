@@ -6,7 +6,7 @@ import { OrderingKeys } from "@/global/i18n";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCart } from "../hooks/useCart";
-import { useGeofence } from "../hooks/useGeofence";
+import { showsGeofenceNotice, useGeofence } from "../hooks/useGeofence";
 import { useBranding } from "../hooks/useBranding";
 import { useSessionStore } from "../hooks/useSession";
 import type { SelectedOption } from "../types";
@@ -87,7 +87,7 @@ export function CustomerMenuPage({
 			<p className="text-sm text-center text-muted-foreground py-2">
 				{t(OrderingKeys.MENU_ORDERING_UNAVAILABLE)}
 			</p>
-		) : geofence.status === "outside" || geofence.status === "unavailable" ? (
+		) : showsGeofenceNotice(geofence.status) ? (
 			<GeofenceNotice
 				slug={slug}
 				status={geofence.status}

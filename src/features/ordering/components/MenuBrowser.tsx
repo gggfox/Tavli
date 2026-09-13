@@ -7,11 +7,23 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { Check, UtensilsCrossed, X } from "lucide-react";
+import { Check, ChevronDown, UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SelectedOption } from "../types";
 import { POPULARITY_MIN_ITEMS } from "convex/menuItemPopularity";
+import { STICKY_BAR_HEIGHT_PX } from "../constants";
+import { useCategoryScrollSpy } from "../hooks/useCategoryScrollSpy";
+import { useScrolledPast } from "../hooks/useScrolledPast";
+import {
+	countAvailableByCategory,
+	firstImageByCategory,
+	isItemAvailableToday,
+	partitionByPhoto,
+} from "../utils/menuLayout";
+import { CategoryRail } from "./CategoryRail";
+import { CategoryTileRail } from "./CategoryTileRail";
+import { FullMenuSheet } from "./FullMenuSheet";
 import { CategoryPills, categorySectionId } from "./CategoryPills";
 import type { MenuItemWithImage } from "./ItemDetailSheet";
 import { PopularItemsCarousel } from "./PopularItemsCarousel";
@@ -65,20 +77,6 @@ interface MenuBrowserProps {
 	 */
 	hero?: React.ReactNode;
 }
-
-/**
- * Height reserved for the sticky search + pills bar, in px.
- *
- * Used as `scroll-margin-top` on every category heading. Without it
- * `scrollIntoView` aligns a heading with the top of the scroll container —
- * which is *underneath* the sticky bar — so tapping a pill lands the diner
- * past the heading, on the third dish of the section they asked for.
- *
- * A constant rather than a measurement: the bar is a fixed two-row layout, and
- * measuring it would mean a layout read on every render of every heading to
- * chase a number that does not change.
- */
-const STICKY_BAR_HEIGHT_PX = 104;
 
 export function MenuBrowser({
 	restaurantId,
@@ -150,6 +148,38 @@ export function MenuBrowser({
 	 * that silently does nothing.
 	 */
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const tilesRef = useRef<HTMLDivElement>(null);
+	const stickyRef = useRef<HTMLDivElement>(null);
+	const [fullMenuOpen, setFullMenuOpen] = useState(false);
+
+	const sortedCategories = useMemo(
+		() => [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder),
+		[categories]
+	);
+	// Availability windows are day-granular, so one read of the clock per menu
+	// render is enough — this used to be a `new Date()` per category per render.
+	const dayOfWeek = useMemo(() => new Date().getDay(), []);
+	const categoryCounts = useMemo(
+		() => countAvailableByCategory(menuItems ?? [], dayOfWeek),
+		[menuItems, dayOfWeek]
+	);
+	const tileImages = useMemo(() => firstImageByCategory(menuItems ?? []), [menuItems]);
+
+	// One source of truth for "which section am I in", shared by the chip
+	// strip, the desktop rail and the full-menu sheet. The sticky offset is
+	// measured live: the bar is search + chips on a phone and search alone on
+	// desktop, and the chips come and go.
+	const { activeId: currentCategoryId, jumpTo: jumpToCategory } = useCategoryScrollSpy({
+		categories: sortedCategories,
+		scrollRef,
+		stickyOffsetPx: () => stickyRef.current?.getBoundingClientRect().height ?? 0,
+	});
+	// While the tiles are on screen they are the index; the chip strip takes
+	// over once they have scrolled away.
+	const tilesPassed = useScrolledPast(tilesRef, scrollRef);
+	// One category is a label, not an index — and a search has already told
+	// us where the diner wants to go.
+	const showIndex = !isFilterActive && sortedCategories.length > 1;
 
 	// Ranked ids only; the objects are resolved from the menu items already
 	// loaded above, which is what makes a carousel tap open the very same
@@ -313,11 +343,22 @@ export function MenuBrowser({
 					</div>
 				)}
 
+				{showIndex ? (
+					<div ref={tilesRef} className="lg:hidden pt-4">
+						<CategoryTileRail
+							categories={sortedCategories}
+							tileImages={tileImages}
+							onJump={jumpToCategory}
+							{...(lang ? { lang } : {})}
+						/>
+					</div>
+				) : null}
+
 				{/*
 				 * Opaque background is load-bearing: a translucent sticky bar lets
 				 * dish cards scroll visibly through the search box.
 				 */}
-				<div className="sticky top-0 z-10 bg-background pt-4">
+				<div ref={stickyRef} className="sticky top-0 z-10 bg-background pt-4">
 					<div className="px-4 pb-2">
 						<SearchInput
 							placeholder={t(OrderingKeys.MENU_FILTER_PLACEHOLDER)}
@@ -326,33 +367,66 @@ export function MenuBrowser({
 						/>
 					</div>
 					{/* Jumping to a section the search has hidden scrolls to
-					    nothing, so the index goes away while the filter is on. */}
-					{!isFilterActive && categories ? (
-						<CategoryPills
-							categories={categories}
-							scrollRef={scrollRef}
-							{...(lang ? { lang } : {})}
-						/>
+					    nothing, so the index goes away while the filter is on.
+					    Phones only, and only once the tiles have scrolled away —
+					    until then the tiles are the index, and both at once is
+					    the same list twice. Desktop has the rail instead. */}
+					{showIndex && tilesPassed ? (
+						<div className="lg:hidden flex items-center gap-1 pl-4">
+							<button
+								type="button"
+								onClick={() => setFullMenuOpen(true)}
+								className="mb-2 shrink-0 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-foreground"
+							>
+								{t(OrderingKeys.MENU_FULL_MENU)}
+								<ChevronDown size={14} />
+							</button>
+							<div className="min-w-0 flex-1">
+								<CategoryPills
+									categories={sortedCategories}
+									activeId={currentCategoryId}
+									onJump={jumpToCategory}
+									{...(lang ? { lang } : {})}
+								/>
+							</div>
+						</div>
 					) : null}
 				</div>
 
-				<div className="px-4 pb-4 space-y-6">
-					{showFilterNoMatches ? (
-						<p className="text-sm text-muted-foreground">
-							{t(OrderingKeys.MENU_FILTER_NO_MATCHES)}
-						</p>
-					) : null}
-					{currentMenuId && (
-						<MenuCategories
-							categories={categories}
-							items={menuItems}
-							lang={lang}
-							selections={selections}
-							onOpenDetail={handleOpenDetail}
-							searchQuery={deferredSearchQuery}
-							onFilterVisibility={handleFilterVisibility}
+				<div
+					className={`px-4 pb-4 ${
+						showIndex ? "lg:grid lg:grid-cols-[220px_1fr] lg:gap-8 lg:items-start" : ""
+					}`}
+				>
+					{showIndex ? (
+						<CategoryRail
+							categories={sortedCategories}
+							counts={categoryCounts}
+							activeId={currentCategoryId}
+							onJump={jumpToCategory}
+							{...(lang ? { lang } : {})}
+							className="hidden lg:block lg:sticky lg:top-[68px] pt-2"
 						/>
-					)}
+					) : null}
+					<div className="space-y-6 min-w-0">
+						{showFilterNoMatches ? (
+							<p className="text-sm text-muted-foreground">
+								{t(OrderingKeys.MENU_FILTER_NO_MATCHES)}
+							</p>
+						) : null}
+						{currentMenuId && (
+							<MenuCategories
+								categories={sortedCategories}
+								items={menuItems}
+								dayOfWeek={dayOfWeek}
+								lang={lang}
+								selections={selections}
+								onOpenDetail={handleOpenDetail}
+								searchQuery={deferredSearchQuery}
+								onFilterVisibility={handleFilterVisibility}
+							/>
+						)}
+					</div>
 				</div>
 			</div>
 
@@ -500,6 +574,16 @@ export function MenuBrowser({
 			{/* Item detail bottom sheet */}
 			{contactBar}
 
+			<FullMenuSheet
+				open={fullMenuOpen}
+				categories={sortedCategories}
+				counts={categoryCounts}
+				activeId={currentCategoryId}
+				onJump={jumpToCategory}
+				onClose={() => setFullMenuOpen(false)}
+				{...(lang ? { lang } : {})}
+			/>
+
 			{detailItem && (
 				<ItemDetailSheet
 					item={detailItem}
@@ -526,20 +610,18 @@ function MenuCategories({
 	onOpenDetail,
 	searchQuery,
 	onFilterVisibility,
+	dayOfWeek,
 }: Readonly<{
-	categories: readonly Doc<"menuCategories">[] | undefined;
+	/** Already in display order — the parent sorts once for every surface. */
+	categories: readonly Doc<"menuCategories">[];
 	items: readonly MenuItemWithImage[] | undefined;
 	lang?: string;
 	selections: Map<string, ItemSelection>;
 	onOpenDetail: (item: MenuItemWithImage) => void;
 	searchQuery: string;
 	onFilterVisibility?: (categoryId: string, visible: boolean) => void;
+	dayOfWeek: number;
 }>) {
-	const sorted = useMemo(
-		() => [...(categories ?? [])].sort((a, b) => a.displayOrder - b.displayOrder),
-		[categories]
-	);
-
 	// The batched query returns the whole menu; bucket it once instead of
 	// letting each category filter the full list on every render.
 	const itemsByCategory = useMemo(() => {
@@ -552,13 +634,9 @@ function MenuCategories({
 		return grouped;
 	}, [items]);
 
-	// Availability windows are day-granular, so one read of the clock per menu
-	// render is enough — this used to be a `new Date()` per category per render.
-	const dayOfWeek = useMemo(() => new Date().getDay(), []);
-
 	return (
 		<>
-			{sorted.map((cat) => (
+			{categories.map((cat) => (
 				<CategoryItems
 					key={cat._id}
 					category={cat}
@@ -601,13 +679,7 @@ function CategoryItems({
 	const availabilityFiltered = useMemo(
 		() =>
 			(items ?? [])
-				.filter((item) => {
-					if (!item.isAvailable) return false;
-					if (item.availableDays && item.availableDays.length > 0) {
-						return item.availableDays.includes(dayOfWeek);
-					}
-					return true;
-				})
+				.filter((item) => isItemAvailableToday(item, dayOfWeek))
 				.sort((a, b) => a.displayOrder - b.displayOrder),
 		[items, dayOfWeek]
 	);
@@ -643,61 +715,151 @@ function CategoryItems({
 			>
 				{getTranslatedField(category, lang)}
 			</h3>
-			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-				{visibleItems.map((item) => {
-					const isSelected = selections.has(item._id);
-					const selection = selections.get(item._id);
-					const description = getTranslatedField(item, lang, "description") || item.description;
-					return (
-						<button
-							key={item._id}
-							onClick={() => onOpenDetail(item)}
-							className="relative w-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
-							style={{
-								backgroundColor: isSelected ? "var(--bg-active)" : "var(--bg-secondary)",
-								border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
-							}}
-						>
-							{isSelected && (
-								<span className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary">
-									<Check size={14} className="text-primary-foreground" />
-								</span>
-							)}
-							{isSelected && selection && selection.quantity > 1 && (
-								<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-primary-foreground bg-primary">
-									{selection.quantity}
-								</span>
-							)}
-							{item.imageUrl ? (
-								<img
-									src={item.imageUrl}
-									alt={getTranslatedField(item, lang)}
-									loading="lazy"
-									decoding="async"
-									className="w-full h-36 sm:h-40 object-cover"
-								/>
-							) : (
-								<div className="w-full h-36 sm:h-40 flex items-center justify-center bg-background">
-									<UtensilsCrossed size={48} className="text-faint-foreground" />
-								</div>
-							)}
-							<div className="px-3 py-2.5 mt-auto">
-								<div className="text-sm font-medium text-foreground">
-									{getTranslatedField(item, lang)}
-								</div>
-								{description && (
-									<div className="text-xs mt-0.5 line-clamp-2 text-faint-foreground">
-										{description}
-									</div>
-								)}
-								<div className="text-sm font-bold mt-1 text-foreground">
-									${formatCents(item.basePrice)}
-								</div>
-							</div>
-						</button>
-					);
-				})}
-			</div>
+			<CategoryItemGroups
+				items={visibleItems}
+				lang={lang}
+				selections={selections}
+				onOpenDetail={onOpenDetail}
+			/>
 		</div>
+	);
+}
+
+/**
+ * The mixed-menu layout (prototype round 2, variant F): dishes with a photo
+ * as image cards, the rest as compact rows, cards first. See
+ * `partitionByPhoto` for why.
+ */
+function CategoryItemGroups({
+	items,
+	lang,
+	selections,
+	onOpenDetail,
+}: Readonly<{
+	items: readonly MenuItemWithImage[];
+	lang?: string;
+	selections: Map<string, ItemSelection>;
+	onOpenDetail: (item: MenuItemWithImage) => void;
+}>) {
+	const { withPhoto, withoutPhoto } = partitionByPhoto(items);
+	return (
+		<div className="space-y-3">
+			{withPhoto.length > 0 ? (
+				<div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+					{withPhoto.map((item) => (
+						<MenuItemCard
+							key={item._id}
+							item={item}
+							lang={lang}
+							selection={selections.get(item._id)}
+							onOpenDetail={onOpenDetail}
+						/>
+					))}
+				</div>
+			) : null}
+			{withoutPhoto.length > 0 ? (
+				<ul className="divide-y divide-border rounded-xl border border-border overflow-hidden">
+					{withoutPhoto.map((item) => (
+						<li key={item._id}>
+							<MenuItemRow
+								item={item}
+								lang={lang}
+								selection={selections.get(item._id)}
+								onOpenDetail={onOpenDetail}
+							/>
+						</li>
+					))}
+				</ul>
+			) : null}
+		</div>
+	);
+}
+
+interface MenuItemProps {
+	readonly item: MenuItemWithImage;
+	readonly lang?: string;
+	readonly selection: ItemSelection | undefined;
+	readonly onOpenDetail: (item: MenuItemWithImage) => void;
+}
+
+function MenuItemCard({ item, lang, selection, onOpenDetail }: Readonly<MenuItemProps>) {
+	const isSelected = selection !== undefined;
+	const description = getTranslatedField(item, lang, "description") || item.description;
+	return (
+		<button
+			type="button"
+			data-testid="menu-item-card"
+			onClick={() => onOpenDetail(item)}
+			className="relative w-full text-left rounded-xl transition-colors overflow-hidden flex flex-col"
+			style={{
+				backgroundColor: isSelected ? "var(--bg-active)" : "var(--bg-secondary)",
+				border: isSelected ? "2px solid var(--btn-primary-bg)" : "2px solid transparent",
+			}}
+		>
+			{isSelected && (
+				<span className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-primary">
+					<Check size={14} className="text-primary-foreground" />
+				</span>
+			)}
+			{isSelected && selection.quantity > 1 && (
+				<span className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-primary-foreground bg-primary">
+					{selection.quantity}
+				</span>
+			)}
+			{item.imageUrl ? (
+				<img
+					src={item.imageUrl}
+					alt={getTranslatedField(item, lang)}
+					loading="lazy"
+					decoding="async"
+					className="aspect-[4/3] w-full object-cover"
+				/>
+			) : (
+				<div className="aspect-[4/3] w-full flex items-center justify-center bg-background">
+					<UtensilsCrossed size={48} className="text-faint-foreground" />
+				</div>
+			)}
+			<div className="px-3 py-2.5 mt-auto">
+				<div className="text-sm font-medium text-foreground">{getTranslatedField(item, lang)}</div>
+				{description && (
+					<div className="text-xs mt-0.5 line-clamp-2 text-faint-foreground">{description}</div>
+				)}
+				<div className="text-sm font-bold mt-1 text-foreground">${formatCents(item.basePrice)}</div>
+			</div>
+		</button>
+	);
+}
+
+function MenuItemRow({ item, lang, selection, onOpenDetail }: Readonly<MenuItemProps>) {
+	const isSelected = selection !== undefined;
+	const description = getTranslatedField(item, lang, "description") || item.description;
+	return (
+		<button
+			type="button"
+			data-testid="menu-item-row"
+			onClick={() => onOpenDetail(item)}
+			className="w-full text-left px-3 py-2.5 transition-colors hover-secondary"
+			style={{
+				backgroundColor: isSelected ? "var(--bg-active)" : "transparent",
+				boxShadow: isSelected ? "inset 3px 0 0 var(--btn-primary-bg)" : "none",
+			}}
+		>
+			<div className="flex items-start justify-between gap-3">
+				<span className="flex items-center gap-2 min-w-0 text-sm font-medium text-foreground">
+					{isSelected && (
+						<span className="shrink-0 inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-full text-[11px] font-bold bg-primary text-primary-foreground">
+							{selection.quantity > 1 ? selection.quantity : <Check size={12} />}
+						</span>
+					)}
+					<span className="truncate">{getTranslatedField(item, lang)}</span>
+				</span>
+				<span className="shrink-0 text-sm font-bold tabular-nums text-foreground">
+					${formatCents(item.basePrice)}
+				</span>
+			</div>
+			{description && (
+				<div className="text-xs mt-0.5 line-clamp-1 text-faint-foreground">{description}</div>
+			)}
+		</button>
 	);
 }

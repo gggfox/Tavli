@@ -127,10 +127,11 @@ function CustomerLayoutContent() {
 			<div className="flex-1 flex flex-col min-h-0">
 				<header className="px-3 py-2 shrink-0 border-b border-border bg-muted space-y-1.5">
 					<RestaurantNameBadge slug={slug} />
-					<div className="flex items-center justify-between gap-2">
-						<CustomerNavTabs slug={slug} />
-						<CustomerAuthAction forceShow />
-					</div>
+					{/* No Sign in / Sign up up here. The card below is this screen's
+					    only job, and a second copy of the same two buttons in the
+					    header was the same decision offered twice. The tab strip
+					    stays; it hides itself when Menu would be its only tab. */}
+					<CustomerNavTabs slug={slug} />
 				</header>
 				<div className="flex-1 flex items-center justify-center p-6">
 					<div className="text-center max-w-sm space-y-4">
@@ -224,17 +225,24 @@ function RestaurantNameBadge({ slug }: Readonly<{ slug: string }>) {
 			// rendering bug. The name survives as `alt`, so a blocked or slow
 			// image still says which restaurant this is — and a screen reader
 			// gets the same line it got before branding existed.
-			<img
-				src={logo.url}
-				alt={restaurant.name}
-				width={logo.width}
-				height={logo.height}
-				// Explicit dimensions plus a fixed rendered height. Preflight sets
-				// `img { height: auto }`, so an image with no intrinsic size
-				// collapses to nothing and then shoves the header open when it
-				// decodes — the exact shift the stored dimensions exist to stop.
-				className="h-8 w-auto max-w-40 object-contain object-left"
-			/>
+			// A light plate under the logo. Restaurants upload one logo, and this
+			// one averages rgb(17,10,10) — on the dark theme's rgb(32,32,32) header
+			// that is black on black. The plate makes any dark logo legible in
+			// both themes. It is a stopgap: the real answer is a per-theme logo
+			// slot, so a light wordmark is not stuck on a white chip in light mode.
+			<span className="inline-flex items-center rounded-md bg-white px-2 py-1">
+				<img
+					src={logo.url}
+					alt={restaurant.name}
+					width={logo.width}
+					height={logo.height}
+					// Explicit dimensions plus a fixed rendered height. Preflight sets
+					// `img { height: auto }`, so an image with no intrinsic size
+					// collapses to nothing and then shoves the header open when it
+					// decodes — the exact shift the stored dimensions exist to stop.
+					className="h-10 sm:h-12 w-auto max-w-56 object-contain object-left"
+				/>
+			</span>
 		);
 	}
 
@@ -248,9 +256,9 @@ function CustomerHeader({
 	return (
 		<header className="px-3 py-2 shrink-0 border-b border-border bg-muted space-y-1.5">
 			<RestaurantNameBadge slug={slug} />
-			<div className="flex items-center justify-between gap-2">
+			<div className="flex items-center gap-2">
 				<CustomerNavTabs slug={slug} />
-				<div className="flex items-center gap-2 shrink-0">
+				<div className="ml-auto flex items-center gap-2 shrink-0">
 					{sessionId && <MyOrdersLink sessionId={sessionId} slug={slug} />}
 					<CustomerAuthAction />
 				</div>
@@ -259,7 +267,7 @@ function CustomerHeader({
 	);
 }
 
-function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
+export function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 	const { t } = useTranslation();
 	const pathname = useRouterState({ select: (s) => s.location.pathname });
 	const params = useParams({ strict: false });
@@ -279,6 +287,12 @@ function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 
 	const isReserveActive = pathname.endsWith("/reserve");
 	const isMenuActive = !isReserveActive;
+
+	// Menu alone is not navigation. With reservations off — or the answer still
+	// in flight — this strip is a single pill that looks tappable, sits under
+	// the logo, and takes the diner exactly where they already are. Same
+	// argument `CategoryPills` makes for a menu with one category.
+	if (!showReserve) return null;
 
 	return (
 		<nav
@@ -375,11 +389,11 @@ function TabLink(props: Readonly<TabLinkProps>) {
 	);
 }
 
-function CustomerAuthAction({ forceShow = false }: Readonly<{ forceShow?: boolean }>) {
+function CustomerAuthAction() {
 	const { t } = useTranslation();
 	const { isLoaded, isSignedIn } = useAuth();
 
-	if (!isLoaded || (isSignedIn && !forceShow)) return null;
+	if (!isLoaded || isSignedIn) return null;
 
 	return (
 		<div className="flex items-center gap-1.5">

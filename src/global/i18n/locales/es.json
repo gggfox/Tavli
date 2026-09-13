@@ -751,6 +751,9 @@
 			"orderingUnavailable": "Los pedidos en línea aún no están disponibles aquí.",
 			"filterPlaceholder": "Buscar en el menú",
 			"filterNoMatches": "Ninguna categoría o producto coincide con tu búsqueda.",
+			"explore": "Explora el menú",
+			"fullMenu": "Menú completo",
+			"fullMenuClose": "Cerrar menú",
 			"popularHeading": "Lo más pedido",
 			"backToTop": "Volver arriba",
 			"tableInUse": "· en uso",
@@ -920,6 +923,7 @@
 			"blockedTitle": "Los pedidos están disponibles en el restaurante",
 			"outside": "Parece que estás fuera del restaurante. Puedes ver el menú y ordenar cuando llegues, o pide al personal un código de acceso.",
 			"locationUnavailable": "No pudimos acceder a tu ubicación. Permite el acceso o pide al personal un código de acceso.",
+			"locationBlocked": "La ubicación está bloqueada para este sitio. Actívala en la configuración de tu navegador o pide un código de acceso al personal.",
 			"codePlaceholder": "Código de acceso",
 			"codeSubmit": "Desbloquear",
 			"codeInvalid": "Ese código de acceso no es válido. Pide al personal que lo verifique.",
@@ -1114,7 +1118,8 @@
 			"brandingUploading": "Subiendo…",
 			"brandingEncodeFailed": "No pudimos leer ese archivo. Intenta con un JPEG o PNG.",
 			"brandingTooLarge": "Esa imagen tiene demasiado detalle para el límite de tamaño. Prueba con una más simple o más pequeña.",
-			"brandingNoImage": "Aún no hay imagen"
+			"brandingNoImage": "Aún no hay imagen",
+			"brandingPasteHint": "O haz clic en esta casilla y pega una imagen."
 		},
 		"managers": {
 			"sectionTitle": "Gerentes del local",

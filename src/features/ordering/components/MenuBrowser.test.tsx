@@ -98,6 +98,42 @@ describe("MenuBrowser", () => {
 		return (await screen.findByRole("combobox")) as HTMLSelectElement;
 	}
 
+	// The mixed-menu rule from the prototype review (variant F): a dish with a
+	// photo gets a card, a dish without collapses to a row, cards first. On a
+	// real menu most dishes have no picture, and a uniform grid made that a
+	// wall of placeholder tiles.
+	it("renders photographed dishes as cards and the rest as rows, cards first", () => {
+		overrides["menuItems:getByMenu"] = [
+			{
+				...(QUERY_DATA["menuItems:getByMenu"] as any[])[0],
+				_id: "menuItems:plain",
+				name: "Bruschetta",
+				displayOrder: 0,
+			},
+			{
+				...(QUERY_DATA["menuItems:getByMenu"] as any[])[0],
+				_id: "menuItems:photo",
+				name: "Rib eye",
+				imageUrl: "https://x/rib.jpg",
+				displayOrder: 1,
+			},
+		];
+		render(
+			<MenuBrowser
+				restaurantId={"restaurants:test" as any}
+				onSubmitOrder={() => {}}
+				isSubmitting={false}
+			/>
+		);
+
+		const card = screen.getByTestId("menu-item-card");
+		const row = screen.getByTestId("menu-item-row");
+		expect(card.textContent).toContain("Rib eye");
+		expect(row.textContent).toContain("Bruschetta");
+		// Cards precede rows even though the photographed dish sorts later.
+		expect(card.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
 	it("issues exactly one item subscription for the whole menu", () => {
 		render(
 			<MenuBrowser

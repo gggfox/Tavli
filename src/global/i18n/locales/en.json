@@ -751,6 +751,9 @@
 			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
 			"filterNoMatches": "No categories or items match your search.",
+			"explore": "Explore the menu",
+			"fullMenu": "Full menu",
+			"fullMenuClose": "Close menu",
 			"popularHeading": "Most popular",
 			"backToTop": "Back to top",
 			"tableInUse": "· in use",
@@ -920,6 +923,7 @@
 			"blockedTitle": "Ordering is available at the restaurant",
 			"outside": "You seem to be outside the restaurant. You can browse the menu, and order once you arrive — or ask the staff for an access code.",
 			"locationUnavailable": "We couldn't access your location. Allow location access, or ask the staff for an access code.",
+			"locationBlocked": "Location is blocked for this site. Turn it on in your browser settings, or ask the staff for an access code.",
 			"codePlaceholder": "Access code",
 			"codeSubmit": "Unlock",
 			"codeInvalid": "That access code is not valid. Ask the staff to check it.",
@@ -1114,7 +1118,8 @@
 			"brandingUploading": "Uploading…",
 			"brandingEncodeFailed": "We could not read that file. Try a JPEG or PNG.",
 			"brandingTooLarge": "That image is too detailed to fit the size limit. Try a simpler or smaller picture.",
-			"brandingNoImage": "No image yet"
+			"brandingNoImage": "No image yet",
+			"brandingPasteHint": "Or click this slot and paste an image."
 		},
 		"managers": {
 			"sectionTitle": "Location managers",
