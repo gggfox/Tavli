@@ -6,6 +6,7 @@ import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import { MENU_ITEM_IMAGE_SOURCE } from "convex/constants";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, Minus, Plus, Trash2, UtensilsCrossed, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -153,6 +154,11 @@ export function ItemDetailSheet({
 						<p className="text-base font-semibold mt-1.5 text-foreground">
 							${formatCents(item.basePrice)}
 						</p>
+						{item.imageSource === MENU_ITEM_IMAGE_SOURCE.GENERATED ? (
+							<p className="text-xs mt-1.5 text-faint-foreground">
+								{t(OrderingKeys.MENU_GENERATED_IMAGE_DETAIL)}
+							</p>
+						) : null}
 					</div>
 
 					{/* Option groups */}

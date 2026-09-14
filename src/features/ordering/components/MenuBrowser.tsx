@@ -6,6 +6,7 @@ import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
+import { MENU_ITEM_IMAGE_SOURCE } from "convex/constants";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, ChevronDown, UtensilsCrossed, X } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -783,6 +784,7 @@ interface MenuItemProps {
 }
 
 function MenuItemCard({ item, lang, selection, onOpenDetail }: Readonly<MenuItemProps>) {
+	const { t } = useTranslation();
 	const isSelected = selection !== undefined;
 	const description = getTranslatedField(item, lang, "description") || item.description;
 	return (
@@ -819,6 +821,13 @@ function MenuItemCard({ item, lang, selection, onOpenDetail }: Readonly<MenuItem
 					<UtensilsCrossed size={48} className="text-faint-foreground" />
 				</div>
 			)}
+			{item.imageSource === MENU_ITEM_IMAGE_SOURCE.GENERATED ? (
+				<span
+					className={`absolute left-2 ${isSelected ? "top-10" : "top-2"} h-5 rounded px-1.5 text-[10px] font-medium leading-5 bg-black/60 text-white`}
+				>
+					{t(OrderingKeys.MENU_GENERATED_IMAGE)}
+				</span>
+			) : null}
 			<div className="px-3 py-2.5 mt-auto">
 				<div className="text-sm font-medium text-foreground">{getTranslatedField(item, lang)}</div>
 				{description && (

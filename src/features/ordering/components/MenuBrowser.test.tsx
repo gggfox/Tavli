@@ -286,4 +286,22 @@ describe("MenuBrowser", () => {
 			expect(onSubmitOrder).toHaveBeenCalled();
 		});
 	});
+
+	it("tells the diner when a card's image is AI-generated", () => {
+		overrides["menuItems:getByMenu"] = [
+			{
+				...(QUERY_DATA["menuItems:getByMenu"] as any[])[0],
+				imageUrl: "https://x/rib.jpg",
+				imageSource: "generated",
+			},
+		];
+		render(
+			<MenuBrowser
+				restaurantId={"restaurants:test" as any}
+				onSubmitOrder={() => {}}
+				isSubmitting={false}
+			/>
+		);
+		expect(screen.getByTestId("menu-item-card").textContent).toContain("AI image");
+	});
 });
