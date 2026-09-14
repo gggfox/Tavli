@@ -18,8 +18,11 @@
  *   3. Cancellation is two-phase. `request_cancel` mutates nothing; the cancel
  *      happens only when a later inbound message carries a server-generated
  *      code, matched in `processing.ts` before the model runs.
- *   4. Creation is a request. Bookings land `pending` with no tables; staff
- *      confirm. The assistant can ask for a table, never take one.
+ *   4. Creation is a request that holds a provisional table. Since TAVLI-101
+ *      `createReservationCore` places the party at booking time (admission IS
+ *      placement) and the row lands `pending` with `tableAssignedBy: "auto"`;
+ *      staff confirm. What bounds abuse is the per-phone create and write
+ *      limits, not the absence of a table — see the ADR-011 amendment.
  *
  * Plus a per-turn write budget, because `stepCountIs` bounds steps, not writes.
  *
@@ -39,7 +42,7 @@ import {
 	WHATSAPP_MENU_TOOL_ITEM_LIMIT,
 	WHATSAPP_MAX_WRITES_PER_TURN,
 } from "../constants";
-import { getBotCopy, resolveLocale } from "./copy";
+import { bookingDeclinedNotice, getBotCopy, resolveLocale } from "./copy";
 import { formatLocalDateTime, resolveRequestedStart } from "./datetime";
 import { redactConfirmationCodes, redactUrls, toWhatsappText } from "./format";
 import { buildMenuToolResult, matchDishByName } from "./menu";
@@ -114,7 +117,7 @@ function buildSystemPrompt(
 				]
 			: []),
 		"- You have NO web address of your own. Never type a URL, a domain, or a `www.` — not the restaurant's, not the menu's, not an example. Any link the customer receives is put there by the system.",
-		"- To answer whether a table is free, call `check_availability` with a date as YYYY-MM-DD and a time as HH:MM (24-hour), resolved from the CONTEXT date above. Never guess availability.",
+		"- To answer whether a table is free, call `check_availability` with a date as YYYY-MM-DD and a time as HH:MM (24-hour), resolved from the CONTEXT date above. Never guess availability. If it returns `reason: ERROR_NOT_ACCEPTING_RESERVATIONS`, the restaurant is not taking reservations at all right now — the system tells the customer so; do NOT propose other times or dates, offer to help with the menu, hours or directions instead.",
 		"- To tell the customer about their own existing bookings, call `list_my_reservations`. It already knows who is messaging; you cannot look up anyone else's booking.",
 		"- Reply in the SAME language as the customer's most recent message (Spanish or English).",
 		"- Keep replies short and friendly — this is WhatsApp. Use prices exactly as given by the tools.",
@@ -127,10 +130,10 @@ function buildSystemPrompt(
 		'- Ask for the name outright — "¿A nombre de quién la dejo?" / "What name should I put it under?". The customer\'s WhatsApp display name is NOT an answer: it is whatever they set for themselves, often a nickname or an emoji, and the restaurant reads this name off the floor plan. Never pass it as `name` and never assume it.',
 		"- If they decline to give a name, book it anyway and leave `name` out.",
 		"- Restate the date, time, party size and name in the same reply that calls `book_reservation`, so a misunderstanding surfaces without costing the customer a second message.",
-		"- A booking you create is a REQUEST. The restaurant confirms it and assigns a table. Never say a table is held, reserved, or confirmed — say the restaurant will confirm.",
+		"- A booking you create is a REQUEST that holds a provisional table. The restaurant still has to confirm it. Never say a table is confirmed or guaranteed — say the restaurant will confirm.",
 		"- Never invent the customer's name. Pass `name` only if they stated one.",
 		"- You may make at most ONE booking or cancellation per message. If they ask for two, do the first and ask them to send a second message.",
-		"- If `book_reservation` comes back with `booked: false`, tell the customer plainly that the time did not work out. When it returns `alternatives`, offer those exact times and nothing else — they are the only ones known to be free. If `alternatives` is empty, say so and ask what else would suit them; never make a time up.",
+		"- If `book_reservation` comes back with `booked: false`, the system appends the reason to your reply — do not restate it, just acknowledge it briefly. When it returns `alternatives`, offer those exact times and nothing else — they are the only ones known to be free. If the reason is `ERROR_NOT_ACCEPTING_RESERVATIONS`, do NOT suggest other times or dates: there are none, so offer the menu, hours or directions instead. For any other reason with empty `alternatives`, ask what day or time would suit them; never make a time up.",
 		"",
 		"CHANGING AN EXISTING BOOKING:",
 		"- To move a booking to a different date, time or party size, call `request_reschedule`. NEVER cancel and rebook to achieve a change: cancelling first would leave the customer with no table and no guarantee the new time is still free.",
@@ -244,6 +247,22 @@ export async function runBotTurn(
 	// model narrates above them; it does not get to state the outcome, because it
 	// will confidently report a cancellation that failed.
 	const notices: string[] = [];
+	/**
+	 * Append the fixed line for a declined booking, once. Both `check_availability`
+	 * and `book_reservation` can report the same terminal reason in one turn, and
+	 * a diner should read "not taking reservations" exactly one time.
+	 */
+	const pushDeclined = (reason: string, hasAlternatives: boolean) => {
+		const line = bookingDeclinedNotice(copy, reason, {
+			hasAlternatives,
+			openTime: args.bookingContext?.openTime,
+			closeTime: args.bookingContext?.closeTime,
+			minAdvanceMinutes: args.bookingContext?.minAdvanceMinutes,
+			maxAdvanceDays: args.bookingContext?.maxAdvanceDays,
+			maxPartySize: args.bookingContext?.maxPartySize,
+		});
+		if (line && !notices.includes(line)) notices.push(line);
+	};
 
 	let writesRemaining = WHATSAPP_MAX_WRITES_PER_TURN;
 	// One menu link per turn. A step can carry several parallel tool calls, and
@@ -379,13 +398,20 @@ export async function runBotTurn(
 				time: z.string().max(5).describe("Local 24-hour start time as HH:MM."),
 				partySize: z.number().int().positive().max(50).describe("Number of people."),
 			}),
-			execute: async ({ date, time, partySize }) =>
-				await ctx.runQuery(internal.whatsapp.reservations.internalCheckAvailabilityForBot, {
-					restaurantId: actor.restaurantId,
-					partySize,
-					date,
-					time,
-				}),
+			execute: async ({ date, time, partySize }) => {
+				const result = await ctx.runQuery(
+					internal.whatsapp.reservations.internalCheckAvailabilityForBot,
+					{ restaurantId: actor.restaurantId, partySize, date, time }
+				);
+				// Only the terminal reason. A full slot is answered with alternatives
+				// and the model's own wording; "not accepting" has no alternatives and
+				// must not be answered with "try another time" — so the fact goes out
+				// from code whether or not the model goes on to call `book_reservation`.
+				if (!result.available && result.reason === "ERROR_NOT_ACCEPTING_RESERVATIONS") {
+					pushDeclined(result.reason, false);
+				}
+				return result;
+			},
 		}),
 		list_my_reservations: tool({
 			description:
@@ -450,6 +476,11 @@ export async function runBotTurn(
 							result.partySize
 						)
 					);
+				} else {
+					// So is the failure. Left to the model, a bare reason code became
+					// "no tables at that time, try another?" at a restaurant with no
+					// tables at all — for every time that will ever exist.
+					pushDeclined(result.reason, result.alternatives.length > 0);
 				}
 				return result;
 			},

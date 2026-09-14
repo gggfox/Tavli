@@ -67,7 +67,10 @@ export function ReservationSettingsPanel({
 		setMinAdvanceMinutes(settings.minAdvanceMinutes);
 		setMaxAdvanceDays(settings.maxAdvanceDays);
 		setNoShowGraceMinutes(settings.noShowGraceMinutes);
-		setAcceptingReservations(settings.acceptingReservations);
+		// The owner's own toggle — NOT the effective value, which folds "no tables
+		// yet" into off. Binding to the fold would show the switch off, refuse to
+		// turn on, and write that off into the row on save.
+		setAcceptingReservations(settings.acceptingReservationsSetting);
 		setTurnRanges([...settings.turnMinutesByCapacity]);
 		setBlackouts([...settings.blackoutWindows]);
 	}, [settings]);
@@ -116,6 +119,9 @@ export function ReservationSettingsPanel({
 					onChange={(e) => setAcceptingReservations(e.target.checked)}
 				/>
 			</div>
+			{settings && !settings.hasActiveTables && (
+				<p className="text-xs text-faint-foreground">{t(ReservationSettingsKeys.MSG_NO_TABLES)}</p>
+			)}
 
 			<NumberField
 				id="default-turn"

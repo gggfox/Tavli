@@ -132,6 +132,9 @@ describe("isBookableByDiners", () => {
 	it("is true when the flag is on and the restaurant accepts", async () => {
 		const t = harness();
 		const seeded = await seed(t, { reservationsFlag: true });
+		// A restaurant with no tables reads as not accepting — capacity is
+		// table-derived, so nothing could be seated. One table makes it bookable.
+		await seedTable(t, seeded, 1);
 		await expect(
 			t.query(api.reservations.isBookableByDiners, { restaurantId: seeded.restaurantId })
 		).resolves.toBe(true);
@@ -172,6 +175,7 @@ describe("isBookableByDiners", () => {
 		// It gates a public page, so it has to be readable without an identity.
 		const t = harness();
 		const seeded = await seed(t, { reservationsFlag: true });
+		await seedTable(t, seeded, 1);
 		await expect(
 			t.query(api.reservations.isBookableByDiners, { restaurantId: seeded.restaurantId })
 		).resolves.toBe(true);

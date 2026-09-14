@@ -29,6 +29,8 @@ export const WhatsappKeys = {
 	ASSISTANT_ENABLE: "whatsapp.assistant.enable",
 	ASSISTANT_PAUSE: "whatsapp.assistant.pause",
 	ASSISTANT_PUBLIC_CTA: "whatsapp.assistant.publicCta",
+	ASSISTANT_NO_TABLES_WARNING: "whatsapp.assistant.noTablesWarning",
+	ASSISTANT_NO_TABLES_LINK: "whatsapp.assistant.noTablesLink",
 	/** Consent line (WhatsApp Business Messaging Policy): messaging is the opt-in. */
 	ASSISTANT_CONSENT_NOTE: "whatsapp.assistant.consentNote",
 

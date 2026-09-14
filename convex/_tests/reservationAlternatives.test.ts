@@ -170,6 +170,31 @@ describe("availability agrees with what booking will do", () => {
 				deletedBy: "owner-agree",
 				hardDeleteAfterAt: Date.now() + 86_400_000,
 			});
+			// A real table too, already taken for the window — so the removed one
+			// is the only *candidate*. With no live table at all the restaurant
+			// reads as "not accepting" (zero tables fold), which is a different
+			// true answer from the one this test pins: a removed table is never
+			// seated even when the floor is otherwise real.
+			const liveTable = await ctx.db.insert("tables", {
+				restaurantId,
+				tableNumber: 2,
+				capacity: 4,
+				isActive: true,
+				createdAt: Date.now(),
+			});
+			const blockStart = localAt(tomorrowYmd(), "18:00");
+			await ctx.db.insert("reservations", {
+				restaurantId,
+				partySize: 4,
+				startsAt: blockStart,
+				endsAt: localAt(tomorrowYmd(), "21:00"),
+				tableIds: [liveTable],
+				status: RESERVATION_STATUS.CONFIRMED,
+				source: "staff",
+				contact: { name: "Blocker", phone: "+525500000000" },
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
 		});
 
 		const startsAt = localAt(tomorrowYmd(), "19:00");

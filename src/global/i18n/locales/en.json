@@ -1688,6 +1688,7 @@
 			"saved": "Saved.",
 			"saveFailed": "Failed to save",
 			"usingDefaults": "Using defaults. Save to persist your own values.",
+			"noTables": "Reservations stay off while this restaurant has no tables. Add at least one active table; your toggle above is kept exactly as you set it.",
 			"rangeFallback": "First matching range wins. If no range matches, the default turn time is used."
 		}
 	},
@@ -2007,6 +2008,8 @@
 			"enable": "Enable",
 			"pause": "Pause",
 			"publicCta": "Ask on WhatsApp",
+			"noTablesWarning": "Reservations through the assistant are off: this restaurant has no tables yet. The assistant still answers menu questions.",
+			"noTablesLink": "Set up tables",
 			"consentNote": "By messaging us you agree to receive replies on WhatsApp. Send STOP to opt out at any time."
 		},
 		"page": {

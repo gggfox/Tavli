@@ -37,6 +37,7 @@ export const ReservationSettingsKeys = {
 	MSG_SAVED: "reservationSettings.messages.saved",
 	MSG_SAVE_FAILED: "reservationSettings.messages.saveFailed",
 	MSG_USING_DEFAULTS: "reservationSettings.messages.usingDefaults",
+	MSG_NO_TABLES: "reservationSettings.messages.noTables",
 	MSG_RANGE_FALLBACK: "reservationSettings.messages.rangeFallback",
 } as const;
 

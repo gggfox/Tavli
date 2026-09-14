@@ -1688,6 +1688,7 @@
 			"saved": "Guardado.",
 			"saveFailed": "Error al guardar",
 			"usingDefaults": "Usando valores predeterminados. Guarda para mantener tus propios valores.",
+			"noTables": "Las reservaciones permanecen desactivadas mientras este restaurante no tenga mesas. Agrega al menos una mesa activa; tu interruptor de arriba se conserva tal como lo dejaste.",
 			"rangeFallback": "Gana el primer rango que coincida. Si ningún rango coincide, se usa el tiempo de mesa predeterminado."
 		}
 	},
@@ -2007,6 +2008,8 @@
 			"enable": "Habilitar",
 			"pause": "Pausar",
 			"publicCta": "Escríbenos por WhatsApp",
+			"noTablesWarning": "Las reservaciones por el asistente están desactivadas: este restaurante aún no tiene mesas. El asistente sigue respondiendo preguntas del menú.",
+			"noTablesLink": "Configurar mesas",
 			"consentNote": "Al escribirnos aceptas recibir respuestas por WhatsApp. Envía BAJA cuando quieras dejar de recibirlas."
 		},
 		"page": {
