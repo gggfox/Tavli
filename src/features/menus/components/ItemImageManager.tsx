@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { uploadImage } from "../utils/imageUtils";
 import { getImageFromClipboard } from "@/global/utils";
+import { AIImageGenerationPanel } from "./AIImageGenerationPanel";
 
 interface ItemImageManagerProps {
 	itemId: Id<"menuItems">;
@@ -95,7 +96,7 @@ export function ItemImageManager({
 				</div>
 			)}
 
-			<div className="flex items-center gap-3">
+			<div className="flex flex-wrap items-center gap-3">
 				<label className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer hover:bg-hover border border-border text-muted-foreground">
 					<ImagePlus size={14} />
 					{currentImageUrl ? t(MenusKeys.FORM_REPLACE_IMAGE) : t(MenusKeys.FORM_UPLOAD_IMAGE)}
@@ -134,6 +135,7 @@ export function ItemImageManager({
 						</button>
 					</div>
 				)}
+				<AIImageGenerationPanel itemId={itemId} />
 			</div>
 		</div>
 	);
