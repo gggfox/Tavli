@@ -2159,7 +2159,7 @@ Expected: FAIL — keys undefined.
 	"regenerate": "Generate another",
 	"discard": "Discard",
 	"badge": "AI",
-	"badgeTooltip": "AI-generated image, attempt {{n}}",
+	"badgeTooltip": "AI-generated image",
 	"remaining": "{{count}} left this month",
 	"limitOff": "AI images are switched off for this organization",
 	"failed": "Couldn't generate an image. Try again."
@@ -2189,7 +2189,7 @@ Expected: FAIL — keys undefined.
 	"regenerate": "Generar otra",
 	"discard": "Descartar",
 	"badge": "IA",
-	"badgeTooltip": "Imagen generada con IA, intento {{n}}",
+	"badgeTooltip": "Imagen generada con IA",
 	"remaining": "Quedan {{count}} este mes",
 	"limitOff": "Las imágenes con IA están desactivadas para esta organización",
 	"failed": "No se pudo generar la imagen. Inténtalo de nuevo."
@@ -2639,7 +2639,7 @@ Expected: the three new tests FAIL (badge/hint text absent).
 	imageSource === MENU_ITEM_IMAGE_SOURCE.GENERATED ? (
 		<span
 			className="absolute -bottom-1 -right-1 rounded px-1 text-[9px] font-bold leading-4 bg-primary text-primary-foreground pointer-events-none"
-			title={t(MenusKeys.AI_IMAGE_BADGE_TOOLTIP, { n: "" }).replace(/,?\s*$/, "")}
+			title={t(MenusKeys.AI_IMAGE_BADGE_TOOLTIP)}
 		>
 			{t(MenusKeys.AI_IMAGE_BADGE)}
 		</span>
@@ -2647,7 +2647,7 @@ Expected: the three new tests FAIL (badge/hint text absent).
 }
 ```
 
-(The row does not know the attempt number; the tooltip key is reused without it. Import `MENU_ITEM_IMAGE_SOURCE` from `convex/constants`.)
+(Import `MENU_ITEM_IMAGE_SOURCE` from `convex/constants` and `MenusKeys` from `@/global/i18n`; the component already has `t`.)
 
 `MenuItemRow.tsx` line ~70: `<MenuItemImagePreview imageUrl={item.imageUrl} itemName={item.name} imageSource={item.imageSource} />`.
 
@@ -2656,14 +2656,16 @@ Expected: the three new tests FAIL (badge/hint text absent).
 ```tsx
 {
 	item.imageSource === MENU_ITEM_IMAGE_SOURCE.GENERATED ? (
-		<span className="absolute bottom-[calc(100%-100%)] left-2 top-2 h-5 rounded px-1.5 text-[10px] font-medium leading-5 bg-black/60 text-white">
+		<span
+			className={`absolute left-2 ${isSelected ? "top-10" : "top-2"} h-5 rounded px-1.5 text-[10px] font-medium leading-5 bg-black/60 text-white`}
+		>
 			{t(OrderingKeys.MENU_GENERATED_IMAGE)}
 		</span>
 	) : null;
 }
 ```
 
-Position it top-left only when there is no quantity chip there: use `left-2 top-2` when `!isSelected`, else `left-2 top-10`. Import `MENU_ITEM_IMAGE_SOURCE` from `convex/constants`.
+It sits top-left, dropping below the quantity chip when the item is selected. Import `MENU_ITEM_IMAGE_SOURCE` from `convex/constants` and `OrderingKeys` from `@/global/i18n`.
 
 `ItemDetailSheet.tsx`: after the price `<p>` (line ~156):
 
