@@ -209,7 +209,7 @@ export async function findOverlappingReservations(
 	// The lower bound is what keeps this read bounded. Without it the scan starts
 	// at the beginning of the restaurant's history, and since this runs once per
 	// table (twice over, via the single-table then multi-table passes in
-	// `checkAvailabilityForCreate`), a few hundred stale rows are enough to blow
+	// the create path's placement read), a few hundred stale rows are enough to blow
 	// the per-transaction read limit and break *all* booking for the restaurant —
 	// web form and staff included, permanently, because the rows persist.
 	//
@@ -268,33 +268,4 @@ export async function isTableFreeInWindow(
 	if (reservations.length > 0) return false;
 	const locks = await findOverlappingLocks(ctx, tableId, startsAt, endsAt);
 	return locks.length === 0;
-}
-
-/**
- * Tables in the restaurant filtered to those big enough for the party AND
- * free for the entire [startsAt, endsAt) window. Used by both the customer
- * availability query and the staff table picker. Inactive tables are
- * excluded; that's the "table doesn't exist for the customer" case.
- */
-export async function findFreeTablesForParty(
-	ctx: ReadCtx,
-	restaurantId: Id<typeof TABLE.RESTAURANTS>,
-	partySize: number,
-	startsAt: number,
-	endsAt: number
-): Promise<TableDoc[]> {
-	const tables = await ctx.db
-		.query(TABLE.TABLES)
-		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
-		.collect();
-
-	const eligible: TableDoc[] = [];
-	for (const t of tables) {
-		if (!t.isActive) continue;
-		if (tableCapacity(t) < partySize) continue;
-		if (await isTableFreeInWindow(ctx, t._id, startsAt, endsAt)) {
-			eligible.push(t);
-		}
-	}
-	return eligible;
 }

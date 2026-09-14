@@ -184,6 +184,30 @@ async function assertTargetUserInOrganization(
 	return [null, null];
 }
 
+/**
+ * Whether the caller is a manager or above for this restaurant.
+ *
+ * Every reservation mutation gates on `requireRestaurantStaffAccess`, so the
+ * client had no notion of "manager" to render against. The collision banner
+ * needs one: the red cards stay visible to all staff, but the escalation prompt
+ * belongs to whoever can act on it.
+ *
+ * Returns a boolean instead of erroring, because "you are not a manager" is a
+ * normal answer here, not a failure -- the caller is deciding what to draw, not
+ * attempting a privileged write. Nothing sensitive rides on it: the real gates
+ * stay on the mutations.
+ */
+export const myAccessLevel = query({
+	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
+	handler: async (ctx, args): Promise<{ isManagerOrAbove: boolean }> => {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return { isManagerOrAbove: false };
+
+		const [, error] = await requireRestaurantManagerOrAbove(ctx, userId, args.restaurantId);
+		return { isManagerOrAbove: error === null };
+	},
+});
+
 export const listByRestaurant = query({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args) => {

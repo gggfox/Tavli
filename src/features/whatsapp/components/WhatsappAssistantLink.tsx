@@ -58,6 +58,11 @@ export function WhatsappAssistantLink({ slug }: WhatsappAssistantLinkProps) {
 					<span className="font-mono tracking-wider">{data.formattedShortCode}</span>
 				</button>
 			</div>
+			{/* Consent line (WhatsApp Business Messaging Policy): messaging is the
+			    opt-in, so the CTA that invites the message says so. */}
+			<p className="mt-0.5 text-[10px] leading-tight text-faint-foreground">
+				{t(WhatsappKeys.ASSISTANT_CONSENT_NOTE)}
+			</p>
 
 			<Modal
 				isOpen={showQr}

@@ -5,6 +5,7 @@ import { WhatsappKeys } from "@/global/i18n";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { useState } from "react";
@@ -33,6 +34,14 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 	const { data: enablement } = useQuery(
 		convexQuery(api.whatsappChannels.getForRestaurant, { restaurantId })
 	);
+	// Zero tables folds into "not accepting reservations" (see
+	// `loadEffectiveSettings`). The assistant still answers menu questions, so
+	// this is a warning with a way out, never a reason to withhold Enable.
+	const { data: reservationSettings } = useQuery(
+		convexQuery(api.reservationSettings.get, { restaurantId })
+	);
+	// Strictly `false`: warn only when the settings query has answered and said so.
+	const hasNoTables = reservationSettings?.hasActiveTables === false;
 	const setEnabled = useConvexMutation(api.whatsappChannels.setEnabled);
 	const regenerate = useConvexMutation(api.whatsappChannels.regenerateShortCode);
 
@@ -55,6 +64,22 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 			testId="settings-whatsapp-assistant"
 		>
 			{error ? <InlineError message={error} onDismiss={() => setError(null)} /> : null}
+
+			{hasNoTables ? (
+				<p
+					className="mb-4 rounded-md border border-border px-3 py-2 text-xs text-faint-foreground"
+					data-testid="settings-whatsapp-no-tables"
+				>
+					{t(WhatsappKeys.ASSISTANT_NO_TABLES_WARNING)}{" "}
+					<Link
+						to="/admin/restaurants"
+						search={{ manage: restaurantId, settings: undefined }}
+						className="font-medium underline"
+					>
+						{t(WhatsappKeys.ASSISTANT_NO_TABLES_LINK)}
+					</Link>
+				</p>
+			) : null}
 
 			{enablement ? (
 				<div className="space-y-4">

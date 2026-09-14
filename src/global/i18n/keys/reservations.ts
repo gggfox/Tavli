@@ -145,6 +145,13 @@ export const ReservationsKeys = {
 
 	TIMELINE_CREATE_TITLE: "reservations.timeline.createDrawerTitle",
 	TIMELINE_UNASSIGNED_ROW: "reservations.timeline.unassignedRow",
+	TIMELINE_QUEUE_HINT: "reservations.timeline.queueHint",
+	TIMELINE_QUEUE_PLACE: "reservations.timeline.queuePlace",
+	TIMELINE_QUEUE_PLACE_FAILED: "reservations.timeline.queuePlaceFailed",
+	TIMELINE_COLLISION_TOOLTIP: "reservations.timeline.collisionTooltip",
+	TIMELINE_COLLISION_BANNER: "reservations.timeline.collisionBanner",
+	TIMELINE_COLLISION_JUMP: "reservations.timeline.collisionJump",
+	TIMELINE_AUTO_PLACEMENT: "reservations.timeline.autoPlacement",
 	TIMELINE_SECTION_TOGGLE_ARIA: "reservations.timeline.sectionToggleAria",
 	TIMELINE_BLOCK_ARIA: "reservations.timeline.blockAria",
 	TIMELINE_LOCK_BLOCK_ARIA: "reservations.timeline.lockBlockAria",

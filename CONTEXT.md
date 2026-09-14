@@ -305,11 +305,48 @@ layout (now line, blocks, drag/create), **Schedule** week grid, and
 order-day numbering. Distinct from the staff device’s local timezone.
 _Avoid_: locale, UTC offset string.
 
+**Placement**:
+Choosing which table (or tables) seat a party. Performed by `placeParty` at
+booking time on every create path: smallest table that fits, ties broken by
+table number, splitting across tables when no single one is big enough.
+Placement and the availability check are deliberately the **same** decision —
+a reservation is admitted only if a table was actually found for it, so an
+admitted booking nobody can seat is impossible by construction.
+_Avoid_: allocation, seating (that is **Mark seated**), holding a table.
+
+**Automatic vs. staff placement**:
+`tableAssignedBy` on a reservation. `auto` is a provisional placement the
+system made that no human has reviewed; `staff` is a decision a person took.
+Any staff write touching `tableIds` (**confirm**, **Reschedule**, **Mark
+seated**) promotes `auto` to `staff`. The distinction is load-bearing:
+**Reschedule** may freely re-place an `auto` reservation onto a different
+table, but never moves a `staff` one.
+_Avoid_: auto-assigned flag, system booking.
+
+**Queue** (formerly the Unassigned row):
+The **Timeline** row holding reservations with no `tableIds`, ordered by
+`startsAt`. Since **Placement** happens at booking time, only rows a staff
+member deliberately left unassigned land here. `placeFromQueue` finds a table
+for one of them as capacity frees up during a service.
+_Avoid_: waitlist (that is a different, unbuilt feature), on-hold row,
+unassigned row.
+
+**Collision**:
+Two active reservations overlapping on the same table. The **Timeline** paints
+the later-_starting_ card red and shows managers a banner. Every write path
+already refuses to double-book, so a collision means legacy data or a bypassed
+path — the detector is a safety net, not the defence. An exact handover (one
+ends as the next begins) is not a collision.
+_Avoid_: conflict (that is the backend error code), overlap, double-booking
+when referring to the UI marker.
+
 **Reschedule**:
 A staff action that changes a reservation’s `startsAt`, `endsAt`, and/or
 `tableIds` from the **Timeline** (for example by dragging a block) or the
 reservation detail drawer. Distinct from **confirm**, which is the initial
-table assignment for a pending booking.
+table assignment for a pending booking. For an `auto` **Placement** a time
+change re-runs `placeParty` rather than dragging the old table into the new
+window; a `staff` placement is never re-picked.
 
 **No-show**:
 A terminal reservation status applied when a booking is still `pending` or
@@ -354,9 +391,12 @@ receives a reservation id, and a booking is always resolved server-side from
 The LLM first responder on **Tavli's** WhatsApp number. Answers menu questions,
 checks availability, and requests or cancels bookings on behalf of the customer
 messaging it. Tavli is the sender for every restaurant (ADR 012), so the diner
-sees one contact — "Tavli" — however many restaurants they talk to. _Avoid_:
-chatbot, agent. ("bot" survives as a code-internal synonym — `runBotTurn`,
-`RESERVATIONS_BOT_TOKEN`.)
+sees one contact — "Tavli" — however many restaurants they talk to. An inbound
+message passes a fixed **gate order** before the model is ever called: Twilio
+signature → **Opt-out** state and keywords → **Confirmation code** → routing →
+restaurant status (deleted/inactive) → subscription standing → **Daily message
+cap** / **Platform ceiling** → the model. _Avoid_: chatbot, agent. ("bot"
+survives as a code-internal synonym — `runBotTurn`, `RESERVATIONS_BOT_TOKEN`.)
 
 **Channel**:
 The record that a `Restaurant` is **enabled** for the **WhatsApp assistant**,
@@ -433,6 +473,39 @@ until staff **confirm** it and assign tables. The assistant must never tell a
 customer a table is held. Note the guest name on such a booking is
 best-effort — the name the customer stated, else their WhatsApp profile name,
 else fixed copy — so staff should not treat it as verified.
+
+**Opt-out**:
+A phone's standing revocation of consent (WhatsApp Business Messaging Policy).
+Sending STOP, BAJA, or ALTO as the whole message — a keyword buried in prose
+is conversation, not consent — earns one confirmation saying how to return,
+then permanent silence: an opted-out phone costs nothing and receives nothing,
+which is why the check sits above every budget. Keyed to the canonical phone,
+never per **Restaurant** — the diner opts out of the number (ADR 012). START
+or ALTA reverses it. History is kept; only sending stops.
+
+The revocation is recorded unconditionally — that is the policy duty — and so
+is the confirmation that says how to return, because the phone most likely to
+send STOP is the one already deep into its **Daily message cap**. That reply is
+still a billed message: it stops at the **Platform ceiling** and at the phone's
+outbound cap, and a transition still spends one inbound message. What it does
+not do is wait for inbound headroom. Alternating STOP and START stays bounded
+one step higher instead: a second opt-out confirmation needs an opt-in first,
+and re-opting in is refused once the phone's inbound cap is spent — the one
+consent step a budget may refuse, because leaving the phone opted out is the
+silent direction. Past the cap a phone therefore buys at most one more
+confirmation, not an unbounded stream of free replies and permanent audit rows.
+
+The converse record, the **opt-in**, is the diner's own first message: each
+**Conversation** stamps when it happened and whether a deep link or a **Cold
+start** brought them. _Avoid_: unsubscribe, blacklist, block.
+
+**Retention**:
+WhatsApp message bodies live 90 days (`WHATSAPP_MESSAGE_RETENTION_MS`), then
+an hourly batched sweep deletes them — LFPDPPP data minimization; the number
+is a product/legal decision held in one place. Messages only: the
+**Conversation** outlives its messages because it carries the opt-in consent
+record and is the spine of the staff view. _Avoid_: archive, cleanup (this is
+a legal lifetime, not tidying).
 
 ## Relationships
 

@@ -27,6 +27,7 @@ import type * as _util_phone from "../_util/phone.js";
 import type * as _util_rateLimit from "../_util/rateLimit.js";
 import type * as _util_reservationSettings from "../_util/reservationSettings.js";
 import type * as _util_stripe from "../_util/stripe.js";
+import type * as _util_tablePlacement from "../_util/tablePlacement.js";
 import type * as _util_timezone from "../_util/timezone.js";
 import type * as admin from "../admin.js";
 import type * as adminHelpers from "../adminHelpers.js";
@@ -90,6 +91,7 @@ import type * as migrations_backfillDefaultMenus from "../migrations/backfillDef
 import type * as migrations_backfillOrderDashboardStatusFilter from "../migrations/backfillOrderDashboardStatusFilter.js";
 import type * as migrations_backfillPrepStation from "../migrations/backfillPrepStation.js";
 import type * as migrations_backfillRestaurantTimezone from "../migrations/backfillRestaurantTimezone.js";
+import type * as migrations_backfillTableAssignedBy from "../migrations/backfillTableAssignedBy.js";
 import type * as migrations_backfillUpdatedBy from "../migrations/backfillUpdatedBy.js";
 import type * as migrations_backfillWhatsappShortCodes from "../migrations/backfillWhatsappShortCodes.js";
 import type * as optionGroups from "../optionGroups.js";
@@ -136,6 +138,7 @@ import type * as whatsapp_datetime from "../whatsapp/datetime.js";
 import type * as whatsapp_format from "../whatsapp/format.js";
 import type * as whatsapp_llm from "../whatsapp/llm.js";
 import type * as whatsapp_menu from "../whatsapp/menu.js";
+import type * as whatsapp_optOut from "../whatsapp/optOut.js";
 import type * as whatsapp_outbound from "../whatsapp/outbound.js";
 import type * as whatsapp_phone from "../whatsapp/phone.js";
 import type * as whatsapp_processing from "../whatsapp/processing.js";
@@ -175,6 +178,7 @@ declare const fullApi: ApiFromModules<{
   "_util/rateLimit": typeof _util_rateLimit;
   "_util/reservationSettings": typeof _util_reservationSettings;
   "_util/stripe": typeof _util_stripe;
+  "_util/tablePlacement": typeof _util_tablePlacement;
   "_util/timezone": typeof _util_timezone;
   admin: typeof admin;
   adminHelpers: typeof adminHelpers;
@@ -238,6 +242,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/backfillOrderDashboardStatusFilter": typeof migrations_backfillOrderDashboardStatusFilter;
   "migrations/backfillPrepStation": typeof migrations_backfillPrepStation;
   "migrations/backfillRestaurantTimezone": typeof migrations_backfillRestaurantTimezone;
+  "migrations/backfillTableAssignedBy": typeof migrations_backfillTableAssignedBy;
   "migrations/backfillUpdatedBy": typeof migrations_backfillUpdatedBy;
   "migrations/backfillWhatsappShortCodes": typeof migrations_backfillWhatsappShortCodes;
   optionGroups: typeof optionGroups;
@@ -284,6 +289,7 @@ declare const fullApi: ApiFromModules<{
   "whatsapp/format": typeof whatsapp_format;
   "whatsapp/llm": typeof whatsapp_llm;
   "whatsapp/menu": typeof whatsapp_menu;
+  "whatsapp/optOut": typeof whatsapp_optOut;
   "whatsapp/outbound": typeof whatsapp_outbound;
   "whatsapp/phone": typeof whatsapp_phone;
   "whatsapp/processing": typeof whatsapp_processing;

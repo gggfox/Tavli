@@ -30,3 +30,6 @@ tmp/
 # Playwright run artifacts (traces, screenshots, HTML report)
 test-results/
 playwright-report/
+
+# Codex CLI config — holds a shell env with API keys in plaintext. Never commit.
+.codex/

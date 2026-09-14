@@ -60,16 +60,19 @@ async function renderDrawer(
 	handlers: Partial<{
 		onCancel: ReturnType<typeof vi.fn>;
 		onReschedule: ReturnType<typeof vi.fn>;
+		onFindTable: ReturnType<typeof vi.fn>;
 	}> = {}
 ) {
 	const onCancel = handlers.onCancel ?? vi.fn().mockResolvedValue(undefined);
 	const onReschedule = handlers.onReschedule ?? vi.fn().mockResolvedValue(undefined);
+	const onFindTable = handlers.onFindTable ?? vi.fn().mockResolvedValue(undefined);
 	render(
 		<ReservationDetailDrawer
 			reservation={reservation}
 			onClose={vi.fn()}
 			onConfirm={vi.fn().mockResolvedValue(undefined)}
 			onReconfirm={vi.fn().mockResolvedValue(undefined)}
+			onFindTable={onFindTable}
 			onCancel={onCancel}
 			onMarkSeated={vi.fn().mockResolvedValue(undefined)}
 			onMarkCompleted={vi.fn().mockResolvedValue(undefined)}
@@ -77,7 +80,7 @@ async function renderDrawer(
 		/>
 	);
 	await settle();
-	return { onCancel, onReschedule };
+	return { onCancel, onReschedule, onFindTable };
 }
 
 /**
@@ -194,5 +197,44 @@ describe("ReservationDetailDrawer — table pickers", () => {
 		await renderDrawer(makeReservation({ status: "confirmed" }));
 
 		expect(screen.getAllByTestId("table-picker")).toHaveLength(1);
+	});
+});
+
+/**
+ * Auto-assignment (TAVLI-101). Two things staff must be able to tell apart: a
+ * table a human picked, and one the system picked that nobody has reviewed.
+ */
+describe("automatic table placement", () => {
+	it("flags a machine-chosen table as unreviewed", async () => {
+		await renderDrawer(
+			makeReservation({ status: "pending", tableAssignedBy: "auto", startsAt: Date.now() })
+		);
+
+		expect(screen.getByText(ReservationsKeys.TIMELINE_AUTO_PLACEMENT)).toBeTruthy();
+	});
+
+	it("says nothing about a table a human chose", async () => {
+		await renderDrawer(
+			makeReservation({ status: "pending", tableAssignedBy: "staff", startsAt: Date.now() })
+		);
+
+		expect(screen.queryByText(ReservationsKeys.TIMELINE_AUTO_PLACEMENT)).toBeNull();
+	});
+
+	it("offers to find a table for a reservation waiting in the queue", async () => {
+		const { onFindTable } = await renderDrawer(
+			makeReservation({ status: "pending", tableIds: [], startsAt: Date.now() })
+		);
+
+		fireEvent.click(screen.getByText(ReservationsKeys.TIMELINE_QUEUE_PLACE));
+		await settle();
+
+		expect(onFindTable).toHaveBeenCalledWith("reservations:1");
+	});
+
+	it("does not offer to find a table for a reservation that already has one", async () => {
+		await renderDrawer(makeReservation({ status: "pending", startsAt: Date.now() }));
+
+		expect(screen.queryByText(ReservationsKeys.TIMELINE_QUEUE_PLACE)).toBeNull();
 	});
 });

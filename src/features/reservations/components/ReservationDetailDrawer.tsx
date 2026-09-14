@@ -30,6 +30,7 @@ import {
 	UserRound,
 	Users,
 	UtensilsCrossed,
+	Wand2,
 	XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -71,6 +72,8 @@ interface ReservationDetailDrawerProps {
 	onClose: () => void;
 	onConfirm: (reservationId: Id<"reservations">, tableIds: Id<"tables">[]) => Promise<void>;
 	onReconfirm: (reservationId: Id<"reservations">, tableIds?: Id<"tables">[]) => Promise<void>;
+	/** Place a reservation sitting in the unassigned queue. */
+	onFindTable: (reservationId: Id<"reservations">) => Promise<void>;
 	onCancel: (reservationId: Id<"reservations">, reason?: string) => Promise<void>;
 	onMarkSeated: (reservationId: Id<"reservations">, tableId?: Id<"tables">) => Promise<void>;
 	onMarkCompleted: (reservationId: Id<"reservations">) => Promise<void>;
@@ -82,6 +85,7 @@ export function ReservationDetailDrawer({
 	onClose,
 	onConfirm,
 	onReconfirm,
+	onFindTable,
 	onCancel,
 	onMarkSeated,
 	onMarkCompleted,
@@ -432,9 +436,27 @@ export function ReservationDetailDrawer({
 				)}
 			</div>
 
+			{reservation.tableAssignedBy === "auto" && reservation.tableIds.length > 0 && (
+				<div className="px-6 py-2 text-xs text-muted-foreground flex items-center gap-1.5">
+					<Wand2 size={12} className="shrink-0" />
+					{t(ReservationsKeys.TIMELINE_AUTO_PLACEMENT)}
+				</div>
+			)}
+
 			{error && <div className="px-6 py-2 text-sm text-destructive">{error}</div>}
 
 			<div className="px-6 py-4 flex flex-wrap gap-2 justify-end shrink-0 border-t border-border">
+				{reservation.tableIds.length === 0 && reservation.status === "pending" && (
+					<button
+						type="button"
+						disabled={busy}
+						onClick={() => wrap(() => onFindTable(reservation._id))}
+						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium border border-border hover:bg-muted"
+					>
+						<Wand2 size={14} />
+						{t(ReservationsKeys.TIMELINE_QUEUE_PLACE)}
+					</button>
+				)}
 				{reservation.status === "pending" && (
 					<button
 						type="button"

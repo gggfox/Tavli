@@ -8,20 +8,41 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import {
+	AUDIT_ACTOR,
+	AUDIT_EVENT,
+	isBillingInGoodStanding,
 	TABLE,
 	WHATSAPP_COLD_START_SCAN_LIMIT,
 	WHATSAPP_CONVERSATION_STATUS,
 	WHATSAPP_MESSAGE_DIRECTION,
+	WHATSAPP_MESSAGE_RETENTION_MS,
+	WHATSAPP_MESSAGE_RETENTION_PURGE_BATCH,
 	WHATSAPP_MESSAGE_SENDER,
+	WHATSAPP_OPT_IN_SOURCE,
 	WHATSAPP_PENDING_CODE_SCAN_LIMIT,
 	WHATSAPP_UNROUTED_CLAIM_TTL_MS,
 	WHATSAPP_UNROUTED_PURGE_BATCH,
 } from "../constants";
-import type { Id } from "../_generated/dataModel";
+import { appendAuditEvent } from "../_util/audit";
+import type { Doc, Id } from "../_generated/dataModel";
 import { isMenuLinkEnabled } from "../featureFlags";
 import { redactConfirmationCodes } from "./format";
 import { MAX_CONTACT_NAME_LENGTH } from "../reservationHelpers";
 import { normalizeShortCode } from "./shortCode";
+
+/**
+ * Whether the assistant may still speak for this restaurant: it exists, is
+ * not soft-deleted, and is active. A soft delete keeps the `whatsappChannels`
+ * row, so `channel.isActive` alone is NOT this check — which is exactly how a
+ * deleted restaurant kept answering (TAVLI-95). Every routing input applies
+ * this, so a diner is never auto-bound to a dead restaurant; the pipeline's
+ * restaurant-status gate backstops it for a thread that already exists.
+ */
+function isRestaurantMessageable(
+	restaurant: Doc<"restaurants"> | null
+): restaurant is Doc<"restaurants"> {
+	return restaurant !== null && restaurant.deletedAt == null && restaurant.isActive;
+}
 
 /** Dedupe lookup: has this Twilio MessageSid already been ingested? */
 export const getMessageBySid = internalQuery({
@@ -31,6 +52,90 @@ export const getMessageBySid = internalQuery({
 			.query(TABLE.WHATSAPP_MESSAGES)
 			.withIndex("by_message_sid", (q) => q.eq("messageSid", args.messageSid))
 			.first();
+	},
+});
+
+/**
+ * Has this canonical phone revoked consent? (WhatsApp Business Messaging
+ * Policy.) Checked at the top of the inbound pipeline — an opted-out phone
+ * must cost nothing and receive nothing — and again inside `sendAndRecord`,
+ * so no future outbound path can message an opted-out phone by forgetting to
+ * ask.
+ */
+export const getOptOutState = internalQuery({
+	args: { phone: v.string() },
+	handler: async (ctx, args) => {
+		const row = await ctx.db
+			.query(TABLE.WHATSAPP_OPT_OUTS)
+			.withIndex("by_phone", (q) => q.eq("phone", args.phone))
+			.first();
+		return { optedOut: row !== null };
+	},
+});
+
+/**
+ * Record an opt-out (STOP/BAJA/ALTO). Returns whether this message actually
+ * transitioned the phone: the transition is what earns the single
+ * policy-required confirmation, so a repeated STOP — or a Twilio redelivery of
+ * the same one — returns `transitioned: false` and the caller stays silent.
+ *
+ * The audit event is keyed to the row id, never the phone: `allEvents` is
+ * append-only with no purge path, and a phone there would be un-erasable PII
+ * (see `AUDIT_ACTOR`). Not restaurant-scoped — the diner is opting out of the
+ * NUMBER, across every restaurant it reaches (ADR 012).
+ */
+export const recordOptOut = internalMutation({
+	args: { phone: v.string(), messageSid: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query(TABLE.WHATSAPP_OPT_OUTS)
+			.withIndex("by_phone", (q) => q.eq("phone", args.phone))
+			.first();
+		if (existing) return { transitioned: false };
+
+		const now = Date.now();
+		const id = await ctx.db.insert(TABLE.WHATSAPP_OPT_OUTS, {
+			phone: args.phone,
+			optedOutAt: now,
+			createdAt: now,
+		});
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.WHATSAPP_OPT_OUTS,
+			aggregateId: id,
+			restaurantId: null,
+			eventType: AUDIT_EVENT.WHATSAPP_PHONE_OPTED_OUT,
+			payload: { messageSid: args.messageSid },
+			userId: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+		});
+		return { transitioned: true };
+	},
+});
+
+/**
+ * Clear an opt-out (START/ALTA). Deleting the row is the reactivation — the
+ * audit events keep the history, correlated by the row id the opt-out event
+ * also carried. `transitioned: false` means the phone was never opted out, in
+ * which case "ALTA" is just a message and the caller processes it normally.
+ */
+export const recordOptIn = internalMutation({
+	args: { phone: v.string(), messageSid: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query(TABLE.WHATSAPP_OPT_OUTS)
+			.withIndex("by_phone", (q) => q.eq("phone", args.phone))
+			.first();
+		if (!existing) return { transitioned: false };
+
+		await ctx.db.delete(existing._id);
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.WHATSAPP_OPT_OUTS,
+			aggregateId: existing._id,
+			restaurantId: null,
+			eventType: AUDIT_EVENT.WHATSAPP_PHONE_OPTED_IN,
+			payload: { messageSid: args.messageSid, optedOutAt: existing.optedOutAt },
+			userId: AUDIT_ACTOR.WHATSAPP_CUSTOMER,
+		});
+		return { transitioned: true };
 	},
 });
 
@@ -52,10 +157,11 @@ export const getEnabledChannelByShortCode = internalQuery({
 				.query(TABLE.WHATSAPP_CHANNELS)
 				.withIndex("by_short_code", (q) => q.eq("shortCode", shortCode))
 				.first();
-			// An inactive restaurant is deliberately treated as no match at all:
-			// the diner gets the same guidance as an unknown code, and learns
-			// nothing about whether that restaurant exists on Tavli.
-			if (channel?.isActive) {
+			// A disabled channel — or a deleted/deactivated restaurant behind an
+			// enabled one — is deliberately treated as no match at all: the diner
+			// gets the same guidance as an unknown code, and learns nothing about
+			// whether that restaurant exists (or existed) on Tavli.
+			if (channel?.isActive && isRestaurantMessageable(await ctx.db.get(channel.restaurantId))) {
 				return { channel, matchedCode: shortCode };
 			}
 		}
@@ -88,6 +194,10 @@ export const getRecentRoutesForPhone = internalQuery({
 		for (const conversation of recent) {
 			if (seen.has(conversation.restaurantId)) continue;
 			seen.add(conversation.restaurantId);
+			// A dead restaurant must not be a binding target: yesterday's thread
+			// with a since-deleted restaurant would otherwise silently swallow
+			// today's codeless message (TAVLI-95).
+			if (!isRestaurantMessageable(await ctx.db.get(conversation.restaurantId))) continue;
 			const channel = await ctx.db
 				.query(TABLE.WHATSAPP_CHANNELS)
 				.withIndex("by_restaurant", (q) => q.eq("restaurantId", conversation.restaurantId))
@@ -143,6 +253,12 @@ export const getRouteByPendingCode = internalQuery({
 			// A restaurant switched off while the code was outstanding is off for
 			// this message too — same as every other route into a disabled
 			// restaurant, rather than a back door that keeps working.
+			//
+			// Deliberately NOT also requiring `isRestaurantMessageable` here: this
+			// route only exists so the cancellation reply ADR 011 demands can land,
+			// and cancelling a booking at a just-deleted restaurant is the one
+			// thing still worth doing there. Anything else the message asks for is
+			// refused by the pipeline's restaurant-status gate.
 			if (channel?.isActive) {
 				return {
 					restaurantId: row.restaurantId,
@@ -203,6 +319,29 @@ export const purgeExpiredUnroutedClaims = internalMutation({
 });
 
 /**
+ * Retention sweep: delete `whatsappMessages` older than
+ * `WHATSAPP_MESSAGE_RETENTION_MS` (LFPDPPP data minimization, TAVLI-95).
+ *
+ * Messages ONLY. The `Conversation` deliberately survives its messages: it
+ * carries the opt-in consent record — which must outlive the chat it came
+ * from — and it is the spine of the staff conversation view. Batched off the
+ * `by_created` index exactly like `purgeExpiredUnroutedClaims` above: take a
+ * bounded bite, delete, and let the next hourly run continue, so a backlog
+ * can never balloon one mutation past its limits.
+ */
+export const purgeExpiredMessages = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const expired = await ctx.db
+			.query(TABLE.WHATSAPP_MESSAGES)
+			.withIndex("by_created", (q) => q.lt("createdAt", Date.now() - WHATSAPP_MESSAGE_RETENTION_MS))
+			.take(WHATSAPP_MESSAGE_RETENTION_PURGE_BATCH);
+		for (const row of expired) await ctx.db.delete(row._id);
+		return { deleted: expired.length };
+	},
+});
+
+/**
  * Idempotently record an inbound message: upsert the Conversation for
  * (customer phone, RESTAURANT), then append the inbound row unless its
  * MessageSid was already stored. Returns the conversation id, the resolved
@@ -223,6 +362,16 @@ export const ingestInbound = internalMutation({
 		body: v.string(),
 		messageSid: v.string(),
 		profileName: v.optional(v.string()),
+		/**
+		 * How this phone reached this restaurant, stamped as the consent record
+		 * when the conversation is created — the diner's first inbound message IS
+		 * the opt-in (user-initiated conversation). Required, not defaulted: every
+		 * route has to say what it was, like `sentBy` on the outbound side.
+		 */
+		optInSource: v.union(
+			v.literal(WHATSAPP_OPT_IN_SOURCE.DEEP_LINK),
+			v.literal(WHATSAPP_OPT_IN_SOURCE.COLD_START)
+		),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
@@ -251,6 +400,10 @@ export const ingestInbound = internalMutation({
 				customerName: profileName,
 				lastMessageAt: now,
 				lastInboundAt: now,
+				// The first inbound message is the opt-in event — stamped on
+				// creation only, so the record keeps the ORIGINAL consent moment.
+				optedInAt: now,
+				optedInSource: args.optInSource,
 				createdAt: now,
 				updatedAt: now,
 			});
@@ -388,7 +541,16 @@ export const getConversationContext = internalQuery({
 	},
 });
 
-/** Minimal restaurant context the bot needs for the system prompt and links. */
+/**
+ * Minimal restaurant context the bot needs for the system prompt and links.
+ *
+ * `unavailable` is the pipeline's restaurant-status gate (TAVLI-95): existence
+ * of the doc is NOT the check — a soft-deleted or deactivated restaurant still
+ * has one, and the assistant must refuse to speak for it. Routing already
+ * skips dead restaurants; this flag catches a thread that outlived its
+ * restaurant, including the pending-code route, which deliberately still
+ * resolves.
+ */
 export const getRestaurantContext = internalQuery({
 	args: { restaurantId: v.id(TABLE.RESTAURANTS) },
 	handler: async (ctx, args) => {
@@ -400,6 +562,14 @@ export const getRestaurantContext = internalQuery({
 			defaultLanguage: restaurant.defaultLanguage ?? null,
 			slug: restaurant.slug,
 			timezone: restaurant.timezone ?? null,
+			unavailable: !isRestaurantMessageable(restaurant),
+			// Enrolled in the platform subscription AND no longer in good standing
+			// (TAVLI-95). Both halves matter: a restaurant outside the subscription
+			// is not gated at all, and `isBillingInGoodStanding` alone treats an
+			// unbound status as fine — see its doc comment.
+			subscriptionLapsed:
+				restaurant.platformSubscriptionEnabled === true &&
+				!isBillingInGoodStanding(restaurant.billingStatus),
 		};
 	},
 });

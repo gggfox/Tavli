@@ -44,7 +44,10 @@ jobs:
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Three audit attempts against an endpoint that can hang for ~4 minutes
+    # each. Ten was enough for one attempt and would turn a retry into a
+    # timeout, which fails just as red for the same non-reason.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -57,7 +60,23 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm audit:check
+      # npm's audit endpoint times out often enough to redden CI on its own —
+      # it failed this job twice on one unchanged commit. Retry before believing
+      # it. A real advisory fails fast and identically on all three attempts, so
+      # this costs nothing when the finding is genuine and does NOT weaken the
+      # gate: a vulnerability still fails the build.
+      - name: Audit dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm audit:check; then exit 0; fi
+            status=$?
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::pnpm audit attempt $attempt failed (exit $status); retrying in 30s"
+              sleep 30
+            fi
+          done
+          echo "::error::pnpm audit failed after 3 attempts"
+          exit 1
 
   typecheck:
     name: Type Check

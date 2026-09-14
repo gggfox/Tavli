@@ -115,6 +115,7 @@ export function ReservationsDashboard() {
 		markCompleted,
 		reschedule,
 		reconfirm,
+		placeFromQueue,
 	} = useReservations(
 		restaurantIds.length ? restaurantIds : undefined,
 		range,
@@ -324,6 +325,9 @@ export function ReservationsDashboard() {
 						});
 					}}
 					onReschedule={runReschedule}
+					onFindTable={async (reservationId) => {
+						await placeFromQueue({ reservationId });
+					}}
 				/>
 			)}
 

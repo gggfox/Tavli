@@ -3,6 +3,7 @@ import {
 	WALK_IN_LOCK_REASON,
 	findCollisions,
 	findCollisionsForTable,
+	findDoubleBookedReservationIds,
 	windowsOverlap,
 } from "./collisions";
 
@@ -133,5 +134,103 @@ describe("findCollisions", () => {
 
 	it("is quiet on an empty timeline", () => {
 		expect(findCollisions(new Map(), new Map()).collidingReservationIds.size).toBe(0);
+	});
+});
+
+/**
+ * The other kind of clash: two bookings against each other on one table
+ * (TAVLI-101). A walk-in collision is the floor disagreeing with the book; this
+ * is the book disagreeing with itself.
+ */
+describe("findDoubleBookedReservationIds", () => {
+	const res = (id: string, from: number, to: number, status = "confirmed") => ({
+		_id: id,
+		startsAt: from,
+		endsAt: to,
+		status,
+	});
+
+	it("finds nothing when bookings merely sit side by side", () => {
+		expect(
+			findDoubleBookedReservationIds([res("a", at(19), at(20)), res("b", at(21), at(22))]).size
+		).toBe(0);
+	});
+
+	it("treats an exact handover as clean", () => {
+		expect(
+			findDoubleBookedReservationIds([res("a", at(19), at(20)), res("b", at(20), at(21))]).size
+		).toBe(0);
+	});
+
+	it("flags the later-starting booking of an overlapping pair", () => {
+		expect([
+			...findDoubleBookedReservationIds([
+				res("early", at(19), at(21)),
+				res("late", at(20), at(22)),
+			]),
+		]).toEqual(["late"]);
+	});
+
+	it("does not care what order the input arrives in", () => {
+		expect([
+			...findDoubleBookedReservationIds([
+				res("late", at(20), at(22)),
+				res("early", at(19), at(21)),
+			]),
+		]).toEqual(["late"]);
+	});
+
+	it("flags every booking in a pile-up, not just the last", () => {
+		// Flagging only the last would leave the middle one looking clean while it
+		// is equally half of a double-booking.
+		expect(
+			findDoubleBookedReservationIds([
+				res("a", at(17), at(20)),
+				res("b", at(18), at(21)),
+				res("c", at(19), at(22)),
+			])
+		).toEqual(new Set(["b", "c"]));
+	});
+
+	it("ignores cancelled and no-show bookings sitting under a live one", () => {
+		expect(
+			findDoubleBookedReservationIds([
+				res("live", at(19), at(21)),
+				res("gone", at(20), at(22), "cancelled"),
+				res("absent", at(20), at(22), "no_show"),
+			]).size
+		).toBe(0);
+	});
+
+	it("counts a completed visit as still holding its table", () => {
+		// `completed` is in ACTIVE_RESERVATION_STATUSES: the table stays held for
+		// the whole window so a mistyped duration surfaces rather than hiding.
+		expect([
+			...findDoubleBookedReservationIds([
+				res("done", at(19), at(21), "completed"),
+				res("late", at(20), at(22)),
+			]),
+		]).toEqual(["late"]);
+	});
+
+	it("treats a row with no status as active, for callers that do not track it", () => {
+		expect(
+			findDoubleBookedReservationIds([
+				{ _id: "a", startsAt: at(19), endsAt: at(21) },
+				{ _id: "b", startsAt: at(20), endsAt: at(22) },
+			]).size
+		).toBe(1);
+	});
+});
+
+describe("findCollisions across both kinds", () => {
+	it("finds a double-booking on a table carrying no lock at all", () => {
+		// The walk-in pass iterates locks, so a table with none would never be
+		// visited by it.
+		const result = findCollisions(
+			new Map([["t1", [booking("r1", at(19), at(21)), booking("r2", at(20), at(22))]]]),
+			new Map()
+		);
+		expect([...result.collidingReservationIds]).toEqual(["r2"]);
 	});
 });
