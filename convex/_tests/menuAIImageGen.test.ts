@@ -331,10 +331,52 @@ describe("generate action", () => {
 		const t = convexTest(schema, modules);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
-		await t.run(async (ctx) => ctx.db.patch(jobId, { status: MENU_AI_IMAGE_JOB_STATUS.FAILED }));
+		await t.run(async (ctx) =>
+			ctx.db.patch(jobId, {
+				status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+				error: "provider_error",
+			})
+		);
 
 		await t.action(internal.menuAIImageGenActions.generate, { jobId });
 
 		expect(fetchMock).not.toHaveBeenCalled();
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.error).toBe("provider_error");
+	});
+
+	it("marks the job failed with item_missing when its menu item is gone", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const jobId = await insertQueuedJob(t, ids);
+		await t.run(async (ctx) => ctx.db.delete(ids.menuItemId));
+
+		await t.action(internal.menuAIImageGenActions.generate, { jobId });
+
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.FAILED);
+		expect(job?.error).toBe("item_missing");
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(await storedFileCount(t)).toBe(0);
+	});
+
+	it("leaves a finished job untouched when invoked again", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const jobId = await insertQueuedJob(t, ids);
+		await t.run(async (ctx) =>
+			ctx.db.patch(jobId, { status: MENU_AI_IMAGE_JOB_STATUS.DONE, costUsd: 0.04 })
+		);
+
+		await t.action(internal.menuAIImageGenActions.generate, { jobId });
+
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.DONE);
+		expect(job?.costUsd).toBe(0.04);
+		expect(job?.error).toBeUndefined();
 	});
 });

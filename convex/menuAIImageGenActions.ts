@@ -28,7 +28,18 @@ export const generate = internalAction({
 	returns: v.null(),
 	handler: async (ctx, { jobId }): Promise<null> => {
 		const context = await ctx.runQuery(internal.menuAIImageGen.loadJobContext, { jobId });
-		if (!context) return null;
+		if (!context) {
+			// Not runnable: either already terminal (markJobFailed below is then a
+			// no-op) or an orphan whose item/category/restaurant is gone — in the
+			// latter case this is what actually terminates it, instead of leaving
+			// a queued/running job to dangle forever and keep consuming a unit of
+			// the organization's monthly cap.
+			await ctx.runMutation(internal.menuAIImageGen.markJobFailed, {
+				jobId,
+				error: MENU_AI_IMAGE_FAILURE.ITEM_MISSING,
+			});
+			return null;
+		}
 		const { job, prompt } = context;
 		await ctx.runMutation(internal.menuAIImageGen.markJobRunning, { jobId });
 

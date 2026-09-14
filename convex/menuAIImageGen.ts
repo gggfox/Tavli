@@ -74,7 +74,16 @@ export const markJobFailed = internalMutation({
 	returns: v.null(),
 	handler: async (ctx, { jobId, error }) => {
 		const job = await ctx.db.get(jobId);
-		if (!job) return null;
+		if (
+			!job ||
+			(job.status !== MENU_AI_IMAGE_JOB_STATUS.QUEUED &&
+				job.status !== MENU_AI_IMAGE_JOB_STATUS.RUNNING)
+		) {
+			// Never clobber a job that already reached a terminal state (done, or
+			// already failed): the action calls this unconditionally when a job
+			// turns out not to be runnable, and that must be a no-op there.
+			return null;
+		}
 		await ctx.db.patch(jobId, {
 			status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
 			error,

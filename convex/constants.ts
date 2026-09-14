@@ -478,6 +478,7 @@ export const MENU_AI_IMAGE_FAILURE = {
 	PROVIDER_ERROR: "provider_error",
 	INVALID_RESPONSE: "invalid_response",
 	TIMEOUT: "timeout",
+	ITEM_MISSING: "item_missing",
 } as const;
 export type MenuAIImageFailure = (typeof MENU_AI_IMAGE_FAILURE)[keyof typeof MENU_AI_IMAGE_FAILURE];
 
