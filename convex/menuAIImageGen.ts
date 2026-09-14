@@ -34,7 +34,11 @@ import {
 	MENU_ITEM_IMAGE_SOURCE,
 	TABLE,
 } from "./constants";
-import { buildDishImagePrompt, monthStartUtc } from "./menuAIImageGenHelpers";
+import {
+	buildDishImagePrompt,
+	countsTowardMonthlyCap,
+	monthStartUtc,
+} from "./menuAIImageGenHelpers";
 
 // ============================================================================
 // Internal: the steps the action calls
@@ -95,7 +99,17 @@ export const bumpRetry = internalMutation({
 });
 
 export const markJobFailed = internalMutation({
-	args: { jobId: v.id(TABLE.MENU_AI_IMAGE_GEN_JOBS), error: v.string() },
+	args: {
+		jobId: v.id(TABLE.MENU_AI_IMAGE_GEN_JOBS),
+		error: v.union(
+			v.literal(MENU_AI_IMAGE_FAILURE.CREDITS_EXHAUSTED),
+			v.literal(MENU_AI_IMAGE_FAILURE.RATE_LIMITED),
+			v.literal(MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR),
+			v.literal(MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE),
+			v.literal(MENU_AI_IMAGE_FAILURE.TIMEOUT),
+			v.literal(MENU_AI_IMAGE_FAILURE.ITEM_MISSING)
+		),
+	},
 	returns: v.null(),
 	handler: async (ctx, { jobId, error }) => {
 		const job = await ctx.db.get(jobId);
@@ -128,13 +142,25 @@ export const recordDraft = internalMutation({
 		prompt: v.string(),
 		costUsd: v.optional(v.number()),
 	},
-	handler: async (ctx, args): Promise<Id<"menuItemAIImageGenDrafts">> => {
+	handler: async (ctx, args): Promise<Id<"menuItemAIImageGenDrafts"> | null> => {
 		const job = await ctx.db.get(args.jobId);
 		if (!job) {
 			// The job vanished (restaurant purged mid-flight). Drop the blob rather
 			// than leak it: nothing would ever reference it.
 			await ctx.storage.delete(args.storageId);
 			throw new Error("Job not found");
+		}
+		if (
+			job.status !== MENU_AI_IMAGE_JOB_STATUS.QUEUED &&
+			job.status !== MENU_AI_IMAGE_JOB_STATUS.RUNNING
+		) {
+			// The job already reached a terminal state while the action was in
+			// flight (e.g. stale-job recovery marked it failed on the next
+			// `startGeneration` click): the draft would dangle with nothing to
+			// review it, so drop the blob and stop, mirroring `markJobFailed`'s
+			// own guard.
+			await ctx.storage.delete(args.storageId);
+			return null;
 		}
 		const now = Date.now();
 		const draftId = await ctx.db.insert(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS, {
@@ -169,10 +195,13 @@ export function monthlyLimitFor(org: Doc<"organizations"> | null): number {
 }
 
 /**
- * Jobs that count against this month: queued, running, done. Failed attempts
- * cost nothing and do not count. Counted from the table rather than a
- * counter so the number can never drift from what was generated; the read
- * is bounded by the cap itself.
+ * Jobs that count against this month: `done`; fresh `queued`/`running`
+ * (a stale one is dead and must not hold a cap unit forever); `failed` only
+ * when the error is `invalid_response` or `timeout`, since the provider may
+ * have generated — and billed for — an image in those cases. See
+ * `countsTowardMonthlyCap` for the exact rule. Counted from the table rather
+ * than a counter so the number can never drift from what was generated; the
+ * read is bounded by the cap itself.
  */
 export async function countMonthlyGenerations(
 	ctx: QueryCtx | MutationCtx,
@@ -186,7 +215,7 @@ export async function countMonthlyGenerations(
 			q.eq("organizationId", organizationId).gte("createdAt", since)
 		)
 		.collect();
-	return jobs.filter((job) => job.status !== MENU_AI_IMAGE_JOB_STATUS.FAILED).length;
+	return jobs.filter((job) => countsTowardMonthlyCap(job, now)).length;
 }
 
 async function supersedePendingDrafts(
@@ -236,11 +265,11 @@ export const startGeneration = mutation({
 		if (permError) return [null, permError];
 
 		const now = Date.now();
-		const inFlight = await ctx.db
+		const jobs = await ctx.db
 			.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
 			.withIndex("by_menuItem", (q) => q.eq("menuItemId", menuItemId))
 			.collect();
-		for (const job of inFlight) {
+		for (const job of jobs) {
 			const active =
 				job.status === MENU_AI_IMAGE_JOB_STATUS.QUEUED ||
 				job.status === MENU_AI_IMAGE_JOB_STATUS.RUNNING;
@@ -265,7 +294,7 @@ export const startGeneration = mutation({
 
 		await supersedePendingDrafts(ctx, menuItemId, userId);
 
-		const attempt = inFlight.reduce((max, job) => Math.max(max, job.attempt), 0) + 1;
+		const attempt = jobs.reduce((max, job) => Math.max(max, job.attempt), 0) + 1;
 		const jobId = await ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
 			restaurantId: item.restaurantId,
 			organizationId: restaurant.organizationId,
@@ -328,7 +357,26 @@ export const getItemGeneration = query({
 		);
 		let activeJob: ItemGenerationView["activeJob"] = null;
 		if (latest) {
-			if (
+			const isRunningOrQueued =
+				latest.status === MENU_AI_IMAGE_JOB_STATUS.QUEUED ||
+				latest.status === MENU_AI_IMAGE_JOB_STATUS.RUNNING;
+			const isStale =
+				isRunningOrQueued &&
+				now - (latest.startedAt ?? latest.createdAt) >= MENU_AI_IMAGE_STALE_JOB_MS;
+			if (isStale) {
+				// A queued/running job past the staleness window is dead, but
+				// nothing has marked it `failed` yet — that only happens on the
+				// next `startGeneration` call. Report it as failed here too, so the
+				// panel shows the button (and this failure) instead of a spinner
+				// that can never resolve without a click that never becomes
+				// possible.
+				activeJob = {
+					jobId: latest._id,
+					status: "failed",
+					attempt: latest.attempt,
+					error: MENU_AI_IMAGE_FAILURE.TIMEOUT,
+				};
+			} else if (
 				latest.status === MENU_AI_IMAGE_JOB_STATUS.QUEUED ||
 				latest.status === MENU_AI_IMAGE_JOB_STATUS.RUNNING
 			) {

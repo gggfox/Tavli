@@ -2,7 +2,12 @@
  * Pure pieces of AI menu image generation (workstream B): everything that can
  * be tested without Convex or the network.
  */
-import { MENU_AI_IMAGE_FAILURE, type MenuAIImageFailure } from "./constants";
+import {
+	MENU_AI_IMAGE_FAILURE,
+	MENU_AI_IMAGE_JOB_STATUS,
+	MENU_AI_IMAGE_STALE_JOB_MS,
+	type MenuAIImageFailure,
+} from "./constants";
 
 export const OPENROUTER_IMAGES_URL = "https://openrouter.ai/api/v1/images";
 
@@ -43,7 +48,11 @@ export function buildDishImagePrompt(input: {
 	return `Professional restaurant food photograph of ${subject}. A ${category} dish served at ${restaurant}. ${DISH_IMAGE_STYLE_BRIEF}`;
 }
 
-export type DecodedImage = { bytes: Uint8Array; mediaType: string; costUsd: number | null };
+export type DecodedImage = {
+	bytes: Uint8Array<ArrayBuffer>;
+	mediaType: string;
+	costUsd: number | null;
+};
 export type DecodeResult =
 	| { ok: true; image: DecodedImage }
 	| { ok: false; reason: "no_image" | "unsupported_media_type" | "malformed" };
@@ -54,6 +63,10 @@ const RASTER_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 export function decodeImageResponse(body: unknown): DecodeResult {
 	if (typeof body !== "object" || body === null) return { ok: false, reason: "no_image" };
 	const data = (body as { data?: unknown }).data;
+	// The spec asks OpenRouter for exactly one image (`n: 1`); more than one
+	// back is not something the caller asked for and is treated as malformed
+	// rather than silently taking the first.
+	if (Array.isArray(data) && data.length > 1) return { ok: false, reason: "malformed" };
 	const first = Array.isArray(data) ? data[0] : undefined;
 	if (typeof first !== "object" || first === null) return { ok: false, reason: "no_image" };
 	const { b64_json: b64, media_type: mediaType } = first as {
@@ -64,11 +77,16 @@ export function decodeImageResponse(body: unknown): DecodeResult {
 	if (typeof mediaType !== "string" || !RASTER_TYPES.has(mediaType)) {
 		return { ok: false, reason: "unsupported_media_type" };
 	}
-	let bytes: Uint8Array;
+	let bytes: Uint8Array<ArrayBuffer>;
 	try {
 		if (!/^[A-Za-z0-9+/=\s]+$/.test(b64)) throw new Error("not base64");
 		const binary = atob(b64.replace(/\s/g, ""));
-		bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+		// `Uint8Array.from` types its result as `Uint8Array<ArrayBufferLike>`
+		// (it could in principle back onto a `SharedArrayBuffer`), but it never
+		// actually does — this cast tells the compiler what is already true at
+		// runtime, once, here, so every caller of `decodeImageResponse` gets the
+		// narrower `Uint8Array<ArrayBuffer>` `BlobPart` needs for free.
+		bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0)) as Uint8Array<ArrayBuffer>;
 	} catch {
 		return { ok: false, reason: "malformed" };
 	}
@@ -124,4 +142,42 @@ export function retryDelayMs(retries: number): number {
 export function monthStartUtc(nowMs: number): number {
 	const d = new Date(nowMs);
 	return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+}
+
+/** The subset of a job row `countsTowardMonthlyCap` needs. */
+export type MonthlyCapJob = {
+	status: string;
+	error?: string;
+	startedAt?: number;
+	createdAt: number;
+};
+
+/**
+ * Whether a job counts against the organization's monthly generation cap.
+ *
+ * - `done` always counts: an image was produced and (usually) billed.
+ * - `queued`/`running` counts only while fresh — a stale one (older than
+ *   `MENU_AI_IMAGE_STALE_JOB_MS`) is dead and must not hold a unit of the cap
+ *   forever; the next `startGeneration` call marks it failed anyway.
+ * - `failed` counts only for `invalid_response` and `timeout`: the provider
+ *   may have generated (and billed for) an image in both cases even though
+ *   Tavli could not use it. Every other failure reason (credits exhausted,
+ *   rate limited, provider error, item missing) never reached — or never
+ *   billed — generation, so it costs nothing and does not count.
+ */
+export function countsTowardMonthlyCap(job: MonthlyCapJob, now: number): boolean {
+	if (job.status === MENU_AI_IMAGE_JOB_STATUS.DONE) return true;
+	if (
+		job.status === MENU_AI_IMAGE_JOB_STATUS.QUEUED ||
+		job.status === MENU_AI_IMAGE_JOB_STATUS.RUNNING
+	) {
+		return now - (job.startedAt ?? job.createdAt) < MENU_AI_IMAGE_STALE_JOB_MS;
+	}
+	if (job.status === MENU_AI_IMAGE_JOB_STATUS.FAILED) {
+		return (
+			job.error === MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE ||
+			job.error === MENU_AI_IMAGE_FAILURE.TIMEOUT
+		);
+	}
+	return false;
 }

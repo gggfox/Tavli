@@ -72,7 +72,10 @@ describe("AIImageGenerationPanel", () => {
 			pendingDraft: { draftId: "d1", imageUrl: "https://x/d1.jpg", attempt: 1, prompt: "p" },
 		};
 		render(<AIImageGenerationPanel itemId={ITEM} />);
-		expect((screen.getByRole("img") as HTMLImageElement).src).toBe("https://x/d1.jpg");
+		const img = screen.getByRole("img") as HTMLImageElement;
+		expect(img.src).toBe("https://x/d1.jpg");
+		expect(img.alt).toMatch(/AI-generated image/i);
+		expect(img.alt).toMatch(/attempt 1/i);
 
 		fireEvent.click(screen.getByRole("button", { name: /use this image/i }));
 		await waitFor(() => expect(hoisted.approve).toHaveBeenCalledWith({ draftId: "d1" }));

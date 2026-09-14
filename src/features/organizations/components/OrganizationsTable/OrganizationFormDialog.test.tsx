@@ -2,7 +2,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const hoisted = vi.hoisted(() => ({ update: vi.fn(async () => ["organizations:1", null]) }));
+const hoisted = vi.hoisted(() => ({
+	update: vi.fn(async (_args: Record<string, unknown>) => ["organizations:1", null]),
+}));
 vi.mock("@convex-dev/react-query", () => ({
 	useConvexMutation: (ref: any) => (ref?.name === "update" ? hoisted.update : vi.fn()),
 }));
@@ -22,6 +24,7 @@ import { OrganizationFormDialog } from "./OrganizationFormDialog";
 
 describe("OrganizationFormDialog", () => {
 	beforeEach(() => {
+		hoisted.update.mockClear();
 		HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
 			this.setAttribute("open", "");
 		});
@@ -50,5 +53,40 @@ describe("OrganizationFormDialog", () => {
 				expect.objectContaining({ id: "organizations:1", aiImageMonthlyLimit: 250 })
 			)
 		);
+	});
+
+	it("does not send the AI image limit when it is left unchanged", async () => {
+		render(
+			<OrganizationFormDialog
+				isOpen
+				organization={
+					{ _id: "organizations:1", name: "Org", isActive: true, aiImageMonthlyLimit: 100 } as any
+				}
+				onClose={() => {}}
+				onSuccess={() => {}}
+			/>
+		);
+		const input = screen.getByLabelText(/AI images per month/i) as HTMLInputElement;
+		fireEvent.submit(input.closest("form")!);
+		await waitFor(() => expect(hoisted.update).toHaveBeenCalled());
+		expect(hoisted.update.mock.calls[0][0]).not.toHaveProperty("aiImageMonthlyLimit");
+	});
+
+	it("does not send the AI image limit when the field is blanked", async () => {
+		render(
+			<OrganizationFormDialog
+				isOpen
+				organization={
+					{ _id: "organizations:1", name: "Org", isActive: true, aiImageMonthlyLimit: 100 } as any
+				}
+				onClose={() => {}}
+				onSuccess={() => {}}
+			/>
+		);
+		const input = screen.getByLabelText(/AI images per month/i) as HTMLInputElement;
+		fireEvent.change(input, { target: { value: "" } });
+		fireEvent.submit(input.closest("form")!);
+		await waitFor(() => expect(hoisted.update).toHaveBeenCalled());
+		expect(hoisted.update.mock.calls[0][0]).not.toHaveProperty("aiImageMonthlyLimit");
 	});
 });

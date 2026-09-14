@@ -14,7 +14,10 @@ import schema from "../schema";
 import {
 	MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG,
 	MENU_AI_IMAGE_DRAFT_STATUS,
+	MENU_AI_IMAGE_FAILURE,
 	MENU_AI_IMAGE_JOB_STATUS,
+	MENU_AI_IMAGE_MAX_RETRIES,
+	MENU_AI_IMAGE_STALE_JOB_MS,
 	MENU_ITEM_IMAGE_SOURCE,
 	TABLE,
 } from "../constants";
@@ -332,6 +335,46 @@ describe("generate action", () => {
 		expect(await storedFileCount(t)).toBe(0);
 	});
 
+	it("fails as timeout when the request aborts and retries are exhausted", async () => {
+		const abortError = new Error("The operation was aborted");
+		abortError.name = "AbortError";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw abortError;
+			})
+		);
+		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const jobId = await insertQueuedJob(t, ids, { retries: MENU_AI_IMAGE_MAX_RETRIES });
+
+		await t.action(internal.menuAIImageGenActions.generate, { jobId });
+
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.FAILED);
+		expect(job?.error).toBe(MENU_AI_IMAGE_FAILURE.TIMEOUT);
+	});
+
+	it("fails as provider_error on a generic network failure with retries exhausted", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("network down");
+			})
+		);
+		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const jobId = await insertQueuedJob(t, ids, { retries: MENU_AI_IMAGE_MAX_RETRIES });
+
+		await t.action(internal.menuAIImageGenActions.generate, { jobId });
+
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.FAILED);
+		expect(job?.error).toBe(MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR);
+	});
+
 	it("does nothing for a job that is no longer runnable", async () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
@@ -385,6 +428,43 @@ describe("generate action", () => {
 		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.DONE);
 		expect(job?.costUsd).toBe(0.04);
 		expect(job?.error).toBeUndefined();
+	});
+});
+
+describe("recordDraft", () => {
+	it("drops the blob and records nothing when the job is no longer queued/running", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const jobId = await insertQueuedJob(t, ids);
+		// Simulate stale-job recovery having already failed this job while the
+		// action was mid-flight (the "job vanished" branch is for a deleted job;
+		// this is a job that still exists but reached a terminal state).
+		await t.run(async (ctx) =>
+			ctx.db.patch(jobId, {
+				status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+				error: MENU_AI_IMAGE_FAILURE.TIMEOUT,
+				finishedAt: NOW,
+			})
+		);
+		const storageId = await t.run(async (ctx) =>
+			ctx.storage.store(new NodeBlob([TINY_JPEG], { type: "image/jpeg" }) as Blob)
+		);
+		expect(await storedFileCount(t)).toBe(1);
+
+		const result = await t.mutation(internal.menuAIImageGen.recordDraft, {
+			jobId,
+			storageId,
+			prompt: "p",
+		});
+
+		expect(result).toBeNull();
+		const drafts = await t.run(async (ctx) =>
+			ctx.db.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS).collect()
+		);
+		expect(drafts).toHaveLength(0);
+		expect(await storedFileCount(t)).toBe(0);
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.FAILED);
 	});
 });
 
@@ -544,6 +624,123 @@ describe("startGeneration", () => {
 		}
 	});
 
+	it("does not let a stale running job (on another item) consume a monthly cap unit", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+		try {
+			const t = convexTest(schema, modules);
+			const ids = await seed(t, { monthlyLimit: 1 });
+			const otherItemId = await t.run(async (ctx) =>
+				ctx.db.insert(TABLE.MENU_ITEMS, {
+					categoryId: ids.categoryId,
+					restaurantId: ids.restaurantId,
+					name: "Other",
+					translations: {},
+					basePrice: 1,
+					isAvailable: true,
+					displayOrder: 1,
+					createdAt: NOW,
+					updatedAt: NOW,
+				})
+			);
+			await t.run(async (ctx) =>
+				ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
+					restaurantId: ids.restaurantId,
+					organizationId: ids.organizationId,
+					menuItemId: otherItemId,
+					attempt: 1,
+					status: MENU_AI_IMAGE_JOB_STATUS.RUNNING,
+					requestedBy: MANAGER,
+					model: "m",
+					retries: 0,
+					createdAt: NOW - MENU_AI_IMAGE_STALE_JOB_MS,
+					startedAt: NOW - MENU_AI_IMAGE_STALE_JOB_MS,
+				})
+			);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => okImageResponse())
+			);
+			vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+
+			const [, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
+				menuItemId: ids.menuItemId,
+			});
+			expect(error).toBeNull();
+			await t.finishAllScheduledFunctions(vi.runAllTimers);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("lets a fresh running job (on another item) consume a monthly cap unit", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+		try {
+			const t = convexTest(schema, modules);
+			const ids = await seed(t, { monthlyLimit: 1 });
+			const otherItemId = await t.run(async (ctx) =>
+				ctx.db.insert(TABLE.MENU_ITEMS, {
+					categoryId: ids.categoryId,
+					restaurantId: ids.restaurantId,
+					name: "Other",
+					translations: {},
+					basePrice: 1,
+					isAvailable: true,
+					displayOrder: 1,
+					createdAt: NOW,
+					updatedAt: NOW,
+				})
+			);
+			await t.run(async (ctx) =>
+				ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
+					restaurantId: ids.restaurantId,
+					organizationId: ids.organizationId,
+					menuItemId: otherItemId,
+					attempt: 1,
+					status: MENU_AI_IMAGE_JOB_STATUS.RUNNING,
+					requestedBy: MANAGER,
+					model: "m",
+					retries: 0,
+					createdAt: NOW,
+					startedAt: NOW,
+				})
+			);
+
+			const [, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
+				menuItemId: ids.menuItemId,
+			});
+			expect(error?.name).toBe("AI_IMAGE_MONTHLY_LIMIT_REACHED");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("counts a failed invalid_response attempt toward the monthly limit (it may have been billed)", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t, { monthlyLimit: 1 });
+		await t.run(async (ctx) =>
+			ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
+				restaurantId: ids.restaurantId,
+				organizationId: ids.organizationId,
+				menuItemId: ids.menuItemId,
+				attempt: 1,
+				status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+				error: MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE,
+				requestedBy: MANAGER,
+				model: "m",
+				retries: 0,
+				createdAt: NOW,
+				finishedAt: NOW,
+			})
+		);
+
+		const [, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
+			menuItemId: ids.menuItemId,
+		});
+		expect(error?.name).toBe("AI_IMAGE_MONTHLY_LIMIT_REACHED");
+	});
+
 	it("is switched off by a limit of 0", async () => {
 		const t = convexTest(schema, modules);
 		const ids = await seed(t, { monthlyLimit: 0 });
@@ -631,6 +828,51 @@ describe("getItemGeneration", () => {
 				.query(api.menuAIImageGen.getItemGeneration, { menuItemId: ids.menuItemId })
 		).rejects.toThrow();
 	});
+
+	it("reports a running job aged past the stale threshold as failed with timeout, so the button reappears", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+		try {
+			const t = convexTest(schema, modules);
+			const ids = await seed(t);
+			const jobId = await insertQueuedJob(t, ids, { status: "running" });
+			await t.run(async (ctx) =>
+				ctx.db.patch(jobId, {
+					startedAt: NOW - MENU_AI_IMAGE_STALE_JOB_MS,
+					createdAt: NOW - MENU_AI_IMAGE_STALE_JOB_MS,
+				})
+			);
+
+			const view = await asManager(t).query(api.menuAIImageGen.getItemGeneration, {
+				menuItemId: ids.menuItemId,
+			});
+			expect(view.activeJob).toEqual({
+				jobId,
+				status: "failed",
+				attempt: 1,
+				error: MENU_AI_IMAGE_FAILURE.TIMEOUT,
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("still reports a fresh running job as running", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+		try {
+			const t = convexTest(schema, modules);
+			const ids = await seed(t);
+			const jobId = await insertQueuedJob(t, ids, { status: "running" });
+
+			const view = await asManager(t).query(api.menuAIImageGen.getItemGeneration, {
+				menuItemId: ids.menuItemId,
+			});
+			expect(view.activeJob).toEqual({ jobId, status: "running", attempt: 1 });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe("approveDraft / rejectDraft", () => {
@@ -705,6 +947,35 @@ describe("imageSource on the upload paths", () => {
 		item = await t.run(async (ctx) => ctx.db.get(ids.menuItemId));
 		expect(item?.imageSource).toBeUndefined();
 		expect(item?.imageStorageId).toBeUndefined();
+	});
+});
+
+describe("menuItems.remove", () => {
+	it("deletes the item's AI jobs and drafts, and the pending draft's blob (the approved one goes with the item)", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		await insertJobAndDraft(t, ids, "pending");
+		await insertJobAndDraft(t, ids, "approved");
+		expect(await storedFileCount(t)).toBe(2);
+
+		const [, error] = await asManager(t).mutation(api.menuItems.remove, {
+			itemId: ids.menuItemId,
+		});
+		expect(error).toBeNull();
+
+		const rows = await t.run(async (ctx) => ({
+			jobs: await ctx.db
+				.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
+				.withIndex("by_menuItem", (q) => q.eq("menuItemId", ids.menuItemId))
+				.collect(),
+			drafts: await ctx.db
+				.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS)
+				.withIndex("by_menuItem", (q) => q.eq("menuItemId", ids.menuItemId))
+				.collect(),
+		}));
+		expect(rows.jobs).toHaveLength(0);
+		expect(rows.drafts).toHaveLength(0);
+		expect(await storedFileCount(t)).toBe(0);
 	});
 });
 

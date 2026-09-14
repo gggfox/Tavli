@@ -62,6 +62,7 @@ export const generate = internalAction({
 
 		const apiKey = process.env.OPENROUTER_API_KEY;
 		if (!apiKey) {
+			console.error("[menuAIImageGen] OPENROUTER_API_KEY is not set");
 			await fail(MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR);
 			return null;
 		}
@@ -92,15 +93,19 @@ export const generate = internalAction({
 			);
 			return null;
 		}
-		clearTimeout(timer);
 
 		if (!response.ok) {
+			clearTimeout(timer);
 			const { code, retry } = classifyHttpFailure(response.status);
 			await retryOrFail(code, retry);
 			return null;
 		}
 
-		const decoded = decodeImageResponse(await response.json().catch(() => null));
+		// The 60 s budget covers the body download too, not just the connection:
+		// clear the timer only once the read is done.
+		const body = await response.json().catch(() => null);
+		clearTimeout(timer);
+		const decoded = decodeImageResponse(body);
 		if (!decoded.ok) {
 			await fail(MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE);
 			return null;
@@ -108,18 +113,8 @@ export const generate = internalAction({
 
 		// Store only after the bytes decoded: a failed attempt must never leave a
 		// blob that no row references.
-		//
-		// `decodeImageResponse` types its output as a bare `Uint8Array`, which
-		// this TypeScript/lib version widens to `Uint8Array<ArrayBufferLike>`
-		// (it could in principle back onto a `SharedArrayBuffer`). `BlobPart`
-		// requires the narrower `Uint8Array<ArrayBuffer>`; the decoder always
-		// builds the bytes with `Uint8Array.from`, which never uses a
-		// `SharedArrayBuffer`, so this assertion just tells the compiler what
-		// is already true at runtime.
 		const storageId = await ctx.storage.store(
-			new Blob([decoded.image.bytes as Uint8Array<ArrayBuffer>], {
-				type: decoded.image.mediaType,
-			})
+			new Blob([decoded.image.bytes], { type: decoded.image.mediaType })
 		);
 		const dims = readJpegDimensions(decoded.image.bytes);
 		await ctx.runMutation(internal.menuAIImageGen.recordDraft, {

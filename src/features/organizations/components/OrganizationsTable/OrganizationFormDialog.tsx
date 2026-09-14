@@ -67,11 +67,17 @@ export function OrganizationFormDialog({
 					description: value.description || undefined,
 				};
 				if (isEditing) {
+					// Only send the limit when it actually changed, and never send it
+					// blank as `0`: a blank field means "leave it alone", not "turn
+					// generation off".
+					const loadedLimit = String(organization.aiImageMonthlyLimit ?? 100);
+					const trimmedLimit = value.aiImageMonthlyLimit.trim();
+					const limitChanged = value.aiImageMonthlyLimit !== loadedLimit && trimmedLimit !== "";
 					unwrapResult(
 						await updateMutation.mutateAsync({
 							id: organization._id,
 							...args,
-							aiImageMonthlyLimit: Number(value.aiImageMonthlyLimit),
+							...(limitChanged ? { aiImageMonthlyLimit: Number(value.aiImageMonthlyLimit) } : {}),
 						})
 					);
 				} else {

@@ -14,6 +14,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
+import { MENU_AI_IMAGE_FAILURE } from "convex/constants";
 import { Loader2, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,7 +22,7 @@ import { useTranslation } from "react-i18next";
 const SCARCE_THRESHOLD = 20;
 
 const FAILURE_KEYS: Record<string, string> = {
-	credits_exhausted: "errors.AI_IMAGE_CREDITS_EXHAUSTED",
+	[MENU_AI_IMAGE_FAILURE.CREDITS_EXHAUSTED]: "errors.AI_IMAGE_CREDITS_EXHAUSTED",
 };
 
 export function AIImageGenerationPanel({ itemId }: Readonly<{ readonly itemId: Id<"menuItems"> }>) {
@@ -77,7 +78,7 @@ export function AIImageGenerationPanel({ itemId }: Readonly<{ readonly itemId: I
 			<div className="flex items-center gap-2">
 				<img
 					src={draft.imageUrl}
-					alt={t(MenusKeys.AI_IMAGE_ATTEMPT, { n: draft.attempt })}
+					alt={`${t(MenusKeys.AI_IMAGE_BADGE_TOOLTIP)} · ${t(MenusKeys.AI_IMAGE_ATTEMPT, { n: draft.attempt })}`}
 					className="w-16 h-12 rounded object-cover"
 				/>
 				<span className="text-[11px] text-faint-foreground">

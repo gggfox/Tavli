@@ -11,7 +11,12 @@ import {
 import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent, stampUpdated } from "./_util/audit";
 import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
-import { DEFAULT_PREP_STATION, MENU_ITEM_IMAGE_SOURCE, TABLE } from "./constants";
+import {
+	DEFAULT_PREP_STATION,
+	MENU_AI_IMAGE_DRAFT_STATUS,
+	MENU_ITEM_IMAGE_SOURCE,
+	TABLE,
+} from "./constants";
 import { PREP_STATION_VALIDATOR } from "./orderHelpers";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
@@ -152,6 +157,26 @@ export const remove = mutation({
 
 		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
 		if (error2) return [null, error2];
+
+		// AI image drafts and jobs (workstream B), mirroring restaurantPurge: a
+		// pending draft owns its blob and it goes here; an approved draft's blob
+		// is the item's own `imageStorageId`, deleted below with the item.
+		const aiDrafts = await ctx.db
+			.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS)
+			.withIndex("by_menuItem", (q) => q.eq("menuItemId", args.itemId))
+			.collect();
+		for (const draft of aiDrafts) {
+			if (draft.status === MENU_AI_IMAGE_DRAFT_STATUS.PENDING) {
+				await ctx.storage.delete(draft.storageId);
+			}
+			await ctx.db.delete(draft._id);
+		}
+
+		const aiJobs = await ctx.db
+			.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
+			.withIndex("by_menuItem", (q) => q.eq("menuItemId", args.itemId))
+			.collect();
+		for (const job of aiJobs) await ctx.db.delete(job._id);
 
 		if (item.imageStorageId) {
 			await ctx.storage.delete(item.imageStorageId);

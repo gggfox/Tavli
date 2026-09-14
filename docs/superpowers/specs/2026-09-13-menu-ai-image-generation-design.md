@@ -132,22 +132,31 @@ Stable error codes (`convex/_shared/errors.ts` → frontend i18n):
    An older running job is marked `failed: timeout` and generation proceeds.
 3. Supersede any `pending` draft for the item (blob deleted) — a new attempt
    replaces the offer on the table.
-4. Spend: count the organization's jobs this calendar month (UTC) with
-   status `queued`, `running` or `done` via `by_organization_createdAt`;
-   refuse with `ERROR_AI_IMAGE_MONTHLY_LIMIT_REACHED` when the count is at
-   or above `organizations.aiImageMonthlyLimit ?? 100`. Failed attempts do
-   not count (they cost nothing). Counting the table rather than a counter
-   keeps the number auditable and unable to drift from what was generated;
-   the read is bounded by the cap itself.
+4. Spend: count the organization's jobs this calendar month (UTC) via
+   `by_organization_createdAt` (`countsTowardMonthlyCap`): `done` always
+   counts; `queued`/`running` counts only while fresh (a stale one, past
+   `MENU_AI_IMAGE_STALE_JOB_MS`, does not — it is dead and must not hold a
+   cap unit forever); `failed` counts only when the error is
+   `invalid_response` or `timeout`, because the provider may have generated
+   — and billed for — an image in those cases; every other failure reason
+   (credits exhausted, rate limited, provider error, item missing) never
+   billed and does not count. Refuse with
+   `ERROR_AI_IMAGE_MONTHLY_LIMIT_REACHED` when the count is at or above
+   `organizations.aiImageMonthlyLimit ?? 100`. Counting the table rather than
+   a counter keeps the number auditable and unable to drift from what was
+   generated; the read is bounded by the cap itself.
 5. Insert the job (`attempt = max(existing attempts)+1`, `status: queued`,
    `organizationId` from the restaurant),
    `ctx.scheduler.runAfter(0, internal.menuAIImageGen.generate, { jobId })`.
 6. Returns `{ jobId, attempt, remainingThisMonth }`.
 
 **`getItemGeneration({ menuItemId })` — query, live.** Returns the newest job
-(if `queued`/`running`/`failed` within the last hour) and the `pending` draft
-with a resolved `imageUrl`, plus `attemptCount` and `remainingThisMonth`
-(the organization's limit minus this month's counted jobs). Manager-or-above
+(if `queued`/`running` and fresh, `failed` within the last hour, or
+`queued`/`running` but stale — reported as `failed: timeout` without writing
+to the DB, since a query cannot, so the button is always reachable instead of
+an unresolvable spinner) and the `pending` draft with a resolved `imageUrl`,
+plus `attemptCount` and `remainingThisMonth` (the organization's limit minus
+this month's counted jobs). Manager-or-above
 only.
 
 **`approveDraft({ draftId })` — mutation.** Manager-or-above. Draft must be
@@ -224,8 +233,15 @@ each draft so tuning can be compared against history.
 - One cap: per organization per calendar month, default 100, admin-adjustable
   per organization, enforced at `startGeneration`; metered from `usage.cost`.
   At ~$0.04/image (OpenRouter docs example) the default is ≤ $4 per
-  organization per month. No per-restaurant or per-day cap in v1.
-- One in-flight job per item; stale-job recovery at 10 min.
+  organization per month. No per-restaurant or per-day cap in v1. Failed
+  attempts with `invalid_response`/`timeout` count toward the cap because the
+  provider may have generated (and billed for) an image despite Tavli being
+  unable to use it; every other failure reason does not count because it
+  never billed. A stale active (`queued`/`running`) job never counts.
+- One in-flight job per item; stale-job recovery at 10 min. A stale job is
+  also reported as `failed: timeout` by `getItemGeneration` before the next
+  `startGeneration` call actually flips it, so the panel's button is always
+  reachable instead of showing a spinner that can never resolve.
 - The action is the only caller of OpenRouter; the key never reaches a client.
 - Purge: `restaurantPurge` deletes both tables' rows and the blobs of
   `pending` drafts only (approved blobs belong to the item and go with it;
@@ -286,12 +302,16 @@ query until a manager-facing surface is designed.
   decisions.
 - `convex-test` (`convex/_tests/menuAIImageGen.test.ts`): start (auth,
   in-progress refusal, stale recovery, supersede on regenerate, attempt
-  numbering, monthly org cap at the default and at an admin-set value,
-  failed attempts not counting, `0` switching generation off), record draft, approve (image
-  patched, `imageSource`, old blob deleted, previous approved draft
-  superseded, audit), reject (blob deleted), purge (rows gone, pending blobs
-  gone, approved blobs untouched), `setAiImageMonthlyLimit` (admin only). `fetch` is stubbed; the suite never calls
-  OpenRouter.
+  numbering, monthly org cap at the default and at an admin-set value, stale
+  active jobs not counting, only `invalid_response`/`timeout` failures
+  counting, `0` switching generation off), `getItemGeneration` reporting a
+  stale active job as failed, record draft (including the guard when the job
+  is no longer runnable), approve (image patched, `imageSource`, old blob
+  deleted, previous approved draft superseded, audit), reject (blob deleted),
+  `menuItems.remove` (AI jobs/drafts and the pending draft's blob deleted),
+  purge (rows gone, pending blobs gone, approved blobs untouched),
+  `setAiImageMonthlyLimit` (admin only). `fetch` is stubbed; the suite never
+  calls OpenRouter.
 - Components: `AIImageGenerationPanel` states; `MenuItemImagePreview` badge;
   `MenuItemCard` hint; `ItemDetailSheet` line.
 - Real run before merge: one item, two attempts, in dev against OpenRouter

@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { MENU_AI_IMAGE_FAILURE } from "./constants";
+import {
+	MENU_AI_IMAGE_FAILURE,
+	MENU_AI_IMAGE_JOB_STATUS,
+	MENU_AI_IMAGE_STALE_JOB_MS,
+} from "./constants";
 import {
 	buildDishImagePrompt,
 	classifyHttpFailure,
+	countsTowardMonthlyCap,
 	decodeImageResponse,
 	DISH_IMAGE_STYLE_BRIEF,
 	monthStartUtc,
@@ -87,6 +92,17 @@ describe("decodeImageResponse", () => {
 		expect(decodeImageResponse(null)).toEqual({ ok: false, reason: "no_image" });
 	});
 
+	it("refuses more than one image (the spec asks for exactly one)", () => {
+		expect(
+			decodeImageResponse({
+				data: [
+					{ b64_json: b64, media_type: "image/jpeg" },
+					{ b64_json: b64, media_type: "image/jpeg" },
+				],
+			})
+		).toEqual({ ok: false, reason: "malformed" });
+	});
+
 	it("leaves cost null when usage is absent", () => {
 		const result = decodeImageResponse({ data: [{ b64_json: b64, media_type: "image/webp" }] });
 		expect(result.ok && result.image.costUsd).toBeNull();
@@ -153,5 +169,83 @@ describe("monthStartUtc", () => {
 	it("returns the first instant of the UTC month", () => {
 		expect(monthStartUtc(Date.UTC(2026, 8, 13, 23, 59))).toBe(Date.UTC(2026, 8, 1));
 		expect(monthStartUtc(Date.UTC(2026, 0, 1, 0, 0, 1))).toBe(Date.UTC(2026, 0, 1));
+	});
+});
+
+describe("countsTowardMonthlyCap", () => {
+	const NOW = Date.UTC(2026, 8, 13, 12, 0, 0);
+
+	it("counts a done job", () => {
+		expect(
+			countsTowardMonthlyCap({ status: MENU_AI_IMAGE_JOB_STATUS.DONE, createdAt: NOW }, NOW)
+		).toBe(true);
+	});
+
+	it("counts a fresh queued or running job", () => {
+		expect(
+			countsTowardMonthlyCap({ status: MENU_AI_IMAGE_JOB_STATUS.QUEUED, createdAt: NOW }, NOW)
+		).toBe(true);
+		expect(
+			countsTowardMonthlyCap(
+				{ status: MENU_AI_IMAGE_JOB_STATUS.RUNNING, createdAt: NOW, startedAt: NOW },
+				NOW
+			)
+		).toBe(true);
+	});
+
+	it("does not count a stale queued or running job", () => {
+		const staleStart = NOW - MENU_AI_IMAGE_STALE_JOB_MS;
+		expect(
+			countsTowardMonthlyCap(
+				{ status: MENU_AI_IMAGE_JOB_STATUS.RUNNING, createdAt: staleStart, startedAt: staleStart },
+				NOW
+			)
+		).toBe(false);
+		// No startedAt yet (still queued): falls back to createdAt.
+		expect(
+			countsTowardMonthlyCap(
+				{ status: MENU_AI_IMAGE_JOB_STATUS.QUEUED, createdAt: staleStart },
+				NOW
+			)
+		).toBe(false);
+	});
+
+	it("counts a failed job only when it may have been billed (invalid_response or timeout)", () => {
+		expect(
+			countsTowardMonthlyCap(
+				{
+					status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+					error: MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE,
+					createdAt: NOW,
+				},
+				NOW
+			)
+		).toBe(true);
+		expect(
+			countsTowardMonthlyCap(
+				{
+					status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+					error: MENU_AI_IMAGE_FAILURE.TIMEOUT,
+					createdAt: NOW,
+				},
+				NOW
+			)
+		).toBe(true);
+	});
+
+	it("does not count a failed job for any other reason", () => {
+		for (const error of [
+			MENU_AI_IMAGE_FAILURE.CREDITS_EXHAUSTED,
+			MENU_AI_IMAGE_FAILURE.RATE_LIMITED,
+			MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR,
+			MENU_AI_IMAGE_FAILURE.ITEM_MISSING,
+		]) {
+			expect(
+				countsTowardMonthlyCap(
+					{ status: MENU_AI_IMAGE_JOB_STATUS.FAILED, error, createdAt: NOW },
+					NOW
+				)
+			).toBe(false);
+		}
 	});
 });
