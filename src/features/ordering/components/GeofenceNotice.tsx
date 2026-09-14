@@ -52,9 +52,11 @@ export function GeofenceNotice({ slug, status, onRetry, onBypass }: Readonly<Geo
 						{t(OrderingKeys.GEOFENCE_BLOCKED_TITLE)}
 					</p>
 					<p className="text-xs text-muted-foreground">
-						{status === "unavailable"
-							? t(OrderingKeys.GEOFENCE_LOCATION_UNAVAILABLE)
-							: t(OrderingKeys.GEOFENCE_OUTSIDE)}
+						{status === "blocked"
+							? t(OrderingKeys.GEOFENCE_LOCATION_BLOCKED)
+							: status === "unavailable"
+								? t(OrderingKeys.GEOFENCE_LOCATION_UNAVAILABLE)
+								: t(OrderingKeys.GEOFENCE_OUTSIDE)}
 					</p>
 				</div>
 			</div>
@@ -91,13 +93,19 @@ export function GeofenceNotice({ slug, status, onRetry, onBypass }: Readonly<Geo
 				<p className="text-xs text-destructive">{t(OrderingKeys.GEOFENCE_CODE_INVALID)}</p>
 			)}
 
-			<button
-				type="button"
-				onClick={onRetry}
-				className="text-xs font-medium underline text-muted-foreground"
-			>
-				{t(OrderingKeys.GEOFENCE_RETRY)}
-			</button>
+			{/* No retry when the permission is denied: `getCurrentPosition` fails
+			    immediately without re-prompting, so the button would only ever
+			    redraw the same panel. The bypass code above stays — it is the
+			    one route out that still works. */}
+			{status === "blocked" ? null : (
+				<button
+					type="button"
+					onClick={onRetry}
+					className="text-xs font-medium underline text-muted-foreground"
+				>
+					{t(OrderingKeys.GEOFENCE_RETRY)}
+				</button>
+			)}
 		</div>
 	);
 }

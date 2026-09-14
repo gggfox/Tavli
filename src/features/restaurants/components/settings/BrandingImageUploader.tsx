@@ -10,6 +10,7 @@
  * that Save would send it when Save has no idea it exists.
  */
 import { RestaurantsKeys } from "@/global/i18n";
+import { getImageFromClipboard } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexAction } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
@@ -85,6 +86,26 @@ export function BrandingImageUploader({
 		}
 	};
 
+	/**
+	 * A screenshot is the common case for a header image, and it arrives on the
+	 * clipboard, not on disk. Paste converges on `handleFile`, so a pasted image
+	 * is encoded, fanned out and validated exactly like a picked one.
+	 *
+	 * The surface is *this slot*, not the page: four slots share the section, and
+	 * a document-level listener would have to guess which one the manager meant —
+	 * a guess that uploads on the spot, with no draft state to take back.
+	 *
+	 * A paste carrying no image is left alone rather than swallowed: the manager
+	 * may be pasting a hex code into the colour field next door.
+	 */
+	const handlePaste = (e: React.ClipboardEvent) => {
+		if (busy) return;
+		const file = getImageFromClipboard(e);
+		if (!file) return;
+		e.preventDefault();
+		void handleFile(file);
+	};
+
 	const handleRemove = async () => {
 		setBusy(true);
 		setError(null);
@@ -101,7 +122,16 @@ export function BrandingImageUploader({
 	};
 
 	return (
-		<div className="space-y-2">
+		// `tabIndex` is what makes the slot a paste target: a paste goes to the
+		// focused element, and without it focus sits on <body> and the handler
+		// never runs. Focus is therefore visible — with four slots on the page,
+		// the ring is how a keyboard user knows which one will take the image.
+		<div
+			data-testid={`branding-slot-${slot}`}
+			tabIndex={0}
+			onPaste={handlePaste}
+			className="space-y-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+		>
 			<div className="flex items-baseline justify-between gap-2">
 				<label htmlFor={inputId} className="text-sm font-medium text-foreground">
 					{label}
@@ -186,6 +216,10 @@ export function BrandingImageUploader({
 					)}
 				</div>
 			</div>
+
+			<p className="text-[11px] text-faint-foreground">
+				{t(RestaurantsKeys.SETTINGS_BRANDING_PASTE_HINT)}
+			</p>
 
 			{error ? <p className="text-xs text-destructive">{error}</p> : null}
 		</div>

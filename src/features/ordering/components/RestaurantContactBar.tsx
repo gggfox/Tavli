@@ -72,7 +72,10 @@ export function RestaurantContactBar({ restaurant }: Readonly<RestaurantContactB
 		<section
 			aria-label={t(CustomerKeys.INFO_HEADING)}
 			// Last element in the column, so it owns the home-indicator inset.
-			className="shrink-0 border-t border-border bg-muted px-4 pt-2 space-y-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+			// `relative` contains the sr-only labels below: they are absolutely
+			// positioned, and without a positioned ancestor they escape the
+			// nowrap row's overflow clip and widen the whole page on phones.
+			className="relative shrink-0 border-t border-border bg-muted px-4 pt-2 space-y-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
 		>
 			{presentSocials.length > 0 ? (
 				<div className="flex items-center gap-1">

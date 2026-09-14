@@ -19,6 +19,8 @@ describe("TABLE constants", () => {
 			"optionGroups",
 			"options",
 			"menuItemOptionGroups",
+			"menuAIImageGenJobs",
+			"menuItemAIImageGenDrafts",
 			"sessions",
 			"orders",
 			"orderDayCounters",

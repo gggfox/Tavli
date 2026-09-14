@@ -54,6 +54,7 @@ export function OrganizationFormDialog({
 			name: organization?.name ?? "",
 			slug: organization?.slug ?? "",
 			description: organization?.description ?? "",
+			aiImageMonthlyLimit: String(organization?.aiImageMonthlyLimit ?? 100),
 		},
 		onSubmit: async ({ value }) => {
 			setFormError(null);
@@ -66,7 +67,19 @@ export function OrganizationFormDialog({
 					description: value.description || undefined,
 				};
 				if (isEditing) {
-					unwrapResult(await updateMutation.mutateAsync({ id: organization._id, ...args }));
+					// Only send the limit when it actually changed, and never send it
+					// blank as `0`: a blank field means "leave it alone", not "turn
+					// generation off".
+					const loadedLimit = String(organization.aiImageMonthlyLimit ?? 100);
+					const trimmedLimit = value.aiImageMonthlyLimit.trim();
+					const limitChanged = value.aiImageMonthlyLimit !== loadedLimit && trimmedLimit !== "";
+					unwrapResult(
+						await updateMutation.mutateAsync({
+							id: organization._id,
+							...args,
+							...(limitChanged ? { aiImageMonthlyLimit: Number(value.aiImageMonthlyLimit) } : {}),
+						})
+					);
 				} else {
 					unwrapResult(await createMutation.mutateAsync(args));
 				}
@@ -89,6 +102,7 @@ export function OrganizationFormDialog({
 				name: organization?.name ?? "",
 				slug: organization?.slug ?? "",
 				description: organization?.description ?? "",
+				aiImageMonthlyLimit: String(organization?.aiImageMonthlyLimit ?? 100),
 			});
 			setFormError(null);
 			setFieldErrors({});
@@ -173,6 +187,22 @@ export function OrganizationFormDialog({
 									className="w-full px-3 py-2 rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-(--btn-primary-bg) focus:border-transparent resize-none bg-muted border border-border text-foreground"
 								/>
 							</div>
+						)}
+					/>
+					<form.Field
+						name="aiImageMonthlyLimit"
+						children={(field) => (
+							<TextInput
+								id="org-ai-image-limit"
+								type="number"
+								min={0}
+								step={1}
+								label="AI images per month (0 = off)"
+								value={field.state.value}
+								onChange={(e) => field.handleChange(e.target.value)}
+								onBlur={field.handleBlur}
+								error={fieldErrors.aiImageMonthlyLimit}
+							/>
 						)}
 					/>
 

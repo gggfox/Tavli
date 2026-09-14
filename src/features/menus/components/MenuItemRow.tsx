@@ -67,7 +67,11 @@ export function MenuItemRow({
 							aria-label={item.name}
 						/>
 					) : null}
-					<MenuItemImagePreview imageUrl={item.imageUrl} itemName={item.name} />
+					<MenuItemImagePreview
+						imageUrl={item.imageUrl}
+						itemName={item.name}
+						imageSource={item.imageSource}
+					/>
 					<div>
 						<span
 							className="text-sm font-medium"

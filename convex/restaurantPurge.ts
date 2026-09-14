@@ -19,6 +19,7 @@ import { BRANDING_IMAGE_SLOTS, BRANDING_SLOT_SPECS } from "./brandingImageHelper
 import {
 	AUDIT_SYSTEM_USER_ID,
 	INVITATION_STATUS,
+	MENU_AI_IMAGE_DRAFT_STATUS,
 	RESTAURANT_PURGE_DELETED_TABLES,
 	type RestaurantPurgeDeletedTable,
 	type RestaurantPurgePatchedTable,
@@ -61,6 +62,8 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.OPTION_GROUPS]: 0,
 		[TABLE.OPTIONS]: 0,
 		[TABLE.MENU_ITEM_OPTION_GROUPS]: 0,
+		[TABLE.MENU_AI_IMAGE_GEN_JOBS]: 0,
+		[TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS]: 0,
 		[TABLE.TABLES]: 0,
 		[TABLE.SECTIONS]: 0,
 		[TABLE.SESSIONS]: 0,
@@ -186,6 +189,30 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const row of popularity) await ctx.db.delete(row._id);
 	deleted[TABLE.MENU_ITEM_POPULARITY] += popularity.length;
+
+	// AI image drafts and jobs (workstream B). Drafts first: a pending draft
+	// owns its blob, so delete that blob here. An approved draft's blob belongs
+	// to the item and is deleted with the item below — deleting it here too
+	// would throw on the second delete.
+	const aiDrafts = await ctx.db
+		.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const draft of aiDrafts) {
+		if (draft.status === MENU_AI_IMAGE_DRAFT_STATUS.PENDING) {
+			await ctx.storage.delete(draft.storageId);
+			storageFilesDeleted++;
+		}
+		await ctx.db.delete(draft._id);
+	}
+	deleted[TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS] += aiDrafts.length;
+
+	const aiJobs = await ctx.db
+		.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const job of aiJobs) await ctx.db.delete(job._id);
+	deleted[TABLE.MENU_AI_IMAGE_GEN_JOBS] += aiJobs.length;
 
 	const menus = await ctx.db
 		.query(TABLE.MENUS)

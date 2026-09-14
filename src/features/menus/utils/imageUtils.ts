@@ -14,14 +14,3 @@ export async function uploadImage(
 	const { storageId } = await response.json();
 	return storageId as Id<"_storage">;
 }
-
-export function getImageFromClipboard(e: React.ClipboardEvent): File | null {
-	const items = e.clipboardData?.items;
-	if (!items) return null;
-	for (const item of items) {
-		if (item.type.startsWith("image/")) {
-			return item.getAsFile();
-		}
-	}
-	return null;
-}

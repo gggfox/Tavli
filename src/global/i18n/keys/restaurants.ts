@@ -178,6 +178,7 @@ export const RestaurantsKeys = {
 	SETTINGS_BRANDING_ENCODE_FAILED: "restaurants.settings.brandingEncodeFailed",
 	SETTINGS_BRANDING_TOO_LARGE: "restaurants.settings.brandingTooLarge",
 	SETTINGS_BRANDING_NO_IMAGE: "restaurants.settings.brandingNoImage",
+	SETTINGS_BRANDING_PASTE_HINT: "restaurants.settings.brandingPasteHint",
 	SETTINGS_PUBLIC_PROFILE_TITLE: "restaurants.settings.publicProfileTitle",
 	SETTINGS_PUBLIC_PROFILE_HINT: "restaurants.settings.publicProfileHint",
 	SETTINGS_PUBLIC_PROFILE_ADDRESS_LABEL: "restaurants.settings.publicProfileAddressLabel",

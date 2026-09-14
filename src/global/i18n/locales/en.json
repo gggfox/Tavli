@@ -708,7 +708,11 @@
 		"ERROR_BRANDING_COLOR_INVALID": "That is not a colour we recognise. Use a hex value like #2383e2.",
 		"ERROR_BRANDING_IMAGE_TOO_LARGE": "That image is too large for this slot. Try a simpler picture.",
 		"ERROR_BRANDING_IMAGE_TYPE_INVALID": "That file is not an image we accept. Use a JPEG or PNG.",
-		"ERROR_BRANDING_IMAGE_DIMENSIONS_INVALID": "That image is the wrong size. Pick it again so we can resize it for you."
+		"ERROR_BRANDING_IMAGE_DIMENSIONS_INVALID": "That image is the wrong size. Pick it again so we can resize it for you.",
+		"AI_IMAGE_GENERATION_IN_PROGRESS": "An image is already being generated for this item.",
+		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "This organization has used all its AI images for the month.",
+		"AI_IMAGE_CREDITS_EXHAUSTED": "AI image credits are exhausted. Contact Tavli support.",
+		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again."
 	},
 	"time": {
 		"relative": {
@@ -751,10 +755,15 @@
 			"orderingUnavailable": "Online ordering isn't available here yet.",
 			"filterPlaceholder": "Search menu",
 			"filterNoMatches": "No categories or items match your search.",
+			"explore": "Explore the menu",
+			"fullMenu": "Full menu",
+			"fullMenuClose": "Close menu",
 			"popularHeading": "Most popular",
 			"backToTop": "Back to top",
 			"tableInUse": "· in use",
-			"tableInUseSelected": "Someone else is already ordering at this table. That's fine — just make sure it's yours."
+			"tableInUseSelected": "Someone else is already ordering at this table. That's fine — just make sure it's yours.",
+			"generatedImage": "AI image",
+			"generatedImageDetail": "This image was AI-generated and may differ from the actual dish."
 		},
 		"item": {
 			"required": "Required",
@@ -920,6 +929,7 @@
 			"blockedTitle": "Ordering is available at the restaurant",
 			"outside": "You seem to be outside the restaurant. You can browse the menu, and order once you arrive — or ask the staff for an access code.",
 			"locationUnavailable": "We couldn't access your location. Allow location access, or ask the staff for an access code.",
+			"locationBlocked": "Location is blocked for this site. Turn it on in your browser settings, or ask the staff for an access code.",
 			"codePlaceholder": "Access code",
 			"codeSubmit": "Unlock",
 			"codeInvalid": "That access code is not valid. Ask the staff to check it.",
@@ -1114,7 +1124,8 @@
 			"brandingUploading": "Uploading…",
 			"brandingEncodeFailed": "We could not read that file. Try a JPEG or PNG.",
 			"brandingTooLarge": "That image is too detailed to fit the size limit. Try a simpler or smaller picture.",
-			"brandingNoImage": "No image yet"
+			"brandingNoImage": "No image yet",
+			"brandingPasteHint": "Or click this slot and paste an image."
 		},
 		"managers": {
 			"sectionTitle": "Location managers",
@@ -1445,6 +1456,19 @@
 			},
 			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later.",
 			"newMenuDefaultName": "Imported Menu"
+		},
+		"aiImage": {
+			"generate": "Generate with AI",
+			"generating": "Generating…",
+			"attempt": "Attempt {{n}}",
+			"use": "Use this image",
+			"regenerate": "Generate another",
+			"discard": "Discard",
+			"badge": "AI",
+			"badgeTooltip": "AI-generated image",
+			"remaining": "{{count}} left this month",
+			"limitOff": "AI images are switched off for this organization",
+			"failed": "Couldn't generate an image. Try again."
 		}
 	},
 	"options": {

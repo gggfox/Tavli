@@ -12,6 +12,10 @@ export const ERROR_NAMES = {
 	INVALID_AUCTION_STATE: "INVALID_AUCTION_STATE",
 	APP_URL_NOT_CONFIGURED: "APP_URL_NOT_CONFIGURED",
 	RATE_LIMITED: "RATE_LIMITED",
+	AI_IMAGE_GENERATION_IN_PROGRESS: "AI_IMAGE_GENERATION_IN_PROGRESS",
+	AI_IMAGE_MONTHLY_LIMIT_REACHED: "AI_IMAGE_MONTHLY_LIMIT_REACHED",
+	AI_IMAGE_CREDITS_EXHAUSTED: "AI_IMAGE_CREDITS_EXHAUSTED",
+	AI_IMAGE_GENERATION_FAILED: "AI_IMAGE_GENERATION_FAILED",
 } as const;
 
 export const DEFAULT_ERROR_MESSAGES = {
@@ -28,6 +32,12 @@ export const DEFAULT_ERROR_MESSAGES = {
 	[ERROR_NAMES.INVALID_AUCTION_STATE]: "Invalid auction state",
 	[ERROR_NAMES.APP_URL_NOT_CONFIGURED]: "App URL not configured",
 	[ERROR_NAMES.RATE_LIMITED]: "Too many requests, please try again later",
+	[ERROR_NAMES.AI_IMAGE_GENERATION_IN_PROGRESS]:
+		"An image is already being generated for this item",
+	[ERROR_NAMES.AI_IMAGE_MONTHLY_LIMIT_REACHED]:
+		"This organization has used its generated images for the month",
+	[ERROR_NAMES.AI_IMAGE_CREDITS_EXHAUSTED]: "Image generation credits are exhausted",
+	[ERROR_NAMES.AI_IMAGE_GENERATION_FAILED]: "Image generation failed",
 } as const;
 
 export interface CustomErrorObject {
@@ -239,5 +249,27 @@ export class RateLimitedError extends CustomError {
 			name: ERROR_NAMES.RATE_LIMITED,
 			message: this.message,
 		};
+	}
+}
+
+export type MenuAIImageErrorName =
+	| typeof ERROR_NAMES.AI_IMAGE_GENERATION_IN_PROGRESS
+	| typeof ERROR_NAMES.AI_IMAGE_MONTHLY_LIMIT_REACHED
+	| typeof ERROR_NAMES.AI_IMAGE_CREDITS_EXHAUSTED
+	| typeof ERROR_NAMES.AI_IMAGE_GENERATION_FAILED;
+
+export type MenuAIImageErrorObject = CustomErrorObject & { name: MenuAIImageErrorName };
+
+/** AI menu image generation refusals (workstream B). The name is the stable code the UI maps. */
+export class MenuAIImageError extends CustomError {
+	readonly errorName: MenuAIImageErrorName;
+
+	constructor(name: MenuAIImageErrorName, message?: string) {
+		super({ message: message ?? DEFAULT_ERROR_MESSAGES[name], name });
+		this.errorName = name;
+	}
+
+	override toObject(): MenuAIImageErrorObject {
+		return { name: this.errorName, message: this.message };
 	}
 }

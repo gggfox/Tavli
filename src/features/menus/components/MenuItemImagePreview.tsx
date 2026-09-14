@@ -1,5 +1,6 @@
 import { Tooltip } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
+import { MENU_ITEM_IMAGE_SOURCE } from "convex/constants";
 import { ImagePlus } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,9 +8,14 @@ import { useTranslation } from "react-i18next";
 interface MenuItemImagePreviewProps {
 	imageUrl?: string | null;
 	itemName: string;
+	imageSource?: "uploaded" | "generated";
 }
 
-export function MenuItemImagePreview({ imageUrl, itemName }: Readonly<MenuItemImagePreviewProps>) {
+export function MenuItemImagePreview({
+	imageUrl,
+	itemName,
+	imageSource,
+}: Readonly<MenuItemImagePreviewProps>) {
 	const { t } = useTranslation();
 	const [imageBroken, setImageBroken] = useState(false);
 	const hasPreviewImage = Boolean(imageUrl) && !imageBroken;
@@ -42,18 +48,28 @@ export function MenuItemImagePreview({ imageUrl, itemName }: Readonly<MenuItemIm
 						: t(MenusKeys.ITEM_NO_IMAGE)
 				}
 			>
-				{imageUrl && !imageBroken ? (
-					<img
-						src={imageUrl}
-						alt=""
-						aria-hidden
-						className="w-10 h-10 rounded object-cover flex-shrink-0 pointer-events-none"
-					/>
-				) : (
-					<div className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center bg-muted border border-border pointer-events-none">
-						<ImagePlus size={14} className="text-faint-foreground" />
-					</div>
-				)}
+				<span className="relative inline-block">
+					{imageUrl && !imageBroken ? (
+						<img
+							src={imageUrl}
+							alt=""
+							aria-hidden
+							className="w-10 h-10 rounded object-cover flex-shrink-0 pointer-events-none"
+						/>
+					) : (
+						<div className="w-10 h-10 rounded flex-shrink-0 flex items-center justify-center bg-muted border border-border pointer-events-none">
+							<ImagePlus size={14} className="text-faint-foreground" />
+						</div>
+					)}
+					{imageSource === MENU_ITEM_IMAGE_SOURCE.GENERATED ? (
+						<span
+							className="absolute -bottom-1 -right-1 rounded px-1 text-[9px] font-bold leading-4 bg-primary text-primary-foreground pointer-events-none"
+							title={t(MenusKeys.AI_IMAGE_BADGE_TOOLTIP)}
+						>
+							{t(MenusKeys.AI_IMAGE_BADGE)}
+						</span>
+					) : null}
+				</span>
 			</button>
 		</Tooltip>
 	);

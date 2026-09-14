@@ -101,4 +101,20 @@ describe("RestaurantContactBar", () => {
 
 		expect(screen.queryByText("La Cocina")).toBeNull();
 	});
+
+	// The details row is nowrap + overflow-x:auto, and its sr-only labels are
+	// absolutely positioned. An absolutely positioned box ignores an overflow
+	// ancestor unless that ancestor is *positioned* — so without `relative`
+	// here the labels sit at their static x in DOCUMENT coordinates, and on a
+	// phone the page silently becomes ~700px wide and mobile Chrome zooms out.
+	// The bar must contain its own labels rather than rely on the host.
+	it("positions itself so its screen-reader labels cannot widen the page", () => {
+		render(
+			<RestaurantContactBar
+				restaurant={baseRestaurant({ phone: "+52 81 1490 6208", address: "El Sillar 1" })}
+			/>
+		);
+
+		expect(screen.getByRole("region").className.split(" ")).toContain("relative");
+	});
 });

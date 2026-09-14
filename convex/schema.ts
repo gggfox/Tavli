@@ -7,6 +7,9 @@ import {
 	CLOCK_EVENT_SOURCE,
 	CLOCK_EVENT_TYPE,
 	INVITATION_STATUS,
+	MENU_AI_IMAGE_DRAFT_STATUS,
+	MENU_AI_IMAGE_JOB_STATUS,
+	MENU_ITEM_IMAGE_SOURCE,
 	ORDER_PAYMENT_STATE,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
@@ -187,6 +190,9 @@ export default defineSchema({
 		name: v.string(),
 		slug: v.optional(v.string()),
 		description: v.optional(v.string()),
+		// Generated images allowed per UTC calendar month. Absent = the
+		// platform default; 0 switches generation off for the organization.
+		aiImageMonthlyLimit: v.optional(v.number()),
 		isActive: v.boolean(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
@@ -444,6 +450,14 @@ export default defineSchema({
 		translations: nameDescTranslations,
 		basePrice: v.number(),
 		imageStorageId: v.optional(v.id("_storage")),
+		// Set to "generated" when a manager approves an AI draft, "uploaded" by
+		// the upload paths, cleared by removeImage. Absent = uploaded (older rows).
+		imageSource: v.optional(
+			v.union(
+				v.literal(MENU_ITEM_IMAGE_SOURCE.UPLOADED),
+				v.literal(MENU_ITEM_IMAGE_SOURCE.GENERATED)
+			)
+		),
 		isAvailable: v.boolean(),
 		unavailableReason: v.optional(v.string()),
 		availableDays: v.optional(v.array(v.number())),
@@ -491,6 +505,68 @@ export default defineSchema({
 	})
 		// The carousel reads by restaurant and renders in rank order.
 		.index("by_restaurant_rank", ["restaurantId", "rank"]),
+
+	/**
+	 * One row per AI image generation attempt for one MenuItem (workstream B).
+	 * Failed attempts are rows too: "how often does this restaurant regenerate"
+	 * counts attempts. Never deleted by review; deleted by the restaurant purge.
+	 */
+	[TABLE.MENU_AI_IMAGE_GEN_JOBS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		// Denormalised from the restaurant at start: the monthly cap counts by it.
+		organizationId: v.id(TABLE.ORGANIZATIONS),
+		menuItemId: v.id(TABLE.MENU_ITEMS),
+		/** 1-based per item. */
+		attempt: v.number(),
+		status: v.union(
+			v.literal(MENU_AI_IMAGE_JOB_STATUS.QUEUED),
+			v.literal(MENU_AI_IMAGE_JOB_STATUS.RUNNING),
+			v.literal(MENU_AI_IMAGE_JOB_STATUS.DONE),
+			v.literal(MENU_AI_IMAGE_JOB_STATUS.FAILED)
+		),
+		requestedBy: v.string(),
+		model: v.string(),
+		costUsd: v.optional(v.number()),
+		/** One of MENU_AI_IMAGE_FAILURE when status is failed. */
+		error: v.optional(v.string()),
+		retries: v.number(),
+		createdAt: v.number(),
+		startedAt: v.optional(v.number()),
+		finishedAt: v.optional(v.number()),
+	})
+		.index("by_menuItem", ["menuItemId"])
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_menuItem_status", ["menuItemId", "status"])
+		.index("by_organization_createdAt", ["organizationId", "createdAt"]),
+
+	/**
+	 * The image an attempt produced. A pending draft owns its blob; approve
+	 * hands the blob to the item (the row keeps `storageId` for audit and must
+	 * never delete it again); reject and supersede delete it.
+	 */
+	[TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		menuItemId: v.id(TABLE.MENU_ITEMS),
+		jobId: v.id(TABLE.MENU_AI_IMAGE_GEN_JOBS),
+		attempt: v.number(),
+		storageId: v.id("_storage"),
+		width: v.optional(v.number()),
+		height: v.optional(v.number()),
+		/** Exact prompt sent, for audit and prompt tuning. */
+		prompt: v.string(),
+		status: v.union(
+			v.literal(MENU_AI_IMAGE_DRAFT_STATUS.PENDING),
+			v.literal(MENU_AI_IMAGE_DRAFT_STATUS.APPROVED),
+			v.literal(MENU_AI_IMAGE_DRAFT_STATUS.REJECTED),
+			v.literal(MENU_AI_IMAGE_DRAFT_STATUS.SUPERSEDED)
+		),
+		reviewedBy: v.optional(v.string()),
+		reviewedAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		.index("by_menuItem", ["menuItemId"])
+		.index("by_restaurant", ["restaurantId"])
+		.index("by_menuItem_status", ["menuItemId", "status"]),
 
 	[TABLE.OPTION_GROUPS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),

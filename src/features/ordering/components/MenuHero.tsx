@@ -100,9 +100,14 @@ export function MenuHero({ branding, restaurantName }: Readonly<MenuHeroProps>) 
 			 * translatable, searchable, and it is what a screen reader reads —
 			 * a name rendered into a photograph is invisible to all four.
 			 */}
-			<h1 className="absolute bottom-3 left-4 right-4 truncate text-xl font-bold text-white drop-shadow">
-				{restaurantName}
-			</h1>
+			{branding.logo ? null : (
+				// Skipped when there is a logo: the customer header already shows
+				// it, and a logo almost always contains the name. Overlaying the
+				// name here as well put it on the page three times in review.
+				<h1 className="absolute bottom-3 left-4 right-4 truncate text-xl font-bold text-white drop-shadow">
+					{restaurantName}
+				</h1>
+			)}
 		</div>
 	);
 }

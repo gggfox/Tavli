@@ -72,6 +72,25 @@ working a shift map onto the same vocabulary that drives the orders-tab
 filter. Lives on `MenuItem`, not on `MenuCategory` — see ADR 005.
 _Avoid_: type, kind, beverage category, meal category.
 
+**AI image generation job**:
+One attempt to generate one image for one `MenuItem` (workstream B). Attempts
+for the same item are numbered from 1. Failed attempts are rows too, so "how
+often does this restaurant regenerate" is answerable. Table `menuAIImageGenJobs`.
+_Avoid_: generation, request.
+
+**AI image draft**:
+The candidate image an **AI image generation job** produced (table
+`menuItemAIImageGenDrafts`). Pending until a manager approves, rejects, or
+regenerates it — regenerating supersedes it. Diners never see a draft; only an
+approved draft's blob is promoted onto the `MenuItem`.
+_Avoid_: preview, candidate image.
+
+**Image source**:
+Whether a `MenuItem`'s current image was uploaded by staff or approved from an
+**AI image draft**. Stored as `menuItems.imageSource`; absent means uploaded
+(pre-existing rows).
+_Avoid_: image type, origin.
+
 ### Ordering
 
 **Session**:
