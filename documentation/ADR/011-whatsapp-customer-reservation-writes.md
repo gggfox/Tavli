@@ -36,13 +36,31 @@ The tool object must stay inside `runBotTurn`. Convex reuses Node isolates acros
 
 This is the rule that answers the threat above. Forwarded content, poisoned menu text, and stored injections are each a single-shot influence over one turn's tool calls; none can produce a second inbound message containing an unguessable value. A "reply YES" step would be theater — injected text can simply contain "YES".
 
-**4. Creation is a request, not an acquisition.** Bookings land `pending` with `tableIds: []`; staff `confirm` and assign tables. The assistant can ask for a table, never take one. (Cancelling and moving _do_ release a confirmed table, which is why those two carry the code and booking does not.)
+**4. Creation is a request that holds a provisional table.** _(Amended 2026-09-14 — see below; the original rule read "Bookings land `pending` with `tableIds: []`; staff confirm and assign tables. The assistant can ask for a table, never take one.")_ Since TAVLI-101, `createReservationCore` places the party at booking time — admission and placement are one decision, so a booking is never accepted that cannot be seated. The row lands `pending` with `tableAssignedBy: "auto"`; staff `confirm`. The customer-facing line still says the restaurant has to confirm and no seat is guaranteed. (Cancelling and moving _do_ release a table, which is why those two carry the code and booking does not.)
 
 **Moving is one operation, not cancel-then-rebook.** A customer asking to change a time must never end up with no table: cancel-then-rebook is not atomic across two WhatsApp messages, and the new slot may be gone by the time the old one is released. `request_reschedule` stores the requested `newStartsAt` on the pending row, so the code authorizes the exact move the customer was quoted, and the slot is re-validated again at redemption — a code stays live for ten minutes and the floor can fill in that time. The booking is patched in place, keeping its identity and its `pending` status, and records `reservations.rescheduledByCustomer`.
 
 **5. Tool arguments and results are both narrowed.** Results are allowlisted projections carrying local `YYYY-MM-DD`/`HH:MM` strings, never `Doc`s, ids, or epoch ms — the reasoning of `toDinerVisiblePayment`. On the input side the model may not supply `contact.email` at all: the attempt limiter keys partly on email and is shared across sources, so a model-supplied address could burn a stranger's budget and lock them out of the public web form. `cancelReason` is a server-set constant.
 
 Supporting controls: a per-turn write budget claimed **synchronously**, before the tool's first `await` (`stepCountIs` bounds steps, and one step can carry many parallel tool calls — decrementing after the round trip is a check-then-act race that hands out as many writes as are asked for); a per-phone hourly write limit, since cancellation had none; `idempotencyKey` derived from `messageSid` **plus the request shape**; server-composed confirmation lines appended to every reply; and `sanitizePromptValue` over `restaurantName` and menu text.
+
+## Amendment — 2026-09-14: the assistant now takes a provisional table
+
+Rule 4 as originally written claimed a safety property — _the assistant can ask for a table, never take one_ — that stopped being true when TAVLI-101 made admission and placement a single decision. This ADR was not updated at the time, and the `llm.ts` header and system prompt repeated the stale claim. That is worse than never having claimed it: a reviewer reading this ADR would have believed a bound that the code no longer enforced.
+
+**What changed.** A customer booking now occupies a real table for its turn window from the moment it is created, status `pending`, `tableAssignedBy: "auto"`. Staff may move it; a `staff` placement is never overwritten by re-placement.
+
+**What now bounds abuse.** Not the absence of assignment. The controls are:
+
+- the per-phone create limit (5 per hour) and per-phone write limit (8 per hour), both already in `reservationHelpers.ts`;
+- a hold occupies only its own turn window, and the no-show sweep releases it after `startsAt + noShowGraceMinutes`;
+- the per-turn write budget (one booking per message).
+
+An unconfirmed `pending` booking is deliberately **not** expired ahead of its start time. Doing so would cancel real customers whenever a restaurant is slow to confirm — which is most restaurants, most days — to close an abuse case that the rate limits already bound to one table-window per booking, five times an hour.
+
+**Why the trade is right.** Accepting a booking that cannot be seated is a worse failure than holding a table that might go unused: the first is discovered by a diner at the door, the second by a host with a floor plan.
+
+**Related (same date):** a restaurant with no active tables now reads as `acceptingReservations: false` from `loadEffectiveSettings`, so every surface tells the diner the restaurant is not taking reservations rather than "no tables at that time" for every time that will ever exist. Booking failures carry a server-composed line per reason code, like successes always did.
 
 ## Consequences
 

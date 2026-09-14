@@ -114,7 +114,11 @@ export const update = mutation({
 			maxAdvanceDays: args.maxAdvanceDays ?? defaults.maxAdvanceDays,
 			noShowGraceMinutes: args.noShowGraceMinutes ?? defaults.noShowGraceMinutes,
 			blackoutWindows: args.blackoutWindows ?? defaults.blackoutWindows,
-			acceptingReservations: args.acceptingReservations ?? defaults.acceptingReservations,
+			// The setting, not the effective value: `loadEffectiveSettings` folds
+			// "no tables yet" into `acceptingReservations: false`, and persisting
+			// that here would switch the restaurant off for good the moment an
+			// owner saved anything before configuring their floor.
+			acceptingReservations: args.acceptingReservations ?? defaults.acceptingReservationsSetting,
 			createdAt: now,
 			updatedAt: now,
 			updatedBy: userId,
