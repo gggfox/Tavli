@@ -150,6 +150,7 @@ export const updateOrganization = mutation({
 		slug: v.optional(v.string()),
 		description: v.optional(v.string()),
 		isActive: v.optional(v.boolean()),
+		aiImageMonthlyLimit: v.optional(v.number()),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, MutationErrors> {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -188,11 +189,32 @@ export const updateOrganization = mutation({
 			}
 		}
 
+		if (
+			args.aiImageMonthlyLimit !== undefined &&
+			(!Number.isInteger(args.aiImageMonthlyLimit) ||
+				args.aiImageMonthlyLimit < 0 ||
+				args.aiImageMonthlyLimit > 100000)
+		) {
+			return [
+				null,
+				new UserInputValidationError({
+					fields: [
+						{
+							field: "aiImageMonthlyLimit",
+							message: "Must be a whole number between 0 and 100000",
+						},
+					],
+				}).toObject(),
+			];
+		}
+
 		const updates: Record<string, unknown> = { updatedAt: Date.now() };
 		if (args.name !== undefined) updates.name = args.name.trim();
 		if (args.slug !== undefined) updates.slug = args.slug.trim() || undefined;
 		if (args.description !== undefined) updates.description = args.description.trim() || undefined;
 		if (args.isActive !== undefined) updates.isActive = args.isActive;
+		if (args.aiImageMonthlyLimit !== undefined)
+			updates.aiImageMonthlyLimit = args.aiImageMonthlyLimit;
 
 		await ctx.db.patch(args.id, updates);
 		return [args.id, null];

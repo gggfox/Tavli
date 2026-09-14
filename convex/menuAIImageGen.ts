@@ -6,10 +6,35 @@
  * manager approves every image before a diner sees it.
  */
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import type { QueryCtx, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { MENU_AI_IMAGE_DRAFT_STATUS, MENU_AI_IMAGE_JOB_STATUS, TABLE } from "./constants";
-import { buildDishImagePrompt } from "./menuAIImageGenHelpers";
+import {
+	ConflictError,
+	ConflictErrorObject,
+	ERROR_NAMES,
+	MenuAIImageError,
+	MenuAIImageErrorObject,
+	NotAuthenticatedErrorObject,
+	NotAuthorizedErrorObject,
+	NotFoundError,
+	NotFoundErrorObject,
+} from "./_shared/errors";
+import { AsyncReturn } from "./_shared/types";
+import { appendAuditEvent, stampUpdated } from "./_util/audit";
+import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
+import {
+	MENU_AI_IMAGE_DEFAULT_MODEL,
+	MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG,
+	MENU_AI_IMAGE_DRAFT_STATUS,
+	MENU_AI_IMAGE_FAILURE,
+	MENU_AI_IMAGE_JOB_STATUS,
+	MENU_AI_IMAGE_STALE_JOB_MS,
+	MENU_ITEM_IMAGE_SOURCE,
+	TABLE,
+} from "./constants";
+import { buildDishImagePrompt, monthStartUtc } from "./menuAIImageGenHelpers";
 
 // ============================================================================
 // Internal: the steps the action calls
@@ -130,5 +155,317 @@ export const recordDraft = internalMutation({
 			finishedAt: now,
 		});
 		return draftId;
+	},
+});
+
+type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
+
+// ============================================================================
+// Monthly cap
+// ============================================================================
+
+export function monthlyLimitFor(org: Doc<"organizations"> | null): number {
+	return org?.aiImageMonthlyLimit ?? MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG;
+}
+
+/**
+ * Jobs that count against this month: queued, running, done. Failed attempts
+ * cost nothing and do not count. Counted from the table rather than a
+ * counter so the number can never drift from what was generated; the read
+ * is bounded by the cap itself.
+ */
+export async function countMonthlyGenerations(
+	ctx: QueryCtx | MutationCtx,
+	organizationId: Id<"organizations">,
+	now: number
+): Promise<number> {
+	const since = monthStartUtc(now);
+	const jobs = await ctx.db
+		.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
+		.withIndex("by_organization_createdAt", (q) =>
+			q.eq("organizationId", organizationId).gte("createdAt", since)
+		)
+		.collect();
+	return jobs.filter((job) => job.status !== MENU_AI_IMAGE_JOB_STATUS.FAILED).length;
+}
+
+async function supersedePendingDrafts(
+	ctx: MutationCtx,
+	menuItemId: Id<"menuItems">,
+	userId: string
+) {
+	const pending = await ctx.db
+		.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS)
+		.withIndex("by_menuItem_status", (q) =>
+			q.eq("menuItemId", menuItemId).eq("status", MENU_AI_IMAGE_DRAFT_STATUS.PENDING)
+		)
+		.collect();
+	const now = Date.now();
+	for (const draft of pending) {
+		await ctx.storage.delete(draft.storageId);
+		await ctx.db.patch(draft._id, {
+			status: MENU_AI_IMAGE_DRAFT_STATUS.SUPERSEDED,
+			reviewedBy: userId,
+			reviewedAt: now,
+		});
+	}
+}
+
+// ============================================================================
+// Public
+// ============================================================================
+
+export const startGeneration = mutation({
+	args: { menuItemId: v.id(TABLE.MENU_ITEMS) },
+	handler: async function (
+		ctx,
+		{ menuItemId }
+	): AsyncReturn<
+		{ jobId: Id<"menuAIImageGenJobs">; attempt: number; remainingThisMonth: number },
+		AuthErrors | NotFoundErrorObject | MenuAIImageErrorObject
+	> {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+		const item = await ctx.db.get(menuItemId);
+		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+		const [restaurant, permError] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			item.restaurantId
+		);
+		if (permError) return [null, permError];
+
+		const now = Date.now();
+		const inFlight = await ctx.db
+			.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
+			.withIndex("by_menuItem", (q) => q.eq("menuItemId", menuItemId))
+			.collect();
+		for (const job of inFlight) {
+			const active =
+				job.status === MENU_AI_IMAGE_JOB_STATUS.QUEUED ||
+				job.status === MENU_AI_IMAGE_JOB_STATUS.RUNNING;
+			if (!active) continue;
+			if (now - (job.startedAt ?? job.createdAt) < MENU_AI_IMAGE_STALE_JOB_MS) {
+				return [null, new MenuAIImageError(ERROR_NAMES.AI_IMAGE_GENERATION_IN_PROGRESS).toObject()];
+			}
+			// A crashed action would otherwise lock the item forever.
+			await ctx.db.patch(job._id, {
+				status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+				error: MENU_AI_IMAGE_FAILURE.TIMEOUT,
+				finishedAt: now,
+			});
+		}
+
+		const org = await ctx.db.get(restaurant.organizationId);
+		const limit = monthlyLimitFor(org);
+		const used = await countMonthlyGenerations(ctx, restaurant.organizationId, now);
+		if (used >= limit) {
+			return [null, new MenuAIImageError(ERROR_NAMES.AI_IMAGE_MONTHLY_LIMIT_REACHED).toObject()];
+		}
+
+		await supersedePendingDrafts(ctx, menuItemId, userId);
+
+		const attempt = inFlight.reduce((max, job) => Math.max(max, job.attempt), 0) + 1;
+		const jobId = await ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
+			restaurantId: item.restaurantId,
+			organizationId: restaurant.organizationId,
+			menuItemId,
+			attempt,
+			status: MENU_AI_IMAGE_JOB_STATUS.QUEUED,
+			requestedBy: userId,
+			model: process.env.MENU_AI_IMAGE_MODEL ?? MENU_AI_IMAGE_DEFAULT_MODEL,
+			retries: 0,
+			createdAt: now,
+		});
+		await ctx.scheduler.runAfter(0, internal.menuAIImageGenActions.generate, { jobId });
+		return [{ jobId, attempt, remainingThisMonth: limit - used - 1 }, null];
+	},
+});
+
+export interface ItemGenerationView {
+	activeJob: {
+		jobId: Id<"menuAIImageGenJobs">;
+		status: "queued" | "running" | "failed";
+		attempt: number;
+		error?: string;
+	} | null;
+	pendingDraft: {
+		draftId: Id<"menuItemAIImageGenDrafts">;
+		imageUrl: string;
+		attempt: number;
+		prompt: string;
+	} | null;
+	attemptCount: number;
+	remainingThisMonth: number;
+	monthlyLimit: number;
+}
+
+const RECENT_FAILURE_MS = 60 * 60 * 1000;
+
+/** Live view for the item's image panel. Throws on auth failure (like branding.getBrandingImages). */
+export const getItemGeneration = query({
+	args: { menuItemId: v.id(TABLE.MENU_ITEMS) },
+	handler: async (ctx, { menuItemId }): Promise<ItemGenerationView> => {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) throw authError;
+		const item = await ctx.db.get(menuItemId);
+		if (!item) throw new NotFoundError("Menu item not found");
+		const [restaurant, permError] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			item.restaurantId
+		);
+		if (permError) throw permError;
+
+		const now = Date.now();
+		const jobs = await ctx.db
+			.query(TABLE.MENU_AI_IMAGE_GEN_JOBS)
+			.withIndex("by_menuItem", (q) => q.eq("menuItemId", menuItemId))
+			.collect();
+		const latest = jobs.reduce<Doc<"menuAIImageGenJobs"> | null>(
+			(best, job) => (!best || job.createdAt > best.createdAt ? job : best),
+			null
+		);
+		let activeJob: ItemGenerationView["activeJob"] = null;
+		if (latest) {
+			if (
+				latest.status === MENU_AI_IMAGE_JOB_STATUS.QUEUED ||
+				latest.status === MENU_AI_IMAGE_JOB_STATUS.RUNNING
+			) {
+				activeJob = { jobId: latest._id, status: latest.status, attempt: latest.attempt };
+			} else if (
+				latest.status === MENU_AI_IMAGE_JOB_STATUS.FAILED &&
+				now - (latest.finishedAt ?? latest.createdAt) < RECENT_FAILURE_MS
+			) {
+				activeJob = {
+					jobId: latest._id,
+					status: "failed",
+					attempt: latest.attempt,
+					error: latest.error,
+				};
+			}
+		}
+
+		const pending = await ctx.db
+			.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS)
+			.withIndex("by_menuItem_status", (q) =>
+				q.eq("menuItemId", menuItemId).eq("status", MENU_AI_IMAGE_DRAFT_STATUS.PENDING)
+			)
+			.first();
+		const imageUrl = pending ? await ctx.storage.getUrl(pending.storageId) : null;
+
+		const org = await ctx.db.get(restaurant.organizationId);
+		const monthlyLimit = monthlyLimitFor(org);
+		const used = await countMonthlyGenerations(ctx, restaurant.organizationId, now);
+		return {
+			activeJob,
+			pendingDraft:
+				pending && imageUrl
+					? { draftId: pending._id, imageUrl, attempt: pending.attempt, prompt: pending.prompt }
+					: null,
+			attemptCount: jobs.length,
+			remainingThisMonth: Math.max(0, monthlyLimit - used),
+			monthlyLimit,
+		};
+	},
+});
+
+async function loadPendingDraftForReview(
+	ctx: MutationCtx,
+	draftId: Id<"menuItemAIImageGenDrafts">
+): Promise<
+	| { userId: string; draft: Doc<"menuItemAIImageGenDrafts"> }
+	| { error: AuthErrors | NotFoundErrorObject | ConflictErrorObject }
+> {
+	const [userId, authError] = await getCurrentUserId(ctx);
+	if (authError) return { error: authError } as const;
+	const draft = await ctx.db.get(draftId);
+	if (!draft) return { error: new NotFoundError("Draft not found").toObject() } as const;
+	const [, permError] = await requireRestaurantManagerOrAbove(ctx, userId, draft.restaurantId);
+	if (permError) return { error: permError } as const;
+	if (draft.status !== MENU_AI_IMAGE_DRAFT_STATUS.PENDING) {
+		return { error: new ConflictError("Draft is no longer pending").toObject() } as const;
+	}
+	return { userId, draft } as const;
+}
+
+export const approveDraft = mutation({
+	args: { draftId: v.id(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS) },
+	handler: async function (
+		ctx,
+		{ draftId }
+	): AsyncReturn<null, AuthErrors | NotFoundErrorObject | ConflictErrorObject> {
+		const loaded = await loadPendingDraftForReview(ctx, draftId);
+		if ("error" in loaded) return [null, loaded.error];
+		const { userId, draft } = loaded;
+		const item = await ctx.db.get(draft.menuItemId);
+		if (!item) return [null, new NotFoundError("Menu item not found").toObject()];
+		const now = Date.now();
+
+		// The item's previous image goes. If it was an approved draft, that row
+		// becomes superseded — its blob is deleted exactly once, here.
+		if (item.imageStorageId) {
+			await ctx.storage.delete(item.imageStorageId);
+			const approvedBefore = await ctx.db
+				.query(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS)
+				.withIndex("by_menuItem_status", (q) =>
+					q.eq("menuItemId", item._id).eq("status", MENU_AI_IMAGE_DRAFT_STATUS.APPROVED)
+				)
+				.collect();
+			for (const old of approvedBefore) {
+				await ctx.db.patch(old._id, {
+					status: MENU_AI_IMAGE_DRAFT_STATUS.SUPERSEDED,
+					reviewedBy: userId,
+					reviewedAt: now,
+				});
+			}
+		}
+
+		await ctx.db.patch(item._id, {
+			imageStorageId: draft.storageId,
+			imageSource: MENU_ITEM_IMAGE_SOURCE.GENERATED,
+			...stampUpdated(userId),
+		});
+		await ctx.db.patch(draft._id, {
+			status: MENU_AI_IMAGE_DRAFT_STATUS.APPROVED,
+			reviewedBy: userId,
+			reviewedAt: now,
+		});
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.MENU_ITEMS,
+			aggregateId: item._id,
+			eventType: "menuItems.aiImageApproved",
+			restaurantId: item.restaurantId,
+			payload: { draftId: draft._id, jobId: draft.jobId, attempt: draft.attempt },
+			userId,
+		});
+		return [null, null];
+	},
+});
+
+export const rejectDraft = mutation({
+	args: { draftId: v.id(TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS) },
+	handler: async function (
+		ctx,
+		{ draftId }
+	): AsyncReturn<null, AuthErrors | NotFoundErrorObject | ConflictErrorObject> {
+		const loaded = await loadPendingDraftForReview(ctx, draftId);
+		if ("error" in loaded) return [null, loaded.error];
+		const { userId, draft } = loaded;
+		await ctx.storage.delete(draft.storageId);
+		await ctx.db.patch(draft._id, {
+			status: MENU_AI_IMAGE_DRAFT_STATUS.REJECTED,
+			reviewedBy: userId,
+			reviewedAt: Date.now(),
+		});
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.MENU_ITEMS,
+			aggregateId: draft.menuItemId,
+			eventType: "menuItems.aiImageRejected",
+			restaurantId: draft.restaurantId,
+			payload: { draftId: draft._id, jobId: draft.jobId, attempt: draft.attempt },
+			userId,
+		});
+		return [null, null];
 	},
 });
