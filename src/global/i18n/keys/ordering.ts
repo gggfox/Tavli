@@ -46,6 +46,8 @@ export const OrderingKeys = {
 	MENU_EXPLORE: "ordering.menu.explore",
 	MENU_FULL_MENU: "ordering.menu.fullMenu",
 	MENU_FULL_MENU_CLOSE: "ordering.menu.fullMenuClose",
+	MENU_GENERATED_IMAGE: "ordering.menu.generatedImage",
+	MENU_GENERATED_IMAGE_DETAIL: "ordering.menu.generatedImageDetail",
 
 	ITEM_REQUIRED: "ordering.item.required",
 	ITEM_PICK_ONE: "ordering.item.pickOne",

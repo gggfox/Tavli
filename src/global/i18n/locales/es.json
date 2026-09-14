@@ -708,7 +708,11 @@
 		"ERROR_BRANDING_COLOR_INVALID": "Ese no es un color que reconozcamos. Usa un valor hex como #2383e2.",
 		"ERROR_BRANDING_IMAGE_TOO_LARGE": "Esa imagen es demasiado grande para este espacio. Prueba con una más simple.",
 		"ERROR_BRANDING_IMAGE_TYPE_INVALID": "Ese archivo no es una imagen que aceptemos. Usa un JPEG o PNG.",
-		"ERROR_BRANDING_IMAGE_DIMENSIONS_INVALID": "Esa imagen tiene el tamaño incorrecto. Vuelve a elegirla para que la ajustemos."
+		"ERROR_BRANDING_IMAGE_DIMENSIONS_INVALID": "Esa imagen tiene el tamaño incorrecto. Vuelve a elegirla para que la ajustemos.",
+		"AI_IMAGE_GENERATION_IN_PROGRESS": "Ya se está generando una imagen para este producto.",
+		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "Esta organización ya usó todas sus imágenes con IA del mes.",
+		"AI_IMAGE_CREDITS_EXHAUSTED": "Se agotaron los créditos de imágenes con IA. Contacta a soporte de Tavli.",
+		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo."
 	},
 	"time": {
 		"relative": {
@@ -757,7 +761,9 @@
 			"popularHeading": "Lo más pedido",
 			"backToTop": "Volver arriba",
 			"tableInUse": "· en uso",
-			"tableInUseSelected": "Alguien más ya está ordenando en esta mesa. No hay problema — solo confirma que es la tuya."
+			"tableInUseSelected": "Alguien más ya está ordenando en esta mesa. No hay problema — solo confirma que es la tuya.",
+			"generatedImage": "Imagen generada",
+			"generatedImageDetail": "Esta imagen fue generada con IA y puede diferir del platillo real."
 		},
 		"item": {
 			"required": "Obligatorio",
@@ -1450,6 +1456,19 @@
 			},
 			"serviceUnavailable": "La importación de menú no está disponible temporalmente. Intenta de nuevo más tarde.",
 			"newMenuDefaultName": "Menú importado"
+		},
+		"aiImage": {
+			"generate": "Generar con IA",
+			"generating": "Generando…",
+			"attempt": "Intento {{n}}",
+			"use": "Usar esta imagen",
+			"regenerate": "Generar otra",
+			"discard": "Descartar",
+			"badge": "IA",
+			"badgeTooltip": "Imagen generada con IA",
+			"remaining": "Quedan {{count}} este mes",
+			"limitOff": "Las imágenes con IA están desactivadas para esta organización",
+			"failed": "No se pudo generar la imagen. Inténtalo de nuevo."
 		}
 	},
 	"options": {

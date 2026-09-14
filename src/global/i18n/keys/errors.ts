@@ -171,6 +171,11 @@ export const BACKEND_ERROR_CODES = [
 	// WhatsApp spend allowlist — convex/whatsappSpendAllowlist.ts
 	"ERROR_PHONE_ALREADY_ALLOWLISTED",
 	"ERROR_ALLOWLIST_ENTRY_NOT_FOUND",
+	// AI menu images — convex/_shared/errors.ts
+	"AI_IMAGE_GENERATION_IN_PROGRESS",
+	"AI_IMAGE_MONTHLY_LIMIT_REACHED",
+	"AI_IMAGE_CREDITS_EXHAUSTED",
+	"AI_IMAGE_GENERATION_FAILED",
 ] as const;
 
 export type BackendErrorCode = (typeof BACKEND_ERROR_CODES)[number];
