@@ -12,6 +12,8 @@ export const TABLE = {
 	MENU_ITEMS: "menuItems",
 	MENU_ITEM_POPULARITY: "menuItemPopularity",
 	MENU_ITEM_OPTION_GROUPS: "menuItemOptionGroups",
+	MENU_AI_IMAGE_GEN_JOBS: "menuAIImageGenJobs",
+	MENU_ITEM_AI_IMAGE_GEN_DRAFTS: "menuItemAIImageGenDrafts",
 	OPTION_GROUPS: "optionGroups",
 	OPTIONS: "options",
 	TABLES: "tables",
@@ -440,6 +442,53 @@ export const ALL_PREP_STATIONS = [PREP_STATION.KITCHEN, PREP_STATION.BAR] as con
 
 /** Default prepStation backfilled onto pre-existing menuItems rows. */
 export const DEFAULT_PREP_STATION: PrepStation = PREP_STATION.KITCHEN;
+
+// ============================================================================
+// AI menu image generation (workstream B)
+// ============================================================================
+
+/** Where a menu item's current image came from. Absent means uploaded (pre-existing rows). */
+export const MENU_ITEM_IMAGE_SOURCE = {
+	UPLOADED: "uploaded",
+	GENERATED: "generated",
+} as const;
+export type MenuItemImageSource =
+	(typeof MENU_ITEM_IMAGE_SOURCE)[keyof typeof MENU_ITEM_IMAGE_SOURCE];
+
+/** One job = one generation attempt for one item. */
+export const MENU_AI_IMAGE_JOB_STATUS = {
+	QUEUED: "queued",
+	RUNNING: "running",
+	DONE: "done",
+	FAILED: "failed",
+} as const;
+
+/** A draft is the image an attempt produced; only approval reaches diners. */
+export const MENU_AI_IMAGE_DRAFT_STATUS = {
+	PENDING: "pending",
+	APPROVED: "approved",
+	REJECTED: "rejected",
+	SUPERSEDED: "superseded",
+} as const;
+
+/** Stable failure codes stored on a failed job's `error`. */
+export const MENU_AI_IMAGE_FAILURE = {
+	CREDITS_EXHAUSTED: "credits_exhausted",
+	RATE_LIMITED: "rate_limited",
+	PROVIDER_ERROR: "provider_error",
+	INVALID_RESPONSE: "invalid_response",
+	TIMEOUT: "timeout",
+} as const;
+export type MenuAIImageFailure = (typeof MENU_AI_IMAGE_FAILURE)[keyof typeof MENU_AI_IMAGE_FAILURE];
+
+/** OpenRouter image model unless `MENU_AI_IMAGE_MODEL` overrides it. */
+export const MENU_AI_IMAGE_DEFAULT_MODEL = "google/gemini-2.5-flash-image";
+/** Generated images per organization per UTC calendar month, unless the org row overrides it. */
+export const MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG = 100;
+/** A `running` job older than this is treated as dead when a manager clicks again. */
+export const MENU_AI_IMAGE_STALE_JOB_MS = 10 * 60 * 1000;
+export const MENU_AI_IMAGE_REQUEST_TIMEOUT_MS = 60_000;
+export const MENU_AI_IMAGE_MAX_RETRIES = 3;
 
 export const RESERVATION_STATUS = {
 	PENDING: "pending",
@@ -1185,6 +1234,8 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.OPTION_GROUPS,
 	TABLE.OPTIONS,
 	TABLE.MENU_ITEM_OPTION_GROUPS,
+	TABLE.MENU_AI_IMAGE_GEN_JOBS,
+	TABLE.MENU_ITEM_AI_IMAGE_GEN_DRAFTS,
 	// Floor plan
 	TABLE.TABLES,
 	TABLE.SECTIONS,
