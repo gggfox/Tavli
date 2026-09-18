@@ -598,6 +598,25 @@ export const handleInboundMessage = internalAction({
 			return;
 		}
 
+		// Paused, not gone (TAVLI-107): the owner switched the restaurant off and
+		// can switch it back on, so the diner — who may be holding this
+		// restaurant's own QR — hears that it is temporary. Same metering and
+		// the same no-model rule as the deleted case above; only the copy differs.
+		if (restaurant.inactive) {
+			if (budget.allowed && !budget.globalCeilingReached) {
+				await sendAndRecord(ctx, {
+					conversationId,
+					restaurantId: route.restaurantId,
+					to: replyAddress,
+					phone: customerPhone,
+					body: getBotCopy(locale).restaurantInactive,
+					modelBody: "",
+					sentBy: WHATSAPP_MESSAGE_SENDER.SYSTEM,
+				});
+			}
+			return;
+		}
+
 		// Subscription gate: an enrolled restaurant whose platform subscription
 		// has lapsed must not keep spending Tavli's money on model turns — the
 		// billing semantics live in `getRestaurantContext` /

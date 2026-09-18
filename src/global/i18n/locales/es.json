@@ -613,6 +613,7 @@
 		"ERROR_SESSION_AWAITING_PAYMENT_ORDERS": "Parte del pedido de tu mesa aún está pendiente de pagarse en persona. Pide al personal que lo cobre antes de cerrar la cuenta.",
 		"ERROR_DEV_ENVIRONMENT_ONLY": "Esta acción solo está disponible en entornos de desarrollo.",
 		"ERROR_DASHBOARD_RESTAURANT_REQUIRED": "Selecciona un restaurante para ver este panel.",
+		"ERROR_RESTAURANT_INACTIVE": "El asistente no se puede activar mientras el restaurante está inactivo.",
 		"ERROR_DASHBOARD_RANGE_TOO_LARGE": "El rango de fechas seleccionado es demasiado grande. Elige un rango más corto.",
 		"ERROR_DASHBOARD_RANGE_INVALID": "El rango de fechas seleccionado no es válido.",
 		"ERROR_DASHBOARD_NAME_REQUIRED": "El nombre del panel es obligatorio.",
@@ -2034,7 +2035,9 @@
 			"publicCta": "Escríbenos por WhatsApp",
 			"noTablesWarning": "Las reservaciones por el asistente están desactivadas: este restaurante aún no tiene mesas. El asistente sigue respondiendo preguntas del menú.",
 			"noTablesLink": "Configurar mesas",
-			"consentNote": "Al escribirnos aceptas recibir respuestas por WhatsApp. Envía BAJA cuando quieras dejar de recibirlas."
+			"consentNote": "Al escribirnos aceptas recibir respuestas por WhatsApp. Envía BAJA cuando quieras dejar de recibirlas.",
+			"offRestaurantInactive": "Apagado · restaurante inactivo",
+			"activateRestaurant": "Activar restaurante"
 		},
 		"page": {
 			"setupRestaurantFirst": "Primero configura tu restaurante."

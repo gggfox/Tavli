@@ -164,14 +164,27 @@ describe("whatsapp and dead restaurants", () => {
 		expect(sentBodies(fetchMock)[0]).toContain("Soy el asistente de Tavli");
 	});
 
-	it("short-code routing skips a deactivated restaurant", async () => {
+	it("routes a deactivated restaurant's code and says the assistant isn't available — recorded, no model", async () => {
 		const t = convexTest(schema, modules);
-		await seedRestaurant(t, { isActive: false });
+		const restaurantId = await seedRestaurant(t, { isActive: false });
 
 		await send(t, { body: "Hola · VRN-8F3" });
 
-		expect(await conversations(t)).toHaveLength(0);
+		// Inactive is not deleted (TAVLI-107): the diner scanned this restaurant's
+		// own QR, so the thread and their deep-link consent are recorded, and the
+		// answer is honest fixed copy rather than the unknown-code guidance.
+		const threads = await conversations(t);
+		expect(threads).toHaveLength(1);
+		expect(threads[0].restaurantId).toBe(restaurantId);
 		expect(mockGenerateText).not.toHaveBeenCalled();
+		const sent = sentBodies(fetchMock);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toContain("no está disponible por ahora");
+		expect(sent[0]).not.toContain("Soy el asistente de Tavli");
+		const outbound = await t.run(async (ctx) =>
+			(await ctx.db.query("whatsappMessages").collect()).filter((m) => m.direction === "outbound")
+		);
+		expect(outbound).toHaveLength(1);
 	});
 
 	it("cold-start binding never binds a diner to a deleted restaurant", async () => {
@@ -187,7 +200,7 @@ describe("whatsapp and dead restaurants", () => {
 		expect(sentBodies(fetchMock)[0]).toContain("Soy el asistente de Tavli");
 	});
 
-	it("cold-start binding never binds a diner to a deactivated restaurant", async () => {
+	it("cold start binds to a deactivated restaurant when it is the only one in this phone's history", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedRestaurant(t, { isActive: false });
 		await seedConversation(t, restaurantId);
@@ -195,9 +208,29 @@ describe("whatsapp and dead restaurants", () => {
 		await send(t, { body: "¿a qué hora abren?" });
 
 		expect(mockGenerateText).not.toHaveBeenCalled();
+		expect(sentBodies(fetchMock)[0]).toContain("no está disponible por ahora");
 	});
 
-	it("getRestaurantContext reports a deleted or deactivated restaurant as unavailable", async () => {
+	it("cold start prefers the active restaurant over a deactivated one in this phone's history", async () => {
+		const t = convexTest(schema, modules);
+		const inactive = await seedRestaurant(t, { isActive: false, shortCode: "BBB222" });
+		const alive = await seedRestaurant(t, { shortCode: "CCC333" });
+		await seedConversation(t, inactive);
+		await seedConversation(t, alive);
+
+		await send(t, { body: "¿a qué hora abren?" });
+
+		// Two restaurants in history, but only one of them can answer: not
+		// ambiguous. Binding to the paused one — or refusing to guess — would
+		// regress a diner who simply also visited a restaurant that is now paused.
+		expect(mockGenerateText).toHaveBeenCalledTimes(1);
+		const inbound = await t.run(async (ctx) =>
+			(await ctx.db.query("whatsappMessages").collect()).filter((m) => m.direction === "inbound")
+		);
+		expect(inbound.map((m) => m.restaurantId)).toEqual([alive]);
+	});
+
+	it("getRestaurantContext tells a deleted restaurant from a deactivated one", async () => {
 		const t = convexTest(schema, modules);
 		const deleted = await seedRestaurant(t, { deletedAt: Date.now(), shortCode: "AAA111" });
 		const inactive = await seedRestaurant(t, { isActive: false, shortCode: "BBB222" });
@@ -210,8 +243,11 @@ describe("whatsapp and dead restaurants", () => {
 		]);
 
 		expect(deletedCtx?.unavailable).toBe(true);
-		expect(inactiveCtx?.unavailable).toBe(true);
+		expect(deletedCtx?.inactive).toBe(false);
+		expect(inactiveCtx?.unavailable).toBe(false);
+		expect(inactiveCtx?.inactive).toBe(true);
 		expect(aliveCtx?.unavailable).toBe(false);
+		expect(aliveCtx?.inactive).toBe(false);
 	});
 
 	it("a message that still reaches the pipeline bound to a dead restaurant gets honest fixed copy, metered, no model", async () => {
@@ -263,6 +299,26 @@ describe("whatsapp and dead restaurants", () => {
 			return all.filter((m) => m.conversationId === deadConversation);
 		});
 		expect(messages.some((m) => m.direction === "outbound")).toBe(true);
+	});
+
+	it("an existing thread with a deactivated restaurant gets the not-available copy, not the deleted one", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, { isActive: false });
+		const conversationId = await seedConversation(t, restaurantId);
+
+		await send(t, { body: "¿tienen mesa hoy?" });
+
+		expect(mockGenerateText).not.toHaveBeenCalled();
+		const sent = sentBodies(fetchMock);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toContain("no está disponible por ahora");
+		expect(sent[0]).not.toContain("ya no recibe mensajes");
+		const messages = await t.run(async (ctx) =>
+			(await ctx.db.query("whatsappMessages").collect()).filter(
+				(m) => m.conversationId === conversationId && m.direction === "outbound"
+			)
+		);
+		expect(messages).toHaveLength(1);
 	});
 
 	it("stays silent once the sender has spent their daily cap", async () => {

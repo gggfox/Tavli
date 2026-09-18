@@ -613,6 +613,7 @@
 		"ERROR_SESSION_AWAITING_PAYMENT_ORDERS": "Part of your table's order is still waiting to be paid in person. Ask the staff to collect it before closing out.",
 		"ERROR_DEV_ENVIRONMENT_ONLY": "This action is only available in development environments.",
 		"ERROR_DASHBOARD_RESTAURANT_REQUIRED": "Select a restaurant to view this dashboard.",
+		"ERROR_RESTAURANT_INACTIVE": "The assistant can't be enabled while the restaurant is inactive.",
 		"ERROR_DASHBOARD_RANGE_TOO_LARGE": "The selected date range is too large. Please choose a shorter range.",
 		"ERROR_DASHBOARD_RANGE_INVALID": "The selected date range isn't valid.",
 		"ERROR_DASHBOARD_NAME_REQUIRED": "A dashboard name is required.",
@@ -2034,7 +2035,9 @@
 			"publicCta": "Ask on WhatsApp",
 			"noTablesWarning": "Reservations through the assistant are off: this restaurant has no tables yet. The assistant still answers menu questions.",
 			"noTablesLink": "Set up tables",
-			"consentNote": "By messaging us you agree to receive replies on WhatsApp. Send STOP to opt out at any time."
+			"consentNote": "By messaging us you agree to receive replies on WhatsApp. Send STOP to opt out at any time.",
+			"offRestaurantInactive": "Off · restaurant inactive",
+			"activateRestaurant": "Activate restaurant"
 		},
 		"page": {
 			"setupRestaurantFirst": "Please set up your restaurant first."

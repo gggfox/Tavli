@@ -31,17 +31,18 @@ import { MAX_CONTACT_NAME_LENGTH } from "../reservationHelpers";
 import { normalizeShortCode } from "./shortCode";
 
 /**
- * Whether the assistant may still speak for this restaurant: it exists, is
- * not soft-deleted, and is active. A soft delete keeps the `whatsappChannels`
- * row, so `channel.isActive` alone is NOT this check — which is exactly how a
- * deleted restaurant kept answering (TAVLI-95). Every routing input applies
- * this, so a diner is never auto-bound to a dead restaurant; the pipeline's
- * restaurant-status gate backstops it for a thread that already exists.
+ * Exists and is not soft-deleted — the routing-time check.
+ *
+ * A soft delete keeps the `whatsappChannels` row, so `channel.isActive` alone
+ * is NOT this check — which is exactly how a deleted restaurant kept answering
+ * (TAVLI-95). Deliberately NOT also requiring `isActive`: a paused restaurant
+ * is still a place a diner scanned a QR at, so its code routes and the thread
+ * is recorded, and the pipeline's status gate answers with "not available
+ * right now" (TAVLI-107). A deleted restaurant is the one that must look like
+ * an unknown code.
  */
-function isRestaurantMessageable(
-	restaurant: Doc<"restaurants"> | null
-): restaurant is Doc<"restaurants"> {
-	return restaurant !== null && restaurant.deletedAt == null && restaurant.isActive;
+function isRestaurantLive(restaurant: Doc<"restaurants"> | null): restaurant is Doc<"restaurants"> {
+	return restaurant !== null && restaurant.deletedAt == null;
 }
 
 /** Dedupe lookup: has this Twilio MessageSid already been ingested? */
@@ -157,11 +158,12 @@ export const getEnabledChannelByShortCode = internalQuery({
 				.query(TABLE.WHATSAPP_CHANNELS)
 				.withIndex("by_short_code", (q) => q.eq("shortCode", shortCode))
 				.first();
-			// A disabled channel — or a deleted/deactivated restaurant behind an
-			// enabled one — is deliberately treated as no match at all: the diner
-			// gets the same guidance as an unknown code, and learns nothing about
-			// whether that restaurant exists (or existed) on Tavli.
-			if (channel?.isActive && isRestaurantMessageable(await ctx.db.get(channel.restaurantId))) {
+			// A disabled channel — or a deleted restaurant behind an enabled one —
+			// is deliberately treated as no match at all: the diner gets the same
+			// guidance as an unknown code, and learns nothing about whether that
+			// restaurant existed on Tavli. A merely paused restaurant DOES route:
+			// the status gate in `processing.ts` answers for it (TAVLI-107).
+			if (channel?.isActive && isRestaurantLive(await ctx.db.get(channel.restaurantId))) {
 				return { channel, matchedCode: shortCode };
 			}
 		}
@@ -189,24 +191,31 @@ export const getRecentRoutesForPhone = internalQuery({
 			.order("desc")
 			.take(WHATSAPP_COLD_START_SCAN_LIMIT);
 
-		const routes: { restaurantId: Id<"restaurants">; channelId: Id<"whatsappChannels"> }[] = [];
+		const active: { restaurantId: Id<"restaurants">; channelId: Id<"whatsappChannels"> }[] = [];
+		const paused: typeof active = [];
 		const seen = new Set<string>();
 		for (const conversation of recent) {
 			if (seen.has(conversation.restaurantId)) continue;
 			seen.add(conversation.restaurantId);
-			// A dead restaurant must not be a binding target: yesterday's thread
+			// A deleted restaurant must not be a binding target: yesterday's thread
 			// with a since-deleted restaurant would otherwise silently swallow
 			// today's codeless message (TAVLI-95).
-			if (!isRestaurantMessageable(await ctx.db.get(conversation.restaurantId))) continue;
+			const restaurant = await ctx.db.get(conversation.restaurantId);
+			if (!isRestaurantLive(restaurant)) continue;
 			const channel = await ctx.db
 				.query(TABLE.WHATSAPP_CHANNELS)
 				.withIndex("by_restaurant", (q) => q.eq("restaurantId", conversation.restaurantId))
 				.first();
-			if (channel?.isActive) {
-				routes.push({ restaurantId: conversation.restaurantId, channelId: channel._id });
-			}
+			if (!channel?.isActive) continue;
+			const route = { restaurantId: conversation.restaurantId, channelId: channel._id };
+			(restaurant.isActive ? active : paused).push(route);
 		}
-		return routes;
+		// A paused restaurant only counts when nothing in this phone's history
+		// can actually answer (TAVLI-107): "one active, one paused" is not
+		// ambiguous, it is the active one — otherwise a diner who also visited a
+		// restaurant that later paused would suddenly get the unknown-code
+		// guidance for a message the active restaurant used to receive.
+		return active.length > 0 ? active : paused;
 	},
 });
 
@@ -562,7 +571,10 @@ export const getRestaurantContext = internalQuery({
 			defaultLanguage: restaurant.defaultLanguage ?? null,
 			slug: restaurant.slug,
 			timezone: restaurant.timezone ?? null,
-			unavailable: !isRestaurantMessageable(restaurant),
+			unavailable: !isRestaurantLive(restaurant),
+			// Paused by its owner, not gone: the pipeline answers with a "not
+			// available right now" line instead of the deleted copy (TAVLI-107).
+			inactive: isRestaurantLive(restaurant) && !restaurant.isActive,
 			// Enrolled in the platform subscription AND no longer in good standing
 			// (TAVLI-95). Both halves matter: a restaurant outside the subscription
 			// is not gated at all, and `isBillingInGoodStanding` alone treats an

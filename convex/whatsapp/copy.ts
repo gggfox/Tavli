@@ -90,6 +90,12 @@ export type BotCopy = {
 	 */
 	restaurantUnavailable: string;
 	/**
+	 * The restaurant is paused (`isActive: false`), not deleted — a state its
+	 * owner controls and can reverse, so the diner is told it is temporary and
+	 * nothing more (TAVLI-107).
+	 */
+	restaurantInactive: string;
+	/**
 	 * The restaurant's platform subscription has lapsed. Deliberately does NOT
 	 * say why — the diner is not party to the restaurant's bill — just that the
 	 * assistant is off and the restaurant itself is the way in. Never silence,
@@ -167,6 +173,8 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"I'm handling an unusually high number of messages right now and can't answer this one. Please try again later, or contact the restaurant directly.",
 		restaurantUnavailable:
 			"This restaurant is no longer taking messages here. If you need to reach them, please contact the restaurant directly.",
+		restaurantInactive:
+			"This restaurant's assistant isn't available right now. Please contact the restaurant directly.",
 		subscriptionLapsed:
 			"The assistant isn't available for this restaurant right now. Please contact the restaurant directly.",
 		optOutConfirmed:
@@ -233,6 +241,8 @@ const COPY: Record<WhatsappLocale, BotCopy> = {
 			"Estoy atendiendo muchísimos mensajes en este momento y no puedo responder este. Inténtalo más tarde o contacta directamente al restaurante.",
 		restaurantUnavailable:
 			"Este restaurante ya no recibe mensajes por aquí. Si necesitas comunicarte, contacta directamente al restaurante.",
+		restaurantInactive:
+			"El asistente de este restaurante no está disponible por ahora. Por favor contacta directamente al restaurante.",
 		subscriptionLapsed:
 			"El asistente no está disponible para este restaurante en este momento. Por favor contacta directamente al restaurante.",
 		optOutConfirmed:

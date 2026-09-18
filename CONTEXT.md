@@ -394,8 +394,12 @@ messaging it. Tavli is the sender for every restaurant (ADR 012), so the diner
 sees one contact — "Tavli" — however many restaurants they talk to. An inbound
 message passes a fixed **gate order** before the model is ever called: Twilio
 signature → **Opt-out** state and keywords → **Confirmation code** → routing →
-restaurant status (deleted/inactive) → subscription standing → **Daily message
-cap** / **Platform ceiling** → the model. _Avoid_: chatbot, agent. ("bot"
+restaurant status (deleted, then inactive) → subscription standing → **Daily
+message cap** / **Platform ceiling** → the model. Routing skips a _deleted_
+restaurant (its code looks unknown) but resolves an _inactive_ one, whose gate
+answers "not available right now": inactive is a state the owner can reverse,
+so the assistant is off while the restaurant is off and back when it is back —
+derived from the `Restaurant`, never written to the **Channel**. _Avoid_: chatbot, agent. ("bot"
 survives as a code-internal synonym — `runBotTurn`, `RESERVATIONS_BOT_TOKEN`.)
 
 **Channel**:
