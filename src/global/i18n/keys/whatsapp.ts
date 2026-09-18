@@ -33,6 +33,9 @@ export const WhatsappKeys = {
 	ASSISTANT_NO_TABLES_LINK: "whatsapp.assistant.noTablesLink",
 	/** Consent line (WhatsApp Business Messaging Policy): messaging is the opt-in. */
 	ASSISTANT_CONSENT_NOTE: "whatsapp.assistant.consentNote",
+	/** The assistant follows the restaurant's active state (TAVLI-107). */
+	ASSISTANT_OFF_RESTAURANT_INACTIVE: "whatsapp.assistant.offRestaurantInactive",
+	ASSISTANT_ACTIVATE_RESTAURANT: "whatsapp.assistant.activateRestaurant",
 
 	// Staff conversation view (TAVLI-93)
 	PAGE_SETUP_RESTAURANT_FIRST: "whatsapp.page.setupRestaurantFirst",

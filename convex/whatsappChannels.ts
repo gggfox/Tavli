@@ -36,6 +36,13 @@ export type WhatsappEnablement = {
 	/** Named here so a diner-facing surface never needs a second query. */
 	restaurantName: string;
 	isActive: boolean;
+	/**
+	 * Whether the restaurant itself is active. The assistant is effectively off
+	 * while this is false — derived, never written to the channel row — so a
+	 * reactivated restaurant gets its assistant back with no further clicks
+	 * (TAVLI-107).
+	 */
+	restaurantIsActive: boolean;
 	/** Canonical code, e.g. `VRN8F3`. */
 	shortCode: string;
 	/** Display code, e.g. `VRN-8F3`. */
@@ -69,6 +76,7 @@ function toEnablement(
 		restaurantId: restaurant._id,
 		restaurantName: restaurant.name,
 		isActive: channel.isActive,
+		restaurantIsActive: restaurant.isActive,
 		shortCode: channel.shortCode,
 		formattedShortCode: formatShortCode(channel.shortCode),
 		deepLinkUrl: buildDeepLinkUrl(
@@ -147,6 +155,9 @@ export const getPublicBySlug = query({
 			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
 			.first();
 		if (!restaurant || restaurant.deletedAt != null) return null;
+		// A paused restaurant's assistant only says "not available right now" —
+		// a link to that is a dead end on the diner's own page (TAVLI-107).
+		if (!restaurant.isActive) return null;
 
 		const channel = await getChannelByRestaurant(ctx, restaurant._id);
 		if (!channel?.isActive) return null;
@@ -183,6 +194,11 @@ export const setEnabled = mutation({
 		const restaurant = await ctx.db.get(args.restaurantId);
 		if (!restaurant || restaurant.deletedAt != null) {
 			throw new NotFoundError("ERROR_RESTAURANT_NOT_FOUND");
+		}
+		// Turning the assistant ON at a paused restaurant would enable something
+		// the pipeline refuses to run. Pausing it is always allowed (TAVLI-107).
+		if (args.isActive && !restaurant.isActive) {
+			throw new ConflictError("ERROR_RESTAURANT_INACTIVE");
 		}
 
 		const now = Date.now();

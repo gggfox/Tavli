@@ -606,4 +606,52 @@ describe("whatsappChannels enablement", () => {
 		});
 		expect(await t.query(api.whatsappChannels.getPublicBySlug, { slug })).toBeNull();
 	});
+
+	it("hides the public link while the restaurant itself is inactive", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+		const slug = await t.run(async (ctx) => (await ctx.db.get(restaurantId))!.slug);
+		await t.run((ctx) => ctx.db.patch(restaurantId, { isActive: false }));
+
+		// The channel is still enabled; the restaurant is paused. A visible
+		// wa.me link would lead a diner straight to "not available" (TAVLI-107).
+		expect(await t.query(api.whatsappChannels.getPublicBySlug, { slug })).toBeNull();
+	});
+
+	it("refuses to enable the assistant for an inactive restaurant, with a stable code", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, { name: "Vernáculo", enabled: false });
+		await t.run((ctx) => ctx.db.patch(restaurantId, { isActive: false }));
+		await seedAdmin(t, "admin-wa");
+		const admin = t.withIdentity({ subject: "admin-wa" });
+
+		await expect(
+			admin.mutation(api.whatsappChannels.setEnabled, { restaurantId, isActive: true })
+		).rejects.toThrow("ERROR_RESTAURANT_INACTIVE");
+		const stored = await t.run((ctx) => ctx.db.query("whatsappChannels").collect());
+		expect(stored).toHaveLength(0);
+
+		// Pausing an already-enabled assistant at an inactive restaurant is fine:
+		// the refusal is about turning it ON.
+		await t.run((ctx) => ctx.db.patch(restaurantId, { isActive: true }));
+		await admin.mutation(api.whatsappChannels.setEnabled, { restaurantId, isActive: true });
+		await t.run((ctx) => ctx.db.patch(restaurantId, { isActive: false }));
+		await expect(
+			admin.mutation(api.whatsappChannels.setEnabled, { restaurantId, isActive: false })
+		).resolves.toMatchObject({ isActive: false });
+	});
+
+	it("reports whether the restaurant is active, so Settings can show the assistant as off", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+		const owner = t.withIdentity({ subject: "owner-wa" });
+
+		const live = await owner.query(api.whatsappChannels.getForRestaurant, { restaurantId });
+		expect(live).toMatchObject({ isActive: true, restaurantIsActive: true });
+
+		await t.run((ctx) => ctx.db.patch(restaurantId, { isActive: false }));
+		const paused = await owner.query(api.whatsappChannels.getForRestaurant, { restaurantId });
+		// Derived, not written: the channel row is untouched (TAVLI-107).
+		expect(paused).toMatchObject({ isActive: true, restaurantIsActive: false });
+	});
 });
