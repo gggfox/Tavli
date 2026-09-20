@@ -10,6 +10,9 @@ import {
 	MENU_AI_IMAGE_DRAFT_STATUS,
 	MENU_AI_IMAGE_JOB_STATUS,
 	MENU_ITEM_IMAGE_SOURCE,
+	OPERATOR_ALERT_KINDS,
+	OPERATOR_ALERT_SEVERITY,
+	OPERATOR_ALERT_STATUS,
 	ORDER_PAYMENT_STATE,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
@@ -1766,6 +1769,55 @@ export default defineSchema({
 		optedOutAt: v.number(),
 		createdAt: v.number(),
 	}).index("by_phone", ["phone"]),
+
+	// ============================================================================
+	// Operator alerts (TAVLI-109)
+	// ============================================================================
+	// The one place a money path can say "a human at Tavli has to look at this".
+	// Raised through `_util/operatorAlerts.raiseOperatorAlert`, read on
+	// `/admin/alerts`, and — when severe — emailed to every platform admin.
+	//
+	// Restaurant-manager notifications are a different thing entirely and never
+	// come from here: an operator alert is Tavli's own inbox.
+	[TABLE.OPERATOR_ALERTS]: defineTable({
+		kind: v.union(...OPERATOR_ALERT_KINDS.map((kind) => v.literal(kind))),
+		severity: v.union(
+			v.literal(OPERATOR_ALERT_SEVERITY.INFO),
+			v.literal(OPERATOR_ALERT_SEVERITY.WARNING),
+			v.literal(OPERATOR_ALERT_SEVERITY.SEVERE)
+		),
+		// All four context ids are optional: an alert can be about a Stripe
+		// object Tavli never matched to anything (that is precisely the
+		// `charge_unmatched` case), and the page just renders fewer links.
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		stripeObjectId: v.optional(v.string()),
+		/** i18n key, never prose — the frontend and the email both translate it. */
+		messageKey: v.string(),
+		/** Interpolation values for `messageKey`. Ids and amounts, not sentences. */
+		messageParams: v.optional(v.record(v.string(), v.union(v.string(), v.number()))),
+		/**
+		 * Caller-chosen identity for "this same problem". While an alert with
+		 * this key is OPEN, raising it again is a no-op — so a webhook replayed
+		 * fifty times leaves one row, and acknowledging that row lets the next
+		 * occurrence through as a fresh alert.
+		 */
+		dedupeKey: v.optional(v.string()),
+		status: v.union(
+			v.literal(OPERATOR_ALERT_STATUS.OPEN),
+			v.literal(OPERATOR_ALERT_STATUS.ACKNOWLEDGED)
+		),
+		acknowledgedBy: v.optional(v.string()),
+		acknowledgedAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		// The page: open alerts newest first, then acknowledged ones.
+		.index("by_status_created", ["status", "createdAt"])
+		.index("by_restaurant", ["restaurantId"])
+		// Idempotency probe. `dedupeKey` is optional, so rows without one sort
+		// under `undefined` and are never reached by a keyed lookup.
+		.index("by_dedupe_status", ["dedupeKey", "status"]),
 
 	// ============================================================================
 	// Unified Event Store

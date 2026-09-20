@@ -53,6 +53,7 @@ export const TABLE = {
 	WHATSAPP_UNROUTED_MESSAGES: "whatsappUnroutedMessages",
 	WHATSAPP_SPEND_ALLOWLIST: "whatsappSpendAllowlist",
 	WHATSAPP_OPT_OUTS: "whatsappOptOuts",
+	OPERATOR_ALERTS: "operatorAlerts",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -1375,6 +1376,10 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.WHATSAPP_CONVERSATIONS,
 	TABLE.WHATSAPP_MESSAGES,
 	TABLE.WHATSAPP_PENDING_ACTIONS,
+	// Operator alerts (TAVLI-109). An alert about a restaurant that no longer
+	// exists is an open item nobody can act on, and it carries that
+	// restaurant's ids in its message params.
+	TABLE.OPERATOR_ALERTS,
 ] as const;
 
 export type RestaurantPurgeDeletedTable = (typeof RESTAURANT_PURGE_DELETED_TABLES)[number];
@@ -1410,3 +1415,136 @@ export const RESTAURANT_PURGE_EXEMPT_TABLES: Partial<Record<TableName, string>> 
 		"key must be stable (e.g. `whatsapp_inbound:<phone>`, never a date): a key " +
 		"that varies per day would add a permanent row per day, purge or no purge.",
 };
+
+// ============================================================================
+// Operator alerts (TAVLI-109)
+// ============================================================================
+
+/**
+ * What went wrong, from the platform operator's point of view.
+ *
+ * One entry per situation a human at Tavli has to look at — mostly money paths
+ * where the code can detect the problem but cannot fix it. The enum is
+ * deliberately small and extended by the ticket that needs a new kind, so every
+ * value here has a call site or is about to get one.
+ */
+export const OPERATOR_ALERT_KIND = {
+	/** A payment sat in a non-terminal status past the sweep's patience. */
+	PAYMENT_STUCK: "payment_stuck",
+	/** Stripe reports a charge Tavli cannot tie to any payment row. */
+	CHARGE_UNMATCHED: "charge_unmatched",
+	/** A charge's amount disagreed with the order's, so it was refunded. */
+	CHARGE_MISMATCHED_REFUNDED: "charge_mismatched_refunded",
+	/** A dispute closed against the restaurant. */
+	DISPUTE_LOST: "dispute_lost",
+	/** A refund issued from the Stripe Dashboard rather than through Tavli. */
+	DASHBOARD_REFUND: "dashboard_refund",
+	/** A Connect payout to a restaurant failed. */
+	PAYOUT_FAILED: "payout_failed",
+	/** A connected account was closed or rejected by Stripe. */
+	ACCOUNT_CLOSED: "account_closed",
+	/** A restaurant has no contact email, so Tavli cannot reach its operator. */
+	RESTAURANT_MISSING_CONTACT_EMAIL: "restaurant_missing_contact_email",
+} as const;
+
+export type OperatorAlertKind = (typeof OPERATOR_ALERT_KIND)[keyof typeof OPERATOR_ALERT_KIND];
+
+export const OPERATOR_ALERT_KINDS = Object.values(OPERATOR_ALERT_KIND);
+
+/**
+ * How loud an alert is.
+ *
+ * `severe` is the only one that reaches anybody who is not already looking at
+ * `/admin/alerts` — it emails every platform admin — so it is reserved for
+ * money that moved wrongly or a restaurant that cannot take payments at all.
+ */
+export const OPERATOR_ALERT_SEVERITY = {
+	INFO: "info",
+	WARNING: "warning",
+	SEVERE: "severe",
+} as const;
+
+export type OperatorAlertSeverity =
+	(typeof OPERATOR_ALERT_SEVERITY)[keyof typeof OPERATOR_ALERT_SEVERITY];
+
+export const OPERATOR_ALERT_SEVERITIES = Object.values(OPERATOR_ALERT_SEVERITY);
+
+/**
+ * Lifecycle. Two states on purpose: an operator either still has to look at
+ * this or has said "seen it". There is no `resolved` — whether the underlying
+ * problem is fixed is answered by the money path itself, not by a checkbox
+ * here, and a third state would only invite a stale one.
+ */
+export const OPERATOR_ALERT_STATUS = {
+	OPEN: "open",
+	ACKNOWLEDGED: "acknowledged",
+} as const;
+
+export type OperatorAlertStatus =
+	(typeof OPERATOR_ALERT_STATUS)[keyof typeof OPERATOR_ALERT_STATUS];
+
+export const OPERATOR_ALERT_STATUSES = Object.values(OPERATOR_ALERT_STATUS);
+
+/**
+ * Severity a kind gets when the call site does not say otherwise.
+ *
+ * A default rather than a fixed mapping: the same kind can be routine or
+ * alarming depending on what raised it (a single stuck payment vs. every
+ * payment on one restaurant), so `raiseOperatorAlert` lets a caller override.
+ * Having the default live here keeps the usual case consistent instead of
+ * leaving each call site to guess.
+ */
+export const OPERATOR_ALERT_DEFAULT_SEVERITY: Record<OperatorAlertKind, OperatorAlertSeverity> = {
+	[OPERATOR_ALERT_KIND.PAYMENT_STUCK]: OPERATOR_ALERT_SEVERITY.WARNING,
+	// Money arrived that Tavli cannot attribute: nobody is owed it yet and
+	// nobody knows whose it is.
+	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: OPERATOR_ALERT_SEVERITY.WARNING,
+	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: OPERATOR_ALERT_SEVERITY.WARNING,
+	// The restaurant is not getting paid.
+	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	// The restaurant cannot take payments at all.
+	[OPERATOR_ALERT_KIND.ACCOUNT_CLOSED]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	[OPERATOR_ALERT_KIND.RESTAURANT_MISSING_CONTACT_EMAIL]: OPERATOR_ALERT_SEVERITY.INFO,
+};
+
+/**
+ * i18n key holding each kind's short title. The backend stores keys, never
+ * prose (CLAUDE.md), so these strings are the contract between
+ * `raiseOperatorAlert`, the alerts page, and the severe-alert email — which
+ * renders the same keys from its own `en`/`es` copy table because Convex code
+ * cannot import `src/global/i18n`.
+ */
+export const OPERATOR_ALERT_TITLE_KEY: Record<OperatorAlertKind, string> = {
+	[OPERATOR_ALERT_KIND.PAYMENT_STUCK]: "alerts.kind.paymentStuck.title",
+	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.title",
+	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: "alerts.kind.chargeMismatchedRefunded.title",
+	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.title",
+	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.title",
+	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.title",
+	[OPERATOR_ALERT_KIND.ACCOUNT_CLOSED]: "alerts.kind.accountClosed.title",
+	[OPERATOR_ALERT_KIND.RESTAURANT_MISSING_CONTACT_EMAIL]:
+		"alerts.kind.restaurantMissingContactEmail.title",
+};
+
+/**
+ * i18n key holding each kind's one-line explanation — what happened and what
+ * the operator is expected to do about it. Used as the default `messageKey`
+ * when a caller does not pass one.
+ */
+export const OPERATOR_ALERT_EXPLANATION_KEY: Record<OperatorAlertKind, string> = {
+	[OPERATOR_ALERT_KIND.PAYMENT_STUCK]: "alerts.kind.paymentStuck.explanation",
+	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.explanation",
+	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]:
+		"alerts.kind.chargeMismatchedRefunded.explanation",
+	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.explanation",
+	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.explanation",
+	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.explanation",
+	[OPERATOR_ALERT_KIND.ACCOUNT_CLOSED]: "alerts.kind.accountClosed.explanation",
+	[OPERATOR_ALERT_KIND.RESTAURANT_MISSING_CONTACT_EMAIL]:
+		"alerts.kind.restaurantMissingContactEmail.explanation",
+};
+
+/** Org-level roles that receive the severe-alert email. */
+export const OPERATOR_ALERT_EMAIL_ROLES = [USER_ROLES.OWNER, USER_ROLES.ADMIN] as const;

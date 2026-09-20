@@ -93,6 +93,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.WHATSAPP_CONVERSATIONS]: 0,
 		[TABLE.WHATSAPP_MESSAGES]: 0,
 		[TABLE.WHATSAPP_PENDING_ACTIONS]: 0,
+		[TABLE.OPERATOR_ALERTS]: 0,
 	};
 	const patched: Record<RestaurantPurgePatchedTable, number> = {
 		[TABLE.INVITATIONS]: 0,
@@ -500,6 +501,17 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const c of channels) await ctx.db.delete(c._id);
 	deleted[TABLE.WHATSAPP_CHANNELS] += channels.length;
+
+	// Operator alerts (TAVLI-109). Alerts with no `restaurantId` are
+	// platform-wide and survive; only this restaurant's are removed. What the
+	// alerts were about stays answerable through `allEvents`, which is
+	// purge-exempt.
+	const alerts = await ctx.db
+		.query(TABLE.OPERATOR_ALERTS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const alert of alerts) await ctx.db.delete(alert._id);
+	deleted[TABLE.OPERATOR_ALERTS] += alerts.length;
 
 	return { deleted, patched, storageFilesDeleted };
 }
