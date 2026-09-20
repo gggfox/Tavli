@@ -28,7 +28,8 @@
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
 			"adminFeatureFlags": "Feature flags",
-			"adminWhatsappAllowlist": "Lista de WhatsApp"
+			"adminWhatsappAllowlist": "Lista de WhatsApp",
+			"adminAlerts": "Alertas de operación"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -2090,6 +2091,86 @@
 		},
 		"reservationLink": {
 			"label": "Abrir la conversación de WhatsApp"
+		}
+	},
+	"alerts": {
+		"page": {
+			"title": "Alertas de operación",
+			"description": "Problemas en los caminos del dinero de Tavli que alguien tiene que revisar. Las graves también le llegan por correo a cada administrador de la plataforma.",
+			"entity": "alertas",
+			"searchPlaceholder": "Buscar alertas...",
+			"emptyTitle": "Nada requiere intervención",
+			"emptyDescription": "No se ha levantado ninguna alerta de operación. Los pagos atorados, los cargos sin orden, los depósitos fallidos y las cuentas cerradas aparecen aquí cuando ocurren.",
+			"filteredEmptyTitle": "No hay alertas que coincidan",
+			"notAuthenticated": "Inicia sesión para ver las alertas de operación.",
+			"resultCount_one": "{{count}} alerta",
+			"resultCount_other": "{{count}} alertas"
+		},
+		"filter": {
+			"severity": "Gravedad",
+			"restaurant": "Restaurante",
+			"allSeverities": "Todas las gravedades",
+			"allRestaurants": "Todos los restaurantes",
+			"noRestaurant": "Sin restaurante"
+		},
+		"column": {
+			"alert": "Alerta",
+			"severity": "Gravedad",
+			"restaurant": "Restaurante",
+			"raised": "Levantada",
+			"status": "Estado"
+		},
+		"action": {
+			"acknowledge": "Marcar como vista",
+			"acknowledgedBy": "Vista por {{actor}}"
+		},
+		"link": {
+			"restaurant": "Restaurante",
+			"order": "Orden",
+			"payment": "Pago"
+		},
+		"severity": {
+			"info": "Informativa",
+			"warning": "Advertencia",
+			"severe": "Grave"
+		},
+		"status": {
+			"open": "Abierta",
+			"acknowledged": "Vista"
+		},
+		"kind": {
+			"paymentStuck": {
+				"title": "Pago atorado",
+				"explanation": "Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute."
+			},
+			"chargeUnmatched": {
+				"title": "Cargo sin orden asociada",
+				"explanation": "Stripe cobró dinero que Tavli no puede ligar a ningún registro de pago. Nadie ha recibido ese crédito: busca el cargo en Stripe y define de quién es."
+			},
+			"chargeMismatchedRefunded": {
+				"title": "Cargo reembolsado: el monto no coincidía",
+				"explanation": "Llegó un cargo por un monto distinto al de la orden que menciona, así que Tavli lo reembolsó en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse."
+			},
+			"disputeLost": {
+				"title": "Disputa perdida",
+				"explanation": "Una red de tarjetas resolvió una disputa en contra del restaurante. El dinero y la comisión de la disputa se perdieron; hay que avisarle al restaurante."
+			},
+			"dashboardRefund": {
+				"title": "Reembolso hecho fuera de Tavli",
+				"explanation": "Se hizo un reembolso desde el panel de Stripe y no a través de Tavli, así que la orden y el depósito que alimenta ya no coinciden con Stripe."
+			},
+			"payoutFailed": {
+				"title": "Depósito fallido",
+				"explanation": "Stripe no pudo depositarle al restaurante. Hay que corregir sus datos bancarios o el estado de su cuenta para que el dinero pueda moverse."
+			},
+			"accountClosed": {
+				"title": "Cuenta conectada cerrada",
+				"explanation": "La cuenta de Stripe del restaurante fue cerrada o rechazada, así que no puede recibir pagos. Los comensales fallarán al pagar hasta que se restablezca."
+			},
+			"restaurantMissingContactEmail": {
+				"title": "El restaurante no tiene correo de contacto",
+				"explanation": "Este restaurante no tiene correo de contacto, así que Tavli no puede avisarle a su operador de nada: recibos, disputas ni esta alerta."
+			}
 		}
 	}
 }

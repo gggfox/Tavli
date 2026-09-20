@@ -122,6 +122,12 @@ export const getOperatorAlertEmailContext = internalQuery({
 type ListErrors = AdminAuthErrors;
 
 /**
+ * An alert as the page reads it: the row plus the restaurant's name, so the
+ * table can label a link and filter by restaurant without a second query.
+ */
+export type OperatorAlertListRow = OperatorAlertDoc & { restaurantName: string | null };
+
+/**
  * Every alert, open ones first and newest first within each group.
  *
  * Ordering is done here rather than in the table so the page has one obvious
@@ -130,11 +136,13 @@ type ListErrors = AdminAuthErrors;
  * be below something somebody already acknowledged.
  *
  * Two indexed reads rather than a full scan — `by_status_created` prefixes on
- * status, so each group comes back already sorted.
+ * status, so each group comes back already sorted. Restaurant names are
+ * resolved through a per-call cache, so a hundred alerts about one restaurant
+ * cost one `db.get`, not a hundred.
  */
 export const list = query({
 	args: {},
-	handler: async function (ctx): AsyncReturn<OperatorAlertDoc[], ListErrors> {
+	handler: async function (ctx): AsyncReturn<OperatorAlertListRow[], ListErrors> {
 		const [, authError] = await requireAdmin(ctx);
 		if (authError) return [null, authError];
 
@@ -149,7 +157,22 @@ export const list = query({
 			.order("desc")
 			.collect();
 
-		return [[...open, ...acknowledged], null];
+		const namesById = new Map<string, string | null>();
+		const rows: OperatorAlertListRow[] = [];
+		for (const alert of [...open, ...acknowledged]) {
+			if (!alert.restaurantId) {
+				rows.push({ ...alert, restaurantName: null });
+				continue;
+			}
+			const key = String(alert.restaurantId);
+			if (!namesById.has(key)) {
+				const restaurant = await ctx.db.get(alert.restaurantId);
+				namesById.set(key, restaurant?.name ?? null);
+			}
+			rows.push({ ...alert, restaurantName: namesById.get(key) ?? null });
+		}
+
+		return [rows, null];
 	},
 });
 

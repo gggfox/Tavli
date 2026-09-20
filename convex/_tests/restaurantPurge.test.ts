@@ -101,6 +101,7 @@ const EXPECTED_DELETED = {
 	[TABLE.WHATSAPP_CONVERSATIONS]: 1,
 	[TABLE.WHATSAPP_MESSAGES]: 2,
 	[TABLE.WHATSAPP_PENDING_ACTIONS]: 1,
+	[TABLE.OPERATOR_ALERTS]: 1,
 } as const;
 
 /**
@@ -544,6 +545,17 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			reservationId,
 			code: "123456",
 			expiresAt: NOW + 10 * 60 * 1000,
+			createdAt: NOW,
+		});
+
+		// An operator alert about this restaurant (TAVLI-109). Platform-wide
+		// alerts carry no `restaurantId` and survive any purge; this one does not.
+		await ctx.db.insert("operatorAlerts", {
+			kind: "payment_stuck",
+			severity: "warning",
+			status: "open",
+			restaurantId,
+			messageKey: "alerts.kind.paymentStuck.explanation",
 			createdAt: NOW,
 		});
 

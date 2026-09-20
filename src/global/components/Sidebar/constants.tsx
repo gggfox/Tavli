@@ -1,5 +1,6 @@
 import { SidebarKeys } from "@/global/i18n";
 import {
+	BellRing,
 	Building2,
 	CalendarClock,
 	CalendarRange,
@@ -103,6 +104,11 @@ export const sidebarItems: SidebarItem[] = [
 				translationKey: SidebarKeys.ADMIN_FEATURE_FLAGS,
 				icon: <Flag size={18} className="shrink-0" />,
 				to: "/admin/feature-flags",
+			},
+			{
+				translationKey: SidebarKeys.ADMIN_ALERTS,
+				icon: <BellRing size={18} className="shrink-0" />,
+				to: "/admin/alerts",
 			},
 			{
 				translationKey: SidebarKeys.ADMIN_WHATSAPP_ALLOWLIST,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	AdminStaffKeys,
+	AlertsKeys,
 	CommonKeys,
 	CustomerKeys,
 	DashboardKeys,
@@ -22,6 +23,11 @@ import {
 	WelcomeKeys,
 	WhatsappKeys,
 } from "@/global/i18n";
+import {
+	OPERATOR_ALERT_EXPLANATION_KEY,
+	OPERATOR_ALERT_KINDS,
+	OPERATOR_ALERT_TITLE_KEY,
+} from "convex/constants";
 import en from "./locales/en.json";
 import es from "./locales/es.json";
 
@@ -92,6 +98,7 @@ describe("Languages constant", () => {
 describe("Key enums resolve in every locale", () => {
 	it.each([
 		["AdminStaffKeys", AdminStaffKeys as Record<string, string>],
+		["AlertsKeys", AlertsKeys as Record<string, string>],
 		["SidebarKeys", SidebarKeys as Record<string, string>],
 		["CommonKeys", CommonKeys as Record<string, string>],
 		["CustomerKeys", CustomerKeys as Record<string, string>],
@@ -114,6 +121,20 @@ describe("Key enums resolve in every locale", () => {
 		["WhatsappKeys", WhatsappKeys as Record<string, string>],
 	])("%s -- all values resolve in en.json and es.json", (name, keys) => {
 		expectAllKeysResolve(name, keys);
+	});
+});
+
+/**
+ * TAVLI-109: the backend stores an i18n key on every operator alert, so a kind
+ * added to `OPERATOR_ALERT_KIND` without copy here would render as a raw key
+ * on `/admin/alerts`. The maps are the contract; this is what enforces it.
+ */
+describe("Operator alert kinds have copy in every locale", () => {
+	it.each(OPERATOR_ALERT_KINDS)("%s -- title and explanation resolve in en and es", (kind) => {
+		for (const key of [OPERATOR_ALERT_TITLE_KEY[kind], OPERATOR_ALERT_EXPLANATION_KEY[kind]]) {
+			expect(resolves(key, enPaths), `Missing en.json key "${key}"`).toBe(true);
+			expect(resolves(key, esPaths), `Missing es.json key "${key}"`).toBe(true);
+		}
 	});
 });
 

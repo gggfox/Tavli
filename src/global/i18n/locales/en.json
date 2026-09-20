@@ -28,7 +28,8 @@
 			"adminUsers": "Users",
 			"adminOrganizations": "Organizations",
 			"adminFeatureFlags": "Feature flags",
-			"adminWhatsappAllowlist": "WhatsApp allowlist"
+			"adminWhatsappAllowlist": "WhatsApp allowlist",
+			"adminAlerts": "Operator alerts"
 		},
 		"theme": {
 			"darkMode": "Dark mode",
@@ -2090,6 +2091,86 @@
 		},
 		"reservationLink": {
 			"label": "Open the WhatsApp conversation"
+		}
+	},
+	"alerts": {
+		"page": {
+			"title": "Operator alerts",
+			"description": "Problems on Tavli's money paths that a person has to look at. Severe ones also email every platform admin.",
+			"entity": "alerts",
+			"searchPlaceholder": "Search alerts...",
+			"emptyTitle": "Nothing needs a human",
+			"emptyDescription": "No operator alert has been raised. Stuck payments, unmatched charges, failed payouts and closed accounts land here when they happen.",
+			"filteredEmptyTitle": "No matching alerts",
+			"notAuthenticated": "Please sign in to view operator alerts.",
+			"resultCount_one": "{{count}} alert",
+			"resultCount_other": "{{count}} alerts"
+		},
+		"filter": {
+			"severity": "Severity",
+			"restaurant": "Restaurant",
+			"allSeverities": "All severities",
+			"allRestaurants": "All restaurants",
+			"noRestaurant": "No restaurant"
+		},
+		"column": {
+			"alert": "Alert",
+			"severity": "Severity",
+			"restaurant": "Restaurant",
+			"raised": "Raised",
+			"status": "Status"
+		},
+		"action": {
+			"acknowledge": "Acknowledge",
+			"acknowledgedBy": "Acknowledged by {{actor}}"
+		},
+		"link": {
+			"restaurant": "Restaurant",
+			"order": "Order",
+			"payment": "Payment"
+		},
+		"severity": {
+			"info": "Info",
+			"warning": "Warning",
+			"severe": "Severe"
+		},
+		"status": {
+			"open": "Open",
+			"acknowledged": "Acknowledged"
+		},
+		"kind": {
+			"paymentStuck": {
+				"title": "Payment stuck",
+				"explanation": "A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge."
+			},
+			"chargeUnmatched": {
+				"title": "Charge matches no order",
+				"explanation": "Stripe took money that Tavli cannot tie to any payment record. Nobody has been credited for it — find the charge in Stripe and decide whose it is."
+			},
+			"chargeMismatchedRefunded": {
+				"title": "Charge refunded: amount did not match",
+				"explanation": "A charge arrived for a different amount than the order it names, so Tavli refunded it rather than keep money it could not account for. The order is still unpaid."
+			},
+			"disputeLost": {
+				"title": "Dispute lost",
+				"explanation": "A card network decided a dispute against the restaurant. The money and the dispute fee are gone; the restaurant needs telling."
+			},
+			"dashboardRefund": {
+				"title": "Refund issued outside Tavli",
+				"explanation": "A refund was made from the Stripe Dashboard rather than through Tavli, so the order and the payout it feeds no longer agree with Stripe."
+			},
+			"payoutFailed": {
+				"title": "Payout failed",
+				"explanation": "Stripe could not pay the restaurant. Their bank details or account status need fixing before the money can move."
+			},
+			"accountClosed": {
+				"title": "Connected account closed",
+				"explanation": "The restaurant's Stripe account was closed or rejected, so it cannot take payments. Diners will fail at checkout until it is restored."
+			},
+			"restaurantMissingContactEmail": {
+				"title": "Restaurant has no contact email",
+				"explanation": "This restaurant has no contact email, so Tavli cannot reach its operator about anything — receipts, disputes, or this alert."
+			}
 		}
 	}
 }
