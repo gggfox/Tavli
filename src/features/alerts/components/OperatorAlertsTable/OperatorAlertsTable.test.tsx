@@ -212,6 +212,20 @@ describe("OperatorAlertsTable", () => {
 		expect(screen.queryByText("alerts.kind.chargeUnmatched.title")).toBeNull();
 	});
 
+	it("finds a row by the Stripe reference an operator pasted in", () => {
+		mockRows([OPEN_SEVERE, OPEN_WARNING_NO_RESTAURANT]);
+		render(<OperatorAlertsTable />);
+
+		// The id is on no accessor column, so this only works because the page
+		// supplies its own global filter.
+		fireEvent.change(screen.getByPlaceholderText("alerts.page.searchPlaceholder"), {
+			target: { value: "ch_1" },
+		});
+
+		expect(screen.getByText("alerts.kind.chargeUnmatched.title")).toBeTruthy();
+		expect(screen.queryByText("alerts.kind.paymentStuck.title")).toBeNull();
+	});
+
 	it("says nothing needs a human when there are no alerts", () => {
 		mockRows([]);
 		render(<OperatorAlertsTable />);

@@ -55,7 +55,26 @@ export type RaiseOperatorAlertArgs = {
 	/** Defaults to the kind's `OPERATOR_ALERT_EXPLANATION_KEY`. */
 	messageKey?: string;
 	messageParams?: OperatorAlertMessageParams;
-	/** Omit for "every occurrence is its own alert". */
+	/**
+	 * A stable name for *the problem*, not for this occurrence of it — e.g.
+	 * `` `payment_stuck:${paymentId}` ``, `` `dispute_lost:${stripeDisputeId}` ``.
+	 *
+	 * **Any caller that can fire more than once for the same problem MUST pass
+	 * one.** That is every sweep (a cron re-running every five minutes sees the
+	 * same stuck payment each time), every webhook handler (Stripe redelivers,
+	 * for days, until it gets a 2xx it believes), and every retried action.
+	 *
+	 * This is not a tidiness preference, it is the only thing bounding the
+	 * table. `operatorAlerts.list` reads the OPEN group **unbounded** on purpose
+	 * — an open alert is work somebody still owes, and truncating would hide the
+	 * oldest, most-ignored one. So a keyless sweep raising one row per run walks
+	 * that query straight into Convex's 32k-document read cap within days, and
+	 * the page stops loading *for every alert*, including the one that matters.
+	 * A key costs nothing and caps the problem at one open row.
+	 *
+	 * Omit it only when each occurrence genuinely is its own alert — a
+	 * user-triggered event that cannot repeat for the same object.
+	 */
 	dedupeKey?: string;
 };
 

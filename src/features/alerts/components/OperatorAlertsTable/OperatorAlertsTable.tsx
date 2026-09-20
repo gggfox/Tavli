@@ -31,6 +31,7 @@ import { ALERT_FILTER_ALL, ALERT_FILTER_NO_RESTAURANT, SEVERITY_LABEL_KEY } from
 import {
 	ALERT_RESTAURANT_COLUMN_ID,
 	ALERT_SEVERITY_COLUMN_ID,
+	alertSearchFilter,
 	buildColumns,
 	type OperatorAlertRow,
 } from "./Columns";
@@ -43,10 +44,23 @@ export function OperatorAlertsTable() {
 
 	const columns = useMemo(() => buildColumns(t), [t]);
 
+	/**
+	 * Free-text search over the ids as well as the words.
+	 *
+	 * The default global filter only sees accessor values, and none of this
+	 * table's accessors carry the ids: an operator arriving from Stripe with a
+	 * `ch_…` in their clipboard, or from a colleague with an order id, is
+	 * pasting the one string they actually have. The payments dashboard already
+	 * searches ids as free text; this mirrors it, and adds the translated title
+	 * and explanation so searching "payout" works too.
+	 */
+	const globalFilterFn = useMemo(() => alertSearchFilter(t), [t]);
+
 	const tableState = useAdminTable<OperatorAlertRow>({
 		queryOptions: convexQuery(api.operatorAlerts.list, {}),
 		columns,
 		getRowId: (row) => row._id,
+		globalFilterFn,
 	});
 
 	const acknowledge = useMutation({

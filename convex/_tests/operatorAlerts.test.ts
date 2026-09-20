@@ -17,6 +17,8 @@ import {
 	OPERATOR_ALERT_SEVERITY,
 	OPERATOR_ALERT_STATUS,
 	TABLE,
+	USER_ROLES,
+	type UserRole,
 } from "../constants";
 import { raiseOperatorAlert } from "../_util/operatorAlerts";
 import { ACKNOWLEDGED_ALERTS_LIMIT } from "../operatorAlerts";
@@ -64,7 +66,7 @@ async function seedUserRole(
 	t: T,
 	args: {
 		userId: string;
-		roles: ("admin" | "owner" | "manager" | "customer" | "employee")[];
+		roles: UserRole[];
 		email?: string;
 		firstName?: string;
 		paternalLastname?: string;
@@ -153,7 +155,7 @@ describe("raiseOperatorAlert", () => {
 
 	it("raises a fresh alert when the same problem recurs after an acknowledgement", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
 		const first = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
@@ -199,10 +201,18 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("schedules exactly one email per platform admin, in their own language", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
-		await seedUserRole(t, { userId: "admin-2", roles: ["admin"], email: "sre@tavliai.com" });
+		await seedUserRole(t, {
+			userId: "admin-1",
+			roles: [USER_ROLES.ADMIN],
+			email: "ops@tavliai.com",
+		});
+		await seedUserRole(t, {
+			userId: "admin-2",
+			roles: [USER_ROLES.ADMIN],
+			email: "sre@tavliai.com",
+		});
 		// Reachable by nobody: no email address on the role row.
-		await seedUserRole(t, { userId: "admin-3", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-3", roles: [USER_ROLES.ADMIN] });
 		await t.run(async (ctx) => {
 			await ctx.db.insert(TABLE.USER_SETTINGS, { userId: "admin-2", language: "es" });
 		});
@@ -233,10 +243,14 @@ describe("severe alerts reach the platform admins", () => {
 	 */
 	it("never emails an org-level owner, or a restaurant manager", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "owner-1", roles: ["owner"], email: "founder@lacocina.mx" });
+		await seedUserRole(t, {
+			userId: "owner-1",
+			roles: [USER_ROLES.OWNER],
+			email: "founder@lacocina.mx",
+		});
 		await seedUserRole(t, {
 			userId: "manager-1",
-			roles: ["manager"],
+			roles: [USER_ROLES.MANAGER],
 			email: "gerente@lacocina.mx",
 		});
 
@@ -249,8 +263,16 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("emails one person once, however many org role rows they hold", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
+		await seedUserRole(t, {
+			userId: "admin-1",
+			roles: [USER_ROLES.ADMIN],
+			email: "ops@tavliai.com",
+		});
+		await seedUserRole(t, {
+			userId: "admin-1",
+			roles: [USER_ROLES.ADMIN],
+			email: "ops@tavliai.com",
+		});
 
 		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.ACCOUNT_CLOSED,
@@ -262,7 +284,11 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("emails nobody for an alert below severe", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
+		await seedUserRole(t, {
+			userId: "admin-1",
+			roles: [USER_ROLES.ADMIN],
+			email: "ops@tavliai.com",
+		});
 
 		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
@@ -273,7 +299,11 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("emails nobody a second time when a deduped severe alert is re-raised", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
+		await seedUserRole(t, {
+			userId: "admin-1",
+			roles: [USER_ROLES.ADMIN],
+			email: "ops@tavliai.com",
+		});
 
 		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.CHARGE_UNMATCHED,
@@ -327,7 +357,7 @@ describe("the severe-alert email", () => {
 describe("the admin alerts list", () => {
 	it("puts open alerts first, newest first inside each group", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
 		const older = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
@@ -350,7 +380,7 @@ describe("the admin alerts list", () => {
 		const t = convexTest(schema, modules);
 		await seedUserRole(t, {
 			userId: "user_2abcCLERKSUBJECT",
-			roles: ["admin"],
+			roles: [USER_ROLES.ADMIN],
 			email: "ada@tavliai.com",
 			firstName: "Ada",
 			paternalLastname: "Lovelace",
@@ -369,7 +399,7 @@ describe("the admin alerts list", () => {
 
 	it("caps the acknowledged history and keeps the newest of it", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
 		// Inserted directly: this is about the read limit, not about the
@@ -403,7 +433,7 @@ describe("the admin alerts list", () => {
 
 	it("records who acknowledged an alert and when", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
 		const alertId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
@@ -424,8 +454,8 @@ describe("the admin alerts list", () => {
 
 	it("treats a second acknowledgement as a no-op, keeping the first actor", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "admin-1", roles: ["admin"] });
-		await seedUserRole(t, { userId: "admin-2", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
+		await seedUserRole(t, { userId: "admin-2", roles: [USER_ROLES.ADMIN] });
 
 		const alertId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
@@ -443,7 +473,7 @@ describe("the admin alerts list", () => {
 
 	it("refuses to list or acknowledge for anyone who is not a platform admin", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "manager-1", roles: ["manager"] });
+		await seedUserRole(t, { userId: "manager-1", roles: [USER_ROLES.MANAGER] });
 		const manager = t.withIdentity({ subject: "manager-1" });
 
 		const alertId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {

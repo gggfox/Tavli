@@ -545,7 +545,21 @@ a platform admin reads it on **`/admin/alerts`** — open alerts first, newest
 first, each with an Acknowledge button that records who cleared it and when.
 An alert carrying a `dedupeKey` is raised once while it is open, so a Stripe
 event redelivered fifty times is one row, and acknowledging that row lets the
-next occurrence through as a fresh alert. A **severe** alert (an unmatched
+next occurrence through as a fresh alert.
+
+**Any call site that can fire more than once for the same problem must pass a
+`dedupeKey` naming that problem** — `payment_stuck:<paymentId>`,
+`payout_failed:<payoutId>`, and so on. That covers every cron sweep (which sees
+the same stuck payment on each run), every webhook handler (Stripe redelivers
+for days until it gets a 2xx it believes) and every retried action. The reason
+is capacity, not neatness: the page reads the OPEN group unbounded on purpose,
+because an open alert is work somebody still owes and truncating would hide the
+one that has been ignored longest. A keyless sweep therefore adds a row per run
+and walks that read into Convex's 32,000-document limit within days — at which
+point `/admin/alerts` stops loading for _every_ alert, including the one worth
+reading. Only the acknowledged history is capped (newest 200).
+
+A **severe** alert (an unmatched
 charge, a failed payout, a closed connected account) additionally emails every
 platform admin — users holding the org-level `admin` role, and nobody else.
 Never the org-level `owner` role: that is the client proprietor of a restaurant

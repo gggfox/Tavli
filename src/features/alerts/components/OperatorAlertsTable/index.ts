@@ -1,2 +1,2 @@
 export { OperatorAlertsTable } from "./OperatorAlertsTable";
-export { buildColumns, type OperatorAlertRow } from "./Columns";
+export { alertSearchFilter, buildColumns, type OperatorAlertRow } from "./Columns";

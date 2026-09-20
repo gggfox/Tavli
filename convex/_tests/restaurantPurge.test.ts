@@ -557,7 +557,7 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 
 		// An operator alert about this restaurant (TAVLI-109). Platform-wide
 		// alerts carry no `restaurantId` and survive any purge; this one does not.
-		await ctx.db.insert("operatorAlerts", {
+		await ctx.db.insert(TABLE.OPERATOR_ALERTS, {
 			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
 			severity: OPERATOR_ALERT_SEVERITY.WARNING,
 			status: OPERATOR_ALERT_STATUS.OPEN,

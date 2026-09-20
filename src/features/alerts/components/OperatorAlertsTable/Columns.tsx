@@ -2,7 +2,7 @@ import { CopyableId } from "@/global/components";
 import { AlertsKeys } from "@/global/i18n";
 import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
 import { Link } from "@tanstack/react-router";
-import { createColumnHelper } from "@tanstack/react-table";
+import { createColumnHelper, type FilterFn } from "@tanstack/react-table";
 import type { Doc } from "convex/_generated/dataModel";
 import {
 	OPERATOR_ALERT_STATUS,
@@ -29,6 +29,38 @@ const columnHelper = createColumnHelper<OperatorAlertRow>();
 /** Column ids the page's own selects drive through react-table column filters. */
 export const ALERT_SEVERITY_COLUMN_ID = "severity";
 export const ALERT_RESTAURANT_COLUMN_ID = "restaurantName";
+
+/**
+ * What the search box matches: the words an operator can read, plus every id
+ * they might have pasted in.
+ *
+ * The default global filter only sees accessor values, and none of this table's
+ * accessors carry an id — so without this, an operator arriving from Stripe
+ * with a `ch_…` in their clipboard searches for the one string they actually
+ * have and gets nothing. Mirrors the free-text id search on the payments
+ * dashboard.
+ */
+export function alertSearchFilter(t: TFunction): FilterFn<OperatorAlertRow> {
+	return (row, _columnId, filterValue) => {
+		const query = String(filterValue ?? "")
+			.toLowerCase()
+			.trim();
+		if (!query) return true;
+
+		const alert = row.original;
+		const haystack: (string | undefined | null)[] = [
+			t(OPERATOR_ALERT_TITLE_KEY[alert.kind]),
+			t(alert.messageKey, alert.messageParams ?? {}),
+			alert.restaurantName,
+			alert.stripeObjectId,
+			alert.orderId,
+			alert.paymentId,
+		];
+		return haystack.some(
+			(value) => typeof value === "string" && value.toLowerCase().includes(query)
+		);
+	};
+}
 
 /**
  * The columns are built per render rather than defined once at module scope
