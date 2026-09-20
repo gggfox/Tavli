@@ -2,14 +2,12 @@ import type { OrderDashboardStatusFilterValue } from "@/features";
 import { getStatusToneStyle, StatusBadge, Surface } from "@/global/components";
 import { OrdersKeys, useLocalizedName } from "@/global/i18n";
 import { getRelativeTime } from "@/global/utils/relativeTime";
-import type { Id } from "convex/_generated/dataModel";
-import { ChefHat, Clock, Replace, XCircle } from "lucide-react";
+import { ChefHat, Clock, XCircle } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OrderItemRow } from "./OrderItemRow";
 import { STATION_CONFIG } from "./stationConfig";
 import type { StationTicket } from "./stationTickets";
-import type { SubstitutionTarget } from "./SubstitutionProposalDialog";
 import { TableBadge } from "./TableBadge";
 import {
 	formatOrderDate,
@@ -24,15 +22,9 @@ import {
 interface StationTicketCardProps {
 	readonly ticket: StationTicket;
 	readonly now: number;
-	/** Item id whose 86 is in flight, if any. Disables the confirm button. */
+	/** Item id whose removal is in flight, if any. Disables the confirm button. */
 	readonly cancelItemPendingId: string | null;
 	readonly cancelItemError: string | null;
-	/**
-	 * Pending substitution proposal ids keyed by order-item id (ADR 008). A line
-	 * with a pending proposal shows a badge + withdraw action instead of the
-	 * propose button.
-	 */
-	readonly pendingProposalsByItem?: ReadonlyMap<string, Id<"substitutionProposals">>;
 	readonly onSelectFullOrder: (order: DashboardOrder) => void;
 	readonly onUpdateStatus: (args: {
 		orderId: DashboardOrder["_id"];
@@ -43,8 +35,6 @@ interface StationTicketCardProps {
 		station: StationTicket["station"];
 	}) => void;
 	readonly onCancelItem: (orderItemId: DashboardOrderItem["_id"]) => void;
-	readonly onProposeSubstitution?: (target: SubstitutionTarget) => void;
-	readonly onCancelProposal?: (proposalId: Id<"substitutionProposals">) => void;
 }
 
 /**
@@ -58,20 +48,14 @@ export function StationTicketCard({
 	now,
 	cancelItemPendingId,
 	cancelItemError,
-	pendingProposalsByItem,
 	onSelectFullOrder,
 	onUpdateStatus,
 	onMarkStationReady,
 	onCancelItem,
-	onProposeSubstitution,
-	onCancelProposal,
 }: Readonly<StationTicketCardProps>) {
 	const { t, i18n } = useTranslation();
 	const [cancelItemConfirm, setCancelItemConfirm] = useState<string | null>(null);
 	const { order, station, items } = ticket;
-	// Substitutions only exist for PAID lines still in the kitchen (ADR 008).
-	const canSubstitute =
-		order.paymentState === "paid" && (order.status === "submitted" || order.status === "preparing");
 	const config = STATUS_CONFIG[order.status as OrderDashboardStatusFilterValue];
 	const stationConfig = STATION_CONFIG[station];
 	const StationIcon = stationConfig.icon;
@@ -142,27 +126,12 @@ export function StationTicketCard({
 						isConfirming={cancelItemConfirm === item._id}
 						isPending={cancelItemPendingId === item._id}
 						errorMessage={cancelItemConfirm === item._id ? cancelItemError : null}
-						pendingProposalId={pendingProposalsByItem?.get(item._id) ?? null}
 						onRequestCancel={() => setCancelItemConfirm(item._id)}
 						onDismissCancel={() => setCancelItemConfirm(null)}
 						onConfirmCancel={() => {
 							onCancelItem(item._id);
 							setCancelItemConfirm(null);
 						}}
-						onRequestSubstitute={
-							canSubstitute && onProposeSubstitution
-								? () =>
-										onProposeSubstitution({
-											orderId: order._id,
-											orderItemId: item._id,
-											menuItemId: item.menuItemId,
-											menuItemName: item.menuItemName,
-											quantity: item.quantity,
-											lineTotal: item.lineTotal,
-										})
-								: undefined
-						}
-						onCancelProposal={onCancelProposal}
 					/>
 				))}
 			</div>
@@ -204,26 +173,21 @@ export function StationTicketCard({
 
 interface TicketItemRowProps {
 	readonly item: DashboardOrderItem;
-	/** Paid orders get the refund-mentioning 86 copy and the substitute action. */
+	/** Paid orders get the refund-mentioning removal copy. */
 	readonly isPaidOrder: boolean;
 	readonly isConfirming: boolean;
 	readonly isPending: boolean;
 	readonly errorMessage: string | null;
-	/** Pending substitution proposal for this line, if any (ADR 008). */
-	readonly pendingProposalId: Id<"substitutionProposals"> | null;
 	readonly onRequestCancel: () => void;
 	readonly onDismissCancel: () => void;
 	readonly onConfirmCancel: () => void;
-	/** Present only when the line is eligible for a substitution proposal. */
-	readonly onRequestSubstitute?: () => void;
-	readonly onCancelProposal?: (proposalId: Id<"substitutionProposals">) => void;
 }
 
 /**
- * An item on a station ticket, with the 86 and substitution affordances. The
- * row itself renders through the shared `OrderItemRow` with no station filter
- * — a ticket only ever holds one station's items, so there is nothing to
- * highlight against.
+ * An item on a station ticket, with the line-removal affordance. The row itself
+ * renders through the shared `OrderItemRow` with no station filter — a ticket
+ * only ever holds one station's items, so there is nothing to highlight
+ * against.
  */
 function TicketItemRow({
 	item,
@@ -231,12 +195,9 @@ function TicketItemRow({
 	isConfirming,
 	isPending,
 	errorMessage,
-	pendingProposalId,
 	onRequestCancel,
 	onDismissCancel,
 	onConfirmCancel,
-	onRequestSubstitute,
-	onCancelProposal,
 }: Readonly<TicketItemRowProps>) {
 	const { t } = useTranslation();
 	const itemName = useLocalizedName(item.menuItemName, item.menuItemTranslations);
@@ -278,49 +239,19 @@ function TicketItemRow({
 		);
 	}
 
-	const hasPendingProposal = pendingProposalId !== null;
-
 	return (
-		<div className="space-y-1">
-			<div className="flex items-start gap-2">
-				<div className="flex-1 min-w-0">
-					<OrderItemRow item={item} />
-				</div>
-				{!hasPendingProposal && onRequestSubstitute && item.cancelledAt === undefined && (
-					<button
-						onClick={onRequestSubstitute}
-						aria-label={t(OrdersKeys.ARIA_PROPOSE_SUBSTITUTION, { name: itemName })}
-						className="flex items-center gap-1 px-2 py-0.5 shrink-0 rounded text-[11px] font-medium border border-border text-foreground"
-					>
-						<Replace size={11} />
-						{t(OrdersKeys.SUB_ACTION_PROPOSE)}
-					</button>
-				)}
-				<button
-					onClick={onRequestCancel}
-					aria-label={t(OrdersKeys.ARIA_CANCEL_ITEM, { name: itemName })}
-					className="flex items-center gap-1 px-2 py-0.5 shrink-0 rounded text-[11px] font-medium border border-border text-destructive"
-				>
-					<XCircle size={11} />
-					{t(OrdersKeys.ACTION_CANCEL_ITEM)}
-				</button>
+		<div className="flex items-start gap-2">
+			<div className="flex-1 min-w-0">
+				<OrderItemRow item={item} />
 			</div>
-			{hasPendingProposal && (
-				<div className="flex items-center gap-2 pl-1">
-					<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wide bg-muted text-muted-foreground">
-						<Replace size={10} />
-						{t(OrdersKeys.SUB_PENDING_BADGE)}
-					</span>
-					{onCancelProposal && (
-						<button
-							onClick={() => onCancelProposal(pendingProposalId)}
-							className="text-[11px] font-medium underline text-muted-foreground"
-						>
-							{t(OrdersKeys.SUB_ACTION_CANCEL_PROPOSAL)}
-						</button>
-					)}
-				</div>
-			)}
+			<button
+				onClick={onRequestCancel}
+				aria-label={t(OrdersKeys.ARIA_CANCEL_ITEM, { name: itemName })}
+				className="flex items-center gap-1 px-2 py-0.5 shrink-0 rounded text-[11px] font-medium border border-border text-destructive"
+			>
+				<XCircle size={11} />
+				{t(OrdersKeys.ACTION_CANCEL_ITEM)}
+			</button>
 		</div>
 	);
 }

@@ -1256,7 +1256,7 @@ describe("stripe actions", () => {
 			expect(order?.paidByUserId).toBe("diner-stripe");
 			expect(order?.dailyOrderNumber).toBe(1);
 			expect(payment?.status).toBe("succeeded");
-			// Needed for one-tap tips / substitution deltas later.
+			// Needed for one-tap tips later.
 			expect(payment?.stripePaymentMethodId).toBe("pm_saved_card");
 		});
 

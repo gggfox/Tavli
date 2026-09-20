@@ -39,7 +39,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	}
 
 	const currentIndex = STATUS_ORDER.indexOf(orderData.status);
-	// 86'd lines are still listed below, but the diner is neither charged for
+	// Removed lines are still listed below, but the diner is neither charged for
 	// them nor waiting on them, so they do not count toward the order.
 	const liveItemCount = orderData.items.filter((item) => item.cancelledAt === undefined).length;
 
@@ -51,6 +51,11 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	const chargedSubtotal = orderData.paidPayment?.subtotalAmount ?? orderData.totalAmount;
 	const chargedFee = orderData.paidPayment?.feeAmount ?? 0;
 	const chargedTotal = orderData.paidPayment?.amount ?? chargedSubtotal + chargedFee;
+	// What has already come back for lines the restaurant could not make
+	// (ADR 013). The total above stays the amount PAID; the refund is its own
+	// line, so the diner can reconcile both against their card statement rather
+	// than seeing a total silently shrink.
+	const refundedTotal = orderData.items.reduce((sum, item) => sum + (item.refundAmount ?? 0), 0);
 
 	return (
 		<div className="flex flex-col h-full p-4 space-y-8">
@@ -113,9 +118,10 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 					{t(OrderingKeys.ORDER_STATUS_ITEMS)}
 				</h3>
 				{orderData.items.map((item) =>
-					// The kitchen or bar ran out. The line stays visible so the diner
-					// can see what happened to something they ordered, but it is no
-					// longer part of what they owe.
+					// The kitchen or bar ran out and staff removed the line. It stays
+					// visible so the diner can see what happened to something they
+					// ordered — and, on a paid order, that the money came back
+					// (ADR 013). It is no longer part of what they owe.
 					item.cancelledAt !== undefined ? (
 						<div
 							key={item._id}
@@ -127,7 +133,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 							</span>
 							<span>
 								{item.refundedAt !== undefined
-									? t(OrderingKeys.RECEIPT_ITEM_REFUNDED)
+									? t(OrderingKeys.ORDER_ITEM_UNAVAILABLE_REFUNDED)
 									: t(OrderingKeys.ORDER_ITEM_UNAVAILABLE)}
 							</span>
 						</div>
@@ -157,6 +163,12 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 							<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
 							<span>${formatCents(chargedTotal)}</span>
 						</div>
+						{refundedTotal > 0 && (
+							<div className="flex justify-between text-sm text-muted-foreground">
+								<span>{t(OrderingKeys.ORDER_STATUS_REFUNDED_LINE)}</span>
+								<span>-${formatCents(refundedTotal)}</span>
+							</div>
+						)}
 					</>
 				)}
 			</div>

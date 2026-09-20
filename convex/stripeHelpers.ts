@@ -29,11 +29,7 @@ const paymentRefundStatusValidator = v.union(
 	v.literal(PAYMENT_REFUND_STATUS.FAILED)
 );
 
-const paymentKindValidator = v.union(
-	v.literal(PAYMENT_KIND.ORDER),
-	v.literal(PAYMENT_KIND.TIP),
-	v.literal(PAYMENT_KIND.SUBSTITUTION)
-);
+const paymentKindValidator = v.union(v.literal(PAYMENT_KIND.ORDER), v.literal(PAYMENT_KIND.TIP));
 
 const orderPaymentStateValidator = v.union(
 	v.literal(ORDER_PAYMENT_STATE.UNPAID),
@@ -247,7 +243,7 @@ export const createPayment = internalMutation({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		/** Absent on kind "tip" rows, which are session-scoped (`sessionId` only). */
 		orderId: v.optional(v.id(TABLE.ORDERS)),
-		/** Set on kind "substitution" rows (the visit grouping) and kind "tip" rows; order rows carry `orderId` only. */
+		/** Set on kind "tip" rows (the visit grouping); order rows carry `orderId` only. */
 		sessionId: v.optional(v.id(TABLE.SESSIONS)),
 		amount: v.number(),
 		// ADR 008 breakdown: new-model rows satisfy amount === subtotalAmount +
@@ -259,8 +255,6 @@ export const createPayment = internalMutation({
 		gratuityAmount: v.optional(v.number()),
 		kind: v.optional(paymentKindValidator),
 		paidByUserId: v.optional(v.string()),
-		/** Set on kind "substitution" rows: the proposal whose delta this pays. */
-		substitutionProposalId: v.optional(v.id(TABLE.SUBSTITUTION_PROPOSALS)),
 		currency: v.string(),
 		status: paymentStatusValidator,
 		refundStatus: paymentRefundStatusValidator,

@@ -71,10 +71,7 @@ import {
 	resolvePrepStation,
 	selectedOptionValidator,
 } from "./orderHelpers";
-import {
-	cancelPendingProposalsForOrder,
-	executeOrderItemCancellation,
-} from "./orderItemCancellation";
+import { executeOrderItemCancellation } from "./orderItemCancellation";
 import { resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -966,18 +963,6 @@ export const updateStatus = mutation({
 		// A manager who calls this mutation directly leaves the order in
 		// `refund_requested`, which the orders tab surfaces as a pending refund.
 
-		// A cancelled order withdraws every pending substitution proposal on it —
-		// there is no line left for the diner to accept a replacement onto
-		// (TAVLI-71 Phase 3A). In-flight delta payments are retired in-app; the
-		// webhook race is closed by `confirmSubstitutionPayment`'s auto-refund.
-		if (args.newStatus === "cancelled") {
-			await cancelPendingProposalsForOrder(ctx, {
-				orderId: args.orderId,
-				actorUserId: userId,
-				reason: "order_cancelled",
-			});
-		}
-
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.ORDERS,
 			aggregateId: args.orderId,
@@ -1865,12 +1850,8 @@ export const cancelOrderItem = mutation({
 			paidPaymentId = paidPayment._id;
 		}
 
-		// The cancellation itself — stamps, totals, last-live-line fallout, and
-		// the scheduled refund — is shared with `substitutions.declineProposal`
-		// (the diner declining a substitution 86's the line the same way). Any
-		// pending substitution proposal on the line is auto-cancelled in there:
-		// the 86 is the stronger signal, so staff never have to withdraw the
-		// proposal first.
+		// The removal itself — stamps, totals, last-live-line fallout, and the
+		// scheduled refund — lives in `orderItemCancellation.ts`.
 		await executeOrderItemCancellation(ctx, {
 			item,
 			order,
@@ -1890,15 +1871,13 @@ export const cancelOrderItem = mutation({
  *
  * Money per row follows `convex/paymentMoneyHelpers.ts`:
  * - `subtotalCents` is the food the restaurant sold. For an order this is the
- *   live `orders.totalAmount` (so an 86'd line leaves it, and an accepted
- *   substitution's delta is already in it), not the charge-time snapshot on
- *   the payment; tips contribute zero.
+ *   live `orders.totalAmount` (so a line removed from the order leaves it), not
+ *   the charge-time snapshot on the payment; tips contribute zero.
  * - `serviceFeeCents` is the customer-borne Tavli fee actually charged — the
- *   order payment's `feeAmount` **plus** every accepted substitution's
- *   `feeOnDelta`, which rode its own PaymentIntent — and is `null` when there
- *   is no fee-split payment behind the row (cash orders report a known 0;
- *   pre-pivot tab-settled orders report `null`, the commission having never
- *   been recorded on our side).
+ *   order payment's `feeAmount` — and is `null` when there is no fee-split
+ *   payment behind the row (cash orders report a known 0; pre-pivot tab-settled
+ *   orders report `null`, the commission having never been recorded on our
+ *   side).
  * - `netToRestaurantCents` is what the restaurant keeps (subtotal + tip), also
  *   `null` for legacy rows for the same reason.
  *
@@ -1962,20 +1941,6 @@ export const getPaymentsLedgerByRestaurant = query({
 				.collect()
 		).filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED);
 
-		// Accepted substitutions charge their delta (+ fee on delta) on a separate
-		// PaymentIntent carrying the same `orderId`. The food value is already in
-		// `orders.totalAmount`; only the fee and the charge have to be folded back
-		// in here, or a substituted order reports full food against a submit-time
-		// fee that no longer covers it.
-		const substitutionPaymentsByOrder = new Map<string, Doc<"payments">[]>();
-		for (const payment of succeededPayments) {
-			if (payment.kind !== PAYMENT_KIND.SUBSTITUTION || !payment.orderId) continue;
-			const key = payment.orderId as string;
-			const bucket = substitutionPaymentsByOrder.get(key);
-			if (bucket) bucket.push(payment);
-			else substitutionPaymentsByOrder.set(key, [payment]);
-		}
-
 		const orderRows = ordersWithItems.map(({ order, items, tableNumber, payment }) => {
 			// Only a payment for THIS order may put money on this row — a tab
 			// payment is stamped on every order it covers (see the header note).
@@ -1984,23 +1949,10 @@ export const getPaymentsLedgerByRestaurant = query({
 				ownPayment && ownPayment.status === PAYMENT_STATUS.SUCCEEDED
 					? paymentMoneyBreakdown(ownPayment)
 					: null;
-			const substitutionMoney = (substitutionPaymentsByOrder.get(order._id as string) ?? []).map(
-				paymentMoneyBreakdown
-			);
-			const substitutionFeeCents = substitutionMoney.reduce(
-				(sum, m) => sum + (m.serviceFee ?? 0),
-				0
-			);
-			const substitutionChargedCents = substitutionMoney.reduce(
-				(sum, m) => sum + m.chargedToDiner,
-				0
-			);
 			// A cash order never went through Stripe, so no service fee was
 			// charged and the restaurant keeps the whole subtotal — a known zero,
 			// not the "we never recorded it" null of a pre-pivot tab payment.
-			const baseServiceFeeCents = isCashSettledOrder(order) ? 0 : (money?.serviceFee ?? null);
-			const serviceFeeCents =
-				baseServiceFeeCents === null ? null : baseServiceFeeCents + substitutionFeeCents;
+			const serviceFeeCents = isCashSettledOrder(order) ? 0 : (money?.serviceFee ?? null);
 			const tipCents = money?.tip ?? 0;
 			return {
 				id: order._id as string,
@@ -2012,7 +1964,7 @@ export const getPaymentsLedgerByRestaurant = query({
 				subtotalCents: order.totalAmount,
 				serviceFeeCents,
 				tipCents,
-				chargedCents: (money?.chargedToDiner ?? order.totalAmount) + substitutionChargedCents,
+				chargedCents: money?.chargedToDiner ?? order.totalAmount,
 				netToRestaurantCents: serviceFeeCents === null ? null : order.totalAmount + tipCents,
 				items: items.map((item) => ({
 					...item,

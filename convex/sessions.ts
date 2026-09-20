@@ -308,8 +308,8 @@ export const getVisitSummary = query({
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
 			.collect();
 
-		// The caller's own card spend: order totals already reflect 86'd lines
-		// and accepted substitutions, so summing them needs no per-line math.
+		// The caller's own card spend: order totals already reflect lines removed
+		// from an order, so summing them needs no per-line math.
 		const myPaidOrders = orders.filter(
 			(o) =>
 				o.paymentState === ORDER_PAYMENT_STATE.PAID &&
@@ -345,7 +345,7 @@ export const getVisitSummary = query({
 
 		// One-tap eligibility: the card persisted by the caller's own
 		// pay-at-submit charge in this session (mirrors
-		// `substitutions.getSavedCardForSessionMemberInternal`).
+		// `payments.getSavedCardForSessionMemberInternal`).
 		let hasSavedCard = false;
 		for (const order of orders) {
 			if (order.paidByUserId !== userId || !order.activePaymentId) continue;
