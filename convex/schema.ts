@@ -10,6 +10,7 @@ import {
 	MENU_AI_IMAGE_DRAFT_STATUS,
 	MENU_AI_IMAGE_JOB_STATUS,
 	MENU_ITEM_IMAGE_SOURCE,
+	NOTIFICATION_KINDS,
 	OPERATOR_ALERT_KINDS,
 	OPERATOR_ALERT_SEVERITY,
 	OPERATOR_ALERT_STATUS,
@@ -1818,6 +1819,41 @@ export default defineSchema({
 		// Idempotency probe. `dedupeKey` is optional, so rows without one sort
 		// under `undefined` and are never reached by a keyed lookup.
 		.index("by_dedupe_status", ["dedupeKey", "status"]),
+
+	// ============================================================================
+	// In-app notifications for restaurant managers (TAVLI-111)
+	// ============================================================================
+	// One row per **recipient**, not per event: a dispute on a restaurant with
+	// three managers writes three rows, because read state is personal and a
+	// shared row could only ever be "somebody read this".
+	//
+	// Fanned out at event time through `_util/notifications.notifyRestaurantManagers`
+	// and read by the bell in the staff header. Distinct from `operatorAlerts`
+	// (TAVLI-109) in every way that matters: that table is Tavli's own inbox
+	// across all restaurants, this one is one restaurant's own money news.
+	[TABLE.NOTIFICATIONS]: defineTable({
+		/** Clerk subject of the recipient. Always a User — see the fan-out helper. */
+		userId: v.string(),
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		kind: v.union(...NOTIFICATION_KINDS.map((kind) => v.literal(kind))),
+		/** i18n key, never prose — the bell and the email both translate it. */
+		messageKey: v.string(),
+		/** Interpolation values for `messageKey`. Amounts and ids, not sentences. */
+		messageParams: v.optional(v.record(v.string(), v.union(v.string(), v.number()))),
+		/** In-app path the row links to, e.g. `/admin/payments`. */
+		href: v.optional(v.string()),
+		/** Unset while unread. The absence IS the unread state — see `by_user_read`. */
+		readAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		// The unread count. `readAt` is optional, and an undefined field sorts
+		// first in a Convex index, so `.eq("readAt", undefined)` is an indexed
+		// read of exactly the unread rows rather than a scan of the user's list.
+		.index("by_user_read", ["userId", "readAt"])
+		// The bell's list: one user's notifications, newest first.
+		.index("by_user_created", ["userId", "createdAt"])
+		// The purge.
+		.index("by_restaurant", ["restaurantId"]),
 
 	// ============================================================================
 	// Unified Event Store
