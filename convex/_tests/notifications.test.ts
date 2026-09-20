@@ -1,12 +1,15 @@
 /**
  * In-app notifications for restaurant managers (TAVLI-111).
  *
- * What is pinned here is what a manager (or a manager's colleague) would notice
- * being wrong: the fan-out reaches every manager of the restaurant and nobody
- * else — not the employee account, not the server, not the manager of the
- * restaurant down the road — a manager hired afterwards does not inherit last
- * week's bad news, the badge counts only what is actually unread, and one
- * manager cannot read or clear another's inbox.
+ * What is pinned here is what a manager (or the owner whose bank account it is)
+ * would notice being wrong: the fan-out reaches everyone who may read the
+ * payments page and nobody else — including the two people who never get a
+ * membership row at all, the restaurant's own owner and the organization's owner,
+ * and excluding the employee account, the server, the manager of the restaurant
+ * down the road, and Tavli's own platform admins. A manager hired afterwards does
+ * not inherit last week's bad news, a redelivered Stripe event does not double
+ * anybody's bell, the badge counts only what is actually unread, and one
+ * recipient cannot read or clear another's inbox.
  */
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
@@ -17,6 +20,9 @@ import {
 	NOTIFICATION_KIND,
 	RESTAURANT_MEMBER_ROLE,
 	TABLE,
+	USER_ROLES,
+	type RestaurantMemberRole,
+	type UserRole,
 } from "../constants";
 import { listRestaurantManagerEmails, notifyRestaurantManagers } from "../_util/notifications";
 import { NOTIFICATIONS_LIST_LIMIT } from "../notifications";
@@ -33,11 +39,19 @@ const MANAGER_A = "user_manager_a";
 const MANAGER_B = "user_manager_b";
 const SERVER = "user_server";
 const OTHER_MANAGER = "user_manager_other_restaurant";
+const ORG_OWNER = "user_org_owner";
+const PLATFORM_ADMIN = "user_platform_admin";
 
-async function seedRestaurant(
-	t: T,
-	slug: string
-): Promise<{ restaurantId: Id<"restaurants">; organizationId: Id<"organizations"> }> {
+type SeededRestaurant = {
+	restaurantId: Id<"restaurants">;
+	organizationId: Id<"organizations">;
+	/** `restaurants.ownerId` — the person who ran Stripe onboarding for it. */
+	ownerId: string;
+};
+
+/** Owner subject is per-restaurant, so one restaurant's owner is not another's. */
+async function seedRestaurant(t: T, slug: string): Promise<SeededRestaurant> {
+	const ownerId = `user_owner_of_${slug}`;
 	return t.run(async (ctx) => {
 		const organizationId = await ctx.db.insert(TABLE.ORGANIZATIONS, {
 			name: `${slug} org`,
@@ -46,7 +60,7 @@ async function seedRestaurant(
 			updatedAt: NOW,
 		});
 		const restaurantId = await ctx.db.insert(TABLE.RESTAURANTS, {
-			ownerId: "user_owner",
+			ownerId,
 			organizationId,
 			name: slug,
 			slug,
@@ -55,7 +69,7 @@ async function seedRestaurant(
 			createdAt: NOW,
 			updatedAt: NOW,
 		});
-		return { restaurantId, organizationId };
+		return { restaurantId, organizationId, ownerId };
 	});
 }
 
@@ -66,7 +80,7 @@ async function seedMember(
 		organizationId: Id<"organizations">;
 		userId?: string;
 		employeeAccountId?: Id<"employeeAccounts">;
-		role?: "manager" | "employee";
+		role?: RestaurantMemberRole;
 		isActive?: boolean;
 	}
 ) {
@@ -85,10 +99,7 @@ async function seedMember(
 }
 
 /** An `EmployeeAccount`-backed membership: a manager with no Clerk identity. */
-async function seedEmployeeAccountManager(
-	t: T,
-	args: { restaurantId: Id<"restaurants">; organizationId: Id<"organizations"> }
-) {
+async function seedEmployeeAccountManager(t: T, args: SeededRestaurant) {
 	const employeeAccountId = await t.run(async (ctx) =>
 		ctx.db.insert(TABLE.EMPLOYEE_ACCOUNTS, {
 			restaurantId: args.restaurantId,
@@ -110,13 +121,20 @@ async function seedEmployeeAccountManager(
 
 async function seedUserRole(
 	t: T,
-	args: { userId: string; email?: string; language?: "en" | "es" }
+	args: {
+		userId: string;
+		roles?: UserRole[];
+		organizationId?: Id<"organizations">;
+		email?: string;
+		language?: "en" | "es";
+	}
 ) {
 	await t.run(async (ctx) => {
 		await ctx.db.insert(TABLE.USER_ROLES, {
 			userId: args.userId,
 			email: args.email,
-			roles: [RESTAURANT_MEMBER_ROLE.MANAGER],
+			roles: args.roles ?? [USER_ROLES.MANAGER],
+			organizationId: args.organizationId,
 			createdAt: NOW,
 			updatedAt: NOW,
 		});
@@ -136,8 +154,8 @@ async function allNotifications(t: T) {
 /**
  * The seed the ticket asks for: two managers with Clerk identities, one
  * employee-account-backed member, one non-manager member, and a manager of a
- * different restaurant. Exactly one of these five is not a recipient for a
- * reason of its own.
+ * different restaurant — plus the restaurant's own owner, who has no membership
+ * row and is a recipient anyway.
  */
 async function seedMixedStaff(t: T) {
 	const cocina = await seedRestaurant(t, "la-cocina");
@@ -153,7 +171,7 @@ async function seedMixedStaff(t: T) {
 }
 
 describe("notifyRestaurantManagers", () => {
-	it("writes one row per manager of the restaurant, and nobody else", async () => {
+	it("writes one row per manager-or-above of the restaurant, and nobody else", async () => {
 		const t = convexTest(schema, modules);
 		const { cocina } = await seedMixedStaff(t);
 
@@ -166,9 +184,11 @@ describe("notifyRestaurantManagers", () => {
 			})
 		);
 
-		expect(count).toBe(2);
+		expect(count).toBe(3);
 		const rows = await allNotifications(t);
-		expect(rows.map((row) => row.userId).sort()).toEqual([MANAGER_A, MANAGER_B]);
+		expect(rows.map((row) => row.userId).sort()).toEqual(
+			[cocina.ownerId, MANAGER_A, MANAGER_B].sort()
+		);
 		expect(rows[0]).toMatchObject({
 			restaurantId: cocina.restaurantId,
 			kind: NOTIFICATION_KIND.PAYOUT_FAILED,
@@ -180,10 +200,53 @@ describe("notifyRestaurantManagers", () => {
 		expect(rows.every((row) => row.readAt === undefined)).toBe(true);
 	});
 
-	it("gives an employee account nothing — it has no Clerk identity to read with", async () => {
+	it("reaches the two owners who never get a membership row, and no platform admin", async () => {
 		const t = convexTest(schema, modules);
-		const cocina = await seedRestaurant(t, "solo-pin");
-		await seedEmployeeAccountManager(t, cocina);
+		const cocina = await seedRestaurant(t, "la-cocina");
+		// The organization's proprietor: a `userRoles` row, no membership anywhere.
+		await seedUserRole(t, {
+			userId: ORG_OWNER,
+			roles: [USER_ROLES.OWNER],
+			organizationId: cocina.organizationId,
+		});
+		// Tavli's own operator, in the same organization's role table. Hears about
+		// this through the operator alert, never through a restaurant's bell.
+		await seedUserRole(t, {
+			userId: PLATFORM_ADMIN,
+			roles: [USER_ROLES.ADMIN],
+			organizationId: cocina.organizationId,
+		});
+		// An owner of a different organization must not be pulled in.
+		const otra = await seedRestaurant(t, "la-otra");
+		await seedUserRole(t, {
+			userId: "user_owner_of_other_org",
+			roles: [USER_ROLES.OWNER],
+			organizationId: otra.organizationId,
+		});
+
+		const count = await t.run(async (ctx) =>
+			notifyRestaurantManagers(ctx, {
+				restaurantId: cocina.restaurantId,
+				kind: NOTIFICATION_KIND.PAYOUT_FAILED,
+			})
+		);
+
+		expect(count).toBe(2);
+		const rows = await allNotifications(t);
+		// `restaurants.ownerId` first: it is the account that ran Stripe onboarding.
+		expect(rows.map((row) => row.userId)).toEqual([cocina.ownerId, ORG_OWNER]);
+	});
+
+	it("counts one person once, however many ways they qualify", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+		// The same person is the restaurant's owner, an org owner, and a manager.
+		await seedUserRole(t, {
+			userId: cocina.ownerId,
+			roles: [USER_ROLES.OWNER],
+			organizationId: cocina.organizationId,
+		});
+		await seedMember(t, { ...cocina, userId: cocina.ownerId });
 
 		const count = await t.run(async (ctx) =>
 			notifyRestaurantManagers(ctx, {
@@ -192,8 +255,25 @@ describe("notifyRestaurantManagers", () => {
 			})
 		);
 
-		expect(count).toBe(0);
-		expect(await allNotifications(t)).toHaveLength(0);
+		expect(count).toBe(1);
+		expect((await allNotifications(t)).map((row) => row.userId)).toEqual([cocina.ownerId]);
+	});
+
+	it("gives an employee account nothing — it has no Clerk identity to read with", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "solo-pin");
+		await seedEmployeeAccountManager(t, cocina);
+
+		await t.run(async (ctx) =>
+			notifyRestaurantManagers(ctx, {
+				restaurantId: cocina.restaurantId,
+				kind: NOTIFICATION_KIND.DISPUTE_OPENED,
+			})
+		);
+
+		// Only the owner. The PIN-backed manager is not reachable by definition.
+		const rows = await allNotifications(t);
+		expect(rows.map((row) => row.userId)).toEqual([cocina.ownerId]);
 	});
 
 	it("skips a manager who has been removed from the restaurant", async () => {
@@ -210,7 +290,7 @@ describe("notifyRestaurantManagers", () => {
 		);
 
 		const rows = await allNotifications(t);
-		expect(rows.map((row) => row.userId)).toEqual([MANAGER_A]);
+		expect(rows.map((row) => row.userId)).toEqual([cocina.ownerId, MANAGER_A]);
 	});
 
 	it("does not hand a manager hired afterwards the earlier notification", async () => {
@@ -229,7 +309,7 @@ describe("notifyRestaurantManagers", () => {
 		await seedMember(t, { ...cocina, userId: MANAGER_B });
 
 		const rows = await allNotifications(t);
-		expect(rows.map((row) => row.userId)).toEqual([MANAGER_A]);
+		expect(rows.map((row) => row.userId)).toEqual([cocina.ownerId, MANAGER_A]);
 
 		const asNewManager = t.withIdentity({ subject: MANAGER_B });
 		const [list] = await asNewManager.query(api.notifications.listMine, {});
@@ -239,7 +319,6 @@ describe("notifyRestaurantManagers", () => {
 	it("takes an explicit messageKey over the kind's default", async () => {
 		const t = convexTest(schema, modules);
 		const cocina = await seedRestaurant(t, "la-cocina");
-		await seedMember(t, { ...cocina, userId: MANAGER_A });
 
 		await t.run(async (ctx) =>
 			notifyRestaurantManagers(ctx, {
@@ -262,7 +341,91 @@ describe("notifyRestaurantManagers", () => {
 			kind: NOTIFICATION_KIND.DISPUTE_WON,
 		});
 
-		expect(count).toBe(2);
+		expect(count).toBe(3);
+	});
+});
+
+describe("dedupeKey", () => {
+	const PAYOUT_KEY = "payout_failed:po_123";
+
+	async function notifyOnce(t: T, restaurantId: Id<"restaurants">) {
+		return t.mutation(internal.notifications.notifyRestaurantManagersInternal, {
+			restaurantId,
+			kind: NOTIFICATION_KIND.PAYOUT_FAILED,
+			dedupeKey: PAYOUT_KEY,
+		});
+	}
+
+	it("leaves one row per person however often Stripe redelivers the event", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+		await seedMember(t, { ...cocina, userId: MANAGER_A });
+
+		expect(await notifyOnce(t, cocina.restaurantId)).toBe(2);
+		// Redelivery, and the retry of the redelivery.
+		expect(await notifyOnce(t, cocina.restaurantId)).toBe(0);
+		expect(await notifyOnce(t, cocina.restaurantId)).toBe(0);
+
+		const rows = await allNotifications(t);
+		expect(rows).toHaveLength(2);
+		expect(rows.every((row) => row.dedupeKey === PAYOUT_KEY)).toBe(true);
+	});
+
+	it("still reaches a manager added between two deliveries", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+
+		expect(await notifyOnce(t, cocina.restaurantId)).toBe(1);
+		await seedMember(t, { ...cocina, userId: MANAGER_A });
+
+		// The owner already has it unread; the new manager does not.
+		expect(await notifyOnce(t, cocina.restaurantId)).toBe(1);
+		expect((await allNotifications(t)).map((row) => row.userId)).toEqual([
+			cocina.ownerId,
+			MANAGER_A,
+		]);
+	});
+
+	it("lets the same problem through again once the recipient has read it", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+		await notifyOnce(t, cocina.restaurantId);
+
+		const asOwner = t.withIdentity({ subject: cocina.ownerId });
+		await asOwner.mutation(api.notifications.markAllRead, {});
+
+		// A genuine recurrence, not a redelivery: they cleared the last one.
+		expect(await notifyOnce(t, cocina.restaurantId)).toBe(1);
+		expect(await allNotifications(t)).toHaveLength(2);
+	});
+
+	it("does not deduplicate across different problems", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+
+		await notifyOnce(t, cocina.restaurantId);
+		const other = await t.mutation(internal.notifications.notifyRestaurantManagersInternal, {
+			restaurantId: cocina.restaurantId,
+			kind: NOTIFICATION_KIND.PAYOUT_FAILED,
+			dedupeKey: "payout_failed:po_999",
+		});
+
+		expect(other).toBe(1);
+		expect(await allNotifications(t)).toHaveLength(2);
+	});
+
+	it("without a key, every call is its own notification", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+
+		for (let i = 0; i < 3; i++) {
+			await t.mutation(internal.notifications.notifyRestaurantManagersInternal, {
+				restaurantId: cocina.restaurantId,
+				kind: NOTIFICATION_KIND.DISPUTE_OPENED,
+			});
+		}
+
+		expect(await allNotifications(t)).toHaveLength(3);
 	});
 });
 
@@ -270,6 +433,7 @@ describe("listRestaurantManagerEmails", () => {
 	it("returns the same recipients as the fan-out, with address and language", async () => {
 		const t = convexTest(schema, modules);
 		const { cocina } = await seedMixedStaff(t);
+		await seedUserRole(t, { userId: cocina.ownerId, email: "owner@cocina.mx" });
 		await seedUserRole(t, { userId: MANAGER_A, email: "a@cocina.mx", language: "es" });
 		await seedUserRole(t, { userId: MANAGER_B, email: "b@cocina.mx" });
 		await seedUserRole(t, { userId: SERVER, email: "server@cocina.mx" });
@@ -279,19 +443,20 @@ describe("listRestaurantManagerEmails", () => {
 		);
 
 		expect(recipients).toEqual([
+			{ userId: cocina.ownerId, email: "owner@cocina.mx", locale: "en" },
 			{ userId: MANAGER_A, email: "a@cocina.mx", locale: "es" },
 			// No userSettings row, so the default locale.
 			{ userId: MANAGER_B, email: "b@cocina.mx", locale: "en" },
 		]);
 	});
 
-	it("drops a manager with no email rather than failing the caller", async () => {
+	it("drops a recipient with no email rather than failing the caller", async () => {
 		const t = convexTest(schema, modules);
 		const cocina = await seedRestaurant(t, "la-cocina");
 		await seedMember(t, { ...cocina, userId: MANAGER_A });
 		await seedMember(t, { ...cocina, userId: MANAGER_B });
 		await seedUserRole(t, { userId: MANAGER_A, email: "a@cocina.mx" });
-		// MANAGER_B has no userRoles row at all.
+		// The owner and MANAGER_B have no userRoles row at all.
 
 		const recipients = await t.run(async (ctx) =>
 			listRestaurantManagerEmails(ctx, cocina.restaurantId)

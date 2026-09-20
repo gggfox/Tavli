@@ -1629,12 +1629,18 @@ export const NOTIFICATION_BODY_KEY: Record<NotificationKind, string> = {
 };
 
 /**
- * Per-restaurant roles that receive a notification: **manager and above**.
+ * Which **membership** roles receive a notification.
  *
- * `RESTAURANT_MEMBER_ROLE` has exactly two values, so today "manager or above"
- * is the single role `manager` — written as a set rather than an equality check
- * so a future role above manager joins the recipient list by being added here,
- * not by somebody remembering to widen a comparison.
+ * Only one of the three recipient sources — `_util/notifications.ts` also
+ * notifies the restaurant's own `ownerId` and every org-level `owner` of its
+ * organization, neither of which has a `restaurantMembers` row at all. Together
+ * those three are exactly `requireRestaurantManagerOrAbove` minus platform
+ * admins, so whoever may read the payments page is whoever gets told about it.
+ *
+ * `RESTAURANT_MEMBER_ROLE` has two values, so today this is the single role
+ * `manager` — written as a set rather than an equality check so a future role
+ * above manager joins the recipient list by being added here, not by somebody
+ * remembering to widen a comparison.
  *
  * `employee` is excluded on purpose: a dispute or a failed payout is the
  * restaurant's money, and a server has neither the authority nor the context to

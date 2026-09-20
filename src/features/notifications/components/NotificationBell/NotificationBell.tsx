@@ -63,6 +63,18 @@ export function NotificationBell() {
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
 
+	/**
+	 * "Now" for the whole panel, frozen when it opens.
+	 *
+	 * Not `Date.now()` inside the row: a render is not a clock tick, and reading
+	 * the wall clock during render makes every row's "2 min ago" depend on when
+	 * React happened to re-render it — so two rows created in the same second can
+	 * disagree, and the output is not a function of the props. One reading per
+	 * opening is also what the manager perceives: they read the list, they do not
+	 * watch it tick.
+	 */
+	const [openedAt, setOpenedAt] = useState(0);
+
 	const { data: unread } = useQuery({
 		...convexQuery(api.notifications.unreadCount, {}),
 		enabled: isAuthenticated,
@@ -126,6 +138,28 @@ export function NotificationBell() {
 		};
 	}, [isOpen, measure]);
 
+	/**
+	 * Keyboard focus follows the panel: into it when it opens, back to the bell
+	 * when it closes. Without this the panel is unreachable without a mouse — the
+	 * portal puts it at the end of `document.body`, so Tab from the bell walks the
+	 * whole page first — and dismissing it would drop focus onto `<body>`,
+	 * stranding a keyboard user at the top of the document.
+	 *
+	 * Guarded on a previous open so the bell is not stolen focus on first mount.
+	 */
+	const wasOpen = useRef(false);
+	useLayoutEffect(() => {
+		if (isOpen) {
+			wasOpen.current = true;
+			panelRef.current?.focus();
+			return;
+		}
+		if (wasOpen.current) {
+			wasOpen.current = false;
+			triggerRef.current?.focus();
+		}
+	}, [isOpen]);
+
 	const handleMarkRead = async (notificationId: Id<"notifications">) => {
 		setError(null);
 		try {
@@ -161,7 +195,11 @@ export function NotificationBell() {
 			<button
 				ref={triggerRef}
 				type="button"
-				onClick={() => setIsOpen((open) => !open)}
+				onClick={() => {
+					// Read the clock here, not in a row's render.
+					setOpenedAt(Date.now());
+					setIsOpen((open) => !open);
+				}}
 				aria-label={bellLabel}
 				aria-haspopup="dialog"
 				aria-expanded={isOpen}
@@ -186,6 +224,8 @@ export function NotificationBell() {
 						<div
 							ref={panelRef}
 							role="dialog"
+							// Focused programmatically when it opens; never in the Tab order.
+							tabIndex={-1}
 							aria-label={t(NotificationsKeys.BELL_PANEL_TITLE)}
 							className="flex max-h-[70vh] w-[min(100vw-2rem,21rem)] flex-col overflow-hidden rounded-lg text-foreground"
 							style={{
@@ -244,6 +284,7 @@ export function NotificationBell() {
 											<NotificationItem
 												key={row._id}
 												row={row}
+												now={openedAt}
 												onOpen={() => void handleMarkRead(row._id)}
 												onNavigate={close}
 											/>
@@ -267,10 +308,13 @@ export function NotificationBell() {
  */
 function NotificationItem({
 	row,
+	now,
 	onOpen,
 	onNavigate,
 }: Readonly<{
 	row: NotificationRow;
+	/** Frozen when the panel opened — never `Date.now()` during render. */
+	now: number;
 	onOpen: () => void;
 	onNavigate: () => void;
 }>) {
@@ -278,7 +322,7 @@ function NotificationItem({
 	const kind = row.kind as NotificationKind;
 	const Icon = NOTIFICATION_KIND_ICON[kind];
 	const isUnread = row.readAt == null;
-	const relative = getRelativeTime(row.createdAt, Date.now());
+	const relative = getRelativeTime(row.createdAt, now);
 
 	const body: ReactNode = (
 		<span className="flex items-start gap-2.5 text-left">

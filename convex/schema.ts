@@ -1842,6 +1842,14 @@ export default defineSchema({
 		messageParams: v.optional(v.record(v.string(), v.union(v.string(), v.number()))),
 		/** In-app path the row links to, e.g. `/admin/payments`. */
 		href: v.optional(v.string()),
+		/**
+		 * Caller-chosen identity for "this same news", e.g. `payout_failed:<id>`.
+		 * While a recipient has an UNREAD row with this key, notifying them again
+		 * is a no-op — so a Stripe webhook redelivered fifty times leaves one row
+		 * per person, and a genuine recurrence after they read it gets through.
+		 * Mandatory for Stripe-driven callers; see the fan-out helper.
+		 */
+		dedupeKey: v.optional(v.string()),
 		/** Unset while unread. The absence IS the unread state — see `by_user_read`. */
 		readAt: v.optional(v.number()),
 		createdAt: v.number(),
@@ -1852,6 +1860,11 @@ export default defineSchema({
 		.index("by_user_read", ["userId", "readAt"])
 		// The bell's list: one user's notifications, newest first.
 		.index("by_user_created", ["userId", "createdAt"])
+		// The fan-out's idempotency probe: does this person already have this news
+		// unread? Prefixed on all three so a replayed webhook costs one lookup per
+		// recipient, not a walk of their history. Rows without a `dedupeKey` sort
+		// under `undefined` and are never reached by a keyed probe.
+		.index("by_user_dedupe_read", ["userId", "dedupeKey", "readAt"])
 		// The purge.
 		.index("by_restaurant", ["restaurantId"]),
 

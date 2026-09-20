@@ -49,8 +49,10 @@ const kindValidator = v.union(...NOTIFICATION_KINDS.map((kind) => v.literal(kind
  * something is Tavli's own code's job, and a client-callable version would be a
  * way to write arbitrary rows into other people's bells.
  *
- * Returns the recipient count, so a caller can record "told 3 managers" (or
- * notice that it told nobody) in its own audit event or operator alert.
+ * Returns how many notifications were written, so a caller can record "told 3
+ * managers" (or notice that it told nobody) in its own audit event or operator
+ * alert. **A Stripe-driven caller must pass `dedupeKey`** — see the helper's
+ * JSDoc; a redelivered event otherwise adds a row per delivery per person.
  */
 export const notifyRestaurantManagersInternal = internalMutation({
 	args: {
@@ -59,6 +61,7 @@ export const notifyRestaurantManagersInternal = internalMutation({
 		messageKey: v.optional(v.string()),
 		messageParams: v.optional(v.record(v.string(), v.union(v.string(), v.number()))),
 		href: v.optional(v.string()),
+		dedupeKey: v.optional(v.string()),
 	},
 	handler: async (ctx, args): Promise<number> => notifyRestaurantManagers(ctx, args),
 });

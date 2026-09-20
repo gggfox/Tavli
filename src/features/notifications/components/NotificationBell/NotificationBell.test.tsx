@@ -263,6 +263,21 @@ describe("NotificationBell", () => {
 		expect(within(panel).queryByText("notifications.kind.payoutFailed.title")).toBeNull();
 	});
 
+	it("moves focus into the panel, and hands it back to the bell on close", () => {
+		mockBell({ unread: 1, rows: [PAYOUT_FAILED] });
+		render(<NotificationBell />);
+		const bell = screen.getByRole("button", { expanded: false });
+
+		const panel = openPanel();
+		// Without this the portalled panel sits at the end of <body>, so Tab from
+		// the bell would walk the whole page before reaching it.
+		expect(document.activeElement).toBe(panel);
+
+		fireEvent.keyDown(document, { key: "Escape" });
+		// And dismissing it must not strand focus on <body>.
+		expect(document.activeElement).toBe(bell);
+	});
+
 	it("closes on Escape, and on a click outside it", () => {
 		mockBell({ unread: 1, rows: [PAYOUT_FAILED] });
 		render(<NotificationBell />);
@@ -274,6 +289,27 @@ describe("NotificationBell", () => {
 		openPanel();
 		fireEvent.pointerDown(document.body);
 		expect(screen.queryByRole("dialog")).toBeNull();
+	});
+
+	it("dates every row against one clock reading, taken when the panel opened", () => {
+		// A clock that jumps a minute on every reading. A component that read it
+		// during a row's render would date the two rows from different moments; one
+		// that reads it once, on open, cannot.
+		let ticks = 0;
+		const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => NOW + ticks++ * 60_000);
+		mockBell({ unread: 1, rows: [PAYOUT_FAILED, DISPUTE_WON_READ] });
+		render(<NotificationBell />);
+
+		const panel = openPanel();
+
+		// The two rows were created 60s apart, so against one shared reading their
+		// ages differ by exactly one minute. Per-row readings would drift them apart.
+		const ages = within(panel)
+			.getAllByText(/^La Cocina · time\.relative\.minAgo \d+$/)
+			.map((node) => Number(node.textContent!.split(" ").at(-1)));
+		expect(ages).toHaveLength(2);
+		expect(ages[1] - ages[0]).toBe(1);
+		nowSpy.mockRestore();
 	});
 
 	it("renders no bell at all for a visitor who is not signed in", () => {
