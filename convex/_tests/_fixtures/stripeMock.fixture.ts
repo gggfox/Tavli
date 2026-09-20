@@ -28,11 +28,16 @@
  * not shared *between* suites — no cross-file bleed. Within a suite the usual
  * `vi.clearAllMocks()` in `beforeEach` still resets them.
  *
- * This file lives under `convex/_tests/_fixtures/` on purpose. It is picked up
- * by `import.meta.glob("../**\/*.ts")` like every other file under `convex/`,
- * but it defines no Convex function, and Convex never registers a path segment
- * starting with `_` as a function module. Its name does not match vitest's
- * `*.test.ts` include either, so it is not collected as a suite.
+ * The `.fixture.ts` suffix is load-bearing, not decoration. A leading `_` on a
+ * directory does NOT keep Convex out: `convex/_tests/helpers/reservationsFlag.ts`
+ * is bundled and pushed like any other module. What Convex's bundler skips is a
+ * file whose basename holds more than one dot -- which is exactly why
+ * `*.test.ts` files are never pushed. Named `stripeMock.ts`, this file was
+ * bundled, and `npx convex codegen` failed analysing it with "Vitest failed to
+ * access its internal state", because importing `vitest` outside the vitest
+ * runtime throws. The second dot puts it on the same footing as the suites
+ * that import it. Vitest, for its part, only collects `*.test.ts`, so it does
+ * not try to run this file as an empty suite.
  */
 import { vi } from "vitest";
 

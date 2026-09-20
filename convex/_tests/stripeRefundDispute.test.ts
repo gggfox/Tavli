@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { mockStripeClient } from "./_fixtures/stripeMock";
+import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 import { computeDisputeFacts, computeRefundFacts } from "../stripeWebhookHelpers";
 
 const modules = import.meta.glob("../**/*.ts");
 
-vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock.fixture")).stripeModuleMock());
 
 async function seedRestaurant(t: ReturnType<typeof convexTest>): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;

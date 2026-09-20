@@ -4,11 +4,11 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
-import { mockStripeClient } from "./_fixtures/stripeMock";
+import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 
 const modules = import.meta.glob("../**/*.ts");
 
-vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock.fixture")).stripeModuleMock());
 
 async function seedOrganization(t: ReturnType<typeof convexTest>) {
 	let organizationId: Id<"organizations">;

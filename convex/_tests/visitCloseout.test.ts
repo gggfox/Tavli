@@ -13,11 +13,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { mockStripeClient } from "./_fixtures/stripeMock";
+import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 
 const modules = import.meta.glob("../**/*.ts");
 
-vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock.fixture")).stripeModuleMock());
 
 const DINER_A = "diner-a-closeout";
 const DINER_B = "diner-b-closeout";
