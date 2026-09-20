@@ -382,21 +382,20 @@ structurally.** The charge is fee-inclusive (`amount = subtotal + 12%`, no tip
 on it), and refund math is computed in-house, per line
 (`computeLineRefundAmount`):
 
-- 86'ing one paid line refunds `lineTotal + round(lineTotal × 12%)`, clamped to
-  the payment's remaining balance.
-- 86'ing the order's **last live line** refunds the payment's **entire
-  remaining balance**, so however the per-line `round()`s fell, a fully-86'd
-  order's refunds sum to exactly `payment.amount` — zero residue by
-  construction.
-- **Substituted lines span two payments** (TAVLI-71 Phase 3A): the accepted
-  substitution's delta (+ 12% fee on the delta) lives on its own
-  `kind: "substitution"` payment. 86'ing that line issues **two refunds** —
-  the substitution payment's full remaining balance (idempotency key
-  `refund:<subPaymentId>:<orderItemId>`), plus the original line share
-  (`lineTotal - delta` + its fee share) from the order payment
-  (`refund:<orderPaymentId>:<orderItemId>`). Cumulative refunds never exceed
-  either payment's captured amount, and the last-live-line sweep clears each
-  payment's remainder independently.
+- Removing one paid line refunds `lineTotal + round(lineTotal × 12%)`, clamped
+  to the payment's remaining balance, keyed
+  `refund:<orderPaymentId>:<orderItemId>`.
+- Removing the order's **last live line** refunds the payment's **entire
+  remaining balance**, so however the per-line `round()`s fell, the refunds of
+  an order emptied line by line sum to exactly `payment.amount` — zero residue
+  by construction.
+- A whole-order cancel refunds the same payment's entire remaining balance under
+  the distinct key `refund:<orderPaymentId>:<orderId>`, so a whole-order cancel
+  after a failed per-line attempt is not replayed at Stripe as a no-op.
+
+Every refund on a post-pivot order concerns exactly **one** charge: an order has
+one pay-at-submit payment, and a dish that turns out to be unavailable is
+refunded, never re-charged at a different price (ADR 013).
 
 > [!CAUTION]
 > **A refund issued from the Stripe Dashboard does NOT reverse the transfer.**
