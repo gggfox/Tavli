@@ -243,6 +243,22 @@ tips, and audit references always point at the `RestaurantMember` row,
 regardless of which kind backs it. Org-level roles (`owner`, `admin`)
 live on `userRoles` instead. See ADR 006.
 
+**Notification**:
+Something the `Restaurant` has to know about its own money, delivered
+in-app to one person. One row per **recipient** — read state is personal —
+fanned out at event time to every `RestaurantMember` of that restaurant
+that is backed by a `User` and holds role `manager`. Carries a `kind`
+(`dispute_opened | dispute_won | dispute_lost | payout_failed |
+payouts_resumed`), an i18n key plus params rather than prose, and an
+optional `href`. Read through the bell in the staff header.
+`EmployeeAccount`-backed members receive none: they have no Clerk
+identity to read one with.
+Distinct from an **Operator alert**, which is Tavli's own inbox across
+every restaurant and is read on `/admin/alerts` by platform admins. The
+two never mix. Distinct again from a **Toast**, the transient in-page
+message `NotificationCenter` renders and nothing persists.
+_Avoid_: alert (that is the operator's), message, notice.
+
 **Shift**:
 A scheduled work block for a `RestaurantMember`, carrying a
 `ShiftRole` (`server | bartender | host | kitchen | manager`).
@@ -519,6 +535,10 @@ a legal lifetime, not tidying).
   by a foreign key.
 - A **Restaurant** has one **Public profile**. Every part of it is optional and
   independently omitted from the diner-facing surfaces when unset.
+- One money event on a **Restaurant** produces one **Notification** per manager
+  of that restaurant, never one shared row — so "read" always means "read by
+  this person". A **Notification** belongs to exactly one **Restaurant** and
+  goes with it when the restaurant is purged.
 - A **Restaurant** has many **Menus**, each with many **MenuCategories**,
   each with many **MenuItems**.
 - Every **MenuItem** has exactly one **PrepStation**.

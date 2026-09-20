@@ -715,7 +715,8 @@
 		"AI_IMAGE_GENERATION_IN_PROGRESS": "An image is already being generated for this item.",
 		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "This organization has used all its AI images for the month.",
 		"AI_IMAGE_CREDITS_EXHAUSTED": "AI image credits are exhausted. Contact Tavli support.",
-		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again."
+		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again.",
+		"ERROR_NOTIFICATION_NOT_FOUND": "That notification no longer exists."
 	},
 	"time": {
 		"relative": {
@@ -2171,6 +2172,42 @@
 			"restaurantMissingContactEmail": {
 				"title": "Restaurant has no contact email",
 				"explanation": "This restaurant has no contact email, so Tavli cannot reach its operator about anything — receipts, disputes, or this alert."
+			}
+		}
+	},
+	"notifications": {
+		"bell": {
+			"label": "Notifications",
+			"unreadCount_one": "{{count}} unread notification",
+			"unreadCount_other": "{{count}} unread notifications",
+			"panelTitle": "Notifications",
+			"close": "Close notifications",
+			"markAllRead": "Mark all read",
+			"markRead": "Mark read",
+			"emptyTitle": "Nothing new",
+			"emptyDescription": "News about your restaurant's money lands here — chargebacks and payouts.",
+			"loadFailed": "Could not load your notifications."
+		},
+		"kind": {
+			"disputeOpened": {
+				"title": "Chargeback opened",
+				"body": "A diner disputed a charge at your restaurant. The card network holds that amount until the dispute is decided."
+			},
+			"disputeWon": {
+				"title": "Chargeback resolved in your favour",
+				"body": "The card network decided the disputed charge in your favour. The held amount returns on a following payout."
+			},
+			"disputeLost": {
+				"title": "Chargeback lost",
+				"body": "The card network decided the disputed charge against your restaurant. The amount and the dispute fee were deducted."
+			},
+			"payoutFailed": {
+				"title": "Payout failed",
+				"body": "Your bank account did not accept a payout. Check the account details in Stripe — payouts stay paused until it is fixed."
+			},
+			"payoutsResumed": {
+				"title": "Payouts resumed",
+				"body": "Your bank account accepted a payout again. Nothing further is needed from you."
 			}
 		}
 	}

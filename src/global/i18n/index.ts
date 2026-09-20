@@ -26,6 +26,7 @@ export {
 	writeLanguageCookie,
 } from "./language";
 export { MenusKeys, type MenusKey } from "./keys/menus";
+export { NotificationsKeys, type NotificationsKey } from "./keys/notifications";
 export { OptionsKeys, type OptionsKey } from "./keys/options";
 export { OrderingKeys, type OrderingKey } from "./keys/ordering";
 export { OrdersKeys, type OrdersKey } from "./keys/orders";

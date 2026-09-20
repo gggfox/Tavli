@@ -9,6 +9,7 @@ import {
 	ExportsKeys,
 	Languages,
 	MenusKeys,
+	NotificationsKeys,
 	OptionsKeys,
 	OrderingKeys,
 	OrdersKeys,
@@ -24,6 +25,9 @@ import {
 	WhatsappKeys,
 } from "@/global/i18n";
 import {
+	NOTIFICATION_BODY_KEY,
+	NOTIFICATION_KINDS,
+	NOTIFICATION_TITLE_KEY,
 	OPERATOR_ALERT_EXPLANATION_KEY,
 	OPERATOR_ALERT_KINDS,
 	OPERATOR_ALERT_TITLE_KEY,
@@ -109,6 +113,7 @@ describe("Key enums resolve in every locale", () => {
 		["PaymentsKeys", PaymentsKeys as Record<string, string>],
 		["ReservationsKeys", ReservationsKeys as Record<string, string>],
 		["MenusKeys", MenusKeys as Record<string, string>],
+		["NotificationsKeys", NotificationsKeys as Record<string, string>],
 		["OptionsKeys", OptionsKeys as Record<string, string>],
 		["RestaurantsKeys", RestaurantsKeys as Record<string, string>],
 		["WelcomeKeys", WelcomeKeys as Record<string, string>],
@@ -134,6 +139,42 @@ describe("Operator alert kinds have copy in every locale", () => {
 		for (const key of [OPERATOR_ALERT_TITLE_KEY[kind], OPERATOR_ALERT_EXPLANATION_KEY[kind]]) {
 			expect(resolves(key, enPaths), `Missing en.json key "${key}"`).toBe(true);
 			expect(resolves(key, esPaths), `Missing es.json key "${key}"`).toBe(true);
+		}
+	});
+});
+
+/**
+ * TAVLI-111: the backend stores an i18n key on every manager notification, so a
+ * kind added to `NOTIFICATION_KIND` without copy here would render as a raw key
+ * inside somebody's bell.
+ */
+describe("Notification kinds have copy in every locale", () => {
+	it.each(NOTIFICATION_KINDS)("%s -- title and body resolve in en and es", (kind) => {
+		for (const key of [NOTIFICATION_TITLE_KEY[kind], NOTIFICATION_BODY_KEY[kind]]) {
+			expect(resolves(key, enPaths), `Missing en.json key "${key}"`).toBe(true);
+			expect(resolves(key, esPaths), `Missing es.json key "${key}"`).toBe(true);
+		}
+	});
+
+	/**
+	 * A caller may pass its own `messageKey` with params (TAVLI-103/102 will, for
+	 * amounts), but a kind's DEFAULT body is what a caller that passes none gets —
+	 * so it must not contain an interpolation placeholder, or a manager reads a
+	 * literal `{{amount}}`.
+	 */
+	it.each(NOTIFICATION_KINDS)("%s -- the default body needs no interpolation", (kind) => {
+		const key = NOTIFICATION_BODY_KEY[kind];
+		for (const [locale, bundle] of [
+			["en", en],
+			["es", es],
+		] as const) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const value = key.split(".").reduce((o: any, k) => o?.[k], bundle) as string;
+			expect(value, `${locale}.json "${key}" is missing`).toBeTypeOf("string");
+			expect(
+				value,
+				`${locale}.json "${key}" interpolates, but callers may pass no params`
+			).not.toContain("{{");
 		}
 	});
 });
