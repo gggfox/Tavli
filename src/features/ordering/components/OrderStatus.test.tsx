@@ -211,6 +211,49 @@ describe("OrderStatus receipt breakdown (TAVLI-71 Phase 3C)", () => {
 			expect(screen.getByText("-$28.00")).toBeTruthy();
 		});
 
+		/**
+		 * The last live line's removal refunds the WHOLE charge and cancels the
+		 * order, so `paymentState` becomes "refunded" rather than "paid". Gating
+		 * the breakdown on that state hid the money from the one diner who most
+		 * needs to see it.
+		 */
+		it("still shows the total and the refund once the whole charge came back", () => {
+			mockBackend(
+				baseOrder({
+					status: "cancelled",
+					paymentState: "refunded",
+					totalAmount: 0,
+					paidPayment: { subtotalAmount: 2800, feeAmount: 336, amount: 3136, paidAt: now },
+					items: [
+						{
+							_id: "orderItems:agua",
+							_creationTime: now,
+							orderId: "orders:status",
+							menuItemId: "menuItems:agua",
+							menuItemName: "Agua de horchata",
+							quantity: 1,
+							unitPrice: 2800,
+							selectedOptions: [],
+							lineTotal: 2800,
+							cancelledAt: now,
+							refundedAt: now,
+							refundAmount: 3136,
+							createdAt: now,
+						},
+					],
+				})
+			);
+
+			renderPage();
+
+			expect(screen.getByText("Order Cancelled")).toBeTruthy();
+			expect(screen.getByText("Unavailable · refunded")).toBeTruthy();
+			expect(screen.getByText("Total")).toBeTruthy();
+			expect(screen.getByText("$31.36")).toBeTruthy();
+			expect(screen.getByText("Refunded")).toBeTruthy();
+			expect(screen.getByText("-$31.36")).toBeTruthy();
+		});
+
 		it("has no refund line when nothing was refunded", () => {
 			mockBackend(baseOrder());
 

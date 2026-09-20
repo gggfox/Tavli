@@ -47,7 +47,16 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	// subtotal/fee split, never the rate re-applied client-side. Cash orders
 	// (paid in person, no payment row) fall back to the order total with no fee
 	// line: cash carries no Tavli service fee (ADR 008).
-	const isPaid = orderData.paymentState === "paid";
+	//
+	// Gated on the succeeded charge, not on `paymentState === "paid"`: removing
+	// an order's last live line refunds the whole charge and leaves the order
+	// `cancelled` / `refunded` (ADR 013), and a diner whose money has just come
+	// back is exactly the one who needs to see what was charged and what was
+	// returned. `paidPayment` is the succeeded kind-"order" payment and survives
+	// a refund — refunds patch `refundStatus`, never `status`. The
+	// `paymentState` half of the test keeps cash orders (no payment row) showing
+	// their subtotal-only breakdown.
+	const isPaid = orderData.paidPayment !== null || orderData.paymentState === "paid";
 	const chargedSubtotal = orderData.paidPayment?.subtotalAmount ?? orderData.totalAmount;
 	const chargedFee = orderData.paidPayment?.feeAmount ?? 0;
 	const chargedTotal = orderData.paidPayment?.amount ?? chargedSubtotal + chargedFee;
