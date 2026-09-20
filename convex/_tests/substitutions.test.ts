@@ -11,29 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import { mockStripeClient } from "./_fixtures/stripeMock";
 
 const modules = import.meta.glob("../**/*.ts");
 
-const mockStripeClient = {
-	paymentIntents: {
-		create: vi.fn(),
-		retrieve: vi.fn(),
-		cancel: vi.fn(),
-	},
-	customers: {
-		create: vi.fn(),
-	},
-	refunds: {
-		create: vi.fn(),
-	},
-	webhooks: {
-		constructEvent: vi.fn(),
-	},
-};
-
-vi.mock("stripe", () => ({
-	default: vi.fn(() => mockStripeClient),
-}));
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
 
 const DINER = "diner-sub";
 const STAFF = "owner-sub";

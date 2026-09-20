@@ -4,46 +4,11 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
+import { mockStripeClient } from "./_fixtures/stripeMock";
 
 const modules = import.meta.glob("../**/*.ts");
 
-const mockStripeClient = {
-	v2: {
-		core: {
-			accounts: {
-				create: vi.fn(),
-				retrieve: vi.fn(),
-			},
-			accountLinks: {
-				create: vi.fn(),
-			},
-			events: {
-				retrieve: vi.fn(),
-			},
-		},
-	},
-	paymentIntents: {
-		create: vi.fn(),
-		retrieve: vi.fn(),
-		cancel: vi.fn(),
-	},
-	customers: {
-		create: vi.fn(),
-	},
-	refunds: {
-		create: vi.fn(),
-	},
-	webhooks: {
-		constructEvent: vi.fn(),
-	},
-	parseEventNotification: vi.fn(),
-};
-
-const StripeConstructor = vi.fn(() => mockStripeClient);
-
-vi.mock("stripe", () => ({
-	default: StripeConstructor,
-}));
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
 
 async function seedOrganization(t: ReturnType<typeof convexTest>) {
 	let organizationId: Id<"organizations">;

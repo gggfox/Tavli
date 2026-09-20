@@ -3,31 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import { mockStripeClient } from "./_fixtures/stripeMock";
 import { computeDisputeFacts, computeRefundFacts } from "../stripeWebhookHelpers";
 
 const modules = import.meta.glob("../**/*.ts");
 
-// Mirror the Stripe mock used in stripe.test.ts so `getStripeClient()` returns a
-// controllable client and `webhooks.constructEvent` yields whatever event we set.
-const mockStripeClient = {
-	v2: {
-		core: {
-			accounts: { create: vi.fn(), retrieve: vi.fn() },
-			accountLinks: { create: vi.fn() },
-			events: { retrieve: vi.fn() },
-		},
-	},
-	paymentIntents: { create: vi.fn(), retrieve: vi.fn() },
-	refunds: { create: vi.fn(), list: vi.fn() },
-	webhooks: { constructEvent: vi.fn() },
-	parseEventNotification: vi.fn(),
-};
-
-const StripeConstructor = vi.fn(() => mockStripeClient);
-
-vi.mock("stripe", () => ({
-	default: StripeConstructor,
-}));
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
 
 async function seedRestaurant(t: ReturnType<typeof convexTest>): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;
