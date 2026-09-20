@@ -158,12 +158,18 @@ describe("OrderStatus receipt breakdown (TAVLI-71 Phase 3C)", () => {
 		).toBe(false);
 	});
 
-	it("labels a refunded line as refunded rather than unavailable", () => {
-		mockBackend(
-			baseOrder({
+	/**
+	 * TAVLI-110 / ADR 013: a dish the restaurant cannot make after payment is
+	 * removed and refunded — there is no swap to negotiate. The line must NOT
+	 * vanish: the diner paid for it, so they get to see what happened to it and
+	 * that the money came back.
+	 */
+	describe("a line removed from a paid order (ADR 013)", () => {
+		function orderWithRefundedLine() {
+			return baseOrder({
 				items: [
 					{
-						_id: "orderItems:refunded",
+						_id: "orderItems:agua",
 						_creationTime: now,
 						orderId: "orders:status",
 						menuItemId: "menuItems:agua",
@@ -178,12 +184,39 @@ describe("OrderStatus receipt breakdown (TAVLI-71 Phase 3C)", () => {
 						createdAt: now,
 					},
 				],
-			})
-		);
+			});
+		}
 
-		renderPage();
+		it("keeps the line visible, marked unavailable and refunded", () => {
+			mockBackend(orderWithRefundedLine());
 
-		expect(screen.getByText("Refunded")).toBeTruthy();
-		expect(screen.queryByText("Unavailable")).toBeNull();
+			renderPage();
+
+			expect(screen.getByText("1x Agua de horchata")).toBeTruthy();
+			expect(screen.getByText("Unavailable · refunded")).toBeTruthy();
+			// "Unavailable" alone is the unpaid case — money never moved there.
+			expect(screen.queryByText("Unavailable")).toBeNull();
+		});
+
+		it("shows the amount paid with the refund as its own line", () => {
+			mockBackend(orderWithRefundedLine());
+
+			renderPage();
+
+			// The total stays what the card was charged (11200); the refund is a
+			// separate line, so both reconcile against the card statement.
+			expect(screen.getByText("Total")).toBeTruthy();
+			expect(screen.getByText("$112.00")).toBeTruthy();
+			expect(screen.getByText("Refunded")).toBeTruthy();
+			expect(screen.getByText("-$28.00")).toBeTruthy();
+		});
+
+		it("has no refund line when nothing was refunded", () => {
+			mockBackend(baseOrder());
+
+			renderPage();
+
+			expect(screen.queryByText("Refunded")).toBeNull();
+		});
 	});
 });

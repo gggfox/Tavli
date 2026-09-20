@@ -1566,7 +1566,7 @@ describe("stripe actions", () => {
 		});
 	});
 
-	describe("refundOrderItem — 86 on a paid order (ADR 008)", () => {
+	describe("refunds on a paid ADR 008 order — line removal and whole-order cancel", () => {
 		/**
 		 * A paid pay-at-submit order (subtotal 1400 → charge 1568) with two live
 		 * lines, plus a staff identity. `activePaymentId` points at the succeeded
@@ -1693,7 +1693,7 @@ describe("stripe actions", () => {
 			};
 		}
 
-		it("refunds the line plus its fee share while the order keeps cooking", async () => {
+		it("refunds the removed line plus its fee share while the order keeps cooking", async () => {
 			vi.useFakeTimers();
 			try {
 				const t = convexTest(schema, modules);
@@ -1741,7 +1741,7 @@ describe("stripe actions", () => {
 			}
 		});
 
-		it("sweeps the entire remaining balance when the last live line is 86'd", async () => {
+		it("sweeps the entire remaining balance when the last live line is removed", async () => {
 			vi.useFakeTimers();
 			try {
 				const t = convexTest(schema, modules);
@@ -1758,7 +1758,7 @@ describe("stripe actions", () => {
 				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 				// 672 + 896 = 1568 — the sum of line refunds is exactly the charge,
-				// so no rounding residue survives a fully-86'd order.
+				// so no rounding residue survives an order emptied line by line.
 				const amounts = mockStripeClient.refunds.create.mock.calls.map(
 					(call) => (call[0] as { amount: number }).amount
 				);
@@ -1856,6 +1856,53 @@ describe("stripe actions", () => {
 			} finally {
 				vi.useRealTimers();
 			}
+		});
+
+		/**
+		 * The other refund this ticket keeps (TAVLI-110): a whole-order cancel on
+		 * a fee-inclusive ADR 008 payment returns the payment's **entire**
+		 * remaining balance, fee included — clamping to `orders.totalAmount` would
+		 * strand the diner's service fee on the charge forever. Asserted here at
+		 * the action level; the arithmetic itself is
+		 * `computeOrderRefundAmount`'s unit test.
+		 */
+		it("cancelOrderAndRefund returns the whole fee-inclusive charge, fee included", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, paymentId, staff } = await seedPaidOrderWithTwoLines(t);
+
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_whole",
+				status: "succeeded",
+				amount: 1568,
+			});
+
+			const [result, error] = await staff.action(api.stripe.cancelOrderAndRefund, { orderId });
+			expect(error).toBeNull();
+			expect(result).toMatchObject({
+				refunded: true,
+				amountRefunded: 1568,
+				stripeRefundId: "re_whole",
+			});
+
+			// A full refund omits `amount` entirely, and the key is (payment, order)
+			// — distinct from the per-line key, so a later line-level retry is not
+			// replayed as a no-op.
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
+				{
+					payment_intent: "pi_86",
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{ idempotencyKey: `refund:${paymentId}:${orderId}` }
+			);
+
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(order?.status).toBe("cancelled");
+			expect(order?.paymentState).toBe("refunded");
+			expect(payment?.refundStatus).toBe("succeeded");
 		});
 	});
 });
