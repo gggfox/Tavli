@@ -12,7 +12,8 @@
  * retry actually re-runs the load instead of replaying the same failure.
  */
 import { useRouter, type ErrorComponentProps } from "@tanstack/react-router";
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useEffect, type ReactNode } from "react";
+import { reportError } from "@/global/utils/telemetry";
 import { ErrorFallback } from "./ErrorFallback";
 
 export type RouteErrorComponentProps = ErrorComponentProps & {
@@ -28,8 +29,13 @@ export function RouteErrorComponent({ error, reset, actions }: RouteErrorCompone
 		void router.invalidate();
 	}, [reset, router]);
 
-	// Mirrors `ErrorBoundary.componentDidCatch`. Real telemetry is TAVLI-9.
-	console.error("Route error:", error);
+	// Mirrors `ErrorBoundary.componentDidCatch`. In an effect rather than the
+	// render body: a render-time side effect runs twice under StrictMode and
+	// would report every error twice.
+	useEffect(() => {
+		console.error("Route error:", error);
+		reportError(error, { source: "route" });
+	}, [error]);
 
 	return <ErrorFallback error={error} onRetry={handleRetry} actions={actions} />;
 }

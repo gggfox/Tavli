@@ -5,6 +5,7 @@ import { useConvexAction } from "@convex-dev/react-query";
 import { getFunctionName } from "convex/server";
 import { DEFAULT_TIP_PERCENT, PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
 import { describe, expect, it, beforeEach, vi } from "vitest";
+import { track } from "@/global/utils/telemetry";
 import { OrderCheckoutPage } from "./OrderCheckoutPage";
 
 vi.mock("@tanstack/react-query", () => ({
@@ -27,6 +28,14 @@ vi.mock("@stripe/react-stripe-js", () => ({
 	PaymentElement: () => <div data-testid="payment-element" />,
 	useStripe: () => null,
 	useElements: () => null,
+}));
+
+vi.mock("@/global/utils/telemetry", () => ({
+	track: vi.fn(),
+	reportError: vi.fn(),
+	initTelemetry: vi.fn(),
+	identifyUser: vi.fn(),
+	resetUser: vi.fn(),
 }));
 
 const now = 1_745_000_000_000;
@@ -105,6 +114,74 @@ describe("OrderCheckoutPage", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		callLog.length = 0;
+	});
+
+	describe("order_placed", () => {
+		const placedCalls = () =>
+			vi.mocked(track).mock.calls.filter(([event]) => event === "order_placed");
+		const page = () => (
+			<OrderCheckoutPage
+				orderId={"orders:checkout" as any}
+				onBackToMenu={() => {}}
+				onViewOrders={() => {}}
+			/>
+		);
+		const paid = () =>
+			baseOrder({ status: "submitted", paymentState: "paid", dailyOrderNumber: 42 });
+
+		it("fires once, as cash, when the draft is committed to pay in person", () => {
+			mockBackend(baseOrder());
+			const { rerender } = render(page());
+
+			mockBackend(baseOrder({ status: "awaiting_payment" }));
+			rerender(page());
+
+			expect(placedCalls()).toEqual([
+				["order_placed", { order_id: "orders:checkout", payment_method: "cash" }],
+			]);
+		});
+
+		it("fires once, as card, when the webhook marks the draft paid", () => {
+			mockBackend(baseOrder());
+			const { rerender } = render(page());
+
+			mockBackend(paid());
+			rerender(page());
+
+			expect(placedCalls()).toEqual([
+				["order_placed", { order_id: "orders:checkout", payment_method: "card" }],
+			]);
+		});
+
+		it("stays silent when the page mounts on an order that is already placed", () => {
+			// A reload of the receipt is not a placement.
+			mockBackend(paid());
+			const { rerender } = render(page());
+			rerender(page());
+
+			expect(placedCalls()).toEqual([]);
+		});
+
+		it("does not count a cash→card switch as a second placement", () => {
+			mockBackend(baseOrder());
+			const { rerender } = render(page());
+			mockBackend(baseOrder({ status: "awaiting_payment" }));
+			rerender(page());
+			mockBackend(paid());
+			rerender(page());
+
+			expect(placedCalls()).toHaveLength(1);
+			expect(placedCalls()[0][1]).toMatchObject({ payment_method: "cash" });
+		});
+
+		it("does not fire when a draft is cancelled", () => {
+			mockBackend(baseOrder());
+			const { rerender } = render(page());
+			mockBackend(baseOrder({ status: "cancelled" }));
+			rerender(page());
+
+			expect(placedCalls()).toEqual([]);
+		});
 	});
 
 	it("itemizes the draft: subtotal, fee, and the pre-applied tip (10000 → 1200 → 1000 → 12200)", () => {

@@ -32,7 +32,7 @@ When you impersonate via the Clerk Dashboard, Clerk gives your browser a session
 
 - **Audit trail.** Any mutation you trigger while impersonating is recorded as the _target user_. Don't click anything destructive. Treat this as read-only.
 - **Stripe.** Stripe Connect calls hit the impersonated restaurant's account. Don't touch payment/refund actions.
-- **External IDs in logs.** Sentry/Convex logs during the session will attribute actions to the target, not to you.
+- **External IDs in logs.** PostHog/Convex logs during the session will attribute actions to the target, not to you.
 
 ## Limits / when to upgrade to Approach 2
 

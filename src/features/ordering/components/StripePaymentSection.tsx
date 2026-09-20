@@ -9,6 +9,7 @@
  * confirmation errors.
  */
 import { OrderingKeys } from "@/global/i18n";
+import { track } from "@/global/utils/telemetry";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { CreditCard, Loader2 } from "lucide-react";
@@ -103,6 +104,9 @@ function StripePaymentForm({ submitLabel }: Readonly<{ submitLabel?: string }>) 
 			setProcessing(false);
 			return;
 		}
+
+		// Past the synchronous validation: this is a real confirmation attempt.
+		track("payment_submitted");
 
 		const { error: confirmError } = await stripe.confirmPayment({
 			elements,

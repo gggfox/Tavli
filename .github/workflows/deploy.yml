@@ -85,6 +85,10 @@ jobs:
           # report the exact commit that is running. Matches the :<sha> image
           # tag pushed below.
           VITE_GIT_SHA: ${{ github.sha }}
+          # Staging and production both build with NODE_ENV=production, so the
+          # bundle cannot tell them apart by Vite mode. This is what
+          # `config.nodeEnv` — and therefore every telemetry event — reads.
+          VITE_APP_ENV: ${{ inputs.infisical_env }}
         run: |
           infisical run \
             --token="$INFISICAL_TOKEN" \
@@ -92,7 +96,7 @@ jobs:
             --env="${{ inputs.infisical_env }}" \
             --domain="$INFISICAL_API_URL" \
             --silent \
-            -- env NODE_ENV=production VITE_GIT_SHA="$VITE_GIT_SHA" pnpm build
+            -- env NODE_ENV=production VITE_GIT_SHA="$VITE_GIT_SHA" VITE_APP_ENV="$VITE_APP_ENV" pnpm build
 
       - name: Deploy Convex
         env:

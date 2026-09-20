@@ -129,7 +129,7 @@ managers can look it up anytime.
 
 - A DB dump or admin session compromise exposes every employee's PIN
   across every restaurant simultaneously.
-- PINs appear in server logs, Sentry breadcrumbs, browser memory dumps,
+- PINs appear in server logs, error-tracker breadcrumbs (PostHog), browser memory dumps,
   and screenshots.
 
 **Why not chosen:** The stated need is **recovery**, not **lookup**.

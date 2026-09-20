@@ -2,6 +2,7 @@ import { useCurrentUserRoles, useUserSettings } from "@/features/users/hooks";
 import { Avatar, getAvatarFallback, i18n, Modal, useTheme } from "@/global";
 import { Languages, SidebarKeys, writeLanguageCookie } from "@/global/i18n";
 import { config } from "@/global/utils/config";
+import { resetUser } from "@/global/utils/telemetry";
 import { useClerk, useUser } from "@clerk/tanstack-react-start";
 import { api } from "convex/_generated/api";
 import { USER_ROLES } from "convex/constants";
@@ -87,6 +88,10 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 
 	const handleSignOut = useCallback(async () => {
 		onClose();
+		// Before Clerk, not after: a sign-out that navigates away never gives the
+		// root telemetry effect a chance to see the user go, and on a shared
+		// tablet the next person would inherit this identity.
+		resetUser();
 		await signOut();
 	}, [onClose, signOut]);
 

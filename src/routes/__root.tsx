@@ -1,4 +1,4 @@
-import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
+import { ClerkProvider, useAuth, useUser } from "@clerk/tanstack-react-start";
 import { QueryClient } from "@tanstack/react-query";
 import {
 	HeadContent,
@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useConvexAuth } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { AuthDebugPanel } from "@/features";
 import { useNewReservationListener } from "@/features/reservations";
@@ -20,6 +20,7 @@ import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
 import { i18n, normalizeLanguage, resolveLanguage } from "@/global/i18n";
 import { config } from "@/global/utils/config";
+import { identifyUser, initTelemetry, resetUser } from "@/global/utils/telemetry";
 import {
 	LOCAL_STORAGE_THEME_KEY,
 	type RemoteThemeSettings,
@@ -40,6 +41,11 @@ import appCss from "../styles.css?url";
 // `tavli-theme` key on first visit, so users who saved a preference under
 // the old name don't lose it.
 const initScript = `(function(){try{var k=${JSON.stringify(LOCAL_STORAGE_THEME_KEY)};var t=localStorage.getItem(k);if(t===null){var legacy=localStorage.getItem('fierro-viejo-theme');if(legacy!==null){localStorage.setItem(k,legacy);localStorage.removeItem('fierro-viejo-theme');t=legacy;}}var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');var sk=${JSON.stringify(LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED)};var st=localStorage.getItem(sk);if(st==='false')document.documentElement.dataset.sidebarExpanded='false';}catch(e){}})();`;
+
+// At module scope, before any route renders: the error boundaries below report
+// through telemetry, so it has to be live before they can catch anything. A
+// no-op on the server and without a project token.
+initTelemetry();
 
 function RootNotFound() {
 	return (
@@ -162,6 +168,32 @@ function StaffLayout() {
 	);
 }
 
+/**
+ * Ties telemetry to the signed-in Clerk user — id only, per ADR-006 — and
+ * forgets them on sign-out, so a shared staff tablet never attributes the next
+ * person's session to whoever just left. `SettingsModal` also resets before it
+ * calls Clerk, because a sign-out that navigates away unmounts this component
+ * before the effect can see the transition.
+ */
+function TelemetryIdentity() {
+	const { user, isLoaded } = useUser();
+	const userId = user?.id ?? null;
+	const wasSignedIn = useRef(false);
+
+	useEffect(() => {
+		if (!isLoaded) return;
+		if (userId) {
+			identifyUser(userId);
+			wasSignedIn.current = true;
+		} else if (wasSignedIn.current) {
+			resetUser();
+			wasSignedIn.current = false;
+		}
+	}, [isLoaded, userId]);
+
+	return null;
+}
+
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 	// Router context, not `i18n.language`: the context value is computed in
 	// `beforeLoad` and is therefore identical on the server and on hydration.
@@ -176,6 +208,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 						<HeadContent />
 					</head>
 					<body>
+						<TelemetryIdentity />
 						{children}
 						{config.isDev ? (
 							<ClientOnlyDevtools
