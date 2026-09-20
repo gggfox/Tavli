@@ -52,6 +52,9 @@ importers:
       '@clerk/tanstack-react-start':
         specifier: ^1.4.12
         version: 1.4.12(@tanstack/react-router@1.170.23(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@tanstack/react-start@1.168.40(crossws@0.4.10(srvx@0.11.22))(esbuild@0.28.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.1.4)(rollup@4.62.2)(vite@7.3.6(@types/node@22.19.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.9.0)))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@convex-dev/aggregate':
+        specifier: ^0.2.2
+        version: 0.2.2(convex@1.31.0(react@19.2.6))
       '@convex-dev/react-query':
         specifier: ^0.1.0
         version: 0.1.0(@tanstack/react-query@5.90.12(react@19.2.6))(convex@1.31.0(react@19.2.6))
@@ -554,6 +557,11 @@ packages:
       '@tanstack/react-start': ^1.157.0
       react: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
       react-dom: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
+
+  '@convex-dev/aggregate@0.2.2':
+    resolution: {integrity: sha512-9sskfPZdiH0mdc33Obcf2+gQSPDpyHqUDkYmXDsUqhqe5lLwGKYbrxw7LgxHmYm9c1YLbaXqxKiM1CgucfKAAw==}
+    peerDependencies:
+      convex: ^1.24.8
 
   '@convex-dev/react-query@0.1.0':
     resolution: {integrity: sha512-ULmBZCtAQDUePdBhUv7hj1Yy4QiCelhi6uEIOtMpjW8db6W9CFKvQwLt9heLngccFyMFfAZdOfSrT+cP4AH0Jw==}
@@ -6202,6 +6210,10 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       tslib: 2.8.1
+
+  '@convex-dev/aggregate@0.2.2(convex@1.31.0(react@19.2.6))':
+    dependencies:
+      convex: 1.31.0(react@19.2.6)
 
   '@convex-dev/react-query@0.1.0(@tanstack/react-query@5.90.12(react@19.2.6))(convex@1.31.0(react@19.2.6))':
     dependencies:
