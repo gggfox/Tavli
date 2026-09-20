@@ -1,6 +1,7 @@
 import { SegmentedControl } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
 import { parseDollarsToCents } from "@/global/utils/money";
+import { track } from "@/global/utils/telemetry";
 import { useForm } from "@tanstack/react-form";
 import type { Id } from "convex/_generated/dataModel";
 import { ClipboardPaste, ImagePlus, X } from "lucide-react";
@@ -84,6 +85,14 @@ export function AddItemForm({
 				basePrice: price,
 				imageStorageId,
 				prepStation,
+			});
+			track("menu_item_created", {
+				restaurant_id: restaurantId,
+				category_id: categoryId,
+				prep_station: prepStation,
+				base_price_cents: price,
+				has_image: imageStorageId !== undefined,
+				has_description: Boolean(value.description),
 			});
 
 			form.reset();

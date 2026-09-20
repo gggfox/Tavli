@@ -20,6 +20,11 @@ const ENVIRONMENTS = {
 export type Environment = (typeof ENVIRONMENTS)[keyof typeof ENVIRONMENTS];
 
 export interface ConfigValues {
+	/**
+	 * Which deployment this bundle is: `VITE_APP_ENV` when the deploy workflow
+	 * set it (staging and production both build with `NODE_ENV=production`, so
+	 * Vite's mode alone cannot tell them apart), otherwise Vite's mode.
+	 */
 	readonly nodeEnv: Environment;
 	readonly isDev: boolean;
 	readonly isProd: boolean;
@@ -47,7 +52,9 @@ function parseEnvironment(env: string): Environment {
 	return ENVIRONMENTS.DEVELOPMENT;
 }
 
-const nodeEnv = parseEnvironment(import.meta.env.MODE ?? ENVIRONMENTS.DEVELOPMENT);
+const nodeEnv = parseEnvironment(
+	import.meta.env.VITE_APP_ENV || import.meta.env.MODE || ENVIRONMENTS.DEVELOPMENT
+);
 const convexUrl = import.meta.env.VITE_CONVEX_URL ?? "";
 const gitSha = import.meta.env.VITE_GIT_SHA ?? "unknown";
 

@@ -2,6 +2,7 @@ import { SearchInput } from "@/global/components";
 import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { OrderingKeys } from "@/global/i18n";
 import { formatCents } from "@/global/utils/money";
+import { track } from "@/global/utils/telemetry";
 import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -230,8 +231,14 @@ export function MenuBrowser({
 				return next;
 			});
 			setDetailItem(null);
+			track("item_added_to_cart", {
+				menu_item_id: data.menuItemId,
+				quantity: data.quantity,
+				base_price_cents: data.basePrice,
+				restaurant_id: restaurantId,
+			});
 		},
-		[]
+		[restaurantId]
 	);
 
 	const handleRemoveItem = useCallback((itemId: Id<"menuItems">) => {
@@ -285,6 +292,14 @@ export function MenuBrowser({
 			quantity: sel.quantity,
 			selectedOptions: Array.from(sel.selectedOptions.values()).flat(),
 		}));
+		// Intent, not outcome — `order_placed` fires where the mutation succeeds.
+		track("order_submitted", {
+			item_count: items.length,
+			total_quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+			order_total_cents: orderTotal,
+			restaurant_id: restaurantId,
+			table_id: selectedTableId,
+		});
 		onSubmitOrder({
 			items,
 			specialInstructions: comment || undefined,

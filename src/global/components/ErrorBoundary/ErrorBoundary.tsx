@@ -8,8 +8,12 @@
  * loader, or during navigation are surfaced by TanStack Router instead — see
  * `RouteErrorComponent`, which renders the same `ErrorFallback` panel and is
  * wired up as the router's `defaultErrorComponent` in `src/router.tsx`.
+ *
+ * Every caught error is reported to telemetry (TAVLI-9) as well as to the
+ * optional `onError` prop, so no call site can forget to.
  */
 import { Component, type ReactNode } from "react";
+import { reportError } from "@/global/utils/telemetry";
 import { ErrorFallback } from "./ErrorFallback";
 
 interface ErrorBoundaryProps {
@@ -40,6 +44,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
 	componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
 		console.error("ErrorBoundary caught an error:", error, errorInfo);
+		reportError(error, { componentStack: errorInfo.componentStack });
 		this.props.onError?.(error, errorInfo);
 	}
 

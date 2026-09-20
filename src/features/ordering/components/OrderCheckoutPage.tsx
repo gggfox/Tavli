@@ -1,6 +1,7 @@
 import { OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { formatCents } from "@/global/utils/money";
+import { track } from "@/global/utils/telemetry";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -15,7 +16,7 @@ import {
 	Loader2,
 	ShieldCheck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { computeOrderCharge } from "convex/_shared/tip";
 import { EmailReceiptButton } from "./EmailReceiptButton";
@@ -83,12 +84,33 @@ export function OrderCheckoutPage({
 		}
 	}, [order?.paymentState, order?.activePayment?.failureMessage, t]);
 
+	// `order_placed` is the settled moment, not the tap. An order leaves "draft"
+	// exactly once — into "awaiting_payment" on a cash commitment, or paid by the
+	// webhook on a card — so that transition is the event. A page that mounts
+	// already placed (a reload of the receipt) has no previous state and stays
+	// silent, and a later cash→card switch is a payment, not a second placement.
+	const orderStatus = order?.status;
+	const paymentState = order?.paymentState;
+	const previousStatus = useRef<string | undefined>(undefined);
+	const reportedPlaced = useRef(false);
+	useEffect(() => {
+		const previous = previousStatus.current;
+		previousStatus.current = orderStatus;
+		if (previous !== "draft" || reportedPlaced.current) return;
+		const method =
+			orderStatus === "awaiting_payment" ? "cash" : paymentState === "paid" ? "card" : null;
+		if (method === null) return;
+		reportedPlaced.current = true;
+		track("order_placed", { order_id: orderId, payment_method: method });
+	}, [orderStatus, paymentState, orderId]);
+
 	const handleStartPayment = async () => {
 		setInitializing(true);
 		setError(null);
 		try {
 			const result = await createPaymentIntent({ orderId, tipPercent });
 			setClientSecret(result?.clientSecret ?? null);
+			track("checkout_started", { order_id: orderId, tip_percent: tipPercent });
 		} catch (err) {
 			setError(getErrorMessage(err, t, OrderingKeys.CHECKOUT_INIT_FAILED));
 			setClientSecret(null);

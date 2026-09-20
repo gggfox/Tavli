@@ -12,6 +12,7 @@ import { DateTimeField } from "@/global/components/Form";
 import { useCalendarVariant } from "@/global/hooks/useCalendarVariant";
 import { unwrapResult } from "@/global/utils";
 import { isValidYmd, todayLocalYmd } from "@/global/utils/calendarMonth";
+import { track } from "@/global/utils/telemetry";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -130,6 +131,13 @@ export function CustomerReservationForm({
 				})
 			);
 			setCreatedId(id);
+			// Ids, size and time only — never the contact details.
+			track("reservation_submitted", {
+				reservation_id: id,
+				restaurant_id: restaurantId,
+				party_size: partySize,
+				starts_at_ms: startsAtMs,
+			});
 		} catch (err) {
 			setError(getErrorMessage(err, t, ReservationsKeys.FORM_GENERIC_ERROR));
 		} finally {

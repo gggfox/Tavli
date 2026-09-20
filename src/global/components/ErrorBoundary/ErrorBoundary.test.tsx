@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { reportError } from "@/global/utils/telemetry";
 import { ErrorBoundary } from "./ErrorBoundary";
+
+vi.mock("@/global/utils/telemetry", () => ({ reportError: vi.fn() }));
 
 // Component that throws an error
 function ThrowingComponent({ error }: { error: Error }): never {
@@ -133,6 +136,23 @@ describe("ErrorBoundary", () => {
 				expect.objectContaining({
 					componentStack: expect.any(String),
 				})
+			);
+		});
+
+		it("reports the caught error to telemetry with the component stack", () => {
+			vi.mocked(reportError).mockClear();
+			const testError = new Error("Test error");
+
+			render(
+				<ErrorBoundary>
+					<ThrowingComponent error={testError} />
+				</ErrorBoundary>
+			);
+
+			expect(reportError).toHaveBeenCalledTimes(1);
+			expect(reportError).toHaveBeenCalledWith(
+				testError,
+				expect.objectContaining({ componentStack: expect.any(String) })
 			);
 		});
 
