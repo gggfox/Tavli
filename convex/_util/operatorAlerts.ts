@@ -68,7 +68,11 @@ export type OperatorAlertEmailRecipient = {
 const EMAIL_ROLES = new Set<string>(OPERATOR_ALERT_EMAIL_ROLES);
 
 /**
- * Every org-level owner or admin with an email address, de-duplicated.
+ * Every platform admin with an email address, de-duplicated.
+ *
+ * `OPERATOR_ALERT_EMAIL_ROLES` is `admin` alone, matching the gate on
+ * `/admin/alerts`. Org-level `owner` is the CLIENT role — a restaurant group's
+ * proprietor — and must never receive Tavli's internal operator mail.
  *
  * Full scan of `userRoles`, matching `admin.ts` and `restaurantPurge.ts`: the
  * table holds one row per person who has ever held a role, the `roles` array

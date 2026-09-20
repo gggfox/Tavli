@@ -21,6 +21,7 @@ import {
 /** What `api.operatorAlerts.list` hands the page: the row plus a restaurant name. */
 export type OperatorAlertRow = Doc<"operatorAlerts"> & {
 	restaurantName: string | null;
+	acknowledgedByName: string | null;
 };
 
 const columnHelper = createColumnHelper<OperatorAlertRow>();
@@ -109,8 +110,12 @@ export function buildColumns(t: TFunction) {
 					<div className="flex flex-col gap-1">
 						<span className="text-sm text-foreground">{t(STATUS_LABEL_KEY[status])}</span>
 						{status === OPERATOR_ALERT_STATUS.ACKNOWLEDGED && row.acknowledgedBy ? (
-							<span className="text-xs text-faint-foreground">
-								{t(AlertsKeys.ACTION_ACKNOWLEDGED_BY, { actor: row.acknowledgedBy })}
+							// The resolved name, with the raw Clerk subject kept in the
+							// tooltip: an operator reads a person, support reads an id.
+							<span className="text-xs text-faint-foreground" title={row.acknowledgedBy}>
+								{t(AlertsKeys.ACTION_ACKNOWLEDGED_BY, {
+									actor: row.acknowledgedByName ?? row.acknowledgedBy,
+								})}
 							</span>
 						) : null}
 					</div>
@@ -133,12 +138,18 @@ function AlertLinks({ row, t }: Readonly<{ row: OperatorAlertRow; t: TFunction }
 	return (
 		<div className="flex flex-wrap items-center gap-3 pt-1">
 			{row.orderId ? (
-				<Link
-					to="/admin/orders"
-					className="text-xs text-muted-foreground underline underline-offset-2 hover:opacity-80"
-				>
-					{t(AlertsKeys.LINK_ORDER)}
-				</Link>
+				<span className="flex items-center gap-1.5">
+					<Link
+						to="/admin/orders"
+						className="text-xs text-muted-foreground underline underline-offset-2 hover:opacity-80"
+					>
+						{t(AlertsKeys.LINK_ORDER)}
+					</Link>
+					{/* The dashboard is scoped to the operator's selected restaurant,
+					    so the link alone may not land on this order — the id is what
+					    makes it findable either way. */}
+					<CopyableId id={row.orderId} />
+				</span>
 			) : null}
 			{row.paymentId ? (
 				// The payments dashboard filters by free text, so the id lands the

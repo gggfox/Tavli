@@ -17,7 +17,7 @@ OperatorAlertEmail.PreviewProps = {
 	referenceLine: "Stripe reference: ch_3QsampleCharge",
 	ctaLabel: "Open operator alerts",
 	alertsUrl: "http://localhost:3000/admin/alerts",
-	footerWhy: "You get this because you hold an owner or admin role on Tavli.",
+	footerWhy: "You get this because you are a Tavli platform admin.",
 	footerSentBy: "Sent by Tavli",
 	previewText: "A severe operator alert needs a look",
 } satisfies OperatorAlertEmailProps;

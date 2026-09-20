@@ -547,7 +547,10 @@ An alert carrying a `dedupeKey` is raised once while it is open, so a Stripe
 event redelivered fifty times is one row, and acknowledging that row lets the
 next occurrence through as a fresh alert. A **severe** alert (an unmatched
 charge, a failed payout, a closed connected account) additionally emails every
-user holding the org-level `owner` or `admin` role, using the existing
+platform admin — users holding the org-level `admin` role, and nobody else.
+Never the org-level `owner` role: that is the client proprietor of a restaurant
+group, so mailing them would send Tavli's internal incident traffic about one
+client to every other client. Delivery uses the existing
 `RESEND_API_KEY` / `RESEND_FROM_ADDRESS` and `PUBLIC_APP_URL` — no new
 environment variable, and no new place for the email to be configured. The
 email is scheduled rather than awaited, so Resend being down never fails the

@@ -676,6 +676,7 @@
 		"ERROR_TABLE_NUMBER_EXISTS": "A table with that number already exists.",
 		"ERROR_PHONE_ALREADY_ALLOWLISTED": "That phone number is already on the allowlist.",
 		"ERROR_ALLOWLIST_ENTRY_NOT_FOUND": "That allowlist entry no longer exists.",
+		"ERROR_OPERATOR_ALERT_NOT_FOUND": "That operator alert no longer exists.",
 		"ERROR_INVITE_CROSS_ORG": "This person already belongs to a different organization. Accepting the invitation would move them out of it.",
 		"ERROR_INVITE_DUPLICATE_PENDING": "This person already has an invitation waiting for this organization.",
 		"ERROR_INVITE_DUPLICATE_IN_FILE": "An earlier row of this file already invites this person to this organization.",

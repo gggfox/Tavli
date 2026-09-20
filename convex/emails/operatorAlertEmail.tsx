@@ -38,6 +38,7 @@ const colors = {
 };
 
 export default function OperatorAlertEmail({
+	locale,
 	heading,
 	alertTitle,
 	explanation,
@@ -51,7 +52,7 @@ export default function OperatorAlertEmail({
 	previewText,
 }: Readonly<OperatorAlertEmailProps>) {
 	return (
-		<Html lang="en">
+		<Html lang={locale}>
 			<Head />
 			<Preview>{previewText}</Preview>
 			<Body

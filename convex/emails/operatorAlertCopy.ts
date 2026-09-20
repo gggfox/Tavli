@@ -7,7 +7,7 @@
  * drifting is that this table is keyed by the **same i18n key strings** the
  * alerts page renders (`OPERATOR_ALERT_TITLE_KEY` /
  * `OPERATOR_ALERT_EXPLANATION_KEY` in `convex/constants.ts`), and
- * `operatorAlertCopy.test.ts` fails when a kind is missing on either side.
+ * `renderOperatorAlertEmail.test.ts` fails when a kind is missing on either side.
  */
 import {
 	OPERATOR_ALERT_EXPLANATION_KEY,
@@ -141,7 +141,7 @@ const CHROME: Record<InviteEmailLocale, OperatorAlertEmailChrome> = {
 		restaurantLabel: "Restaurant",
 		referenceLabel: "Stripe reference",
 		cta: "Open operator alerts",
-		footerWhy: "You get this because you hold an owner or admin role on Tavli.",
+		footerWhy: "You get this because you are a Tavli platform admin.",
 		footerSentBy: "Sent by Tavli",
 	},
 	es: {
@@ -157,7 +157,7 @@ const CHROME: Record<InviteEmailLocale, OperatorAlertEmailChrome> = {
 		restaurantLabel: "Restaurante",
 		referenceLabel: "Referencia de Stripe",
 		cta: "Abrir alertas de operación",
-		footerWhy: "Recibes esto porque tienes un rol de propietario o administrador en Tavli.",
+		footerWhy: "Recibes esto porque eres administrador de la plataforma Tavli.",
 		footerSentBy: "Enviado por Tavli",
 	},
 };

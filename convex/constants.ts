@@ -1546,5 +1546,18 @@ export const OPERATOR_ALERT_EXPLANATION_KEY: Record<OperatorAlertKind, string> =
 		"alerts.kind.restaurantMissingContactEmail.explanation",
 };
 
-/** Org-level roles that receive the severe-alert email. */
-export const OPERATOR_ALERT_EMAIL_ROLES = [USER_ROLES.OWNER, USER_ROLES.ADMIN] as const;
+/**
+ * Org-level roles that receive the severe-alert email: **platform admins only**.
+ *
+ * Deliberately not `owner`. In this domain `userRoles.owner` is the per-organization
+ * CLIENT role — it is what `INVITE_ROLE.OWNER` grants a restaurant group's
+ * proprietor (`inviteOnboardingHelpers.ts`), and what `organizations.ts` uses to
+ * list the organizations a user belongs to. An owner is a customer of Tavli, not
+ * an operator of it. Including them would mail Tavli's internal incident traffic
+ * about one client's restaurant to every other client's proprietor, with a CTA to
+ * `/admin/alerts`, a page their role cannot open.
+ *
+ * Kept identical to the page's gate (`requireAdminRole`) on purpose: whoever can
+ * read an alert is exactly whoever gets told about it.
+ */
+export const OPERATOR_ALERT_EMAIL_ROLES = [USER_ROLES.ADMIN] as const;

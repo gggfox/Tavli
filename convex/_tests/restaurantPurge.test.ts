@@ -17,7 +17,14 @@ import { describe, expect, it } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { BRANDING_IMAGE_SLOTS, BRANDING_SLOT_SPECS } from "../brandingImageHelpers";
-import { RESTAURANT_PURGE_DELETED_TABLES, TABLE } from "../constants";
+import {
+	OPERATOR_ALERT_EXPLANATION_KEY,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	OPERATOR_ALERT_STATUS,
+	RESTAURANT_PURGE_DELETED_TABLES,
+	TABLE,
+} from "../constants";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -551,11 +558,11 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 		// An operator alert about this restaurant (TAVLI-109). Platform-wide
 		// alerts carry no `restaurantId` and survive any purge; this one does not.
 		await ctx.db.insert("operatorAlerts", {
-			kind: "payment_stuck",
-			severity: "warning",
-			status: "open",
+			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
+			severity: OPERATOR_ALERT_SEVERITY.WARNING,
+			status: OPERATOR_ALERT_STATUS.OPEN,
 			restaurantId,
-			messageKey: "alerts.kind.paymentStuck.explanation",
+			messageKey: OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.PAYMENT_STUCK],
 			createdAt: NOW,
 		});
 

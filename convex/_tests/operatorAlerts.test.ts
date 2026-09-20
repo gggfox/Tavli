@@ -19,6 +19,7 @@ import {
 	TABLE,
 } from "../constants";
 import { raiseOperatorAlert } from "../_util/operatorAlerts";
+import { ACKNOWLEDGED_ALERTS_LIMIT } from "../operatorAlerts";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -65,12 +66,16 @@ async function seedUserRole(
 		userId: string;
 		roles: ("admin" | "owner" | "manager" | "customer" | "employee")[];
 		email?: string;
+		firstName?: string;
+		paternalLastname?: string;
 	}
 ) {
 	await t.run(async (ctx) => {
 		await ctx.db.insert(TABLE.USER_ROLES, {
 			userId: args.userId,
 			email: args.email,
+			firstName: args.firstName,
+			paternalLastname: args.paternalLastname,
 			roles: args.roles,
 			createdAt: NOW,
 			updatedAt: NOW,
@@ -195,17 +200,11 @@ describe("severe alerts reach the platform admins", () => {
 	it("schedules exactly one email per platform admin, in their own language", async () => {
 		const t = convexTest(schema, modules);
 		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
-		await seedUserRole(t, { userId: "owner-1", roles: ["owner"], email: "founder@tavliai.com" });
-		// Not org-level: a restaurant manager is not a platform admin.
-		await seedUserRole(t, {
-			userId: "manager-1",
-			roles: ["manager"],
-			email: "gerente@lacocina.mx",
-		});
+		await seedUserRole(t, { userId: "admin-2", roles: ["admin"], email: "sre@tavliai.com" });
 		// Reachable by nobody: no email address on the role row.
-		await seedUserRole(t, { userId: "admin-2", roles: ["admin"] });
+		await seedUserRole(t, { userId: "admin-3", roles: ["admin"] });
 		await t.run(async (ctx) => {
-			await ctx.db.insert(TABLE.USER_SETTINGS, { userId: "owner-1", language: "es" });
+			await ctx.db.insert(TABLE.USER_SETTINGS, { userId: "admin-2", language: "es" });
 		});
 
 		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
@@ -222,15 +221,36 @@ describe("severe alerts reach the platform admins", () => {
 			])
 		);
 		expect(byEmail.get("ops@tavliai.com")?.locale).toBe("en");
-		expect(byEmail.get("founder@tavliai.com")?.locale).toBe("es");
+		expect(byEmail.get("sre@tavliai.com")?.locale).toBe("es");
 
 		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 	});
 
+	/**
+	 * The org-level `owner` role is the CLIENT proprietor of a restaurant group,
+	 * not an operator of Tavli. Mailing them would send one client's incident to
+	 * every other client's owner, with a link to a page their role cannot open.
+	 */
+	it("never emails an org-level owner, or a restaurant manager", async () => {
+		const t = convexTest(schema, modules);
+		await seedUserRole(t, { userId: "owner-1", roles: ["owner"], email: "founder@lacocina.mx" });
+		await seedUserRole(t, {
+			userId: "manager-1",
+			roles: ["manager"],
+			email: "gerente@lacocina.mx",
+		});
+
+		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+			kind: OPERATOR_ALERT_KIND.PAYOUT_FAILED,
+		});
+
+		expect(await scheduledEmails(t)).toHaveLength(0);
+	});
+
 	it("emails one person once, however many org role rows they hold", async () => {
 		const t = convexTest(schema, modules);
-		await seedUserRole(t, { userId: "owner-1", roles: ["owner"], email: "founder@tavliai.com" });
-		await seedUserRole(t, { userId: "owner-1", roles: ["owner"], email: "founder@tavliai.com" });
+		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
+		await seedUserRole(t, { userId: "admin-1", roles: ["admin"], email: "ops@tavliai.com" });
 
 		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.ACCOUNT_CLOSED,
@@ -324,6 +344,61 @@ describe("the admin alerts list", () => {
 		const [rows, error] = await admin.query(api.operatorAlerts.list, {});
 		expect(error).toBeNull();
 		expect(rows!.map((row) => row._id)).toEqual([newest, older, acknowledged]);
+	});
+
+	it("names the admin who acknowledged an alert, never their Clerk subject", async () => {
+		const t = convexTest(schema, modules);
+		await seedUserRole(t, {
+			userId: "user_2abcCLERKSUBJECT",
+			roles: ["admin"],
+			email: "ada@tavliai.com",
+			firstName: "Ada",
+			paternalLastname: "Lovelace",
+		});
+		const admin = t.withIdentity({ subject: "user_2abcCLERKSUBJECT" });
+
+		const alertId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
+		});
+		await admin.mutation(api.operatorAlerts.acknowledge, { alertId });
+
+		const [rows] = await admin.query(api.operatorAlerts.list, {});
+		expect(rows![0].acknowledgedBy).toBe("user_2abcCLERKSUBJECT");
+		expect(rows![0].acknowledgedByName).toBe("Ada Lovelace");
+	});
+
+	it("caps the acknowledged history and keeps the newest of it", async () => {
+		const t = convexTest(schema, modules);
+		await seedUserRole(t, { userId: "admin-1", roles: ["admin"] });
+		const admin = t.withIdentity({ subject: "admin-1" });
+
+		// Inserted directly: this is about the read limit, not about the
+		// acknowledge path, and 200+ round trips through the mutation would only
+		// make the test slow.
+		await t.run(async (ctx) => {
+			for (let i = 0; i < ACKNOWLEDGED_ALERTS_LIMIT + 2; i++) {
+				await ctx.db.insert(TABLE.OPERATOR_ALERTS, {
+					kind: OPERATOR_ALERT_KIND.DASHBOARD_REFUND,
+					severity: OPERATOR_ALERT_SEVERITY.WARNING,
+					status: OPERATOR_ALERT_STATUS.ACKNOWLEDGED,
+					messageKey: OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.DASHBOARD_REFUND],
+					acknowledgedBy: "admin-1",
+					acknowledgedAt: NOW + i,
+					createdAt: NOW + i,
+				});
+			}
+		});
+		// An open alert is never dropped, however much history sits behind it.
+		const openId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
+		});
+
+		const [rows] = await admin.query(api.operatorAlerts.list, {});
+		expect(rows).toHaveLength(ACKNOWLEDGED_ALERTS_LIMIT + 1);
+		expect(rows![0]._id).toBe(openId);
+		// Newest-first, so the two oldest acknowledged rows are the ones cut.
+		const oldestKept = rows!.at(-1)!;
+		expect(oldestKept.createdAt).toBe(NOW + 2);
 	});
 
 	it("records who acknowledged an alert and when", async () => {

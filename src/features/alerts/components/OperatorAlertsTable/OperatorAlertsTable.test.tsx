@@ -12,7 +12,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getFunctionName } from "convex/server";
 import { useConvexAuth } from "convex/react";
-import { OPERATOR_ALERT_SEVERITY, OPERATOR_ALERT_STATUS } from "convex/constants";
+import {
+	OPERATOR_ALERT_EXPLANATION_KEY,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	OPERATOR_ALERT_STATUS,
+} from "convex/constants";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OperatorAlertsTable } from "./OperatorAlertsTable";
 
@@ -58,35 +63,38 @@ const calls: MutationCall[] = [];
 const OPEN_SEVERE = {
 	_id: "alerts:severe",
 	_creationTime: 1,
-	kind: "charge_unmatched" as const,
+	kind: OPERATOR_ALERT_KIND.CHARGE_UNMATCHED,
 	severity: OPERATOR_ALERT_SEVERITY.SEVERE,
 	status: OPERATOR_ALERT_STATUS.OPEN,
-	messageKey: "alerts.kind.chargeUnmatched.explanation",
+	messageKey: OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED],
 	stripeObjectId: "ch_1",
 	restaurantId: "restaurants:cocina",
 	restaurantName: "La Cocina",
+	acknowledgedByName: null,
 	createdAt: 1700000000000,
 };
 
 const OPEN_WARNING_NO_RESTAURANT = {
 	_id: "alerts:warning",
 	_creationTime: 2,
-	kind: "payment_stuck" as const,
+	kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
 	severity: OPERATOR_ALERT_SEVERITY.WARNING,
 	status: OPERATOR_ALERT_STATUS.OPEN,
-	messageKey: "alerts.kind.paymentStuck.explanation",
+	messageKey: OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.PAYMENT_STUCK],
 	restaurantName: null,
+	acknowledgedByName: null,
 	createdAt: 1700000001000,
 };
 
 const ACKNOWLEDGED = {
 	_id: "alerts:done",
 	_creationTime: 3,
-	kind: "dispute_lost" as const,
+	kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
 	severity: OPERATOR_ALERT_SEVERITY.WARNING,
 	status: OPERATOR_ALERT_STATUS.ACKNOWLEDGED,
-	messageKey: "alerts.kind.disputeLost.explanation",
-	acknowledgedBy: "admin-1",
+	messageKey: OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.DISPUTE_LOST],
+	acknowledgedBy: "user_2abcCLERKSUBJECT",
+	acknowledgedByName: "Ada Lovelace",
 	acknowledgedAt: 1700000002000,
 	restaurantId: "restaurants:otra",
 	restaurantName: "La Otra",
@@ -140,7 +148,9 @@ describe("OperatorAlertsTable", () => {
 
 		expect(screen.getAllByText("alerts.action.acknowledge")).toHaveLength(1);
 		expect(screen.getByText("alerts.status.acknowledged")).toBeTruthy();
-		expect(screen.getByText("alerts.action.acknowledgedBy admin-1")).toBeTruthy();
+		// A person, not a Clerk subject — with the subject kept in the tooltip.
+		const actor = screen.getByText("alerts.action.acknowledgedBy Ada Lovelace");
+		expect(actor.getAttribute("title")).toBe("user_2abcCLERKSUBJECT");
 	});
 
 	it("acknowledges the row that was clicked", async () => {

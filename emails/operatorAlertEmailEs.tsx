@@ -17,7 +17,7 @@ OperatorAlertEmailEs.PreviewProps = {
 	referenceLine: "Referencia de Stripe: ch_3QsampleCharge",
 	ctaLabel: "Abrir alertas de operación",
 	alertsUrl: "http://localhost:3000/admin/alerts",
-	footerWhy: "Recibes esto porque tienes un rol de propietario o administrador en Tavli.",
+	footerWhy: "Recibes esto porque eres administrador de la plataforma Tavli.",
 	footerSentBy: "Enviado por Tavli",
 	previewText: "Una alerta grave de operación necesita revisión",
 } satisfies OperatorAlertEmailProps;

@@ -34,8 +34,9 @@ import {
 	NotFoundErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
-import { getCurrentUserId, requireAdminRole } from "./_util/auth";
+import { fetchUserRoleRecord, getCurrentUserId, requireAdminRole } from "./_util/auth";
 import { raiseOperatorAlert } from "./_util/operatorAlerts";
+import { buildInviterDisplayName } from "./emails/contextHelpers";
 import {
 	OPERATOR_ALERT_KINDS,
 	OPERATOR_ALERT_SEVERITIES,
@@ -122,10 +123,27 @@ export const getOperatorAlertEmailContext = internalQuery({
 type ListErrors = AdminAuthErrors;
 
 /**
- * An alert as the page reads it: the row plus the restaurant's name, so the
- * table can label a link and filter by restaurant without a second query.
+ * An alert as the page reads it: the row, the restaurant's name, and a human
+ * name for whoever acknowledged it — so the table can label its links and
+ * filter by restaurant without a second query, and without showing an operator
+ * a raw Clerk subject.
  */
-export type OperatorAlertListRow = OperatorAlertDoc & { restaurantName: string | null };
+export type OperatorAlertListRow = OperatorAlertDoc & {
+	restaurantName: string | null;
+	/** Display name or email of `acknowledgedBy`; null when unresolvable. */
+	acknowledgedByName: string | null;
+};
+
+/**
+ * How many acknowledged alerts the page carries.
+ *
+ * Open alerts are deliberately unbounded — every one of them is work somebody
+ * still has to do, and silently dropping the oldest would hide exactly the
+ * alert that has been ignored longest. Acknowledged ones are history: they grow
+ * without limit over the product's life, and past a couple of screens nobody
+ * scrolls. Newest-first, so the cut falls on the oldest cleared alerts.
+ */
+export const ACKNOWLEDGED_ALERTS_LIMIT = 200;
 
 /**
  * Every alert, open ones first and newest first within each group.
@@ -136,9 +154,9 @@ export type OperatorAlertListRow = OperatorAlertDoc & { restaurantName: string |
  * be below something somebody already acknowledged.
  *
  * Two indexed reads rather than a full scan — `by_status_created` prefixes on
- * status, so each group comes back already sorted. Restaurant names are
- * resolved through a per-call cache, so a hundred alerts about one restaurant
- * cost one `db.get`, not a hundred.
+ * status, so each group comes back already sorted. Restaurant names and
+ * acknowledger names are resolved through per-call caches, so a hundred alerts
+ * about one restaurant cleared by one admin cost two lookups, not two hundred.
  */
 export const list = query({
 	args: {},
@@ -155,21 +173,36 @@ export const list = query({
 			.query(TABLE.OPERATOR_ALERTS)
 			.withIndex("by_status_created", (q) => q.eq("status", OPERATOR_ALERT_STATUS.ACKNOWLEDGED))
 			.order("desc")
-			.collect();
+			.take(ACKNOWLEDGED_ALERTS_LIMIT);
 
-		const namesById = new Map<string, string | null>();
+		const restaurantNames = new Map<string, string | null>();
+		const actorNames = new Map<string, string | null>();
 		const rows: OperatorAlertListRow[] = [];
 		for (const alert of [...open, ...acknowledged]) {
-			if (!alert.restaurantId) {
-				rows.push({ ...alert, restaurantName: null });
-				continue;
+			let restaurantName: string | null = null;
+			if (alert.restaurantId) {
+				const key = String(alert.restaurantId);
+				if (!restaurantNames.has(key)) {
+					const restaurant = await ctx.db.get(alert.restaurantId);
+					restaurantNames.set(key, restaurant?.name ?? null);
+				}
+				restaurantName = restaurantNames.get(key) ?? null;
 			}
-			const key = String(alert.restaurantId);
-			if (!namesById.has(key)) {
-				const restaurant = await ctx.db.get(alert.restaurantId);
-				namesById.set(key, restaurant?.name ?? null);
+
+			let acknowledgedByName: string | null = null;
+			if (alert.acknowledgedBy) {
+				const key = alert.acknowledgedBy;
+				if (!actorNames.has(key)) {
+					// `userRoles` is where an org-level identity's name and email
+					// live; `buildInviterDisplayName` already encodes "structured
+					// name, else email" and is what invite emails use.
+					const roleRow = await fetchUserRoleRecord(ctx, key);
+					actorNames.set(key, roleRow ? buildInviterDisplayName(roleRow) : null);
+				}
+				acknowledgedByName = actorNames.get(key) ?? null;
 			}
-			rows.push({ ...alert, restaurantName: namesById.get(key) ?? null });
+
+			rows.push({ ...alert, restaurantName, acknowledgedByName });
 		}
 
 		return [rows, null];
