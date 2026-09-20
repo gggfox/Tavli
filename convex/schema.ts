@@ -958,6 +958,13 @@ export default defineSchema({
 		 *
 		 * — one bounded range, no `filter` over the table.
 		 *
+		 * Mind what `updatedAt` measures: `stripeHelpers.updatePayment` stamps it
+		 * on every patch, including status-preserving ones (a late
+		 * `latestStripeEventId` or `stripeChargeId` write), so the range means
+		 * "untouched for N minutes", not "in processing for N minutes". TAVLI-106
+		 * should size N with that in mind — and read `createdAt` off the rows the
+		 * range returns if it needs the payment's true age.
+		 *
 		 * Why not `by_status_kind_updated` (status, kind, updatedAt)? The sweep
 		 * covers more than one `kind` (order and tip), and an index orders by
 		 * each field in turn, so putting `kind` in the middle would push

@@ -13,9 +13,9 @@
  * Usage in a suite (the two lines belong together):
  *
  * ```ts
- * import { mockStripeClient } from "./_fixtures/stripeMock";
+ * import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
  *
- * vi.mock("stripe", async () => (await import("./_fixtures/stripeMock")).stripeModuleMock());
+ * vi.mock("stripe", async () => (await import("./_fixtures/stripeMock.fixture")).stripeModuleMock());
  * ```
  *
  * `vi.mock` is hoisted above the imports, so its factory cannot close over a
