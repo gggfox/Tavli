@@ -1527,7 +1527,7 @@ export const getActiveOrdersByRestaurant = query({
 			}))
 			.filter((order) => {
 				if (!stationFilter) return true;
-				// An order whose only items at this station were 86'd has nothing
+				// An order whose only items at this station were removed has nothing
 				// left for it to prepare, so it drops out of that station's queue.
 				return order.items.some(
 					(it) => it.cancelledAt === undefined && stationFilter.has(it.prepStation)
@@ -1737,9 +1737,9 @@ export const unmarkStationReady = mutation({
 });
 
 /**
- * "86" a single line: the kitchen is out of an ingredient, the bar is out of a
- * bottle. Cancelling the whole round because one station cannot make one item
- * is the wrong blast radius — this drops just that line.
+ * Remove a single line from an order: the kitchen is out of an ingredient, the
+ * bar is out of a bottle. Cancelling the whole round because one station cannot
+ * make one item is the wrong blast radius — this drops just that line.
  *
  * Two payment worlds (ADR 008):
  * - **Unpaid rounds** (legacy tab flow, and `awaiting_payment` cash orders):
@@ -1747,12 +1747,13 @@ export const unmarkStationReady = mutation({
  *   no Stripe call is made.
  * - **Paid orders** (pay-at-submit): the line is refunded — its price plus its
  *   share of the customer-borne service fee — via a scheduled
- *   `stripe.refundOrderItem`. The order keeps cooking; only 86'ing the last
+ *   `stripe.refundOrderItem`. The order keeps cooking; only removing the last
  *   live line cancels it and refunds the payment's entire remaining balance.
  *
  * A payment or refund **in flight** (pending/processing/refund_*) still
- * refuses: 86'ing under an open intent shifts the total nobody agreed to, and
- * a double-86 while a refund is pending must not be able to double-refund.
+ * refuses: removing a line under an open intent shifts the total nobody agreed
+ * to, and removing the same line twice while a refund is pending must not be
+ * able to double-refund.
  * That includes an `awaiting_payment` order whose diner is mid cash→card
  * switch — the open intent, not the status, decides.
  *
@@ -1764,7 +1765,7 @@ export const unmarkStationReady = mutation({
  *
  * No station-level authorization exists in this codebase by design (ADR 005:
  * the station filter is a UI convenience, not an access boundary), so any
- * restaurant staff may 86 any line. `cancelledBy`/`cancelledAt` is the trail.
+ * restaurant staff may remove any line. `cancelledBy`/`cancelledAt` is the trail.
  */
 export const cancelOrderItem = mutation({
 	args: { orderItemId: v.id(TABLE.ORDER_ITEMS) },
@@ -1787,8 +1788,8 @@ export const cancelOrderItem = mutation({
 
 		// Drafts belong to the diner (`removeItem`), and once an order is ready
 		// the food is plated — comping that is a manager's whole-order call.
-		// `awaiting_payment` is 86-able like any un-fired round: the cash hasn't
-		// been collected, so the line just leaves what staff will collect.
+		// A line leaves an `awaiting_payment` round like any un-fired one: the
+		// cash hasn't been collected, so it just leaves what staff will collect.
 		if (
 			order.status !== "submitted" &&
 			order.status !== "preparing" &&
@@ -1800,7 +1801,7 @@ export const cancelOrderItem = mutation({
 		// "Unpaid" is decided by paymentState alone — `awaiting_payment` gets no
 		// shortcut. A diner switching cash→card holds an open intent while the
 		// status stays awaiting_payment (paymentState pending/processing);
-		// 86'ing under that intent would shift the total the payment sheet is
+		// removing a line under that intent would shift the total the payment sheet is
 		// about to charge, and the webhook would then no-op the settle on the
 		// snapshot mismatch — money moved, order stuck. requestPayInPerson
 		// leaves paymentState unpaid and failPayment stamps `failed`, so a cash
@@ -2112,7 +2113,7 @@ export const internalListOrdersForExportYear = internalQuery({
 					.collect();
 
 				const ITEM_PREVIEW_LIMIT = 5;
-				// 86'd lines stay in the export, flagged: the diner ordered them and
+				// Removed lines stay in the export, flagged: the diner ordered them and
 				// may ask about them, but `totalAmountCents` already excludes them.
 				const preview = items
 					.slice(0, ITEM_PREVIEW_LIMIT)

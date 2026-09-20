@@ -116,7 +116,6 @@ export const OrderingKeys = {
 	// Receipt (ADR 008, TAVLI-71 Phase 3C): paid-order breakdown showing the
 	// CHARGED subtotal/fee split, plus the emailed restaurant-branded receipt.
 	// Breakdown amount labels reuse the checkout keys (subtotal/serviceFee/total).
-	RECEIPT_ITEM_REFUNDED: "ordering.receipt.itemRefunded",
 	RECEIPT_EMAIL_CTA: "ordering.receipt.emailCta",
 	RECEIPT_EMAIL_SENDING: "ordering.receipt.emailSending",
 	RECEIPT_EMAIL_SENT: "ordering.receipt.emailSent",

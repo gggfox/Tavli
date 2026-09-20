@@ -42,7 +42,7 @@ export function OrderItemRow({ item, activeStationFilters }: Readonly<OrderItemR
 			: { opacity: 0.45 };
 	}
 
-	// An 86'd line stays visible — the diner ordered it and may ask — but it
+	// A removed line stays visible — the diner ordered it and may ask — but it
 	// must never read as something still to make, so the station treatment
 	// gives way to a struck-through, muted row.
 	if (isCancelled) {

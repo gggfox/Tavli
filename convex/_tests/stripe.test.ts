@@ -1575,9 +1575,9 @@ describe("stripe actions", () => {
 		async function seedPaidOrderWithTwoLines(t: ReturnType<typeof convexTest>) {
 			const organizationId = await seedOrganization(t);
 			const restaurantId = await seedRestaurant(t, {
-				ownerId: "owner-86",
+				ownerId: "owner-refunds",
 				organizationId,
-				stripeAccountId: "acct_86",
+				stripeAccountId: "acct_refunds",
 				stripeOnboardingComplete: true,
 			});
 
@@ -1588,7 +1588,7 @@ describe("stripe actions", () => {
 
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
-					userId: "owner-86",
+					userId: "owner-refunds",
 					roles: ["owner"],
 					organizationId,
 					createdAt: Date.now(),
@@ -1603,7 +1603,7 @@ describe("stripe actions", () => {
 				const sessionId = await ctx.db.insert("sessions", {
 					restaurantId,
 					tableId,
-					userId: "diner-86",
+					userId: "diner-refunds",
 					status: "active",
 					startedAt: Date.now(),
 				});
@@ -1671,12 +1671,12 @@ describe("stripe actions", () => {
 					subtotalAmount: 1400,
 					feeAmount: 168,
 					kind: "order",
-					paidByUserId: "diner-86",
+					paidByUserId: "diner-refunds",
 					currency: "usd",
 					status: "succeeded",
 					refundStatus: "none",
 					attemptNumber: 1,
-					stripePaymentIntentId: "pi_86",
+					stripePaymentIntentId: "pi_refunds",
 					succeededAt: Date.now(),
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
@@ -1689,7 +1689,7 @@ describe("stripe actions", () => {
 				tacosItemId: tacosItemId!,
 				drinkItemId: drinkItemId!,
 				paymentId: paymentId!,
-				staff: t.withIdentity({ subject: "owner-86" }),
+				staff: t.withIdentity({ subject: "owner-refunds" }),
 			};
 		}
 
@@ -1714,7 +1714,7 @@ describe("stripe actions", () => {
 				// 600 line + round(600 × 12%) = 672, keyed per (payment, line).
 				expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
 					{
-						payment_intent: "pi_86",
+						payment_intent: "pi_refunds",
 						amount: 672,
 						reverse_transfer: true,
 						refund_application_fee: true,
@@ -1817,7 +1817,7 @@ describe("stripe actions", () => {
 					feeAmount: undefined,
 				});
 				// Cancel the line by hand, as a buggy scheduler-caller would have.
-				await ctx.db.patch(drinkItemId, { cancelledAt: Date.now(), cancelledBy: "owner-86" });
+				await ctx.db.patch(drinkItemId, { cancelledAt: Date.now(), cancelledBy: "owner-refunds" });
 			});
 
 			await t.action(internal.stripe.refundOrderItem, {
@@ -1889,7 +1889,7 @@ describe("stripe actions", () => {
 			// replayed as a no-op.
 			expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
 				{
-					payment_intent: "pi_86",
+					payment_intent: "pi_refunds",
 					reverse_transfer: true,
 					refund_application_fee: true,
 				},

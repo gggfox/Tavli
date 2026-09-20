@@ -153,7 +153,7 @@ describe("buildLineRefundIdempotencyKey", () => {
 		expect(buildLineRefundIdempotencyKey(PAYMENT_A, ITEM_A)).toBe(`refund:${PAYMENT_A}:${ITEM_A}`);
 	});
 
-	it("differs per line so two 86s on one payment are not replayed", () => {
+	it("differs per line so two removals on one payment are not replayed", () => {
 		expect(buildLineRefundIdempotencyKey(PAYMENT_A, ITEM_A)).not.toBe(
 			buildLineRefundIdempotencyKey(PAYMENT_A, ITEM_B)
 		);
@@ -181,7 +181,7 @@ describe("computeLineRefundAmount", () => {
 		).toBe(672);
 	});
 
-	it("sums to exactly the payment amount across a fully-86'd order", () => {
+	it("sums to exactly the payment amount across an order emptied line by line", () => {
 		// Three lines whose per-line fee rounding cannot land cleanly:
 		// subtotal 10000 → charge 11200. The last live line sweeps the remainder,
 		// so the residue documented in the go-live runbook is structurally zero.

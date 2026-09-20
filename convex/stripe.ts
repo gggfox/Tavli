@@ -643,8 +643,8 @@ export const createRefund = internalAction({
 		/** Defaults to the legacy payment-scoped key. */
 		idempotencyKey: v.optional(v.string()),
 		/**
-		 * Leave `order.paymentState` alone (ADR 008 line refunds). A single 86'd
-		 * line refunds while the order keeps cooking, so flipping the order
+		 * Leave `order.paymentState` alone (ADR 008 line refunds). A single
+		 * removed line refunds while the order keeps cooking, so flipping the order
 		 * through refund_requested → refunded here would be wrong; the caller
 		 * (`refundOrderItem`) records per-line outcome itself. Payment-level
 		 * refund fields are still maintained either way.

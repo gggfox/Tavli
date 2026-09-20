@@ -226,7 +226,7 @@ export const getTabSummary = query({
  * settled). A tab with a payable balance can only leave the active state via
  * payment (`confirmTabPayment` — legacy pre-pivot flow), and a session holding
  * an uncollected cash order (`awaiting_payment`) stays open until staff collect
- * the cash or 86 the order from the Orders dashboard — cash walkout is the
+ * the cash or cancel the order from the Orders dashboard — cash walkout is the
  * only walkout left under ADR 008.
  */
 export const close = mutation({
@@ -253,7 +253,7 @@ export const close = mutation({
 
 		// Uncollected cash is owed money too, just outside the tab balance
 		// (`awaiting_payment` is deliberately not tab-payable). Same reasoning as
-		// above: closing would erase debt staff still have to collect — or 86 —
+		// above: closing would erase debt staff still have to collect — or cancel —
 		// from the Orders dashboard.
 		if (orders.some(isAwaitingPaymentOrder)) {
 			throw fromErrorObject(

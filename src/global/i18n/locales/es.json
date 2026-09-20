@@ -812,7 +812,6 @@
 			"stepServed": "Entregado"
 		},
 		"receipt": {
-			"itemRefunded": "Reembolsado",
 			"emailCta": "Envíame el recibo por correo",
 			"emailSending": "Enviando...",
 			"emailSent": "Enviado a {{email}}"

@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field             | Value      |
-| ----------------- | ---------- |
-| **Status**        | Accepted   |
-| **Date**          | 2026-09-20 |
-| **Author(s)**     | Tavli team |
-| **Supersedes**    | —          |
-| **Superseded by** | —          |
+| Field             | Value                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| **Status**        | Accepted                                                                                    |
+| **Date**          | 2026-09-20                                                                                  |
+| **Author(s)**     | Tavli team                                                                                  |
+| **Supersedes**    | [ADR-008](./008-customer-borne-commission-and-pay-at-submit.md) — substitution section only |
+| **Superseded by** | —                                                                                           |
 
 ## Context
 
@@ -105,8 +105,12 @@ came back, without having to reconcile a total that silently shrank.
 - The saved card that `setup_future_usage: "off_session"` persists remains, with
   the post-visit tip as its only one-tap consumer.
 - Terminology: **remove a line from an order** is the term for staff taking one
-  item off a placed order (see `CONTEXT.md`). The kitchen slang for it is not
-  used in this codebase.
+  item off a placed order (see `CONTEXT.md`). New code, copy, tests and tickets
+  never use the kitchen slang for it; this PR also swept the pre-existing
+  comments, docstrings, test names and staff-facing English copy that did. The
+  slang survives only in historical ADR prose (ADR-007, ADR-008), which is a
+  record and not rewritten, and inside behaviour-bearing identifiers listed in
+  the Implementation section below.
 
 ## Alternatives Considered
 
@@ -180,6 +184,14 @@ Moved: `getSavedCardForSessionMemberInternal` from `convex/substitutions.ts` to
 Kept and still tested: `stripe.cancelOrderAndRefund`, `stripe.refundOrderItem`,
 `orderItemCancellation.executeOrderItemCancellation`, `computeLineRefundAmount`,
 `computeOrderRefundAmount`.
+
+Left unrenamed on purpose, because renaming them changes behaviour rather than
+wording: the mutation `orders.cancelOrderItem`, the columns
+`orderItems.cancelledAt` / `cancelledBy`, the error codes
+`ERROR_ORDER_ITEM_NOT_CANCELLABLE` / `ERROR_ORDER_ITEM_CANCEL_PAID` /
+`ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED`, and the i18n keys under `orders.ticket.*`
+(`cancelItem`, `itemCancelledBadge`, `confirmCancelItem`). None of them spells
+the slang out; they say "cancel", which is the older wording for the same act.
 
 ## References
 

@@ -433,11 +433,11 @@
 		},
 		"ticket": {
 			"orderNote": "Order note",
-			"itemCancelledBadge": "86'd",
-			"cancelItem": "86 item",
+			"itemCancelledBadge": "Removed",
+			"cancelItem": "Remove item",
 			"cancelItemPrompt": "Can't make {{name}}? It comes off the diner's bill immediately.",
 			"cancelItemPaidPrompt": "Can't make {{name}}? Its price plus its service-fee share is refunded to the diner automatically.",
-			"confirmCancelItem": "Confirm 86",
+			"confirmCancelItem": "Confirm removal",
 			"keepItem": "Keep item",
 			"undoReady": "Undo",
 			"markedReady": "{{station}} marked ready · #{{n}}",
@@ -812,7 +812,6 @@
 			"stepServed": "Served"
 		},
 		"receipt": {
-			"itemRefunded": "Refunded",
 			"emailCta": "Email me a receipt",
 			"emailSending": "Sending...",
 			"emailSent": "Sent to {{email}}"

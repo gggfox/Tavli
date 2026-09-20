@@ -497,7 +497,7 @@ export default defineSchema({
 	[TABLE.MENU_ITEM_POPULARITY]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		menuItemId: v.id(TABLE.MENU_ITEMS),
-		/** Units sold in the window. Cancelled (86'd) lines are excluded. */
+		/** Units sold in the window. Lines removed from an order are excluded. */
 		quantity: v.number(),
 		/** 1-based, so the carousel can order without re-sorting. */
 		rank: v.number(),
@@ -816,15 +816,15 @@ export default defineSchema({
 		specialInstructions: v.optional(v.string()),
 		lineTotal: v.number(),
 		/**
-		 * Set by `orders.cancelOrderItem` (86). A cancelled line stays on the
+		 * Set by `orders.cancelOrderItem`. A cancelled line stays on the
 		 * order for history but is excluded from totals, station applicability,
 		 * and analytics. `undefined` means the line is live.
 		 */
 		cancelledAt: v.optional(v.number()),
-		/** Clerk subject of the staff member who 86'd the line. */
+		/** Clerk subject of the staff member who removed the line. */
 		cancelledBy: v.optional(v.string()),
 		/**
-		 * Set when 86'ing this line on a *paid* order produced a Stripe refund
+		 * Set when removing this line from a *paid* order produced a Stripe refund
 		 * (ADR 008). The tuple below is the per-line refund record — and the
 		 * idempotency marker `stripe.refundOrderItem` checks so a replayed
 		 * schedule can never refund the same line twice. `undefined` on lines
