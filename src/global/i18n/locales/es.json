@@ -2113,6 +2113,10 @@
 				"title": "Cargo reembolsado: el monto no coincidía",
 				"explanation": "Llegó un cargo por un monto distinto al de la orden que menciona, así que Tavli lo reembolsó en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse."
 			},
+			"paymentAmountMismatch": {
+				"title": "Cobro detenido: el monto no coincidía",
+				"explanation": "Stripe cobró un monto distinto al que Tavli pidió, así que no se marcó nada como pagado. El dinero sigue en Stripe: compara los dos montos y reembolsa el cargo o corrige la orden."
+			},
 			"disputeLost": {
 				"title": "Disputa perdida",
 				"explanation": "Una red de tarjetas resolvió una disputa en contra del restaurante. El dinero y la comisión de la disputa se perdieron; hay que avisarle al restaurante."

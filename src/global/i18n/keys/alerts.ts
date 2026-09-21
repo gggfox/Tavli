@@ -57,6 +57,8 @@ export const AlertsKeys = {
 	KIND_CHARGE_UNMATCHED_EXPLANATION: "alerts.kind.chargeUnmatched.explanation",
 	KIND_CHARGE_MISMATCHED_REFUNDED_TITLE: "alerts.kind.chargeMismatchedRefunded.title",
 	KIND_CHARGE_MISMATCHED_REFUNDED_EXPLANATION: "alerts.kind.chargeMismatchedRefunded.explanation",
+	KIND_PAYMENT_AMOUNT_MISMATCH_TITLE: "alerts.kind.paymentAmountMismatch.title",
+	KIND_PAYMENT_AMOUNT_MISMATCH_EXPLANATION: "alerts.kind.paymentAmountMismatch.explanation",
 	KIND_DISPUTE_LOST_TITLE: "alerts.kind.disputeLost.title",
 	KIND_DISPUTE_LOST_EXPLANATION: "alerts.kind.disputeLost.explanation",
 	KIND_DASHBOARD_REFUND_TITLE: "alerts.kind.dashboardRefund.title",

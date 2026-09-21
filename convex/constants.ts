@@ -1409,6 +1409,13 @@ export const OPERATOR_ALERT_KIND = {
 	CHARGE_UNMATCHED: "charge_unmatched",
 	/** A charge's amount disagreed with the order's, so it was refunded. */
 	CHARGE_MISMATCHED_REFUNDED: "charge_mismatched_refunded",
+	/**
+	 * Stripe reported collecting a different amount than the payment row expected,
+	 * so the webhook refused to settle it (TAVLI-69). Distinct from
+	 * `charge_mismatched_refunded`: there the money was sent back, here it is
+	 * still sitting at Stripe awaiting a human decision.
+	 */
+	PAYMENT_AMOUNT_MISMATCH: "payment_amount_mismatch",
 	/** A dispute closed against the restaurant. */
 	DISPUTE_LOST: "dispute_lost",
 	/** A refund issued from the Stripe Dashboard rather than through Tavli. */
@@ -1474,6 +1481,10 @@ export const OPERATOR_ALERT_DEFAULT_SEVERITY: Record<OperatorAlertKind, Operator
 	// nobody knows whose it is.
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: OPERATOR_ALERT_SEVERITY.SEVERE,
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	// A card was charged an amount Tavli did not ask for and settlement is
+	// blocked: the diner has paid, the restaurant has not been credited, and
+	// only a human can decide which number was right.
+	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: OPERATOR_ALERT_SEVERITY.SEVERE,
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: OPERATOR_ALERT_SEVERITY.WARNING,
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: OPERATOR_ALERT_SEVERITY.WARNING,
 	// The restaurant is not getting paid.
@@ -1494,6 +1505,7 @@ export const OPERATOR_ALERT_TITLE_KEY: Record<OperatorAlertKind, string> = {
 	[OPERATOR_ALERT_KIND.PAYMENT_STUCK]: "alerts.kind.paymentStuck.title",
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.title",
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: "alerts.kind.chargeMismatchedRefunded.title",
+	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: "alerts.kind.paymentAmountMismatch.title",
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.title",
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.title",
 	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.title",
@@ -1512,6 +1524,7 @@ export const OPERATOR_ALERT_EXPLANATION_KEY: Record<OperatorAlertKind, string> =
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.explanation",
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]:
 		"alerts.kind.chargeMismatchedRefunded.explanation",
+	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: "alerts.kind.paymentAmountMismatch.explanation",
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.explanation",
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.explanation",
 	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.explanation",

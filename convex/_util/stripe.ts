@@ -18,9 +18,14 @@
 import Stripe from "stripe";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { PAYMENT_KIND, USER_ROLES } from "../constants";
+import {
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	PAYMENT_KIND,
+	USER_ROLES,
+} from "../constants";
 import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
-import { redactExternalId } from "../_shared/integrationLogging";
+import { buildIntegrationErrorLog, redactExternalId } from "../_shared/integrationLogging";
 import {
 	computeDisputeFacts,
 	computeRefundFacts,
@@ -235,6 +240,80 @@ export async function handlePaymentIntentSuccess(
 		}
 	);
 	if (!payment) return undefined;
+
+	// ---------------------------------------------------------------------
+	// AMOUNT ASSERTION (TAVLI-69). Does Stripe agree with us about how much
+	// was collected? Asked here, before any dispatch or side effect, so all
+	// three kinds get it: `payments.amount` is the gross the intent was
+	// created with on every path (order = subtotal + fee, tip = the tip,
+	// legacy tab = the tab total), so one field answers it for all of them.
+	//
+	// Not the same question `orders.confirmPayment` asks. That one compares
+	// the ORDER's total against the payment row and catches an order edited
+	// after the intent was created; it says nothing about what Stripe
+	// actually took, and the tab and tip paths compare nothing at all. Both
+	// checks stay: this one runs first and covers every kind.
+	// ---------------------------------------------------------------------
+	const receivedAmount =
+		typeof paymentIntent.amount_received === "number"
+			? paymentIntent.amount_received
+			: typeof paymentIntent.amount === "number"
+				? // Stripe always sends `amount_received` on a success. If a
+					// delivery somehow lacks it, `amount` is the documented
+					// equivalent for a succeeded intent — better than refusing to
+					// settle good money over a missing field.
+					paymentIntent.amount
+				: undefined;
+
+	if (receivedAmount !== undefined && receivedAmount !== payment.amount) {
+		// Loud first: the alert is for the operator, the log is for whoever is
+		// reading Convex logs when this fires. Ids redacted per convention.
+		console.error("[stripe.fulfillPayment] PAYMENT AMOUNT MISMATCH", {
+			...buildIntegrationErrorLog(
+				new Error("PaymentIntent amount does not match the payment row"),
+				{
+					integration: "stripe-webhook",
+					operation: "handlePaymentIntentSuccess",
+					restaurantId: payment.restaurantId,
+				}
+			),
+			paymentId: payment._id,
+			paymentKind: payment.kind ?? "legacy",
+			expectedAmount: payment.amount,
+			receivedAmount,
+			currency: payment.currency,
+			paymentIntentId: redactExternalId(
+				typeof paymentIntent.id === "string" ? paymentIntent.id : undefined
+			),
+		});
+
+		await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+			kind: OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH,
+			severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+			restaurantId: payment.restaurantId,
+			orderId: payment.orderId,
+			paymentId: payment._id,
+			stripeObjectId: typeof paymentIntent.id === "string" ? paymentIntent.id : undefined,
+			messageParams: {
+				expected: payment.amount,
+				received: receivedAmount,
+				currency: payment.currency,
+			},
+			// One open alert per payment, not per delivery: Stripe redelivers a
+			// success for days, and each retry is a fresh event id that the
+			// `stripeWebhookEvents` dedup cannot collapse.
+			dedupeKey: `amount_mismatch:${payment._id}`,
+		});
+
+		// Return rather than throw, deliberately. Throwing would make
+		// `fulfillPayment` skip `recordStripeWebhookEvent` and hand Stripe a
+		// 500, so it would redeliver this event for days and re-raise on every
+		// attempt — and the answer would never change, because the disagreement
+		// is with the amount, not with a transient failure. Returning lets the
+		// dedup row be written, which stops the retries, while settlement stays
+		// undone until a human resolves the alert.
+		return payment._id;
+	}
 
 	const chargeId =
 		typeof paymentIntent.latest_charge === "string"
