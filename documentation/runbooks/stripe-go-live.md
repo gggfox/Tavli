@@ -8,6 +8,7 @@ Production configuration and verification for Tavli's Stripe integration:
 - `PaymentElement` tab checkout for diners
 - Standard (snapshot) payment webhooks
 - Connect (thin) account-lifecycle webhooks
+- Connected-account (snapshot) payout webhooks
 - Refunds, including partial refunds of a single order out of a paid tab
 
 > [!IMPORTANT]
@@ -27,12 +28,13 @@ Production configuration and verification for Tavli's Stripe integration:
 
 ## Where each value lives
 
-| Value                                       | Lives in                                            | Applied                                                                                                         |
-| ------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `VITE_STRIPE_PUBLISHABLE_KEY` (`pk_live_…`) | **Infisical**, per-env (`dev` / `staging` / `prod`) | **Build time** — inlined into the JS bundle by `deploy.yml`. Changing it requires a **rebuild**, not a restart. |
-| `STRIPE_SECRET_KEY` (`sk_live_…`)           | **Convex deployment env**                           | Read at call time by `getStripeClient()`                                                                        |
-| `STRIPE_WEBHOOK_SECRET` (`whsec_…`)         | **Convex deployment env**                           | Read by `stripe.fulfillPayment`                                                                                 |
-| `STRIPE_CONNECT_WEBHOOK_SECRET` (`whsec_…`) | **Convex deployment env**                           | Read by `stripe.handleThinEvent`                                                                                |
+| Value                                                 | Lives in                                            | Applied                                                                                                         |
+| ----------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `VITE_STRIPE_PUBLISHABLE_KEY` (`pk_live_…`)           | **Infisical**, per-env (`dev` / `staging` / `prod`) | **Build time** — inlined into the JS bundle by `deploy.yml`. Changing it requires a **rebuild**, not a restart. |
+| `STRIPE_SECRET_KEY` (`sk_live_…`)                     | **Convex deployment env**                           | Read at call time by `getStripeClient()`                                                                        |
+| `STRIPE_WEBHOOK_SECRET` (`whsec_…`)                   | **Convex deployment env**                           | Read by `stripe.fulfillPayment`                                                                                 |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` (`whsec_…`)           | **Convex deployment env**                           | Read by `stripe.handleThinEvent`                                                                                |
+| `STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` (`whsec_…`) | **Convex deployment env**                           | Read by `stripe.handleConnectedAccountEvent`                                                                    |
 
 See [`deployment-and-secrets.md`](../internal-guides/deployment-and-secrets.md)
 for the full model. The Convex-side values are **not** in Infisical.
@@ -41,7 +43,12 @@ for the full model. The Convex-side values are **not** in Infisical.
 npx convex env set STRIPE_SECRET_KEY sk_live_... --prod
 npx convex env set STRIPE_WEBHOOK_SECRET whsec_... --prod
 npx convex env set STRIPE_CONNECT_WEBHOOK_SECRET whsec_... --prod
+npx convex env set STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET whsec_... --prod
 ```
+
+The three secrets are **not interchangeable**. Each destination mints its own,
+and a delivery signed by one fails verification against another. The names are
+declared together in `convex/_util/env.ts` so the set is countable in one place.
 
 **Verify a key belongs to the right account without exposing it.** Every Stripe
 key embeds its account id after the `_51` prefix, and that portion is public —
@@ -75,20 +82,23 @@ Confirm on the **live** account (`acct_1TGR3uAUMbq2vVG5`):
 card. If Link is disabled on the live payment-method configuration, returning
 customers silently lose a method they had in test.
 
-### 2. Two webhook destinations — structural, not a preference
+### 2. Three webhook destinations — structural, not a preference
 
-v1 snapshot events and v2 thin events use **different Convex routes, different
-signing secrets, and different parsers**. They can never share one destination.
+Two axes decide the split, and neither is a preference. **Payload style**: v1
+snapshot events carry a full `data.object`, v2 thin events carry only a
+reference, and the two need different parsers. **Scope**: Stripe delivers
+events on _your_ account and events on _connected_ accounts to separate
+destinations. Three of the four cells are occupied.
 
-|                      | Payments                                    | Connect                                             |
-| -------------------- | ------------------------------------------- | --------------------------------------------------- |
-| Name                 | `tavli-prod-payments`                       | `tavli-prod-connect-accounts`                       |
-| URL                  | `https://<slug>.convex.site/stripe/webhook` | `https://<slug>.convex.site/stripe/connect-webhook` |
-| Scope ("Eventos de") | **Tu cuenta**                               | **Tu cuenta**                                       |
-| Payload style        | **Resumen** (snapshot)                      | **Breve** (thin)                                    |
-| Secret               | `STRIPE_WEBHOOK_SECRET`                     | `STRIPE_CONNECT_WEBHOOK_SECRET`                     |
-| Parser               | `webhooks.constructEvent`                   | `parseEventNotification`                            |
-| Handler              | `stripe.fulfillPayment`                     | `stripe.handleThinEvent`                            |
+|                      | Payments                                    | Connect                                             | Connected accounts                                    |
+| -------------------- | ------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------- |
+| Name                 | `tavli-prod-payments`                       | `tavli-prod-connect-accounts`                       | `tavli-prod-connected-payouts`                        |
+| URL                  | `https://<slug>.convex.site/stripe/webhook` | `https://<slug>.convex.site/stripe/connect-webhook` | `https://<slug>.convex.site/stripe/connected-webhook` |
+| Scope ("Eventos de") | **Tu cuenta**                               | **Tu cuenta**                                       | **Cuentas conectadas**                                |
+| Payload style        | **Resumen** (snapshot)                      | **Breve** (thin)                                    | **Resumen** (snapshot)                                |
+| Secret               | `STRIPE_WEBHOOK_SECRET`                     | `STRIPE_CONNECT_WEBHOOK_SECRET`                     | `STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET`             |
+| Parser               | `webhooks.constructEvent`                   | `parseEventNotification`                            | `webhooks.constructEvent`                             |
+| Handler              | `stripe.fulfillPayment`                     | `stripe.handleThinEvent`                            | `stripe.handleConnectedAccountEvent`                  |
 
 > [!IMPORTANT]
 > Use the **`.convex.site`** host, never `.convex.cloud`. Convex serves HTTP
@@ -100,11 +110,16 @@ Selecting a mix of v1 and v2 events in Stripe's "Crea un destino de evento"
 wizard makes it **auto-split into two destinations** and walk you through both
 ("1 de 2", "2 de 2"). You do not create them separately.
 
-**Scope is "Tu cuenta" for both.** V2 accounts created directly by the platform
-deliver to _Tu cuenta_; only events belonging to a connected account's own
-customers deliver to _Cuentas conectadas_. A consequence: the v1
+**Scope is "Tu cuenta" for the first two.** V2 accounts created directly by the
+platform deliver their lifecycle events to _Tu cuenta_. A consequence: the v1
 `account.updated` handler is effectively **dead** for our V2 accounts, which is
 why it is absent from the list below.
+
+**The third is "Cuentas conectadas", and that is the whole reason it exists.**
+A payout from a restaurant's connected account to its own bank belongs to that
+account, so it never appears on _Tu cuenta_ — which is why, before TAVLI-103,
+`payout.*` reached no handler anywhere and a failed payout was invisible to
+Tavli and to the restaurant alike.
 
 #### Payments destination events (9)
 
@@ -150,6 +165,23 @@ Beware the near-miss pair: you want
 > `inferV2AccountStatus` instead of reading the event body. The destination
 > showing **"Sin versión"** for API version is expected: there is no embedded
 > object to version.
+
+#### Connected-accounts destination events (5)
+
+```text
+payout.created    payout.updated    payout.paid
+payout.failed     payout.canceled
+```
+
+All five are handled. `payout.failed` is the one that does anything visible:
+see §4c. Anything else delivered here logs
+`unhandled connected-account event type: …` at info level and is recorded for
+dedup only — subscribe nothing else unless a ticket asks for it.
+
+> These are **snapshot** payloads with an extra `account` property naming the
+> connected account. `handleConnectedAccountEvent` resolves the Restaurant from
+> it through `restaurants.by_stripe_account`; there is no re-fetch, because
+> unlike a thin event the payout object is right there in the body.
 
 ### 3. Verifying a live signing secret
 
@@ -404,6 +436,168 @@ value `STRIPE_CONNECT_WEBHOOK_SECRET` must hold while the session runs, and it
 rotates every session. A registered destination is preferable for anything but
 a debugging session, precisely because its secret is stable.
 
+### 4c. Payouts — and the money a restaurant cannot see (TAVLI-103)
+
+> [!CAUTION]
+> **`STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` has never been set on any
+> deployment, and the connected-accounts destination does not exist yet.**
+> Until both exist, `handleConnectedAccountEvent` throws before it reads the
+> payload, the route answers **500 `Webhook secret not configured`**, and every
+> `payout.*` event is lost. The whole feature — the payouts page, the held
+> total, the manager notification and email, the operator alert — is
+> **dormant**. Set the secret on **each** deployment separately: dev, staging
+> and production each have their own Convex env and their own destination. Dev
+> and staging share one Stripe **test** account, but not one destination, and
+> therefore not one secret.
+
+```bash
+# One per deployment. Run each against the deployment it names.
+npx convex env set STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET whsec_...            # dev
+npx convex env set STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET whsec_... --prod     # production
+# staging: run it with that deployment selected (CONVEX_DEPLOYMENT / --url),
+# NOT with --prod, or you will overwrite production's secret with staging's.
+```
+
+#### What a failed payout does
+
+Stripe pays a connected account's balance to the restaurant's bank on a
+schedule. A payout can fail — wrong CLABE, closed account, lapsed
+verification, a restricted account — and Stripe then usually **pauses the
+schedule**. The money is **not lost**: it stays in the connected account's
+balance. On `payout.failed` Tavli:
+
+1. upserts the row in `stripePayouts` (one per Stripe payout id);
+2. adds the amount to that restaurant's **held total**, which is the sum of
+   failed payouts nothing has since replaced;
+3. writes one notification per manager-or-above (bell + `href` to
+   `/admin/payouts`), `dedupeKey: payout_failed:<payoutId>`;
+4. schedules one email per recipient with an address — the same set, so the
+   bell and the inbox cannot drift;
+5. raises a **severe** `payout_failed` operator alert (same `dedupeKey`), which
+   emails every platform admin.
+
+Routine payouts — created, in transit, arrived while nothing was stuck — write
+the row and tell nobody. The side effects fire on the **transition into**
+`failed`, not on the event, so a following `payout.updated` that still says
+`failed` refreshes the failure detail without ringing anybody's bell twice.
+
+**Stripe never retries a failed payout.** It creates a _new_ one once the bank
+details are fixed. So a failure counts as resolved when a **later** payout of
+that account reached `paid` with an amount **at least as large** — a scheduled
+payout sweeps the whole available balance, so a genuine recovery is never
+smaller. When that clears the last unresolved failure, the managers get a
+`payouts_resumed` notification and email. `payouts_enabled` going true again is
+deliberately **not** the signal: Stripe re-enables on verification, not on a
+successful transfer, so it would tell a restaurant their money had moved when it
+had not.
+
+A payout event for an account **no restaurant in this deployment claims** is
+logged and recorded but raises nothing — dev and staging share one Stripe test
+account, so that is routine noise. The exception is a `payout.failed`, which
+raises a **warning**-level alert (not severe, which would email every platform
+admin) carrying the _account_ id, because it can also be a restaurant whose link
+was cleared while Stripe was still delivering.
+
+#### Verifying the payout path in test mode
+
+Do this once per deployment, after creating the destination and setting the
+secret, **in test mode only**.
+
+Unlike the thin events in §4b, `payout.*` **is** supported by `stripe trigger` —
+these are v1 snapshot events, which is the only kind `trigger` fires. Confirm
+the current list for your CLI version with `stripe trigger --help`, or on
+<https://docs.stripe.com/cli/trigger>.
+
+**1. Prove the pipe answers at all.**
+
+```bash
+curl -i -X POST https://<slug>.convex.site/stripe/connected-webhook
+# 400 "Missing stripe-signature header"  → route is live
+# 500 "Webhook secret not configured"    → the route is live but the secret is unset
+# 404                                    → wrong host (.convex.cloud, not .convex.site)
+```
+
+(The 400 comes before any secret is read, so it is the answer even on a
+deployment where the secret is missing. Send a body with a bogus signature to
+see the 500.)
+
+**2. Fire a real failure at a real connected account.** `--stripe-account` makes
+the CLI create the object **on that connected account**, so the resulting event
+carries `account: acct_…` and is delivered to the connected-accounts
+destination — which is exactly what this is proving:
+
+```bash
+stripe trigger payout.failed --stripe-account acct_<a test restaurant's account>
+```
+
+Without `--stripe-account` the event fires on the platform account, lands on the
+_payments_ destination, and proves nothing about this path. If the CLI version in
+use does not accept `--stripe-account` on `trigger`, use
+`stripe listen --forward-connect-to` (below) and trigger through it, or send a
+test event from the destination's own page in the Workbench.
+
+**3. Read the deployment logs.** For a failure on a claimed account:
+
+```text
+H  POST /stripe/connected-webhook          200
+A  stripe:handleConnectedAccountEvent      success
+Q  getProcessedStripeWebhookEventInternal  success
+Q  getRestaurantByStripeAccountIdInternal  success
+M  payouts:recordPayoutEventInternal       success
+M  recordStripeWebhookEvent                success
+```
+
+`payouts:recordPayoutEventInternal` logs its own outcome line, which is the one
+worth reading:
+
+```text
+[stripe.handleConnectedAccountEvent] payout.failed {"stripePayoutId":"po_…","status":"failed",
+ "action":"inserted","becameFailed":true,"payoutsResumed":false,"heldCents":123456,
+ "notified":2,"emailsScheduled":2}
+```
+
+`notified: 0` means the restaurant has nobody eligible — real, not an error; the
+operator alert is what makes sure a human at Tavli still sees it. For an
+unclaimed account the log line is
+`no restaurant claims this connected account`, and the only mutation is
+`raiseOperatorAlertInternal`.
+
+**4. See it in the app.** Sign in as that restaurant's owner: `/admin/payouts`
+shows the held total above the list, and `/admin/payments` carries the banner.
+`/admin/alerts` has one open `payout_failed` row. Acknowledge it to clear it.
+
+**5. Prove the replay dedup.** Workbench → **Events** → find the
+`payout.failed` you just triggered → **Resend**. The same event id must answer
+**200** while writing nothing: still one `stripePayouts` row, still one open
+alert, still two notifications. Then trigger a _second_, different
+`payout.failed` on the same account and confirm the held total is the sum — that
+is the difference between event dedup and transition dedup.
+
+#### Triage: 400 vs 500 on this route
+
+Identical to §4b: **500** `Webhook secret not configured` means
+`STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` is unset on this deployment (nothing
+about the delivery is wrong), **400** `Webhook handler failed` means the
+delivery failed verification — most often the _other_ destination's secret
+pasted here. Tell them apart from the Convex side by the log line, not the
+status: a missing secret logs `STRIPE_WEBHOOK_SECRET_MISSING` in the
+`[http.stripe/connected-webhook]` entry, a verification failure logs
+`operation: "constructEvent"` from `[stripe.handleConnectedAccountEvent]`.
+
+#### Local development against payout events
+
+```bash
+stripe listen --forward-connect-to https://<dev-slug>.convex.site/stripe/connected-webhook
+```
+
+`--forward-connect-to` is the connected-account counterpart of `--forward-to`:
+it forwards only events that carry an `account`. Use both flags in one session
+to drive the payments and connected destinations at once. The session mints
+**its own** signing secret and prints it; that is the value
+`STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` must hold while it runs, and it
+rotates every session. A registered destination is preferable for anything but a
+debugging session, precisely because its secret is stable.
+
 ### 5. Platform subscription — the 2,000 MXN/month Price
 
 This is the fee **restaurants pay Tavli** for using the product (ADR 008,
@@ -596,7 +790,9 @@ for raw-payload debugging; its secret rotates per session.
 
 ```bash
 curl -i -X POST https://<slug>.convex.site/stripe/webhook
-# Expect 400 "Missing stripe-signature header".
+curl -i -X POST https://<slug>.convex.site/stripe/connect-webhook
+curl -i -X POST https://<slug>.convex.site/stripe/connected-webhook
+# Expect 400 "Missing stripe-signature header" from each.
 # A 404 means the wrong host (.convex.cloud instead of .convex.site).
 ```
 
@@ -679,6 +875,8 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 - Convex logs for webhook signature failures
 - Convex logs for `REFUND ID UNRESOLVED` / `REFUND LOOKUP FAILED`
 - Convex logs for `CHARGE DISPUTE` — disputes hit the platform balance
+- Convex logs for `[stripe.handleConnectedAccountEvent]` — one line per
+  `payout.*`, carrying the held total after the write
 - `stripeWebhookEvents` rows are being created for processed events
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs
@@ -718,16 +916,19 @@ transaction that recorded the problem.
 
 ## Common pitfalls
 
-| Symptom                                         | Cause → fix                                                                                                                |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Webhook route returns 404                       | Using `.convex.cloud`. Use `.convex.site`.                                                                                 |
-| Webhook returns 400 on real deliveries          | Signing-secret mismatch, or the two `whsec_` values swapped between destinations. Compare fingerprints.                    |
-| Live charges succeed but never settle in the DB | Same as above — the customer is charged and the order stays unpaid. This is the failure §3's verification exists to catch. |
-| "Development mode" badge on prod                | Bundle built with `pk_test`. Set `pk_live` in Infisical `prod` and **rebuild** — a restart is not enough.                  |
-| Thin events never arrive                        | Destination scope set to _Cuentas conectadas_, or payload style _Resumen_ instead of _Breve_.                              |
-| `stripeRefundId` never populated                | The `refunds.list` fallback was removed. `charge.refunded` carries no refunds list.                                        |
-| Restaurant keeps its payout after a refund      | Refund issued from the dashboard without ticking "Reverse the transfer".                                                   |
-| Everything looks configured but charges fail    | Keys mixed between the dev and production Stripe accounts. Check the `_51…` account fingerprint.                           |
+| Symptom                                         | Cause → fix                                                                                                                              |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Webhook route returns 404                       | Using `.convex.cloud`. Use `.convex.site`.                                                                                               |
+| Webhook returns 400 on real deliveries          | Signing-secret mismatch, or the two `whsec_` values swapped between destinations. Compare fingerprints.                                  |
+| Live charges succeed but never settle in the DB | Same as above — the customer is charged and the order stays unpaid. This is the failure §3's verification exists to catch.               |
+| "Development mode" badge on prod                | Bundle built with `pk_test`. Set `pk_live` in Infisical `prod` and **rebuild** — a restart is not enough.                                |
+| Thin events never arrive                        | Destination scope set to _Cuentas conectadas_, or payload style _Resumen_ instead of _Breve_.                                            |
+| `payout.*` events never arrive                  | Connected-accounts destination scoped to _Tu cuenta_ (a restaurant's payout is never a platform event), or not created.                  |
+| Payouts page empty, restaurant says it is owed  | The destination or `STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` is missing — the feature is dormant, not broken. See §4c.                   |
+| A `payout_failed` alert with no restaurant      | Unclaimed connected account: usually the other environment's, occasionally a restaurant whose link was cleared. Warning-level by design. |
+| `stripeRefundId` never populated                | The `refunds.list` fallback was removed. `charge.refunded` carries no refunds list.                                                      |
+| Restaurant keeps its payout after a refund      | Refund issued from the dashboard without ticking "Reverse the transfer".                                                                 |
+| Everything looks configured but charges fail    | Keys mixed between the dev and production Stripe accounts. Check the `_51…` account fingerprint.                                         |
 
 ## References
 
@@ -735,4 +936,6 @@ transaction that recorded the problem.
 - `convex/stripe.ts` — actions, webhook handlers, refunds
 - `convex/stripeHelpers.ts` — payment and dispute persistence
 - `convex/stripeWebhookHelpers.ts` — pure event → state logic
-- `convex/http.ts` — the two webhook routes
+- `convex/payouts.ts` / `convex/payoutHelpers.ts` — payout persistence, the held total, who gets told
+- `convex/_util/env.ts` — the three webhook-secret env vars in one table
+- `convex/http.ts` — the three webhook routes
