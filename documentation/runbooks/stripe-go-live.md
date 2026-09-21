@@ -578,25 +578,39 @@ produce — those are exercised in `convex/payoutHelpers.test.ts`, not here.)
 Two prerequisites, in this order — `stripe payouts create` on its own will not
 fail the way you want, or will not succeed at all:
 
-**(a) Put the failing CLABE on the account.** The connected account pays out to
-whatever external account it currently holds, which after onboarding is a
-_working_ one. Replace it in the test-mode Dashboard (connected account → payout
-details), or from the CLI:
+**(a) Add the failing CLABE and make it the default.** The connected account
+pays out to its **default** external account for that currency, which after
+onboarding is a _working_ one. Posting a new bank account without
+`default_for_currency` only **adds a second one**, and `stripe payouts create`
+would still pay to the old default — the payout succeeds and you learn nothing.
+Set it in the test-mode Dashboard (connected account → payout details), or from
+the CLI:
 
 ```bash
 stripe post /v1/accounts/acct_<a test restaurant's account>/external_accounts \
   -d 'external_account[object]=bank_account' \
   -d 'external_account[country]=MX' \
   -d 'external_account[currency]=mxn' \
-  -d 'external_account[account_number]=<a failing CLABE from the table above>'
+  -d 'external_account[account_number]=<a failing CLABE from the table above>' \
+  -d default_for_currency=true
 ```
+
+The alternative, if you would rather not move the default: keep the response's
+`ba_…` id and pass it to the payout as `--destination ba_…`.
 
 **(b) Give the account a balance to pay out.** A fresh test connected account
 has none, and a payout larger than the available balance is rejected outright
-rather than failing at the bank. Either run a test destination charge to it (the
-diner flow, which is the more faithful rehearsal), or fund it directly:
+rather than failing at the bank.
+
+Prefer a **test destination charge** through the diner flow: it is the more
+faithful rehearsal, and it lands the money on the connected account the same way
+real takings do. Funding it directly works too, but `stripe transfers create`
+spends the **platform** test account's _available_ MXN balance, which is usually
+empty — a card charge normally settles as _pending_ first:
 
 ```bash
+# Test card 4000000000000077 bypasses the pending period, so the platform
+# balance is available immediately and the transfer below can draw on it.
 stripe transfers create --amount 1000 --currency mxn \
   --destination acct_<a test restaurant's account>
 ```
@@ -648,12 +662,15 @@ The outcome line worth reading is logged by the handler,
 
 ```text
 [stripe.handleConnectedAccountEvent] payout.failed {"stripePayoutId":"po_…","status":"failed",
- "action":"inserted","becameFailed":true,"payoutsResumed":false,"heldCents":123456,
- "notified":2,"emailsScheduled":2}
+ "action":"inserted","becameFailed":true,"supersededOnArrival":false,"payoutsResumed":false,
+ "heldCents":123456,"notified":2,"emailsScheduled":2}
 ```
 
 `notified: 0` means the restaurant has nobody eligible — real, not an error; the
-operator alert is what makes sure a human at Tavli still sees it. For an
+operator alert is what makes sure a human at Tavli still sees it.
+`supersededOnArrival: true` means the failure was delivered _after_ the payout
+that had already resolved it, so the row was recorded but nobody was told —
+there was no longer any stuck money to tell them about. For an
 unclaimed account the line is
 `[stripe.handleConnectedAccountEvent] no restaurant claims this connected account`,
 and the only mutation is `operatorAlerts:raiseOperatorAlertInternal`.
@@ -662,12 +679,17 @@ and the only mutation is `operatorAlerts:raiseOperatorAlertInternal`.
 shows the held total above the list, and `/admin/payments` carries the banner.
 `/admin/alerts` has one open `payout_failed` row. Acknowledge it to clear it.
 
-**6. Prove the replay dedup.** Workbench → **Events** → find the
-`payout.failed` you just caused → **Resend**. The same event id must answer
+**6. Prove the replay dedup, then supersession.** Workbench → **Events** → find
+the `payout.failed` you just caused → **Resend**. The same event id must answer
 **200** while writing nothing: still one `stripePayouts` row, still one open
-alert, still two notifications. Then trigger a _second_, different
-`payout.failed` on the same account and confirm the held total is the sum — that
-is the difference between event dedup and transition dedup.
+alert, still two notifications.
+
+Then cause a **second, different** failure on the same account. The held total
+must become that newest failure's amount — **not the sum of the two**. The
+second sweep took the whole available balance, which already contained the first
+failure's money, so adding them up would report the same money as stuck twice.
+That is supersession, and it is a different mechanism from event dedup: two
+distinct events, both recorded, both announced, one held total.
 
 #### Triage: 400 vs 500 on this route
 

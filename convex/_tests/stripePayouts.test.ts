@@ -650,6 +650,61 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 			expect(resumed).toHaveLength(2);
 		});
 
+		it("stays quiet when a failure arrives already superseded by a later paid payout", async () => {
+			const t = harness();
+			const restaurantId = await seedRestaurant(t);
+
+			// Tuesday's successful payout is delivered first…
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_late_paid",
+					type: "payout.paid",
+					payout: payout({
+						id: "po_late_paid",
+						amount: 2_000_00,
+						status: "paid",
+						created: 1_700_600_000,
+					}),
+				})
+			);
+			// …and Monday's failure lands behind it. It really happened, so the row
+			// is written — but the money is not stuck any more, and telling a
+			// manager about it would ring a bell for a problem that was over before
+			// they heard of it, and leave a severe alert to acknowledge.
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_late_failed",
+					type: "payout.failed",
+					payout: payout({
+						id: "po_late_failed",
+						amount: 1_000_00,
+						status: "failed",
+						created: 1_700_000_000,
+						failureCode: "no_account",
+					}),
+				})
+			);
+
+			const { payouts, alerts, notifications, jobs } = await t.run(async (ctx) => ({
+				payouts: await ctx.db.query("stripePayouts").collect(),
+				alerts: await ctx.db.query("operatorAlerts").collect(),
+				notifications: await ctx.db.query("notifications").collect(),
+				jobs: await ctx.db.system.query("_scheduled_functions").collect(),
+			}));
+
+			expect(payouts).toHaveLength(2);
+			expect(alerts).toHaveLength(0);
+			expect(notifications).toHaveLength(0);
+			expect(jobs.filter((job) => job.name.includes("sendPayoutEmail"))).toHaveLength(0);
+
+			const held = await t
+				.withIdentity({ subject: OWNER })
+				.query(api.payouts.getHeldTotal, { restaurantId });
+			expect(held[0]?.heldCents).toBe(0);
+		});
+
 		it("counts only the newest failure when the next sweep fails too", async () => {
 			const t = harness();
 			const restaurantId = await seedRestaurant(t);
@@ -743,11 +798,18 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 				.query(api.payouts.getHeldTotal, { restaurantId });
 			expect(held[0]?.heldCents).toBe(0);
 
-			// The failure still landed in the bell and on /admin/alerts: it really
-			// happened, and the restaurant should know its bank refused a transfer
-			// even though the money has since moved.
-			const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
-			expect(alerts).toHaveLength(1);
+			// The failure is recorded — it really happened, and it is on the payouts
+			// page — but nobody is told: the money it was about has already moved,
+			// so a bell row and a severe alert would be work created about a
+			// problem that was over before anyone heard of it.
+			const { alerts, notifications } = await t.run(async (ctx) => ({
+				alerts: await ctx.db.query("operatorAlerts").collect(),
+				notifications: await ctx.db.query("notifications").collect(),
+			}));
+			expect(alerts).toHaveLength(0);
+			expect(notifications).toHaveLength(0);
+			const rows = await t.run(async (ctx) => ctx.db.query("stripePayouts").collect());
+			expect(rows).toHaveLength(2);
 		});
 	});
 

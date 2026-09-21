@@ -146,6 +146,32 @@ describe("computePayoutFacts", () => {
 		expect(facts.failureBalanceTransaction).toBeUndefined();
 	});
 
+	it("dates a payout with no `created` to 0, so it can never supersede a real failure", () => {
+		const facts = computePayoutFacts(
+			{ id: "po_undated", amount: 500, currency: "mxn", status: "paid" },
+			"payout.paid"
+		);
+		// `Date.now()` here would make this the newest event on the account and
+		// silently resolve every outstanding failure.
+		expect(facts.createdAt).toBe(0);
+		expect(
+			computeHeldTotal([
+				{
+					stripePayoutId: "po_failed",
+					amount: 1000,
+					createdAt: 10,
+					status: STRIPE_PAYOUT_STATUS.FAILED,
+				},
+				{
+					stripePayoutId: facts.stripePayoutId,
+					amount: facts.amount,
+					createdAt: facts.createdAt,
+					status: facts.status,
+				},
+			]).heldCents
+		).toBe(1000);
+	});
+
 	it("keeps a failed payout with no failure_code, mapped to unknown rather than dropped", () => {
 		const facts = computePayoutFacts(
 			{ id: "po_3", amount: 500, currency: "mxn", status: "failed", created: 1 },

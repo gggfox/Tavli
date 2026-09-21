@@ -170,6 +170,11 @@ export type RecordPayoutOutcome = {
 	action: "inserted" | "updated" | "stale" | "conflict";
 	/** True when this event moved the payout into `failed` for the first time. */
 	becameFailed: boolean;
+	/**
+	 * True when that failure arrived already superseded by a later payout, so
+	 * nobody was told about money that is no longer stuck.
+	 */
+	supersededOnArrival: boolean;
 	/** True when this event cleared the restaurant's last unresolved failure. */
 	payoutsResumed: boolean;
 	/** Held total after the write, smallest currency unit. */
@@ -266,6 +271,7 @@ export const recordPayoutEventInternal = internalMutation({
 				return {
 					action: decision.conflict ? "conflict" : "stale",
 					becameFailed: false,
+					supersededOnArrival: false,
 					payoutsResumed: false,
 					heldCents: heldBefore.heldCents,
 					notified: 0,
@@ -291,10 +297,29 @@ export const recordPayoutEventInternal = internalMutation({
 			heldBefore.heldCents > 0 &&
 			heldAfter.heldCents === 0;
 
+		// A failure can arrive *after* the payout that already resolved it —
+		// Stripe's deliveries are not ordered, so Monday's `payout.failed` can
+		// land behind Tuesday's `payout.paid`. The row is still written (it
+		// really happened, and the payouts page shows it), but there is nothing
+		// to tell anyone: the money is not stuck. Announcing it would ring a bell
+		// and email a manager about a problem that was over before they heard of
+		// it, and raise a severe alert somebody then has to acknowledge.
+		const stillHeld = heldAfter.unresolvedPayoutIds.includes(args.stripePayoutId);
+		const supersededOnArrival = becameFailed && !stillHeld;
+		if (supersededOnArrival) {
+			console.log(
+				"[payouts.recordPayoutEventInternal] failure arrived already superseded; recording it quietly",
+				JSON.stringify({
+					stripePayoutId: args.stripePayoutId,
+					heldCents: heldAfter.heldCents,
+				})
+			);
+		}
+
 		let notified = 0;
 		let emailsScheduled = 0;
 
-		if (becameFailed) {
+		if (becameFailed && stillHeld) {
 			const amountFormatted = formatPayoutAmount(args.amount);
 			notified = await notifyRestaurantManagers(ctx, {
 				restaurantId: args.restaurantId,
@@ -344,6 +369,7 @@ export const recordPayoutEventInternal = internalMutation({
 		return {
 			action,
 			becameFailed,
+			supersededOnArrival,
 			payoutsResumed,
 			heldCents: heldAfter.heldCents,
 			notified,

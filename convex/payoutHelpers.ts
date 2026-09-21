@@ -205,7 +205,13 @@ export function computePayoutFacts(payout: PayoutInput, eventType: string): Payo
 		amount: payout.amount ?? 0,
 		currency: (payout.currency ?? "").toUpperCase(),
 		status,
-		createdAt: stripeSecondsToMs(payout.created) ?? Date.now(),
+		// 0, never `Date.now()`. `createdAt` is what orders payouts against each
+		// other, so a missing one defaulting to "now" would make the event the
+		// newest thing that ever happened to this account — superseding every
+		// genuine failure and silently zeroing the held total. Stripe always
+		// sends `created`; if it ever does not, an epoch-0 row sorts last and
+		// supersedes nothing, which is the harmless direction to be wrong in.
+		createdAt: stripeSecondsToMs(payout.created) ?? 0,
 		arrivalDate: stripeSecondsToMs(payout.arrival_date),
 		// A failed payout with no code still needs a reason line, so it maps to
 		// `unknown` rather than being left blank.
