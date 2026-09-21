@@ -592,7 +592,16 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 			});
 		});
 
-		it("raises one alert, not one per delivery, when Stripe redelivers", async () => {
+		/**
+		 * Two independent DETECTIONS of the same problem, which is what the
+		 * dedupeKey is actually for. Not a Stripe redelivery: those carry the
+		 * same `evt_` id and never reach the handler twice, because the
+		 * `stripeWebhookEvents` row short-circuits them. The real second caller
+		 * is `reconcileStuckTabPayments`, which re-runs this handler every five
+		 * minutes for a tab that is still locked — modelled here as a second
+		 * event id, since that is the shape a fresh detection has.
+		 */
+		it("raises one alert per payment, not one per detection", async () => {
 			const t = convexTest(schema, modules);
 			const restaurantId = await seedRestaurant(t);
 			const { paymentId } = await seedTipPayment(t, {
@@ -601,8 +610,9 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 				paymentIntentId: "pi_replay",
 			});
 
-			// Two DIFFERENT event ids for the same problem: the webhook-event dedup
-			// does not cover this, so only `dedupeKey` keeps the alert list bounded.
+			// Two DIFFERENT event ids, i.e. two detections rather than one event
+			// delivered twice — the webhook-event dedup keys on the event id and so
+			// cannot collapse these. Only `dedupeKey` keeps the alert list bounded.
 			mockStripeClient.webhooks.constructEvent.mockReturnValueOnce(
 				succeededIntentEvent({
 					eventId: "evt_replay_1",

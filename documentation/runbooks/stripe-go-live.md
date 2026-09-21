@@ -528,9 +528,12 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 - Send an invalid signature; confirm rejection without state mutation
 - A `payment_intent.succeeded` whose collected amount disagrees with the payment
   row settles **nothing** and raises a severe `payment_amount_mismatch` operator
-  alert instead (TAVLI-69) — the money stays at Stripe until a human refunds the
-  charge or corrects the order, so treat one of these as an unpaid order, not a
-  paid one. Watch for `PAYMENT AMOUNT MISMATCH` in the Convex logs.
+  alert instead (TAVLI-69). Resolve it by refunding the charge in Stripe: the
+  order stays unpaid and the diner pays again, because no mutation can settle a
+  mismatched payment. Treat one of these as an unpaid order, not a paid one, and
+  watch for `PAYMENT AMOUNT MISMATCH` in the Convex logs. The stuck-tab
+  reconciliation cron logs the same line but deliberately does **not** re-raise
+  the alert, so an acknowledged one staying quiet is correct, not a missed event.
 
 ## Post-launch monitoring
 

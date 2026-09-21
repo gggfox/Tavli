@@ -60,7 +60,7 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		payment_amount_mismatch: {
 			title: "Settlement blocked: amount did not match",
 			explanation:
-				"Stripe collected a different amount than Tavli asked for, so nothing was marked paid. The money is still at Stripe — compare the two amounts and either refund the charge or correct the order.",
+				"Stripe collected a different amount than Tavli asked for, so nothing was marked paid. Refund the charge in Stripe; the order stays unpaid and the diner pays again.",
 		},
 		dispute_lost: {
 			title: "Dispute lost",
@@ -107,7 +107,7 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		payment_amount_mismatch: {
 			title: "Cobro detenido: el monto no coincidía",
 			explanation:
-				"Stripe cobró un monto distinto al que Tavli pidió, así que no se marcó nada como pagado. El dinero sigue en Stripe: compara los dos montos y reembolsa el cargo o corrige la orden.",
+				"Stripe cobró un monto distinto al que Tavli pidió, así que no se marcó nada como pagado. Reembolsa el cargo en Stripe; la orden sigue sin pagarse y el comensal paga de nuevo.",
 		},
 		dispute_lost: {
 			title: "Disputa perdida",

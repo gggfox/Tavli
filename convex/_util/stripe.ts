@@ -299,9 +299,14 @@ export async function handlePaymentIntentSuccess(
 				received: receivedAmount,
 				currency: payment.currency,
 			},
-			// One open alert per payment, not per delivery: Stripe redelivers a
-			// success for days, and each retry is a fresh event id that the
-			// `stripeWebhookEvents` dedup cannot collapse.
+			// One open alert per payment, not per DETECTION. Stripe's own
+			// retries are not the reason — a redelivery carries the same `evt_`
+			// id, so `stripeWebhookEvents` already collapses those (which is
+			// exactly what the comment below relies on). The reason is that
+			// this handler has a second caller: `reconcileStuckTabPayments`
+			// re-runs it every five minutes for a tab that is still locked, and
+			// a mismatched tab stays locked until a human acts. Without the key
+			// that is one severe alert and one admin email per sweep.
 			dedupeKey: `amount_mismatch:${payment._id}`,
 		});
 

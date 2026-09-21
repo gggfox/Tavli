@@ -67,7 +67,7 @@ import {
 	type NotAuthorizedErrorObject,
 	type NotFoundErrorObject,
 } from "./_shared/errors";
-import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
+import { buildIntegrationErrorLog, redactExternalId } from "./_shared/integrationLogging";
 import type { AsyncReturn } from "./_shared/types";
 import {
 	buildLineRefundIdempotencyKey,
@@ -1838,6 +1838,59 @@ export const reconcileStuckTabPayments = internalAction({
 
 				switch (decision) {
 					case "settle": {
+						// -------------------------------------------------------
+						// AMOUNT ASSERTION, AHEAD OF THE HANDLER (TAVLI-69).
+						//
+						// `handlePaymentIntentSuccess` runs this same comparison and
+						// raises an operator alert on a mismatch. That is right for
+						// the webhook, which sees each PaymentIntent once, and wrong
+						// here: a mismatched tab is PERMANENTLY in this sweep's
+						// candidate list. Nothing patches `payments.amount`, nothing
+						// clears `lockedForPaymentAt`, and the row stays
+						// `processing` — so `listStuckLockedTabs` hands it back every
+						// five minutes, forever.
+						//
+						// The `amount_mismatch:${paymentId}` dedupeKey does not stop
+						// that, because `raiseOperatorAlert` scopes it to OPEN alerts
+						// by design (acknowledging a row is what lets a genuine
+						// recurrence through). So once an admin acknowledges this
+						// alert, the next sweep would raise a fresh severe one and
+						// email every platform admin again — punishing them for
+						// clearing their inbox.
+						//
+						// Detecting the same unchanged fact on a timer is not news.
+						// Log it and move on; the webhook already raised it once, and
+						// the alert is only resolved by a human refunding the charge.
+						//
+						// TAVLI-106: when the order and tip sweeps land, they must
+						// keep this rule — compare before dispatching, and let the
+						// webhook own the alert.
+						// -------------------------------------------------------
+						const received =
+							typeof paymentIntent.amount_received === "number"
+								? paymentIntent.amount_received
+								: typeof paymentIntent.amount === "number"
+									? paymentIntent.amount
+									: undefined;
+
+						if (received !== undefined && received !== candidate.amount) {
+							console.error("[stripe.reconcileStuckTabPayments] PAYMENT AMOUNT MISMATCH", {
+								...buildIntegrationErrorLog(
+									new Error("PaymentIntent amount does not match the payment row"),
+									{
+										integration: "stripe",
+										operation: "reconcileStuckTab",
+									}
+								),
+								paymentId: candidate.paymentId,
+								sessionId: candidate.sessionId,
+								expectedAmount: candidate.amount,
+								receivedAmount: received,
+								paymentIntentId: redactExternalId(candidate.stripePaymentIntentId),
+							});
+							break;
+						}
+
 						// Identical to the webhook path — routes tab payments to the
 						// idempotent `confirmTabPayment` mutation.
 						await handlePaymentIntentSuccess(ctx, paymentIntent);

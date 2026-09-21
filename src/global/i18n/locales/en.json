@@ -2115,7 +2115,7 @@
 			},
 			"paymentAmountMismatch": {
 				"title": "Settlement blocked: amount did not match",
-				"explanation": "Stripe collected a different amount than Tavli asked for, so nothing was marked paid. The money is still at Stripe — compare the two amounts and either refund the charge or correct the order."
+				"explanation": "Stripe collected a different amount than Tavli asked for, so nothing was marked paid. Refund the charge in Stripe; the order stays unpaid and the diner pays again."
 			},
 			"disputeLost": {
 				"title": "Dispute lost",
