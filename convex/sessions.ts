@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { DatabaseWriter } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
@@ -587,9 +588,11 @@ export const markTabPaymentProcessing = internalMutation({
 		paymentId: v.id(TABLE.PAYMENTS),
 		stripePaymentIntentId: v.string(),
 	},
-	handler: async (ctx, args) => {
+	/** See `stripeHelpers.attachIntentToPayment`: false means do not go on. */
+	returns: v.object({ attached: v.boolean() }),
+	handler: async (ctx, args): Promise<{ attached: boolean }> => {
 		const payment = await ctx.db.get(args.paymentId);
-		if (!payment) return;
+		if (!payment) return { attached: false };
 
 		// The tab mirror of `stripeHelpers.attachIntentToPayment` (TAVLI-105). A
 		// tab intent is created unconfirmed, so the diner cannot have paid before
@@ -607,7 +610,26 @@ export const markTabPaymentProcessing = internalMutation({
 				paymentId: payment._id,
 				status: payment.status,
 			});
-			return;
+			return { attached: false };
+		}
+
+		// A retired row is not given the id at all, and its intent is stood down
+		// instead — the same rule as the order and tip paths (sign-off nit). A tab
+		// attempt superseded while its create was running would otherwise hold a
+		// live intent whose client secret the caller is about to return.
+		if (
+			payment.status === PAYMENT_STATUS.SUPERSEDED ||
+			payment.status === PAYMENT_STATUS.CANCELLED
+		) {
+			console.error("[sessions.markTabPaymentProcessing] INTENT ARRIVED FOR A RETIRED ROW", {
+				paymentId: payment._id,
+				status: payment.status,
+			});
+			await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+				paymentId: payment._id,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			});
+			return { attached: false };
 		}
 
 		// Forward only: anything past PENDING has already been decided, by the
@@ -619,11 +641,14 @@ export const markTabPaymentProcessing = internalMutation({
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			updatedAt: Date.now(),
 		});
-		if (alreadyDecided) return;
+		// Decided elsewhere (the webhook settled it): the id is recorded, but the
+		// tab's own state is not this call's to move.
+		if (alreadyDecided) return { attached: true };
 
 		await ctx.db.patch(args.sessionId, {
 			paymentState: SESSION_PAYMENT_STATE.PROCESSING,
 		});
+		return { attached: true };
 	},
 });
 

@@ -1163,6 +1163,31 @@ async function standDownPreviousAttempt(
 }
 
 /**
+ * The intent just created does not belong to this row after all — it was
+ * retired, or claimed by another intent, while the create call was running
+ * (sign-off nit).
+ *
+ * Every create path ends the same way: attach the intent to the row, then hand
+ * its client secret to the diner. When the attach is REFUSED, that second step
+ * would hand out a secret for an intent nothing is watching — the row will
+ * never be settled from it, and `attachIntentToPayment` has already scheduled
+ * its stand-down at Stripe. Re-pointing the order at it would be worse still.
+ *
+ * So the create paths stop here with ERROR_PAYMENT_IN_PROGRESS, which is
+ * precisely what happened: another attempt owns this payment now. The checkout
+ * page already maps that code ("Your payment is already going through. Give it
+ * a moment rather than tapping again.") and the diner's next tap creates a
+ * fresh intent against whatever the live attempt turns out to be.
+ */
+function throwSupersededMidCreate(operation: string, paymentId: Id<"payments">): never {
+	console.error("[stripe] INTENT CREATED FOR A ROW THAT NO LONGER OWNS IT", {
+		operation,
+		paymentId,
+	});
+	throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+}
+
+/**
  * Creates the pay-at-submit PaymentIntent for one order (ADR 008) — the
  * primary payment path. The diner pays `subtotal + 12% service fee` in-app via
  * Stripe Elements; the kitchen only sees the order once the webhook confirms
@@ -1375,10 +1400,14 @@ export const createPaymentIntent = action({
 			// intent, so the diner cannot have paid yet and the guard is belt and
 			// braces — but the four create paths should not differ in whether they
 			// can clobber a settlement.
-			await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
+			const { attached } = await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 				paymentId,
 				stripePaymentIntentId: paymentIntent.id,
 			});
+			// Refused: the order must NOT be re-pointed at this intent, and its
+			// client secret must not reach the diner.
+			if (!attached) throwSupersededMidCreate("createPaymentIntent", paymentId);
+
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 				orderId: args.orderId,
 				paymentState: ORDER_PAYMENT_STATE.PROCESSING,
@@ -1851,11 +1880,16 @@ export const createTipCharge = action({
 				// SETTLED this row. `attachIntentToPayment` records the ids and
 				// moves the status only if the row is still PENDING, so it can
 				// never overwrite that settlement with PROCESSING (TAVLI-105).
-				await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
+				const { attached } = await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 					paymentId,
 					stripePaymentIntentId: paymentIntent.id,
 					stripePaymentMethodId: savedPaymentMethodId,
 				});
+				// Refused: this row was retired mid-charge, so the money that just
+				// moved belongs to no live attempt. It is already being stood down
+				// (and refunded, if it went through) — the diner is told the live
+				// attempt owns this tip rather than being handed a second one.
+				if (!attached) throwSupersededMidCreate("createTipCharge", paymentId);
 				// Confirmed (or confirming) — the webhook records the tip.
 				return { clientSecret: null, paymentId };
 			} catch (error) {
@@ -1871,10 +1905,11 @@ export const createTipCharge = action({
 						);
 						clientSecret = retrieved.client_secret;
 					}
-					await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
+					const { attached } = await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 						paymentId,
 						stripePaymentIntentId: errorIntent.id,
 					});
+					if (!attached) throwSupersededMidCreate("createTipCharge3ds", paymentId);
 					return { clientSecret, paymentId };
 				}
 
@@ -1932,10 +1967,11 @@ export const createTipCharge = action({
 				}
 			);
 
-			await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
+			const { attached } = await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 				paymentId,
 				stripePaymentIntentId: paymentIntent.id,
 			});
+			if (!attached) throwSupersededMidCreate("createTipChargeElements", paymentId);
 
 			return { clientSecret: paymentIntent.client_secret, paymentId };
 		} catch (error) {
@@ -2138,11 +2174,14 @@ export const createTabPaymentIntent = action({
 				}
 			);
 
-			await ctx.runMutation(internal.sessions.markTabPaymentProcessing, {
+			const { attached } = await ctx.runMutation(internal.sessions.markTabPaymentProcessing, {
 				sessionId: args.sessionId,
 				paymentId,
 				stripePaymentIntentId: paymentIntent.id,
 			});
+			// Refused: another member's tap owns the tab now, and the session must
+			// not be moved to `processing` for an intent nothing is watching.
+			if (!attached) throwSupersededMidCreate("createTabPaymentIntent", paymentId);
 
 			return {
 				clientSecret: paymentIntent.client_secret,

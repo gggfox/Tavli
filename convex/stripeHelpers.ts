@@ -443,9 +443,15 @@ export const attachIntentToPayment = internalMutation({
 		/** The saved card, on the one-tap path. */
 		stripePaymentMethodId: v.optional(v.string()),
 	},
-	handler: async (ctx, args) => {
+	/**
+	 * `attached: false` means this intent is NOT the row's intent — the row is
+	 * gone, holds another one, or was retired. The caller must not go on to hand
+	 * its client secret to the diner or re-point the order at it (sign-off nit).
+	 */
+	returns: v.object({ attached: v.boolean() }),
+	handler: async (ctx, args): Promise<{ attached: boolean }> => {
 		const payment = await ctx.db.get(args.paymentId);
-		if (!payment) return;
+		if (!payment) return { attached: false };
 
 		if (
 			payment.stripePaymentIntentId &&
@@ -456,7 +462,7 @@ export const attachIntentToPayment = internalMutation({
 				paymentKind: payment.kind ?? "legacy",
 				status: payment.status,
 			});
-			return;
+			return { attached: false };
 		}
 
 		// A RETIRED row does not get the intent id at all (TAVLI-104 review round
@@ -485,7 +491,7 @@ export const attachIntentToPayment = internalMutation({
 				paymentId: payment._id,
 				stripePaymentIntentId: args.stripePaymentIntentId,
 			});
-			return;
+			return { attached: false };
 		}
 
 		await ctx.db.patch(args.paymentId, {
@@ -498,6 +504,7 @@ export const attachIntentToPayment = internalMutation({
 			...(payment.status === PAYMENT_STATUS.PENDING && { status: PAYMENT_STATUS.PROCESSING }),
 			updatedAt: Date.now(),
 		});
+		return { attached: true };
 	},
 });
 

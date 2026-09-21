@@ -836,6 +836,46 @@ describe("superseding a payment attempt cancels its intent at Stripe first (TAVL
 			expect(payments[0].status).toBe("pending");
 		});
 
+		it("does the same on the tab path, leaving the session unlocked for the live attempt", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { sessionId, diner } = await seedPayableTab(t, restaurantId, 30000);
+
+			mockStripeClient.paymentIntents.create.mockImplementationOnce(async () => {
+				await t.run(async (ctx) => {
+					const rows = await ctx.db.query("payments").collect();
+					await ctx.db.patch(rows[0]._id, { status: "superseded" });
+				});
+				return { id: "pi_tab_orphan", client_secret: "cs_tab_orphan" };
+			});
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+				id: "pi_tab_orphan",
+				status: "requires_payment_method",
+			});
+			mockStripeClient.paymentIntents.cancel.mockResolvedValue({
+				id: "pi_tab_orphan",
+				status: "canceled",
+			});
+
+			vi.useFakeTimers();
+			try {
+				await expect(
+					diner.action(api.stripe.createTabPaymentIntent, { sessionId, tipAmount: 0 })
+				).rejects.toThrow(/ERROR_PAYMENT_IN_PROGRESS/);
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			} finally {
+				vi.useRealTimers();
+			}
+
+			const { session, payments } = await t.run(async (ctx) => ({
+				session: await ctx.db.get(sessionId),
+				payments: await ctx.db.query("payments").collect(),
+			}));
+			expect(payments[0].stripePaymentIntentId).toBeUndefined();
+			expect(session?.paymentState).not.toBe("processing");
+			expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_tab_orphan");
+		});
+
 		it("leaves the tab lock and the old row alone when Stripe cannot be reached", async () => {
 			const t = convexTest(schema, modules);
 			const restaurantId = await seedRestaurant(t);
@@ -940,6 +980,59 @@ describe("superseding a payment attempt cancels its intent at Stripe first (TAVL
 			// The order still points at the intent, so nothing pretends it is gone.
 			const order = await t.run(async (ctx) => ctx.db.get(orderId));
 			expect(order?.activePaymentId).toBeTruthy();
+		});
+	});
+
+	describe("a row retired while its own create call was running", () => {
+		it("returns no client secret and leaves the order pointer alone", async () => {
+			// The create came back with an intent the row is no longer entitled to:
+			// a concurrent tap retired it in the meantime. Handing that client
+			// secret to the diner would let them confirm a charge no row will ever
+			// settle, and re-pointing the order at it would make it look live.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 20000 });
+
+			// Retire the row the moment it is created, which is what a racing tap
+			// does between `createPayment` and the Stripe response.
+			mockStripeClient.paymentIntents.create.mockImplementationOnce(async () => {
+				await t.run(async (ctx) => {
+					const rows = await ctx.db.query("payments").collect();
+					await ctx.db.patch(rows[0]._id, { status: "superseded" });
+				});
+				return { id: "pi_orphan", client_secret: "cs_orphan" };
+			});
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+				id: "pi_orphan",
+				status: "requires_payment_method",
+			});
+			mockStripeClient.paymentIntents.cancel.mockResolvedValue({
+				id: "pi_orphan",
+				status: "canceled",
+			});
+
+			vi.useFakeTimers();
+			try {
+				await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+					/ERROR_PAYMENT_IN_PROGRESS/
+				);
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			} finally {
+				vi.useRealTimers();
+			}
+
+			const { order, payments } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payments: await ctx.db.query("payments").collect(),
+			}));
+			// The row never learned the orphan's id, and the order was not moved to
+			// `processing` or pointed at it.
+			expect(payments[0].stripePaymentIntentId).toBeUndefined();
+			expect(payments[0].status).toBe("superseded");
+			expect(order?.paymentState).not.toBe("processing");
+			expect(order?.stripePaymentIntentId).toBeUndefined();
+			// And the orphan is killed at Stripe rather than left confirmable.
+			expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_orphan");
 		});
 	});
 

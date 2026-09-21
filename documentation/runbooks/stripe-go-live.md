@@ -579,7 +579,8 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   `ERROR_PAYMENT_ALREADY_PAID` when the old intent had already succeeded — the
   webhook settles that one moments later. A second tap landing while the first
   attempt's `paymentIntents.create` is still running (row `pending`, no intent
-  id, younger than `PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS` = 90s) gets
+  id, younger than `PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS`, which derives to 195s —
+  see the derivation below) gets
   `ERROR_PAYMENT_IN_PROGRESS` rather than superseding a charge that is moving
   money right now. That window is **derived**, not picked:
   `(STRIPE_MAX_NETWORK_RETRIES + 1) × STRIPE_REQUEST_TIMEOUT_MS + margin` = 195s,
@@ -594,9 +595,15 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   document; a tab caller passes `supersededPaymentId` and the mutation refuses to
   retire anything else.
   If a create returns _after_ its row was retired,
-  `stripeHelpers.attachIntentToPayment` refuses to write the intent id onto the
+  `stripeHelpers.attachIntentToPayment` (and its tab mirror
+  `sessions.markTabPaymentProcessing`) refuses to write the intent id onto the
   retired row (logged `INTENT ARRIVED FOR A RETIRED ROW`) and stands that intent
-  down at Stripe instead. If that orphan had already charged, a severe
+  down at Stripe instead. It returns `{ attached: false }`, and the create path
+  then returns **no client secret** and does not re-point the order or the
+  session — it fails with `ERROR_PAYMENT_IN_PROGRESS` (logged
+  `INTENT CREATED FOR A ROW THAT NO LONGER OWNS IT`), because another attempt
+  owns that payment now and handing out a secret for an intent nothing is
+  watching is how a diner confirms a charge no row will ever settle. If that orphan had already charged, a severe
   `charge_needs_review` alert is raised (`charge_on_retired_attempt:<paymentId>`).
   **A retired row is never settled by the webhook either**: the metadata fallback
   (TAVLI-105) exists to repair a row that lost a race, not to hand a settlement
