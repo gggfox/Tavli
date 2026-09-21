@@ -538,12 +538,29 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   cron logs the same line and fails the row, but deliberately does **not**
   re-raise the alert, so an acknowledged one staying quiet is correct rather
   than a missed event.
+- A `payment_intent.*` event is matched to its payment row by
+  `stripePaymentIntentId` **and**, failing that, by `metadata.paymentId`
+  (TAVLI-105). The fallback is what makes the one-tap tip safe: `createTipCharge`
+  charges the saved card with `off_session: true, confirm: true`, so the money
+  moves before the row can be told the intent id, and the success event can beat
+  that patch. On a fallback match the intent id is patched onto the row and
+  settlement proceeds normally. An event that neither route can place is still
+  recorded as processed — a redelivery would ask the same two questions — so the
+  alert is the only thing carrying it to a human: an intent whose
+  `metadata.paymentId` names no row, or names a row already holding a different
+  intent, raises a severe `charge_unmatched` alert keyed
+  `charge_unmatched:<pi_…>` and logs `CHARGE UNMATCHED` with a `reason`. An
+  intent with **no** `paymentId` in its metadata is not ours at all (dev and
+  staging share one test account) and is logged as `FOREIGN PAYMENT INTENT
+IGNORED` without an alert.
 
 ## Post-launch monitoring
 
 - Convex logs for webhook signature failures
 - Convex logs for `REFUND ID UNRESOLVED` / `REFUND LOOKUP FAILED`
 - Convex logs for `CHARGE DISPUTE` — disputes hit the platform balance
+- Convex logs for `CHARGE UNMATCHED` — a charge Tavli cannot tie to a payment
+  row; always paired with a severe `charge_unmatched` alert on `/admin/alerts`
 - `stripeWebhookEvents` rows are being created for processed events
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs

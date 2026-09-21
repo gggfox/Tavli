@@ -625,6 +625,21 @@ export const fulfillPayment = internalAction({
 				}
 			}
 
+			// The dedup row is written even when nothing was settled, and that is
+			// deliberate (TAVLI-105). An event we could not place is not a
+			// transient failure: the handlers looked for the payment row by
+			// `stripePaymentIntentId` AND by `metadata.paymentId`, so a redelivery
+			// would ask the same two questions and get the same two answers, for
+			// as long as Stripe keeps trying (days). Withholding the row to force
+			// retries buys nothing and hides the real ones behind a permanent 500.
+			//
+			// What used to make this dangerous was that recording the event was
+			// also the END of it — a tip charge that beat its own webhook was
+			// dropped here in silence. It is no longer silent: an intent carrying a
+			// `paymentId` we stamped that cannot be placed raises a severe
+			// `charge_unmatched` alert (money taken with no record), and an intent
+			// with no `paymentId` at all — somebody else's, on shared test keys —
+			// is logged and ignored. See `resolvePaymentForIntent`.
 			await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
 				eventId: event.id,
 				eventType: event.type,
@@ -1542,6 +1557,19 @@ export const createTipCharge = action({
 		const customerId = await getOrCreateStripeCustomerId(ctx, stripeClient, userId);
 
 		// ONE-TAP FIRST: charge the saved card off-session.
+		//
+		// `confirm: true` means the money moves inside this create call, so the
+		// row below cannot learn the intent id until after the charge exists —
+		// and `payment_intent.succeeded` can arrive first (TAVLI-105). There is
+		// no pre-create intent id to reach for: Stripe mints `pi_…` in its
+		// response, and the only way to hold it before the money moves is to
+		// split this into create-then-confirm. That was considered and rejected.
+		// It doubles the Stripe round trips on the hot path, and it trades this
+		// race for a worse one: a create that succeeds while the confirm call is
+		// lost leaves an unconfirmed intent and a `processing` row that no webhook
+		// will ever settle — and the stuck-payment sweep covers tabs, not tips.
+		// The webhook's `metadata.paymentId` fallback closes the race for every
+		// path at once, so it is the guarantee here, not a safety net.
 		if (savedPaymentMethodId) {
 			try {
 				const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
