@@ -36,6 +36,7 @@ import {
 	stripeSecondsToMs,
 } from "../stripeWebhookHelpers";
 import { getCurrentUserId } from "./auth";
+import { getDeploymentMarker } from "./env";
 
 /**
  * The Stripe API version this codebase is written against.
@@ -296,19 +297,29 @@ async function failPaymentByKind(
  * row — the write the race lost — and the handler then proceeds exactly as it
  * would have, amount assertion included.
  *
- * Returns `null` when the event is not ours. Two shapes of "not ours", with
- * deliberately different answers:
+ * Returns `null` when the event cannot be placed, and the reason decides whether
+ * a human is told. A severe `charge_unmatched` alert emails every platform
+ * admin, so it has to mean something; the bar is "money THIS deployment took and
+ * cannot account for".
  *
- * - **No `paymentId` in the metadata at all.** Tavli stamps one on every intent
- *   it creates, so this intent was created by something else: another
- *   developer's test keys on a shared account (dev and staging share one), a
- *   charge made by hand in the Stripe Dashboard, a Billing intent. An info log,
- *   no alert — alerting here would page platform admins about other people's
- *   traffic, constantly, and an alert nobody can act on trains people to ignore
- *   the ones they can.
- * - **A `paymentId` we stamped, whose row is gone or names a different
- *   intent.** That is our own money with no record of it, which is exactly what
- *   `charge_unmatched` exists for: severe, one open alert per intent.
+ * - **No `paymentId` in the metadata.** Not ours at all: a charge made by hand
+ *   in the Stripe Dashboard, a Billing intent, a test from some other tool. Info
+ *   log, no alert.
+ * - **A `deployment` marker naming some OTHER deployment.** Also not ours, and
+ *   this is the common case, not an edge one: the two dev deployments and staging
+ *   all charge the same Stripe test account, and every one of them stamps
+ *   `metadata.paymentId`. Without the marker each of their tip charges would
+ *   raise a severe alert and mail every platform admin — the fastest way to
+ *   teach people that `/admin/alerts` is noise. Info log, no alert, and the row
+ *   is not even looked up: a `paymentId` minted in another deployment's database
+ *   has no business resolving in ours.
+ * - **No marker at all, and the row is missing.** Intents created before this
+ *   shipped carry no marker, so the fallback still RUNS for them (an in-flight
+ *   tip charge mid-deploy is exactly the case this ticket exists for) — but a
+ *   miss cannot be attributed, so it is logged rather than alerted.
+ * - **Our marker, and the row is gone or names a different intent.** Money this
+ *   deployment took with no record of it. Severe `charge_unmatched`, one open
+ *   alert per intent.
  */
 async function resolvePaymentForIntent(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -336,17 +347,40 @@ async function resolvePaymentForIntent(
 			? paymentIntent.metadata.paymentId
 			: undefined;
 
+	const intentMarker: string | undefined =
+		typeof paymentIntent?.metadata?.deployment === "string" &&
+		paymentIntent.metadata.deployment.length > 0
+			? paymentIntent.metadata.deployment
+			: undefined;
+	const ourMarker = getDeploymentMarker();
+
 	// Not ours, and cheaply provable: nothing to alert about. `paymentIntentId`
 	// missing lands here too — an event with no object id is malformed, and
 	// there is no key to dedupe an alert on anyway.
-	if (!paymentIntentId || !metadataPaymentId) {
+	//
+	// A marker naming another deployment is the same verdict reached sooner: its
+	// `paymentId` was minted in another database, so resolving it here would at
+	// best miss and at worst hit an unrelated row.
+	const foreignDeployment = Boolean(intentMarker && ourMarker && intentMarker !== ourMarker);
+	if (!paymentIntentId || !metadataPaymentId || foreignDeployment) {
 		console.info("[stripe.fulfillPayment] FOREIGN PAYMENT INTENT IGNORED", {
 			operation,
 			paymentIntentId: redactExternalId(paymentIntentId),
-			reason: paymentIntentId ? "no_metadata_payment_id" : "no_payment_intent_id",
+			reason: !paymentIntentId
+				? "no_payment_intent_id"
+				: !metadataPaymentId
+					? "no_metadata_payment_id"
+					: "another_deployment",
+			...(foreignDeployment && { intentDeployment: intentMarker, ourDeployment: ourMarker }),
 		});
 		return null;
 	}
+
+	// Can a miss below be blamed on us? Only when the intent says it is ours.
+	// An unmarked intent predates the marker (created by the code this replaced),
+	// so it still gets the fallback — but not the alert, because a miss on it is
+	// indistinguishable from a stranger's charge.
+	const attributableToUs = Boolean(ourMarker) && intentMarker === ourMarker;
 
 	const {
 		payment,
@@ -363,6 +397,14 @@ async function resolvePaymentForIntent(
 	// The row this intent names is gone (or the id never resolved). Money moved
 	// against a record we cannot produce.
 	if (!payment) {
+		if (!attributableToUs) {
+			console.info("[stripe.fulfillPayment] FOREIGN PAYMENT INTENT IGNORED", {
+				operation,
+				paymentIntentId: redactExternalId(paymentIntentId),
+				reason: "unmarked_intent_no_matching_row",
+			});
+			return null;
+		}
 		await raiseChargeUnmatched(ctx, {
 			operation,
 			paymentIntentId,
@@ -377,6 +419,8 @@ async function resolvePaymentForIntent(
 	// recorded as the first. The row is left exactly as it is and a human is
 	// told which intent could not be placed.
 	if (payment.stripePaymentIntentId && payment.stripePaymentIntentId !== paymentIntentId) {
+		// Alerted regardless of the marker: the row is unambiguously ours, so the
+		// charge that cannot be placed on it is a real accounting hole either way.
 		await raiseChargeUnmatched(ctx, {
 			operation,
 			paymentIntentId,

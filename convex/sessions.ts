@@ -552,11 +552,24 @@ export const markTabPaymentProcessing = internalMutation({
 		stripePaymentIntentId: v.string(),
 	},
 	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		// Forward only, matching `stripeHelpers.attachIntentToPayment`
+		// (TAVLI-105). A tab intent is created unconfirmed, so the diner cannot
+		// have paid before this runs and the webhook cannot have settled the row
+		// yet — but "the create path can overwrite a settlement with PROCESSING"
+		// is a bug class, not a per-path accident, and the tab half should not be
+		// the one place it survives.
+		const alreadyDecided = payment.status !== PAYMENT_STATUS.PENDING;
+
 		await ctx.db.patch(args.paymentId, {
-			status: PAYMENT_STATUS.PROCESSING,
+			...(alreadyDecided ? {} : { status: PAYMENT_STATUS.PROCESSING }),
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			updatedAt: Date.now(),
 		});
+		if (alreadyDecided) return;
+
 		await ctx.db.patch(args.sessionId, {
 			paymentState: SESSION_PAYMENT_STATE.PROCESSING,
 		});

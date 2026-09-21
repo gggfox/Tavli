@@ -85,6 +85,7 @@ import {
 	handleSubscriptionLifecycle,
 } from "./_util/billing";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
+import { getDeploymentMarker } from "./_util/env";
 import {
 	getOrCreateStripeCustomerId,
 	getStripeClient,
@@ -1248,6 +1249,8 @@ export const createPaymentIntent = action({
 			activePaymentId: paymentId,
 		});
 
+		const deploymentMarker = getDeploymentMarker();
+
 		try {
 			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
 				{
@@ -1271,6 +1274,11 @@ export const createPaymentIntent = action({
 						restaurantId: order.restaurantId,
 						sessionId: order.sessionId,
 						paymentId,
+						// Which deployment's `paymentId` this is (TAVLI-105). Several
+						// deployments share one Stripe test account, so the webhook needs
+						// this to tell a charge it cannot account for from a charge that
+						// was never its business.
+						...(deploymentMarker && { deployment: deploymentMarker }),
 						kind: PAYMENT_KIND.ORDER,
 						subtotalAmount: String(subtotalAmount),
 						feeAmount: String(feeAmount),
@@ -1282,9 +1290,14 @@ export const createPaymentIntent = action({
 				}
 			);
 
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			// `attachIntentToPayment`, not a blind patch: the status only moves
+			// PENDING -> PROCESSING, so a webhook that already settled this row
+			// cannot be overwritten (TAVLI-105). This path creates an unconfirmed
+			// intent, so the diner cannot have paid yet and the guard is belt and
+			// braces — but the four create paths should not differ in whether they
+			// can clobber a settlement.
+			await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 				paymentId,
-				status: PAYMENT_STATUS.PROCESSING,
 				stripePaymentIntentId: paymentIntent.id,
 			});
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
@@ -1532,6 +1545,7 @@ export const createTipCharge = action({
 			attemptNumber: existingPayment ? existingPayment.attemptNumber + 1 : 1,
 		});
 
+		const deploymentMarker = getDeploymentMarker();
 		const baseIntentParams = {
 			amount: args.tipAmount,
 			currency,
@@ -1546,6 +1560,8 @@ export const createTipCharge = action({
 				sessionId: args.sessionId,
 				restaurantId: membership.restaurantId,
 				paymentId,
+				// See the order path: names the deployment that owns `paymentId`.
+				...(deploymentMarker && { deployment: deploymentMarker }),
 				paidByUserId: userId,
 			},
 		} satisfies Stripe.PaymentIntentCreateParams;
@@ -1585,9 +1601,14 @@ export const createTipCharge = action({
 					}
 				);
 
-				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				// THE racy one. `confirm: true` above means the charge has already
+				// happened, so `payment_intent.succeeded` may already have been
+				// delivered and — via the metadata fallback — may already have
+				// SETTLED this row. `attachIntentToPayment` records the ids and
+				// moves the status only if the row is still PENDING, so it can
+				// never overwrite that settlement with PROCESSING (TAVLI-105).
+				await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 					paymentId,
-					status: PAYMENT_STATUS.PROCESSING,
 					stripePaymentIntentId: paymentIntent.id,
 					stripePaymentMethodId: savedPaymentMethodId,
 				});
@@ -1606,9 +1627,8 @@ export const createTipCharge = action({
 						);
 						clientSecret = retrieved.client_secret;
 					}
-					await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+					await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 						paymentId,
-						status: PAYMENT_STATUS.PROCESSING,
 						stripePaymentIntentId: errorIntent.id,
 					});
 					return { clientSecret, paymentId };
@@ -1641,9 +1661,8 @@ export const createTipCharge = action({
 				}
 			);
 
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 				paymentId,
-				status: PAYMENT_STATUS.PROCESSING,
 				stripePaymentIntentId: paymentIntent.id,
 			});
 
@@ -1777,6 +1796,8 @@ export const createTabPaymentIntent = action({
 			userId: identity.subject,
 		});
 
+		const deploymentMarker = getDeploymentMarker();
+
 		try {
 			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
 				{
@@ -1790,6 +1811,8 @@ export const createTabPaymentIntent = action({
 						sessionId: args.sessionId,
 						restaurantId: tab.restaurantId,
 						paymentId,
+						// See the order path: names the deployment that owns `paymentId`.
+						...(deploymentMarker && { deployment: deploymentMarker }),
 						gratuityAmount: String(args.tipAmount),
 					},
 				},

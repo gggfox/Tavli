@@ -319,6 +319,67 @@ export const createPayment = internalMutation({
 	},
 });
 
+/**
+ * Records the PaymentIntent a payment row was charged on, WITHOUT ever moving
+ * the row backwards (TAVLI-105).
+ *
+ * This is the create-path half of the same race the webhook's metadata fallback
+ * fixes, and it is the more dangerous half. `createTipCharge` charges the saved
+ * card with `off_session: true, confirm: true`, so by the time
+ * `paymentIntents.create` returns, `payment_intent.succeeded` may already have
+ * been delivered and — now that the fallback can find the row without an intent
+ * id — may already have SETTLED it. The blind
+ * `updatePayment({ status: "processing", stripePaymentIntentId })` that used to
+ * run here would then overwrite `succeeded` with `processing`, permanently: the
+ * tip is uncredited, Stripe's redeliveries are already deduped, and the diner's
+ * retry is refused because an in-flight attempt exists. Fixing the webhook
+ * without fixing this would have moved the bug rather than closed it.
+ *
+ * So the status only ever moves PENDING → PROCESSING. A row that has reached
+ * `succeeded`, `failed`, `superseded` or `cancelled` keeps that status and only
+ * gains the ids, which are facts about the charge and safe to record either way.
+ *
+ * A row already naming a DIFFERENT intent is not touched at all: two intents
+ * cannot both be the one that charged it, and the webhook is the half that knows
+ * which. Logged rather than thrown — this runs after the money has moved, and
+ * throwing would show the diner an error for a charge that went through.
+ */
+export const attachIntentToPayment = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		stripePaymentIntentId: v.string(),
+		/** The saved card, on the one-tap path. */
+		stripePaymentMethodId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		if (
+			payment.stripePaymentIntentId &&
+			payment.stripePaymentIntentId !== args.stripePaymentIntentId
+		) {
+			console.error("[stripeHelpers.attachIntentToPayment] INTENT ID CONFLICT", {
+				paymentId: payment._id,
+				paymentKind: payment.kind ?? "legacy",
+				status: payment.status,
+			});
+			return;
+		}
+
+		await ctx.db.patch(args.paymentId, {
+			stripePaymentIntentId: args.stripePaymentIntentId,
+			...(args.stripePaymentMethodId !== undefined && {
+				stripePaymentMethodId: args.stripePaymentMethodId,
+			}),
+			// Forward only. Anything past PENDING has already been decided, by the
+			// webhook or by a superseding attempt, and that decision stands.
+			...(payment.status === PAYMENT_STATUS.PENDING && { status: PAYMENT_STATUS.PROCESSING }),
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 export const updatePayment = internalMutation({
 	args: {
 		paymentId: v.id(TABLE.PAYMENTS),

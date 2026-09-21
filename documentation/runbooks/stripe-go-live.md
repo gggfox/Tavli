@@ -546,21 +546,37 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   that patch. On a fallback match the intent id is patched onto the row and
   settlement proceeds normally. An event that neither route can place is still
   recorded as processed — a redelivery would ask the same two questions — so the
-  alert is the only thing carrying it to a human: an intent whose
-  `metadata.paymentId` names no row, or names a row already holding a different
-  intent, raises a severe `charge_unmatched` alert keyed
-  `charge_unmatched:<pi_…>` and logs `CHARGE UNMATCHED` with a `reason`. An
-  intent with **no** `paymentId` in its metadata is not ours at all (dev and
-  staging share one test account) and is logged as `FOREIGN PAYMENT INTENT
-IGNORED` without an alert.
+  alert is the only thing carrying it to a human.
+- **Which unplaceable events alert, and which are only logged.** Every intent
+  Tavli creates also stamps `metadata.deployment` with this deployment's slug
+  (from `CONVEX_CLOUD_URL`), because the two dev deployments and staging all
+  charge the **same** Stripe test account and all of them stamp
+  `metadata.paymentId` too. A severe `charge_unmatched` alert emails every
+  platform admin, so it is raised only for money _this_ deployment cannot account
+  for: the marker matches and the row is missing, or the row already holds a
+  different intent. Those are keyed `charge_unmatched:<pi_…>` and logged as
+  `CHARGE UNMATCHED` with a `reason`. Everything else is logged as
+  `FOREIGN PAYMENT INTENT IGNORED` with no alert — no `paymentId` at all, a
+  marker naming another deployment (whose `paymentId` is not even looked up), or
+  an unmarked intent (created before this shipped) whose row is missing. An
+  unmarked intent whose row _is_ found still settles normally, so a tip charge in
+  flight across the deploy is not lost.
+- The create path cannot undo a settlement: `stripeHelpers.attachIntentToPayment`
+  records the intent id but moves the status only `pending` → `processing`, so a
+  webhook that settled a tip while `paymentIntents.create` was still in flight is
+  never overwritten. Watch for `INTENT ID CONFLICT` — a payment row asked to
+  attach a second intent id.
 
 ## Post-launch monitoring
 
 - Convex logs for webhook signature failures
 - Convex logs for `REFUND ID UNRESOLVED` / `REFUND LOOKUP FAILED`
 - Convex logs for `CHARGE DISPUTE` — disputes hit the platform balance
-- Convex logs for `CHARGE UNMATCHED` — a charge Tavli cannot tie to a payment
-  row; always paired with a severe `charge_unmatched` alert on `/admin/alerts`
+- Convex logs for `CHARGE UNMATCHED` — a charge this deployment cannot tie to a
+  payment row; always paired with a severe `charge_unmatched` alert on
+  `/admin/alerts`. `FOREIGN PAYMENT INTENT IGNORED` beside it is the benign
+  counterpart (another deployment's charge on the shared test account): expected
+  traffic in dev and staging, not a finding
 - `stripeWebhookEvents` rows are being created for processed events
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs

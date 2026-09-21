@@ -16,12 +16,17 @@
  * fallback matches, the intent id is patched onto the row and the handler
  * continues exactly as it would have — amount assertion included.
  *
- * After the fallback, an unmatched `payment_intent.*` is genuinely not ours,
- * and the suite below pins the two shapes that has and the different answers
- * they get: no `paymentId` in metadata at all (somebody else's intent on a
- * shared test account — an info log, no alert) versus a `paymentId` we stamped
- * whose row does not exist or names a different intent (money with no record —
- * a severe operator alert).
+ * After the fallback, an unmatched `payment_intent.*` is genuinely not ours, and
+ * the suite below pins which shapes of that get a severe operator alert (money
+ * THIS deployment took and cannot account for) and which get a log: no
+ * `paymentId` at all, and — the common case, because several deployments charge
+ * one shared Stripe test account and all of them stamp `paymentId` — a
+ * `metadata.deployment` marker naming somebody else.
+ *
+ * The other half of the same race is the create path resuming AFTER the webhook
+ * settled the row. `stripeHelpers.attachIntentToPayment` is what keeps it from
+ * overwriting `succeeded` with `processing`, and the ordering tests at the end
+ * pin both directions.
  */
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +40,13 @@ const modules = import.meta.glob("../**/*.ts");
 vi.mock("stripe", async () => (await import("./_fixtures/stripeMock.fixture")).stripeModuleMock());
 
 const DINER = "diner-fallback";
+
+/**
+ * Stands in for `CONVEX_CLOUD_URL`'s slug. `getDeploymentMarker()` reads
+ * `process.env` at call time, so setting the URL in `beforeEach` is enough for
+ * both the create sites and the webhook to agree on who "we" are.
+ */
+const OUR_DEPLOYMENT = "tavli-test-105";
 
 async function seedRestaurant(t: ReturnType<typeof convexTest>): Promise<Id<"restaurants">> {
 	let restaurantId: Id<"restaurants">;
@@ -114,6 +126,105 @@ async function seedTipPaymentAwaitingIntentId(
 	return { sessionId: sessionId!, paymentId: paymentId! };
 }
 
+/**
+ * The order-path equivalent: a submitted, fully payable order whose `kind:
+ * "order"` payment row is PENDING with no intent id. Less racy than the tip
+ * (this intent is created unconfirmed, so the diner cannot have paid before the
+ * id lands) but the fallback is one code path for all three kinds and the order
+ * half should be pinned too.
+ */
+async function seedOrderPaymentAwaitingIntentId(
+	t: ReturnType<typeof convexTest>,
+	args: { restaurantId: Id<"restaurants">; subtotalAmount: number; feeAmount: number }
+): Promise<{ orderId: Id<"orders">; paymentId: Id<"payments"> }> {
+	let orderId: Id<"orders">;
+	let paymentId: Id<"payments">;
+	await t.run(async (ctx) => {
+		const now = Date.now();
+		const tableId = await ctx.db.insert("tables", {
+			restaurantId: args.restaurantId,
+			tableNumber: 12,
+			isActive: true,
+			createdAt: now,
+		});
+		const sessionId = await ctx.db.insert("sessions", {
+			restaurantId: args.restaurantId,
+			tableId,
+			userId: DINER,
+			status: "active",
+			startedAt: now,
+		});
+		orderId = await ctx.db.insert("orders", {
+			sessionId,
+			restaurantId: args.restaurantId,
+			tableId,
+			status: "submitted",
+			totalAmount: args.subtotalAmount,
+			paymentState: "unpaid",
+			submittedAt: now,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		const menuId = await ctx.db.insert("menus", {
+			restaurantId: args.restaurantId,
+			name: "Menu",
+			isActive: true,
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const categoryId = await ctx.db.insert("menuCategories", {
+			menuId,
+			restaurantId: args.restaurantId,
+			name: "Cat",
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const menuItemId = await ctx.db.insert("menuItems", {
+			categoryId,
+			restaurantId: args.restaurantId,
+			name: "Birria",
+			basePrice: args.subtotalAmount,
+			isAvailable: true,
+			displayOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.insert("orderItems", {
+			orderId,
+			menuItemId,
+			menuItemName: "Birria",
+			quantity: 1,
+			unitPrice: args.subtotalAmount,
+			selectedOptions: [],
+			lineTotal: args.subtotalAmount,
+			createdAt: now,
+		});
+
+		const order = await ctx.db.get(orderId);
+		paymentId = await ctx.db.insert("payments", {
+			restaurantId: args.restaurantId,
+			orderId,
+			amount: args.subtotalAmount + args.feeAmount,
+			subtotalAmount: args.subtotalAmount,
+			feeAmount: args.feeAmount,
+			kind: "order",
+			paidByUserId: DINER,
+			currency: "usd",
+			status: "pending",
+			refundStatus: "none",
+			attemptNumber: 1,
+			orderUpdatedAtSnapshot: order!.updatedAt,
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.patch(orderId, { activePaymentId: paymentId, paymentState: "pending" });
+	});
+	return { orderId: orderId!, paymentId: paymentId! };
+}
+
 function tipIntentEvent(args: {
 	eventId: string;
 	type: "payment_intent.succeeded" | "payment_intent.payment_failed";
@@ -122,6 +233,8 @@ function tipIntentEvent(args: {
 	/** Omitted entirely for the "somebody else's intent" case. */
 	metadataPaymentId?: string;
 	restaurantId?: Id<"restaurants">;
+	/** `undefined` = an intent created before the marker existed. */
+	deployment?: string;
 }) {
 	const succeeded = args.type === "payment_intent.succeeded";
 	return {
@@ -142,6 +255,7 @@ function tipIntentEvent(args: {
 					kind: "tip",
 					...(args.metadataPaymentId !== undefined && { paymentId: args.metadataPaymentId }),
 					...(args.restaurantId !== undefined && { restaurantId: args.restaurantId }),
+					...(args.deployment !== undefined && { deployment: args.deployment }),
 				},
 			},
 		},
@@ -175,6 +289,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 		vi.clearAllMocks();
 		process.env.STRIPE_SECRET_KEY = "sk_test_123";
 		process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+		process.env.CONVEX_CLOUD_URL = `https://${OUR_DEPLOYMENT}.convex.cloud`;
 	});
 
 	it("records the tip and credits the member when the row has no intent id yet", async () => {
@@ -193,6 +308,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 				amount: 2500,
 				metadataPaymentId: paymentId,
 				restaurantId,
+				deployment: OUR_DEPLOYMENT,
 			})
 		);
 
@@ -235,6 +351,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 				amount: 9900,
 				metadataPaymentId: paymentId,
 				restaurantId,
+				deployment: OUR_DEPLOYMENT,
 			})
 		);
 
@@ -269,6 +386,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 				amount: 1800,
 				metadataPaymentId: paymentId,
 				restaurantId,
+				deployment: OUR_DEPLOYMENT,
 			})
 		);
 
@@ -298,6 +416,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 				amount: 2500,
 				metadataPaymentId: paymentId,
 				restaurantId,
+				deployment: OUR_DEPLOYMENT,
 			})
 		);
 
@@ -341,6 +460,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 				amount: 2500,
 				metadataPaymentId: paymentId,
 				restaurantId,
+				deployment: OUR_DEPLOYMENT,
 			})
 		);
 
@@ -401,6 +521,7 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 				amount: 2500,
 				metadataPaymentId: paymentId,
 				restaurantId,
+				deployment: OUR_DEPLOYMENT,
 			})
 		);
 
@@ -413,5 +534,242 @@ describe("payment_intent.* — metadata.paymentId fallback (TAVLI-105)", () => {
 		expect(await tipAuditEventsOf(t)).toHaveLength(1);
 		expect(await webhookEventsOf(t)).toHaveLength(1);
 		expect(await alertsOf(t)).toHaveLength(0);
+	});
+
+	it("ignores an intent stamped by another deployment, even when the id resolves here", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_other_deployment",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_other_deployment",
+				amount: 2500,
+				// A real row id here, to prove the marker is checked BEFORE the
+				// lookup: the other dev deployment and staging charge the same
+				// Stripe test account and stamp `paymentId` too.
+				metadataPaymentId: paymentId,
+				restaurantId,
+				deployment: "some-other-deployment",
+			})
+		);
+
+		await fulfill(t);
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.status).toBe("pending");
+		expect(payment?.stripePaymentIntentId).toBeUndefined();
+		// The whole point: no severe alert, so no email to every platform admin
+		// every time somebody tests a tip on another deployment.
+		expect(await alertsOf(t)).toHaveLength(0);
+		expect(await webhookEventsOf(t)).toHaveLength(1);
+	});
+
+	it("still falls back for an unmarked intent, but will not alert on a miss", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+
+		// No marker: an intent created by the code this replaced, in flight across
+		// the deploy. The fallback must still place it — that is the charge this
+		// ticket is about.
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_unmarked_hit",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_unmarked_hit",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+			})
+		);
+		await fulfill(t);
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.status).toBe("succeeded");
+		expect(payment?.stripePaymentIntentId).toBe("pi_unmarked_hit");
+		expect(await alertsOf(t)).toHaveLength(0);
+
+		// Same shape, but naming a row that does not exist. Unattributable rather
+		// than unaccounted-for, so it is logged, not alerted.
+		await t.run(async (ctx) => ctx.db.delete(paymentId));
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_unmarked_miss",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_unmarked_miss",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+			})
+		);
+		await fulfill(t);
+
+		expect(await alertsOf(t)).toHaveLength(0);
+		expect(await webhookEventsOf(t)).toHaveLength(2);
+	});
+
+	it("settles an order whose payment row has no intent id yet", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { orderId, paymentId } = await seedOrderPaymentAwaitingIntentId(t, {
+			restaurantId,
+			subtotalAmount: 5000,
+			feeAmount: 600,
+		});
+
+		mockStripeClient.webhooks.constructEvent.mockReturnValue({
+			id: "evt_order_race",
+			type: "payment_intent.succeeded",
+			created: 1_700_000_000,
+			data: {
+				object: {
+					id: "pi_order_race",
+					amount: 5600,
+					amount_received: 5600,
+					currency: "usd",
+					latest_charge: "ch_order_race",
+					payment_method: "pm_order_race",
+					metadata: {
+						kind: "order",
+						paymentId,
+						restaurantId,
+						deployment: OUR_DEPLOYMENT,
+						gratuityAmount: "0",
+					},
+				},
+			},
+		});
+
+		await fulfill(t);
+
+		const { order, payment } = await t.run(async (ctx) => ({
+			order: await ctx.db.get(orderId),
+			payment: await ctx.db.get(paymentId),
+		}));
+		expect(payment?.status).toBe("succeeded");
+		expect(payment?.stripePaymentIntentId).toBe("pi_order_race");
+		expect(order?.paymentState).toBe("paid");
+		expect(await alertsOf(t)).toHaveLength(0);
+	});
+});
+
+/**
+ * The create path's half of the race (TAVLI-105 review round 1).
+ *
+ * Fixing only the webhook would have moved the bug rather than closed it: with
+ * the fallback in place the webhook can now settle a tip row while
+ * `createTipCharge` is still waiting on `paymentIntents.create`, and the blind
+ * `status: "processing"` patch that used to follow that call would have
+ * overwritten `succeeded` — permanently, since the redeliveries are deduped and
+ * no sweep covers tips.
+ */
+describe("attachIntentToPayment — the create path cannot undo a settlement", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+		process.env.CONVEX_CLOUD_URL = `https://${OUR_DEPLOYMENT}.convex.cloud`;
+	});
+
+	it("leaves a row the webhook already settled at succeeded", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+
+		// Webhook first: the off-session charge has happened and Stripe delivered
+		// before `paymentIntents.create` returned.
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_webhook_first",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_webhook_first",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+				deployment: OUR_DEPLOYMENT,
+			})
+		);
+		await fulfill(t);
+		expect(await t.run(async (ctx) => (await ctx.db.get(paymentId))?.status)).toBe("succeeded");
+
+		// createTipCharge now resumes and records the intent it charged.
+		await t.mutation(internal.stripeHelpers.attachIntentToPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_webhook_first",
+			stripePaymentMethodId: "pm_saved",
+		});
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		// Not downgraded to processing: the tip stays credited.
+		expect(payment?.status).toBe("succeeded");
+		expect(payment?.stripePaymentIntentId).toBe("pi_webhook_first");
+		expect(payment?.stripePaymentMethodId).toBe("pm_saved");
+		expect(await tipAuditEventsOf(t)).toHaveLength(1);
+	});
+
+	it("moves a pending row to processing in the normal order, then settles", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+
+		await t.mutation(internal.stripeHelpers.attachIntentToPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_normal_order",
+			stripePaymentMethodId: "pm_saved",
+		});
+		const midFlight = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(midFlight?.status).toBe("processing");
+		expect(midFlight?.stripePaymentIntentId).toBe("pi_normal_order");
+
+		// The webhook then arrives and takes the index route, not the fallback.
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_normal_order",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_normal_order",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+				deployment: OUR_DEPLOYMENT,
+			})
+		);
+		await fulfill(t);
+
+		expect(await t.run(async (ctx) => (await ctx.db.get(paymentId))?.status)).toBe("succeeded");
+		expect(await alertsOf(t)).toHaveLength(0);
+	});
+
+	it("does not overwrite an intent id with a different one", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+			stripePaymentIntentId: "pi_the_real_one",
+		});
+
+		await t.mutation(internal.stripeHelpers.attachIntentToPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_an_imposter",
+		});
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.stripePaymentIntentId).toBe("pi_the_real_one");
+		expect(payment?.status).toBe("pending");
 	});
 });
