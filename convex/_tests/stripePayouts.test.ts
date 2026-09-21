@@ -14,6 +14,7 @@
  * same call `fulfillPayment` uses — which the shared Stripe mock stubs.
  */
 import { convexTest } from "convex-test";
+import { registerDisputeComponents } from "./_fixtures/disputeComponents.fixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -40,6 +41,7 @@ let harnesses: ReturnType<typeof convexTest>[] = [];
 
 function harness(): ReturnType<typeof convexTest> {
 	const t = convexTest(schema, modules);
+	registerDisputeComponents(t);
 	harnesses.push(t);
 	return t;
 }

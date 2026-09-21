@@ -14,6 +14,16 @@
  * (`POST /stripe/webhook`), NOT the V2 connect thin-event endpoint.
  */
 import { PAYMENT_REFUND_STATUS } from "./constants";
+import { isDisputeLost } from "./disputeRecoveryHelpers";
+
+// `DISPUTE_PHASE` used to live here, when "created" and "closed" were purely a
+// webhook detail. TAVLI-102 made the phase a domain term — it names a bell
+// notification's dedupe key and decides whether a recovery ledger row opens or
+// is credited back — so it moved to `convex/constants.ts` with the rest of the
+// vocabulary. Re-exported so the many `from "./stripeWebhookHelpers"` imports
+// keep working and there is still one obvious place to find it from a webhook
+// handler.
+export { DISPUTE_PHASE, type DisputePhase } from "./constants";
 
 /**
  * Marker embedded in the error a Stripe action throws when the deployment is
@@ -125,8 +135,21 @@ export function computeRefundFacts(charge: ChargeRefundInput): RefundFacts {
 }
 
 /**
+ * One entry of a dispute's `balance_transactions` array.
+ *
+ * Stripe posts one balance transaction when a dispute is opened (the money and
+ * the fee leaving) and another when it is reversed (both coming back), so the
+ * array can hold entries of both signs. Only `fee` and `created` matter here.
+ */
+export interface DisputeBalanceTransactionInput {
+	fee?: number | null;
+	created?: number | null;
+	reporting_category?: string | null;
+}
+
+/**
  * Minimal structural view of a Stripe `Dispute` as delivered on a
- * `charge.dispute.created` / `charge.dispute.closed` event.
+ * `charge.dispute.*` event.
  */
 export interface DisputeInput {
 	id: string;
@@ -137,15 +160,8 @@ export interface DisputeInput {
 	charge?: string | { id?: string | null } | null;
 	payment_intent?: string | { id?: string | null } | null;
 	created?: number | null;
+	balance_transactions?: DisputeBalanceTransactionInput[] | null;
 }
-
-/** Which `charge.dispute.*` event produced these facts. */
-export const DISPUTE_PHASE = {
-	CREATED: "created",
-	CLOSED: "closed",
-} as const;
-
-export type DisputePhase = (typeof DISPUTE_PHASE)[keyof typeof DISPUTE_PHASE];
 
 export interface DisputeFacts {
 	disputeId: string;
@@ -159,10 +175,60 @@ export interface DisputeFacts {
 	createdAtMs: number | undefined;
 	/** True when Stripe has resolved the dispute against us (funds withdrawn). */
 	isLost: boolean;
+	/**
+	 * Stripe's dispute fee in the smallest currency unit, when the dispute's
+	 * balance transactions expose one. **Tavli absorbs this** — it is recorded
+	 * for the platform's own accounting and never added to a restaurant's
+	 * recovery ledger.
+	 */
+	feeAmount: number | undefined;
+	/** `created` (ms) of the balance transaction the fee came from. */
+	feeAtMs: number | undefined;
+}
+
+/**
+ * The dispute fee, summed across the balance transactions that charge one.
+ *
+ * Summed rather than "the first one": a dispute that is lost and later
+ * reinstated posts a second balance transaction, and Stripe refunds the fee on
+ * some reversals by posting a negative one. Adding them up is therefore the
+ * only reading that stays true as a dispute moves — and a net of zero (fee
+ * charged, fee returned) is a real answer, not a missing one.
+ *
+ * Returns `undefined` when no balance transaction is present at all, which is
+ * the normal state for a warning-stage dispute and for the slimmed-down object
+ * Stripe puts on some deliveries; the caller then fetches the dispute.
+ */
+export function computeDisputeFee(dispute: DisputeInput): {
+	feeAmount: number | undefined;
+	feeAtMs: number | undefined;
+} {
+	const transactions = dispute.balance_transactions;
+	if (!Array.isArray(transactions) || transactions.length === 0) {
+		return { feeAmount: undefined, feeAtMs: undefined };
+	}
+
+	let total = 0;
+	let seenFee = false;
+	let feeAtMs: number | undefined;
+	for (const transaction of transactions) {
+		if (typeof transaction?.fee !== "number") continue;
+		seenFee = true;
+		total += transaction.fee;
+		// The earliest fee-bearing transaction dates the fee: that is the month
+		// the platform was charged in, which is what the aggregate is keyed by.
+		const createdMs = stripeSecondsToMs(transaction.created);
+		if (createdMs !== undefined && (feeAtMs === undefined || createdMs < feeAtMs)) {
+			feeAtMs = createdMs;
+		}
+	}
+
+	return seenFee ? { feeAmount: total, feeAtMs } : { feeAmount: undefined, feeAtMs: undefined };
 }
 
 /** Extracts the dispute facts we persist and surface for staff visibility. */
 export function computeDisputeFacts(dispute: DisputeInput): DisputeFacts {
+	const { feeAmount, feeAtMs } = computeDisputeFee(dispute);
 	return {
 		disputeId: dispute.id,
 		amount: dispute.amount ?? 0,
@@ -172,6 +238,8 @@ export function computeDisputeFacts(dispute: DisputeInput): DisputeFacts {
 		chargeId: extractStripeId(dispute.charge),
 		paymentIntentId: extractStripeId(dispute.payment_intent),
 		createdAtMs: stripeSecondsToMs(dispute.created),
-		isLost: dispute.status === "lost",
+		isLost: isDisputeLost(dispute.status),
+		feeAmount,
+		feeAtMs,
 	};
 }

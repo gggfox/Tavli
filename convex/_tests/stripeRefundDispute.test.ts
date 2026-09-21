@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
+import { registerDisputeComponents } from "./_fixtures/disputeComponents.fixture";
 import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 import { computeDisputeFacts, computeRefundFacts } from "../stripeWebhookHelpers";
 
@@ -239,6 +240,7 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 
 	it("records a full refund on the payment and flips the order to refunded", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t);
 		const { orderId, paymentId } = await seedPaidOrderPayment(t, {
 			restaurantId,
@@ -282,6 +284,7 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 
 	it("resolves the refund id via the API when the charge omits the refunds list", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t);
 		const { paymentId } = await seedPaidOrderPayment(t, {
 			restaurantId,
@@ -325,6 +328,7 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 
 	it("records a partial refund without changing the order payment state", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t);
 		const { orderId, paymentId } = await seedPaidOrderPayment(t, {
 			restaurantId,
@@ -359,6 +363,7 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 
 	it("persists a created dispute, then updates it on close", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t);
 		const { paymentId } = await seedPaidOrderPayment(t, {
 			restaurantId,
@@ -440,6 +445,7 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 
 	it("treats a duplicate refund delivery as a no-op", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t);
 		const { paymentId } = await seedPaidOrderPayment(t, {
 			restaurantId,
@@ -484,6 +490,7 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 
 	it("treats a duplicate dispute delivery as a no-op", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t);
 		await seedPaidOrderPayment(t, {
 			restaurantId,

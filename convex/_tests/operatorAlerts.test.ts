@@ -8,6 +8,7 @@
  * the admin role can read or clear the list.
  */
 import { convexTest } from "convex-test";
+import { registerDisputeComponents } from "./_fixtures/disputeComponents.fixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -99,6 +100,7 @@ async function scheduledEmails(t: T) {
 describe("raiseOperatorAlert", () => {
 	it("records the alert as open, with the kind's default severity and message key", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t, "la-cocina");
 
 		const alertId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
@@ -123,6 +125,7 @@ describe("raiseOperatorAlert", () => {
 
 	it("is callable straight from a mutation context, without a round trip", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 
 		const alertId = await t.run(async (ctx) =>
 			raiseOperatorAlert(ctx, {
@@ -139,6 +142,7 @@ describe("raiseOperatorAlert", () => {
 
 	it("raises once while the dedupe key is open, however often the webhook replays", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 
 		const first = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
@@ -155,6 +159,7 @@ describe("raiseOperatorAlert", () => {
 
 	it("raises a fresh alert when the same problem recurs after an acknowledgement", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
@@ -175,6 +180,7 @@ describe("raiseOperatorAlert", () => {
 
 	it("keeps alerts without a dedupe key separate", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 
 		await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
@@ -201,6 +207,7 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("schedules exactly one email per platform admin, in their own language", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, {
 			userId: "admin-1",
 			roles: [USER_ROLES.ADMIN],
@@ -243,6 +250,7 @@ describe("severe alerts reach the platform admins", () => {
 	 */
 	it("never emails an org-level owner, or a restaurant manager", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, {
 			userId: "owner-1",
 			roles: [USER_ROLES.OWNER],
@@ -263,6 +271,7 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("emails one person once, however many org role rows they hold", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, {
 			userId: "admin-1",
 			roles: [USER_ROLES.ADMIN],
@@ -284,6 +293,7 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("emails nobody for an alert below severe", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, {
 			userId: "admin-1",
 			roles: [USER_ROLES.ADMIN],
@@ -299,6 +309,7 @@ describe("severe alerts reach the platform admins", () => {
 
 	it("emails nobody a second time when a deduped severe alert is re-raised", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, {
 			userId: "admin-1",
 			roles: [USER_ROLES.ADMIN],
@@ -326,6 +337,7 @@ describe("severe alerts reach the platform admins", () => {
 describe("the severe-alert email", () => {
 	it("sends the rendered alert to Resend, naming the restaurant", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const restaurantId = await seedRestaurant(t, "la-cocina");
 
 		const alertId = await t.mutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
@@ -357,6 +369,7 @@ describe("the severe-alert email", () => {
 describe("the admin alerts list", () => {
 	it("puts open alerts first, newest first inside each group", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
@@ -378,6 +391,7 @@ describe("the admin alerts list", () => {
 
 	it("names the admin who acknowledged an alert, never their Clerk subject", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, {
 			userId: "user_2abcCLERKSUBJECT",
 			roles: [USER_ROLES.ADMIN],
@@ -399,6 +413,7 @@ describe("the admin alerts list", () => {
 
 	it("caps the acknowledged history and keeps the newest of it", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
@@ -433,6 +448,7 @@ describe("the admin alerts list", () => {
 
 	it("records who acknowledged an alert and when", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		const admin = t.withIdentity({ subject: "admin-1" });
 
@@ -454,6 +470,7 @@ describe("the admin alerts list", () => {
 
 	it("treats a second acknowledgement as a no-op, keeping the first actor", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, { userId: "admin-1", roles: [USER_ROLES.ADMIN] });
 		await seedUserRole(t, { userId: "admin-2", roles: [USER_ROLES.ADMIN] });
 
@@ -473,6 +490,7 @@ describe("the admin alerts list", () => {
 
 	it("refuses to list or acknowledge for anyone who is not a platform admin", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		await seedUserRole(t, { userId: "manager-1", roles: [USER_ROLES.MANAGER] });
 		const manager = t.withIdentity({ subject: "manager-1" });
 
@@ -496,6 +514,7 @@ describe("the admin alerts list", () => {
 
 	it("refuses a signed-out caller", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 
 		const [rows, listError] = await t.query(api.operatorAlerts.list, {});
 		expect(rows).toBeNull();
@@ -506,6 +525,7 @@ describe("the admin alerts list", () => {
 describe("restaurant purge", () => {
 	it("removes the purged restaurant's alerts and leaves everyone else's", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const doomed = await seedRestaurant(t, "doomed");
 		const survivor = await seedRestaurant(t, "survivor");
 

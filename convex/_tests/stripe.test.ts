@@ -1141,7 +1141,11 @@ describe("stripe actions", () => {
 					customer: "cus_fee",
 					setup_future_usage: "off_session",
 					application_fee_amount: 1200,
-					transfer_data: { destination: "acct_ready" },
+					// `transfer_data.amount` is explicit from TAVLI-102 onward. With
+					// no dispute recovery configured it is exactly what Stripe would
+					// have transferred anyway (subtotal + tip), so this asserts the
+					// previous behaviour is unchanged, only now stated.
+					transfer_data: { destination: "acct_ready", amount: 10000 },
 					on_behalf_of: "acct_ready",
 					metadata: expect.objectContaining({
 						orderId,
