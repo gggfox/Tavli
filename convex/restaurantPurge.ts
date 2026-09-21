@@ -25,6 +25,7 @@ import {
 	type RestaurantPurgePatchedTable,
 	TABLE,
 } from "./constants";
+import { clearRestaurantDisputeTotals, removeDisputeFeeFromAggregate } from "./disputeAggregates";
 
 /**
  * Restaurants purged per cron run. The cascade for one restaurant runs in a
@@ -74,6 +75,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.PAYMENTS]: 0,
 		[TABLE.STRIPE_WEBHOOK_EVENTS]: 0,
 		[TABLE.STRIPE_DISPUTES]: 0,
+		[TABLE.DISPUTE_RECOVERIES]: 0,
 		[TABLE.STRIPE_PAYOUTS]: 0,
 		[TABLE.RESERVATIONS]: 0,
 		[TABLE.TABLE_LOCKS]: 0,
@@ -322,8 +324,30 @@ export async function hardDeleteRestaurantDataTyped(
 		.query(TABLE.STRIPE_DISPUTES)
 		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
 		.collect();
-	for (const d of disputes) await ctx.db.delete(d._id);
+	for (const d of disputes) {
+		// The per-month platform fee aggregate is keyed by month and holds one
+		// entry per dispute, so it cannot be cleared by namespace the way the
+		// per-restaurant aggregate can — each entry has to be removed while we
+		// still hold the row that names its month. Aggregate entries are not
+		// rows in any table, so nothing else in the purge would ever find them.
+		await removeDisputeFeeFromAggregate(ctx, d);
+		await ctx.db.delete(d._id);
+	}
 	deleted[TABLE.STRIPE_DISPUTES] += disputes.length;
+
+	// The recovery ledger (TAVLI-102): a debt against a restaurant that will
+	// never take another payment. Nothing can draw it down and nobody can act on
+	// it, so it goes with the disputes that created it.
+	const recoveries = await ctx.db
+		.query(TABLE.DISPUTE_RECOVERIES)
+		.withIndex("by_restaurant_status_lost", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const recovery of recoveries) await ctx.db.delete(recovery._id);
+	deleted[TABLE.DISPUTE_RECOVERIES] += recoveries.length;
+
+	// The per-restaurant dispute aggregate is namespaced by restaurant id, so
+	// the whole namespace goes in one call.
+	await clearRestaurantDisputeTotals(ctx, restaurantId);
 
 	// Payout rows (TAVLI-103) are the same shape of record: a local mirror of
 	// Stripe's ledger, kept so the restaurant can see its own money. Stripe
