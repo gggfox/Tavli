@@ -629,6 +629,86 @@ async function refundStrandedPayment(
 }
 
 /**
+ * Records a settlement on an order the kitchen has already finished with
+ * (review round 2).
+ *
+ * Reached when a card charge arrives for an order past `awaiting_payment` —
+ * `preparing`, `ready`, `served` — that is not yet paid, for exactly what the
+ * order costs. That is not an exotic state: with
+ * `releaseCashOrdersImmediately` (TAVLI-81) a round is cooked and served while
+ * its cash is uncollected, so a diner who pays by card from another tab lands
+ * here. Marking the row SUCCEEDED and leaving the order unpaid — what this
+ * branch did before — invites staff to collect the cash as well, and books the
+ * same round twice.
+ *
+ * The MONEY is settled; the kitchen status is not touched. The ticket has run
+ * its course, and rewriting `served` back to `submitted` would put a finished
+ * round back on the rail. `submittedAt`, the daily number and the order-day key
+ * are likewise left alone — they were stamped when the order was placed.
+ */
+async function settleMoneyWithoutReleasing(
+	ctx: MutationCtx,
+	args: {
+		payment: Doc<"payments">;
+		order: Doc<"orders">;
+		stripePaymentIntentId: string;
+		stripeChargeId?: string;
+		gratuityAmount?: number;
+	}
+): Promise<void> {
+	const { payment, order } = args;
+	const now = Date.now();
+
+	console.info(
+		`[orders.confirmPayment] settling money on order ${order._id} in status ${order.status} ` +
+			`without touching the kitchen status: payment ${payment._id} collected ${payment.amount}`
+	);
+
+	await ctx.db.patch(payment._id, {
+		status: PAYMENT_STATUS.SUCCEEDED,
+		stripePaymentIntentId: args.stripePaymentIntentId,
+		...(args.stripeChargeId !== undefined && { stripeChargeId: args.stripeChargeId }),
+		succeededAt: now,
+		updatedAt: now,
+		updatedBy: AUDIT_SYSTEM_USER_ID,
+		...(args.gratuityAmount !== undefined && args.gratuityAmount > 0
+			? { gratuityAmount: args.gratuityAmount }
+			: {}),
+	});
+
+	await ctx.db.patch(order._id, {
+		paymentState: ORDER_PAYMENT_STATE.PAID,
+		activePaymentId: payment._id,
+		stripePaymentIntentId: args.stripePaymentIntentId,
+		paidAt: now,
+		settledBy: SETTLED_BY.STRIPE,
+		...(payment.paidByUserId !== undefined && { paidByUserId: payment.paidByUserId }),
+		updatedAt: now,
+		updatedBy: AUDIT_SYSTEM_USER_ID,
+	});
+
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.ORDERS,
+		aggregateId: order._id,
+		eventType: AUDIT_EVENT.ORDER_PAYMENT_CONFIRMED,
+		restaurantId: order.restaurantId,
+		payload: {
+			paymentId: payment._id,
+			restaurantId: order.restaurantId,
+			sessionId: order.sessionId,
+			amount: payment.amount,
+			subtotalAmount: payment.subtotalAmount,
+			feeAmount: payment.feeAmount,
+			gratuityAmount: args.gratuityAmount,
+			fromStatus: order.status,
+			stripePaymentIntentId: args.stripePaymentIntentId,
+		},
+		userId: AUDIT_SYSTEM_USER_ID,
+		idempotencyKey: args.stripePaymentIntentId,
+	});
+}
+
+/**
  * Called by the Stripe webhook handler after payment_intent.succeeded.
  * Releases a paid order to the kitchen: `draft` or `awaiting_payment` (a diner
  * who switched from cash to card) flips to `submitted`, payment facts are
@@ -706,32 +786,51 @@ export const confirmPayment = internalMutation({
 				return;
 			}
 
-			console.error(
-				`[orders.confirmPayment] CHARGE ON AN ORDER THAT CANNOT BE SETTLED: ` +
-					`payment ${payment._id} collected ${payment.amount} for order ${order._id} in status ${order.status}`
-			);
-			const now = Date.now();
-			await ctx.db.patch(payment._id, {
-				status: PAYMENT_STATUS.SUCCEEDED,
+			// Past `served` (or `preparing`/`ready`) the food has moved, so the
+			// only open question is the MONEY — and it is not an undecidable one
+			// (review round 2). Leaving the row SUCCEEDED beside an unpaid order
+			// and asking a human was wrong in the case that actually happens: with
+			// `releaseCashOrdersImmediately` a round is cooked and served while the
+			// cash is uncollected, so a diner paying by card from another tab
+			// produces exactly this — and staff then collect the cash too, because
+			// nothing on their screen says it is paid.
+			const activePaymentRow = order.activePaymentId
+				? await ctx.db.get(order.activePaymentId)
+				: null;
+			const alreadyPaid =
+				order.paymentState === ORDER_PAYMENT_STATE.PAID ||
+				(activePaymentRow !== null &&
+					activePaymentRow._id !== payment._id &&
+					activePaymentRow.status === PAYMENT_STATUS.SUCCEEDED);
+
+			if (!alreadyPaid && payment.amount === currentCharge) {
+				// It pays for exactly what was served. Settle the MONEY and leave
+				// the kitchen status alone: the ticket has already run its course,
+				// and rewriting `served` back to `submitted` would put a finished
+				// round back on the rail.
+				await settleMoneyWithoutReleasing(ctx, {
+					payment,
+					order,
+					stripePaymentIntentId: args.stripePaymentIntentId,
+					stripeChargeId: args.stripeChargeId,
+					gratuityAmount: args.gratuityAmount,
+				});
+				return;
+			}
+
+			// Either the order is already paid — by another card payment or by
+			// cash (`settledBy: "staff"` leaves no payment row at all, which is
+			// why `paymentState` is the test and not just the active row) — or
+			// the amount does not match what was served. Both are money Tavli
+			// cannot keep: a duplicate, or a charge for something nobody sold at
+			// that price. It goes back, with the same alert the repriced branch
+			// raises.
+			await refundStrandedPayment(ctx, {
+				payment,
+				order,
+				currentCharge,
 				stripePaymentIntentId: args.stripePaymentIntentId,
-				...(args.stripeChargeId !== undefined && { stripeChargeId: args.stripeChargeId }),
-				succeededAt: now,
-				failureMessage: `Order was ${order.status} when this charge arrived`,
-				updatedAt: now,
-				updatedBy: AUDIT_SYSTEM_USER_ID,
-			});
-			await raiseOperatorAlert(ctx, {
-				kind: OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW,
-				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
-				restaurantId: order.restaurantId,
-				orderId: order._id,
-				paymentId: payment._id,
-				stripeObjectId: args.stripePaymentIntentId,
-				messageParams: {
-					collected: formatMoneyCents(payment.amount),
-					currency: payment.currency.toUpperCase(),
-				},
-				dedupeKey: `charge_on_unsettleable_order:${payment._id}`,
+				stripeChargeId: args.stripeChargeId,
 			});
 			return;
 		}
@@ -1180,12 +1279,49 @@ export const updateStatus = mutation({
 			}
 		}
 
+		// A cancel with a card intent still in flight lets go of it here, in the
+		// same transaction that voids the ticket (review round 2). Scheduling the
+		// Stripe cancel while the order still points at a PENDING/PROCESSING row
+		// leaves a window where staff see a cancelled order that is still
+		// "processing" a payment, and `requestPayInPerson`'s in-flight guard still
+		// trips. The row is CANCELLED and the pointer cleared now; the Stripe half
+		// follows on the hop below.
+		const cancellingInFlightPayment =
+			args.newStatus === ORDER_STATUS.CANCELLED &&
+			order.activePaymentId !== undefined &&
+			(order.paymentState === ORDER_PAYMENT_STATE.PENDING ||
+				order.paymentState === ORDER_PAYMENT_STATE.PROCESSING);
+		const inFlightPaymentId = cancellingInFlightPayment ? order.activePaymentId : undefined;
+
+		if (inFlightPaymentId) {
+			const inFlight = await ctx.db.get(inFlightPaymentId);
+			// Never over a settlement: if the charge won the race, the row is
+			// SUCCEEDED and the webhook's cancelled-order branch refunds it.
+			if (
+				inFlight &&
+				(inFlight.status === PAYMENT_STATUS.PENDING ||
+					inFlight.status === PAYMENT_STATUS.PROCESSING)
+			) {
+				await ctx.db.patch(inFlight._id, {
+					status: PAYMENT_STATUS.CANCELLED,
+					failureMessage: "Order was cancelled while this payment was in flight",
+					updatedAt: now,
+					updatedBy: userId,
+				});
+			}
+		}
+
 		await ctx.db.patch(args.orderId, {
 			status: args.newStatus,
 			...(args.newStatus === "cancelled" &&
 				order.paymentState === ORDER_PAYMENT_STATE.PAID && {
 					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
 				}),
+			...(inFlightPaymentId !== undefined && {
+				paymentState: ORDER_PAYMENT_STATE.UNPAID,
+				activePaymentId: undefined,
+				stripePaymentIntentId: undefined,
+			}),
 			// The only path into `served`, so the only place this is stamped.
 			// It anchors the Served segment's visibility window (TAVLI-84);
 			// `updatedAt` cannot, because later writes move it.
@@ -1211,14 +1347,9 @@ export const updateStatus = mutation({
 		// it. Scheduled because this is a mutation; harmless if it loses the race,
 		// because the stand-down leaves a `succeeded` intent alone and the
 		// webhook's cancelled-order branch refunds it.
-		if (
-			args.newStatus === ORDER_STATUS.CANCELLED &&
-			order.activePaymentId &&
-			(order.paymentState === ORDER_PAYMENT_STATE.PENDING ||
-				order.paymentState === ORDER_PAYMENT_STATE.PROCESSING)
-		) {
+		if (inFlightPaymentId) {
 			await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
-				paymentId: order.activePaymentId,
+				paymentId: inFlightPaymentId,
 			});
 		}
 

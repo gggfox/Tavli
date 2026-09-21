@@ -466,10 +466,53 @@ describe("orders.confirmPayment — a charge that matches no active payment (TAV
 				newStatus: "cancelled",
 			});
 			expect(error).toBeNull();
+
+			// Before the scheduled Stripe call even runs, the transaction that
+			// voided the ticket has already let go of the payment: staff never see
+			// a cancelled order that is still "processing" a card, and
+			// `requestPayInPerson`'s in-flight guard no longer trips.
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seeded.orderId),
+				payment: await ctx.db.get(seeded.paymentId),
+			}));
+			expect(payment?.status).toBe("cancelled");
+			expect(order?.activePaymentId).toBeUndefined();
+			expect(order?.stripePaymentIntentId).toBeUndefined();
+			expect(order?.paymentState).toBe("unpaid");
+
 			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 			// The diner's payment sheet can no longer charge a voided ticket.
 			expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_stranded");
+		});
+
+		it("leaves a settlement alone when the charge won the race to the cancel", async () => {
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			const manager = await seedManager(t, seeded.restaurantId);
+			await t.run(async (ctx) => {
+				// The webhook settled it a moment before staff hit cancel.
+				await ctx.db.patch(seeded.paymentId, { status: "succeeded", succeededAt: Date.now() });
+				await ctx.db.patch(seeded.orderId, { status: "submitted", paymentState: "paid" });
+			});
+
+			const [, error] = await manager.mutation(api.orders.updateStatus, {
+				orderId: seeded.orderId,
+				newStatus: "cancelled",
+			});
+			expect(error).toBeNull();
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+			// Untouched: a paid order's cancel is a refund, which
+			// `cancelOrderAndRefund` owns.
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seeded.orderId),
+				payment: await ctx.db.get(seeded.paymentId),
+			}));
+			expect(payment?.status).toBe("succeeded");
+			expect(order?.activePaymentId).toBe(seeded.paymentId);
+			expect(order?.paymentState).toBe("refund_requested");
+			expect(mockStripeClient.paymentIntents.cancel).not.toHaveBeenCalled();
 		});
 	});
 
@@ -571,49 +614,116 @@ describe("orders.confirmPayment — a charge that matches no active payment (TAV
 			expect(alerts.map((alert) => alert.kind)).toEqual(["charge_mismatched_refunded"]);
 		});
 
-		it("holds a charge for a served order and asks a human, rather than refunding food already eaten", async () => {
+		it("settles the money on a served round whose cash was never collected", async () => {
+			// `releaseCashOrdersImmediately` (TAVLI-81) cooks and serves a round
+			// while its cash is uncollected, so a diner paying by card from another
+			// tab lands exactly here. Marking the row SUCCEEDED beside an unpaid
+			// order — what this used to do — invites staff to collect the cash too.
 			const t = convexTest(schema, modules);
 			const seeded = await seedOrderAndPayment(t);
 			await t.run(async (ctx) => {
-				await ctx.db.patch(seeded.orderId, { status: "served", servedAt: Date.now() });
+				await ctx.db.patch(seeded.orderId, {
+					status: "served",
+					servedAt: Date.now(),
+					paymentState: "unpaid",
+				});
 			});
 
 			await confirm(t, seeded);
 			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
-			// No automatic refund: the diner ate the food, and Tavli cannot tell
-			// from here whether they also paid in cash.
-			expect(mockStripeClient.refunds.create).not.toHaveBeenCalled();
-			const payment = await t.run(async (ctx) => ctx.db.get(seeded.paymentId));
-			// SUCCEEDED because Stripe really did collect — not left PROCESSING
-			// forever, which is what this branch used to do.
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seeded.orderId),
+				payment: await ctx.db.get(seeded.paymentId),
+			}));
 			expect(payment?.status).toBe("succeeded");
 			expect(payment?.refundStatus).toBe("none");
-
-			const alerts = await alertsOf(t);
-			expect(alerts).toHaveLength(1);
-			expect(alerts[0]).toMatchObject({
-				kind: "charge_needs_review",
-				severity: "severe",
-				status: "open",
-				paymentId: seeded.paymentId,
-				orderId: seeded.orderId,
-				dedupeKey: `charge_on_unsettleable_order:${seeded.paymentId}`,
-			});
-			expect(alerts[0].messageParams).toEqual({ collected: "244.00", currency: "USD" });
+			// The MONEY settles; the kitchen status does not move — putting a
+			// finished round back on the rail would be worse than the bug.
+			expect(order?.status).toBe("served");
+			expect(order?.paymentState).toBe("paid");
+			expect(order?.activePaymentId).toBe(seeded.paymentId);
+			expect(order?.settledBy).toBe("stripe");
+			expect(order?.paidAt).toBeGreaterThan(0);
+			expect(mockStripeClient.refunds.create).not.toHaveBeenCalled();
+			expect(await alertsOf(t)).toHaveLength(0);
 		});
 
-		it("raises one alert however many times the event is redelivered", async () => {
+		it("refunds a card charge on a served round the diner already paid in cash", async () => {
 			const t = convexTest(schema, modules);
 			const seeded = await seedOrderAndPayment(t);
 			await t.run(async (ctx) => {
-				await ctx.db.patch(seeded.orderId, { status: "served", servedAt: Date.now() });
+				// `markOrderPaidInPerson` leaves no payment row at all, which is why
+				// `paymentState` is the test and not just the active row.
+				await ctx.db.patch(seeded.orderId, {
+					status: "served",
+					servedAt: Date.now(),
+					paymentState: "paid",
+					settledBy: "staff",
+					paidAt: Date.now(),
+					activePaymentId: undefined,
+				});
+			});
+
+			await confirm(t, seeded);
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seeded.orderId),
+				payment: await ctx.db.get(seeded.paymentId),
+			}));
+			expect(payment?.refundStatus).toBe("succeeded");
+			// The cash settlement stands.
+			expect(order?.paymentState).toBe("paid");
+			expect(order?.settledBy).toBe("staff");
+			const alerts = await alertsOf(t);
+			expect(alerts.map((alert) => alert.kind)).toEqual(["charge_mismatched_refunded"]);
+		});
+
+		it("refunds a charge on a served round for an amount nobody was served", async () => {
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(seeded.orderId, {
+					status: "served",
+					servedAt: Date.now(),
+					paymentState: "unpaid",
+					totalAmount: 15000,
+				});
+			});
+
+			await confirm(t, seeded);
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seeded.orderId),
+				payment: await ctx.db.get(seeded.paymentId),
+			}));
+			expect(payment?.refundStatus).toBe("succeeded");
+			// Still owed: the round was served but never paid for.
+			expect(order?.paymentState).toBe("unpaid");
+			expect(await alertsOf(t)).toHaveLength(1);
+		});
+
+		it("does not refund a served round twice on a redelivery", async () => {
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(seeded.orderId, {
+					status: "served",
+					servedAt: Date.now(),
+					paymentState: "unpaid",
+					totalAmount: 15000,
+				});
 			});
 
 			await confirm(t, seeded);
 			await confirm(t, seeded);
 			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
 			expect(await alertsOf(t)).toHaveLength(1);
 		});
 	});

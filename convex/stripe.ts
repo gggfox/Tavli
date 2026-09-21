@@ -718,10 +718,14 @@ export const createRefund = internalAction({
 			throw new Error("Payment does not have a Stripe payment intent");
 		}
 		const targetOrderId = args.orderId ?? payment.orderId;
-		if (!targetOrderId) {
+		const patchOrderState = args.skipOrderStatePatch !== true;
+		// Only the order-state patch needs an order. A tip row has none by
+		// construction (ADR 008: tips are session-scoped), and the retired-tip
+		// refund passes `skipOrderStatePatch` — demanding an order there would
+		// throw on the one path that has money to send back (review round 2).
+		if (patchOrderState && !targetOrderId) {
 			throw new Error("Refund requires an order: payment has no orderId and none was supplied");
 		}
-		const patchOrderState = args.skipOrderStatePatch !== true;
 
 		// A partial refund leaves money on the charge, so the payment is `partial`
 		// rather than `succeeded`. This matches what the `charge.refunded` webhook
@@ -734,7 +738,7 @@ export const createRefund = internalAction({
 			refundStatus: PAYMENT_REFUND_STATUS.REQUESTED,
 			refundRequestedAt: Date.now(),
 		});
-		if (patchOrderState) {
+		if (patchOrderState && targetOrderId) {
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 				orderId: targetOrderId,
 				paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
@@ -768,7 +772,7 @@ export const createRefund = internalAction({
 				stripeRefundId: refund.id,
 				...(succeeded && { refundedAt: Date.now() }),
 			});
-			if (patchOrderState) {
+			if (patchOrderState && targetOrderId) {
 				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 					orderId: targetOrderId,
 					paymentState: succeeded
@@ -792,7 +796,7 @@ export const createRefund = internalAction({
 				refundStatus: PAYMENT_REFUND_STATUS.FAILED,
 				failureMessage: error instanceof Error ? error.message : "Refund failed",
 			});
-			if (patchOrderState) {
+			if (patchOrderState && targetOrderId) {
 				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 					orderId: targetOrderId,
 					paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,

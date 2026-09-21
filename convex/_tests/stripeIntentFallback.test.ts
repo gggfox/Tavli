@@ -29,7 +29,7 @@
  * pin both directions.
  */
 import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
@@ -85,6 +85,8 @@ async function seedTipPaymentAwaitingIntentId(
 		tipAmount: number;
 		/** Set only by the conflict test; absent is the racing state. */
 		stripePaymentIntentId?: string;
+		/** Defaults to the racing state. `superseded` is the retired-row case. */
+		status?: "pending" | "processing" | "superseded" | "cancelled";
 	}
 ): Promise<{ sessionId: Id<"sessions">; paymentId: Id<"payments"> }> {
 	let sessionId: Id<"sessions">;
@@ -113,7 +115,7 @@ async function seedTipPaymentAwaitingIntentId(
 			kind: "tip",
 			paidByUserId: DINER,
 			currency: "usd",
-			status: "pending",
+			status: args.status ?? "pending",
 			refundStatus: "none",
 			attemptNumber: 1,
 			...(args.stripePaymentIntentId !== undefined && {
@@ -978,5 +980,146 @@ describe("failPaymentUnlessSettled — a failed call cannot erase a settled tip"
 		expect(payment?.stripePaymentIntentId).toBe("pi_e2e_lost");
 		expect(await tipAuditEventsOf(t)).toHaveLength(1);
 		expect(await alertsOf(t)).toHaveLength(0);
+	});
+});
+
+/**
+ * The fallback's other half (TAVLI-104 review round 2): the row it finds may be
+ * one that was RETIRED while its create call was in flight.
+ *
+ * The sequence that produced the bug: a tip create outlives the in-flight
+ * window → a second tap supersedes T1 and charges its own intent → T1's create
+ * finally returns and `attachIntentToPayment` refuses the retired row → and
+ * then `payment_intent.succeeded` arrives for T1's intent. The metadata
+ * fallback found T1, attached the intent id, and `confirmTipPayment` settled it,
+ * because its only guard was "already succeeded". The member was tipped twice
+ * and both rows booked into the tip pool.
+ */
+describe("a charge that lands on a retired row (TAVLI-104)", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+		process.env.CONVEX_CLOUD_URL = `https://${OUR_DEPLOYMENT}.convex.cloud`;
+		mockStripeClient.refunds.create.mockResolvedValue({
+			id: "re_retired_tip",
+			status: "succeeded",
+			amount: 2500,
+		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("refunds the tip instead of crediting it a second time", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+			status: "superseded",
+		});
+
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_retired_tip",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_retired_tip",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+				deployment: OUR_DEPLOYMENT,
+			})
+		);
+
+		vi.useFakeTimers();
+		await fulfill(t);
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		// NOT succeeded: the row stays retired, so it never enters the tip pool.
+		expect(payment?.status).toBe("superseded");
+		// The charge is recorded on it, though — the refund needs the ids, and the
+		// trail should say which charge this was.
+		expect(payment?.stripePaymentIntentId).toBe("pi_retired_tip");
+		expect(payment?.refundStatus).toBe("succeeded");
+		// The member is credited once, by the attempt that replaced this one.
+		expect(await tipAuditEventsOf(t)).toHaveLength(0);
+
+		expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
+		expect(mockStripeClient.refunds.create.mock.calls[0][1]).toEqual({
+			idempotencyKey: `stranded-charge-refund:${paymentId}`,
+		});
+
+		const alerts = await alertsOf(t);
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0]).toMatchObject({
+			kind: "charge_needs_review",
+			severity: "severe",
+			paymentId,
+			stripeObjectId: "pi_retired_tip",
+			dedupeKey: `charge_on_retired_attempt:${paymentId}`,
+		});
+	});
+
+	it("refunds once however many times Stripe redelivers", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+			status: "superseded",
+		});
+
+		const event = (eventId: string) =>
+			tipIntentEvent({
+				eventId,
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_retired_tip_replay",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+				deployment: OUR_DEPLOYMENT,
+			});
+
+		vi.useFakeTimers();
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(event("evt_retired_1"));
+		await fulfill(t);
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		// A second delivery now takes the INDEX route, because the refund recorded
+		// the intent id on the row.
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(event("evt_retired_2"));
+		await fulfill(t);
+		await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+		expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
+		expect(await alertsOf(t)).toHaveLength(1);
+		expect(await tipAuditEventsOf(t)).toHaveLength(0);
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.status).toBe("superseded");
+	});
+
+	it("never settles a retired tip row, even called directly", async () => {
+		// The guard belongs in the mutation as well as the router: `confirmTipPayment`
+		// is reachable from the stuck-payment sweep and from a future caller.
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+			status: "cancelled",
+		});
+
+		await t.mutation(internal.payments.confirmTipPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_direct",
+			stripeChargeId: "ch_direct",
+		});
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.status).toBe("cancelled");
+		expect(payment?.succeededAt).toBeUndefined();
+		expect(await tipAuditEventsOf(t)).toHaveLength(0);
 	});
 });

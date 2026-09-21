@@ -304,12 +304,16 @@ export type PaymentFailureCode = (typeof PAYMENT_FAILURE_CODE)[keyof typeof PAYM
  *
  * Set explicitly rather than left to stripe-node's 80s default, because
  * {@link PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS} is derived from it and a default
- * that moves under a minor SDK bump would move that window with it. 30s is
- * generous for every call Tavli makes (intent create, refund, account link);
- * anything slower is a Stripe incident, not a slow response, and the diner is
- * better served by a clean "try again" than by a spinner.
+ * that moves under a minor SDK bump would move that window with it.
+ *
+ * 60s, not the 30s this started at. Both are far longer than a healthy Stripe
+ * call, so the only thing the number really decides is who is right when the
+ * network is sick: a timeout shorter than the request Stripe is actually still
+ * processing turns a slow success into a client-side failure, and on the
+ * `confirm: true` tip path that failure is indistinguishable from a decline.
+ * Being slow costs a spinner; being wrong costs a charge nobody records.
  */
-export const STRIPE_REQUEST_TIMEOUT_MS = 30 * 1000;
+export const STRIPE_REQUEST_TIMEOUT_MS = 60 * 1000;
 
 /** `maxNetworkRetries` on the Stripe client. Stripe reuses the idempotency key. */
 export const STRIPE_MAX_NETWORK_RETRIES = 2;
@@ -1489,15 +1493,15 @@ export const OPERATOR_ALERT_KIND = {
 	 */
 	PAYMENT_AMOUNT_MISMATCH: "payment_amount_mismatch",
 	/**
-	 * Stripe collected money Tavli could place on a payment row but could NOT
-	 * apply, and did not refund automatically (TAVLI-104). Two ways in, both
-	 * needing the same thing — a human to look at the charge and decide:
-	 * - the order it names cannot be settled at all (served, cancelled past the
-	 *   refund path, or any other terminal status), so releasing it to the
-	 *   kitchen is meaningless and an automatic refund could hand back money for
-	 *   food that was already eaten;
-	 * - the payment attempt it names had already been retired, and the charge
-	 *   arrived late enough that the intent could not be cancelled.
+	 * Stripe charged a card against a payment attempt Tavli had already retired
+	 * (TAVLI-104) — a second tap, an edited order or a staff cancel replaced the
+	 * row while its create call was still in flight, or the stand-down lost the
+	 * race to the diner's confirm.
+	 *
+	 * The money is always resolved automatically: a tip is refunded, an order's
+	 * charge is applied to that order or refunded. The alert exists because a
+	 * duplicate charge is worth a human's eyes either way, and because the refund
+	 * is a scheduled Stripe call whose landing somebody should confirm.
 	 */
 	CHARGE_NEEDS_REVIEW: "charge_needs_review",
 	/** A dispute closed against the restaurant. */
