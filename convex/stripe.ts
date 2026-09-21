@@ -8,6 +8,7 @@
 //   2. Onboarding via V2 Account Links
 //   3. Checking account status via V2 Accounts retrieve
 //   4. Listening for V2 thin events (requirements & capability changes)
+//   4b. Listening for connected-account payout events (TAVLI-103)
 //   5. PaymentIntent-backed checkout for restaurant orders
 //   6. Refunds for cancelled orders
 //
@@ -29,6 +30,9 @@
 //
 //   For payment webhooks:
 //     stripe listen --forward-to http://localhost:3210/stripe/webhook
+//
+//   For connected-account payout events:
+//     stripe listen --forward-connect-to http://localhost:3210/stripe/connected-webhook
 //
 //   For V2 thin events (connected account changes):
 //     stripe listen --thin-events \
@@ -55,6 +59,9 @@ import {
 	PAYMENT_STATUS,
 	PLATFORM_APPLICATION_FEE_RATE,
 	STRIPE_ACCOUNT_STATUS,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	STRIPE_PAYOUT_STATUS,
 	SUBSTITUTION_PROPOSAL_STATUS,
 	TAB_RECONCILE_ALERT_AGE_MS,
 	TAB_RECONCILE_MIN_AGE_MS,
@@ -81,6 +88,7 @@ import {
 	ORDER_REFUND_BLOCK_REASON,
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
+import { computePayoutFacts, type PayoutInput } from "./payoutHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
 import { STRIPE_NOT_CONFIGURED } from "./stripeWebhookHelpers";
 import {
@@ -91,6 +99,7 @@ import {
 	handleSubscriptionLifecycle,
 } from "./_util/billing";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
+import { STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV } from "./_util/env";
 import {
 	assertRestaurantAcceptsPayments,
 	getOrCreateStripeCustomerId,
@@ -587,6 +596,233 @@ export const handleThinEvent = internalAction({
 		}
 	},
 });
+
+// =============================================================================
+// 4b. Connected-Account Snapshot Webhook (Payout Events) — TAVLI-103
+// =============================================================================
+
+/** The `payout.*` types this handler acts on. Anything else is logged and recorded. */
+const PAYOUT_EVENT_TYPES = new Set([
+	"payout.created",
+	"payout.updated",
+	"payout.paid",
+	"payout.failed",
+	"payout.canceled",
+]);
+
+/**
+ * Handles **v1 snapshot events that fire on a connected account** — today, the
+ * `payout.*` family (TAVLI-103).
+ *
+ * Why a third destination rather than one of the two we already have:
+ *
+ * - `POST /stripe/webhook` is scoped to **Tavli's own account**. A restaurant's
+ *   payout to its own bank is an event on the restaurant's connected account, so
+ *   it never lands there. (Refunds and disputes *do* land there, because our
+ *   destination charges settle on the platform account — see
+ *   `convex/stripeWebhookHelpers.ts`.)
+ * - `POST /stripe/connect-webhook` is the **v2 thin** endpoint. Payout events are
+ *   v1 snapshots carrying a full `data.object`, parsed by
+ *   `webhooks.constructEvent`, not by `parseEventNotification`. Different
+ *   payload, different parser, different secret — they cannot share a
+ *   destination.
+ *
+ * So: a destination with "Events on connected accounts" selected, subscribed to
+ * the `payout.*` types, pointing here, with its own
+ * `STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET`.
+ *
+ * The restaurant is resolved from `event.account` (present on every
+ * connected-account delivery) through `restaurants.by_stripe_account`. An
+ * account **no restaurant in this deployment claims** is logged and recorded but
+ * raises nothing: dev and staging share one Stripe test account, so that is
+ * routine noise. The one exception is `payout.failed`, which raises a
+ * **warning** (not severe) alert carrying the account id — a real restaurant's
+ * money may be stuck somewhere Tavli cannot see, and that is worth a human
+ * glance even if it is usually the other environment.
+ *
+ * Every event id is recorded in `stripeWebhookEvents` exactly as the other two
+ * handlers do, so Stripe's redeliveries cannot notify a manager twice.
+ *
+ * Setup in Stripe Dashboard:
+ *   1. Developers > Webhooks > + Add destination
+ *   2. "Events from": **Connected accounts**
+ *   3. Payload style: **Snapshot**
+ *   4. Subscribe to `payout.created`, `payout.updated`, `payout.paid`,
+ *      `payout.failed`, `payout.canceled`
+ *
+ * Dormant until `STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` is set on the
+ * deployment — without it every delivery throws before the switch is reached and
+ * the route answers 500. See `documentation/runbooks/stripe-go-live.md`.
+ */
+export const handleConnectedAccountEvent = internalAction({
+	args: {
+		payloadString: v.string(),
+		signatureHeader: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const stripeClient = getStripeClient();
+
+		const webhookSecret = process.env[STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV];
+		if (!webhookSecret) {
+			// Same marker, same reason as the other two handlers: the HTTP route
+			// reads it to answer 500 (Tavli is not configured) instead of 400
+			// (Stripe sent something we rejected).
+			throw new Error(
+				`${STRIPE_WEBHOOK_SECRET_MISSING}: ${STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV} is not set. ` +
+					"Add it to your Convex deployment environment variables. " +
+					"You get this secret when creating the connected-accounts webhook destination in the Stripe Dashboard."
+			);
+		}
+
+		let event: Stripe.Event;
+		try {
+			event = stripeClient.webhooks.constructEvent(
+				args.payloadString,
+				args.signatureHeader,
+				webhookSecret
+			);
+		} catch (error) {
+			console.error(
+				"[stripe.handleConnectedAccountEvent]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-connected-account-webhook",
+					operation: "constructEvent",
+				})
+			);
+			throw error;
+		}
+
+		try {
+			const processedEvent = await ctx.runQuery(
+				internal.stripeHelpers.getProcessedStripeWebhookEventInternal,
+				{ eventId: event.id }
+			);
+			if (processedEvent) {
+				return;
+			}
+
+			// Present on every connected-account delivery; absent means the
+			// destination was created with the wrong scope.
+			const stripeAccountId = event.account;
+
+			if (!PAYOUT_EVENT_TYPES.has(event.type)) {
+				// Louder than "ignored" but not an alert: this destination is
+				// subscribed to five types, so anything else is somebody widening
+				// it by hand or Stripe adding a type nobody has decided about.
+				console.info(
+					`[stripe.handleConnectedAccountEvent] unhandled connected-account event type: ${event.type}`,
+					JSON.stringify({ eventId: event.id, stripeAccountId })
+				);
+			} else if (!stripeAccountId) {
+				console.error(
+					"[stripe.handleConnectedAccountEvent] payout event carries no `account`; " +
+						"the destination is probably scoped to the platform account instead of connected accounts",
+					JSON.stringify({ eventId: event.id, eventType: event.type })
+				);
+			} else {
+				await handlePayoutEvent(ctx, {
+					eventId: event.id,
+					eventType: event.type,
+					stripeAccountId,
+					payout: event.data.object as unknown as PayoutInput,
+				});
+			}
+
+			await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
+				eventId: event.id,
+				eventType: event.type,
+			});
+		} catch (error) {
+			console.error(
+				"[stripe.handleConnectedAccountEvent]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-connected-account-webhook",
+					operation: "processEvent",
+					eventType: event.type,
+					eventId: event.id,
+				})
+			);
+			throw error;
+		}
+	},
+});
+
+/**
+ * One `payout.*` event: resolve the restaurant, persist, and let
+ * `payouts.recordPayoutEventInternal` decide whether anybody needs telling.
+ *
+ * Split out of the switch above so the unclaimed-account branch and the
+ * persistence branch each read as one thing.
+ */
+async function handlePayoutEvent(
+	ctx: ActionCtx,
+	args: {
+		eventId: string;
+		eventType: string;
+		stripeAccountId: string;
+		payout: PayoutInput;
+	}
+): Promise<void> {
+	const facts = computePayoutFacts(args.payout, args.eventType);
+
+	const restaurant: Doc<"restaurants"> | null = await ctx.runQuery(
+		internal.stripeHelpers.getRestaurantByStripeAccountIdInternal,
+		{ stripeAccountId: args.stripeAccountId }
+	);
+
+	if (!restaurant) {
+		// Dev and staging share one Stripe test account, so most of these are the
+		// other environment's restaurants. Recorded (by the caller) and logged,
+		// never alerted — except a failure, below.
+		console.info(
+			"[stripe.handleConnectedAccountEvent] no restaurant claims this connected account",
+			JSON.stringify({
+				eventId: args.eventId,
+				eventType: args.eventType,
+				stripeAccountId: args.stripeAccountId,
+				stripePayoutId: facts.stripePayoutId,
+			})
+		);
+
+		if (facts.status === STRIPE_PAYOUT_STATUS.FAILED) {
+			// A failure on an account nobody claims is either the other
+			// environment (fine) or a restaurant whose link was cleared while
+			// Stripe was still delivering — which is money stuck somewhere Tavli
+			// can no longer see. Warning, not severe: it is usually the former,
+			// and a severe alert emails every platform admin.
+			await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+				kind: OPERATOR_ALERT_KIND.PAYOUT_FAILED,
+				severity: OPERATOR_ALERT_SEVERITY.WARNING,
+				stripeObjectId: args.stripeAccountId,
+				dedupeKey: `payout_failed_unclaimed:${facts.stripePayoutId}`,
+			});
+		}
+		return;
+	}
+
+	const outcome = await ctx.runMutation(internal.payouts.recordPayoutEventInternal, {
+		restaurantId: restaurant._id,
+		stripeAccountId: args.stripeAccountId,
+		stripePayoutId: facts.stripePayoutId,
+		amount: facts.amount,
+		currency: facts.currency,
+		status: facts.status,
+		createdAt: facts.createdAt,
+		arrivalDate: facts.arrivalDate,
+		failureCode: facts.failureCode,
+		failureMessage: facts.failureMessage,
+		failureBalanceTransaction: facts.failureBalanceTransaction,
+	});
+
+	console.log(
+		`[stripe.handleConnectedAccountEvent] ${args.eventType}`,
+		JSON.stringify({
+			stripePayoutId: facts.stripePayoutId,
+			status: facts.status,
+			...outcome,
+		})
+	);
+}
 
 // =============================================================================
 // 5. Standard Webhook Handler (Payment Events)

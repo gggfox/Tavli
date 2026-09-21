@@ -1094,10 +1094,11 @@ export default defineSchema({
 	})
 		.index("by_restaurant_created", ["restaurantId", "createdAt"])
 		.index("by_payout_id", ["stripePayoutId"])
-		// The held total reads only failures, and the payments-page banner asks
-		// for it on every render — an indexed read of the failed rows keeps that
-		// off the restaurant's whole payout history.
-		.index("by_restaurant_status", ["restaurantId", "status"]),
+		// The held total reads only failures plus the successful payouts newer
+		// than the oldest one, and the payments-page banner asks for it on every
+		// render — `createdAt` in the index is what bounds that second read
+		// instead of walking the restaurant's whole payout history.
+		.index("by_restaurant_status_created", ["restaurantId", "status", "createdAt"]),
 
 	// Platform-level Stripe Customer per Clerk user (ADR 008). Needed so
 	// `setup_future_usage: "off_session"` on a pay-at-submit charge can attach

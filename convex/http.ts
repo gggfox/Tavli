@@ -17,8 +17,16 @@
 //    updated, capability status changes). These are "thin" events
 //    containing only a reference; the handler fetches full data from Stripe.
 //
-// Both endpoints verify the `stripe-signature` header to ensure the request
-// came from Stripe. Each uses its own webhook secret.
+// 3. POST /stripe/connected-webhook
+//    Snapshot webhook for events that fire on a CONNECTED account — the
+//    `payout.*` family (TAVLI-103). Full payload like (1), but scoped to
+//    connected accounts and carrying `event.account`, which resolves the
+//    restaurant. Separate from (1) because a restaurant's payout to its own
+//    bank never appears on Tavli's own account.
+//
+// All three endpoints verify the `stripe-signature` header to ensure the request
+// came from Stripe. Each uses its own webhook secret — they are not
+// interchangeable; see `convex/_util/env.ts`.
 // =============================================================================
 
 import { httpRouter } from "convex/server";
@@ -142,6 +150,68 @@ http.route({
 			return new Response(
 				isStripeNotConfiguredError(error) ? "Stripe not configured" : "Webhook handler failed",
 				{ status: isStripeNotConfiguredError(error) ? 500 : 400 }
+			);
+		}
+	}),
+});
+
+// =============================================================================
+// Connected-Account Snapshot Webhook (Payout Events) — TAVLI-103
+// =============================================================================
+//
+// Payout events fire on the restaurant's CONNECTED account, not on Tavli's, and
+// they are v1 snapshot events with a full `data.object` plus an `account`
+// property. That makes them a third destination: the payments one above is
+// scoped to Tavli's own account (a restaurant's payout never reaches it) and the
+// connect one is thin-payload-only (a different parser and a different secret).
+//
+// To set this up:
+//   1. Stripe Dashboard > Developers > Webhooks > + Add destination
+//   2. Events from: "Connected accounts"
+//   3. Payload style: "Snapshot"
+//   4. Subscribe to payout.created, payout.updated, payout.paid, payout.failed,
+//      payout.canceled
+//
+// For local development, use the Stripe CLI:
+//   stripe listen --forward-connect-to http://localhost:3210/stripe/connected-webhook
+
+http.route({
+	path: "/stripe/connected-webhook",
+	method: "POST",
+	handler: httpAction(async (ctx, request) => {
+		const signature = request.headers.get("stripe-signature");
+		if (!signature) {
+			return new Response("Missing stripe-signature header", { status: 400 });
+		}
+
+		const payloadString = await request.text();
+
+		try {
+			await ctx.runAction(internal.stripe.handleConnectedAccountEvent, {
+				payloadString,
+				signatureHeader: signature,
+			});
+			return new Response(JSON.stringify({ received: true }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		} catch (error) {
+			console.error(
+				"[http.stripe/connected-webhook]",
+				buildIntegrationErrorLog(error, {
+					integration: "stripe-connected-account-webhook",
+					operation: "POST /stripe/connected-webhook",
+				})
+			);
+			// Same split as the two routes above: 500 means the signing secret is
+			// missing (which it is on every deployment until somebody sets
+			// STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET), 400 means this delivery
+			// failed verification.
+			return new Response(
+				isMissingWebhookSecretError(error)
+					? "Webhook secret not configured"
+					: "Webhook handler failed",
+				{ status: isMissingWebhookSecretError(error) ? 500 : 400 }
 			);
 		}
 	}),
