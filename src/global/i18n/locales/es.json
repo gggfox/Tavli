@@ -2116,6 +2116,10 @@
 				"title": "Cargo reembolsado: el monto no coincidía",
 				"explanation": "Stripe cobró {{collected}} por una orden que ahora cuesta {{expected}} ({{currency}}), así que Tavli reembolsó el cargo completo en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse: confirma en Stripe que el reembolso se aplicó."
 			},
+			"chargeNeedsReview": {
+				"title": "Cargo que Tavli no pudo aplicar",
+				"explanation": "Stripe cobró {{collected}} ({{currency}}) que Tavli no pudo aplicar a la orden que menciona, y no lo reembolsó automáticamente porque eso podría devolver dinero por comida que ya se sirvió. Busca el cargo en Stripe y decide: reembolsarlo o liquidar la orden a mano."
+			},
 			"paymentAmountMismatch": {
 				"title": "Cobro detenido: el monto no coincidía",
 				"explanation": "Stripe cobró {{received}} en lugar de {{expected}} ({{currency}}), así que el pago se marcó como fallido en vez de liquidarse. Reembolsa el cargo en Stripe: el dinero sigue ahí y el comensal paga de nuevo."

@@ -57,6 +57,11 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 			explanation:
 				"Stripe collected {{collected}} for an order that now costs {{expected}} ({{currency}}), so Tavli refunded the charge in full rather than keep money it could not account for. The order is still unpaid \u2014 confirm the refund landed in Stripe.",
 		},
+		charge_needs_review: {
+			title: "Charge Tavli could not apply",
+			explanation:
+				"Stripe collected {{collected}} ({{currency}}) that Tavli could not apply to the order it names, and did not refund automatically because doing so could hand back money for food that was already served. Find the charge in Stripe and decide: refund it, or settle the order by hand.",
+		},
 		payment_amount_mismatch: {
 			title: "Settlement blocked: amount did not match",
 			explanation:
@@ -103,6 +108,11 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 			title: "Cargo reembolsado: el monto no coincidía",
 			explanation:
 				"Stripe cobró {{collected}} por una orden que ahora cuesta {{expected}} ({{currency}}), así que Tavli reembolsó el cargo completo en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse: confirma en Stripe que el reembolso se aplicó.",
+		},
+		charge_needs_review: {
+			title: "Cargo que Tavli no pudo aplicar",
+			explanation:
+				"Stripe cobró {{collected}} ({{currency}}) que Tavli no pudo aplicar a la orden que menciona, y no lo reembolsó automáticamente porque eso podría devolver dinero por comida que ya se sirvió. Busca el cargo en Stripe y decide: reembolsarlo o liquidar la orden a mano.",
 		},
 		payment_amount_mismatch: {
 			title: "Cobro detenido: el monto no coincidía",

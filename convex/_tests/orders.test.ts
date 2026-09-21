@@ -597,6 +597,10 @@ describe("orders", () => {
 				attemptNumber: 2,
 				orderUpdatedAtSnapshot: (await authed.query(api.orders.getOrderWithItems, { orderId }))!
 					.updatedAt,
+				// A second attempt has to name the one it is replacing (TAVLI-104):
+				// `createPayment` re-checks inside the transaction and refuses to
+				// insert alongside a live attempt it was not told about.
+				supersededPaymentId: firstPaymentId,
 			});
 			await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 				orderId,

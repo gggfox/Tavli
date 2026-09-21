@@ -42,11 +42,14 @@
 import { v } from "convex/values";
 import type Stripe from "stripe";
 import { api, internal } from "./_generated/api";
+import { formatMoneyCents } from "./_shared/money";
 import { computeOrderCharge } from "./_shared/tip";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import {
 	AUDIT_SYSTEM_USER_ID,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
 	ORDER_PAYMENT_STATE,
 	ORDER_STATUS,
 	PAYMENT_FAILURE_CODE,
@@ -1312,12 +1315,13 @@ export const createPaymentIntent = action({
 			refundStatus: PAYMENT_REFUND_STATUS.NONE,
 			attemptNumber,
 			orderUpdatedAtSnapshot: order.updatedAt,
-		});
-
-		await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-			orderId: args.orderId,
-			paymentState: ORDER_PAYMENT_STATE.PENDING,
-			activePaymentId: paymentId,
+			// The attempt this call stood down, re-checked inside the inserting
+			// transaction (TAVLI-104 review round 1). Everything above ran against
+			// a snapshot; two diners tapping Pay within the same second both pass
+			// these checks, and only the transaction can order them. `createPayment`
+			// also moves the order's `activePaymentId` in that same transaction, so
+			// the two taps collide on the order document and OCC serialises them.
+			...(latestPayment && { supersededPaymentId: latestPayment._id }),
 		});
 
 		const deploymentMarker = getDeploymentMarker();
@@ -1516,17 +1520,29 @@ export const cancelOrderPaymentIntent = action({
  * the refund-and-alert branch. A duplicate charge is refunded and surfaced
  * rather than lost.
  *
+ * The second caller is `stripeHelpers.attachIntentToPayment`, which refuses to
+ * write an intent id onto a row that was retired while its own create call was
+ * still running. It has an intent nobody is waiting for and no row to read it
+ * off, so it passes `stripePaymentIntentId` explicitly — that is the only
+ * reason the argument is optional rather than always read from the row.
+ *
  * Never throws: a failure here leaves an abandoned intent at Stripe, which
  * expires on its own, and throwing would only retry the scheduled job.
  */
 export const standDownSupersededIntent = internalAction({
-	args: { paymentId: v.id(TABLE.PAYMENTS) },
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		/** The orphaned intent, when the row was never allowed to record it. */
+		stripePaymentIntentId: v.optional(v.string()),
+	},
 	handler: async (ctx, args): Promise<void> => {
 		const payment: Doc<"payments"> | null = await ctx.runQuery(
 			internal.stripeHelpers.getPaymentInternal,
 			{ paymentId: args.paymentId }
 		);
-		if (!payment?.stripePaymentIntentId) return;
+		if (!payment) return;
+		const intentId = args.stripePaymentIntentId ?? payment.stripePaymentIntentId;
+		if (!intentId) return;
 		// Settled between the patch and this job: the money is real and the
 		// webhook owns it. Cancelling is impossible and pretending otherwise
 		// would be worse.
@@ -1534,16 +1550,35 @@ export const standDownSupersededIntent = internalAction({
 
 		const { outcome } = await standDownPaymentIntent(
 			getStripeClient(),
-			payment.stripePaymentIntentId,
+			intentId,
 			"standDownSupersededIntent"
 		);
 		if (outcome === INTENT_STAND_DOWN.SUCCEEDED) {
-			// The superseded intent was confirmed anyway. Loud, because it means a
-			// second charge exists; its own webhook delivery will refund it against
-			// the now-paid order and raise the operator alert.
-			console.error("[stripe.standDownSupersededIntent] SUPERSEDED INTENT ALREADY SUCCEEDED", {
+			// The retired intent was confirmed anyway, so a charge exists that no
+			// live payment row accounts for. When it belongs to an order, its own
+			// `payment_intent.succeeded` will find the order paid (or repriced) and
+			// refund it. When it is a tip — the one-tap path, where the money moves
+			// inside the create call this row lost the race to — there is no such
+			// second chance: nothing else will look at it again. So the alert is
+			// raised here, for both, rather than trusting a follow-up that only one
+			// of them gets.
+			console.error("[stripe.standDownSupersededIntent] RETIRED INTENT ALREADY SUCCEEDED", {
 				paymentId: payment._id,
-				stripePaymentIntentId: redactExternalId(payment.stripePaymentIntentId),
+				paymentKind: payment.kind ?? "legacy",
+				stripePaymentIntentId: redactExternalId(intentId),
+			});
+			await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+				kind: OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				restaurantId: payment.restaurantId,
+				...(payment.orderId && { orderId: payment.orderId }),
+				paymentId: payment._id,
+				stripeObjectId: intentId,
+				messageParams: {
+					collected: formatMoneyCents(payment.amount),
+					currency: payment.currency.toUpperCase(),
+				},
+				dedupeKey: `charge_on_retired_attempt:${payment._id}`,
 			});
 		}
 	},
@@ -1742,6 +1777,12 @@ export const createTipCharge = action({
 			status: PAYMENT_STATUS.PENDING,
 			refundStatus: PAYMENT_REFUND_STATUS.NONE,
 			attemptNumber: existingPayment ? existingPayment.attemptNumber + 1 : 1,
+			// Re-checked inside the transaction — see the order path. On this path
+			// the collision is on the session's tip rows rather than an order
+			// document, and it matters more: the one-tap charge moves money inside
+			// `paymentIntents.create`, so two taps that both get a row are two
+			// tips.
+			...(existingPayment && { supersededPaymentId: existingPayment._id }),
 		});
 
 		const deploymentMarker = getDeploymentMarker();
@@ -2051,7 +2092,13 @@ export const createTabPaymentIntent = action({
 		}
 
 		// Locks the tab, supersedes any prior attempt, and re-validates the
-		// balance inside the transaction.
+		// balance inside the transaction — including WHICH attempt it is retiring
+		// (TAVLI-104 review round 1). Any tab member can pay, so two people
+		// tapping Pay at the same moment is a normal Tuesday: both read the same
+		// `activePaymentId`, both stand the same intent down, and without the id
+		// below the mutation would retire whatever it found at commit time and
+		// hand the tab to the second row while the first diner is looking at a
+		// live client secret for the first.
 		const paymentId: Id<"payments"> = await ctx.runMutation(internal.sessions.beginTabPayment, {
 			sessionId: args.sessionId,
 			restaurantId: tab.restaurantId,
@@ -2059,6 +2106,7 @@ export const createTabPaymentIntent = action({
 			currency,
 			gratuityAmount: args.tipAmount,
 			userId: identity.subject,
+			...(tab.activePaymentId && { supersededPaymentId: tab.activePaymentId }),
 		});
 
 		const deploymentMarker = getDeploymentMarker();

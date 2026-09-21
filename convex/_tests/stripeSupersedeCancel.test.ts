@@ -318,6 +318,94 @@ describe("superseding a payment attempt cancels its intent at Stripe first (TAVL
 			const payments = await paymentsOf(t);
 			expect(payments.filter((p) => p.status === "superseded")).toHaveLength(1);
 		});
+
+		it("still refuses a tap at 100s, while a retried create can legitimately be running", async () => {
+			// The review catch. The first window was a flat 90s "against
+			// stripe-node's 80s default timeout", which ignored `maxNetworkRetries`
+			// — the worst case is `(retries + 1) × timeout` plus backoff. A tap at
+			// 100s would have superseded a create that was still going; that create
+			// then returns, and the webhook's metadata fallback settles the retired
+			// row. The window is now derived from the same two constants the Stripe
+			// client is built with, so the two cannot drift apart.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 20000 });
+
+			await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					orderId,
+					amount: 22400,
+					subtotalAmount: 20000,
+					feeAmount: 2400,
+					kind: "order",
+					paidByUserId: "diner-supersede",
+					currency: "usd",
+					status: "pending",
+					refundStatus: "none",
+					attemptNumber: 1,
+					createdAt: Date.now() - 100_000,
+					updatedAt: Date.now() - 100_000,
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id, paymentState: "pending" });
+			});
+
+			await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+				/ERROR_PAYMENT_IN_PROGRESS/
+			);
+			expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+		});
+
+		it("refuses the second of two taps that both got past the snapshot check", async () => {
+			// The action's guard reads a snapshot; two taps a few hundred
+			// milliseconds apart both pass it. Only the inserting transaction can
+			// order them, which is why the same question is asked again inside
+			// `createPayment` — and why that mutation moves the order's pointer in
+			// the same transaction, so the two collide on one document.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { orderId } = await seedDraftOrder(t, { restaurantId, totalAmount: 20000 });
+
+			const firstId = await t.mutation(internal.stripeHelpers.createPayment, {
+				restaurantId,
+				orderId,
+				amount: 22400,
+				subtotalAmount: 20000,
+				feeAmount: 2400,
+				kind: "order",
+				paidByUserId: "diner-supersede",
+				currency: "usd",
+				status: "pending",
+				refundStatus: "none",
+				attemptNumber: 1,
+			});
+
+			// The second tap believes there was nothing to replace — exactly what a
+			// stale snapshot looks like.
+			await expect(
+				t.mutation(internal.stripeHelpers.createPayment, {
+					restaurantId,
+					orderId,
+					amount: 22400,
+					subtotalAmount: 20000,
+					feeAmount: 2400,
+					kind: "order",
+					paidByUserId: "diner-supersede",
+					currency: "usd",
+					status: "pending",
+					refundStatus: "none",
+					attemptNumber: 2,
+				})
+			).rejects.toThrow(/ERROR_PAYMENT_IN_PROGRESS/);
+
+			const payments = await paymentsOf(t);
+			expect(payments).toHaveLength(1);
+			expect(payments[0]._id).toBe(firstId);
+			// And the pointer moved inside that insert, which is what gives the two
+			// taps something to collide on.
+			const order = await t.run(async (ctx) => ctx.db.get(orderId));
+			expect(order?.activePaymentId).toBe(firstId);
+		});
 	});
 
 	describe("tip path — createTipCharge", () => {
@@ -381,6 +469,152 @@ describe("superseding a payment attempt cancels its intent at Stripe first (TAVL
 			expect(payments).toHaveLength(1);
 			expect(payments[0]._id).toBe(paymentId);
 			expect(payments[0].status).toBe("pending");
+		});
+
+		it("refuses the second of two tip taps that both got past the snapshot check", async () => {
+			// The one-tap charge moves money INSIDE `paymentIntents.create`, so two
+			// rows is two tips. The scope here is the session's tip rows rather
+			// than an order document; Convex tracks the query's read set, so the
+			// loser's insert conflicts and it re-runs into this guard.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { sessionId } = await seedTippableSession(t, restaurantId);
+
+			const row = {
+				restaurantId,
+				sessionId,
+				amount: 5000,
+				subtotalAmount: 0,
+				feeAmount: 0,
+				gratuityAmount: 5000,
+				kind: "tip" as const,
+				paidByUserId: "diner-tipper",
+				currency: "usd",
+				status: "pending" as const,
+				refundStatus: "none" as const,
+			};
+			const firstId = await t.mutation(internal.stripeHelpers.createPayment, {
+				...row,
+				attemptNumber: 1,
+			});
+
+			await expect(
+				t.mutation(internal.stripeHelpers.createPayment, { ...row, attemptNumber: 2 })
+			).rejects.toThrow(/ERROR_PAYMENT_IN_PROGRESS/);
+
+			const payments = await paymentsOf(t);
+			expect(payments).toHaveLength(1);
+			expect(payments[0]._id).toBe(firstId);
+		});
+
+		it("does not attach a late intent to a row that was retired under it", async () => {
+			// The residue the window cannot cover: the create finally returns after
+			// the row was superseded. Attaching the id would hand the webhook's
+			// metadata fallback a target, and `confirmTipPayment` settles anything
+			// that is not already SUCCEEDED — the double tip, by the back door.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { sessionId } = await seedTippableSession(t, restaurantId);
+
+			const paymentId = await t.run(async (ctx) =>
+				ctx.db.insert("payments", {
+					restaurantId,
+					sessionId,
+					amount: 5000,
+					subtotalAmount: 0,
+					feeAmount: 0,
+					gratuityAmount: 5000,
+					kind: "tip",
+					paidByUserId: "diner-tipper",
+					currency: "usd",
+					status: "superseded",
+					refundStatus: "none",
+					attemptNumber: 1,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				})
+			);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+				id: "pi_late",
+				status: "requires_payment_method",
+			});
+			mockStripeClient.paymentIntents.cancel.mockResolvedValue({
+				id: "pi_late",
+				status: "canceled",
+			});
+
+			vi.useFakeTimers();
+			try {
+				await t.mutation(internal.stripeHelpers.attachIntentToPayment, {
+					paymentId,
+					stripePaymentIntentId: "pi_late",
+				});
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			} finally {
+				vi.useRealTimers();
+			}
+
+			const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+			expect(payment?.stripePaymentIntentId).toBeUndefined();
+			expect(payment?.status).toBe("superseded");
+			// The orphan is killed at Stripe instead, so it can never be confirmed.
+			expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_late");
+		});
+
+		it("alerts when the late intent had already charged the card", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { sessionId } = await seedTippableSession(t, restaurantId);
+
+			const paymentId = await t.run(async (ctx) =>
+				ctx.db.insert("payments", {
+					restaurantId,
+					sessionId,
+					amount: 5000,
+					subtotalAmount: 0,
+					feeAmount: 0,
+					gratuityAmount: 5000,
+					kind: "tip",
+					paidByUserId: "diner-tipper",
+					currency: "usd",
+					status: "superseded",
+					refundStatus: "none",
+					attemptNumber: 1,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				})
+			);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+				id: "pi_late_charged",
+				status: "succeeded",
+			});
+
+			vi.useFakeTimers();
+			try {
+				await t.mutation(internal.stripeHelpers.attachIntentToPayment, {
+					paymentId,
+					stripePaymentIntentId: "pi_late_charged",
+				});
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			} finally {
+				vi.useRealTimers();
+			}
+
+			expect(mockStripeClient.paymentIntents.cancel).not.toHaveBeenCalled();
+			// A tip charge nothing will look at again — only an alert carries it to
+			// a human.
+			const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+			expect(alerts).toHaveLength(1);
+			expect(alerts[0]).toMatchObject({
+				kind: "charge_needs_review",
+				severity: "severe",
+				paymentId,
+				stripeObjectId: "pi_late_charged",
+				dedupeKey: `charge_on_retired_attempt:${paymentId}`,
+			});
+			expect(alerts[0].messageParams).toEqual({ collected: "50.00", currency: "USD" });
 		});
 
 		it("cancels a live tip intent before retiring its row", async () => {
@@ -520,6 +754,88 @@ describe("superseding a payment attempt cancels its intent at Stripe first (TAVL
 			);
 		});
 
+		it("refuses the second of two members tapping Pay at the same moment", async () => {
+			// Any tab member can pay, so this is a normal Tuesday. Both taps read
+			// the same `activePaymentId`, both stand the same intent down, and both
+			// arrive at `beginTabPayment`. Without naming the attempt it is allowed
+			// to retire, the second one retires the FIRST diner's live row — whose
+			// client secret is on their screen — and points the session at its own.
+			// That diner then pays an intent the session has forgotten, and
+			// `confirmTabPayment` warns and returns.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { sessionId, diner } = await seedPayableTab(t, restaurantId, 30000);
+
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_tab_first",
+				client_secret: "cs_tab_first",
+			});
+			const first = await diner.action(api.stripe.createTabPaymentIntent, {
+				sessionId,
+				tipAmount: 0,
+			});
+
+			// The second member's action ran against the snapshot from BEFORE the
+			// first tap locked the tab: it believes there is nothing to replace.
+			await expect(
+				t.mutation(internal.sessions.beginTabPayment, {
+					sessionId,
+					restaurantId,
+					amount: 30000,
+					currency: "usd",
+					gratuityAmount: 0,
+					userId: "diner-tab-2",
+				})
+			).rejects.toThrow(/ERROR_PAYMENT_IN_PROGRESS/);
+
+			const session = await t.run(async (ctx) => ctx.db.get(sessionId));
+			expect(session?.activePaymentId).toBe(first.paymentId);
+			const payments = await paymentsOf(t);
+			expect(payments).toHaveLength(1);
+			expect(payments[0].status).toBe("processing");
+		});
+
+		it("refuses to retire a tab attempt whose own create call is still running", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { sessionId } = await seedPayableTab(t, restaurantId, 30000);
+
+			const inFlightId = await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					sessionId,
+					amount: 30000,
+					currency: "usd",
+					status: "pending",
+					refundStatus: "none",
+					attemptNumber: 1,
+					gratuityAmount: 0,
+					createdAt: Date.now() - 2_000,
+					updatedAt: Date.now() - 2_000,
+				});
+				await ctx.db.patch(sessionId, { activePaymentId: id, lockedForPaymentAt: Date.now() });
+				return id;
+			});
+
+			// Even naming it correctly is not enough: there was no intent to cancel,
+			// so retiring the row would let this tap charge the tab a second time.
+			await expect(
+				t.mutation(internal.sessions.beginTabPayment, {
+					sessionId,
+					restaurantId,
+					amount: 30000,
+					currency: "usd",
+					gratuityAmount: 0,
+					userId: "diner-tab-2",
+					supersededPaymentId: inFlightId,
+				})
+			).rejects.toThrow(/ERROR_PAYMENT_IN_PROGRESS/);
+
+			const payments = await paymentsOf(t);
+			expect(payments).toHaveLength(1);
+			expect(payments[0].status).toBe("pending");
+		});
+
 		it("leaves the tab lock and the old row alone when Stripe cannot be reached", async () => {
 			const t = convexTest(schema, modules);
 			const restaurantId = await seedRestaurant(t);
@@ -624,6 +940,63 @@ describe("superseding a payment attempt cancels its intent at Stripe first (TAVL
 			// The order still points at the intent, so nothing pretends it is gone.
 			const order = await t.run(async (ctx) => ctx.db.get(orderId));
 			expect(order?.activePaymentId).toBeTruthy();
+		});
+	});
+
+	describe("a cancel whose intent slipped through", () => {
+		it("reports already paid, not try again, when the intent succeeded mid-cancel", async () => {
+			// Stripe answers `payment_intent_unexpected_state` when the intent
+			// stopped being cancellable between the retrieve and the cancel — the
+			// diner's stale tab confirmed it in that sliver. Reporting "unreachable"
+			// there sends them "try again", and the retry then fails with a blunter
+			// error on an order that is already paying.
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 20000 });
+
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_slipped",
+				client_secret: "cs_slipped",
+			});
+			await diner.action(api.stripe.createPaymentIntent, { orderId });
+			await editOrder(t, orderId);
+
+			mockStripeClient.paymentIntents.retrieve
+				.mockResolvedValueOnce({ id: "pi_slipped", status: "requires_payment_method" })
+				// The re-read after the failed cancel.
+				.mockResolvedValueOnce({ id: "pi_slipped", status: "succeeded" });
+			mockStripeClient.paymentIntents.cancel.mockRejectedValue(
+				Object.assign(new Error("You cannot cancel this PaymentIntent"), {
+					code: "payment_intent_unexpected_state",
+				})
+			);
+
+			await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+				/ERROR_PAYMENT_ALREADY_PAID/
+			);
+			expect(mockStripeClient.paymentIntents.create).toHaveBeenCalledTimes(1);
+		});
+
+		it("still says try again when the re-read cannot reach Stripe either", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 20000 });
+
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_down",
+				client_secret: "cs_down",
+			});
+			await diner.action(api.stripe.createPaymentIntent, { orderId });
+			await editOrder(t, orderId);
+
+			mockStripeClient.paymentIntents.retrieve
+				.mockResolvedValueOnce({ id: "pi_down", status: "requires_payment_method" })
+				.mockRejectedValueOnce(new Error("connection error"));
+			mockStripeClient.paymentIntents.cancel.mockRejectedValue(new Error("connection error"));
+
+			await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+				/ERROR_PAYMENT_CANCEL_FAILED/
+			);
 		});
 	});
 

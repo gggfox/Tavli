@@ -663,20 +663,76 @@ export const confirmPayment = internalMutation({
 		const order = await ctx.db.get(paymentOrderId);
 		if (!order) throw new Error(`Order ${payment.orderId} not found`);
 
-		// Checked before anything else about the money, because it is the one
-		// precondition neither settling nor refunding can work around: an order
-		// that is cancelled or already served cannot be released to the kitchen by
-		// this charge. Unchanged in behaviour from before TAVLI-104 — both were
-		// no-ops — only moved above the three branches below so they do not have to
-		// consider an unsettleable order.
+		// ---------------------------------------------------------------------
+		// THE ORDER CANNOT BE RELEASED BY THIS CHARGE. Checked first, because it
+		// is the one precondition neither settling nor refunding can work around.
+		// It used to be a `console.warn` and a `return`, which left the row
+		// PROCESSING forever with money sitting at Stripe and nobody told
+		// (TAVLI-104 review round 1).
+		//
+		// Two outcomes, because the two situations are not the same:
+		//
+		// - CANCELLED. Nobody is cooking this and nobody will. The diner paid for
+		//   food that will never arrive, so the money goes back automatically —
+		//   the same decision the repriced branch below makes, through the same
+		//   path. (`cancelOrderAndRefund` refunds the ACTIVE payment when staff
+		//   cancel; this is the charge that arrived afterwards, which that flow
+		//   never sees.)
+		// - Any other terminal status — `served` above all. An automatic refund
+		//   here would hand back money for food the diner has already eaten, and
+		//   Tavli cannot tell from the row whether they also paid in cash. So the
+		//   money stays put, the row is marked SUCCEEDED because Stripe really did
+		//   collect it, and a severe alert asks a human to decide.
+		// ---------------------------------------------------------------------
 		if (
 			order.status !== "draft" &&
 			order.status !== "submitted" &&
 			order.status !== ORDER_STATUS.AWAITING_PAYMENT
 		) {
-			console.warn(
-				`Order ${order._id} is in status ${order.status}, skipping payment confirmation`
+			const currentCharge = currentOrderChargeAmount(
+				order.totalAmount,
+				payment,
+				PLATFORM_APPLICATION_FEE_RATE
 			);
+
+			if (order.status === ORDER_STATUS.CANCELLED) {
+				await refundStrandedPayment(ctx, {
+					payment,
+					order,
+					currentCharge,
+					stripePaymentIntentId: args.stripePaymentIntentId,
+					stripeChargeId: args.stripeChargeId,
+				});
+				return;
+			}
+
+			console.error(
+				`[orders.confirmPayment] CHARGE ON AN ORDER THAT CANNOT BE SETTLED: ` +
+					`payment ${payment._id} collected ${payment.amount} for order ${order._id} in status ${order.status}`
+			);
+			const now = Date.now();
+			await ctx.db.patch(payment._id, {
+				status: PAYMENT_STATUS.SUCCEEDED,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+				...(args.stripeChargeId !== undefined && { stripeChargeId: args.stripeChargeId }),
+				succeededAt: now,
+				failureMessage: `Order was ${order.status} when this charge arrived`,
+				updatedAt: now,
+				updatedBy: AUDIT_SYSTEM_USER_ID,
+			});
+			await raiseOperatorAlert(ctx, {
+				kind: OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				restaurantId: order.restaurantId,
+				orderId: order._id,
+				paymentId: payment._id,
+				stripeObjectId: args.stripePaymentIntentId,
+				messageParams: {
+					collected: formatMoneyCents(payment.amount),
+					currency: payment.currency.toUpperCase(),
+				},
+				dedupeKey: `charge_on_unsettleable_order:${payment._id}`,
+			});
 			return;
 		}
 
@@ -1145,6 +1201,26 @@ export const updateStatus = mutation({
 		// `stripe.cancelOrderAndRefund`, which calls this first and then refunds.
 		// A manager who calls this mutation directly leaves the order in
 		// `refund_requested`, which the orders tab surfaces as a pending refund.
+
+		// A cancel DOES have to reach Stripe for one thing: an intent that is
+		// still in flight (TAVLI-104 review round 1). The diner has a live client
+		// secret on their payment sheet, and staff have just voided the ticket —
+		// if they confirm in that window, the charge arrives for an order nobody
+		// is cooking and `confirmPayment` can only refund it after the fact.
+		// Cancelling the intent closes the window instead of cleaning up after
+		// it. Scheduled because this is a mutation; harmless if it loses the race,
+		// because the stand-down leaves a `succeeded` intent alone and the
+		// webhook's cancelled-order branch refunds it.
+		if (
+			args.newStatus === ORDER_STATUS.CANCELLED &&
+			order.activePaymentId &&
+			(order.paymentState === ORDER_PAYMENT_STATE.PENDING ||
+				order.paymentState === ORDER_PAYMENT_STATE.PROCESSING)
+		) {
+			await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+				paymentId: order.activePaymentId,
+			});
+		}
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.ORDERS,

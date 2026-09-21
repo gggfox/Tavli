@@ -2116,6 +2116,10 @@
 				"title": "Charge refunded: amount did not match",
 				"explanation": "Stripe collected {{collected}} for an order that now costs {{expected}} ({{currency}}), so Tavli refunded the charge in full rather than keep money it could not account for. The order is still unpaid \u2014 confirm the refund landed in Stripe."
 			},
+			"chargeNeedsReview": {
+				"title": "Charge Tavli could not apply",
+				"explanation": "Stripe collected {{collected}} ({{currency}}) that Tavli could not apply to the order it names, and did not refund automatically because doing so could hand back money for food that was already served. Find the charge in Stripe and decide: refund it, or settle the order by hand."
+			},
 			"paymentAmountMismatch": {
 				"title": "Settlement blocked: amount did not match",
 				"explanation": "Stripe collected {{received}} instead of {{expected}} ({{currency}}), so the payment was marked failed rather than settled. Refund the charge in Stripe — the money is still sitting there, and the diner pays again."

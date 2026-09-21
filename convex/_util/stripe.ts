@@ -23,6 +23,8 @@ import {
 	OPERATOR_ALERT_SEVERITY,
 	PAYMENT_FAILURE_CODE,
 	PAYMENT_KIND,
+	STRIPE_MAX_NETWORK_RETRIES,
+	STRIPE_REQUEST_TIMEOUT_MS,
 	USER_ROLES,
 } from "../constants";
 import { formatMoneyCents } from "../exportHelpers";
@@ -73,7 +75,14 @@ export function getStripeClient(): Stripe {
 		apiVersion: STRIPE_API_VERSION,
 		// Convex actions already retry, but a network blip mid-charge is worth
 		// absorbing here: Stripe's own retries reuse the idempotency key.
-		maxNetworkRetries: 2,
+		//
+		// Both numbers are constants rather than literals because
+		// `PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS` is derived from them (TAVLI-104):
+		// the window has to outlive `(retries + 1) × timeout`, so a timeout left
+		// to stripe-node's 80s default would silently make that window too short
+		// and let a second tap supersede a create that is still running.
+		maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
+		timeout: STRIPE_REQUEST_TIMEOUT_MS,
 		appInfo: { name: "Tavli" },
 	});
 }
@@ -117,6 +126,23 @@ export type IntentStandDownOutcome = (typeof INTENT_STAND_DOWN)[keyof typeof INT
  * attached, because "we could not reach Stripe" is a decision the caller has to
  * make (refuse the new intent, or rethrow) rather than an exception to leak.
  */
+/**
+ * Does this intent read `succeeded` at Stripe? Swallows its own failure — the
+ * caller is already on an error path and a second one must not mask the first.
+ */
+async function readsAsSucceeded(
+	stripeClient: Stripe,
+	stripePaymentIntentId: string
+): Promise<boolean> {
+	try {
+		const intent: Stripe.PaymentIntent =
+			await stripeClient.paymentIntents.retrieve(stripePaymentIntentId);
+		return intent.status === "succeeded";
+	} catch {
+		return false;
+	}
+}
+
 export async function standDownPaymentIntent(
 	stripeClient: Stripe,
 	stripePaymentIntentId: string,
@@ -134,6 +160,18 @@ export async function standDownPaymentIntent(
 		await stripeClient.paymentIntents.cancel(stripePaymentIntentId);
 		return { outcome: INTENT_STAND_DOWN.CANCELLED };
 	} catch (error) {
+		// One re-read before giving up. The likeliest reason a cancel throws is
+		// that the intent stopped being cancellable between the retrieve and the
+		// cancel — the diner's stale tab confirmed it in that sliver, and Stripe
+		// answers `payment_intent_unexpected_state`. Reporting `unreachable`
+		// there sends the diner "try again", their retry finds an order that is
+		// already paying, and they get a second, blunter error. Asking once more
+		// turns that into the honest "already paid", which is a screen they can
+		// act on.
+		const succeeded = await readsAsSucceeded(stripeClient, stripePaymentIntentId);
+		if (succeeded) {
+			return { outcome: INTENT_STAND_DOWN.SUCCEEDED };
+		}
 		console.error(
 			"[stripe.standDownPaymentIntent]",
 			buildIntegrationErrorLog(error, {
