@@ -1870,28 +1870,68 @@ describe("stripe actions", () => {
 	 * rather than reach Stripe and come back as an opaque failure.
 	 */
 	describe("payment gates — a restaurant that is not accepting payments (TAVLI-65)", () => {
-		it.each(["closed", "restricted"] as const)(
-			"refuses an order intent for a %s account with a stable code",
-			async (stripeAccountStatus) => {
-				const t = convexTest(schema, modules);
-				const organizationId = await seedOrganization(t);
-				const restaurantId = await seedRestaurant(t, {
-					ownerId: "owner-1",
-					organizationId,
-					stripeAccountId: "acct_dead",
-					// The pre-TAVLI-65 gate passed on this alone.
-					stripeOnboardingComplete: true,
-					stripeAccountStatus,
-				});
-				const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
+		it("refuses an order intent for a closed account with a stable code", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_dead",
+				// The pre-TAVLI-65 gate passed on this alone.
+				stripeOnboardingComplete: true,
+				stripeAccountStatus: "closed",
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
 
-				await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
-					/ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS/
-				);
+			await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+				/ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS/
+			);
 
-				expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
-			}
-		);
+			expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+		});
+
+		it("refuses an unfinished account, whatever the stored status says", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_restricted",
+				stripeOnboardingComplete: false,
+				stripeAccountStatus: "restricted",
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
+
+			await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+				/ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS/
+			);
+			expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+		});
+
+		it("lets a stale `restricted` status through when the boolean says the account is complete", async () => {
+			// The v1 `account.updated` handler writes `stripeOnboardingComplete`
+			// and no status at all, so the boolean is routinely the fresher fact.
+			// Only `closed` — asserted by an event, and terminal — overrides it.
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_stale_status",
+				stripeOnboardingComplete: true,
+				stripeAccountStatus: "restricted",
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
+
+			mockStripeClient.customers.create.mockResolvedValueOnce({ id: "cus_stale" });
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_stale",
+				client_secret: "cs_stale",
+			});
+
+			const result = await diner.action(api.stripe.createPaymentIntent, { orderId });
+			expect(result.clientSecret).toBe("cs_stale");
+		});
 
 		it("refuses a post-visit tip charge for a closed account", async () => {
 			const t = convexTest(schema, modules);
@@ -1999,6 +2039,36 @@ describe("stripe actions", () => {
 			// A closed account is not retrievable in any useful sense, and asking
 			// would only risk a throw where the UI needs an answer.
 			expect(mockStripeClient.v2.core.accounts.retrieve).not.toHaveBeenCalled();
+		});
+
+		it("resets an already-closed account without asking Stripe to close it twice", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_already_closed",
+				stripeOnboardingComplete: false,
+				stripeAccountStatus: "closed",
+			});
+			await seedUserRole(t, { userId: "owner-1", roles: ["owner"] });
+
+			const result = await t
+				.withIdentity({ subject: "owner-1" })
+				.action(api.stripe.resetStripeConnection, { restaurantId });
+
+			// Reported closed because it IS closed — a `false` here would send the
+			// operator to close an account Stripe already closed.
+			expect(result).toEqual({
+				closedStripeAccount: true,
+				closedStripeAccountId: "acct_already_closed",
+			});
+			expect(mockStripeClient.v2.core.accounts.close).not.toHaveBeenCalled();
+
+			const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+			expect(restaurant?.stripeAccountId).toBeUndefined();
+			expect(restaurant?.stripeOnboardingComplete).toBeUndefined();
+			expect(restaurant?.stripeAccountStatus).toBeUndefined();
 		});
 	});
 });

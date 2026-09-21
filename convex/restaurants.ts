@@ -258,6 +258,11 @@ export const softDelete = mutation({
 			isActive: false,
 			stripeAccountId: undefined,
 			stripeOnboardingComplete: undefined,
+			// All three together, exactly as `clearStripeConnection` does: a
+			// lingering `stripeAccountStatus` would outlive the link it describes
+			// and, if the restaurant is restored and re-onboarded, a stale
+			// `closed` would refuse payments on the NEW account.
+			stripeAccountStatus: undefined,
 			...stampUpdated(userId),
 		});
 

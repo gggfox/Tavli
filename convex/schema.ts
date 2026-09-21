@@ -24,6 +24,7 @@ import {
 	RESTAURANT_MEMBER_ROLE,
 	SESSION_PAYMENT_STATE,
 	SHIFT_STATUS,
+	STRIPE_ACCOUNT_STATUS,
 	SUBSTITUTION_PROPOSAL_STATUS,
 	TABLE,
 	TABLE_ASSIGNED_BY,
@@ -285,7 +286,11 @@ export default defineSchema({
 		 * unlike the admin Reset, which unlinks deliberately.
 		 */
 		stripeAccountStatus: v.optional(
-			v.union(v.literal("active"), v.literal("restricted"), v.literal("closed"))
+			v.union(
+				v.literal(STRIPE_ACCOUNT_STATUS.ACTIVE),
+				v.literal(STRIPE_ACCOUNT_STATUS.RESTRICTED),
+				v.literal(STRIPE_ACCOUNT_STATUS.CLOSED)
+			)
 		),
 		/**
 		 * Receipt tax block (ADR 008): rendered verbatim on restaurant-branded

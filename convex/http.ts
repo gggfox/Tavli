@@ -27,6 +27,7 @@ import { httpAction } from "./_generated/server";
 import { ERROR_NAMES } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import { RESERVATION_SOURCE } from "./constants";
+import { isMissingWebhookSecretError } from "./stripeWebhookHelpers";
 import { clampInboundBody } from "./whatsapp/format";
 
 const http = httpRouter();
@@ -69,7 +70,18 @@ http.route({
 					operation: "POST /stripe/webhook",
 				})
 			);
-			return new Response("Webhook handler failed", { status: 400 });
+			// 500 when Tavli has no signing secret configured, 400 when the
+			// delivery itself failed verification. The two are opposite
+			// diagnoses — "we are not set up" vs "Stripe sent something we
+			// rejected" — and answering 400 for both sent an operator hunting a
+			// wrong secret when there was no secret at all. The Convex log line
+			// for the action tells them apart in one read.
+			return new Response(
+				isMissingWebhookSecretError(error)
+					? "Webhook secret not configured"
+					: "Webhook handler failed",
+				{ status: isMissingWebhookSecretError(error) ? 500 : 400 }
+			);
 		}
 	}),
 });
@@ -86,12 +98,13 @@ http.route({
 //   1. In Stripe Dashboard > Developers > Webhooks > + Add destination
 //   2. Events from: "Connected accounts"
 //   3. Show advanced options > Payload style: "Thin"
-//   4. Select: v2.core.account[requirements].updated
-//              v2.core.account[configuration.recipient].capability_status_updated
+//   4. Subscribe to EVERY `v2.core.account*` type (all 15), so the destination
+//      never has to be edited again. `handleThinEvent` acts on three of them
+//      (requirements, the recipient capability, and `.closed`), logs the other
+//      12 as deliberately ignored, and warns on anything outside the 15.
 //
 // For local development, use the Stripe CLI:
-//   stripe listen --thin-events \
-//     'v2.core.account[requirements].updated,v2.core.account[.recipient].capability_status_updated' \
+//   stripe listen --thin-events 'v2.core.account*' \
 //     --forward-thin-to http://localhost:3210/stripe/connect-webhook
 
 http.route({
@@ -123,7 +136,16 @@ http.route({
 					operation: "POST /stripe/connect-webhook",
 				})
 			);
-			return new Response("Webhook handler failed", { status: 400 });
+			// See the payments route above: 500 means the signing secret is
+			// missing (which it is on every deployment until somebody sets
+			// STRIPE_CONNECT_WEBHOOK_SECRET), 400 means this delivery failed
+			// verification.
+			return new Response(
+				isMissingWebhookSecretError(error)
+					? "Webhook secret not configured"
+					: "Webhook handler failed",
+				{ status: isMissingWebhookSecretError(error) ? 500 : 400 }
+			);
 		}
 	}),
 });

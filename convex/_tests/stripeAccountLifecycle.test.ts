@@ -250,6 +250,79 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 		expect(mockStripeClient.v2.core.accounts.retrieve).toHaveBeenCalledTimes(2);
 	});
 
+	it("falls back to the signed notification when the versioned event cannot be fetched", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedConnectedRestaurant(t, { stripeAccountId: "acct_no_event" });
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		const notification = thinNotification("v2.core.account.closed", {
+			eventId: "evt_gone",
+			accountId: "acct_no_event",
+		});
+		mockStripeClient.parseEventNotification.mockReturnValueOnce(notification);
+		// Events are only readable for a limited window; a redelivered old
+		// closure 404s here. The closure is still real — the signed notification
+		// said which account it was — so it must not become a silent no-op.
+		mockStripeClient.v2.core.events.retrieve.mockRejectedValueOnce(
+			Object.assign(new Error("No such event: evt_gone"), { statusCode: 404 })
+		);
+
+		await t.action(internal.stripe.handleThinEvent, {
+			payloadString: JSON.stringify(notification),
+			signatureHeader: "sig_gone",
+		});
+
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.stripeAccountStatus).toBe("closed");
+		expect(restaurant?.stripeOnboardingComplete).toBe(false);
+
+		const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0]?.stripeObjectId).toBe("acct_no_event");
+		// The fallback is logged, not swallowed.
+		expect(warnSpy.mock.calls.flat().join(" ")).toContain("falling back");
+		warnSpy.mockRestore();
+	});
+
+	describe("POST /stripe/connect-webhook status codes", () => {
+		it("answers 500 when the signing secret is not configured, not 400", async () => {
+			const t = convexTest(schema, modules);
+			// The state every deployment is in until somebody sets it.
+			delete process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+			const response = await t.fetch("/stripe/connect-webhook", {
+				method: "POST",
+				headers: { "stripe-signature": "sig_whatever" },
+				body: "{}",
+			});
+
+			// 400 would read as "Stripe sent something we rejected" and send the
+			// operator hunting a wrong secret when there is no secret at all.
+			expect(response.status).toBe(500);
+			errorSpy.mockRestore();
+		});
+
+		it("answers 400 when the delivery itself fails signature verification", async () => {
+			const t = convexTest(schema, modules);
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+			mockStripeClient.parseEventNotification.mockImplementationOnce(() => {
+				throw new Error("Invalid signature");
+			});
+
+			const response = await t.fetch("/stripe/connect-webhook", {
+				method: "POST",
+				headers: { "stripe-signature": "sig_bad" },
+				body: "{}",
+			});
+
+			expect(response.status).toBe(400);
+			const events = await t.run(async (ctx) => ctx.db.query("stripeWebhookEvents").collect());
+			expect(events).toHaveLength(0);
+			errorSpy.mockRestore();
+		});
+	});
+
 	it("never promotes a closed account back to active on a later status event", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedConnectedRestaurant(t, { stripeAccountId: "acct_reopened" });

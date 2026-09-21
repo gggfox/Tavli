@@ -32,7 +32,7 @@ import {
 	NotAuthorizedError,
 	NotFoundError,
 } from "../_shared/errors";
-import { redactExternalId } from "../_shared/integrationLogging";
+import { buildIntegrationErrorLog, redactExternalId } from "../_shared/integrationLogging";
 import {
 	computeDisputeFacts,
 	computeRefundFacts,
@@ -260,8 +260,28 @@ export async function handleAccountClosed(
 	stripeClient: Stripe,
 	notification: { id: string; relatedObjectId: string | undefined }
 ): Promise<void> {
+	// The retrieve is best-effort. Events are only readable through the v2 API
+	// for a limited window, and a redelivery of an old closure (or a key that
+	// cannot read events) would 404 here — which must not turn a real closure
+	// into a silent no-op, because the notification Stripe SIGNED already told
+	// us which account closed. So a failed retrieve falls back to it and says
+	// so, and only a closure with no account id anywhere is dropped.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const event: any = await stripeClient.v2.core.events.retrieve(notification.id);
+	let event: any = null;
+	try {
+		event = await stripeClient.v2.core.events.retrieve(notification.id);
+	} catch (error) {
+		console.warn(
+			"[stripe.handleAccountClosed] could not fetch the versioned event; " +
+				"falling back to the signed notification's related object",
+			buildIntegrationErrorLog(error, {
+				integration: "stripe-connect-webhook",
+				operation: "v2.core.events.retrieve",
+				eventId: notification.id,
+			})
+		);
+	}
+
 	const stripeAccountId: string | undefined =
 		event?.related_object?.id ?? notification.relatedObjectId;
 
@@ -300,17 +320,26 @@ export async function handleAccountClosed(
  * accepting payments right now" in the diner's own language. Before this, a
  * closed account produced an opaque Stripe failure several seconds later.
  *
- * A restaurant with no stored status passes on `stripeOnboardingComplete`
- * alone. That is not laxity: every restaurant onboarded before TAVLI-65 has an
- * absent status until a thin event or a status refresh writes one, and a
- * stricter rule would stop live restaurants from taking payments on deploy.
+ * **`stripeOnboardingComplete` owns "can this account be charged right now";
+ * the status only adds `closed`.** A `restricted` status does not by itself
+ * refuse, and that is deliberate twice over. The boolean is the field every
+ * writer maintains — including the v1 `account.updated` handler, which writes
+ * it with no status at all — so a restaurant can legitimately be
+ * `{ complete: true, status: "restricted" }` while the status is merely stale.
+ * And `restricted` is the same "not finished onboarding" the boolean already
+ * says `false` for, so making it refuse independently would only ever fire on
+ * the disagreement, which is the case where the boolean is the fresher fact.
+ * `closed` is different in kind: it is asserted by an event, it is terminal,
+ * and no writer of the boolean knows about it.
+ *
+ * A restaurant with no stored status therefore passes on the boolean alone —
+ * which is every restaurant onboarded before TAVLI-65, until a thin event or a
+ * status refresh writes one.
  */
 export function assertRestaurantAcceptsPayments(restaurant: Doc<"restaurants">): void {
-	const status = restaurant.stripeAccountStatus;
 	if (
 		!restaurant.stripeOnboardingComplete ||
-		status === STRIPE_ACCOUNT_STATUS.CLOSED ||
-		status === STRIPE_ACCOUNT_STATUS.RESTRICTED
+		restaurant.stripeAccountStatus === STRIPE_ACCOUNT_STATUS.CLOSED
 	) {
 		throw fromErrorObject(new ConflictError("ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS").toObject());
 	}

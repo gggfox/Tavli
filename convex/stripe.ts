@@ -82,6 +82,7 @@ import {
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
+import { STRIPE_WEBHOOK_SECRET_MISSING } from "./stripeWebhookHelpers";
 import {
 	handleSubscriptionCheckoutCompleted,
 	handleSubscriptionDeleted,
@@ -201,6 +202,18 @@ export const resetStripeConnection = action({
 
 		if (!restaurant.stripeAccountId) {
 			return { closedStripeAccount: false, closedStripeAccountId: null };
+		}
+
+		// Stripe already closed this account (TAVLI-65) — asking it to close it
+		// again is a call that can only fail, and a failure here reports
+		// `closedStripeAccount: false`, which tells the operator to go close by
+		// hand an account that is already closed. The account IS closed, so say
+		// so and get on with unlinking, which is the only part still outstanding.
+		if (restaurant.stripeAccountStatus === STRIPE_ACCOUNT_STATUS.CLOSED) {
+			await ctx.runMutation(internal.stripeHelpers.clearStripeConnection, {
+				restaurantId: args.restaurantId,
+			});
+			return { closedStripeAccount: true, closedStripeAccountId: restaurant.stripeAccountId };
 		}
 
 		let closedStripeAccount = false;
@@ -420,8 +433,10 @@ export const handleThinEvent = internalAction({
 		// separate from the standard webhook secret.
 		const webhookSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
 		if (!webhookSecret) {
+			// Marker first: the HTTP route reads it to answer 500 (Tavli is not
+			// configured) instead of 400 (Stripe sent something we rejected).
 			throw new Error(
-				"STRIPE_CONNECT_WEBHOOK_SECRET is not set. " +
+				`${STRIPE_WEBHOOK_SECRET_MISSING}: STRIPE_CONNECT_WEBHOOK_SECRET is not set. ` +
 					"Add it to your Convex deployment environment variables. " +
 					"You get this secret when creating a webhook endpoint in the Stripe Dashboard."
 			);
@@ -614,8 +629,9 @@ export const fulfillPayment = internalAction({
 		// You get this when creating a webhook endpoint or running `stripe listen`.
 		const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 		if (!webhookSecret) {
+			// Same marker, same reason as the connect handler above.
 			throw new Error(
-				"STRIPE_WEBHOOK_SECRET is not set. " +
+				`${STRIPE_WEBHOOK_SECRET_MISSING}: STRIPE_WEBHOOK_SECRET is not set. ` +
 					"Add it to your Convex deployment environment variables. " +
 					"You get this secret when creating a webhook endpoint or running `stripe listen`."
 			);
