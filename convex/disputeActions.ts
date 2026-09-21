@@ -377,6 +377,18 @@ export const reverseRecoveryTransfer = internalAction({
 		} catch (error) {
 			if (isIdempotencyKeyInUse(error)) return;
 
+			// The pending entry was written before Stripe agreed to anything.
+			// Left in place it would make the next, larger target compute its
+			// delta from a slice that never happened — recording more reversed
+			// than Stripe ever reversed. Rolled back, the next target recomputes
+			// from what is confirmed and one reversal covers both slices.
+			if (args.paymentId) {
+				await ctx.runMutation(internal.disputes.rollBackPendingReversalInternal, {
+					paymentId: args.paymentId,
+					stripeTransferId: args.stripeTransferId,
+				});
+			}
+
 			console.error("[disputeActions.reverseRecoveryTransfer] could not reverse the transfer", {
 				...buildIntegrationErrorLog(error, {
 					integration: "stripe",

@@ -1838,6 +1838,80 @@ describe("a trimmed return, and reversals in flight (review round 3)", () => {
 		]);
 	});
 
+	it("does not forget a reversal slice that failed", async () => {
+		// The pending entry is written before Stripe agrees to anything. If a
+		// failed slice stayed on the record, the next, larger target would
+		// compute its delta from it — reversing 300 while recording 500.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_failed_slice",
+		});
+		await t.run(async (ctx) => {
+			const recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_failed_slice",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 500,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				returnedAt: 3_000,
+				returnedAmount: 500,
+				stripeTransferId: "tr_slice",
+				createdAt: 1_000,
+				updatedAt: 3_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 500,
+				disputeRecoveryAppliedAt: 2_500,
+				disputeRecoveryLegs: [{ recoveryId, amount: 500 }],
+			});
+		});
+
+		// 40% of the charge → a 200 slice, which fails at Stripe.
+		mockStripeClient.transfers.createReversal.mockRejectedValueOnce(new Error("try again"));
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 4_480,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+		await drainScheduled(t);
+
+		const afterFailure = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(afterFailure?.disputeReturnReversals ?? []).toEqual([]);
+		// Rolled back, so nothing claims a reversal that did not happen.
+		expect(afterFailure?.disputeReturnReversalsPending ?? []).toEqual([]);
+
+		// Then the rest of the charge comes back.
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_whole" });
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		// One reversal covering BOTH slices — not 300 recorded as 500.
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenLastCalledWith(
+			"tr_slice",
+			expect.objectContaining({ amount: 500 }),
+			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_slice:500` }
+		);
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeReturnReversals).toEqual([
+			{ stripeTransferId: "tr_slice", amount: 500 },
+		]);
+		// Cleared on confirm, so `confirmed` is the single source of truth.
+		expect(payment?.disputeReturnReversalsPending ?? []).toEqual([]);
+	});
+
 	it("treats a reused key with different parameters as a failure, not a race", async () => {
 		// `idempotency_error` means the same key came back with different
 		// parameters — a trimmed retry against an amount that already went out.

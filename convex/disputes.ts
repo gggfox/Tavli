@@ -1368,6 +1368,10 @@ export const markReturnReversalInternal = internalMutation({
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {
 			disputeReturnReversals: reversals,
+			// The pending entry has served its purpose: `confirmed` now carries
+			// the same figure, so leaving it would only be a second copy that
+			// could drift.
+			disputeReturnReversalsPending: dropPendingEntry(payment, args.stripeTransferId),
 			updatedAt: now,
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
@@ -1421,6 +1425,60 @@ export const getRecoveryForReturnInternal = internalQuery({
 			stripeDisputeId: recovery.stripeDisputeId,
 			returnedAt: recovery.returnedAt,
 		};
+	},
+});
+
+/** The pending list with one transfer's entry removed, or `undefined` when empty. */
+function dropPendingEntry(
+	payment: Doc<"payments">,
+	stripeTransferId: string
+): { stripeTransferId: string; amount: number }[] | undefined {
+	const remaining = (payment.disputeReturnReversalsPending ?? []).filter(
+		(entry) => entry.stripeTransferId !== stripeTransferId
+	);
+	return remaining.length > 0 ? remaining : undefined;
+}
+
+/**
+ * Forget a reversal slice that never happened (TAVLI-102, review round 4).
+ *
+ * The pending entry exists so two refunds in quick succession each send only
+ * their own delta. But it is written at scheduling, before Stripe has agreed to
+ * anything — so a slice that then FAILS would stay on the record as if it had
+ * gone through, and the next, larger target would compute its delta from it.
+ * A failed 200 followed by a full refund would send 300 while recording 500,
+ * overstating what Stripe actually reversed by exactly the slice that failed.
+ *
+ * Rolling the entry back to the confirmed amount is what makes the next target
+ * recompute from reality: one reversal then covers both slices.
+ */
+export const rollBackPendingReversalInternal = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		stripeTransferId: v.string(),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		const confirmed =
+			payment.disputeReturnReversals?.find(
+				(entry) => entry.stripeTransferId === args.stripeTransferId
+			)?.amount ?? 0;
+
+		const pending = dropPendingEntry(payment, args.stripeTransferId) ?? [];
+		// Back to whatever Stripe has actually confirmed — which is nothing at
+		// all for a first slice, so the entry simply goes.
+		const next =
+			confirmed > 0
+				? [...pending, { stripeTransferId: args.stripeTransferId, amount: confirmed }]
+				: pending;
+
+		await ctx.db.patch(payment._id, {
+			disputeReturnReversalsPending: next.length > 0 ? next : undefined,
+			updatedAt: Date.now(),
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+		});
 	},
 });
 
