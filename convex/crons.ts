@@ -7,6 +7,7 @@
  */
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
+import { STUCK_PAYMENT_RECONCILE_INTERVAL_MS } from "./constants";
 
 const crons = cronJobs();
 
@@ -65,7 +66,10 @@ crons.interval(
 // independently.
 crons.interval(
 	"stuck order and tip payment reconciliation",
-	{ minutes: 5 },
+	// Derived, not a literal: `PAYMENT_INTENT_REUSE_MAX_AGE_MS` subtracts one
+	// interval from the alert age so a reused client secret is never one the
+	// next run is about to cancel. A schedule change has to move that with it.
+	{ minutes: STUCK_PAYMENT_RECONCILE_INTERVAL_MS / 60_000 },
 	internal.stripe.reconcileStuckPayments
 );
 

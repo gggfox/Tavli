@@ -473,14 +473,16 @@ export const failTipPayment = internalMutation({
 		stripePaymentIntentId: v.string(),
 		failureCode: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
+		/** See `orders.failPayment` — the stuck-payment sweep passes this. */
+		onlyIfInFlight: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment || payment.kind !== PAYMENT_KIND.TIP) return;
 		// The same forward-only guard `orders.failPayment` uses, for the same
 		// reasons — including the FAILED → FAILED refresh a retried tip charge
-		// needs. See `canRecordPaymentFailure`.
-		if (!canRecordPaymentFailure(payment)) return;
+		// needs, and the sweep's opt-out from it. See `canRecordPaymentFailure`.
+		if (!canRecordPaymentFailure(payment, { onlyIfInFlight: args.onlyIfInFlight })) return;
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

@@ -56,6 +56,7 @@ import {
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
+	PAYMENT_INTENT_REUSE_MAX_AGE_MS,
 	PLATFORM_APPLICATION_FEE_RATE,
 	STUCK_PAYMENT_RECONCILE_BATCH_SIZE,
 	TAB_RECONCILE_ALERT_AGE_MS,
@@ -1292,7 +1293,14 @@ export const createPaymentIntent = action({
 			// rows written before this feature carry no gratuity at all.
 			(latestPayment.gratuityAmount ?? 0) === gratuityAmount &&
 			latestPayment.currency === currency &&
-			!!latestPayment.stripePaymentIntentId;
+			!!latestPayment.stripePaymentIntentId &&
+			// Not so old that the stuck-payment sweep is about to cancel it
+			// (TAVLI-106 sign-off). Handing back a secret we are minutes from
+			// invalidating means a diner who reopened checkout gets their payment
+			// killed mid-typing, for no reason they could see. An older row falls
+			// through to the stand-down + supersede + fresh-intent path below,
+			// which is what a stale attempt already gets.
+			Date.now() - latestPayment.createdAt < PAYMENT_INTENT_REUSE_MAX_AGE_MS;
 
 		if (canReuseExistingIntent && latestPayment?.stripePaymentIntentId) {
 			const existingIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
@@ -2532,6 +2540,14 @@ export const reconcileStuckPayments = internalAction({
 								stripePaymentIntentId,
 								failureCode: `reconcile_${paymentIntent.status}`,
 								failureMessage: `Reconciled by the stuck-payment sweep: PaymentIntent status is ${paymentIntent.status}`,
+								// Only while the row is still in flight (sign-off nit).
+								// A `payment_intent.payment_failed` may have landed
+								// between the candidate read and this call, in which
+								// case the row already carries the decline code the
+								// diner's bank gave — and "PaymentIntent status is
+								// canceled" would replace the only useful fact on it
+								// with a restatement of what the sweep just saw.
+								onlyIfInFlight: true,
 							});
 						}
 						break;

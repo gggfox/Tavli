@@ -367,6 +367,14 @@ export async function failPaymentByKind(
 		stripePaymentIntentId: string;
 		failureCode?: string;
 		failureMessage?: string;
+		/**
+		 * Refuse a row that has already reached a terminal status. The
+		 * stuck-payment sweep passes it so its reconciliation prose cannot
+		 * overwrite a real Stripe decline recorded in the meantime; the webhook's
+		 * own decline path leaves it off, because there the newer reason is the
+		 * truer one.
+		 */
+		onlyIfInFlight?: boolean;
 	}
 ): Promise<void> {
 	const mutationArgs = { paymentId: payment._id, ...args };

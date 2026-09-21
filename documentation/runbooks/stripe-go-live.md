@@ -753,19 +753,28 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
     policies included. A mismatched amount therefore fails the row and raises
     `payment_amount_mismatch` exactly once — the sweep adds no alert of its own
     on top
-  - **`canceled`** → terminally dead at Stripe. The row is retired at once and
-    the order's payment pointer cleared
+  - **`canceled`** → terminally dead at Stripe. The row is retired at once
   - **`requires_payment_method` / `requires_action` / `requires_confirmation`**
     (waiting on the **customer**) → left alone until the kind's alert age, then
     treated as an abandoned checkout: the intent is cancelled at Stripe FIRST,
-    then the row is retired and the pointer cleared. The wait matters — a row is
-    `processing` from the moment its intent is created, so a diner still typing
-    their card at minute six is not abandoned. The clear matters more: without
-    it a served, cash-owed round is locked out of "mark paid in person" with
+    then the row is retired. The wait matters — a row is `processing` from the
+    moment its intent is created, so a diner still typing their card at minute
+    six is not abandoned. The clear matters more: without it a served, cash-owed
+    round is locked out of "mark paid in person" with
     `ERROR_ORDER_PAYMENT_IN_FLIGHT` and no staff-side release, and an abandoned
     3DS intent never expires at Stripe, so alerting instead would mean a
     permanent alert about a permanent row. A tip is simply failed, so the diner
     can tip again
+
+    How the row is retired depends on where the order has got to. While it is
+    still `draft` or `awaiting_payment` the attempt is **cancelled and the
+    order's payment pointer cleared**, exactly as the diner's own "back to menu"
+    does. Once the round has been released to the kitchen — the served,
+    cash-owed case — the pointer is left where a real card decline would have
+    left it and the row is simply **failed in place**, which is all
+    "mark paid in person" needs: it refuses a PENDING or PROCESSING attempt, not
+    a terminal one
+
   - **`processing` / `requires_capture`** (waiting on **Stripe**) → genuinely
     mid-flight, and not ours to cancel. Left alone until the kind's alert age,
     then escalated

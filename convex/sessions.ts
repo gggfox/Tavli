@@ -747,11 +747,24 @@ export const failTabPayment = internalMutation({
 		stripePaymentIntentId: v.optional(v.string()),
 		failureCode: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
+		/**
+		 * Refuse a row that is not still in flight. Accepted so `failPaymentByKind`
+		 * can pass one set of arguments to all three kinds; the tab sweep itself
+		 * does not use it, and neither does the webhook.
+		 */
+		onlyIfInFlight: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment?.sessionId) return;
 		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+		if (
+			args.onlyIfInFlight &&
+			payment.status !== PAYMENT_STATUS.PENDING &&
+			payment.status !== PAYMENT_STATUS.PROCESSING
+		) {
+			return;
+		}
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

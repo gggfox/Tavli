@@ -159,14 +159,34 @@ export function currentOrderChargeAmount(
  *   writes refund facts wherever it finds them, and a "declined" stamp on top
  *   of that would be a lie in the ledger.
  */
-export function canRecordPaymentFailure(payment: {
-	status: string;
-	refundStatus?: string;
-}): boolean {
+export function canRecordPaymentFailure(
+	payment: {
+		status: string;
+		refundStatus?: string;
+	},
+	options?: {
+		/**
+		 * Refuse a row that is already FAILED (`onlyIfInFlight` on the mutations).
+		 *
+		 * The FAILED → FAILED refresh belongs to `handlePaymentIntentFailure`,
+		 * whose reason IS the news: Stripe declined again, and the newer decline
+		 * is the truer one. It does NOT belong to the stuck-payment sweep, whose
+		 * "reason" is a sentence about reconciliation (`reconcile_canceled`). The
+		 * sweep decides about a row it read minutes ago; if a real
+		 * `payment_intent.payment_failed` landed in that gap, the row now carries
+		 * the decline code the diner's bank gave — and overwriting
+		 * "insufficient_funds" with "PaymentIntent status is canceled" would
+		 * destroy the only useful fact on the row, for a state change that had
+		 * already happened anyway.
+		 */
+		onlyIfInFlight?: boolean;
+	}
+): boolean {
+	const terminalIsAllowed = !options?.onlyIfInFlight;
 	if (
 		payment.status !== PAYMENT_STATUS.PENDING &&
 		payment.status !== PAYMENT_STATUS.PROCESSING &&
-		payment.status !== PAYMENT_STATUS.FAILED
+		!(terminalIsAllowed && payment.status === PAYMENT_STATUS.FAILED)
 	) {
 		return false;
 	}

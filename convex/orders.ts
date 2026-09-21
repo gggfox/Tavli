@@ -1060,13 +1060,20 @@ export const failPayment = internalMutation({
 		stripePaymentIntentId: v.string(),
 		failureCode: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
+		/**
+		 * Refuse a row that is already FAILED. The stuck-payment sweep passes
+		 * this so its reconciliation prose can never overwrite a real Stripe
+		 * decline code that landed between the candidate read and this call.
+		 */
+		onlyIfInFlight: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment?.orderId) return;
-		// Forward-only, but FAILED → FAILED is allowed so a second decline on the
-		// same intent refreshes the reason. See `canRecordPaymentFailure`.
-		if (!canRecordPaymentFailure(payment)) return;
+		// Forward-only. FAILED → FAILED is allowed so a second decline on the same
+		// intent refreshes the reason — unless the caller says otherwise. See
+		// `canRecordPaymentFailure`.
+		if (!canRecordPaymentFailure(payment, { onlyIfInFlight: args.onlyIfInFlight })) return;
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

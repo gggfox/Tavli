@@ -552,6 +552,41 @@ export const TIP_PAYMENT_RECONCILE_ALERT_AGE_MS = 120 * 60 * 1000;
  */
 export const STUCK_PAYMENT_RECONCILE_BATCH_SIZE = 100;
 
+/**
+ * How often both reconciliation crons run. Declared here rather than left as a
+ * literal in `crons.ts` because {@link PAYMENT_INTENT_REUSE_MAX_AGE_MS} is
+ * derived from it, and a schedule that moved without that derivation moving
+ * with it would silently reopen the race below.
+ */
+export const STUCK_PAYMENT_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * How old an existing PROCESSING attempt may be and still have its client
+ * secret handed back to a returning diner (`stripe.createPaymentIntent`).
+ *
+ * The sweep clears a customer-side intent at
+ * {@link ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS}. Reuse without this bound is a
+ * race Tavli would lose in the diner's favour exactly never: a diner reopens
+ * checkout at minute fourteen, gets the old secret, starts typing, and the next
+ * sweep run cancels the intent under them. They see a payment that fails for no
+ * reason they can understand.
+ *
+ * So reuse stops one full cron interval BEFORE the sweep would act, and an
+ * older row falls through to the path that already exists for a stale attempt:
+ * stand the intent down at Stripe, supersede the row, mint a fresh intent. The
+ * whole cost is one extra `paymentIntents.create` for a diner who left the
+ * sheet for ten minutes and came back — rare, cheap, and it hands them a secret
+ * with a full alert age of life left in it.
+ *
+ * The alternative — bump `updatedAt` on reuse and age the customer-side
+ * statuses from the last touch — was rejected: the alert threshold reads
+ * `createdAt` on purpose (a status-preserving write must never buy a stuck
+ * payment more silence), and splitting the sweep across two clocks to rescue a
+ * reuse that saves one API call is a worse trade than not reusing.
+ */
+export const PAYMENT_INTENT_REUSE_MAX_AGE_MS =
+	ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS - STUCK_PAYMENT_RECONCILE_INTERVAL_MS;
+
 export const SELECTION_TYPE = {
 	SINGLE: "single",
 	MULTI: "multi",

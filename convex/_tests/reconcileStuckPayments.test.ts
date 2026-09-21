@@ -14,6 +14,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
 	ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS,
+	PAYMENT_INTENT_REUSE_MAX_AGE_MS,
 	STUCK_PAYMENT_RECONCILE_BATCH_SIZE,
 	TIP_PAYMENT_RECONCILE_ALERT_AGE_MS,
 } from "../constants";
@@ -1144,6 +1145,133 @@ describe("stripe.reconcileStuckPayments (TAVLI-106)", () => {
 
 		await t.action(internal.stripe.reconcileStuckPayments, {});
 
+		await t.run(async (ctx) => {
+			expect((await ctx.db.get(paymentId))!.status).toBe("superseded");
+		});
+	});
+
+	/**
+	 * Sign-off nit 2. The sweep decides about a row it read minutes ago. If a
+	 * real `payment_intent.payment_failed` landed in that gap, the row already
+	 * carries the decline code the diner's bank gave — and the sweep's own
+	 * "reason" is a restatement of the status it just read. The bank's reason
+	 * wins.
+	 */
+	it("does not overwrite a real decline reason recorded while the sweep was running", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_decline_in_the_gap",
+			amount: 2400,
+			ageMs: ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS + MINUTE,
+			// Served, so `cancelActivePaymentInternal` refuses and the clear
+			// branch falls through to the fail path under test.
+			orderStatus: "served",
+			kind: "order",
+		});
+
+		mockStripeClient.paymentIntents.retrieve.mockImplementationOnce(async () => {
+			// The webhook arrives while the sweep is talking to Stripe.
+			await t.mutation(internal.orders.failPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_decline_in_the_gap",
+				failureCode: "insufficient_funds",
+				failureMessage: "Your card has insufficient funds.",
+			});
+			return { id: "pi_decline_in_the_gap", status: "canceled" };
+		});
+
+		await t.action(internal.stripe.reconcileStuckPayments, {});
+
+		await t.run(async (ctx) => {
+			const payment = await ctx.db.get(paymentId);
+			expect(payment!.status).toBe("failed");
+			expect(payment!.failureCode).toBe("insufficient_funds");
+			expect(payment!.failureMessage).toBe("Your card has insufficient funds.");
+		});
+	});
+
+	it("keeps the same protection for a tip row", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckTipPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_tip_decline_in_the_gap",
+			amount: 600,
+			ageMs: 40 * MINUTE,
+		});
+
+		mockStripeClient.paymentIntents.retrieve.mockImplementationOnce(async () => {
+			await t.mutation(internal.payments.failTipPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_tip_decline_in_the_gap",
+				failureCode: "card_declined",
+			});
+			return { id: "pi_tip_decline_in_the_gap", status: "canceled" };
+		});
+
+		await t.action(internal.stripe.reconcileStuckPayments, {});
+
+		await t.run(async (ctx) => {
+			expect((await ctx.db.get(paymentId))!.failureCode).toBe("card_declined");
+		});
+	});
+
+	/**
+	 * Sign-off nit 1. Reuse stops one cron interval before the sweep would
+	 * clear a customer-side intent, so a diner who reopens checkout never gets
+	 * a client secret this deployment is minutes from cancelling.
+	 */
+	it("does not hand back a client secret the sweep is about to cancel", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { orderId, paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_too_old_to_reuse",
+			amount: 2400,
+			ageMs: PAYMENT_INTENT_REUSE_MAX_AGE_MS + MINUTE,
+			kind: "order",
+		});
+		await t.run(async (ctx) => {
+			const order = await ctx.db.get(orderId);
+			// Everything else about the row says "reusable": untouched order,
+			// matching subtotal, no tip, same currency.
+			await ctx.db.patch(paymentId, {
+				subtotalAmount: 2400,
+				feeAmount: 0,
+				gratuityAmount: 0,
+				orderUpdatedAtSnapshot: order!.updatedAt,
+			});
+			await ctx.db.patch(orderId, { status: "draft", paidByUserId: "diner-sweep" });
+		});
+
+		mockStripeClient.customers.create.mockResolvedValue({ id: "cus_reuse" });
+		// Deliberately reusable-looking: a live intent WITH a client secret. So if
+		// the age guard were missing, this secret is what would come back, and the
+		// assertion below would catch it.
+		mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+			id: "pi_too_old_to_reuse",
+			status: "requires_payment_method",
+			client_secret: "cs_stale",
+		});
+		mockStripeClient.paymentIntents.cancel.mockResolvedValueOnce({
+			id: "pi_too_old_to_reuse",
+			status: "canceled",
+		});
+		mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+			id: "pi_fresh_after_reuse_refused",
+			client_secret: "cs_fresh",
+			status: "requires_payment_method",
+		});
+
+		const diner = t.withIdentity({ subject: "diner-sweep" });
+		const result = await diner.action(api.stripe.createPaymentIntent, { orderId });
+
+		// A brand-new intent, not the stale one.
+		expect(result.clientSecret).toBe("cs_fresh");
+		expect(result.paymentId).not.toBe(paymentId);
+		expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_too_old_to_reuse");
 		await t.run(async (ctx) => {
 			expect((await ctx.db.get(paymentId))!.status).toBe("superseded");
 		});
