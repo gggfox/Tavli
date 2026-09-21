@@ -664,6 +664,17 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   automatically refunded stranded charge would otherwise be counted alongside the
   payment the diner makes on their second attempt — the same sale twice. Partial
   refunds are unchanged (still counted gross).
+- **A refunded card attempt never un-pays a cash settlement.** The stranded
+  refund clears the order's `activePaymentId` / `stripePaymentIntentId` whenever
+  they name the refunded payment, but only resets `paymentState` to `unpaid`
+  when the order is not already PAID. A cash-settled order keeps `settledBy:
+"staff"` and its `paidAt` — the restaurant has that money. To stop the race
+  reaching that point at all, `orders.markOrderPaidInPerson` now refuses with
+  `ERROR_ORDER_PAYMENT_IN_FLIGHT` while a PENDING/PROCESSING card attempt is
+  active, exactly as `requestPayInPerson` already does from the diner's side.
+  Staff clear it by having the diner tap "Pay in person" or leave the checkout
+  (both cancel the intent); the next attempt supersedes it, and the
+  stuck-payment sweep catches a `processing` row that stopped moving.
 - **The refund's own `charge.refunded` does not restate the order.**
   `recordChargeRefund` flips an order to REFUNDED only when the refunded row is
   the order's `activePaymentId` AND the order is PAID or REFUND_REQUESTED. A

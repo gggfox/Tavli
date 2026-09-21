@@ -516,6 +516,116 @@ describe("orders.confirmPayment — a charge that matches no active payment (TAV
 		});
 	});
 
+	describe("a refunded card attempt never un-pays a cash settlement", () => {
+		it("leaves a cash-settled order paid, clears the pointer, and refunds the card", async () => {
+			// The cash→card switch, from the other side. The diner moved an
+			// `awaiting_payment` round onto a card (intent A live, pointer A), staff
+			// collected at the table anyway, and A confirmed afterwards. Refunding A
+			// is right; writing UNPAID over the cash settlement is not — the
+			// restaurant has the money, and the ticket would say otherwise while
+			// `settledBy`/`paidAt` sat there contradicting it.
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			const cashPaidAt = Date.now();
+			await t.run(async (ctx) => {
+				await ctx.db.patch(seeded.orderId, {
+					status: "submitted",
+					paymentState: "paid",
+					settledBy: "staff",
+					paidAt: cashPaidAt,
+					// Staff collected without touching the diner's card attempt:
+					// `markOrderPaidInPerson` leaves the pointer exactly where it was.
+					updatedAt: Date.now() + 9_000,
+				});
+			});
+
+			await confirm(t, seeded);
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(seeded.orderId),
+				payment: await ctx.db.get(seeded.paymentId),
+			}));
+			// The card charge goes back...
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
+			expect(payment?.refundStatus).toBe("succeeded");
+			// ...and the cash settlement is untouched.
+			expect(order?.paymentState).toBe("paid");
+			expect(order?.settledBy).toBe("staff");
+			expect(order?.paidAt).toBe(cashPaidAt);
+			// But nothing points at the refunded attempt any more.
+			expect(order?.activePaymentId).toBeUndefined();
+			expect(order?.stripePaymentIntentId).toBeUndefined();
+
+			const alerts = await alertsOf(t);
+			expect(alerts.map((alert) => alert.kind)).toEqual(["charge_mismatched_refunded"]);
+		});
+
+		it("still returns an unpaid order to unpaid when its own attempt is refunded", async () => {
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(seeded.orderId, { totalAmount: 15000, updatedAt: Date.now() + 9_000 });
+			});
+
+			await confirm(t, seeded);
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+			const order = await t.run(async (ctx) => ctx.db.get(seeded.orderId));
+			expect(order?.paymentState).toBe("unpaid");
+			expect(order?.activePaymentId).toBeUndefined();
+		});
+
+		it("refuses to collect cash while a card attempt is live", async () => {
+			// The same interlock `requestPayInPerson` applies from the diner's
+			// side. Refused rather than stood down: a scheduled Stripe cancel would
+			// land after this transaction commits the cash, which is the window
+			// being closed.
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			const staff = await seedManager(t, seeded.restaurantId);
+			await t.run(async (ctx) => {
+				await ctx.db.patch(seeded.orderId, {
+					status: "awaiting_payment",
+					paymentState: "processing",
+				});
+			});
+
+			await expect(
+				staff.mutation(api.orders.markOrderPaidInPerson, { orderId: seeded.orderId })
+			).rejects.toThrow(/ERROR_ORDER_PAYMENT_IN_FLIGHT/);
+
+			const order = await t.run(async (ctx) => ctx.db.get(seeded.orderId));
+			expect(order?.paymentState).toBe("processing");
+			expect(order?.paidAt).toBeUndefined();
+			expect(order?.settledBy).toBeUndefined();
+		});
+
+		it("collects cash once the card attempt is no longer live", async () => {
+			const t = convexTest(schema, modules);
+			const seeded = await seedOrderAndPayment(t);
+			const staff = await seedManager(t, seeded.restaurantId);
+			await t.run(async (ctx) => {
+				// The diner backed out: `cancelOrderPaymentIntent` stood it down.
+				await ctx.db.patch(seeded.paymentId, { status: "cancelled" });
+				await ctx.db.patch(seeded.orderId, {
+					status: "awaiting_payment",
+					paymentState: "unpaid",
+					activePaymentId: undefined,
+				});
+			});
+
+			const [orderId, error] = await staff.mutation(api.orders.markOrderPaidInPerson, {
+				orderId: seeded.orderId,
+			});
+			expect(error).toBeNull();
+			expect(orderId).toBe(seeded.orderId);
+			const order = await t.run(async (ctx) => ctx.db.get(seeded.orderId));
+			expect(order?.paymentState).toBe("paid");
+			expect(order?.settledBy).toBe("staff");
+		});
+	});
+
 	describe("the refund's own webhook does not restate the order", () => {
 		it("leaves a refunded stranded charge's order unpaid, not refunded", async () => {
 			const t = convexTest(schema, modules);

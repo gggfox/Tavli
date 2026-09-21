@@ -595,11 +595,32 @@ async function refundStrandedPayment(
 		updatedBy: AUDIT_SYSTEM_USER_ID,
 	});
 
-	if (order.activePaymentId === payment._id) {
+	// Two separate questions, because the answer to one is not the answer to the
+	// other (review round 3).
+	//
+	// POINTER: does the order still name this payment? Then it must stop — the
+	// attempt is being refunded and nothing should reach for it again.
+	//
+	// PAYMENT STATE: is the order still owed? Only then does it go back to
+	// UNPAID. A PAID order is one somebody has already settled — and it can be
+	// PAID while still pointing here: a diner switches from cash to card on an
+	// `awaiting_payment` order, staff collect the cash at the table
+	// (`markOrderPaidInPerson` stamps `settledBy: "staff"` and leaves the card
+	// pointer alone), and the diner's intent confirms afterwards. Refunding that
+	// card charge is right; writing UNPAID over the cash settlement is not. The
+	// restaurant has the money, and the ticket would say otherwise — leaving
+	// `settledBy`/`paidAt` behind to contradict `paymentState` as well.
+	const orderNamesThisPayment =
+		order.activePaymentId === payment._id ||
+		order.stripePaymentIntentId === args.stripePaymentIntentId;
+	if (orderNamesThisPayment) {
+		const stillOwed = order.paymentState !== ORDER_PAYMENT_STATE.PAID;
 		await ctx.db.patch(order._id, {
-			paymentState: ORDER_PAYMENT_STATE.UNPAID,
-			activePaymentId: undefined,
-			stripePaymentIntentId: undefined,
+			...(stillOwed && { paymentState: ORDER_PAYMENT_STATE.UNPAID }),
+			...(order.activePaymentId === payment._id && { activePaymentId: undefined }),
+			...(order.stripePaymentIntentId === args.stripePaymentIntentId && {
+				stripePaymentIntentId: undefined,
+			}),
 			updatedAt: now,
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
@@ -1413,6 +1434,36 @@ export const markOrderPaidInPerson = mutation({
 		// rejected: an order can only owe in person while it holds that status.
 		if (!owesInPersonPayment(order)) {
 			throw new ConflictError("ERROR_ORDER_NOT_AWAITING_PAYMENT");
+		}
+
+		// The same interlock `requestPayInPerson` applies from the diner's side
+		// (review round 3), for the same reason and with the same code: cash and a
+		// live card intent must never be collected for one round.
+		//
+		// Without it, staff collect at the table while the diner still has a
+		// mounted PaymentElement, the diner confirms a moment later, and the money
+		// is taken twice. The webhook does catch it — the charge is refunded as a
+		// duplicate — but only after the card has been charged and only if the
+		// refund lands, and the refunded attempt used to overwrite the cash
+		// settlement on its way out.
+		//
+		// REFUSED rather than stood down, deliberately. This is a mutation, so
+		// "stand the intent down" means scheduling a Stripe call — and a scheduled
+		// cancel lands *after* this transaction commits the cash, which is exactly
+		// the window being closed. Refusing is synchronous and leaves the order
+		// exactly as it was. The intent does not outlive the situation either: the
+		// diner's own checkout cancels it on "Pay in person" or "Back to menu", the
+		// next payment attempt supersedes it, and the stuck-payment sweep sees a
+		// `processing` row that stopped moving.
+		if (order.activePaymentId) {
+			const activePayment = await ctx.db.get(order.activePaymentId);
+			if (
+				activePayment &&
+				(activePayment.status === PAYMENT_STATUS.PENDING ||
+					activePayment.status === PAYMENT_STATUS.PROCESSING)
+			) {
+				throw new ConflictError("ERROR_ORDER_PAYMENT_IN_FLIGHT");
+			}
 		}
 
 		const isRelease = order.status === ORDER_STATUS.AWAITING_PAYMENT;
