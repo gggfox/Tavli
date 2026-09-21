@@ -567,7 +567,42 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   lost. If neither `CONVEX_CLOUD_URL` nor `CONVEX_SITE_URL` resolves, the webhook
   logs `DEPLOYMENT MARKER UNAVAILABLE` and raises no unmatched-charge alerts at
   all — matching still works, only the attribution is blind.
-
+- **A superseded PaymentIntent is cancelled at Stripe before its row is retired**
+  (TAVLI-104). Editing an order, moving the tip slider or re-opening the tab
+  creates a replacement intent; the previous one is stood down first, through the
+  one shared helper `standDownPaymentIntent` (retrieve → `succeeded`? leave it
+  for the webhook; `canceled`? nothing to do; otherwise cancel). Order, tab and
+  tip all go through it, and so does "Back to menu" on the checkout page. If the
+  stand-down cannot be completed, **no new intent is created**: the diner sees
+  `ERROR_PAYMENT_CANCEL_FAILED` ("try again") when Stripe was unreachable, or
+  `ERROR_PAYMENT_ALREADY_PAID` when the old intent had already succeeded — the
+  webhook settles that one moments later. A second tap landing while the first
+  attempt's `paymentIntents.create` is still running (row `pending`, no intent
+  id, younger than `PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS` = 90s) gets
+  `ERROR_PAYMENT_IN_PROGRESS` rather than superseding a charge that is moving
+  money right now. The tab path cancels inside `createTabPaymentIntent`, ahead of
+  `sessions.beginTabPayment`, because a mutation cannot call Stripe and a
+  scheduled cancel could land after the replacement intent exists.
+- **A `payment_intent.succeeded` that matches no active payment is accepted or
+  refunded, never dropped** (TAVLI-104). `orders.confirmPayment` used to warn and
+  return on three conditions — the payment is not the order's `activePaymentId`,
+  the order's `updatedAt` moved past the payment's snapshot, or the total drifted
+  — leaving Stripe holding the diner's money and the order unreleased. It now
+  recomputes what the order costs right now (same helper `createPaymentIntent`
+  uses: subtotal + 12% fee + the gratuity on the row) and either:
+  - **accepts** — settles the order with that payment, re-points
+    `activePaymentId` at it, retires any newer attempt and cancels that attempt's
+    intent through `stripe.standDownSupersededIntent`; logged as
+    `adopting payment …`; or
+  - **refunds in full** — the row goes `succeeded` with
+    `refundStatus: requested`, the order goes back to **unpaid and still owed**
+    (not "refunded" — it was never paid), a severe `charge_mismatched_refunded`
+    alert is raised carrying both amounts, and `stripe.refundStrandedCharge`
+    issues the refund on a `runAfter(0)` hop with idempotency key
+    `stranded-charge-refund:<paymentId>`. Logged as
+    `REFUNDING A CHARGE THAT MATCHES NO ORDER TOTAL`.
+    An order that is cancelled or already served is still only logged and skipped:
+    that money is `cancelOrderAndRefund`'s business, not this handler's.
 - The create path cannot undo a settlement, on either branch.
   `stripeHelpers.attachIntentToPayment` records the intent id but moves the status
   only `pending` → `processing`, and `stripeHelpers.failPaymentUnlessSettled`
@@ -592,6 +627,13 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   `/admin/alerts`. `FOREIGN PAYMENT INTENT IGNORED` beside it is the benign
   counterpart (another deployment's charge on the shared test account): expected
   traffic in dev and staging, not a finding
+- Convex logs for `REFUNDING A CHARGE THAT MATCHES NO ORDER TOTAL` — a charge
+  Tavli sent back because it no longer matched its order; always paired with a
+  severe `charge_mismatched_refunded` alert naming both amounts. Confirm the
+  refund landed in Stripe, then acknowledge the alert
+- Convex logs for `SUPERSEDED INTENT ALREADY SUCCEEDED` — a replaced intent was
+  confirmed anyway, so a duplicate charge exists; its own webhook delivery
+  refunds it against the now-paid order and raises the alert above
 - `stripeWebhookEvents` rows are being created for processed events
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs
