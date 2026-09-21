@@ -11,6 +11,7 @@ import {
 	TABLE,
 } from "./constants";
 import { appendAuditEvent } from "./_util/audit";
+import { restoreLedgerForRefund } from "./disputes";
 
 const paymentStatusValidator = v.union(
 	v.literal(PAYMENT_STATUS.PENDING),
@@ -529,6 +530,16 @@ export const recordChargeRefund = internalMutation({
 				});
 			}
 		}
+
+		// A refund on a payment that repaid a lost dispute has to give the ledger
+		// its debt back (TAVLI-102): Stripe returns the diner's whole charge out
+		// of the platform balance and reverses only the already-reduced transfer,
+		// so Tavli recovered nothing. Same transaction as the refund record, so
+		// the two can never disagree.
+		await restoreLedgerForRefund(ctx, {
+			paymentId: args.paymentId,
+			amountRefunded: args.amountRefunded,
+		});
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.PAYMENTS,

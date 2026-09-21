@@ -783,7 +783,7 @@
 		"AI_IMAGE_CREDITS_EXHAUSTED": "Se agotaron los créditos de imágenes con IA. Contacta a soporte de Tavli.",
 		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo.",
 		"ERROR_NOTIFICATION_NOT_FOUND": "Esa notificación ya no existe.",
-		"ERROR_PAYMENT_UNDER_DISPUTE": "El banco del comensal tiene este cargo en disputa, así que no se puede reembolsar. Tavli está atendiendo la disputa.",
+		"ERROR_PAYMENT_UNDER_DISPUTE": "Este cargo está ligado a una disputa bancaria, así que no se puede reembolsar aquí. Tavli la está atendiendo — y si el banco ya resolvió a favor del comensal, su dinero ya le fue devuelto por el banco.",
 		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "El porcentaje de recuperación de disputas debe ser un número entero entre 0 y 50."
 	},
 	"time": {

@@ -993,11 +993,30 @@ curl -s https://api.stripe.com/v1/payment_intents -u "$STRIPE_SECRET_KEY:" \
   -d "transfer_data[destination]=acct_..."
 ```
 
-Close a dispute to fire `charge.dispute.closed`:
+Decide a dispute by **submitting evidence** — that is what makes test mode
+produce a real `won` or `lost`:
 
 ```bash
-curl -s -X POST "https://api.stripe.com/v1/disputes/du_.../close" -u "$STRIPE_SECRET_KEY:"
+# WINS: closed (status won), then charge.dispute.funds_reinstated
+curl -s -X POST "https://api.stripe.com/v1/disputes/du_.../" -u "$STRIPE_SECRET_KEY:" \
+  -d "evidence[uncategorized_text]=winning_evidence" -d submit=true
+
+# LOSES: closed (status lost) — the case the recovery ledger exists for
+curl -s -X POST "https://api.stripe.com/v1/disputes/du_.../" -u "$STRIPE_SECRET_KEY:" \
+  -d "evidence[uncategorized_text]=losing_evidence" -d submit=true
 ```
+
+> [!WARNING]
+> Do **not** use `POST /v1/disputes/du_.../close` to exercise the happy path. It
+> means "give up", and Stripe closes the dispute as **lost** — so a test meant
+> to prove the win path silently exercises the loss path and opens a recovery
+> ledger row.
+>
+> `stripe trigger charge.dispute.created` is also not a substitute: its dispute
+> belongs to no PaymentIntent of ours, so it only ever proves the **unlinked**
+> path (the row is written, the operator alert is raised, and no ledger row or
+> manager notification follows because no restaurant claims the charge). Use
+> `pm_card_createDispute` for anything that has to touch the ledger.
 
 Confirming a PaymentIntent server-side needs `--return-url` when
 `automatic_payment_methods.allow_redirects` is `always` — Link can redirect:

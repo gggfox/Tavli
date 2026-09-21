@@ -881,6 +881,10 @@ export const AUDIT_EVENT = {
 	DISPUTE_RECOVERY_REVERSED: "payments.disputeRecoveryReversed",
 	/** The return transfer to the connected account settled at Stripe. */
 	DISPUTE_RECOVERY_RETURNED: "payments.disputeRecoveryReturned",
+	/** A refund gave money back to the ledger rows the payment had drawn down. */
+	DISPUTE_RECOVERY_RESTORED: "payments.disputeRecoveryRestored",
+	/** Withheld at Stripe but not applicable to any ledger row; transferred back. */
+	DISPUTE_RECOVERY_SHORTFALL_RETURNED: "payments.disputeRecoveryShortfallReturned",
 	/** 180 days elapsed with money still outstanding. */
 	DISPUTE_RECOVERY_WRITTEN_OFF: "payments.disputeRecoveryWrittenOff",
 	/** A platform admin changed a restaurant's recovery percentage. */

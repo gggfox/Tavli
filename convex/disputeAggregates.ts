@@ -156,6 +156,33 @@ export async function recordDisputeFee(
 }
 
 /**
+ * Correct a fee already in the month's total.
+ *
+ * Reinstating a dispute's funds usually reinstates its fee too, which Stripe
+ * posts as a negative balance transaction — so the summed fee falls, often to
+ * zero. A net of zero (or less) is not "no fee recorded", it is "the fee came
+ * back", and the entry has to leave the month rather than sit there as a cost
+ * Tavli never bore.
+ */
+export async function correctDisputeFee(
+	ctx: MutationCtx,
+	args: { stripeDisputeId: string; month: string; feeAmount: number }
+): Promise<void> {
+	if (args.feeAmount > 0) {
+		await disputeFeesByMonth.replaceOrInsert(
+			ctx,
+			{ key: args.month, id: args.stripeDisputeId },
+			{ key: args.month, sumValue: args.feeAmount }
+		);
+		return;
+	}
+	await disputeFeesByMonth.deleteIfExists(ctx, {
+		key: args.month,
+		id: args.stripeDisputeId,
+	});
+}
+
+/**
  * Drop one dispute's fee entry — the restaurant purge, which deletes the row
  * that knows which month the entry lives under.
  */

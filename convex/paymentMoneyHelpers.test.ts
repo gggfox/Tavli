@@ -173,6 +173,13 @@ describe("dispute recovery is its own line (TAVLI-102)", () => {
 		expect(money.disputeRecovery).toBe(0);
 	});
 
+	it("nets out what a refund gave back to the ledger", () => {
+		const money = paymentMoneyBreakdown({ ...recovered, disputeRecoveryRestored: 2_000 });
+		// The whole deduction was returned to the ledger, so Tavli kept nothing.
+		expect(money.disputeRecovery).toBe(0);
+		expect(money.settledToRestaurant).toBe(10_000);
+	});
+
 	it("sums only the recoveries that settled", () => {
 		expect(
 			sumDisputeRecoveryFromPayments([

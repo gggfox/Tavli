@@ -584,16 +584,21 @@ export async function handleChargeRefunded(
 	// still wins when there is one — the fetch is for the object, not the id.
 	let { latestRefundId, refundedAtMs } = facts;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	let fetchedRefund: any = null;
+	let fetchedRefunds: any[] = [];
 	try {
+		// Ten, not one. A charge can carry several refunds — a per-line removal
+		// followed by a dashboard refund of the rest is the obvious case — and
+		// `charge.refunded` fires for each, so a limit of 1 would inspect the
+		// newest and never notice an older one that reversed no transfer.
 		const { data } = await getStripeClient().refunds.list({
 			payment_intent: facts.paymentIntentId,
-			limit: 1,
+			limit: 10,
 		});
-		fetchedRefund = data[0] ?? null;
-		if (fetchedRefund && !latestRefundId) {
-			latestRefundId = fetchedRefund.id;
-			refundedAtMs = stripeSecondsToMs(fetchedRefund.created);
+		fetchedRefunds = data ?? [];
+		const latest = fetchedRefunds[0] ?? null;
+		if (latest && !latestRefundId) {
+			latestRefundId = latest.id;
+			refundedAtMs = stripeSecondsToMs(latest.created);
 		}
 	} catch (error) {
 		console.error("[stripe.fulfillPayment] REFUND LOOKUP FAILED", {
@@ -617,7 +622,7 @@ export async function handleChargeRefunded(
 			chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
 			paymentIntentId: redactExternalId(facts.paymentIntentId),
 			chargeHadRefundsKey: charge.refunds !== undefined,
-			refundsListReturned: 0,
+			refundsListReturned: fetchedRefunds.length,
 		});
 	}
 
@@ -636,15 +641,20 @@ export async function handleChargeRefunded(
 	// Judged only on the FETCHED refund. The charge's own `refunds` list is
 	// abbreviated and may omit the field, and inferring "no reversal" from an
 	// absent key would alert on every properly-reversed refund.
-	if (fetchedRefund && !fetchedRefund.transfer_reversal) {
+	//
+	// One alert per refund, keyed on the refund id, so a charge that was
+	// partially refunded in-app and then finished off from the Dashboard raises
+	// exactly one alert about the second refund and none about the first.
+	for (const refund of fetchedRefunds) {
+		if (refund?.transfer_reversal) continue;
 		await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 			kind: OPERATOR_ALERT_KIND.DASHBOARD_REFUND,
 			severity: OPERATOR_ALERT_SEVERITY.SEVERE,
 			restaurantId: payment.restaurantId,
 			paymentId: payment._id,
 			...(payment.orderId && { orderId: payment.orderId }),
-			stripeObjectId: fetchedRefund.id,
-			dedupeKey: `dashboard_refund:${fetchedRefund.id}`,
+			stripeObjectId: refund.id,
+			dedupeKey: `dashboard_refund:${refund.id}`,
 		});
 	}
 

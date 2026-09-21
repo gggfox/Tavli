@@ -78,6 +78,7 @@ import {
 	type DisputeStatus,
 } from "./constants";
 import {
+	correctDisputeFee,
 	DISPUTE_OUTCOME,
 	readRestaurantDisputeTotals,
 	recordDisputeFee,
@@ -347,6 +348,16 @@ export const recordDisputeEventInternal = internalMutation({
 			});
 		}
 
+		// Outside the transition branches on purpose: a redelivered win is not a
+		// transition, and it is exactly when an earlier return transfer is most
+		// likely to have died unretried. See `ensureRecoveryReturnScheduled`.
+		if (nowWon && args.restaurantId) {
+			outcome.returningCents = await ensureRecoveryReturnScheduled(ctx, {
+				stripeDisputeId: args.stripeDisputeId,
+				restaurantId: args.restaurantId,
+			});
+		}
+
 		return outcome;
 	},
 });
@@ -490,6 +501,7 @@ async function recordFeeIfNew(
 		existing: DisputeDoc | null;
 		args: {
 			stripeDisputeId: string;
+			phase: DisputePhase;
 			currency: string;
 			restaurantId?: Id<"restaurants">;
 			feeAmount?: number;
@@ -498,8 +510,50 @@ async function recordFeeIfNew(
 	}
 ): Promise<void> {
 	const { dispute, existing, args } = input;
-	if (args.feeAmount === undefined || args.feeAmount <= 0) return;
-	if (existing?.disputeFeeAmount !== undefined) return;
+	if (args.feeAmount === undefined) return;
+
+	// A dispute whose funds are reinstated usually has its fee refunded too,
+	// which Stripe posts as a NEGATIVE balance transaction — so the summed fee
+	// can fall, to zero or below. That is a correction of a number already in
+	// the month's total, not a new fee, so it is the one case that may overwrite
+	// a fee we have already recorded. Everything else keeps the
+	// first-delivery-wins rule: the fee arrives on whichever delivery has it.
+	const isCorrection = args.phase === DISPUTE_PHASE.FUNDS_REINSTATED;
+	if (existing?.disputeFeeAmount !== undefined && !isCorrection) return;
+	if (existing?.disputeFeeAmount === undefined && args.feeAmount <= 0) return;
+
+	if (isCorrection && existing?.disputeFeeAmount !== undefined) {
+		const priorMonth = existing.disputeFeeMonth ?? disputeFeeMonthKey(dispute.createdAt);
+		const net = args.feeAmount;
+		await ctx.db.patch(dispute._id, {
+			disputeFeeAmount: net > 0 ? net : undefined,
+			disputeFeeMonth: net > 0 ? priorMonth : undefined,
+			updatedAt: Date.now(),
+		});
+		await correctDisputeFee(ctx, {
+			stripeDisputeId: args.stripeDisputeId,
+			month: priorMonth,
+			feeAmount: net,
+		});
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.STRIPE_DISPUTES,
+			aggregateId: dispute._id,
+			eventType: AUDIT_EVENT.DISPUTE_FEE_ABSORBED,
+			restaurantId: args.restaurantId ?? null,
+			payload: {
+				stripeDisputeId: args.stripeDisputeId,
+				feeAmount: net,
+				previousFeeAmount: existing.disputeFeeAmount,
+				currency: args.currency,
+				month: priorMonth,
+				correction: "funds_reinstated",
+				absorbedBy: "platform",
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: `dispute_fee_corrected:${args.stripeDisputeId}:${net}`,
+		});
+		return;
+	}
 
 	const month = disputeFeeMonthKey(args.feeAtMs ?? dispute.createdAt);
 	await ctx.db.patch(dispute._id, {
@@ -690,32 +744,6 @@ async function applyWin(
 			userId: AUDIT_SYSTEM_USER_ID,
 			idempotencyKey: `dispute_recovery_reversed:${args.stripeDisputeId}`,
 		});
-
-		// Only money we actually took comes back. A dispute lost and won again
-		// before any order paid it down owes the restaurant nothing.
-		if (recovery.recovered > 0 && recovery.returnedAt === undefined) {
-			const restaurant = await ctx.db.get(args.restaurantId);
-			if (restaurant?.stripeAccountId) {
-				outcome.returningCents = recovery.recovered;
-				await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
-					recoveryId: recovery._id,
-					stripeAccountId: restaurant.stripeAccountId,
-					stripeDisputeId: args.stripeDisputeId,
-					amount: recovery.recovered,
-					currency: recovery.currency,
-				});
-			} else {
-				// Nowhere to send it. The row keeps `recovered` so the debt is
-				// visible and an operator can settle it by hand.
-				await raiseOperatorAlert(ctx, {
-					kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
-					severity: OPERATOR_ALERT_SEVERITY.SEVERE,
-					restaurantId: args.restaurantId,
-					stripeObjectId: args.stripeDisputeId,
-					dedupeKey: `dispute_recovery_return_blocked:${args.stripeDisputeId}`,
-				});
-			}
-		}
 	}
 
 	await tellManagers(ctx, {
@@ -726,6 +754,57 @@ async function applyWin(
 		dispute,
 		recoveryPercent: 0,
 	});
+}
+
+/**
+ * Make sure a reinstated dispute's recovered money is on its way back.
+ *
+ * Called for **every** delivery that says the dispute went our way, not only
+ * the one that first said so. Convex does not retry a scheduled function that
+ * throws, so a return whose `transfers.create` failed leaves a row that is
+ * reinstated, still owes the restaurant money, and whose managers have already
+ * been told the money is coming back. A redelivered win is the event most
+ * likely to arrive after exactly that failure — and gating on the *transition*
+ * (`resolvedInFavour`) or on the row's *status* would make it the one event
+ * guaranteed to skip the retry.
+ *
+ * `returnedAt` is therefore the only gate, and Stripe's idempotency key
+ * (`dispute-recovery-return:<disputeId>`) is what makes re-scheduling safe: a
+ * second call returns Stripe's record of the first transfer rather than making
+ * a second one. The daily sweep is the third line of defence.
+ *
+ * Only money we actually took comes back: a dispute lost and won again before
+ * any order paid it down owes the restaurant nothing.
+ */
+async function ensureRecoveryReturnScheduled(
+	ctx: MutationCtx,
+	args: { stripeDisputeId: string; restaurantId: Id<"restaurants"> }
+): Promise<number> {
+	const recovery = await readRecoveryForDispute(ctx, args.stripeDisputeId);
+	if (!recovery || recovery.recovered <= 0 || recovery.returnedAt !== undefined) return 0;
+
+	const restaurant = await ctx.db.get(args.restaurantId);
+	if (!restaurant?.stripeAccountId) {
+		// Nowhere to send it. The row keeps `recovered` so the debt is visible
+		// and an operator can settle it by hand.
+		await raiseOperatorAlert(ctx, {
+			kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+			severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+			restaurantId: args.restaurantId,
+			stripeObjectId: args.stripeDisputeId,
+			dedupeKey: `dispute_recovery_return_blocked:${args.stripeDisputeId}`,
+		});
+		return 0;
+	}
+
+	await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
+		recoveryId: recovery._id,
+		stripeAccountId: restaurant.stripeAccountId,
+		stripeDisputeId: args.stripeDisputeId,
+		amount: recovery.recovered,
+		currency: recovery.currency,
+	});
+	return recovery.recovered;
 }
 
 // ============================================================================
@@ -822,17 +901,28 @@ export function formatDisputeAmount(cents: number): string {
  * `outstanding` rather than from the plan recorded at pricing time — so a
  * ledger that moved in between (another order settled first, or the dispute was
  * won) is honoured instead of over-drawn.
+ *
+ * **Whatever cannot be applied is transferred back.** Re-planning is the right
+ * behaviour for the ledger and the wrong one for the money: Stripe has already
+ * withheld `disputeRecoveryAmount` from this transfer, so if the dispute was
+ * reinstated between pricing and settlement — or two intents were priced
+ * against the same last 500 and both settled — the difference is sitting on the
+ * PLATFORM balance and belongs to the restaurant. It is returned with
+ * `dispute-recovery-shortfall:<paymentId>` as the idempotency key, and
+ * `disputeRecoveryAmount` is corrected to what was actually applied so the
+ * exports report what Tavli kept rather than what it briefly held.
  */
 export const applyDisputeRecoveryOnSettleInternal = internalMutation({
 	args: { paymentId: v.id(TABLE.PAYMENTS) },
-	handler: async (ctx, args): Promise<{ applied: number; legs: number }> => {
+	handler: async (ctx, args): Promise<{ applied: number; shortfall: number; legs: number }> => {
 		const payment = await ctx.db.get(args.paymentId);
-		if (!payment) return { applied: 0, legs: 0 };
-		if (payment.status !== PAYMENT_STATUS.SUCCEEDED) return { applied: 0, legs: 0 };
-		if (payment.disputeRecoveryAppliedAt !== undefined) return { applied: 0, legs: 0 };
+		const nothing = { applied: 0, shortfall: 0, legs: 0 };
+		if (!payment) return nothing;
+		if (payment.status !== PAYMENT_STATUS.SUCCEEDED) return nothing;
+		if (payment.disputeRecoveryAppliedAt !== undefined) return nothing;
 
 		const intended = payment.disputeRecoveryAmount ?? 0;
-		if (intended <= 0) return { applied: 0, legs: 0 };
+		if (intended <= 0) return nothing;
 
 		const now = Date.now();
 		const rows = await readOutstandingRecoveries(ctx, payment.restaurantId);
@@ -842,6 +932,7 @@ export const applyDisputeRecoveryOnSettleInternal = internalMutation({
 		);
 
 		let applied = 0;
+		const appliedLegs: { recoveryId: Id<typeof TABLE.DISPUTE_RECOVERIES>; amount: number }[] = [];
 		for (const leg of legs) {
 			const row = rows.find((candidate) => candidate._id === leg.id);
 			if (!row) continue;
@@ -863,14 +954,19 @@ export const applyDisputeRecoveryOnSettleInternal = internalMutation({
 				lostAt: row.lostAt,
 			});
 			applied += leg.amount;
+			appliedLegs.push({ recoveryId: row._id, amount: leg.amount });
 		}
 
-		// Stamped even when the ledger had nothing left to draw: the money was
-		// already withheld at Stripe, and re-running would not put it back.
-		// Whatever could not be applied is a credit the next credit-back or
-		// write-off reconciles, and the audit event below records the gap.
+		const shortfall = intended - applied;
+
+		// `disputeRecoveryAmount` is corrected to what was actually applied. It
+		// started life as an intention (what the intent asked Stripe to withhold)
+		// and from here it has to be a fact, because the exports read it as one.
 		await ctx.db.patch(payment._id, {
 			disputeRecoveryAppliedAt: now,
+			disputeRecoveryAmount: applied,
+			disputeRecoveryLegs: appliedLegs,
+			...(shortfall > 0 && { disputeRecoveryShortfall: shortfall }),
 			updatedAt: now,
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
@@ -883,6 +979,7 @@ export const applyDisputeRecoveryOnSettleInternal = internalMutation({
 			payload: {
 				withheldAtStripe: intended,
 				appliedToLedger: applied,
+				returnedToRestaurant: shortfall,
 				legs: legs.length,
 				currency: payment.currency,
 			},
@@ -890,9 +987,195 @@ export const applyDisputeRecoveryOnSettleInternal = internalMutation({
 			idempotencyKey: `dispute_recovery_applied:${payment._id}`,
 		});
 
-		return { applied, legs: legs.length };
+		if (shortfall > 0) {
+			const restaurant = await ctx.db.get(payment.restaurantId);
+			if (restaurant?.stripeAccountId) {
+				await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveryShortfall, {
+					paymentId: payment._id,
+					stripeAccountId: restaurant.stripeAccountId,
+					amount: shortfall,
+					currency: payment.currency,
+				});
+			} else {
+				// Nowhere to send it. The field on the payment keeps the amount
+				// visible so an operator can settle it by hand.
+				await raiseOperatorAlert(ctx, {
+					kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+					severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+					restaurantId: payment.restaurantId,
+					paymentId: payment._id,
+					dedupeKey: `dispute_recovery_shortfall_blocked:${payment._id}`,
+				});
+			}
+		}
+
+		return { applied, shortfall, legs: legs.length };
 	},
 });
+
+/**
+ * Mark a payment's shortfall transfer as settled.
+ *
+ * The Stripe transfer carries `dispute-recovery-shortfall:${paymentId}`, so
+ * Stripe itself refuses a second one; this is the in-app half, so the payment
+ * row agrees and an operator can find the transfer beside the payment.
+ */
+export const markRecoveryShortfallReturnedInternal = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		stripeTransferId: v.string(),
+		amount: v.number(),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment || payment.disputeRecoveryShortfallReturnedAt !== undefined) return;
+
+		const now = Date.now();
+		await ctx.db.patch(payment._id, {
+			disputeRecoveryShortfallReturnedAt: now,
+			disputeRecoveryShortfallTransferId: args.stripeTransferId,
+			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.PAYMENTS,
+			aggregateId: payment._id,
+			eventType: AUDIT_EVENT.DISPUTE_RECOVERY_SHORTFALL_RETURNED,
+			restaurantId: payment.restaurantId,
+			payload: {
+				stripeTransferId: args.stripeTransferId,
+				amount: args.amount,
+				currency: payment.currency,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: `dispute_recovery_shortfall_returned:${payment._id}`,
+		});
+	},
+});
+
+/**
+ * Give the ledger back what a refund undid (TAVLI-102, review round 1).
+ *
+ * A refund on a payment that drew the ledger down is a double loss if nothing
+ * is done. Stripe returns the **whole** amount the diner paid out of the
+ * PLATFORM balance, and reverses only the transfer that actually went out —
+ * which was already short by the recovery. So Tavli pays the diner in full,
+ * claws back a reduced transfer, and the ledger still says the debt was repaid.
+ * It was not: nobody's money moved in Tavli's favour.
+ *
+ * The restored amount is proportional to how much of the charge was refunded,
+ * so a single line removed from an order gives back its share and a full
+ * refund gives back all of it. It is allocated over `disputeRecoveryLegs` in
+ * the order the draw-down took them, and the allocation is recomputed from the
+ * cumulative total each time rather than from a delta — which is what makes a
+ * partial refund followed by a full one, or a redelivered `charge.refunded`,
+ * land on the same numbers instead of compounding.
+ *
+ * Rows that have since been **reinstated** or **written off** are skipped, and
+ * deliberately: a reinstated row's `recovered` has already been transferred
+ * back to the restaurant, and a written-off row is closed. Resurrecting either
+ * would invent a debt. The audit event records the gap.
+ *
+ * Called from `stripeHelpers.recordChargeRefund`, in the same transaction that
+ * records the refund, so the two can never disagree.
+ */
+export async function restoreLedgerForRefund(
+	ctx: MutationCtx,
+	args: { paymentId: Id<"payments">; amountRefunded: number }
+): Promise<{ restored: number; skipped: number }> {
+	const payment = await ctx.db.get(args.paymentId);
+	if (!payment) return { restored: 0, skipped: 0 };
+	if (payment.disputeRecoveryAppliedAt === undefined) return { restored: 0, skipped: 0 };
+
+	const applied = payment.disputeRecoveryAmount ?? 0;
+	const legs = payment.disputeRecoveryLegs ?? [];
+	if (applied <= 0 || legs.length === 0) return { restored: 0, skipped: 0 };
+
+	const alreadyRestored = payment.disputeRecoveryRestored ?? 0;
+	const target = Math.min(
+		applied,
+		Math.floor((applied * Math.max(0, args.amountRefunded)) / Math.max(1, payment.amount))
+	);
+	if (target <= alreadyRestored) return { restored: 0, skipped: 0 };
+
+	// Greedy over the legs in draw-down order. A pure function of the total, so
+	// the difference between two totals is the work still to do.
+	const allocate = (total: number): number[] => {
+		let remaining = total;
+		return legs.map((leg) => {
+			const take = Math.min(leg.amount, Math.max(0, remaining));
+			remaining -= take;
+			return take;
+		});
+	};
+	const previous = allocate(alreadyRestored);
+	const next = allocate(target);
+
+	const now = Date.now();
+	let restored = 0;
+	let skipped = 0;
+
+	for (const [index, leg] of legs.entries()) {
+		const delta = next[index] - previous[index];
+		if (delta <= 0) continue;
+
+		const row = await ctx.db.get(leg.recoveryId);
+		if (
+			!row ||
+			row.status === DISPUTE_RECOVERY_STATUS.REINSTATED ||
+			row.status === DISPUTE_RECOVERY_STATUS.WRITTEN_OFF
+		) {
+			skipped += delta;
+			continue;
+		}
+
+		const outstanding = row.outstanding + delta;
+		const recovered = Math.max(0, row.recovered - delta);
+		await ctx.db.patch(row._id, {
+			outstanding,
+			recovered,
+			status: DISPUTE_RECOVERY_STATUS.OUTSTANDING,
+			updatedAt: now,
+		});
+		await recordRecoveredTotal(ctx, {
+			restaurantId: row.restaurantId,
+			stripeDisputeId: row.stripeDisputeId,
+			recovered,
+			lostAt: row.lostAt,
+		});
+		restored += delta;
+	}
+
+	// The cumulative total counts the skipped rows too: they were allocated and
+	// must not be re-attempted on the next delivery, and the audit event below
+	// is where an operator sees what could not be put back.
+	await ctx.db.patch(payment._id, {
+		disputeRecoveryRestored: target,
+		updatedAt: now,
+		updatedBy: AUDIT_SYSTEM_USER_ID,
+	});
+
+	await appendAuditEvent(ctx, {
+		aggregateType: TABLE.PAYMENTS,
+		aggregateId: payment._id,
+		eventType: AUDIT_EVENT.DISPUTE_RECOVERY_RESTORED,
+		restaurantId: payment.restaurantId,
+		payload: {
+			amountRefunded: args.amountRefunded,
+			chargeAmount: payment.amount,
+			appliedToLedger: applied,
+			restoredNow: restored,
+			restoredTotal: target,
+			skippedClosedRows: skipped,
+			currency: payment.currency,
+		},
+		userId: AUDIT_SYSTEM_USER_ID,
+		idempotencyKey: `dispute_recovery_restored:${payment._id}:${target}`,
+	});
+
+	return { restored, skipped };
+}
 
 /**
  * Mark a reinstated row's return transfer as settled.
@@ -958,7 +1241,7 @@ const WRITE_OFF_BATCH_SIZE = 50;
  */
 export const sweepDisputeWriteOffs = internalMutation({
 	args: {},
-	handler: async (ctx): Promise<{ writtenOff: number }> => {
+	handler: async (ctx): Promise<{ writtenOff: number; reScheduled: number }> => {
 		const now = Date.now();
 		const cutoff = writeOffCutoff(now);
 
@@ -1005,9 +1288,56 @@ export const sweepDisputeWriteOffs = internalMutation({
 			});
 		}
 
-		return { writtenOff: due.length };
+		const reScheduled = await rescheduleUnreturnedReturns(ctx);
+
+		return { writtenOff: due.length, reScheduled };
 	},
 });
+
+/**
+ * Re-schedule return transfers that never settled.
+ *
+ * Convex does **not** retry a scheduled function that throws, so a
+ * `transfers.create` that failed — Stripe down, a connected account briefly
+ * unable to receive — leaves a reinstated row that still owes the restaurant
+ * money, with its managers already told the money was on its way back. The
+ * operator alert raised in the action's catch makes that visible; this makes it
+ * self-healing.
+ *
+ * Safe to run daily because the transfer carries
+ * `dispute-recovery-return:<disputeId>` as its Stripe idempotency key: a
+ * re-schedule for a transfer that did go through returns Stripe's record of it,
+ * and `markRecoveryReturnedInternal` then stamps the row so the next sweep
+ * skips it.
+ *
+ * One exact index probe, not a scan: `by_status_returned` on
+ * `(status, returnedAt)` with `returnedAt: undefined` is precisely "reinstated
+ * and not yet paid back".
+ */
+async function rescheduleUnreturnedReturns(ctx: MutationCtx): Promise<number> {
+	const pending = await ctx.db
+		.query(TABLE.DISPUTE_RECOVERIES)
+		.withIndex("by_status_returned", (q) =>
+			q.eq("status", DISPUTE_RECOVERY_STATUS.REINSTATED).eq("returnedAt", undefined)
+		)
+		.take(WRITE_OFF_BATCH_SIZE);
+
+	let scheduled = 0;
+	for (const row of pending) {
+		if (row.recovered <= 0) continue;
+		const restaurant = await ctx.db.get(row.restaurantId);
+		if (!restaurant?.stripeAccountId) continue;
+		await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
+			recoveryId: row._id,
+			stripeAccountId: restaurant.stripeAccountId,
+			stripeDisputeId: row.stripeDisputeId,
+			amount: row.recovered,
+			currency: row.currency,
+		});
+		scheduled++;
+	}
+	return scheduled;
+}
 
 // ============================================================================
 // The disputes surface

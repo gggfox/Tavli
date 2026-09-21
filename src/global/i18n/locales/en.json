@@ -783,7 +783,7 @@
 		"AI_IMAGE_CREDITS_EXHAUSTED": "AI image credits are exhausted. Contact Tavli support.",
 		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again.",
 		"ERROR_NOTIFICATION_NOT_FOUND": "That notification no longer exists.",
-		"ERROR_PAYMENT_UNDER_DISPUTE": "This charge is being disputed by the diner's bank, so it can't be refunded. Tavli is handling the dispute.",
+		"ERROR_PAYMENT_UNDER_DISPUTE": "This charge is tied to a bank dispute, so it can't be refunded here. Tavli is handling it — and if the bank already decided in the diner's favour, they have their money back from the bank.",
 		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "The dispute recovery percentage must be a whole number between 0 and 50."
 	},
 	"time": {

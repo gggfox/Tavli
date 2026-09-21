@@ -999,6 +999,38 @@ export default defineSchema({
 		disputeRecoveryIds: v.optional(v.array(v.id(TABLE.DISPUTE_RECOVERIES))),
 		/** Set once the draw-down ran. The idempotency marker for webhook replay. */
 		disputeRecoveryAppliedAt: v.optional(v.number()),
+		/**
+		 * What the draw-down actually took off which rows, in the order it took
+		 * it. Recorded rather than re-derived because the draw-down re-plans
+		 * against the ledger's *current* state, so the rows it touched need not
+		 * be the ones `disputeRecoveryIds` was priced against — and a later
+		 * refund has to give the money back to the rows it really came from.
+		 */
+		disputeRecoveryLegs: v.optional(
+			v.array(
+				v.object({
+					recoveryId: v.id(TABLE.DISPUTE_RECOVERIES),
+					amount: v.number(),
+				})
+			)
+		),
+		/**
+		 * Withheld at Stripe but not applicable to any ledger row — the dispute
+		 * was reinstated between pricing and settlement, or another intent got
+		 * there first. This money is the restaurant's and is transferred back
+		 * (`dispute-recovery-shortfall:<paymentId>`); the field is what makes
+		 * that a visible, reconcilable state rather than a silent platform gain.
+		 */
+		disputeRecoveryShortfall: v.optional(v.number()),
+		disputeRecoveryShortfallTransferId: v.optional(v.string()),
+		disputeRecoveryShortfallReturnedAt: v.optional(v.number()),
+		/**
+		 * Cumulative amount given back to the ledger because this payment was
+		 * refunded. A refund returns the diner's whole charge out of the platform
+		 * balance while reversing only the (already-reduced) transfer, so Tavli
+		 * recovered nothing — the debt has to come back.
+		 */
+		disputeRecoveryRestored: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
@@ -1178,6 +1210,14 @@ export default defineSchema({
 		// The write-off sweep: every outstanding row across all restaurants whose
 		// `lostAt` is older than the cutoff. One bounded range, no table scan.
 		.index("by_status_lost", ["status", "lostAt"])
+		// Reinstated rows whose return transfer has not settled. Convex sorts an
+		// undefined indexed field before every defined value, which is exactly
+		// what makes `.eq("status", "reinstated").eq("returnedAt", undefined)` an
+		// exact probe for "owed but not yet paid back" rather than a scan of
+		// every dispute this platform has ever reinstated. The daily sweep uses
+		// it to re-schedule a return whose action died — Convex does not retry a
+		// scheduled function that throws.
+		.index("by_status_returned", ["status", "returnedAt"])
 		.index("by_dispute_id", ["stripeDisputeId"]),
 
 	[TABLE.STRIPE_PAYOUTS]: defineTable({

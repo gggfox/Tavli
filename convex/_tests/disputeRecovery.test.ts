@@ -732,6 +732,279 @@ describe("the deduction on the next order", () => {
 	});
 });
 
+describe("what the ledger could not absorb (review round 1)", () => {
+	/** A draft order plus a priced intent, reusing the deduction helpers above. */
+	async function priceAnIntent(
+		t: SchemaAwareConvex,
+		args: { restaurantId: Id<"restaurants">; total: number; intentId: string }
+	) {
+		let orderId: Id<"orders">;
+		await t.run(async (ctx) => {
+			const tableId = await ctx.db.insert("tables", {
+				restaurantId: args.restaurantId,
+				tableNumber: 9,
+				isActive: true,
+				createdAt: Date.now(),
+			});
+			const sessionId = await ctx.db.insert("sessions", {
+				restaurantId: args.restaurantId,
+				tableId,
+				userId: DINER,
+				status: "active",
+				startedAt: Date.now(),
+			});
+			orderId = await ctx.db.insert("orders", {
+				sessionId,
+				restaurantId: args.restaurantId,
+				tableId,
+				status: "draft",
+				totalAmount: args.total,
+				paymentState: "unpaid",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		});
+
+		mockStripeClient.customers.create.mockResolvedValueOnce({ id: `cus_${args.intentId}` });
+		mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+			id: args.intentId,
+			client_secret: `cs_${args.intentId}`,
+		});
+		const diner = t.withIdentity({ subject: DINER });
+		const { paymentId } = await diner.action(api.stripe.createPaymentIntent, {
+			orderId: orderId!,
+		});
+		return paymentId;
+	}
+
+	async function seedLedgerRow(
+		t: SchemaAwareConvex,
+		args: { restaurantId: Id<"restaurants">; disputeId: string; amount: number; lostAt: number }
+	): Promise<Id<"disputeRecoveries">> {
+		let id: Id<"disputeRecoveries">;
+		await t.run(async (ctx) => {
+			id = await ctx.db.insert("disputeRecoveries", {
+				restaurantId: args.restaurantId,
+				stripeDisputeId: args.disputeId,
+				amount: args.amount,
+				outstanding: args.amount,
+				recovered: 0,
+				currency: "mxn",
+				status: "outstanding",
+				lostAt: args.lostAt,
+				createdAt: args.lostAt,
+				updatedAt: args.lostAt,
+			});
+		});
+		return id!;
+	}
+
+	it("transfers back what a reinstatement between pricing and settlement stranded", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: 50 });
+		const row = await seedLedgerRow(t, {
+			restaurantId,
+			disputeId: "dp_stranded",
+			amount: 5_000,
+			lostAt: 1_000,
+		});
+		const paymentId = await priceAnIntent(t, {
+			restaurantId,
+			total: 10_000,
+			intentId: "pi_stranded",
+		});
+		// Stripe has already withheld 5,000 from the transfer.
+		expect(await t.run(async (ctx) => (await ctx.db.get(paymentId))?.disputeRecoveryAmount)).toBe(
+			5_000
+		);
+
+		// The dispute is won before the charge settles: the ledger has nothing
+		// left to draw, but the money is off the transfer regardless.
+		await t.run(async (ctx) => {
+			await ctx.db.patch(row, { outstanding: 0, status: "reinstated", reinstatedAt: Date.now() });
+			await ctx.db.patch(paymentId, { status: "succeeded" });
+		});
+
+		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_shortfall" });
+		await t.mutation(internal.disputes.applyDisputeRecoveryOnSettleInternal, { paymentId });
+		await drainScheduled(t);
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeRecoveryShortfall).toBe(5_000);
+		// Corrected to what was actually kept, so the exports do not report a
+		// recovery that never happened.
+		expect(payment?.disputeRecoveryAmount).toBe(0);
+		expect(payment?.disputeRecoveryShortfallTransferId).toBe("tr_shortfall");
+
+		expect(mockStripeClient.transfers.create).toHaveBeenCalledWith(
+			expect.objectContaining({ amount: 5_000, destination: "acct_dispute" }),
+			{ idempotencyKey: `dispute-recovery-shortfall:${paymentId}` }
+		);
+	});
+
+	it("returns the overlap when two intents were priced against the same remainder", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: 50 });
+		await seedLedgerRow(t, {
+			restaurantId,
+			disputeId: "dp_shared",
+			amount: 5_000,
+			lostAt: 1_000,
+		});
+
+		// Both orders are priced while the ledger still shows 5,000 outstanding,
+		// so each withholds the full 5,000 cap.
+		const first = await priceAnIntent(t, { restaurantId, total: 10_000, intentId: "pi_one" });
+		const second = await priceAnIntent(t, { restaurantId, total: 10_000, intentId: "pi_two" });
+
+		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_overlap" });
+		await t.run(async (ctx) => {
+			await ctx.db.patch(first, { status: "succeeded" });
+			await ctx.db.patch(second, { status: "succeeded" });
+		});
+		await t.mutation(internal.disputes.applyDisputeRecoveryOnSettleInternal, { paymentId: first });
+		await t.mutation(internal.disputes.applyDisputeRecoveryOnSettleInternal, { paymentId: second });
+		await drainScheduled(t);
+
+		// The first clears the debt; the second recovers nothing and hands its
+		// whole withholding back rather than leaving it on the platform balance.
+		expect(await t.run(async (ctx) => (await ctx.db.get(first))?.disputeRecoveryAmount)).toBe(
+			5_000
+		);
+		const secondPayment = await t.run(async (ctx) => ctx.db.get(second));
+		expect(secondPayment?.disputeRecoveryAmount).toBe(0);
+		expect(secondPayment?.disputeRecoveryShortfall).toBe(5_000);
+		expect(mockStripeClient.transfers.create).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("refunding a payment that repaid a dispute (review round 1)", () => {
+	/** A settled payment that drew 2,000 off one ledger row. */
+	async function seedDrawnDownPayment(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_refund_ledger",
+		});
+		let recoveryId: Id<"disputeRecoveries">;
+		await t.run(async (ctx) => {
+			recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_refund_ledger",
+				amount: 5_000,
+				outstanding: 3_000,
+				recovered: 2_000,
+				currency: "mxn",
+				status: "outstanding",
+				lostAt: 1_000,
+				createdAt: 1_000,
+				updatedAt: 1_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 2_000,
+				disputeRecoveryAppliedAt: Date.now(),
+				disputeRecoveryLegs: [{ recoveryId: recoveryId!, amount: 2_000 }],
+			});
+		});
+		return { paymentId, recoveryId: recoveryId! };
+	}
+
+	it("gives the whole debt back on a full refund", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedDrawnDownPayment(t, restaurantId);
+
+		// `payment.amount` is 11,200 (10,000 + 12%).
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+
+		// Stripe returned the diner's whole charge from the PLATFORM balance and
+		// reversed only the already-shortened transfer, so Tavli recovered
+		// nothing and the debt has to stand again.
+		const row = await t.run(async (ctx) => ctx.db.get(recoveryId));
+		expect(row).toMatchObject({ outstanding: 5_000, recovered: 0, status: "outstanding" });
+		expect(await t.run(async (ctx) => (await ctx.db.get(paymentId))?.disputeRecoveryRestored)).toBe(
+			2_000
+		);
+	});
+
+	it("gives back only the refunded share when one line is removed", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedDrawnDownPayment(t, restaurantId);
+
+		// A quarter of the charge comes back: 2,800 of 11,200.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 2_800,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+
+		const row = await t.run(async (ctx) => ctx.db.get(recoveryId));
+		expect(row?.recovered).toBe(1_500);
+		expect(row?.outstanding).toBe(3_500);
+	});
+
+	it("does not compound when a partial refund is followed by the rest", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedDrawnDownPayment(t, restaurantId);
+
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 2_800,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		// And a redelivery of the same full refund.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+
+		const row = await t.run(async (ctx) => ctx.db.get(recoveryId));
+		expect(row?.recovered).toBe(0);
+		expect(row?.outstanding).toBe(5_000);
+	});
+
+	it("leaves a reinstated row alone — its money was already returned", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedDrawnDownPayment(t, restaurantId);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(recoveryId, {
+				outstanding: 0,
+				status: "reinstated",
+				reinstatedAt: Date.now(),
+			});
+		});
+
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+
+		const row = await t.run(async (ctx) => ctx.db.get(recoveryId));
+		expect(row?.outstanding).toBe(0);
+		expect(row?.status).toBe("reinstated");
+	});
+});
+
 describe("won and reinstated", () => {
 	async function seedLostAndRecovered(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
 		await seedPaidOrder(t, { restaurantId, subtotal: 30_000, paymentIntentId: "pi_win" });
@@ -807,13 +1080,21 @@ describe("won and reinstated", () => {
 			stripeTransferId: "tr_return",
 		});
 
-		// One transfer, whatever Stripe redelivers — and with the documented
-		// idempotency key, so Stripe refuses a second one too.
-		expect(mockStripeClient.transfers.create).toHaveBeenCalledTimes(1);
-		expect(mockStripeClient.transfers.create).toHaveBeenCalledWith(
-			expect.objectContaining({ amount: 7_000, destination: "acct_dispute", currency: "mxn" }),
-			{ idempotencyKey: "dispute-recovery-return:dp_win" }
-		);
+		// The restaurant is paid back exactly once. Two deliveries arriving before
+		// the scheduler runs both queue a return — which is deliberate, because
+		// the alternative (gating on the row's status) is what would skip the
+		// retry after a failed transfer. Every call carries the same idempotency
+		// key, so Stripe returns its record of the first transfer rather than
+		// making a second, and `markRecoveryReturnedInternal` stamps the row once.
+		expect(row?.returnedAmount).toBe(7_000);
+		for (const call of mockStripeClient.transfers.create.mock.calls) {
+			expect(call[0]).toMatchObject({
+				amount: 7_000,
+				destination: "acct_dispute",
+				currency: "mxn",
+			});
+			expect(call[1]).toEqual({ idempotencyKey: "dispute-recovery-return:dp_win" });
+		}
 	});
 
 	it("returns nothing when no order had paid the debt down yet", async () => {
@@ -853,6 +1134,154 @@ describe("won and reinstated", () => {
 		);
 		expect(row?.outstanding).toBe(0);
 		expect(row?.status).toBe("reinstated");
+	});
+});
+
+describe("a return transfer that failed (review round 1)", () => {
+	async function seedReinstatedOwing(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
+		await seedPaidOrder(t, { restaurantId, subtotal: 30_000, paymentIntentId: "pi_retry" });
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_retry_lost",
+				type: "charge.dispute.closed",
+				disputeId: "dp_retry",
+				paymentIntentId: "pi_retry",
+				status: "lost",
+				amount: 30_000,
+			})
+		);
+		await t.run(async (ctx) => {
+			const row = await ctx.db
+				.query("disputeRecoveries")
+				.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", "dp_retry"))
+				.first();
+			await ctx.db.patch(row!._id, { outstanding: 23_000, recovered: 7_000 });
+		});
+	}
+
+	it("raises a severe alert when the transfer throws, because nothing retries it", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: 25 });
+		await seedReinstatedOwing(t, restaurantId);
+
+		mockStripeClient.transfers.create.mockRejectedValue(new Error("stripe is down"));
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_retry_won",
+				type: "charge.dispute.funds_reinstated",
+				disputeId: "dp_retry",
+				paymentIntentId: "pi_retry",
+				status: "won",
+				amount: 30_000,
+				created: 1_700_400_000,
+			})
+		);
+		// convex-test records a failed scheduled run rather than rejecting here,
+		// which is the point: Convex does not retry it either.
+		await drainScheduled(t);
+
+		const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+		expect(alerts.some((a) => a.dedupeKey === "dispute_recovery_return_failed:dp_retry")).toBe(
+			true
+		);
+
+		const row = await t.run(async (ctx) =>
+			ctx.db
+				.query("disputeRecoveries")
+				.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", "dp_retry"))
+				.first()
+		);
+		// Reinstated but still owing: exactly the state the sweep has to find.
+		expect(row?.status).toBe("reinstated");
+		expect(row?.returnedAt).toBeUndefined();
+	});
+
+	it("re-schedules from a redelivered win, although the row is already reinstated", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: 25 });
+		await seedReinstatedOwing(t, restaurantId);
+
+		mockStripeClient.transfers.create.mockRejectedValueOnce(new Error("stripe is down"));
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_retry_won_1",
+				type: "charge.dispute.funds_reinstated",
+				disputeId: "dp_retry",
+				paymentIntentId: "pi_retry",
+				status: "won",
+				amount: 30_000,
+				created: 1_700_400_000,
+			})
+		);
+		// convex-test records a failed scheduled run rather than rejecting here,
+		// which is the point: Convex does not retry it either.
+		await drainScheduled(t);
+
+		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_second_try" });
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_retry_won_2",
+				type: "charge.dispute.closed",
+				disputeId: "dp_retry",
+				paymentIntentId: "pi_retry",
+				status: "won",
+				amount: 30_000,
+				created: 1_700_500_000,
+			})
+		);
+		await drainScheduled(t);
+
+		const row = await t.run(async (ctx) =>
+			ctx.db
+				.query("disputeRecoveries")
+				.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", "dp_retry"))
+				.first()
+		);
+		expect(row?.stripeTransferId).toBe("tr_second_try");
+		expect(row?.returnedAmount).toBe(7_000);
+	});
+
+	it("the daily sweep re-schedules a return that never settled", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: 25 });
+		await seedReinstatedOwing(t, restaurantId);
+
+		mockStripeClient.transfers.create.mockRejectedValueOnce(new Error("stripe is down"));
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_sweep_won",
+				type: "charge.dispute.funds_reinstated",
+				disputeId: "dp_retry",
+				paymentIntentId: "pi_retry",
+				status: "won",
+				amount: 30_000,
+				created: 1_700_400_000,
+			})
+		);
+		// convex-test records a failed scheduled run rather than rejecting here,
+		// which is the point: Convex does not retry it either.
+		await drainScheduled(t);
+
+		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_swept" });
+		const result = await t.mutation(internal.disputes.sweepDisputeWriteOffs, {});
+		expect(result.reScheduled).toBe(1);
+		await drainScheduled(t);
+
+		const row = await t.run(async (ctx) =>
+			ctx.db
+				.query("disputeRecoveries")
+				.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", "dp_retry"))
+				.first()
+		);
+		expect(row?.returnedAt).toBeDefined();
+
+		// And once it has settled, the sweep leaves it alone.
+		expect((await t.mutation(internal.disputes.sweepDisputeWriteOffs, {})).reScheduled).toBe(0);
 	});
 });
 
@@ -989,6 +1418,78 @@ describe("the dispute fee aggregates", () => {
 			)
 		);
 		expect(feeAudits).toHaveLength(1);
+	});
+
+	it("takes the fee back out of the month when the funds are reinstated", async () => {
+		// Stripe refunds the dispute fee as a NEGATIVE balance transaction, so the
+		// summed fee nets to zero — a cost Tavli never bore must not sit in the
+		// month's total forever.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		await seedPaidOrder(t, { restaurantId, subtotal: 20_000, paymentIntentId: "pi_feeback" });
+		const septFee = Date.UTC(2026, 8, 15) / 1000;
+
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_feeback_lost",
+				type: "charge.dispute.closed",
+				disputeId: "dp_feeback",
+				paymentIntentId: "pi_feeback",
+				status: "lost",
+				amount: 20_000,
+				fee: 40_000,
+				feeCreated: septFee,
+			})
+		);
+
+		const admin = t.withIdentity({ subject: ADMIN });
+		let [report] = await admin.query(api.disputes.getDisputeAggregates, {
+			restaurantId,
+			month: "2026-09",
+		});
+		expect(report?.platformFees).toEqual({ count: 1, amount: 40_000 });
+
+		// The reinstatement carries both transactions: +40,000 and −40,000.
+		mockStripeClient.webhooks.constructEvent.mockReturnValueOnce({
+			id: "evt_feeback_reinstated",
+			type: "charge.dispute.funds_reinstated",
+			created: 1_700_400_000,
+			data: {
+				object: {
+					id: "dp_feeback",
+					charge: "ch_dispute",
+					payment_intent: "pi_feeback",
+					amount: 20_000,
+					currency: "mxn",
+					reason: "fraudulent",
+					status: "won",
+					created: 1_699_999_000,
+					balance_transactions: [
+						{ fee: 40_000, created: septFee },
+						{ fee: -40_000, created: septFee + 86_400 },
+					],
+				},
+			},
+		});
+		await t.action(internal.stripe.fulfillPayment, {
+			payloadString: "{}",
+			signatureHeader: "sig",
+		});
+
+		[report] = await admin.query(api.disputes.getDisputeAggregates, {
+			restaurantId,
+			month: "2026-09",
+		});
+		expect(report?.platformFees).toEqual({ count: 0, amount: 0 });
+
+		const dispute = await t.run(async (ctx) =>
+			ctx.db
+				.query("stripeDisputes")
+				.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", "dp_feeback"))
+				.first()
+		);
+		expect(dispute?.disputeFeeAmount).toBeUndefined();
 	});
 
 	it("refuses the aggregates to anyone who is not a platform admin", async () => {

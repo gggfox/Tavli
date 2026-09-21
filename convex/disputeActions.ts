@@ -11,7 +11,12 @@ import {
 } from "./_shared/integrationLogging";
 import { getAppUrl } from "./_util/env";
 import { getStripeClient } from "./_util/stripe";
-import { NOTIFICATION_KIND, PAYMENTS_PAGE_PATH } from "./constants";
+import {
+	NOTIFICATION_KIND,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	PAYMENTS_PAGE_PATH,
+} from "./constants";
 import { renderDisputeEmail } from "./emails/renderDisputeEmail";
 
 /**
@@ -110,9 +115,14 @@ export const sendDisputeEmail = internalAction({
  * the key covers a retry of this action, the row covers a replayed webhook that
  * scheduled it twice with the money already home.
  *
- * A failure is logged and rethrown so the Convex scheduler retries it. Unlike
- * the emails, this one moves money the restaurant is owed — swallowing it would
- * leave a silent debt that only an audit could find.
+ * **Convex does not retry a scheduled function that throws.** So a failure here
+ * is not self-correcting and cannot be treated like the emails: it leaves a
+ * reinstated row that still owes the restaurant money, with its managers
+ * already told the money is on its way back. Two things close that gap — a
+ * **severe** operator alert raised from the catch (deduped per dispute), and
+ * the daily `dispute recovery write-off sweep`, which re-schedules every
+ * reinstated row whose `returnedAt` is still unset. The throw is kept so the
+ * run also shows as failed in the Convex dashboard, not because it retries.
  */
 export const returnRecoveredFunds = internalAction({
 	args: {
@@ -155,6 +165,82 @@ export const returnRecoveredFunds = internalAction({
 					operation: "transfers.create",
 				}),
 				stripeDisputeId: redactExternalId(args.stripeDisputeId),
+			});
+			// The only thing that makes this failure visible: nothing retries it
+			// on its own, and the restaurant has already been told the money is
+			// coming back. The daily sweep re-schedules it; this is how a human
+			// finds out in the meantime.
+			await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+				kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				stripeObjectId: args.stripeDisputeId,
+				dedupeKey: `dispute_recovery_return_failed:${args.stripeDisputeId}`,
+			});
+			throw error;
+		}
+	},
+});
+
+/**
+ * Return what a settled payment withheld but could not apply (TAVLI-102,
+ * review round 1).
+ *
+ * The deduction is priced when the PaymentIntent is created and the ledger is
+ * drawn down when the charge settles, and the ledger can move in between: the
+ * dispute is reinstated, or a second intent priced against the same remaining
+ * balance settles first. Stripe has already shortened this transfer by the
+ * full priced amount, so the difference is on the PLATFORM balance and belongs
+ * to the restaurant — a silent platform gain if nothing sends it on.
+ *
+ * Same failure story as `returnRecoveredFunds`: the Stripe idempotency key
+ * (`dispute-recovery-shortfall:<paymentId>`) makes a re-run safe, and a failure
+ * raises a severe alert because nothing retries it.
+ */
+export const returnRecoveryShortfall = internalAction({
+	args: {
+		paymentId: v.id("payments"),
+		stripeAccountId: v.string(),
+		/** Smallest currency unit — withheld at Stripe but applied to no row. */
+		amount: v.number(),
+		currency: v.string(),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		if (args.amount <= 0) return;
+
+		const stripeClient = getStripeClient();
+		try {
+			const transfer: Stripe.Transfer = await stripeClient.transfers.create(
+				{
+					amount: args.amount,
+					currency: args.currency,
+					destination: args.stripeAccountId,
+					description: `Dispute recovery shortfall returned (${args.paymentId})`,
+					metadata: {
+						paymentId: args.paymentId,
+						reason: "dispute_recovery_shortfall",
+					},
+				},
+				{ idempotencyKey: `dispute-recovery-shortfall:${args.paymentId}` }
+			);
+
+			await ctx.runMutation(internal.disputes.markRecoveryShortfallReturnedInternal, {
+				paymentId: args.paymentId,
+				stripeTransferId: transfer.id,
+				amount: args.amount,
+			});
+		} catch (error) {
+			console.error("[disputeActions.returnRecoveryShortfall] could not return the shortfall", {
+				...buildIntegrationErrorLog(error, {
+					integration: "stripe",
+					operation: "transfers.create",
+				}),
+				paymentId: redactExternalId(args.paymentId),
+			});
+			await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+				kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				paymentId: args.paymentId,
+				dedupeKey: `dispute_recovery_shortfall_failed:${args.paymentId}`,
 			});
 			throw error;
 		}

@@ -312,9 +312,12 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 			signatureHeader: "sig",
 		});
 
+		// Ten, not one: a charge can carry several refunds, and the dashboard
+		// -refund detector has to inspect each of them for a transfer reversal
+		// (TAVLI-102), not only the newest.
 		expect(mockStripeClient.refunds.list).toHaveBeenCalledWith({
 			payment_intent: "pi_no_refunds_list",
-			limit: 1,
+			limit: 10,
 		});
 
 		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));

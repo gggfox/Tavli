@@ -57,6 +57,8 @@ export type PaymentMoneyRow = {
 	disputeRecoveryAmount?: number;
 	/** Set once the ledger was actually drawn down — i.e. the charge settled. */
 	disputeRecoveryAppliedAt?: number;
+	/** Given back to the ledger because this payment was refunded. */
+	disputeRecoveryRestored?: number;
 };
 
 /** Structural shape of the `orders` fields these helpers read. */
@@ -134,10 +136,17 @@ export function paymentMoneyBreakdown(payment: PaymentMoneyRow): PaymentMoneyBre
  * happens when the charge settles. A row that was priced with a deduction and
  * then failed or was superseded moved no money at all, and reporting its
  * intended deduction would show a restaurant a withholding that never happened.
+ * The same rule nets out `disputeRecoveryRestored`: a refunded charge gave the
+ * debt back to the ledger, so nothing was recovered from it either.
  */
 export function disputeRecoveryFromPayment(payment: PaymentMoneyRow): number {
 	if (payment.disputeRecoveryAppliedAt === undefined) return 0;
-	return payment.disputeRecoveryAmount ?? 0;
+	// Net of anything a refund gave back: refunding the charge returns the
+	// diner's money out of the platform balance and reverses only the already
+	// -shortened transfer, so Tavli recovered nothing and the report must not
+	// claim it did.
+	const applied = payment.disputeRecoveryAmount ?? 0;
+	return Math.max(0, applied - (payment.disputeRecoveryRestored ?? 0));
 }
 
 /** Σ {@link disputeRecoveryFromPayment} over a payment set. */
