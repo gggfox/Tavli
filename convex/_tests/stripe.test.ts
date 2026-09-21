@@ -355,6 +355,17 @@ describe("stripe actions", () => {
 				id: "pi_replaced",
 				client_secret: "pi_secret_replaced",
 			});
+		// TAVLI-104: superseding now stands the old intent down at Stripe first,
+		// so the retrieve/cancel pair is part of this flow.
+		mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+			id: "pi_original",
+			status: "requires_payment_method",
+			client_secret: "pi_secret_original",
+		});
+		mockStripeClient.paymentIntents.cancel.mockResolvedValue({
+			id: "pi_original",
+			status: "canceled",
+		});
 
 		await diner.action(api.stripe.createPaymentIntent, {
 			orderId,
@@ -372,6 +383,8 @@ describe("stripe actions", () => {
 		});
 
 		expect(second.clientSecret).toBe("pi_secret_replaced");
+		// The abandoned intent is dead at Stripe, not just in our table.
+		expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_original");
 
 		const payments = await t.run(async (ctx) => ctx.db.query("payments").collect());
 		expect(payments).toHaveLength(2);
@@ -1355,7 +1368,7 @@ describe("stripe actions", () => {
 			expect(payment?.stripePaymentMethodId).toBe("pm_saved_card");
 		});
 
-		it("no-ops confirmation when the order total drifted from the payment's subtotal", async () => {
+		it("refunds a confirmation whose order total drifted away from the payment", async () => {
 			const t = convexTest(schema, modules);
 			const organizationId = await seedOrganization(t);
 			const restaurantId = await seedRestaurant(t, {
@@ -1399,9 +1412,17 @@ describe("stripe actions", () => {
 				order: await ctx.db.get(orderId),
 				payment: await ctx.db.get(paymentId),
 			}));
-			// Warn-and-skip: a fresh intent will supersede this one.
+			// TAVLI-104: no longer warn-and-skip. The charge is real and pays for a
+			// 5000 order that now costs 6000, so the money goes back and the order
+			// stays owed. Full coverage of the decision lives in
+			// `ordersStrandedCharge.test.ts`; this pins that the total-drift branch
+			// reaches it.
 			expect(order?.status).toBe("draft");
-			expect(payment?.status).toBe("processing");
+			expect(order?.paymentState).toBe("unpaid");
+			expect(payment?.status).toBe("succeeded");
+			expect(payment?.refundStatus).toBe("requested");
+			const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+			expect(alerts.map((alert) => alert.kind)).toEqual(["charge_mismatched_refunded"]);
 		});
 
 		/**

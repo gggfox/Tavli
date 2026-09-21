@@ -96,8 +96,11 @@ import {
 	handlePaymentIntentFailure,
 	handlePaymentIntentSuccess,
 	inferV2AccountStatus,
+	INTENT_STAND_DOWN,
 	requireStripeRestaurantAccess,
+	standDownPaymentIntent,
 } from "./_util/stripe";
+import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupersedeHelpers";
 
 // =============================================================================
 // 1. Connected Account Creation (V2 API)
@@ -1093,6 +1096,66 @@ export const refundOrderItem = internalAction({
 // =============================================================================
 
 /**
+ * Clears the way for a fresh PaymentIntent by standing the previous attempt's
+ * intent down at Stripe — and refuses to create one when it cannot (TAVLI-104).
+ *
+ * Called by all three supersede paths (order, tab, tip) **before** the previous
+ * row is patched to `superseded`. That order is the whole point: patching first
+ * leaves a live intent whose client secret a stale tab, a back button, a double
+ * tap or a retry can still confirm. Stripe then charges the card, and the
+ * webhook finds a charge it cannot place against the order — money taken, order
+ * never released.
+ *
+ * Throws a stable, diner-facing code rather than returning a flag, because every
+ * "not clear" answer means the caller must create nothing:
+ * - `ALREADY_PAID` — the old intent already succeeded. The webhook (or the
+ *   TAVLI-105 metadata fallback) settles it; a new intent would be a second
+ *   charge for the same food.
+ * - `CANCEL_FAILED` — Stripe is unreachable. We cannot prove the old intent is
+ *   dead, so adding a second live one is the one thing we must not do. The
+ *   checkout shows "try again".
+ * - `IN_PROGRESS` — the previous attempt's create call is still running, so
+ *   there is no intent id to cancel yet (see `isPaymentCreateInFlight`).
+ *
+ * Returns silently when there is nothing live at Stripe: no previous attempt, a
+ * terminal row, or a row that never reached Stripe. The caller's own patch to
+ * `superseded` then runs unchanged.
+ */
+async function standDownPreviousAttempt(
+	stripeClient: Stripe,
+	previous: Doc<"payments"> | null,
+	operation: string,
+	nowMs: number = Date.now()
+): Promise<void> {
+	if (!previous) return;
+	// Terminal rows (succeeded, failed, superseded, cancelled) have nothing live
+	// at Stripe for a loose client secret to confirm.
+	if (previous.status !== PAYMENT_STATUS.PENDING && previous.status !== PAYMENT_STATUS.PROCESSING) {
+		return;
+	}
+
+	if (isPaymentCreateInFlight(previous, nowMs)) {
+		throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+	}
+
+	// Past the in-flight window with no intent id: the create never landed, so
+	// there is nothing to cancel and the row is debris a retry may claim.
+	if (!previous.stripePaymentIntentId) return;
+
+	const { outcome } = await standDownPaymentIntent(
+		stripeClient,
+		previous.stripePaymentIntentId,
+		operation
+	);
+	if (outcome === INTENT_STAND_DOWN.SUCCEEDED) {
+		throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.ALREADY_PAID).toObject());
+	}
+	if (outcome === INTENT_STAND_DOWN.UNREACHABLE) {
+		throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.CANCEL_FAILED).toObject());
+	}
+}
+
+/**
  * Creates the pay-at-submit PaymentIntent for one order (ADR 008) — the
  * primary payment path. The diner pays `subtotal + 12% service fee` in-app via
  * Stripe Elements; the kitchen only sees the order once the webhook confirms
@@ -1213,6 +1276,14 @@ export const createPaymentIntent = action({
 				};
 			}
 		}
+
+		// Stripe FIRST, then the row (TAVLI-104). The intent we are about to
+		// abandon is the one holding a client secret the diner's browser already
+		// has; patching the row first would retire our record of a charge that can
+		// still happen. Throws a stable code when the way is not clear, which is
+		// the diner's cue to try again — or the webhook's cue to settle the charge
+		// that beat us.
+		await standDownPreviousAttempt(stripeClient, latestPayment, "createPaymentIntent");
 
 		if (
 			latestPayment &&
@@ -1401,29 +1472,21 @@ export const cancelOrderPaymentIntent = action({
 
 		// Cancel at Stripe first, then clear our records — the reverse order
 		// would leave a live intent a stale client secret could still confirm.
+		// The three-way read lives in `standDownPaymentIntent`, shared with the
+		// supersede paths (TAVLI-104); this caller rethrows on `unreachable`
+		// because an abandon that did not reach Stripe must not report success.
 		if (payment.stripePaymentIntentId) {
-			const stripeClient = getStripeClient();
-			const intent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
-				payment.stripePaymentIntentId
+			const { outcome, error } = await standDownPaymentIntent(
+				getStripeClient(),
+				payment.stripePaymentIntentId,
+				"cancelOrderPaymentIntent"
 			);
-			if (intent.status === "succeeded") {
+			if (outcome === INTENT_STAND_DOWN.SUCCEEDED) {
 				// The charge won the race; let the webhook settle the order.
 				return { cancelled: false, settled: true };
 			}
-			if (intent.status !== "canceled") {
-				try {
-					await stripeClient.paymentIntents.cancel(payment.stripePaymentIntentId);
-				} catch (error) {
-					console.error(
-						"[stripe.cancelOrderPaymentIntent]",
-						buildIntegrationErrorLog(error, {
-							integration: "stripe",
-							operation: "cancelOrderPaymentIntent",
-							eventId: payment.stripePaymentIntentId,
-						})
-					);
-					throw error;
-				}
+			if (outcome === INTENT_STAND_DOWN.UNREACHABLE) {
+				throw error;
 			}
 		}
 
@@ -1432,6 +1495,115 @@ export const cancelOrderPaymentIntent = action({
 			userId: identity.subject,
 		});
 		return { cancelled, settled: false };
+	},
+});
+
+/**
+ * Stands a superseded attempt's intent down at Stripe from a mutation's
+ * scheduler hop (TAVLI-104).
+ *
+ * The one caller is `orders.confirmPayment`'s accept-and-adopt branch: a charge
+ * arrived for a payment the order had stopped pointing at, the amount still
+ * matches what the order costs, so that payment is adopted and the NEWER row
+ * loses. The newer row's intent has to come down, and `confirmPayment` is a
+ * mutation — it can neither call Stripe nor await one.
+ *
+ * So the row is patched inside the transaction and the Stripe call is scheduled,
+ * which inverts this ticket's Stripe-first rule for exactly this path. It is the
+ * only ordering a mutation can achieve, and the residual risk is already
+ * covered: if the newer intent is confirmed in that window, its own
+ * `payment_intent.succeeded` finds the order paid by another payment and takes
+ * the refund-and-alert branch. A duplicate charge is refunded and surfaced
+ * rather than lost.
+ *
+ * Never throws: a failure here leaves an abandoned intent at Stripe, which
+ * expires on its own, and throwing would only retry the scheduled job.
+ */
+export const standDownSupersededIntent = internalAction({
+	args: { paymentId: v.id(TABLE.PAYMENTS) },
+	handler: async (ctx, args): Promise<void> => {
+		const payment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentInternal,
+			{ paymentId: args.paymentId }
+		);
+		if (!payment?.stripePaymentIntentId) return;
+		// Settled between the patch and this job: the money is real and the
+		// webhook owns it. Cancelling is impossible and pretending otherwise
+		// would be worse.
+		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+
+		const { outcome } = await standDownPaymentIntent(
+			getStripeClient(),
+			payment.stripePaymentIntentId,
+			"standDownSupersededIntent"
+		);
+		if (outcome === INTENT_STAND_DOWN.SUCCEEDED) {
+			// The superseded intent was confirmed anyway. Loud, because it means a
+			// second charge exists; its own webhook delivery will refund it against
+			// the now-paid order and raise the operator alert.
+			console.error("[stripe.standDownSupersededIntent] SUPERSEDED INTENT ALREADY SUCCEEDED", {
+				paymentId: payment._id,
+				stripePaymentIntentId: redactExternalId(payment.stripePaymentIntentId),
+			});
+		}
+	},
+});
+
+/**
+ * Refunds a charge Tavli collected but cannot account for (TAVLI-104).
+ *
+ * Scheduled by `orders.confirmPayment` when a `payment_intent.succeeded` arrives
+ * for an order that has since been repriced (or already paid by another
+ * payment): the money is real, the order it names no longer costs that, and
+ * keeping it would mean charging a diner for something they did not buy. The
+ * mutation cannot refund — refunds are Stripe calls — so it records the intent
+ * to refund (`refundStatus: requested` on a `succeeded` row) and hands the
+ * Stripe half to this action via `runAfter(0)`.
+ *
+ * Idempotent twice over: the row is checked for a refund that already landed,
+ * and `createRefund` carries a payment-scoped idempotency key, so a redelivery
+ * or a retried job cannot refund the same charge twice.
+ *
+ * `skipOrderStatePatch` is deliberate. `createRefund` would otherwise walk the
+ * ORDER through `refund_requested` → `refunded`, and this order was never paid —
+ * it is unpaid and still owed. The payment row carries the refund facts; the
+ * order stays where `confirmPayment` left it.
+ */
+export const refundStrandedCharge = internalAction({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		const payment: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentInternal,
+			{ paymentId: args.paymentId }
+		);
+		if (!payment?.stripePaymentIntentId) {
+			console.error("[stripe.refundStrandedCharge] NO INTENT TO REFUND", {
+				paymentId: args.paymentId,
+			});
+			return;
+		}
+		// Already refunded (by a previous run of this job, by the operator, or by
+		// the `charge.refunded` webhook recording one made in the Dashboard).
+		if (
+			payment.stripeRefundId ||
+			payment.refundStatus === PAYMENT_REFUND_STATUS.SUCCEEDED ||
+			payment.refundStatus === PAYMENT_REFUND_STATUS.PARTIAL
+		) {
+			return;
+		}
+
+		await ctx.runAction(internal.stripe.createRefund, {
+			paymentId: args.paymentId,
+			...(args.orderId !== undefined && { orderId: args.orderId }),
+			// Scoped to the payment, and distinct from the operator-initiated
+			// `refund:<paymentId>` key so the two can never collide on different
+			// amounts at Stripe.
+			idempotencyKey: `stranded-charge-refund:${args.paymentId}`,
+			skipOrderStatePatch: true,
+		});
 	},
 });
 
@@ -1531,6 +1703,19 @@ export const createTipCharge = action({
 				return { clientSecret: existingIntent.client_secret, paymentId: existingPayment._id };
 			}
 		}
+		// Stripe FIRST, then the row (TAVLI-104). Two things this catches that the
+		// branch above cannot:
+		// - A PROCESSING row whose intent is still live (the branch above only
+		//   returns early when it can hand back a client secret). Retiring the row
+		//   while that intent stands leaves the diner's sheet able to charge a tip
+		//   nobody will record.
+		// - The double tap. A PENDING row with no intent id, younger than
+		//   `PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS`, has a `confirm: true` create in
+		//   flight RIGHT NOW — the money is moving inside that call. Superseding it
+		//   is how one tap became two tips; `standDownPreviousAttempt` throws
+		//   ERROR_PAYMENT_IN_PROGRESS instead.
+		await standDownPreviousAttempt(stripeClient, existingPayment, "createTipCharge");
+
 		if (existingPayment) {
 			// A pending row that never reached Stripe (or a canceled intent) is a
 			// dead attempt — retire it and start fresh.
@@ -1840,6 +2025,29 @@ export const createTabPaymentIntent = action({
 					};
 				}
 			}
+		}
+
+		// Stripe FIRST, then the row (TAVLI-104) — and that is why the cancel lives
+		// HERE rather than in `beginTabPayment`.
+		//
+		// `beginTabPayment` is the mutation that patches the previous attempt to
+		// `superseded`, and a mutation cannot call Stripe. Two designs were
+		// available: a `supersede_pending` status the mutation writes and a
+		// scheduled action cancels, or moving the Stripe half of the supersede up
+		// into this action. This is the second. The first adds a payment status to
+		// the schema whose only meaning is "an action owes Stripe a call", and it
+		// is asynchronous by construction — `runAfter(0)` can land after the new
+		// intent exists, which is exactly the window this ticket closes. Doing it
+		// here is synchronous and ordered: nothing is created, and no row is
+		// touched, until the old intent is provably dead. `beginTabPayment` keeps
+		// the transactional half (the balance re-check, the lock, the `superseded`
+		// patch) untouched.
+		if (tab.activePaymentId) {
+			const previous: Doc<"payments"> | null = await ctx.runQuery(
+				internal.stripeHelpers.getPaymentInternal,
+				{ paymentId: tab.activePaymentId }
+			);
+			await standDownPreviousAttempt(stripeClient, previous, "createTabPaymentIntent");
 		}
 
 		// Locks the tab, supersedes any prior attempt, and re-validates the

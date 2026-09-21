@@ -79,6 +79,74 @@ export function getStripeClient(): Stripe {
 }
 
 /**
+ * What happened when we tried to stand a PaymentIntent down at Stripe
+ * (TAVLI-104). Four answers because the callers branch on all four: two are
+ * "the way is clear", one means the diner has already paid, and one means we do
+ * not know and must not proceed.
+ */
+export const INTENT_STAND_DOWN = {
+	/** Cancelled by this call. */
+	CANCELLED: "cancelled",
+	/** Already `canceled` at Stripe — nothing to do, which is a success. */
+	ALREADY_CANCELLED: "already_cancelled",
+	/** The charge won the race. Nothing was cancelled; the webhook settles it. */
+	SUCCEEDED: "succeeded",
+	/** The retrieve or the cancel threw. We do not know if the intent is live. */
+	UNREACHABLE: "unreachable",
+} as const;
+
+export type IntentStandDownOutcome = (typeof INTENT_STAND_DOWN)[keyof typeof INTENT_STAND_DOWN];
+
+/**
+ * Takes a PaymentIntent out of play at Stripe — retrieve first, then cancel
+ * (TAVLI-104).
+ *
+ * The retrieve is not a formality. An intent whose client secret is loose in a
+ * stale tab can be confirmed at any moment, so between our decision to abandon
+ * it and the cancel call it may already have charged the card. Cancelling a
+ * `succeeded` intent is an error at Stripe, and *treating* it as cancelled would
+ * be worse: the money is real and only the webhook can place it. So a
+ * `succeeded` read reports back and cancels nothing.
+ *
+ * This is the one copy of that race handling. `cancelOrderPaymentIntent` had it
+ * inline first; the supersede paths (order, tab, tip) and the webhook's
+ * accept-and-adopt branch all need exactly the same three-way read, and a second
+ * copy is how one of them ends up cancelling a charge that already went through.
+ *
+ * Never throws. A Stripe failure comes back as `unreachable` with the error
+ * attached, because "we could not reach Stripe" is a decision the caller has to
+ * make (refuse the new intent, or rethrow) rather than an exception to leak.
+ */
+export async function standDownPaymentIntent(
+	stripeClient: Stripe,
+	stripePaymentIntentId: string,
+	operation: string
+): Promise<{ outcome: IntentStandDownOutcome; error?: unknown }> {
+	try {
+		const intent: Stripe.PaymentIntent =
+			await stripeClient.paymentIntents.retrieve(stripePaymentIntentId);
+		if (intent.status === "succeeded") {
+			return { outcome: INTENT_STAND_DOWN.SUCCEEDED };
+		}
+		if (intent.status === "canceled") {
+			return { outcome: INTENT_STAND_DOWN.ALREADY_CANCELLED };
+		}
+		await stripeClient.paymentIntents.cancel(stripePaymentIntentId);
+		return { outcome: INTENT_STAND_DOWN.CANCELLED };
+	} catch (error) {
+		console.error(
+			"[stripe.standDownPaymentIntent]",
+			buildIntegrationErrorLog(error, {
+				integration: "stripe",
+				operation,
+				eventId: stripePaymentIntentId,
+			})
+		);
+		return { outcome: INTENT_STAND_DOWN.UNREACHABLE, error };
+	}
+}
+
+/**
  * Asserts the current user can manage the given restaurant's Stripe connection.
  *
  * Resolution order:

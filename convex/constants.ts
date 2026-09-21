@@ -299,6 +299,24 @@ export const PAYMENT_FAILURE_CODE = {
 export type PaymentFailureCode = (typeof PAYMENT_FAILURE_CODE)[keyof typeof PAYMENT_FAILURE_CODE];
 
 /**
+ * How long a `pending` payment row that holds no intent id is assumed to still
+ * have its `paymentIntents.create` call in flight (TAVLI-104).
+ *
+ * Every create path inserts the row before calling Stripe, so this shape means
+ * either "the call is running right now" or "the process died between the two".
+ * A second tap inside the window must NOT supersede the row: on the one-tap tip
+ * path the money moves inside that very call, so retiring the row lets the
+ * second tap charge the card again for the same gesture.
+ *
+ * 90s is chosen against stripe-node's own request timeout (80s by default) so
+ * the window outlives the longest single attempt Tavli can make. Past it, a row
+ * in this shape is debris and a retry may claim it — the cost of being wrong
+ * that way round is one extra retry a minute later, against a double charge the
+ * other way round.
+ */
+export const PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS = 90 * 1000;
+
+/**
  * How an Order / Session was settled (ADR 008). `stripe` means a `payments`
  * row backs it; `staff` means it was collected in person and there is **no**
  * `payments` row at all — analytics and exports must derive that money from
