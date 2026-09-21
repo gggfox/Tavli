@@ -1054,6 +1054,51 @@ export default defineSchema({
 		.index("by_payment", ["paymentId"])
 		.index("by_restaurant", ["restaurantId"]),
 
+	// Payouts from a connected account to the restaurant's bank (TAVLI-103).
+	//
+	// Unlike refunds and disputes, payout events fire on the CONNECTED account
+	// and arrive on the third destination (`POST /stripe/connected-webhook`)
+	// carrying `event.account`, which resolves the restaurant through
+	// `restaurants.by_stripe_account`.
+	//
+	// One row per Stripe payout id, upserted on every `payout.*` event. Stripe
+	// keeps the authoritative ledger; this table exists so the restaurant can
+	// see its own money without a Stripe login, and so a failure can be
+	// detected at all. `failureMessage` is Stripe's raw English sentence and is
+	// for operators only — the manager-facing query maps `failureCode` to
+	// bilingual copy and never returns it.
+	[TABLE.STRIPE_PAYOUTS]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		stripeAccountId: v.string(),
+		stripePayoutId: v.string(),
+		/** Smallest currency unit. */
+		amount: v.number(),
+		currency: v.string(),
+		/** `STRIPE_PAYOUT_STATUS` — Stripe's own vocabulary, stored verbatim. */
+		status: v.string(),
+		/** Expected arrival at the bank (ms). Absent when Stripe gave none. */
+		arrivalDate: v.optional(v.number()),
+		/** Raw Stripe `failure_code`; normalized to a stable code on read. */
+		failureCode: v.optional(v.string()),
+		/** Raw Stripe sentence. Operators only. */
+		failureMessage: v.optional(v.string()),
+		failureBalanceTransaction: v.optional(v.string()),
+		/**
+		 * Stripe's `payout.created` (ms), NOT the moment this row was written —
+		 * `_creationTime` already answers that, and "newest first" on the payouts
+		 * page means the payout's own date. The held total's "a later paid
+		 * payout" test reads this field, so it has to be Stripe's clock.
+		 */
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_restaurant_created", ["restaurantId", "createdAt"])
+		.index("by_payout_id", ["stripePayoutId"])
+		// The held total reads only failures, and the payments-page banner asks
+		// for it on every render — an indexed read of the failed rows keeps that
+		// off the restaurant's whole payout history.
+		.index("by_restaurant_status", ["restaurantId", "status"]),
+
 	// Platform-level Stripe Customer per Clerk user (ADR 008). Needed so
 	// `setup_future_usage: "off_session"` on a pay-at-submit charge can attach
 	// the payment method somewhere reusable — one-tap tips and substitution

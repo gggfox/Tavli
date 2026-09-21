@@ -112,6 +112,7 @@ import type * as orders from "../orders.js";
 import type * as organizations from "../organizations.js";
 import type * as paymentMoneyHelpers from "../paymentMoneyHelpers.js";
 import type * as payments from "../payments.js";
+import type * as payoutHelpers from "../payoutHelpers.js";
 import type * as performance from "../performance.js";
 import type * as publicProfileHelpers from "../publicProfileHelpers.js";
 import type * as receiptActions from "../receiptActions.js";
@@ -271,6 +272,7 @@ declare const fullApi: ApiFromModules<{
   organizations: typeof organizations;
   paymentMoneyHelpers: typeof paymentMoneyHelpers;
   payments: typeof payments;
+  payoutHelpers: typeof payoutHelpers;
   performance: typeof performance;
   publicProfileHelpers: typeof publicProfileHelpers;
   receiptActions: typeof receiptActions;

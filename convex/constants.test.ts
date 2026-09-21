@@ -30,6 +30,7 @@ describe("TABLE constants", () => {
 			"payments",
 			"stripeWebhookEvents",
 			"stripeDisputes",
+			"stripePayouts",
 			"stripeCustomers",
 			"substitutionProposals",
 			"reservations",
