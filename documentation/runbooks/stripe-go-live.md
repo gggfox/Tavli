@@ -567,6 +567,7 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   lost. If neither `CONVEX_CLOUD_URL` nor `CONVEX_SITE_URL` resolves, the webhook
   logs `DEPLOYMENT MARKER UNAVAILABLE` and raises no unmatched-charge alerts at
   all — matching still works, only the attribution is blind.
+
 - **A superseded PaymentIntent is cancelled at Stripe before its row is retired**
   (TAVLI-104). Editing an order, moving the tip slider or re-opening the tab
   creates a replacement intent; the previous one is stood down first, through the
