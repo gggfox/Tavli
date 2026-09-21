@@ -14,6 +14,7 @@ import {
 	OrderingKeys,
 	OrdersKeys,
 	PaymentsKeys,
+	PayoutsKeys,
 	ReservationSettingsKeys,
 	ReservationsKeys,
 	RestaurantsKeys,
@@ -28,6 +29,9 @@ import {
 	NOTIFICATION_BODY_KEY,
 	NOTIFICATION_KINDS,
 	NOTIFICATION_TITLE_KEY,
+	PAYOUT_FAILURE_CODES,
+	PAYOUT_FAILURE_FIX_KEY,
+	PAYOUT_FAILURE_REASON_KEY,
 	OPERATOR_ALERT_EXPLANATION_KEY,
 	OPERATOR_ALERT_KINDS,
 	OPERATOR_ALERT_TITLE_KEY,
@@ -111,6 +115,7 @@ describe("Key enums resolve in every locale", () => {
 		["TimeKeys", TimeKeys as Record<string, string>],
 		["OrdersKeys", OrdersKeys as Record<string, string>],
 		["PaymentsKeys", PaymentsKeys as Record<string, string>],
+		["PayoutsKeys", PayoutsKeys as Record<string, string>],
 		["ReservationsKeys", ReservationsKeys as Record<string, string>],
 		["MenusKeys", MenusKeys as Record<string, string>],
 		["NotificationsKeys", NotificationsKeys as Record<string, string>],
@@ -221,5 +226,20 @@ describe("Access code and join code stay distinct", () => {
 		expect(copy).not.toContain("table code");
 		expect(copy).not.toContain("table bypass");
 		expect(copy).not.toContain("código de mesa");
+	});
+});
+
+/**
+ * TAVLI-103: the payouts page maps Stripe's `failure_code` to one of a closed
+ * set, then to these keys. A code without copy would show a manager a blank
+ * reason where the explanation of their stuck money should be — or, if the
+ * mapping were ever loosened, the raw Stripe identifier.
+ */
+describe("Payout failure codes have copy in every locale", () => {
+	it.each(PAYOUT_FAILURE_CODES)("%s -- reason and fix resolve in en and es", (code) => {
+		for (const key of [PAYOUT_FAILURE_REASON_KEY[code], PAYOUT_FAILURE_FIX_KEY[code]]) {
+			expect(resolves(key, enPaths), `Missing en.json key "${key}"`).toBe(true);
+			expect(resolves(key, esPaths), `Missing es.json key "${key}"`).toBe(true);
+		}
 	});
 });

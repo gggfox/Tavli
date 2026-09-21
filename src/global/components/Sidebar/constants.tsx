@@ -7,6 +7,7 @@ import {
 	ClipboardList,
 	DollarSign,
 	Flag,
+	Landmark,
 	LayoutDashboard,
 	MessageSquare,
 	ListOrdered,
@@ -51,6 +52,15 @@ export const sidebarItems: SidebarItem[] = [
 		translationKey: SidebarKeys.PAYMENTS,
 		icon: <DollarSign size={18} className="shrink-0" />,
 		to: "/admin/payments",
+	},
+	{
+		// Beside Payments on purpose: a manager wondering about money looks in one
+		// place, and "what diners paid" and "what reached the bank" are two
+		// different answers (TAVLI-103). The real gate is on the backend.
+		type: "link",
+		translationKey: SidebarKeys.PAYOUTS,
+		icon: <Landmark size={18} className="shrink-0" />,
+		to: "/admin/payouts",
 	},
 	{
 		type: "link",

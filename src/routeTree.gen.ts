@@ -19,6 +19,7 @@ import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-fl
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
 import { Route as AdminPaymentsRouteImport } from './routes/admin/payments'
+import { Route as AdminPayoutsRouteImport } from './routes/admin/payouts'
 import { Route as AdminRestaurantsRouteImport } from './routes/admin/restaurants'
 import { Route as AdminScheduleRouteImport } from './routes/admin/schedule'
 import { Route as AdminTeamRouteImport } from './routes/admin/team'
@@ -97,6 +98,11 @@ const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPayoutsRoute = AdminPayoutsRouteImport.update({
+  id: '/payouts',
+  path: '/payouts',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminRestaurantsRoute = AdminRestaurantsRouteImport.update({
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
@@ -297,6 +304,7 @@ export interface FileRoutesByTo {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
@@ -339,6 +347,7 @@ export interface FileRoutesById {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/payouts': typeof AdminPayoutsRoute
   '/admin/restaurants': typeof AdminRestaurantsRoute
   '/admin/schedule': typeof AdminScheduleRoute
   '/admin/team': typeof AdminTeamRoute
@@ -382,6 +391,7 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
+    | '/admin/payouts'
     | '/admin/restaurants'
     | '/admin/schedule'
     | '/admin/team'
@@ -423,6 +433,7 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
+    | '/admin/payouts'
     | '/admin/restaurants'
     | '/admin/schedule'
     | '/admin/team'
@@ -464,6 +475,7 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/organizations'
     | '/admin/payments'
+    | '/admin/payouts'
     | '/admin/restaurants'
     | '/admin/schedule'
     | '/admin/team'
@@ -575,6 +587,13 @@ declare module '@tanstack/react-router' {
       path: '/payments'
       fullPath: '/admin/payments'
       preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/payouts': {
+      id: '/admin/payouts'
+      path: '/payouts'
+      fullPath: '/admin/payouts'
+      preLoaderRoute: typeof AdminPayoutsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/restaurants': {
@@ -813,6 +832,7 @@ interface AdminRouteChildren {
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
+  AdminPayoutsRoute: typeof AdminPayoutsRoute
   AdminRestaurantsRoute: typeof AdminRestaurantsRoute
   AdminScheduleRoute: typeof AdminScheduleRoute
   AdminTeamRoute: typeof AdminTeamRoute
@@ -830,6 +850,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
+  AdminPayoutsRoute: AdminPayoutsRoute,
   AdminRestaurantsRoute: AdminRestaurantsRoute,
   AdminScheduleRoute: AdminScheduleRoute,
   AdminTeamRoute: AdminTeamRoute,

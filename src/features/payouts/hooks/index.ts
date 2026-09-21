@@ -1,0 +1,1 @@
+export { useUpdateBankDetails } from "./useUpdateBankDetails";

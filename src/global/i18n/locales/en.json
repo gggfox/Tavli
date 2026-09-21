@@ -17,6 +17,7 @@
 			"options": "Options",
 			"orders": "Orders",
 			"payments": "Payments",
+			"payouts": "Payouts",
 			"reservations": "Reservations",
 			"whatsapp": "WhatsApp",
 			"team": "Members",
@@ -2211,6 +2212,123 @@
 			"payoutsResumed": {
 				"title": "Payouts resumed",
 				"body": "Your bank account accepted a payout again. Nothing further is needed from you."
+			}
+		}
+	},
+	"payouts": {
+		"page": {
+			"title": "Payouts",
+			"description": "Money moving from Tavli to your bank account.",
+			"entity": "payouts"
+		},
+		"safeLine": "This money is yours and it is safe.",
+		"held": {
+			"title": "{{amount}} {{currency}} is waiting to reach your bank",
+			"body": "It is sitting in your Tavli balance, not lost. Your bank did not accept the last transfer, so payouts are paused until the details are fixed. As soon as they are, this goes out on the next payout.",
+			"count_one": "{{count}} payout is waiting",
+			"count_other": "{{count}} payouts are waiting",
+			"fixCta": "Update your bank details",
+			"fixPending": "Opening Stripe…",
+			"fixFailed": "Could not open the bank-details form. Please try again."
+		},
+		"banner": {
+			"title": "{{amount}} {{currency}} has not reached your bank yet",
+			"body": "The money is safe in your Tavli balance. Your bank did not accept the transfer.",
+			"cta": "See your payouts"
+		},
+		"list": {
+			"title": "All payouts",
+			"amount": "Amount",
+			"sentOn": "Sent {{date}}",
+			"arrivesOn": "Expected {{date}}",
+			"arrivedOn": "Arrived {{date}}",
+			"reasonLabel": "Why it did not go through",
+			"fixLabel": "How to fix it",
+			"reference": "Stripe reference"
+		},
+		"status": {
+			"pending": "Preparing",
+			"inTransit": "On the way",
+			"paid": "Arrived",
+			"failed": "Did not arrive",
+			"canceled": "Cancelled"
+		},
+		"empty": {
+			"title": "No payouts yet",
+			"description": "Once diners pay and Stripe settles the money, your payouts appear here."
+		},
+		"notConnected": {
+			"title": "No bank account connected yet",
+			"description": "Finish Stripe setup on your restaurant's settings page, and your payouts will appear here."
+		},
+		"notification": {
+			"failed": "A payout of {{amount}} {{currency}} did not reach your bank. The money is safe in your Tavli balance.",
+			"resumed": "A payout of {{amount}} {{currency}} reached your bank. Payouts are flowing again."
+		},
+		"failure": {
+			"accountClosed": {
+				"reason": "The bank account on file has been closed.",
+				"fix": "Add a current bank account in your Stripe details, and the money goes out on the next payout."
+			},
+			"accountFrozen": {
+				"reason": "The bank has frozen the account, so it cannot receive transfers.",
+				"fix": "Ask your bank to release the account, or add a different one in your Stripe details."
+			},
+			"bankAccountRestricted": {
+				"reason": "The bank account does not allow this kind of transfer.",
+				"fix": "Use a standard business or checking account — some savings and payroll accounts cannot receive payouts. Update it in your Stripe details."
+			},
+			"bankOwnershipChanged": {
+				"reason": "The bank account has changed hands, so the details no longer match.",
+				"fix": "Re-enter the account in your Stripe details with the current holder's information."
+			},
+			"couldNotProcess": {
+				"reason": "The bank could not process the transfer this time. No reason was given.",
+				"fix": "Confirm the account details are right. Stripe retries on the next scheduled payout, and most of these clear on their own."
+			},
+			"debitNotAuthorized": {
+				"reason": "The account holder has not authorized transfers from this account.",
+				"fix": "Authorize the account with your bank, or add one that is already authorized in your Stripe details."
+			},
+			"declined": {
+				"reason": "The bank declined the transfer without saying why.",
+				"fix": "Ask your bank whether anything is blocking incoming transfers, then check the account details in Stripe."
+			},
+			"insufficientFunds": {
+				"reason": "Stripe reported not enough available balance to complete the payout.",
+				"fix": "Nothing to do on your side right now — the balance settles and the payout goes out again. Contact us if it repeats."
+			},
+			"invalidAccountNumber": {
+				"reason": "The account number (CLABE) is not valid.",
+				"fix": "Re-enter the account number in your Stripe details, digit for digit as it appears on your bank statement."
+			},
+			"incorrectAccountHolderName": {
+				"reason": "The account holder's name does not match the bank's records.",
+				"fix": "Update the holder's name in your Stripe details so it matches the bank exactly."
+			},
+			"incorrectAccountHolderAddress": {
+				"reason": "The account holder's address does not match the bank's records.",
+				"fix": "Update the holder's address in your Stripe details so it matches the bank."
+			},
+			"incorrectAccountHolderTaxId": {
+				"reason": "The account holder's tax ID (RFC) does not match the bank's records.",
+				"fix": "Update the tax ID in your Stripe details so it matches the bank."
+			},
+			"invalidCurrency": {
+				"reason": "The bank account cannot receive money in this currency.",
+				"fix": "Add an account that accepts this currency in your Stripe details."
+			},
+			"noAccount": {
+				"reason": "The bank could not find the account.",
+				"fix": "Check the account number and the bank in your Stripe details, and re-enter them."
+			},
+			"unsupportedCard": {
+				"reason": "The debit card on file cannot receive payouts.",
+				"fix": "Add a bank account instead of a card in your Stripe details."
+			},
+			"unknown": {
+				"reason": "The bank refused the transfer and did not say why.",
+				"fix": "Check your bank details in Stripe. If they look right, contact us and we will look at it with you."
 			}
 		}
 	}
