@@ -575,14 +575,46 @@ numbers with no separate routing number:
 other countries, and for the codes Tavli maps that these fixtures do not
 produce — those are exercised in `convex/payoutHelpers.test.ts`, not here.)
 
+Two prerequisites, in this order — `stripe payouts create` on its own will not
+fail the way you want, or will not succeed at all:
+
+**(a) Put the failing CLABE on the account.** The connected account pays out to
+whatever external account it currently holds, which after onboarding is a
+_working_ one. Replace it in the test-mode Dashboard (connected account → payout
+details), or from the CLI:
+
 ```bash
-# Attach the failing test account, then pay out on it.
+stripe post /v1/accounts/acct_<a test restaurant's account>/external_accounts \
+  -d 'external_account[object]=bank_account' \
+  -d 'external_account[country]=MX' \
+  -d 'external_account[currency]=mxn' \
+  -d 'external_account[account_number]=<a failing CLABE from the table above>'
+```
+
+**(b) Give the account a balance to pay out.** A fresh test connected account
+has none, and a payout larger than the available balance is rejected outright
+rather than failing at the bank. Either run a test destination charge to it (the
+diner flow, which is the more faithful rehearsal), or fund it directly:
+
+```bash
+stripe transfers create --amount 1000 --currency mxn \
+  --destination acct_<a test restaurant's account>
+```
+
+**Then create the payout:**
+
+```bash
 stripe payouts create --amount 1000 --currency mxn \
   --stripe-account acct_<a test restaurant's account>
 ```
 
-The payout goes `pending` → `failed` within a minute or two in test mode, so
-expect `payout.created` first and `payout.failed` after it.
+Expect `payout.created` first and `payout.failed` shortly after creation. The
+delay is not documented and is not worth guessing at — ask Stripe instead:
+
+```bash
+stripe payouts retrieve po_... --stripe-account acct_<a test restaurant's account>
+# status: pending → failed, and `failure_code` once it is there
+```
 
 Two alternatives when the CLI is awkward: drive it through
 `stripe listen --forward-connect-to` (below), or use the destination's own page
