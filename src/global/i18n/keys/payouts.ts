@@ -21,6 +21,7 @@ export const PayoutsKeys = {
 	PAGE_TITLE: "payouts.page.title",
 	PAGE_DESCRIPTION: "payouts.page.description",
 	PAGE_ENTITY: "payouts.page.entity",
+	NO_RESTAURANT: "payouts.page.noRestaurant",
 
 	// The reassurance, used on the page, the held card and the banner
 	SAFE_LINE: "payouts.safeLine",

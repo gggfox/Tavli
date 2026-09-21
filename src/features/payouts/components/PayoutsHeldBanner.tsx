@@ -1,7 +1,6 @@
 import { Surface } from "@/global/components";
 import { PayoutsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
-import { formatCents } from "@/global/utils/money";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -10,7 +9,7 @@ import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { PAYOUTS_ROUTE } from "../constants";
+import { formatPayoutMoney, PAYOUTS_ROUTE } from "../constants";
 
 type HeldTotal = NonNullable<Awaited<FunctionReturnType<typeof api.payouts.getHeldTotal>>[0]>;
 
@@ -59,8 +58,7 @@ export function PayoutsHeldBanner({ restaurantId }: PayoutsHeldBannerProps) {
 				<div className="min-w-0">
 					<p className="text-sm font-semibold text-foreground">
 						{t(PayoutsKeys.BANNER_TITLE, {
-							amount: formatCents(data.heldCents),
-							currency: data.currency,
+							amount: formatPayoutMoney(data.heldCents, data.currency),
 						})}
 					</p>
 					<p className="text-xs text-muted-foreground">{t(PayoutsKeys.BANNER_BODY)}</p>

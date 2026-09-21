@@ -203,15 +203,14 @@ http.route({
 					operation: "POST /stripe/connected-webhook",
 				})
 			);
-			// Same split as the two routes above: 500 means the signing secret is
-			// missing (which it is on every deployment until somebody sets
-			// STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET), 400 means this delivery
-			// failed verification.
+			// Same split as the two routes above: 500 means this deployment is not
+			// configured for Stripe (no signing secret — which is every
+			// deployment until somebody sets
+			// STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET — or no STRIPE_SECRET_KEY),
+			// 400 means this delivery failed verification.
 			return new Response(
-				isMissingWebhookSecretError(error)
-					? "Webhook secret not configured"
-					: "Webhook handler failed",
-				{ status: isMissingWebhookSecretError(error) ? 500 : 400 }
+				isStripeNotConfiguredError(error) ? "Stripe not configured" : "Webhook handler failed",
+				{ status: isStripeNotConfiguredError(error) ? 500 : 400 }
 			);
 		}
 	}),

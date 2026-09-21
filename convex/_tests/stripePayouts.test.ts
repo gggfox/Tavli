@@ -600,7 +600,7 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 			});
 		});
 
-		it("keeps holding when the later paid payout is smaller than the failure", async () => {
+		it("resolves, and says payouts resumed, even when the recovery payout is SMALLER", async () => {
 			const t = harness();
 			const restaurantId = await seedRestaurant(t);
 
@@ -618,6 +618,10 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 					}),
 				})
 			);
+			// A refund or a lost dispute shrank the balance between the two, or
+			// Stripe settled it across two payouts. The money left either way, and
+			// an "at least as large" rule would hold it on the page forever and
+			// never tell the restaurant it was over.
 			await deliver(
 				t,
 				payoutEvent({
@@ -635,7 +639,7 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 			const held = await t
 				.withIdentity({ subject: OWNER })
 				.query(api.payouts.getHeldTotal, { restaurantId });
-			expect(held[0]?.heldCents).toBe(1_000_00);
+			expect(held[0]?.heldCents).toBe(0);
 
 			const resumed = await t.run(async (ctx) =>
 				ctx.db
@@ -643,7 +647,60 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 					.collect()
 					.then((rows) => rows.filter((row) => row.kind === "payouts_resumed"))
 			);
-			expect(resumed).toHaveLength(0);
+			expect(resumed).toHaveLength(2);
+		});
+
+		it("counts only the newest failure when the next sweep fails too", async () => {
+			const t = harness();
+			const restaurantId = await seedRestaurant(t);
+
+			// Monday: 1,000 bounces.
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_sweep_1",
+					type: "payout.failed",
+					payout: payout({
+						id: "po_sweep_1",
+						amount: 1_000_00,
+						status: "failed",
+						created: 1_700_000_000,
+						failureCode: "no_account",
+					}),
+				})
+			);
+			// Tuesday: the automatic payout sweeps the WHOLE available balance —
+			// Monday's 1,000 plus 200 of new sales — and bounces again.
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_sweep_2",
+					type: "payout.failed",
+					payout: payout({
+						id: "po_sweep_2",
+						amount: 1_200_00,
+						status: "failed",
+						created: 1_700_600_000,
+						failureCode: "no_account",
+					}),
+				})
+			);
+
+			const held = await t
+				.withIdentity({ subject: OWNER })
+				.query(api.payouts.getHeldTotal, { restaurantId });
+			// 1,200 is stuck. 2,200 was never stuck — that would be counting
+			// Monday's money twice.
+			expect(held[0]?.heldCents).toBe(1_200_00);
+			expect(held[0]?.unresolvedPayoutIds).toEqual(["po_sweep_2"]);
+
+			// Both failures are real events, so both were told and both alerted.
+			const { alerts, notifications } = await t.run(async (ctx) => ({
+				alerts: await ctx.db.query("operatorAlerts").collect(),
+				notifications: await ctx.db.query("notifications").collect(),
+			}));
+			expect(alerts).toHaveLength(2);
+			expect(notifications).toHaveLength(4);
 		});
 
 		it("resolves the held total even when the paid event for a DIFFERENT payout arrives first", async () => {

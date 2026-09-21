@@ -300,14 +300,20 @@ charge), deposit in English copy, withdrawal, settlement.
 
 **Held total**:
 How much of a `Restaurant`'s money is stuck in Stripe: the sum of its
-**failed** payouts that nothing has since replaced. Stripe **never
-retries** a failed payout — it creates a new one once the bank details are
-fixed — so "resolved" is derived, not stored: a failure counts as resolved
-once a **later** payout of that account reached `paid` with an amount at
-least as large, because a scheduled payout sweeps the whole available
-balance and a genuine recovery is therefore never smaller. The money is
-never lost while it is held; it sits in the connected account's balance.
-Shown on `/admin/payouts` and as a banner on `/admin/payments`.
+**failed** payouts that no later payout has superseded. Stripe **never
+retries** a failed payout — the schedule simply runs again — so "resolved"
+is derived, not stored. Because Tavli never creates a manual payout, every
+automatic payout sweeps the **whole available balance**, and that balance
+already contains whatever bounced last time. So a later terminal payout
+that actually attempted the bank supersedes an earlier failure: a later
+`failed` already carries the older failure's money (counting both would
+double-count it), and a later `paid` resolves every earlier failure
+**regardless of amount** — a refund or a lost dispute can shrink the
+balance in between, and Stripe can settle it across two smaller payouts.
+A `canceled` payout supersedes nothing: it never attempted the bank. In
+practice the total is the newest failure, or zero. The money is never lost
+while it is held; it sits in the connected account's balance. Shown on
+`/admin/payouts` and as a banner on `/admin/payments`.
 _Avoid_: pending balance (Stripe's own term for something else), owed,
 outstanding, frozen funds.
 

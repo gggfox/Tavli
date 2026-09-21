@@ -73,7 +73,7 @@ const FAILURE_COPY: Record<InviteEmailLocale, Record<PayoutFailureCode, PayoutFa
 		},
 		could_not_process: {
 			reason: "The bank could not process the transfer this time. No reason was given.",
-			fix: "Confirm the account details are right. Stripe retries on the next scheduled payout, and most of these clear on their own.",
+			fix: "Confirm the account details are right. Nothing else to do: the money goes out with the next scheduled payout, and most of these clear on their own.",
 		},
 		debit_not_authorized: {
 			reason: "The account holder has not authorized transfers from this account.",
@@ -139,7 +139,7 @@ const FAILURE_COPY: Record<InviteEmailLocale, Record<PayoutFailureCode, PayoutFa
 		},
 		could_not_process: {
 			reason: "El banco no pudo procesar la transferencia esta vez. No dio un motivo.",
-			fix: "Confirma que los datos de la cuenta estén correctos. Stripe lo intenta de nuevo en el siguiente depósito programado, y casi siempre se resuelve solo.",
+			fix: "Confirma que los datos de la cuenta estén correctos. No hay nada más que hacer: el dinero sale con el siguiente depósito programado, y casi siempre se resuelve solo.",
 		},
 		debit_not_authorized: {
 			reason: "El titular no ha autorizado transferencias desde esta cuenta.",

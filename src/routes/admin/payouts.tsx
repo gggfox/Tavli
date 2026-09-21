@@ -1,8 +1,10 @@
 import { PayoutsDashboard, PayoutsDashboardSkeleton } from "@/features/payouts";
 import { useRestaurant } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
+import { PayoutsKeys } from "@/global/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import type { Id } from "convex/_generated/dataModel";
+import { useTranslation } from "react-i18next";
 
 /**
  * `/admin/payouts` — the restaurant's payouts (TAVLI-103).
@@ -32,9 +34,15 @@ function PayoutsContent({
 	restaurantId,
 	isLoading,
 }: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
+	const { t } = useTranslation();
+
 	if (isLoading) return <PayoutsDashboardSkeleton />;
+	// Through a key, not the bare English the older admin routes still carry:
+	// the whole point of this page is a restaurant reading about its own money
+	// in its own language, and the empty state is the first thing a new one
+	// sees.
 	if (!restaurantId) {
-		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
+		return <p className="text-sm text-faint-foreground">{t(PayoutsKeys.NO_RESTAURANT)}</p>;
 	}
 	return <PayoutsDashboard restaurantId={restaurantId} />;
 }

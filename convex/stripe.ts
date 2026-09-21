@@ -660,19 +660,22 @@ export const handleConnectedAccountEvent = internalAction({
 		signatureHeader: v.string(),
 	},
 	handler: async (ctx, args) => {
-		const stripeClient = getStripeClient();
-
+		// Checked BEFORE the client is built, same order and same marker as the
+		// other two handlers: both this and `getStripeClient()` are configuration
+		// failures, and the one an operator hits first should name the variable
+		// they actually have to set. The marker leads the message so the HTTP
+		// route answers 500 ("this deployment is not configured") rather than 400
+		// ("Stripe sent something we rejected").
 		const webhookSecret = process.env[STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV];
 		if (!webhookSecret) {
-			// Same marker, same reason as the other two handlers: the HTTP route
-			// reads it to answer 500 (Tavli is not configured) instead of 400
-			// (Stripe sent something we rejected).
 			throw new Error(
-				`${STRIPE_WEBHOOK_SECRET_MISSING}: ${STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV} is not set. ` +
+				`${STRIPE_NOT_CONFIGURED}: ${STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV} is not set. ` +
 					"Add it to your Convex deployment environment variables. " +
 					"You get this secret when creating the connected-accounts webhook destination in the Stripe Dashboard."
 			);
 		}
+
+		const stripeClient = getStripeClient();
 
 		let event: Stripe.Event;
 		try {

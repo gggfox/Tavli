@@ -83,22 +83,25 @@ const statusValidator = v.union(...STRIPE_PAYOUT_STATUSES.map((status) => v.lite
 // Reading the held total
 // ============================================================================
 
+/** A held-total input plus the payout's own currency, for labelling the total. */
+type HeldTotalRow = HeldTotalInput & { currency: string };
+
 /**
  * The failed payouts of one restaurant, plus every successful payout that could
- * possibly have replaced one.
+ * possibly supersede one.
  *
  * Both reads are indexed on `by_restaurant_status_created`. The failed set is
  * naturally tiny. The successful set is bounded to payouts created **after the
- * oldest failure**, because an earlier success cannot have carried money that
- * had not failed yet — so a restaurant with a clean history reads two empty
- * ranges, and only a restaurant with an ancient unresolved failure reads a long
- * one. That case is money stuck for months, which is an operator problem long
- * before it is a query-size problem.
+ * newest failure**: a `paid` older than that cannot resolve anything, because
+ * the newest failure itself supersedes every failure before it (see
+ * `computeHeldTotal`). So a restaurant with a clean history reads one empty
+ * range and stops, and even a restaurant with an ancient unresolved failure
+ * reads only what came after its most recent bounce.
  */
 async function readHeldTotalInputs(
 	ctx: PayoutReadCtx,
 	restaurantId: Id<"restaurants">
-): Promise<HeldTotalInput[]> {
+): Promise<HeldTotalRow[]> {
 	const failures = await ctx.db
 		.query(TABLE.STRIPE_PAYOUTS)
 		.withIndex("by_restaurant_status_created", (q) =>
@@ -107,14 +110,14 @@ async function readHeldTotalInputs(
 		.collect();
 	if (failures.length === 0) return [];
 
-	const oldestFailureAt = Math.min(...failures.map((row) => row.createdAt));
+	const newestFailureAt = Math.max(...failures.map((row) => row.createdAt));
 	const successes = await ctx.db
 		.query(TABLE.STRIPE_PAYOUTS)
 		.withIndex("by_restaurant_status_created", (q) =>
 			q
 				.eq("restaurantId", restaurantId)
 				.eq("status", STRIPE_PAYOUT_STATUS.PAID)
-				.gt("createdAt", oldestFailureAt)
+				.gt("createdAt", newestFailureAt)
 		)
 		.collect();
 
@@ -123,6 +126,7 @@ async function readHeldTotalInputs(
 		amount: row.amount,
 		createdAt: row.createdAt,
 		status: row.status as StripePayoutStatus,
+		currency: row.currency,
 	}));
 }
 
@@ -139,9 +143,21 @@ async function readHeldTotal(
 	ctx: PayoutReadCtx,
 	restaurant: Doc<"restaurants">
 ): Promise<RestaurantHeldTotal> {
-	const inputs = await readHeldTotalInputs(ctx, restaurant._id);
-	const held = computeHeldTotal(inputs);
-	return { ...held, currency: restaurant.currency };
+	const rows = await readHeldTotalInputs(ctx, restaurant._id);
+	const held = computeHeldTotal(rows);
+
+	// The label belongs to the payouts that are actually held, not to the
+	// Restaurant's configured currency. They agree today and need not stay so: a
+	// restaurant that switches currency would otherwise have its older held
+	// payouts silently relabelled into the new one, and the held total is the one
+	// number on this page a manager has to be able to trust. With nothing held
+	// there is no payout to read it from, so the Restaurant's own currency is the
+	// sensible label for a zero.
+	const heldCurrency = rows.find((row) =>
+		held.unresolvedPayoutIds.includes(row.stripePayoutId)
+	)?.currency;
+
+	return { ...held, currency: heldCurrency ?? restaurant.currency };
 }
 
 // ============================================================================

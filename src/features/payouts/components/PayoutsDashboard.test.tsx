@@ -123,7 +123,7 @@ describe("PayoutsDashboard", () => {
 
 		const card = screen.getByTestId("held-total-card");
 		expect(card.textContent).toContain("payouts.safeLine");
-		expect(card.textContent).toContain("payouts.held.title 1,000.00 MXN");
+		expect(card.textContent).toContain("payouts.held.title $1,000.00 MXN");
 		expect(card.textContent).toContain("payouts.held.fixCta");
 
 		// The promise of the ticket, as an ordering assertion: the manager reads
@@ -231,7 +231,7 @@ describe("PayoutsHeldBanner", () => {
 		render(<PayoutsHeldBanner restaurantId={RESTAURANT_ID} />);
 
 		const banner = screen.getByTestId("payouts-held-banner");
-		expect(banner.textContent).toContain("payouts.banner.title 2,500.00 MXN");
+		expect(banner.textContent).toContain("payouts.banner.title $2,500.00 MXN");
 		expect(banner.textContent).toContain("payouts.banner.body");
 		expect(screen.getByText("payouts.banner.cta").getAttribute("to")).toBe("/admin/payouts");
 	});

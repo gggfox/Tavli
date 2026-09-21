@@ -2219,11 +2219,12 @@
 		"page": {
 			"title": "Depósitos",
 			"description": "El dinero que va de Tavli a tu cuenta bancaria.",
-			"entity": "depósitos"
+			"entity": "depósitos",
+			"noRestaurant": "Primero configura tu restaurante."
 		},
 		"safeLine": "Este dinero es tuyo y está seguro.",
 		"held": {
-			"title": "{{amount}} {{currency}} está esperando para llegar a tu banco",
+			"title": "{{amount}} está esperando para llegar a tu banco",
 			"body": "Está en tu saldo de Tavli, no se perdió. Tu banco no aceptó la última transferencia, así que los depósitos están en pausa hasta que se corrijan los datos. En cuanto se corrijan, este monto sale en el siguiente depósito.",
 			"count_one": "{{count}} depósito está esperando",
 			"count_other": "{{count}} depósitos están esperando",
@@ -2232,7 +2233,7 @@
 			"fixFailed": "No se pudo abrir el formulario de datos bancarios. Inténtalo de nuevo."
 		},
 		"banner": {
-			"title": "{{amount}} {{currency}} aún no ha llegado a tu banco",
+			"title": "{{amount}} aún no ha llegado a tu banco",
 			"body": "El dinero está seguro en tu saldo de Tavli. Tu banco no aceptó la transferencia.",
 			"cta": "Ver tus depósitos"
 		},
@@ -2284,7 +2285,7 @@
 			},
 			"couldNotProcess": {
 				"reason": "El banco no pudo procesar la transferencia esta vez. No dio un motivo.",
-				"fix": "Confirma que los datos de la cuenta estén correctos. Stripe lo intenta de nuevo en el siguiente depósito programado, y casi siempre se resuelve solo."
+				"fix": "Confirma que los datos de la cuenta estén correctos. No hay nada más que hacer: el dinero sale con el siguiente depósito programado, y casi siempre se resuelve solo."
 			},
 			"debitNotAuthorized": {
 				"reason": "El titular no ha autorizado transferencias desde esta cuenta.",

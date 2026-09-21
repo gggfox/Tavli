@@ -442,7 +442,7 @@ a debugging session, precisely because its secret is stable.
 > **`STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` has never been set on any
 > deployment, and the connected-accounts destination does not exist yet.**
 > Until both exist, `handleConnectedAccountEvent` throws before it reads the
-> payload, the route answers **500 `Webhook secret not configured`**, and every
+> payload, the route answers **500 `Stripe not configured`**, and every
 > `payout.*` event is lost. The whole feature — the payouts page, the held
 > total, the manager notification and email, the operator alert — is
 > **dormant**. Set the secret on **each** deployment separately: dev, staging
@@ -467,8 +467,7 @@ schedule**. The money is **not lost**: it stays in the connected account's
 balance. On `payout.failed` Tavli:
 
 1. upserts the row in `stripePayouts` (one per Stripe payout id);
-2. adds the amount to that restaurant's **held total**, which is the sum of
-   failed payouts nothing has since replaced;
+2. adds the amount to that restaurant's **held total** (below);
 3. writes one notification per manager-or-above (bell + `href` to
    `/admin/payouts`), `dedupeKey: payout_failed:<payoutId>`;
 4. schedules one email per recipient with an address — the same set, so the
@@ -481,15 +480,33 @@ the row and tell nobody. The side effects fire on the **transition into**
 `failed`, not on the event, so a following `payout.updated` that still says
 `failed` refreshes the failure detail without ringing anybody's bell twice.
 
-**Stripe never retries a failed payout.** It creates a _new_ one once the bank
-details are fixed. So a failure counts as resolved when a **later** payout of
-that account reached `paid` with an amount **at least as large** — a scheduled
-payout sweeps the whole available balance, so a genuine recovery is never
-smaller. When that clears the last unresolved failure, the managers get a
-`payouts_resumed` notification and email. `payouts_enabled` going true again is
-deliberately **not** the signal: Stripe re-enables on verification, not on a
-successful transfer, so it would tell a restaurant their money had moved when it
-had not.
+#### The held total, and why it is not a running sum
+
+**Stripe never retries a failed payout** — the schedule simply runs again. And
+because Tavli never creates a manual payout, every automatic payout sweeps the
+**whole available balance**, which already contains whatever bounced last time.
+Both halves of the rule follow from that:
+
+- A **later `failed`** payout supersedes an earlier one. A 1,000 that bounces on
+  Monday is inside Tuesday's 1,200 sweep (the same 1,000 plus 200 of new sales),
+  so the held total is 1,200 — not 2,200. Adding them up would report money as
+  stuck twice.
+- A **later `paid`** payout resolves every earlier failure, **whatever its
+  amount**. An "at least as large" test looks safe and is not: a refund or a
+  lost dispute can shrink the balance between the failure and the recovery, and
+  Stripe can settle a balance across two smaller payouts. In both cases the
+  money left — while the amount test would hold it on the page forever and,
+  worse, never send the `payouts_resumed` notification that tells the restaurant
+  it is over.
+- A **`canceled`** payout supersedes nothing: it never attempted the bank, so
+  the stuck money is exactly where it was. `pending` and `in_transit` say
+  nothing yet.
+
+So the held total is the newest failure, or zero. When a `paid` payout takes it
+to zero the managers get a `payouts_resumed` notification and email.
+`payouts_enabled` going true again is deliberately **not** the signal: Stripe
+re-enables on verification, not on a successful transfer, so it would tell a
+restaurant their money had moved when it had not.
 
 A payout event for an account **no restaurant in this deployment claims** is
 logged and recorded but raises nothing — dev and staging share one Stripe test
@@ -503,17 +520,19 @@ was cleared while Stripe was still delivering.
 Do this once per deployment, after creating the destination and setting the
 secret, **in test mode only**.
 
-Unlike the thin events in §4b, `payout.*` **is** supported by `stripe trigger` —
-these are v1 snapshot events, which is the only kind `trigger` fires. Confirm
-the current list for your CLI version with `stripe trigger --help`, or on
-<https://docs.stripe.com/cli/trigger>.
+`stripe trigger` fires v1 snapshot events, so some of this family is reachable
+from the CLI — but **`payout.failed` is not one of them.** The supported payout
+triggers are exactly `payout.created` and `payout.updated` (confirm for your CLI
+version with `stripe trigger --help`, or on
+<https://docs.stripe.com/cli/trigger>). Producing a genuine failure means
+producing a genuine payout that a bank refuses, which is step 3.
 
 **1. Prove the pipe answers at all.**
 
 ```bash
 curl -i -X POST https://<slug>.convex.site/stripe/connected-webhook
 # 400 "Missing stripe-signature header"  → route is live
-# 500 "Webhook secret not configured"    → the route is live but the secret is unset
+# 500 "Stripe not configured"            → the route is live but the secret is unset
 # 404                                    → wrong host (.convex.cloud, not .convex.site)
 ```
 
@@ -521,34 +540,79 @@ curl -i -X POST https://<slug>.convex.site/stripe/connected-webhook
 deployment where the secret is missing. Send a body with a bogus signature to
 see the 500.)
 
-**2. Fire a real failure at a real connected account.** `--stripe-account` makes
-the CLI create the object **on that connected account**, so the resulting event
-carries `account: acct_…` and is delivered to the connected-accounts
-destination — which is exactly what this is proving:
+**2. Prove the scope, the signature and `event.account` — with a trigger.**
+`--stripe-account` is a real flag on `trigger`; it sets the
+`Stripe-Account` header, so the CLI creates the object **on that connected
+account** and the resulting event carries `account: acct_…` and is delivered to
+the connected-accounts destination. That is exactly what this step proves:
 
 ```bash
-stripe trigger payout.failed --stripe-account acct_<a test restaurant's account>
+stripe trigger payout.updated --stripe-account acct_<a test restaurant's account>
 ```
 
 Without `--stripe-account` the event fires on the platform account, lands on the
-_payments_ destination, and proves nothing about this path. If the CLI version in
-use does not accept `--stripe-account` on `trigger`, use
-`stripe listen --forward-connect-to` (below) and trigger through it, or send a
-test event from the destination's own page in the Workbench.
+_payments_ destination, and proves nothing about this path. Expect a 200, a
+`stripePayouts` row for that restaurant, and **no** notification and **no**
+alert — `payout.updated` with a non-failed status is a routine payout.
 
-**3. Read the deployment logs.** For a failure on a claimed account:
+**3. Produce a real `payout.failed`.** Attach one of Stripe's failing test bank
+accounts to the test connected account, then create a payout on it. The test
+account number decides the `failure_code`
+(<https://docs.stripe.com/connect/testing>); for **MX**, CLABE-shaped account
+numbers with no separate routing number:
 
-```text
-H  POST /stripe/connected-webhook          200
-A  stripe:handleConnectedAccountEvent      success
-Q  getProcessedStripeWebhookEventInternal  success
-Q  getRestaurantByStripeAccountIdInternal  success
-M  payouts:recordPayoutEventInternal       success
-M  recordStripeWebhookEvent                success
+| Test account number  | Result                 |
+| -------------------- | ---------------------- |
+| `000000001234567897` | payout succeeds        |
+| `000000111111111117` | `no_account`           |
+| `000000111111111133` | `account_closed`       |
+| `000000222222222224` | `insufficient_funds`   |
+| `000000333333333331` | `debit_not_authorized` |
+| `000000444444444448` | `invalid_currency`     |
+
+(The US equivalents are routing `110000000` with account `000111111113` →
+`account_closed` and `000111111116` → `no_account`. Check the page above for
+other countries, and for the codes Tavli maps that these fixtures do not
+produce — those are exercised in `convex/payoutHelpers.test.ts`, not here.)
+
+```bash
+# Attach the failing test account, then pay out on it.
+stripe payouts create --amount 1000 --currency mxn \
+  --stripe-account acct_<a test restaurant's account>
 ```
 
-`payouts:recordPayoutEventInternal` logs its own outcome line, which is the one
-worth reading:
+The payout goes `pending` → `failed` within a minute or two in test mode, so
+expect `payout.created` first and `payout.failed` after it.
+
+Two alternatives when the CLI is awkward: drive it through
+`stripe listen --forward-connect-to` (below), or use the destination's own page
+in the **Workbench → Send test event**, which lets you pick `payout.failed` and
+edit the payload — good for proving the handler and the copy, though it does not
+prove a real bank refusal.
+
+**4. Read the deployment logs.** For a failure on a claimed account, with the
+`module:function` prefix Convex prints:
+
+```text
+H  POST /stripe/connected-webhook                            200
+A  stripe:handleConnectedAccountEvent                        success
+Q  stripeHelpers:getProcessedStripeWebhookEventInternal      success
+Q  stripeHelpers:getRestaurantByStripeAccountIdInternal      success
+M  payouts:recordPayoutEventInternal                         success
+M  stripeHelpers:recordStripeWebhookEvent                    success
+A  payoutActions:sendPayoutEmail                             success
+A  payoutActions:sendPayoutEmail                             success
+```
+
+One `payoutActions:sendPayoutEmail` per recipient, scheduled rather than awaited
+— they appear after the action that caused them has already returned, and a
+failing one logs `[payoutActions] Resend error` without failing anything else.
+With `RESEND_API_KEY` unset they still run and log
+`RESEND_API_KEY or RESEND_FROM_ADDRESS missing; skipping payout email.`
+
+The outcome line worth reading is logged by the handler,
+`[stripe.handleConnectedAccountEvent]`, from what
+`payouts:recordPayoutEventInternal` returned:
 
 ```text
 [stripe.handleConnectedAccountEvent] payout.failed {"stripePayoutId":"po_…","status":"failed",
@@ -558,16 +622,16 @@ worth reading:
 
 `notified: 0` means the restaurant has nobody eligible — real, not an error; the
 operator alert is what makes sure a human at Tavli still sees it. For an
-unclaimed account the log line is
-`no restaurant claims this connected account`, and the only mutation is
-`raiseOperatorAlertInternal`.
+unclaimed account the line is
+`[stripe.handleConnectedAccountEvent] no restaurant claims this connected account`,
+and the only mutation is `operatorAlerts:raiseOperatorAlertInternal`.
 
-**4. See it in the app.** Sign in as that restaurant's owner: `/admin/payouts`
+**5. See it in the app.** Sign in as that restaurant's owner: `/admin/payouts`
 shows the held total above the list, and `/admin/payments` carries the banner.
 `/admin/alerts` has one open `payout_failed` row. Acknowledge it to clear it.
 
-**5. Prove the replay dedup.** Workbench → **Events** → find the
-`payout.failed` you just triggered → **Resend**. The same event id must answer
+**6. Prove the replay dedup.** Workbench → **Events** → find the
+`payout.failed` you just caused → **Resend**. The same event id must answer
 **200** while writing nothing: still one `stripePayouts` row, still one open
 alert, still two notifications. Then trigger a _second_, different
 `payout.failed` on the same account and confirm the held total is the sum — that
@@ -575,13 +639,14 @@ is the difference between event dedup and transition dedup.
 
 #### Triage: 400 vs 500 on this route
 
-Identical to §4b: **500** `Webhook secret not configured` means
-`STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` is unset on this deployment (nothing
-about the delivery is wrong), **400** `Webhook handler failed` means the
-delivery failed verification — most often the _other_ destination's secret
-pasted here. Tell them apart from the Convex side by the log line, not the
-status: a missing secret logs `STRIPE_WEBHOOK_SECRET_MISSING` in the
-`[http.stripe/connected-webhook]` entry, a verification failure logs
+Identical to §4b: **500** `Stripe not configured` means
+`STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET` (or `STRIPE_SECRET_KEY`) is unset on
+this deployment — nothing about the delivery is wrong. **400** `Webhook handler
+failed` means the delivery failed verification, most often the _other_
+destination's secret pasted here. Tell them apart from the Convex side by the
+log line, not the status: a missing secret or API key logs
+`STRIPE_NOT_CONFIGURED` in the `[http.stripe/connected-webhook]` entry, naming
+the exact variable, while a verification failure logs
 `operation: "constructEvent"` from `[stripe.handleConnectedAccountEvent]`.
 
 #### Local development against payout events

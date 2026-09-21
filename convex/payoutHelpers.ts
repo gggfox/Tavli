@@ -238,19 +238,33 @@ export type HeldTotal = {
 /**
  * How much of this restaurant's money is stuck in Stripe.
  *
- * **Stripe never retries a failed payout.** It creates a *new* payout once the
- * bank details are fixed, so a failed row stays `failed` forever and "is it
+ * **Stripe never retries a failed payout.** It creates a *new* payout the next
+ * time the schedule runs, so a failed row stays `failed` forever and "is it
  * resolved?" cannot be read off that row. The rule this implements:
  *
- * > A failed payout is resolved when a **later** payout for the same account
- * > reached `paid` with an amount **at least as large**.
+ * > A failed payout is superseded by any **later** terminal payout that
+ * > actually attempted the balance — another `failed`, or a `paid`. Only the
+ * > unsuperseded failures are held, and a later `paid` therefore holds nothing.
  *
- * Both halves are load-bearing. *Later*, because an earlier successful payout
- * obviously did not carry money that had not failed yet. *At least as large*,
- * because a scheduled Stripe payout sweeps the whole available balance — the
- * replacement is the stuck amount plus whatever has accrued since, so a
- * genuine recovery is never smaller, while a smaller later payout is a
- * different, partial movement and proves nothing about the stuck money.
+ * Both halves follow from one fact about how Tavli's money moves: **the
+ * connected accounts are on an automatic schedule and Tavli never creates a
+ * manual payout**, so every payout sweeps the *whole available balance*. That
+ * balance already contains whatever bounced last time.
+ *
+ * - A later **`failed`** payout therefore already includes the earlier
+ *   failure's money. Counting both double-counts: a 1,000 failure followed the
+ *   next day by a 1,200 failure (the same 1,000 plus 200 of new sales) is
+ *   1,200 stuck, not 2,200.
+ * - A later **`paid`** payout resolves every earlier failure **regardless of
+ *   its amount**. Requiring "at least as large" looks safe and is not: a refund
+ *   or a lost dispute can shrink the balance between the failure and the
+ *   recovery, and Stripe can settle the balance across two smaller payouts. In
+ *   either case the money did leave, while an amount test would hold it on the
+ *   page forever and — worse — suppress the `payouts_resumed` notification that
+ *   tells the restaurant it is over.
+ * - A `canceled` payout supersedes nothing: it never attempted the bank, so the
+ *   money it would have carried is still stuck. `pending` and `in_transit` are
+ *   not terminal and say nothing yet.
  *
  * The alternative the ticket weighed — treat `payouts_enabled` going true
  * again as resolution — was rejected: the capability can be re-enabled while
@@ -258,11 +272,9 @@ export type HeldTotal = {
  * not on a successful transfer), so it would tell a restaurant their money had
  * moved when it had not. Only money actually reaching a bank proves that.
  *
- * Consequence worth knowing: the rule is deliberately generous about *which*
- * failure a recovery clears. One large successful payout clears every older
- * failure at or below its size, because the balance it swept contained all of
- * them. It cannot over-report: what it reports is bounded by the failures that
- * happened.
+ * In practice the surviving set is the newest failure, or nothing. It can hold
+ * more than one row only when two payouts were created at the very same instant
+ * — a genuine split of one balance, where both amounts really are stuck.
  */
 export function computeHeldTotal(rows: readonly HeldTotalInput[]): HeldTotal {
 	const failures = rows
@@ -270,15 +282,19 @@ export function computeHeldTotal(rows: readonly HeldTotalInput[]): HeldTotal {
 		.sort((a, b) => b.createdAt - a.createdAt);
 	if (failures.length === 0) return { heldCents: 0, unresolvedPayoutIds: [] };
 
-	const successes = rows.filter((row) => row.status === STRIPE_PAYOUT_STATUS.PAID);
+	// Terminal *and* attempted: `canceled` never reached the bank, so it leaves
+	// the older failure's money exactly where it was.
+	const attempted = rows.filter(
+		(row) => row.status === STRIPE_PAYOUT_STATUS.FAILED || row.status === STRIPE_PAYOUT_STATUS.PAID
+	);
 
 	let heldCents = 0;
 	const unresolvedPayoutIds: string[] = [];
 	for (const failure of failures) {
-		const replaced = successes.some(
-			(success) => success.createdAt > failure.createdAt && success.amount >= failure.amount
-		);
-		if (replaced) continue;
+		// Strictly later: a payout created at the same instant is a parallel
+		// sweep of the same balance, not a re-sweep of it.
+		const superseded = attempted.some((other) => other.createdAt > failure.createdAt);
+		if (superseded) continue;
 		heldCents += failure.amount;
 		unresolvedPayoutIds.push(failure.stripePayoutId);
 	}

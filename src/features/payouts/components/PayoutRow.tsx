@@ -1,7 +1,6 @@
 import { CopyableId, StatusBadge, Surface } from "@/global/components";
 import { PayoutsKeys } from "@/global/i18n";
 import { formatDate } from "@/global/utils/date";
-import { formatCents } from "@/global/utils/money";
 import {
 	PAYOUT_FAILURE_FIX_KEY,
 	PAYOUT_FAILURE_REASON_KEY,
@@ -10,7 +9,12 @@ import {
 	type StripePayoutStatus,
 } from "convex/constants";
 import { useTranslation } from "react-i18next";
-import { PAYOUT_STATUS_BADGE, PAYOUT_STATUS_ICON, PAYOUT_STATUS_LABEL_KEY } from "../constants";
+import {
+	formatPayoutMoney,
+	PAYOUT_STATUS_BADGE,
+	PAYOUT_STATUS_ICON,
+	PAYOUT_STATUS_LABEL_KEY,
+} from "../constants";
 
 export interface PayoutRowData {
 	readonly stripePayoutId: string;
@@ -75,7 +79,7 @@ export function PayoutRow({ payout }: { readonly payout: PayoutRowData }) {
 					</span>
 					<div className="min-w-0">
 						<p className="text-base font-semibold text-foreground">
-							${formatCents(payout.amount)} {payout.currency}
+							{formatPayoutMoney(payout.amount, payout.currency)}
 						</p>
 						<p className="text-xs text-faint-foreground">
 							{t(PayoutsKeys.LIST_SENT_ON, { date: formatDate(payout.createdAt, locale) })}

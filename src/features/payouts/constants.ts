@@ -1,4 +1,5 @@
 import { PayoutsKeys } from "@/global/i18n";
+import { formatCents } from "@/global/utils/money";
 import { STRIPE_PAYOUT_STATUS, type StripePayoutStatus } from "convex/constants";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, CheckCircle2, CircleSlash, Clock, Send } from "lucide-react";
@@ -60,3 +61,21 @@ export const PAYOUT_STATUS_BADGE: Record<
 
 /** Where the payouts page lives, so the banner and the tests agree on one string. */
 export const PAYOUTS_ROUTE = "/admin/payouts" as const;
+
+/**
+ * One money string for the whole payouts surface: `$1,000.00 MXN`.
+ *
+ * A helper rather than a convention, because the held card, the banner and the
+ * rows all render the same money and were free to drift — the card said
+ * `1,000.00 MXN` while the row beneath it said `$1,000.00 MXN` for the same
+ * payout, which reads as two different numbers at a glance. The copy keys take
+ * this as one `{{amount}}` param so a translator cannot reintroduce the gap by
+ * moving the symbol.
+ *
+ * The currency **code** stays alongside the symbol on purpose: `$` is MXN, USD
+ * and several others, and this is the one page where the restaurant is counting
+ * its own money.
+ */
+export function formatPayoutMoney(cents: number, currency: string): string {
+	return `$${formatCents(cents)} ${currency}`.trim();
+}

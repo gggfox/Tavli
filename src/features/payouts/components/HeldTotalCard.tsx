@@ -1,9 +1,9 @@
 import { Button, InlineError, Surface } from "@/global/components";
 import { PayoutsKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
 import type { Id } from "convex/_generated/dataModel";
 import { ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { formatPayoutMoney } from "../constants";
 import { useUpdateBankDetails } from "../hooks/useUpdateBankDetails";
 
 export interface HeldTotalCardProps {
@@ -48,10 +48,7 @@ export function HeldTotalCard({
 				<div className="space-y-1">
 					<p className="text-sm font-semibold text-success">{t(PayoutsKeys.SAFE_LINE)}</p>
 					<h2 className="text-lg font-semibold text-foreground">
-						{t(PayoutsKeys.HELD_TITLE, {
-							amount: formatCents(heldCents),
-							currency,
-						})}
+						{t(PayoutsKeys.HELD_TITLE, { amount: formatPayoutMoney(heldCents, currency) })}
 					</h2>
 					<p className="text-sm text-muted-foreground">{t(PayoutsKeys.HELD_BODY)}</p>
 					<p className="text-xs text-faint-foreground">

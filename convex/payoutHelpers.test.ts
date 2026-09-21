@@ -230,27 +230,49 @@ describe("computeHeldTotal", () => {
 		});
 	});
 
-	it("sums several unresolved failures", () => {
-		expect(computeHeldTotal([failed("po_1", 1000, 10), failed("po_2", 250, 20)]).heldCents).toBe(
+	it("counts only the NEWEST failure — a later sweep already carried the older one", () => {
+		// The money that bounced on Monday is in Tuesday's sweep, because an
+		// automatic payout takes the whole available balance. 1,000 stuck plus
+		// 200 of new sales fails as 1,200; 2,200 was never stuck.
+		expect(computeHeldTotal([failed("po_1", 1000, 10), failed("po_2", 1200, 20)])).toEqual({
+			heldCents: 1200,
+			unresolvedPayoutIds: ["po_2"],
+		});
+	});
+
+	it("counts the newest failure even when it is SMALLER than the one it superseded", () => {
+		// A refund or a lost dispute between the two shrank the balance. What is
+		// stuck is what the last attempt carried.
+		expect(computeHeldTotal([failed("po_1", 1000, 10), failed("po_2", 400, 20)]).heldCents).toBe(
+			400
+		);
+	});
+
+	it("holds two failures created at the very same instant — a split balance", () => {
+		// Neither is "later" than the other, so neither re-swept the other's
+		// money: both amounts really are stuck.
+		expect(computeHeldTotal([failed("po_1", 1000, 10), failed("po_2", 250, 10)]).heldCents).toBe(
 			1250
 		);
 	});
 
-	it("resolves a failure once a LATER payout of at least that size is paid", () => {
+	it("resolves a failure once a LATER payout is paid, whatever its size", () => {
 		expect(computeHeldTotal([failed("po_1", 1000, 10), paid("po_2", 1000, 20)])).toEqual({
 			heldCents: 0,
 			unresolvedPayoutIds: [],
 		});
-	});
-
-	it("resolves when the replacement is larger — Stripe sweeps the whole balance", () => {
 		expect(computeHeldTotal([failed("po_1", 1000, 10), paid("po_2", 4000, 20)]).heldCents).toBe(0);
 	});
 
-	it("does NOT resolve on a smaller later payout — that is a different movement", () => {
-		expect(computeHeldTotal([failed("po_1", 1000, 10), paid("po_2", 999, 20)]).heldCents).toBe(
-			1000
-		);
+	it("resolves on a SMALLER later paid payout too — the balance shrank, it did not stick", () => {
+		// Requiring "at least as large" would hold this money on the page forever
+		// and suppress the payouts_resumed notification, when in fact the money
+		// left: a refund or a dispute reduced the balance in between, or Stripe
+		// settled it across two smaller payouts.
+		expect(computeHeldTotal([failed("po_1", 1000, 10), paid("po_2", 300, 20)])).toEqual({
+			heldCents: 0,
+			unresolvedPayoutIds: [],
+		});
 	});
 
 	it("does NOT resolve on an EARLIER paid payout", () => {
@@ -259,14 +281,14 @@ describe("computeHeldTotal", () => {
 		);
 	});
 
-	it("lets one large replacement clear several smaller failures", () => {
+	it("lets one later paid payout clear several older failures", () => {
 		expect(
-			computeHeldTotal([failed("po_1", 1000, 10), failed("po_2", 250, 20), paid("po_3", 4000, 30)])
+			computeHeldTotal([failed("po_1", 1000, 10), failed("po_2", 250, 20), paid("po_3", 40, 30)])
 				.heldCents
 		).toBe(0);
 	});
 
-	it("ignores pending, in-transit and cancelled payouts entirely", () => {
+	it("ignores pending and in-transit payouts, and lets a cancelled one supersede nothing", () => {
 		const rows: HeldTotalInput[] = [
 			failed("po_1", 1000, 10),
 			{ stripePayoutId: "po_2", amount: 9999, createdAt: 20, status: STRIPE_PAYOUT_STATUS.PENDING },
@@ -277,13 +299,15 @@ describe("computeHeldTotal", () => {
 				status: STRIPE_PAYOUT_STATUS.IN_TRANSIT,
 			},
 			{
+				// Cancelled before it left, so it never attempted the bank and the
+				// stuck money is exactly where it was.
 				stripePayoutId: "po_4",
 				amount: 9999,
 				createdAt: 40,
 				status: STRIPE_PAYOUT_STATUS.CANCELED,
 			},
 		];
-		expect(computeHeldTotal(rows).heldCents).toBe(1000);
+		expect(computeHeldTotal(rows)).toEqual({ heldCents: 1000, unresolvedPayoutIds: ["po_1"] });
 	});
 
 	it("does not care what order the rows arrive in", () => {

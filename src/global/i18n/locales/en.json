@@ -2219,11 +2219,12 @@
 		"page": {
 			"title": "Payouts",
 			"description": "Money moving from Tavli to your bank account.",
-			"entity": "payouts"
+			"entity": "payouts",
+			"noRestaurant": "Please set up your restaurant first."
 		},
 		"safeLine": "This money is yours and it is safe.",
 		"held": {
-			"title": "{{amount}} {{currency}} is waiting to reach your bank",
+			"title": "{{amount}} is waiting to reach your bank",
 			"body": "It is sitting in your Tavli balance, not lost. Your bank did not accept the last transfer, so payouts are paused until the details are fixed. As soon as they are, this goes out on the next payout.",
 			"count_one": "{{count}} payout is waiting",
 			"count_other": "{{count}} payouts are waiting",
@@ -2232,7 +2233,7 @@
 			"fixFailed": "Could not open the bank-details form. Please try again."
 		},
 		"banner": {
-			"title": "{{amount}} {{currency}} has not reached your bank yet",
+			"title": "{{amount}} has not reached your bank yet",
 			"body": "The money is safe in your Tavli balance. Your bank did not accept the transfer.",
 			"cta": "See your payouts"
 		},
@@ -2284,7 +2285,7 @@
 			},
 			"couldNotProcess": {
 				"reason": "The bank could not process the transfer this time. No reason was given.",
-				"fix": "Confirm the account details are right. Stripe retries on the next scheduled payout, and most of these clear on their own."
+				"fix": "Confirm the account details are right. Nothing else to do: the money goes out with the next scheduled payout, and most of these clear on their own."
 			},
 			"debitNotAuthorized": {
 				"reason": "The account holder has not authorized transfers from this account.",
