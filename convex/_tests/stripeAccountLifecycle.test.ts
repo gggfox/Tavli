@@ -75,6 +75,7 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
 		process.env.STRIPE_CONNECT_WEBHOOK_SECRET = "whsec_connect_test";
 	});
 
@@ -311,6 +312,48 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 			});
 
 			const response = await t.fetch("/stripe/connect-webhook", {
+				method: "POST",
+				headers: { "stripe-signature": "sig_bad" },
+				body: "{}",
+			});
+
+			expect(response.status).toBe(400);
+			const events = await t.run(async (ctx) => ctx.db.query("stripeWebhookEvents").collect());
+			expect(events).toHaveLength(0);
+			errorSpy.mockRestore();
+		});
+	});
+
+	/**
+	 * The v1 snapshot route shares the marker and therefore the same contract.
+	 * Its secret IS set everywhere, so this is the regression that would
+	 * otherwise go unnoticed: the two routes' triage must not drift apart.
+	 */
+	describe("POST /stripe/webhook status codes", () => {
+		it("answers 500 when STRIPE_WEBHOOK_SECRET is not configured", async () => {
+			const t = convexTest(schema, modules);
+			delete process.env.STRIPE_WEBHOOK_SECRET;
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+			const response = await t.fetch("/stripe/webhook", {
+				method: "POST",
+				headers: { "stripe-signature": "sig_whatever" },
+				body: "{}",
+			});
+
+			expect(response.status).toBe(500);
+			errorSpy.mockRestore();
+		});
+
+		it("answers 400 when the delivery itself fails signature verification", async () => {
+			const t = convexTest(schema, modules);
+			process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+			mockStripeClient.webhooks.constructEvent.mockImplementationOnce(() => {
+				throw new Error("Invalid signature");
+			});
+
+			const response = await t.fetch("/stripe/webhook", {
 				method: "POST",
 				headers: { "stripe-signature": "sig_bad" },
 				body: "{}",

@@ -37,6 +37,7 @@ import {
 	computeDisputeFacts,
 	computeRefundFacts,
 	DISPUTE_PHASE,
+	STRIPE_NOT_CONFIGURED,
 	type DisputePhase,
 	stripeSecondsToMs,
 } from "../stripeWebhookHelpers";
@@ -67,8 +68,11 @@ export function getStripeClient(): Stripe {
 	// Get your key from https://dashboard.stripe.com/apikeys
 	const key = process.env.STRIPE_SECRET_KEY;
 	if (!key) {
+		// Marked like the two signing secrets: this is the same class of failure
+		// (the deployment is not configured), and the webhook HTTP routes must
+		// answer 500 for it rather than a 400 that reads as "wrong secret".
 		throw new Error(
-			"STRIPE_SECRET_KEY is not set. " +
+			`${STRIPE_NOT_CONFIGURED}: STRIPE_SECRET_KEY is not set. ` +
 				"Add it to your Convex deployment environment variables in the Convex Dashboard. " +
 				"You can find your secret key at https://dashboard.stripe.com/apikeys"
 		);

@@ -169,14 +169,14 @@ Nothing is charged or captured — no payment method is ever attached. Then chec
 the Convex deployment logs for the delivery:
 
 ```text
-Q  getProcessedStripeWebhookEventInternal   success
-M  recordStripeWebhookEvent                 success
-A  stripe:fulfillPayment                    success
-H  POST /stripe/webhook                     200
+Q  stripeHelpers:getProcessedStripeWebhookEventInternal      success
+M  stripeHelpers:recordStripeWebhookEvent                    success
+A  stripe:fulfillPayment                                     success
+H  POST /stripe/webhook                                      200
 ```
 
 A `400` on the POST means signature verification failed — the secret is wrong. A
-`500` means `STRIPE_WEBHOOK_SECRET` is not set at all; see the 400-vs-500 triage
+`500` means `STRIPE_WEBHOOK_SECRET` (or `STRIPE_SECRET_KEY`) is not set at all; see the 400-vs-500 triage
 table under step 4b, which applies to both destinations.
 
 > [!WARNING]
@@ -274,7 +274,7 @@ entirely. Any restaurant onboarded in test must be onboarded again in live.
 > [!CAUTION]
 > **`STRIPE_CONNECT_WEBHOOK_SECRET` has never been set on any deployment.**
 > Until it is, `handleThinEvent` throws before it reads the payload, the route
-> answers **500 `Webhook secret not configured`**, and every `v2.core.account*`
+> answers **500 `Stripe not configured`**, and every `v2.core.account*`
 > event Stripe delivers is lost. The whole connected-account lifecycle —
 > including account closure — is **dormant**. It must be set on **each**
 > deployment separately: dev, staging and production each have their own Convex
@@ -353,12 +353,12 @@ test and, on a **throwaway** restaurant:
 **3. Read the deployment logs.** For the closure:
 
 ```text
-H  POST /stripe/connect-webhook             200
-A  stripe:handleThinEvent                   success
-Q  getProcessedStripeWebhookEventInternal   success
-M  markStripeAccountClosedByAccountId       success
-M  raiseOperatorAlertInternal               success
-M  recordStripeWebhookEvent                 success
+H  POST /stripe/connect-webhook                             200
+A  stripe:handleThinEvent                                   success
+Q  stripeHelpers:getProcessedStripeWebhookEventInternal      success
+M  stripeHelpers:markStripeAccountClosedByAccountId          success
+M  operatorAlerts:raiseOperatorAlertInternal                 success
+M  stripeHelpers:recordStripeWebhookEvent                    success
 ```
 
 Reset clears the Convex link **before** the closure arrives, so no restaurant
@@ -380,15 +380,15 @@ repeatedly.
 
 The two failures are opposite diagnoses and the status code now says which:
 
-| Response                                  | Means                                                       | Fix                                                              |
-| ----------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
-| **500** `Webhook secret not configured`   | `STRIPE_CONNECT_WEBHOOK_SECRET` is unset on this deployment | Set it (above). Nothing about the delivery is wrong.             |
-| **400** `Webhook handler failed`          | The delivery failed verification                            | Wrong secret, or the **other** destination's secret. Re-copy it. |
-| **400** `Missing stripe-signature header` | Not from Stripe                                             | Something else is POSTing at the route.                          |
+| Response                                  | Means                                                                                | Fix                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| **500** `Stripe not configured`           | `STRIPE_CONNECT_WEBHOOK_SECRET` (or `STRIPE_SECRET_KEY`) is unset on this deployment | Set it (above). Nothing about the delivery is wrong.             |
+| **400** `Webhook handler failed`          | The delivery failed verification                                                     | Wrong secret, or the **other** destination's secret. Re-copy it. |
+| **400** `Missing stripe-signature header` | Not from Stripe                                                                      | Something else is POSTing at the route.                          |
 
 Tell them apart from the Convex side by the **log line**, not the status alone:
-a missing secret logs `STRIPE_WEBHOOK_SECRET_MISSING` in the
-`[http.stripe/connect-webhook]` entry, while a verification failure logs
+a missing secret or API key logs `STRIPE_NOT_CONFIGURED` in the
+`[http.stripe/connect-webhook]` entry, naming the exact variable, while a verification failure logs
 `operation: "parseEventNotification"` from `[stripe.handleThinEvent]`. The same
 distinction applies to `POST /stripe/webhook`.
 

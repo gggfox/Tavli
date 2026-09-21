@@ -27,7 +27,7 @@ import { httpAction } from "./_generated/server";
 import { ERROR_NAMES } from "./_shared/errors";
 import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
 import { RESERVATION_SOURCE } from "./constants";
-import { isMissingWebhookSecretError } from "./stripeWebhookHelpers";
+import { isStripeNotConfiguredError } from "./stripeWebhookHelpers";
 import { clampInboundBody } from "./whatsapp/format";
 
 const http = httpRouter();
@@ -70,17 +70,16 @@ http.route({
 					operation: "POST /stripe/webhook",
 				})
 			);
-			// 500 when Tavli has no signing secret configured, 400 when the
-			// delivery itself failed verification. The two are opposite
+			// 500 when this deployment is not configured for Stripe (no signing
+			// secret, or no STRIPE_SECRET_KEY), 400 when the delivery itself
+			// failed verification. The two are opposite
 			// diagnoses — "we are not set up" vs "Stripe sent something we
 			// rejected" — and answering 400 for both sent an operator hunting a
 			// wrong secret when there was no secret at all. The Convex log line
 			// for the action tells them apart in one read.
 			return new Response(
-				isMissingWebhookSecretError(error)
-					? "Webhook secret not configured"
-					: "Webhook handler failed",
-				{ status: isMissingWebhookSecretError(error) ? 500 : 400 }
+				isStripeNotConfiguredError(error) ? "Stripe not configured" : "Webhook handler failed",
+				{ status: isStripeNotConfiguredError(error) ? 500 : 400 }
 			);
 		}
 	}),
@@ -141,10 +140,8 @@ http.route({
 			// STRIPE_CONNECT_WEBHOOK_SECRET), 400 means this delivery failed
 			// verification.
 			return new Response(
-				isMissingWebhookSecretError(error)
-					? "Webhook secret not configured"
-					: "Webhook handler failed",
-				{ status: isMissingWebhookSecretError(error) ? 500 : 400 }
+				isStripeNotConfiguredError(error) ? "Stripe not configured" : "Webhook handler failed",
+				{ status: isStripeNotConfiguredError(error) ? 500 : 400 }
 			);
 		}
 	}),

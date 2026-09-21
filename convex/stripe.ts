@@ -82,7 +82,7 @@ import {
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
-import { STRIPE_WEBHOOK_SECRET_MISSING } from "./stripeWebhookHelpers";
+import { STRIPE_NOT_CONFIGURED } from "./stripeWebhookHelpers";
 import {
 	handleSubscriptionCheckoutCompleted,
 	handleSubscriptionDeleted,
@@ -426,21 +426,25 @@ export const handleThinEvent = internalAction({
 		signatureHeader: v.string(),
 	},
 	handler: async (ctx, args) => {
-		const stripeClient = getStripeClient();
-
 		// PLACEHOLDER: Set STRIPE_CONNECT_WEBHOOK_SECRET in your Convex Dashboard.
 		// This is the signing secret for your thin-event webhook endpoint,
 		// separate from the standard webhook secret.
+		//
+		// Checked BEFORE the client is built: both this and `getStripeClient()`
+		// are configuration failures, and the one an operator hits first should
+		// name the variable they actually have to set. Marker first in the
+		// message, so the HTTP route answers 500 ("this deployment is not
+		// configured") rather than 400 ("Stripe sent something we rejected").
 		const webhookSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
 		if (!webhookSecret) {
-			// Marker first: the HTTP route reads it to answer 500 (Tavli is not
-			// configured) instead of 400 (Stripe sent something we rejected).
 			throw new Error(
-				`${STRIPE_WEBHOOK_SECRET_MISSING}: STRIPE_CONNECT_WEBHOOK_SECRET is not set. ` +
+				`${STRIPE_NOT_CONFIGURED}: STRIPE_CONNECT_WEBHOOK_SECRET is not set. ` +
 					"Add it to your Convex deployment environment variables. " +
 					"You get this secret when creating a webhook endpoint in the Stripe Dashboard."
 			);
 		}
+
+		const stripeClient = getStripeClient();
 
 		let eventNotification: ReturnType<typeof stripeClient.parseEventNotification>;
 		try {
@@ -623,19 +627,20 @@ export const fulfillPayment = internalAction({
 		signatureHeader: v.string(),
 	},
 	handler: async (ctx, args) => {
-		const stripeClient = getStripeClient();
-
 		// PLACEHOLDER: Set STRIPE_WEBHOOK_SECRET in your Convex Dashboard.
 		// You get this when creating a webhook endpoint or running `stripe listen`.
+		// Checked before the client, same marker, same reason as the connect
+		// handler above.
 		const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 		if (!webhookSecret) {
-			// Same marker, same reason as the connect handler above.
 			throw new Error(
-				`${STRIPE_WEBHOOK_SECRET_MISSING}: STRIPE_WEBHOOK_SECRET is not set. ` +
+				`${STRIPE_NOT_CONFIGURED}: STRIPE_WEBHOOK_SECRET is not set. ` +
 					"Add it to your Convex deployment environment variables. " +
 					"You get this secret when creating a webhook endpoint or running `stripe listen`."
 			);
 		}
+
+		const stripeClient = getStripeClient();
 
 		let event: Stripe.Event;
 		try {

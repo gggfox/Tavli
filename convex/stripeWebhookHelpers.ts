@@ -16,8 +16,9 @@
 import { PAYMENT_REFUND_STATUS } from "./constants";
 
 /**
- * Marker embedded in the error a webhook action throws when its signing secret
- * is not configured.
+ * Marker embedded in the error a Stripe action throws when the deployment is
+ * not configured for Stripe at all — a missing signing secret or a missing
+ * `STRIPE_SECRET_KEY`.
  *
  * The HTTP routes in `convex/http.ts` catch everything `ctx.runAction` throws
  * and, before TAVLI-65, answered 400 for all of it. That conflated two
@@ -32,17 +33,23 @@ import { PAYMENT_REFUND_STATUS } from "./constants";
  * A marker in the message rather than a custom error class because the throw
  * crosses a Convex action boundary, which preserves the message and not the
  * prototype.
+ *
+ * It covers the API key as well as the two signing secrets deliberately: a
+ * deployment missing `STRIPE_SECRET_KEY` fails inside `getStripeClient()`, and
+ * without the marker that too came back as a 400 the triage table would read as
+ * "the signing secret is wrong".
  */
-export const STRIPE_WEBHOOK_SECRET_MISSING = "STRIPE_WEBHOOK_SECRET_MISSING";
+export const STRIPE_NOT_CONFIGURED = "STRIPE_NOT_CONFIGURED";
 
 /**
- * Whether a caught webhook error is "the signing secret is not set" rather than
- * "this delivery failed verification". Drives 500 vs 400 in `convex/http.ts`.
+ * Whether a caught Stripe error is "this deployment is not configured" rather
+ * than "this delivery failed verification". Drives 500 vs 400 in
+ * `convex/http.ts`.
  */
-export function isMissingWebhookSecretError(error: unknown): boolean {
+export function isStripeNotConfiguredError(error: unknown): boolean {
 	const message =
 		error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
-	return message.includes(STRIPE_WEBHOOK_SECRET_MISSING);
+	return message.includes(STRIPE_NOT_CONFIGURED);
 }
 
 /** Narrow the `string | { id } | null | undefined` shape Stripe uses for expandable refs. */
