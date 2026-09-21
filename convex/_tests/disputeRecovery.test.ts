@@ -335,6 +335,34 @@ describe("charge.dispute.* event coverage", () => {
 		expect(auditTypes).toContain("payments.disputeFundsReinstated");
 	});
 
+	it("counts a dispute first seen on a non-created delivery as opened", async () => {
+		// Stripe's delivery order is not guaranteed and a `created` can be
+		// dropped outright; requiring that phase left such a dispute counted as
+		// nothing and its managers never told a chargeback existed.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		await seedPaidOrder(t, { restaurantId, subtotal: 20_000, paymentIntentId: "pi_late" });
+
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_late_updated",
+				type: "charge.dispute.updated",
+				disputeId: "dp_late",
+				paymentIntentId: "pi_late",
+				status: "under_review",
+				amount: 20_000,
+			})
+		);
+
+		const notifications = await t.run(async (ctx) => ctx.db.query("notifications").collect());
+		expect(notifications.filter((row) => row.kind === "dispute_opened")).toHaveLength(2);
+
+		const admin = t.withIdentity({ subject: ADMIN });
+		const [report] = await admin.query(api.disputes.getDisputeAggregates, { restaurantId });
+		expect(report?.perRestaurant.opened).toEqual({ count: 1, amount: 20_000 });
+	});
+
 	it("opens the ledger for a loss that arrives as `updated`, not `closed`", async () => {
 		// Stripe's delivery order is not guaranteed and the two event types
 		// overlap. Keying the money off the event NAME would miss this loss.
@@ -1168,6 +1196,168 @@ describe("a refund after the money was already transferred out (review round 2)"
 			"tr_shortfall_out",
 			expect.objectContaining({ amount: 1_000 }),
 			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_shortfall_out:1000` }
+		);
+	});
+
+	it("claws back a shortfall even when the ledger absorbed nothing at all", async () => {
+		// pct 25, ledger 500, order 1,000: the whole deduction became shortfall,
+		// so `applied` is 0 and there are no legs — and every ledger-shaped early
+		// return used to skip straight past the shortfall transfer, leaving the
+		// restaurant holding it on a sale refunded in full.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_all_shortfall",
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 0,
+				disputeRecoveryAppliedAt: 2_000,
+				disputeRecoveryLegs: [],
+				disputeRecoveryShortfall: 500,
+				disputeRecoveryShortfallTransferId: "tr_all_shortfall",
+				disputeRecoveryShortfallReturnedAt: 2_100,
+			});
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_all_shortfall" });
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenCalledWith(
+			"tr_all_shortfall",
+			expect.objectContaining({ amount: 500 }),
+			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_all_shortfall:500` }
+		);
+	});
+
+	it("claws back a shortfall whose target grows although the ledger's does not", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_uneven",
+		});
+		await t.run(async (ctx) => {
+			const recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_uneven",
+				amount: 5_000,
+				outstanding: 4_990,
+				recovered: 10,
+				currency: "mxn",
+				status: "outstanding",
+				lostAt: 1_000,
+				createdAt: 1_000,
+				updatedAt: 1_000,
+			});
+			await ctx.db.patch(paymentId, {
+				// A tiny ledger leg beside a large shortfall: at 25% refunded the
+				// ledger target is still 0 while the shortfall's is 500.
+				disputeRecoveryAmount: 10,
+				disputeRecoveryAppliedAt: 2_000,
+				disputeRecoveryLegs: [{ recoveryId, amount: 10 }],
+				disputeRecoveryShortfall: 2_000,
+				disputeRecoveryShortfallTransferId: "tr_uneven",
+				disputeRecoveryShortfallReturnedAt: 2_100,
+			});
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_uneven" });
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 2_800,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+		await drainScheduled(t);
+
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenCalledWith(
+			"tr_uneven",
+			expect.objectContaining({ amount: 500 }),
+			expect.anything()
+		);
+	});
+
+	it("never reverses more of a transfer than the leg actually sent on it", async () => {
+		// P1 drew 100 and P2 drew 200 off the same row. The row is reinstated; a
+		// partial refund of P1 trims the pending return (300 → 250) before
+		// anything is transferred, so only 50 of P1's money ever leaves. A later
+		// full refund of P1 must reverse 50, not 100 — a 100 reversal against a
+		// 250 transfer that carried 50 of P1's money is wrong, and against a
+		// smaller transfer Stripe would reject it and alert.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 1_000,
+			paymentIntentId: "pi_leg_trim",
+		});
+		let recoveryId: Id<"disputeRecoveries">;
+		await t.run(async (ctx) => {
+			recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_leg_trim",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 300,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				createdAt: 1_000,
+				updatedAt: 2_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 100,
+				disputeRecoveryAppliedAt: 1_500,
+				disputeRecoveryLegs: [{ recoveryId: recoveryId!, amount: 100 }],
+			});
+		});
+
+		// Half of P1's charge comes back: 560 of 1,120 → 50 of the 100, trimmed
+		// off the pending return because nothing has been transferred yet.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 560,
+			amountCaptured: 1_120,
+			isFullyRefunded: false,
+		});
+		expect(await t.run(async (ctx) => (await ctx.db.get(recoveryId!))?.recovered)).toBe(250);
+		expect(
+			await t.run(async (ctx) => (await ctx.db.get(paymentId))?.disputeRecoveryLegs?.[0].trimmed)
+		).toBe(50);
+
+		// The return then goes out for what is left.
+		await t.run(async (ctx) => {
+			await ctx.db.patch(recoveryId!, {
+				returnedAt: 3_000,
+				returnedAmount: 250,
+				stripeTransferId: "tr_leg_trim",
+			});
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_leg_trim" });
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 1_120,
+			amountCaptured: 1_120,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenCalledWith(
+			"tr_leg_trim",
+			expect.objectContaining({ amount: 50 }),
+			expect.anything()
 		);
 	});
 

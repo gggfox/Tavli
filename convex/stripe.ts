@@ -2004,9 +2004,14 @@ export const createPaymentIntent = action({
 						subtotalAmount: String(subtotalAmount),
 						feeAmount: String(feeAmount),
 						gratuityAmount: String(gratuityAmount),
-						// So an operator reading the PaymentIntent in the Stripe
-						// Dashboard can see why the transfer is short.
-						disputeRecoveryAmount: String(disputeRecoveryAmount),
+						// Only when there is something to explain. An operator
+						// reading the PaymentIntent in the Stripe Dashboard needs
+						// to know why a transfer is short; a `0` on every intent
+						// that never had a dispute is noise, and it would make the
+						// request differ from the pre-TAVLI-102 one for no reason.
+						...(disputeRecoveryAmount > 0 && {
+							disputeRecoveryAmount: String(disputeRecoveryAmount),
+						}),
 					},
 				},
 				{

@@ -1011,6 +1011,19 @@ export default defineSchema({
 				v.object({
 					recoveryId: v.id(TABLE.DISPUTE_RECOVERIES),
 					amount: v.number(),
+					/**
+					 * How much of this leg was taken back by trimming the row's
+					 * *pending* return rather than by moving money.
+					 *
+					 * A reinstated row whose return has not gone out yet is trimmed
+					 * at source, so that share never reaches the restaurant. If the
+					 * transfer later goes out and a further refund arrives, the
+					 * claw-back must reverse only what actually travelled — the
+					 * leg's share MINUS what was trimmed before it left. Without
+					 * this the reversal asks Stripe for more than the transfer
+					 * carried and is rejected.
+					 */
+					trimmed: v.optional(v.number()),
 				})
 			)
 		),

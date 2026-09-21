@@ -1072,10 +1072,12 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   PaymentIntent carries `transfer_data.amount` short by the deduction while
   `amount` is unchanged; then confirm the ledger only moves once the charge
   **settles**
-- Reinstate the funds (`POST /v1/disputes/du_.../close` on a won dispute, or a
-  `charge.dispute.funds_reinstated` delivery) and confirm the row goes to
+- Reinstate the funds by submitting `winning_evidence` on a dispute that was
+  lost in test mode (Stripe reopens it, closes it as won, and
+  `charge.dispute.funds_reinstated` follows). Confirm the row goes to
   `reinstated` with `outstanding: 0`, and that exactly one `transfers.create`
-  fires for whatever had been recovered
+  fires for whatever had been recovered. Do **not** use
+  `POST /v1/disputes/du_.../close` — it means "give up" and closes as lost
 - Confirm refunding a disputed charge returns `ERROR_PAYMENT_UNDER_DISPUTE`
   rather than Stripe's `charge_disputed`, and leaves the payment and the order
   untouched

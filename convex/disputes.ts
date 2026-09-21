@@ -314,7 +314,13 @@ export const recordDisputeEventInternal = internalMutation({
 
 		const outcome: RecordDisputeOutcome = {
 			disputeId,
-			opened: !wasOpened && args.phase === DISPUTE_PHASE.CREATED,
+			// The INSERT is the opening, whatever phase carried it. Stripe's
+			// delivery order is not guaranteed and a `created` can be dropped
+			// outright, so requiring the `created` phase would leave a dispute
+			// first seen as `updated` counted as nothing and its managers never
+			// told a chargeback existed. `upsertDisputeRow` stamps `openedAt` on
+			// any first sighting for exactly the same reason.
+			opened: !wasOpened,
 			lost: nowLost && !wasLost,
 			resolvedInFavour: nowWon && !wasResolvedInFavour,
 			recoveryId: null,
@@ -328,11 +334,10 @@ export const recordDisputeEventInternal = internalMutation({
 		// staging share a Stripe test account) is still recorded and still logged;
 		// it simply has nobody to tell and no debt to open. The operator alert on
 		// a loss is raised either way, below.
-		if (outcome.lost) {
-			await applyLoss(ctx, { args, dispute, outcome, now });
-		} else if (outcome.resolvedInFavour) {
-			await applyWin(ctx, { args, dispute, outcome, now, reinstated });
-		} else if (outcome.opened && args.restaurantId) {
+		// Counted outside the branch chain below: a dispute first seen as a LOSS
+		// was still opened at some point, and "disputes opened" must not depend
+		// on which delivery happened to arrive first.
+		if (outcome.opened && args.restaurantId) {
 			await recordDisputeOutcome(ctx, {
 				restaurantId: args.restaurantId,
 				stripeDisputeId: args.stripeDisputeId,
@@ -340,6 +345,13 @@ export const recordDisputeEventInternal = internalMutation({
 				amount: args.amount,
 				whenMs: args.eventTimeMs,
 			});
+		}
+
+		if (outcome.lost) {
+			await applyLoss(ctx, { args, dispute, outcome, now });
+		} else if (outcome.resolvedInFavour) {
+			await applyWin(ctx, { args, dispute, outcome, now, reinstated });
+		} else if (outcome.opened && args.restaurantId) {
 			await tellManagers(ctx, {
 				restaurantId: args.restaurantId,
 				outcome,
@@ -786,7 +798,10 @@ async function ensureRecoveryReturnScheduled(
 	if (!recovery || recovery.recovered <= 0 || recovery.returnedAt !== undefined) return 0;
 
 	const restaurant = await ctx.db.get(args.restaurantId);
-	if (!restaurant?.stripeAccountId) {
+	// A CLOSED connected account cannot receive a transfer, so scheduling one is
+	// a guaranteed dead action plus a second severe alert saying nothing the
+	// first did not. One alert, naming what is stuck, and no doomed job.
+	if (!isPayableConnectedAccount(restaurant)) {
 		// Nowhere to send it. The row keeps `recovered` so the debt is visible
 		// and an operator can settle it by hand.
 		await raiseOperatorAlert(ctx, {
@@ -1096,16 +1111,41 @@ export async function restoreLedgerForRefund(
 	if (!payment) return nothing;
 	if (payment.disputeRecoveryAppliedAt === undefined) return nothing;
 
+	const now = Date.now();
+	let clawedBack = 0;
+
+	// The shortfall went out on a transfer of its own, and a refund reverses the
+	// CHARGE's transfer and nothing else. Handled FIRST and unconditionally,
+	// because it has nothing to do with the ledger: a payment whose whole
+	// deduction became shortfall has `applied: 0` and no legs at all, and every
+	// ledger-shaped early return below would otherwise skip straight past it —
+	// leaving the restaurant holding the shortfall on a sale refunded in full.
+	if (payment.disputeRecoveryShortfallTransferId && payment.disputeRecoveryShortfall) {
+		const shortfallTarget = Math.min(
+			payment.disputeRecoveryShortfall,
+			Math.floor(
+				(payment.disputeRecoveryShortfall * Math.max(0, args.amountRefunded)) /
+					Math.max(1, payment.amount)
+			)
+		);
+		clawedBack += await scheduleReturnReversal(ctx, {
+			payment,
+			stripeTransferId: payment.disputeRecoveryShortfallTransferId,
+			targetReversal: shortfallTarget,
+			label: "recovery shortfall",
+		});
+	}
+
 	const applied = payment.disputeRecoveryAmount ?? 0;
 	const legs = payment.disputeRecoveryLegs ?? [];
-	if (applied <= 0 || legs.length === 0) return nothing;
+	if (applied <= 0 || legs.length === 0) return { ...nothing, clawedBack };
 
 	const alreadyRestored = payment.disputeRecoveryRestored ?? 0;
 	const target = Math.min(
 		applied,
 		Math.floor((applied * Math.max(0, args.amountRefunded)) / Math.max(1, payment.amount))
 	);
-	if (target <= alreadyRestored) return nothing;
+	if (target <= alreadyRestored) return { ...nothing, clawedBack };
 
 	// Greedy over the legs in draw-down order. A pure function of the total, so
 	// the difference between two totals is the work still to do.
@@ -1120,11 +1160,11 @@ export async function restoreLedgerForRefund(
 	const previous = allocate(alreadyRestored);
 	const next = allocate(target);
 
-	const now = Date.now();
 	let restored = 0;
 	let skipped = 0;
-	let clawedBack = 0;
 	let pendingReturnsTrimmed = 0;
+	// Copied so the per-leg `trimmed` tallies can be written back in one patch.
+	const legsOut = legs.map((leg) => ({ ...leg }));
 
 	for (const [index, leg] of legs.entries()) {
 		const delta = next[index] - previous[index];
@@ -1147,20 +1187,28 @@ export async function restoreLedgerForRefund(
 				// reverses only the CHARGE's transfer, so that one is untouched.
 				// Left alone, the restaurant keeps it on a sale that was refunded
 				// in full from Tavli's balance. Reverse this payment's share.
+				//
+				// MINUS whatever an earlier refund already trimmed off the pending
+				// return before it left: that share never travelled, so asking
+				// Stripe to reverse it would exceed what the transfer carried and
+				// be rejected — an alert about money that was never misplaced.
+				const alreadyTrimmed = legsOut[index].trimmed ?? 0;
 				clawedBack += await scheduleReturnReversal(ctx, {
 					payment,
 					stripeTransferId: row.stripeTransferId,
-					targetReversal: next[index],
+					targetReversal: Math.max(0, next[index] - alreadyTrimmed),
 					label: `dispute ${row.stripeDisputeId}`,
 				});
 			} else {
 				// Reinstated but not yet paid out: trim the pending return instead,
 				// which is cheaper and exact — the transfer has not happened, so
-				// there is nothing to reverse.
+				// there is nothing to reverse. Tallied per leg so a later
+				// claw-back knows this share never left.
 				await ctx.db.patch(row._id, {
 					recovered: Math.max(0, row.recovered - delta),
 					updatedAt: now,
 				});
+				legsOut[index].trimmed = (legsOut[index].trimmed ?? 0) + delta;
 				pendingReturnsTrimmed += delta;
 			}
 			skipped += delta;
@@ -1184,30 +1232,12 @@ export async function restoreLedgerForRefund(
 		restored += delta;
 	}
 
-	// The shortfall went out on a transfer of its own too, and a refund does not
-	// touch it either. Same claw-back, proportional to how much of the charge
-	// came back.
-	if (payment.disputeRecoveryShortfallTransferId && payment.disputeRecoveryShortfall) {
-		const shortfallTarget = Math.min(
-			payment.disputeRecoveryShortfall,
-			Math.floor(
-				(payment.disputeRecoveryShortfall * Math.max(0, args.amountRefunded)) /
-					Math.max(1, payment.amount)
-			)
-		);
-		clawedBack += await scheduleReturnReversal(ctx, {
-			payment,
-			stripeTransferId: payment.disputeRecoveryShortfallTransferId,
-			targetReversal: shortfallTarget,
-			label: "recovery shortfall",
-		});
-	}
-
 	// The cumulative total counts the skipped rows too: they were allocated and
 	// must not be re-attempted on the next delivery, and the audit event below
 	// is where an operator sees what could not be put back.
 	await ctx.db.patch(payment._id, {
 		disputeRecoveryRestored: target,
+		...(pendingReturnsTrimmed > 0 && { disputeRecoveryLegs: legsOut }),
 		updatedAt: now,
 		updatedBy: AUDIT_SYSTEM_USER_ID,
 	});
