@@ -107,6 +107,44 @@ export const getPaymentByPaymentIntentIdInternal = internalQuery({
 	},
 });
 
+/**
+ * Resolves the `paymentId` / `restaurantId` a PaymentIntent carries in its
+ * metadata into real documents (TAVLI-105).
+ *
+ * Every intent Tavli creates stamps both — `createOrderPaymentIntent`,
+ * `createTabPaymentIntent` and `createTipCharge` alike — which is what lets the
+ * webhook find a payment row whose `stripePaymentIntentId` has not landed yet.
+ *
+ * Takes plain strings, not `v.id(...)`, and goes through `normalizeId`. That is
+ * the whole point: metadata is arbitrary text off the wire, and handing a
+ * `v.id(TABLE.PAYMENTS)` validator a string that is not an id of that table
+ * THROWS. A throw inside `fulfillPayment` means a non-2xx, which means Stripe
+ * redelivers the same event for days and throws again every time. A value that
+ * does not normalize is simply not one of our rows, and the caller treats it as
+ * such.
+ *
+ * The restaurant is resolved rather than passed through so an operator alert
+ * can never be filed against an id that names nothing.
+ */
+export const resolveStripeMetadataRefsInternal = internalQuery({
+	args: {
+		paymentId: v.optional(v.string()),
+		restaurantId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const paymentId = args.paymentId ? ctx.db.normalizeId(TABLE.PAYMENTS, args.paymentId) : null;
+		const restaurantId = args.restaurantId
+			? ctx.db.normalizeId(TABLE.RESTAURANTS, args.restaurantId)
+			: null;
+
+		const restaurant = restaurantId ? await ctx.db.get(restaurantId) : null;
+		return {
+			payment: paymentId ? await ctx.db.get(paymentId) : null,
+			restaurantId: restaurant?._id ?? null,
+		};
+	},
+});
+
 export const listPaymentsByOrderInternal = internalQuery({
 	args: { orderId: v.id(TABLE.ORDERS) },
 	handler: async (ctx, args) => {
