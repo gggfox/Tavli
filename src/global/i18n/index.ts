@@ -31,6 +31,7 @@ export { OptionsKeys, type OptionsKey } from "./keys/options";
 export { OrderingKeys, type OrderingKey } from "./keys/ordering";
 export { OrdersKeys, type OrdersKey } from "./keys/orders";
 export { PaymentsKeys, type PaymentsKey } from "./keys/payments";
+export { DisputesKeys, type DisputesKey } from "./keys/disputes";
 export { PayoutsKeys, type PayoutsKey } from "./keys/payouts";
 export { ReservationSettingsKeys, type ReservationSettingsKey } from "./keys/reservationSettings";
 export { ReservationsKeys, type ReservationsKey } from "./keys/reservations";

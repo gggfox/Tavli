@@ -534,6 +534,70 @@
 			"tip": "Tip"
 		}
 	},
+	"disputes": {
+		"section": {
+			"title": "Disputes",
+			"description": "When a diner's bank pulls a payment back. These charges succeeded, so they still appear as paid in the list below."
+		},
+		"empty": {
+			"title": "No disputes",
+			"description": "None of your payments has been questioned by a diner's bank."
+		},
+		"recovery": {
+			"title": "Repaying a reversed payment",
+			"body": "{{percent}}% of the food subtotal on each new order is held back until this is repaid. Tips are never touched, and what your diners pay does not change.",
+			"outstanding": "{{amount}} left to repay",
+			"recovered": "{{amount}} repaid so far",
+			"off": "Nothing is being held back from your orders."
+		},
+		"list": {
+			"amount": "{{amount}} disputed",
+			"order": "Order #{{number}}",
+			"orderUnknown": "No single order — this charge covered a tab",
+			"openedOn": "Opened {{date}}",
+			"closedOn": "Decided {{date}}",
+			"reinstatedOn": "Money returned {{date}}",
+			"reasonLabel": "Reason given",
+			"nextLabel": "What happens next",
+			"reference": "Stripe reference",
+			"ledgerLabel": "Recovery ledger",
+			"ledgerLine": "{{recovered}} recovered, {{outstanding}} outstanding ({{status}})"
+		},
+		"status": {
+			"warningNeedsResponse": "Early warning",
+			"warningUnderReview": "Early warning",
+			"warningClosed": "Closed, no charge",
+			"needsResponse": "With the bank",
+			"underReview": "Under review",
+			"won": "Resolved in your favour",
+			"lost": "Reversed",
+			"unknown": "Being looked at"
+		},
+		"next": {
+			"open": "Tavli is handling this with Stripe. Nothing is being held back from you while it is open, and we will tell you when it is decided.",
+			"won": "The payment stands and the money is yours. Anything held back for this dispute has been returned to you.",
+			"lostNoRecovery": "The bank returned this payment to the diner. Nothing is being held back from your payouts — Tavli covers this one. Your sales figures are unchanged.",
+			"lostWithRecovery": "The bank returned this payment to the diner. To cover it, {{percent}}% of the food subtotal on your next orders is held back until {{outstanding}} has been repaid — never from tips, and what your diners pay does not change.",
+			"lostSettled": "The bank returned this payment to the diner. Nothing further is being held back from your orders for it."
+		},
+		"admin": {
+			"title": "Dispute recovery",
+			"description": "How much of each new order's food subtotal is held back to repay this restaurant's lost chargebacks. Whole percent, 0 to {{max}}. Platform admins only.",
+			"label": "Hold back",
+			"hint": "{{percent}}% of each order's food subtotal is held back while this restaurant owes a reversed payment. Tips are never touched.",
+			"disabledHint": "0 means recovery is off: lost chargebacks are still recorded, but nothing is ever held back from this restaurant's orders.",
+			"save": "Save",
+			"saving": "Saving…",
+			"saved": "Saved — holding back {{percent}}% of each order's food subtotal.",
+			"invalid": "Enter a whole number between 0 and {{max}}."
+		},
+		"notification": {
+			"opened": "A diner's bank is questioning a {{amount}} {{currency}} payment. Nothing is being held back while it is reviewed.",
+			"won": "A disputed {{amount}} {{currency}} payment was resolved in your favour. The money is yours.",
+			"lost": "A diner's bank reversed a {{amount}} {{currency}} payment. Nothing is being held back from your payouts.",
+			"lostWithRecovery": "A diner's bank reversed a {{amount}} {{currency}} payment. {{percent}}% of the food subtotal on your next orders is held back until it is repaid."
+		}
+	},
 	"customer": {
 		"nav": {
 			"menu": "Menu",
@@ -718,7 +782,9 @@
 		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "This organization has used all its AI images for the month.",
 		"AI_IMAGE_CREDITS_EXHAUSTED": "AI image credits are exhausted. Contact Tavli support.",
 		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again.",
-		"ERROR_NOTIFICATION_NOT_FOUND": "That notification no longer exists."
+		"ERROR_NOTIFICATION_NOT_FOUND": "That notification no longer exists.",
+		"ERROR_PAYMENT_UNDER_DISPUTE": "This charge is being disputed by the diner's bank, so it can't be refunded. Tavli is handling the dispute.",
+		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "The dispute recovery percentage must be a whole number between 0 and 50."
 	},
 	"time": {
 		"relative": {

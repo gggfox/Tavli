@@ -119,6 +119,11 @@ export const internalListPaymentsForExportYear = internalQuery({
 					subtotalCents: hasSplit ? money.restaurantRevenue : null,
 					serviceFeeCents: money.serviceFee,
 					netToRestaurantCents: money.netToRestaurant,
+					// A settlement figure, not a sales figure (TAVLI-102): the
+					// order sold what it sold, and the recovery is the repayment
+					// of an older chargeback on its own line.
+					disputeRecoveryCents: money.disputeRecovery,
+					settledToRestaurantCents: money.settledToRestaurant,
 					gratuityCents: payment.gratuityAmount ?? null,
 					currency: payment.currency,
 					succeededAt: payment.succeededAt ?? null,

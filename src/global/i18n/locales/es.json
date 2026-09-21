@@ -534,6 +534,70 @@
 			"tip": "Propina"
 		}
 	},
+	"disputes": {
+		"section": {
+			"title": "Disputas",
+			"description": "Cuando el banco de un comensal revierte un pago. Estos cargos sí se completaron, así que siguen apareciendo como pagados en la lista de abajo."
+		},
+		"empty": {
+			"title": "Sin disputas",
+			"description": "Ningún banco ha cuestionado tus pagos."
+		},
+		"recovery": {
+			"title": "Reponiendo un pago revertido",
+			"body": "Se retiene el {{percent}}% del subtotal de alimentos de cada pedido nuevo hasta cubrirlo. Las propinas nunca se tocan, y lo que pagan tus comensales no cambia.",
+			"outstanding": "Faltan {{amount}} por reponer",
+			"recovered": "{{amount}} repuestos hasta ahora",
+			"off": "No se está reteniendo nada de tus pedidos."
+		},
+		"list": {
+			"amount": "{{amount}} en disputa",
+			"order": "Pedido #{{number}}",
+			"orderUnknown": "Sin un pedido único — este cargo cubrió una cuenta",
+			"openedOn": "Abierta el {{date}}",
+			"closedOn": "Resuelta el {{date}}",
+			"reinstatedOn": "Dinero devuelto el {{date}}",
+			"reasonLabel": "Motivo indicado",
+			"nextLabel": "Qué sigue",
+			"reference": "Referencia de Stripe",
+			"ledgerLabel": "Registro de recuperación",
+			"ledgerLine": "{{recovered}} recuperados, {{outstanding}} pendientes ({{status}})"
+		},
+		"status": {
+			"warningNeedsResponse": "Aviso previo",
+			"warningUnderReview": "Aviso previo",
+			"warningClosed": "Cerrada, sin cargo",
+			"needsResponse": "Con el banco",
+			"underReview": "En revisión",
+			"won": "Resuelta a tu favor",
+			"lost": "Revertida",
+			"unknown": "En revisión"
+		},
+		"next": {
+			"open": "Tavli se encarga de esto con Stripe. No se te está reteniendo nada mientras está abierta, y te avisamos cuando se resuelva.",
+			"won": "El pago se mantiene y el dinero es tuyo. Lo que se hubiera retenido por esta disputa ya te fue devuelto.",
+			"lostNoRecovery": "El banco devolvió este pago al comensal. No se retendrá nada de tus depósitos — Tavli absorbe este caso. Tus cifras de ventas no cambian.",
+			"lostWithRecovery": "El banco devolvió este pago al comensal. Para cubrirlo, se retiene el {{percent}}% del subtotal de alimentos de tus siguientes pedidos hasta reponer {{outstanding}} — nunca de las propinas, y lo que pagan tus comensales no cambia.",
+			"lostSettled": "El banco devolvió este pago al comensal. Ya no se está reteniendo nada de tus pedidos por esta disputa."
+		},
+		"admin": {
+			"title": "Recuperación de disputas",
+			"description": "Cuánto del subtotal de alimentos de cada pedido nuevo se retiene para reponer los contracargos perdidos de este restaurante. Número entero, de 0 a {{max}}. Solo administradores de la plataforma.",
+			"label": "Retener",
+			"hint": "Se retiene el {{percent}}% del subtotal de alimentos de cada pedido mientras este restaurante deba un pago revertido. Las propinas nunca se tocan.",
+			"disabledHint": "0 significa que la recuperación está apagada: los contracargos perdidos se siguen registrando, pero nunca se retiene nada de los pedidos de este restaurante.",
+			"save": "Guardar",
+			"saving": "Guardando…",
+			"saved": "Guardado — se retiene el {{percent}}% del subtotal de alimentos de cada pedido.",
+			"invalid": "Escribe un número entero entre 0 y {{max}}."
+		},
+		"notification": {
+			"opened": "El banco de un comensal está cuestionando un pago de {{amount}} {{currency}}. No se retiene nada mientras se revisa.",
+			"won": "Un pago en disputa de {{amount}} {{currency}} se resolvió a tu favor. El dinero es tuyo.",
+			"lost": "El banco de un comensal revirtió un pago de {{amount}} {{currency}}. No se retendrá nada de tus depósitos.",
+			"lostWithRecovery": "El banco de un comensal revirtió un pago de {{amount}} {{currency}}. Se retiene el {{percent}}% del subtotal de alimentos de tus siguientes pedidos hasta reponerlo."
+		}
+	},
 	"customer": {
 		"nav": {
 			"menu": "Menú",
@@ -718,7 +782,9 @@
 		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "Esta organización ya usó todas sus imágenes con IA del mes.",
 		"AI_IMAGE_CREDITS_EXHAUSTED": "Se agotaron los créditos de imágenes con IA. Contacta a soporte de Tavli.",
 		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo.",
-		"ERROR_NOTIFICATION_NOT_FOUND": "Esa notificación ya no existe."
+		"ERROR_NOTIFICATION_NOT_FOUND": "Esa notificación ya no existe.",
+		"ERROR_PAYMENT_UNDER_DISPUTE": "El banco del comensal tiene este cargo en disputa, así que no se puede reembolsar. Tavli está atendiendo la disputa.",
+		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "El porcentaje de recuperación de disputas debe ser un número entero entre 0 y 50."
 	},
 	"time": {
 		"relative": {

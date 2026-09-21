@@ -385,6 +385,14 @@ interface PaymentExportRow {
 	subtotalCents: number | null;
 	serviceFeeCents: number | null;
 	netToRestaurantCents: number | null;
+	/**
+	 * Withheld from this payment's transfer to repay a lost dispute
+	 * (TAVLI-102). Its own column on purpose: the order still sold what it
+	 * sold, so the sales figures are unchanged and the settlement figure
+	 * differs from them visibly.
+	 */
+	disputeRecoveryCents: number;
+	settledToRestaurantCents: number | null;
 	gratuityCents: number | null;
 	currency: string;
 	succeededAt: number | null;
@@ -440,6 +448,8 @@ export const exportPaymentsXlsx = action({
 		const monthlySubtotalCents = new Array(12).fill(0);
 		const monthlyServiceFeeCents = new Array(12).fill(0);
 		const monthlyNetCents = new Array(12).fill(0);
+		const monthlyDisputeRecoveryCents = new Array(12).fill(0);
+		const monthlySettledCents = new Array(12).fill(0);
 
 		for (const row of rows) {
 			const bucketingMs = row.succeededAt ?? row.createdAt;
@@ -455,6 +465,8 @@ export const exportPaymentsXlsx = action({
 				monthlySubtotalCents[idx] += row.subtotalCents ?? 0;
 				monthlyServiceFeeCents[idx] += row.serviceFeeCents ?? 0;
 				monthlyNetCents[idx] += row.netToRestaurantCents ?? 0;
+				monthlyDisputeRecoveryCents[idx] += row.disputeRecoveryCents;
+				monthlySettledCents[idx] += row.settledToRestaurantCents ?? 0;
 			}
 		}
 
@@ -468,6 +480,12 @@ export const exportPaymentsXlsx = action({
 			: "tavli service fee";
 		const gratuityLabel = currencyLabel ? `gratuity (${currencyLabel})` : "gratuity";
 		const netLabel = currencyLabel ? `net to restaurant (${currencyLabel})` : "net to restaurant";
+		const recoveryLabel = currencyLabel
+			? `dispute recovery withheld (${currencyLabel})`
+			: "dispute recovery withheld";
+		const settledLabel = currencyLabel
+			? `settled to restaurant (${currencyLabel})`
+			: "settled to restaurant";
 
 		const headers = [
 			"daily order number",
@@ -481,6 +499,8 @@ export const exportPaymentsXlsx = action({
 			serviceFeeLabel,
 			gratuityLabel,
 			netLabel,
+			recoveryLabel,
+			settledLabel,
 			"currency",
 			"created at",
 			"succeeded at",
@@ -508,6 +528,8 @@ export const exportPaymentsXlsx = action({
 			formatMoneyCents(r.serviceFeeCents),
 			formatMoneyCents(r.gratuityCents),
 			formatMoneyCents(r.netToRestaurantCents),
+			formatMoneyCents(r.disputeRecoveryCents),
+			formatMoneyCents(r.settledToRestaurantCents),
 			r.currency,
 			formatLocalTimestamp(r.createdAt, tz),
 			formatLocalTimestamp(r.succeededAt, tz),
@@ -542,6 +564,8 @@ export const exportPaymentsXlsx = action({
 			`succeeded ${serviceFeeLabel}`,
 			`succeeded ${gratuityLabel}`,
 			`succeeded ${netLabel}`,
+			`succeeded ${recoveryLabel}`,
+			`succeeded ${settledLabel}`,
 			`cash orders ${subtotalLabel}`,
 		];
 		const summaryRows: CellValue[][] = monthNames.map((name, i) => [
@@ -552,6 +576,8 @@ export const exportPaymentsXlsx = action({
 			formatMoneyCents(monthlyServiceFeeCents[i]),
 			formatMoneyCents(monthlyGratuityCents[i]),
 			formatMoneyCents(monthlyNetCents[i]),
+			formatMoneyCents(monthlyDisputeRecoveryCents[i]),
+			formatMoneyCents(monthlySettledCents[i]),
 			formatMoneyCents(cashByMonth[i]),
 		]);
 		const totalCount = rows.length;
@@ -565,6 +591,8 @@ export const exportPaymentsXlsx = action({
 				formatMoneyCents(sumOf(monthlyServiceFeeCents)),
 				formatMoneyCents(sumOf(monthlyGratuityCents)),
 				formatMoneyCents(sumOf(monthlyNetCents)),
+				formatMoneyCents(sumOf(monthlyDisputeRecoveryCents)),
+				formatMoneyCents(sumOf(monthlySettledCents)),
 				formatMoneyCents(sumOf(cashByMonth)),
 			],
 			[],
@@ -580,6 +608,14 @@ export const exportPaymentsXlsx = action({
 			[
 				"Note: tip rows (kind = tip) are separate payments with no order; their whole amount " +
 					"is gratuity and carries no service fee.",
+			],
+			[
+				"Note: 'dispute recovery withheld' is money kept back from this payment's transfer to " +
+					"repay an earlier lost chargeback (from 2026-09). It is NOT a reduction of the sale — " +
+					"'subtotal' and 'net to restaurant' report what the order sold either way — which is " +
+					"why 'settled to restaurant' (net minus recovery) is what matches the bank deposit. " +
+					"It is counted only once the charge settled; a failed or superseded attempt withheld " +
+					"nothing.",
 			],
 			[
 				"Note: cash orders marked paid in person have no payment row at all — they appear " +

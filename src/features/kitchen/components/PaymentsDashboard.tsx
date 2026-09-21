@@ -1,4 +1,5 @@
 /* eslint-disable boundaries/no-unknown -- feature-internal hooks/types not in eslint-boundaries map */
+import { DisputesSection } from "@/features/disputes";
 import { PayoutsHeldBanner } from "@/features/payouts";
 import { usePaymentsDashboardPrefs } from "../hooks/usePaymentsDashboardPrefs";
 import type { PaymentsTimePeriod } from "../paymentsDashboardSearch";
@@ -135,6 +136,13 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			 * (TAVLI-103). The banner renders nothing while nothing is held.
 			 */}
 			<PayoutsHeldBanner restaurantId={restaurantId} />
+
+			{/*
+			 * A chargeback is equally invisible in this ledger: the charge it
+			 * reversed succeeded and is still listed as succeeded (TAVLI-102).
+			 * The card renders nothing for a restaurant that has never had one.
+			 */}
+			<DisputesSection restaurantId={restaurantId} />
 
 			<div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
 				<SummaryCard

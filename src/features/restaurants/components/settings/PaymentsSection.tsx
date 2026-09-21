@@ -1,3 +1,4 @@
+import { DisputeRecoveryControl } from "@/features/disputes";
 import { StripeConnectSetup } from "@/features/restaurants/components/StripeConnectSetup";
 import { BillingSection } from "@/features/restaurants/components/settings/BillingSection";
 import { Skeleton } from "@/global/components";
@@ -53,6 +54,14 @@ export function PaymentsSection({ restaurant, isAdmin }: Readonly<PaymentsSectio
 	return (
 		<section data-testid="settings-section-payments" className="space-y-4">
 			<StripeConnectSetup restaurantId={restaurant._id} />
+			{/*
+			 * Dispute recovery (TAVLI-102) sits in the Stripe block because it is
+			 * about the same direction of money — what reaches the restaurant from
+			 * its diners — but it is a commercial term only Tavli sets, so the
+			 * control renders nothing for anyone but a platform admin. Its own
+			 * query is the gate; `isAdmin` here would be a second, drift-prone copy.
+			 */}
+			<DisputeRecoveryControl restaurantId={restaurant._id} />
 			<BillingSection restaurant={restaurant} isAdmin={isAdmin} />
 		</section>
 	);

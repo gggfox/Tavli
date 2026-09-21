@@ -33,7 +33,16 @@ const ADMIN = "admin-dispute";
 const MANAGER = "manager-dispute";
 const DINER = "diner-dispute";
 
+/**
+ * Loose on purpose, exactly as the other Stripe suites declare it: the helpers
+ * below only insert rows. The test bodies keep the concrete instance returned
+ * by `newTest`, whose inferred type carries the schema — which is what makes
+ * `ctx.db.query(...).withIndex(...)` typecheck inside `t.run`.
+ */
 type TestConvex = ReturnType<typeof convexTest>;
+
+/** The concrete instance, for helpers that need to READ rows by index. */
+type SchemaAwareConvex = ReturnType<typeof newTest>;
 
 /**
  * A restaurant that can take payments, with an owner and a manager who both
@@ -214,7 +223,7 @@ async function deliver(t: TestConvex, event: ReturnType<typeof disputeEvent>) {
 	});
 }
 
-function newTest(): TestConvex {
+function newTest() {
 	const t = convexTest(schema, modules);
 	registerDisputeComponents(t);
 	return t;
@@ -724,7 +733,7 @@ describe("the deduction on the next order", () => {
 });
 
 describe("won and reinstated", () => {
-	async function seedLostAndRecovered(t: TestConvex, restaurantId: Id<"restaurants">) {
+	async function seedLostAndRecovered(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
 		await seedPaidOrder(t, { restaurantId, subtotal: 30_000, paymentIntentId: "pi_win" });
 		await deliver(
 			t,
