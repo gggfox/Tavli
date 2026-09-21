@@ -1640,6 +1640,233 @@ describe("retries and races (review round 2)", () => {
 	});
 });
 
+describe("a trimmed return, and reversals in flight (review round 3)", () => {
+	/**
+	 * A reinstated row owing 500, with a return already scheduled, and one of
+	 * the payments that drew it down about to be refunded.
+	 */
+	async function seedScheduledReturn(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_trim",
+		});
+		let recoveryId: Id<"disputeRecoveries">;
+		await t.run(async (ctx) => {
+			recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_trim",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 500,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				returnScheduledAt: 2_000,
+				createdAt: 1_000,
+				updatedAt: 2_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 500,
+				disputeRecoveryAppliedAt: 1_500,
+				disputeRecoveryLegs: [{ recoveryId: recoveryId!, amount: 500 }],
+			});
+		});
+		return { paymentId, recoveryId: recoveryId! };
+	}
+
+	it("transfers what the row says at execution, not what it said at scheduling", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedScheduledReturn(t, restaurantId);
+
+		// The return is queued for 500…
+		await t.run(async (ctx) => {
+			await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
+				recoveryId,
+				stripeAccountId: "acct_dispute",
+				stripeDisputeId: "dp_trim",
+				amount: 500,
+				currency: "mxn",
+			});
+		});
+
+		// …and then 60% of the charge is refunded, trimming the row to 200.
+		// (6,720 of 11,200 → 300 of the 500.)
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 6_720,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+		expect(await t.run(async (ctx) => (await ctx.db.get(recoveryId))?.recovered)).toBe(200);
+
+		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_trimmed", amount: 200 });
+		await drainScheduled(t);
+
+		// 200, never 500 — the 300 difference went back to the diner, so sending
+		// it to the restaurant as well would leak it with nothing to alert on.
+		expect(mockStripeClient.transfers.create).toHaveBeenCalledWith(
+			expect.objectContaining({ amount: 200 }),
+			{ idempotencyKey: "dispute-recovery-return:dp_trim" }
+		);
+		expect(await t.run(async (ctx) => (await ctx.db.get(recoveryId))?.returnedAmount)).toBe(200);
+	});
+
+	it("stands down entirely when the refund left nothing to return", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedScheduledReturn(t, restaurantId);
+
+		await t.run(async (ctx) => {
+			await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
+				recoveryId,
+				stripeAccountId: "acct_dispute",
+				stripeDisputeId: "dp_trim",
+				amount: 500,
+				currency: "mxn",
+			});
+		});
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		expect(mockStripeClient.transfers.create).not.toHaveBeenCalled();
+		const row = await t.run(async (ctx) => ctx.db.get(recoveryId));
+		expect(row?.recovered).toBe(0);
+		expect(row?.returnedAt ?? null).toBeNull();
+	});
+
+	it("reverses the excess when the transfer beat the trim to Stripe", async () => {
+		// Belt and braces: the action read 500 and was mid-flight when the trim
+		// landed, so the money left before anything could lower it.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId, recoveryId } = await seedScheduledReturn(t, restaurantId);
+
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 6_720,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_excess" });
+		await t.mutation(internal.disputes.markRecoveryReturnedInternal, {
+			recoveryId,
+			stripeTransferId: "tr_raced",
+			amount: 500,
+		});
+		await drainScheduled(t);
+
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenCalledWith(
+			"tr_raced",
+			expect.objectContaining({ amount: 300 }),
+			{ idempotencyKey: `dispute-return-reversal:${recoveryId}:tr_raced:300` }
+		);
+		const row = await t.run(async (ctx) => ctx.db.get(recoveryId));
+		expect(row?.returnExcessReversed).toBe(300);
+		// Net paid out: 500 transferred minus 300 reversed = the 200 owed.
+		expect(row?.returnedAmount).toBe(200);
+	});
+
+	it("sends only the new slice when a bigger refund lands before the first reversal confirms", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_pending_reversal",
+		});
+		await t.run(async (ctx) => {
+			const recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_pending_reversal",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 2_000,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				returnedAt: 3_000,
+				returnedAmount: 2_000,
+				stripeTransferId: "tr_out",
+				createdAt: 1_000,
+				updatedAt: 3_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 2_000,
+				disputeRecoveryAppliedAt: 2_500,
+				disputeRecoveryLegs: [{ recoveryId, amount: 2_000 }],
+			});
+		});
+
+		// Two refund deliveries back to back, with NOTHING drained in between —
+		// so the first reversal has not confirmed and `disputeReturnReversals` is
+		// still empty when the second is planned.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 2_800,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_step" });
+		await drainScheduled(t);
+
+		// 500 then 1,500 — never 500 then 2,000, which would reverse the first
+		// slice twice or be rejected depending on what Stripe saw second.
+		const amounts = mockStripeClient.transfers.createReversal.mock.calls.map(
+			(call) => call[1].amount
+		);
+		expect(amounts).toEqual([500, 1_500]);
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeReturnReversals).toEqual([
+			{ stripeTransferId: "tr_out", amount: 2_000 },
+		]);
+	});
+
+	it("treats a reused key with different parameters as a failure, not a race", async () => {
+		// `idempotency_error` means the same key came back with different
+		// parameters — a trimmed retry against an amount that already went out.
+		// Swallowing it would make the daily sweep retry the same mismatch every
+		// day, in silence.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { recoveryId } = await seedScheduledReturn(t, restaurantId);
+
+		const mismatch = Object.assign(new Error("Keys for idempotent requests..."), {
+			type: "idempotency_error",
+		});
+		mockStripeClient.transfers.create.mockRejectedValue(mismatch);
+		await t.run(async (ctx) => {
+			await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
+				recoveryId,
+				stripeAccountId: "acct_dispute",
+				stripeDisputeId: "dp_trim",
+				amount: 500,
+				currency: "mxn",
+			});
+		});
+		await drainScheduled(t);
+
+		const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+		expect(alerts.some((a) => a.dedupeKey === "dispute_recovery_return_failed:dp_trim")).toBe(true);
+	});
+});
+
 describe("the write-off sweep", () => {
 	it("writes off an outstanding loss older than the window and leaves younger ones alone", async () => {
 		const t = newTest();

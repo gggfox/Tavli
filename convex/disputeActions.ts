@@ -134,14 +134,39 @@ export const returnRecoveredFunds = internalAction({
 		currency: v.string(),
 	},
 	handler: async (ctx, args): Promise<void> => {
-		if (args.amount <= 0) return;
+		// Re-read the row rather than trust the amount frozen at scheduling
+		// (review round 3). Between the schedule and this run, a refund on one
+		// of the payments that drew this row down can trim `recovered` — and it
+		// trims precisely because no transfer had gone out yet. Transferring the
+		// stale figure would send more than is owed, with nothing to alert on
+		// and nothing to reverse it.
+		const row: {
+			recovered: number;
+			currency: string;
+			stripeDisputeId: string;
+			returnedAt: number | undefined;
+		} | null = await ctx.runQuery(internal.disputes.getRecoveryForReturnInternal, {
+			recoveryId: args.recoveryId,
+		});
+		if (!row || row.returnedAt !== undefined) return;
+
+		const amount = row.recovered;
+		if (amount <= 0) {
+			// Trimmed to nothing: the refund gave the diner back everything this
+			// row had been paid down by, so there is no longer anything to return.
+			console.log(
+				"[disputeActions.returnRecoveredFunds] nothing left to return after a refund",
+				JSON.stringify({ stripeDisputeId: redactExternalId(args.stripeDisputeId) })
+			);
+			return;
+		}
 
 		const stripeClient = getStripeClient();
 		try {
 			const transfer: Stripe.Transfer = await stripeClient.transfers.create(
 				{
-					amount: args.amount,
-					currency: args.currency,
+					amount,
+					currency: row.currency,
 					destination: args.stripeAccountId,
 					description: `Dispute recovery returned (${args.stripeDisputeId})`,
 					metadata: {
@@ -150,13 +175,16 @@ export const returnRecoveredFunds = internalAction({
 						reason: "dispute_recovery_return",
 					},
 				},
+				// Unchanged by the re-read: the key identifies the return of THIS
+				// dispute, so it still happens exactly once however many runs
+				// reach here.
 				{ idempotencyKey: `dispute-recovery-return:${args.stripeDisputeId}` }
 			);
 
 			await ctx.runMutation(internal.disputes.markRecoveryReturnedInternal, {
 				recoveryId: args.recoveryId,
 				stripeTransferId: transfer.id,
-				amount: args.amount,
+				amount: transfer.amount ?? amount,
 			});
 		} catch (error) {
 			// Two calls sharing one idempotency key is a RACE, not a failure: the
@@ -195,24 +223,21 @@ export const returnRecoveredFunds = internalAction({
 });
 
 /**
- * Whether a Stripe error means "somebody else is already doing this".
+ * Whether a Stripe error means "somebody else is doing this **right now**".
  *
- * Stripe answers `idempotency_key_in_use` (HTTP 409) when a second request
- * arrives while the first with the same key is still in flight. For every
- * transfer in this module that is a race between the event-driven schedule and
- * the daily sweep, and the correct response is to stand down — the winner is
- * moving the money and will record it.
+ * Exactly one code qualifies: `idempotency_key_in_use` (HTTP 409), which Stripe
+ * answers when a second request arrives while the first with the same key is
+ * still in flight. That is a race between the event-driven schedule and the
+ * daily sweep, the winner is moving the money, and the loser should stand down.
  *
- * Matched structurally rather than on the message, but with a message fallback:
- * the error crosses no process boundary here, yet the SDK's shape has moved
- * between major versions and a missed match would turn a benign race back into
- * a severe alert.
+ * Stripe's broader `type: "idempotency_error"` is deliberately **not** treated
+ * as a race. It means the same key was reused with *different parameters* —
+ * which is what a trimmed return looks like when the original amount already
+ * reached Stripe. Swallowing it would make the daily sweep retry that same
+ * mismatch every day, forever, in silence. It is a real failure and it alerts.
  */
 function isIdempotencyKeyInUse(error: unknown): boolean {
-	const candidate = error as { code?: string; type?: string; message?: string } | null;
-	if (candidate?.code === "idempotency_key_in_use") return true;
-	if (candidate?.type === "idempotency_error") return true;
-	return typeof candidate?.message === "string" && candidate.message.includes("idempotency");
+	return (error as { code?: string } | null)?.code === "idempotency_key_in_use";
 }
 
 /**
@@ -310,7 +335,10 @@ export const returnRecoveryShortfall = internalAction({
  */
 export const reverseRecoveryTransfer = internalAction({
 	args: {
-		paymentId: v.id("payments"),
+		/** A refund claw-back, scoped to the payment whose sale was refunded. */
+		paymentId: v.optional(v.id("payments")),
+		/** An over-sized return, scoped to the ledger row that was trimmed. */
+		recoveryId: v.optional(v.id("disputeRecoveries")),
 		stripeTransferId: v.string(),
 		/** Smallest currency unit — only the part not yet reversed. */
 		amount: v.number(),
@@ -321,6 +349,10 @@ export const reverseRecoveryTransfer = internalAction({
 	handler: async (ctx, args): Promise<void> => {
 		if (args.amount <= 0) return;
 
+		// Whichever side owns this reversal is what scopes the idempotency key.
+		const scope = args.paymentId ?? args.recoveryId;
+		if (!scope) return;
+
 		const stripeClient = getStripeClient();
 		try {
 			const reversal: Stripe.TransferReversal = await stripeClient.transfers.createReversal(
@@ -328,15 +360,16 @@ export const reverseRecoveryTransfer = internalAction({
 				{
 					amount: args.amount,
 					description: `Refund claw-back (${args.label})`,
-					metadata: { paymentId: args.paymentId, reason: "dispute_return_reversal" },
+					metadata: { scope, reason: "dispute_return_reversal" },
 				},
 				{
-					idempotencyKey: `dispute-return-reversal:${args.paymentId}:${args.stripeTransferId}:${args.cumulative}`,
+					idempotencyKey: `dispute-return-reversal:${scope}:${args.stripeTransferId}:${args.cumulative}`,
 				}
 			);
 
 			await ctx.runMutation(internal.disputes.markReturnReversalInternal, {
-				paymentId: args.paymentId,
+				...(args.paymentId && { paymentId: args.paymentId }),
+				...(args.recoveryId && { recoveryId: args.recoveryId }),
 				stripeTransferId: args.stripeTransferId,
 				cumulative: args.cumulative,
 				stripeTransferReversalId: reversal.id,
@@ -349,7 +382,7 @@ export const reverseRecoveryTransfer = internalAction({
 					integration: "stripe",
 					operation: "transfers.createReversal",
 				}),
-				paymentId: redactExternalId(args.paymentId),
+				scope: redactExternalId(scope),
 				stripeTransferId: redactExternalId(args.stripeTransferId),
 			});
 			// Usually an insufficient connected-account balance: the restaurant
@@ -357,9 +390,9 @@ export const reverseRecoveryTransfer = internalAction({
 			await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
 				kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
 				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
-				paymentId: args.paymentId,
+				...(args.paymentId && { paymentId: args.paymentId }),
 				stripeObjectId: args.stripeTransferId,
-				dedupeKey: `dispute_return_reversal_failed:${args.paymentId}:${args.stripeTransferId}`,
+				dedupeKey: `dispute_return_reversal_failed:${scope}:${args.stripeTransferId}`,
 			});
 			throw error;
 		}

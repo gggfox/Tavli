@@ -1054,6 +1054,25 @@ export default defineSchema({
 			)
 		),
 		/**
+		 * Reversal targets already handed to the scheduler but not yet confirmed
+		 * by Stripe.
+		 *
+		 * `disputeReturnReversals` only moves on success, so without this a
+		 * second, larger refund arriving before the first reversal settles would
+		 * read "nothing reversed yet" and re-send the whole new target —
+		 * reversing the first slice twice, or being rejected, depending on which
+		 * request Stripe sees second. The scheduler reads
+		 * `max(confirmed, pending)`, so each step only ever sends its own delta.
+		 */
+		disputeReturnReversalsPending: v.optional(
+			v.array(
+				v.object({
+					stripeTransferId: v.string(),
+					amount: v.number(),
+				})
+			)
+		),
+		/**
 		 * Cumulative amount given back to the ledger because this payment was
 		 * refunded. A refund returns the diner's whole charge out of the platform
 		 * balance while reversing only the (already-reduced) transfer, so Tavli
@@ -1243,6 +1262,15 @@ export default defineSchema({
 		 * would otherwise raise a severe alert.
 		 */
 		returnScheduledAt: v.optional(v.number()),
+		/**
+		 * Money taken back out of the return transfer because the row was
+		 * trimmed while that transfer was already in flight at Stripe.
+		 *
+		 * A refund on a payment that had drawn this row down lowers `recovered`,
+		 * but a transfer that has already left cannot be lowered — it can only
+		 * be reversed. Cumulative, so a second trim reverses the difference.
+		 */
+		returnExcessReversed: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})

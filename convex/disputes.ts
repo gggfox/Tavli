@@ -1268,10 +1268,27 @@ async function scheduleReturnReversal(
 	}
 ): Promise<number> {
 	const { payment, stripeTransferId, targetReversal } = input;
-	const reversals = payment.disputeReturnReversals ?? [];
-	const already = reversals.find((r) => r.stripeTransferId === stripeTransferId)?.amount ?? 0;
+
+	// `disputeReturnReversals` only moves when Stripe confirms, so a second,
+	// larger refund arriving before the first reversal settles would read
+	// "nothing reversed yet" and re-send the whole new target — reversing the
+	// first slice twice, or colliding with it, depending on what Stripe sees
+	// second. The pending list is what makes each step send only its own delta.
+	const confirmed =
+		payment.disputeReturnReversals?.find((r) => r.stripeTransferId === stripeTransferId)?.amount ??
+		0;
+	const pending =
+		payment.disputeReturnReversalsPending?.find((r) => r.stripeTransferId === stripeTransferId)
+			?.amount ?? 0;
+	const already = Math.max(confirmed, pending);
 	const delta = targetReversal - already;
 	if (delta <= 0) return 0;
+
+	const pendingList = [...(payment.disputeReturnReversalsPending ?? [])];
+	const index = pendingList.findIndex((r) => r.stripeTransferId === stripeTransferId);
+	if (index >= 0) pendingList[index] = { stripeTransferId, amount: targetReversal };
+	else pendingList.push({ stripeTransferId, amount: targetReversal });
+	await ctx.db.patch(payment._id, { disputeReturnReversalsPending: pendingList });
 
 	await ctx.scheduler.runAfter(0, internal.disputeActions.reverseRecoveryTransfer, {
 		paymentId: payment._id,
@@ -1293,13 +1310,48 @@ async function scheduleReturnReversal(
  */
 export const markReturnReversalInternal = internalMutation({
 	args: {
-		paymentId: v.id(TABLE.PAYMENTS),
+		/** Set for a refund claw-back, which is scoped to one payment. */
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		/** Set instead for an over-sized return transfer, which is scoped to the row. */
+		recoveryId: v.optional(v.id(TABLE.DISPUTE_RECOVERIES)),
 		stripeTransferId: v.string(),
 		/** The new cumulative total reversed out of that transfer. */
 		cumulative: v.number(),
 		stripeTransferReversalId: v.string(),
 	},
 	handler: async (ctx, args): Promise<void> => {
+		// The excess-return case: the row, not a payment, is what tracks it.
+		if (args.recoveryId) {
+			const recovery = await ctx.db.get(args.recoveryId);
+			if (!recovery) return;
+			if ((recovery.returnExcessReversed ?? 0) >= args.cumulative) return;
+
+			const now = Date.now();
+			await ctx.db.patch(recovery._id, {
+				returnExcessReversed: args.cumulative,
+				returnedAmount: Math.max(0, (recovery.returnedAmount ?? 0) - args.cumulative),
+				updatedAt: now,
+			});
+			await appendAuditEvent(ctx, {
+				aggregateType: TABLE.DISPUTE_RECOVERIES,
+				aggregateId: recovery._id,
+				eventType: AUDIT_EVENT.DISPUTE_RETURN_REVERSED,
+				restaurantId: recovery.restaurantId,
+				payload: {
+					stripeDisputeId: recovery.stripeDisputeId,
+					stripeTransferId: args.stripeTransferId,
+					stripeTransferReversalId: args.stripeTransferReversalId,
+					reversedTotal: args.cumulative,
+					reason: "return exceeded the trimmed ledger row",
+					currency: recovery.currency,
+				},
+				userId: AUDIT_SYSTEM_USER_ID,
+				idempotencyKey: `dispute_return_excess_reversed:${recovery.stripeDisputeId}:${args.cumulative}`,
+			});
+			return;
+		}
+
+		if (!args.paymentId) return;
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment) return;
 
@@ -1338,6 +1390,41 @@ export const markReturnReversalInternal = internalMutation({
 });
 
 /**
+ * What a return transfer is actually worth **right now** (TAVLI-102, review
+ * round 3).
+ *
+ * The return is scheduled from a mutation that knows `recovered` at that
+ * instant, and the ledger can move before the action runs: a refund on one of
+ * the payments that drew this row down trims `recovered`, and the trim happens
+ * precisely because no transfer had gone out yet. An action that transferred
+ * its frozen argument would send the pre-trim figure and leak the difference,
+ * silently and with nothing to alert on.
+ *
+ * So the action re-reads through this and transfers what the row says now.
+ */
+export const getRecoveryForReturnInternal = internalQuery({
+	args: { recoveryId: v.id(TABLE.DISPUTE_RECOVERIES) },
+	handler: async (
+		ctx,
+		args
+	): Promise<{
+		recovered: number;
+		currency: string;
+		stripeDisputeId: string;
+		returnedAt: number | undefined;
+	} | null> => {
+		const recovery = await ctx.db.get(args.recoveryId);
+		if (!recovery) return null;
+		return {
+			recovered: recovery.recovered,
+			currency: recovery.currency,
+			stripeDisputeId: recovery.stripeDisputeId,
+			returnedAt: recovery.returnedAt,
+		};
+	},
+});
+
+/**
  * Mark a reinstated row's return transfer as settled.
  *
  * The Stripe transfer carries `dispute-recovery-return:${disputeId}` as its
@@ -1354,6 +1441,26 @@ export const markRecoveryReturnedInternal = internalMutation({
 	handler: async (ctx, args): Promise<void> => {
 		const recovery = await ctx.db.get(args.recoveryId);
 		if (!recovery || recovery.returnedAt !== undefined) return;
+
+		// The transfer may have reached Stripe just before a refund trimmed the
+		// row. Nothing can lower a transfer that has left — it can only be
+		// reversed — so reverse the excess rather than record a payout larger
+		// than the row says is owed. The action re-reads the row before
+		// transferring, so this is the narrow window where it read the old
+		// figure; it is belt and braces, not the primary defence.
+		const excess = args.amount - recovery.recovered;
+		if (excess > 0) {
+			const alreadyReversed = recovery.returnExcessReversed ?? 0;
+			if (excess > alreadyReversed) {
+				await ctx.scheduler.runAfter(0, internal.disputeActions.reverseRecoveryTransfer, {
+					recoveryId: recovery._id,
+					stripeTransferId: args.stripeTransferId,
+					amount: excess - alreadyReversed,
+					cumulative: excess,
+					label: `dispute ${recovery.stripeDisputeId} return excess`,
+				});
+			}
+		}
 
 		const now = Date.now();
 		await ctx.db.patch(recovery._id, {
