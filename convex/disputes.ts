@@ -1297,7 +1297,17 @@ async function scheduleReturnReversal(
 		label: string;
 	}
 ): Promise<number> {
-	const { payment, stripeTransferId, targetReversal } = input;
+	const { stripeTransferId, targetReversal } = input;
+
+	// Re-read rather than use the caller's snapshot. One refund can schedule two
+	// reversals — the shortfall transfer and a returned leg's — and the second
+	// call would otherwise build its pending list from the payment as it looked
+	// BEFORE the first call's patch, dropping that entry. The next refund would
+	// then read "nothing pending" for the forgotten transfer and re-send its
+	// whole target, over-reversing it. Reads inside one mutation see the earlier
+	// write, so this is simply the current list.
+	const payment = await ctx.db.get(input.payment._id);
+	if (!payment) return 0;
 
 	// `disputeReturnReversals` only moves when Stripe confirms, so a second,
 	// larger refund arriving before the first reversal settles would read

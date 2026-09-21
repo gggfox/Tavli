@@ -1361,6 +1361,84 @@ describe("a refund after the money was already transferred out (review round 2)"
 		);
 	});
 
+	it("keeps both pending entries when one refund schedules two reversals", async () => {
+		// The shortfall transfer and a returned leg's transfer are both clawed
+		// back by the same refund. Building the second call's pending list from
+		// the pre-patch snapshot dropped the first entry, and the next refund
+		// then re-sent that transfer's whole target instead of its delta.
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_two_reversals",
+		});
+		await t.run(async (ctx) => {
+			const recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_two_reversals",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 2_000,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				returnedAt: 3_000,
+				returnedAmount: 2_000,
+				stripeTransferId: "tr_leg",
+				createdAt: 1_000,
+				updatedAt: 3_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 2_000,
+				disputeRecoveryAppliedAt: 2_500,
+				disputeRecoveryLegs: [{ recoveryId, amount: 2_000 }],
+				disputeRecoveryShortfall: 1_000,
+				disputeRecoveryShortfallTransferId: "tr_short",
+				disputeRecoveryShortfallReturnedAt: 2_600,
+			});
+		});
+
+		// A quarter of the charge: 500 off the leg, 250 off the shortfall.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 2_800,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+
+		const afterFirst = await t.run(async (ctx) => ctx.db.get(paymentId));
+		const pending = [...(afterFirst?.disputeReturnReversalsPending ?? [])].sort((a, b) =>
+			a.stripeTransferId.localeCompare(b.stripeTransferId)
+		);
+		expect(pending).toEqual([
+			{ stripeTransferId: "tr_leg", amount: 500 },
+			{ stripeTransferId: "tr_short", amount: 250 },
+		]);
+
+		// A second refund before either reversal confirms: each transfer must be
+		// sent only its own remaining delta.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_pair" });
+		await drainScheduled(t);
+
+		const byTransfer = new Map<string, number[]>();
+		for (const call of mockStripeClient.transfers.createReversal.mock.calls) {
+			byTransfer.set(call[0], [...(byTransfer.get(call[0]) ?? []), call[1].amount]);
+		}
+		// 500 then 1,500 for the leg (2,000 total), 250 then 750 for the
+		// shortfall (1,000 total) — never the full target twice.
+		expect(byTransfer.get("tr_leg")).toEqual([500, 1_500]);
+		expect(byTransfer.get("tr_short")).toEqual([250, 750]);
+	});
+
 	it("raises a severe alert when the claw-back fails — usually an empty balance", async () => {
 		const t = newTest();
 		const restaurantId = await seedRestaurant(t);
