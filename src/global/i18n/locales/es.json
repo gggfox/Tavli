@@ -2106,7 +2106,7 @@
 		"kind": {
 			"paymentStuck": {
 				"title": "Pago atorado",
-				"explanation": "Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute."
+				"explanation": "Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute. (tipo: {{kind}}, atorado {{minutes}} min)"
 			},
 			"chargeUnmatched": {
 				"title": "Cargo sin orden asociada",

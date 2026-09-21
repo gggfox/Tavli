@@ -35,7 +35,7 @@ describe("stuckPaymentSweepKind (TAVLI-106)", () => {
 	it("sweeps a legacy row with no kind and no sessionId as an order", () => {
 		// Pre-pivot per-order payment. It has an orderId and settles through the
 		// same `orders.confirmPayment` path a kind:order row does.
-		expect(stuckPaymentSweepKind({ orderId: "orders:abc" })).toBe(STUCK_PAYMENT_SWEEP_KIND.ORDER);
+		expect(stuckPaymentSweepKind({})).toBe(STUCK_PAYMENT_SWEEP_KIND.ORDER);
 	});
 
 	it("leaves a legacy tab row to the tab sweep", () => {

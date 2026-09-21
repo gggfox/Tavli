@@ -488,17 +488,28 @@ export const requestPayInPerson = mutation({
  *
  * A payment that already `succeeded` is left untouched — the webhook owns that
  * settlement and cancelling it here would orphan real money.
+ *
+ * `expectedPaymentId` pins the cancel to one attempt (TAVLI-106). The diner's
+ * own abandon happens milliseconds after they decide, so it can read the
+ * pointer and act on it; the stuck-payment sweep decides about a row it read
+ * minutes ago, and in that gap the diner may have started a fresh checkout. A
+ * blind "cancel whatever the order points at" would then stand down their live
+ * attempt. Checked inside this transaction, so it is a guard rather than a
+ * hopeful pre-read.
  */
 export const cancelActivePaymentInternal = internalMutation({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
 		/** Clerk subject of the diner who abandoned the intent (audit actor). */
 		userId: v.string(),
+		/** Cancel only while the order still points at this attempt. */
+		expectedPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
 	},
 	returns: v.boolean(),
 	handler: async (ctx, args) => {
 		const order = await ctx.db.get(args.orderId);
 		if (!order?.activePaymentId) return false;
+		if (args.expectedPaymentId && order.activePaymentId !== args.expectedPaymentId) return false;
 		if (order.status !== "draft" && order.status !== ORDER_STATUS.AWAITING_PAYMENT) return false;
 
 		const payment = await ctx.db.get(order.activePaymentId);

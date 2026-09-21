@@ -52,6 +52,23 @@ crons.interval(
 	internal.stripe.reconcileStuckTabPayments
 );
 
+// The same backstop for ORDER and TIP payments (TAVLI-106), which had none: a
+// dropped `payment_intent.succeeded` left a diner who paid with a round nobody
+// was cooking, or a tip charged and never credited.
+//
+// A SIBLING job rather than a call appended to the tab sweep. They share a
+// cadence and nothing else: different candidate queries, different settlement
+// paths, different failure modes. Chaining them would mean a tab sweep that
+// throws (an unreachable Stripe, a bad candidate that escapes its catch) also
+// silently stops order and tip reconciliation, and the Convex dashboard's cron
+// list would show one job where two ran. Separate jobs fail, retry and are read
+// independently.
+crons.interval(
+	"stuck order and tip payment reconciliation",
+	{ minutes: 5 },
+	internal.stripe.reconcileStuckPayments
+);
+
 // Confirmation codes for assistant-initiated cancellations expire in 10 minutes;
 // this only reclaims the rows. Expiry itself is enforced on redemption, so a
 // late sweep is never a security issue.

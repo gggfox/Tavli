@@ -354,8 +354,12 @@ export async function handleAccountStatusChange(
  *
  * Every target mutation early-returns on an already-SUCCEEDED row, so this is
  * safe to call on a replay.
+ *
+ * Exported for the stuck-payment sweep (TAVLI-106), which needs exactly this
+ * routing question answered for a candidate it decided to retire — and must not
+ * answer it a second, slightly different way.
  */
-async function failPaymentByKind(
+export async function failPaymentByKind(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	ctx: any,
 	payment: Doc<"payments">,

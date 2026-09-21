@@ -2106,7 +2106,7 @@
 		"kind": {
 			"paymentStuck": {
 				"title": "Payment stuck",
-				"explanation": "A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge."
+				"explanation": "A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge. (kind: {{kind}}, stuck {{minutes}} min)"
 			},
 			"chargeUnmatched": {
 				"title": "Charge matches no order",
