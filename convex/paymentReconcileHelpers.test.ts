@@ -79,24 +79,38 @@ describe("decidePaymentReconciliation (TAVLI-106)", () => {
 		).toBe("clear");
 	});
 
-	it("clears an intent back at requires_payment_method — the diner abandoned the card sheet", () => {
-		expect(
-			decidePaymentReconciliation({
-				paymentIntentStatus: "requires_payment_method",
-				ageMs: 6 * MINUTE,
-				kind: STUCK_PAYMENT_SWEEP_KIND.ORDER,
-			})
-		).toBe("clear");
-		expect(
-			decidePaymentReconciliation({
-				paymentIntentStatus: "requires_payment_method",
-				ageMs: 31 * MINUTE,
-				kind: STUCK_PAYMENT_SWEEP_KIND.TIP,
-			})
-		).toBe("clear");
-	});
+	it.each(["requires_payment_method", "requires_action", "requires_confirmation"])(
+		"waits on a %s intent under the alert age — the diner may still be typing",
+		(paymentIntentStatus) => {
+			// A row is `processing` from the moment its intent is created, so at
+			// minute six this may be a diner halfway through their card number.
+			expect(
+				decidePaymentReconciliation({
+					paymentIntentStatus,
+					ageMs: 6 * MINUTE,
+					kind: STUCK_PAYMENT_SWEEP_KIND.ORDER,
+				})
+			).toBe("wait");
+		}
+	);
 
-	it.each(["processing", "requires_action", "requires_confirmation", "requires_capture"])(
+	it.each(["requires_payment_method", "requires_action", "requires_confirmation"])(
+		"clears a %s intent past the alert age rather than alerting for ever",
+		(paymentIntentStatus) => {
+			// These wait on the CUSTOMER and never expire at Stripe. Alerting
+			// would leave the row `processing` and re-raise the same alert every
+			// five minutes; clearing resolves it (review round 1).
+			expect(
+				decidePaymentReconciliation({
+					paymentIntentStatus,
+					ageMs: ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS,
+					kind: STUCK_PAYMENT_SWEEP_KIND.ORDER,
+				})
+			).toBe("clear");
+		}
+	);
+
+	it.each(["processing", "requires_capture"])(
 		"waits on a %s intent under the alert age",
 		(paymentIntentStatus) => {
 			expect(
@@ -109,8 +123,8 @@ describe("decidePaymentReconciliation (TAVLI-106)", () => {
 		}
 	);
 
-	it.each(["processing", "requires_action", "requires_confirmation", "requires_capture"])(
-		"alerts on a %s intent past the alert age",
+	it.each(["processing", "requires_capture"])(
+		"alerts on a %s intent past the alert age — it waits on Stripe, not the diner",
 		(paymentIntentStatus) => {
 			expect(
 				decidePaymentReconciliation({

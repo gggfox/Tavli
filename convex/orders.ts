@@ -1064,7 +1064,15 @@ export const failPayment = internalMutation({
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment?.orderId) return;
-		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+		// Forward-only (review round 1). SUCCEEDED was always refused; so now is
+		// every other terminal status. The caller that made this matter is the
+		// stuck-payment sweep, which decides about a row it read minutes ago: if a
+		// fresh attempt superseded it in that gap, rewriting SUPERSEDED to FAILED
+		// would lose the more precise fact — "replaced", not "declined" — and the
+		// audit event below would claim a decline that never happened.
+		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
+			return;
+		}
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

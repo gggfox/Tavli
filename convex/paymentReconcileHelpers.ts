@@ -115,26 +115,38 @@ export function stuckPaymentReconcileAges(kind: StuckPaymentSweepKind): {
  * `updatedAt` cutoff is a separate thing entirely — it is how the candidate
  * query finds rows that stopped moving.
  *
+ * The table turns on **who the intent is waiting for**.
+ *
  * - `succeeded` — the money is at Stripe and the webhook never landed. Settle.
- * - `canceled` — terminally dead at Stripe. Clear the attempt.
- * - `requires_payment_method` — the card was declined, or the diner opened the
- *   payment sheet and walked away. Every candidate reaching here is already
- *   past its kind's `minAgeMs` by construction (that is what the candidate
- *   query selects on), so this is not a live checkout: clear it. Doing so is
- *   the whole point of the carried TAVLI-104 finding — a served, cash-released
- *   round whose diner abandoned the card sheet is otherwise locked out of
- *   `markOrderPaidInPerson` with ERROR_ORDER_PAYMENT_IN_FLIGHT and no
- *   staff-side release.
- * - `requires_confirmation` / `requires_action` — **diverges from the tab
- *   sweep, which unlocks these.** A tab's lock blocks a whole table from
- *   ordering, so the tab sweep trades an over-eager unlock against that; an
- *   order payment blocks only its own round, and `requires_action` means the
- *   diner is quite possibly mid-3DS in their banking app right now. Clearing
- *   under them would retire a row their confirm is about to charge against.
- *   Wait, then alert.
- * - `processing` / `requires_capture` — genuinely mid-flight at Stripe (the
- *   latter is impossible on this automatic-capture integration, which is why it
- *   is grouped with the waits rather than guessed at). Wait, then alert.
+ * - `canceled` — terminally dead at Stripe. Nothing can change, so clear the
+ *   attempt immediately; no amount of waiting makes a cancelled intent pay.
+ * - `requires_payment_method` / `requires_action` / `requires_confirmation` —
+ *   **waiting on the customer.** Wait, and then, past the kind's `alertAgeMs`,
+ *   CLEAR rather than alert. The waiting matters: a row is `processing` in our
+ *   database from the moment its intent is created, so a diner still typing
+ *   their card at minute six sits at `requires_payment_method`, and retiring
+ *   their attempt under them would be a bug, not a rescue. Fifteen minutes with
+ *   the sheet open (or mid-3DS in a banking app) is a different story — that is
+ *   an abandoned checkout, and clearing it is the whole point of the carried
+ *   TAVLI-104 finding: a served, cash-released round whose diner walked away
+ *   from the card sheet is otherwise locked out of `markOrderPaidInPerson` with
+ *   ERROR_ORDER_PAYMENT_IN_FLIGHT and no staff-side release.
+ *
+ *   Clearing is also the only ending these ever get. An abandoned
+ *   `requires_action` intent does not expire at Stripe, so alerting on it would
+ *   leave the row `processing` and re-raise the same alert every five minutes
+ *   for ever. Resolving what can be resolved beats telling a human about it
+ *   repeatedly.
+ *
+ *   This diverges from the tab sweep, which unlocks all three the moment it
+ *   sees them. A tab's lock blocks an entire table from ordering, so that sweep
+ *   trades an over-eager unlock against a hostage table; an order payment
+ *   blocks only its own round, so it can afford to be sure.
+ * - `processing` / `requires_capture` — **waiting on Stripe.** Time is not ours
+ *   to spend on the customer's behalf here, and cancelling an intent that may
+ *   be moving money would be reckless, so: wait, then alert. (`requires_capture`
+ *   is impossible on this automatic-capture integration, which is why it is
+ *   grouped here rather than guessed at.)
  * - Anything else — a status this code has never seen. Do not guess at the
  *   money state, and do not sit on it either: alert straight away. Unlike the
  *   wait statuses there is no story where time resolves it, and the row is
@@ -152,11 +164,12 @@ export function decidePaymentReconciliation(input: {
 		case "succeeded":
 			return "settle";
 		case "canceled":
-		case "requires_payment_method":
 			return "clear";
-		case "processing":
+		case "requires_payment_method":
 		case "requires_action":
 		case "requires_confirmation":
+			return input.ageMs >= alertAgeMs ? "clear" : "wait";
+		case "processing":
 		case "requires_capture":
 			return input.ageMs >= alertAgeMs ? "alert" : "wait";
 		default:

@@ -9,7 +9,7 @@
  * `paymentIntents.retrieve` mocked.
  */
 import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
@@ -384,6 +384,29 @@ describe("payments.listStuckPayments — candidate selection (TAVLI-106)", () =>
 		expect(rows.map((row) => row.stripePaymentIntentId)).toEqual(["pi_batch_0", "pi_batch_1"]);
 	});
 
+	it("does not let an older tab row eat the batch slot of a real candidate", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		// Older, so it sorts first in the `updatedAt` range.
+		await seedStuckTabPayment(t, { restaurantId, ageMs: 60 * MINUTE });
+		const { paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_behind_the_tab",
+			amount: 2400,
+			ageMs: 20 * MINUTE,
+			kind: "order",
+		});
+
+		// One slot. Excluded inside the range rather than after the `take`, so
+		// the slot goes to the row the sweep can actually act on (review round 1).
+		const rows = await t.query(internal.payments.listStuckPayments, {
+			now: Date.now(),
+			limit: 1,
+		});
+
+		expect(rows.map((row) => row._id)).toEqual([paymentId]);
+	});
+
 	it("skips a processing row that never recorded an intent id", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedRestaurant(t);
@@ -582,7 +605,10 @@ describe("stripe.reconcileStuckPayments (TAVLI-106)", () => {
 			restaurantId,
 			stripePaymentIntentId: "pi_sweep_abandoned",
 			amount: 3100,
-			ageMs: 12 * MINUTE,
+			// Past the order alert age: under it the sweep waits, because a row is
+			// `processing` from the moment the intent is created and the diner may
+			// still be at the sheet (review round 1).
+			ageMs: 16 * MINUTE,
 			orderStatus: "served",
 			kind: "order",
 			paymentState: "processing",
@@ -823,6 +849,190 @@ describe("stripe.reconcileStuckPayments (TAVLI-106)", () => {
 			const alerts = await ctx.db.query("operatorAlerts").collect();
 			expect(alerts).toHaveLength(1);
 			expect(alerts[0].kind).toBe("payment_amount_mismatch");
+		});
+	});
+
+	/**
+	 * Review round 1, the blocking half that stays an alert.
+	 *
+	 * `processing` waits on Stripe, so the sweep cannot resolve it — the row
+	 * stays a candidate for as long as the problem lasts. `dedupeKey` alone
+	 * scopes to OPEN alerts, so the moment an admin acknowledges the row the
+	 * next run would raise a fresh severe alert and mail every platform admin
+	 * again, every five minutes, for clearing their inbox.
+	 *
+	 * Fake timers because the severe path schedules an email job per admin, and
+	 * an undrained job writes to the scheduler table after its transaction has
+	 * closed (the idiom `operatorAlerts.test.ts` established).
+	 */
+	describe("after an acknowledgement", () => {
+		beforeEach(() => {
+			// No Resend key: the scheduled job runs and declines to send, which is
+			// all this test needs from it.
+			delete process.env.RESEND_API_KEY;
+			vi.useFakeTimers();
+		});
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("does not re-alert or re-mail the same stuck payment", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t);
+			await t.run(async (ctx) => {
+				// A platform admin with an address, so a second severe alert would
+				// really schedule a second email.
+				await ctx.db.insert("userRoles", {
+					userId: "admin-sweep",
+					roles: ["admin"],
+					email: "admin@tavli.test",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+			});
+			const { paymentId } = await seedStuckOrderPayment(t, {
+				restaurantId,
+				stripePaymentIntentId: "pi_sweep_ack",
+				amount: 2400,
+				ageMs: ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS + MINUTE,
+				kind: "order",
+			});
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+				id: "pi_sweep_ack",
+				status: "processing",
+			});
+
+			await t.action(internal.stripe.reconcileStuckPayments, {});
+
+			const alertId = await t.run(async (ctx) => {
+				const alerts = await ctx.db.query("operatorAlerts").collect();
+				expect(alerts).toHaveLength(1);
+				// The admin reads it and clears their inbox.
+				await ctx.db.patch(alerts[0]._id, {
+					status: "acknowledged",
+					acknowledgedBy: "admin-sweep",
+					acknowledgedAt: Date.now(),
+				});
+				return alerts[0]._id;
+			});
+
+			// Three more runs over the same unchanged fact.
+			await t.action(internal.stripe.reconcileStuckPayments, {});
+			await t.action(internal.stripe.reconcileStuckPayments, {});
+			await t.action(internal.stripe.reconcileStuckPayments, {});
+
+			await t.run(async (ctx) => {
+				const alerts = await ctx.db.query("operatorAlerts").collect();
+				expect(alerts).toHaveLength(1);
+				expect(alerts[0]._id).toBe(alertId);
+				expect(alerts[0].status).toBe("acknowledged");
+				// And the row is still what it was — nothing was guessed at.
+				expect((await ctx.db.get(paymentId))!.status).toBe("processing");
+			});
+
+			// Exactly the one email the first alert scheduled, and no more.
+			const emailJobs = await t.run(async (ctx) =>
+				(await ctx.db.system.query("_scheduled_functions").collect()).filter((job) =>
+					job.name.includes("sendOperatorAlertEmail")
+				)
+			);
+			expect(emailJobs).toHaveLength(1);
+
+			await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+		});
+	});
+
+	/**
+	 * Review round 1, the half that resolves rather than reports. An abandoned
+	 * 3DS intent sits at `requires_action` for ever — Stripe never expires it —
+	 * so alerting on it would be a permanent alert about a permanent row.
+	 */
+	it("clears an abandoned 3DS attempt past the alert age instead of alerting", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { orderId, paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_sweep_3ds",
+			amount: 2400,
+			ageMs: ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS + MINUTE,
+			kind: "order",
+		});
+
+		mockStripeClient.paymentIntents.retrieve
+			.mockResolvedValueOnce({ id: "pi_sweep_3ds", status: "requires_action" })
+			.mockResolvedValueOnce({ id: "pi_sweep_3ds", status: "requires_action" });
+		mockStripeClient.paymentIntents.cancel.mockResolvedValueOnce({
+			id: "pi_sweep_3ds",
+			status: "canceled",
+		});
+
+		await t.action(internal.stripe.reconcileStuckPayments, {});
+
+		expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_sweep_3ds");
+		await t.run(async (ctx) => {
+			// Resolved, not reported: no alert, and the row has left `processing`
+			// so it can never come back round on the next run.
+			expect(await ctx.db.query("operatorAlerts").collect()).toEqual([]);
+			expect((await ctx.db.get(paymentId))!.status).toBe("cancelled");
+			expect((await ctx.db.get(orderId))!.activePaymentId).toBeUndefined();
+		});
+	});
+
+	/**
+	 * Review round 1, nit 3. The sweep decides about a row it read minutes ago;
+	 * a fresh attempt may have superseded it in that gap, and "replaced" is a
+	 * more precise fact than "declined".
+	 */
+	it("leaves a row superseded between the read and the act alone", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_sweep_superseded",
+			amount: 2400,
+			ageMs: ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS + MINUTE,
+			kind: "order",
+		});
+
+		mockStripeClient.paymentIntents.retrieve.mockImplementationOnce(async () => {
+			// The diner started a fresh checkout while the sweep was talking to
+			// Stripe: the order now points elsewhere and this row is retired.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, { status: "superseded" });
+			});
+			return { id: "pi_sweep_superseded", status: "canceled" };
+		});
+
+		await t.action(internal.stripe.reconcileStuckPayments, {});
+
+		await t.run(async (ctx) => {
+			expect((await ctx.db.get(paymentId))!.status).toBe("superseded");
+			expect((await ctx.db.get(paymentId))!.failedAt).toBeUndefined();
+		});
+	});
+
+	it("leaves a superseded tip row alone for the same reason", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckTipPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_sweep_tip_superseded",
+			amount: 600,
+			ageMs: 40 * MINUTE,
+		});
+
+		mockStripeClient.paymentIntents.retrieve.mockImplementationOnce(async () => {
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, { status: "superseded" });
+			});
+			return { id: "pi_sweep_tip_superseded", status: "canceled" };
+		});
+
+		await t.action(internal.stripe.reconcileStuckPayments, {});
+
+		await t.run(async (ctx) => {
+			expect((await ctx.db.get(paymentId))!.status).toBe("superseded");
 		});
 	});
 

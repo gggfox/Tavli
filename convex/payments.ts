@@ -260,8 +260,16 @@ export const getActiveTipPaymentInternal = internalQuery({
  *   what moves a row into `processing`), so this is a belt-and-braces guard
  *   rather than an expected case.
  *
- * Filtering after the `take` means the batch bound counts rows read, not rows
- * returned, which is the bound that actually matters for the query's cost.
+ * The tab exclusion is pushed INTO the range, ahead of the `take` (review round
+ * 1). It has to be: `take` stops at the first `limit` rows the range yields, so
+ * a busy service's older tab rows would fill the batch and starve the order
+ * payments behind them — silently, and worst exactly when it matters. A
+ * `.filter` on an indexed range is not a scan: it is still bounded by the range,
+ * and it makes the bound count rows the sweep can actually use.
+ *
+ * The two remaining checks stay in code, because neither can starve a batch: a
+ * `processing` row always has an intent id, and the per-kind minimum only ever
+ * holds back rows *younger* than the ones already returned.
  */
 export const listStuckPayments = internalQuery({
 	args: {
@@ -277,11 +285,16 @@ export const listStuckPayments = internalQuery({
 					.eq("status", PAYMENT_STATUS.PROCESSING)
 					.lt("updatedAt", args.now - ORDER_PAYMENT_RECONCILE_MIN_AGE_MS)
 			)
+			// "Has a `kind`, or has no `sessionId`" — the negation of a legacy tab
+			// row, and the exact complement of `stuckPaymentSweepKind` returning
+			// null. The two must stay in step; the assertion below is what says so.
+			.filter((q) => q.or(q.neq(q.field("kind"), undefined), q.eq(q.field("sessionId"), undefined)))
 			.take(args.limit);
 
 		return rows.filter((payment) => {
 			if (!payment.stripePaymentIntentId) return false;
 			const kind = stuckPaymentSweepKind(payment);
+			// Unreachable while the index filter above and the discriminator agree.
 			if (kind === null) return false;
 			return args.now - payment.updatedAt >= stuckPaymentReconcileAges(kind).minAgeMs;
 		});
@@ -463,7 +476,12 @@ export const failTipPayment = internalMutation({
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment || payment.kind !== PAYMENT_KIND.TIP) return;
-		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+		// Forward-only, matching `orders.failPayment` (review round 1): a tip row
+		// the diner replaced with a fresh attempt stays SUPERSEDED, even if the
+		// stuck-payment sweep decided about it a moment before that happened.
+		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
+			return;
+		}
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

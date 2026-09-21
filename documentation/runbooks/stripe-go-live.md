@@ -753,23 +753,40 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
     policies included. A mismatched amount therefore fails the row and raises
     `payment_amount_mismatch` exactly once — the sweep adds no alert of its own
     on top
-  - **`canceled` / `requires_payment_method`** → the attempt is dead (declined
-    card, or a diner who opened the payment sheet and walked away). The intent
-    is cancelled at Stripe FIRST, then the row is retired and the order's
-    payment pointer cleared, so staff can collect cash: without this, a served,
-    cash-owed round is locked out of "mark paid in person" with
-    `ERROR_ORDER_PAYMENT_IN_FLIGHT` and no staff-side release. A tip is simply
-    failed, so the diner can tip again
-  - **`processing` / `requires_action` / `requires_confirmation` /
-    `requires_capture`** → genuinely mid-flight. Left alone until the kind's
-    alert age, then escalated
+  - **`canceled`** → terminally dead at Stripe. The row is retired at once and
+    the order's payment pointer cleared
+  - **`requires_payment_method` / `requires_action` / `requires_confirmation`**
+    (waiting on the **customer**) → left alone until the kind's alert age, then
+    treated as an abandoned checkout: the intent is cancelled at Stripe FIRST,
+    then the row is retired and the pointer cleared. The wait matters — a row is
+    `processing` from the moment its intent is created, so a diner still typing
+    their card at minute six is not abandoned. The clear matters more: without
+    it a served, cash-owed round is locked out of "mark paid in person" with
+    `ERROR_ORDER_PAYMENT_IN_FLIGHT` and no staff-side release, and an abandoned
+    3DS intent never expires at Stripe, so alerting instead would mean a
+    permanent alert about a permanent row. A tip is simply failed, so the diner
+    can tip again
+  - **`processing` / `requires_capture`** (waiting on **Stripe**) → genuinely
+    mid-flight, and not ours to cancel. Left alone until the kind's alert age,
+    then escalated
   - **anything unrecognised** → escalated straight away; waiting does not
     resolve a status this code has never seen
 
+  A diner whose attempt was retired under them sees "This payment session
+  expired. Start the payment again — you have not been charged." if they come
+  back to a stale sheet and confirm, rather than Stripe's English
+  `payment_intent_unexpected_state` text.
+
 - Stuck-payment alerts are `payment_stuck`, deduped per payment
-  (`payment_stuck:<paymentId>`), so a payment wedged for a day is **one** open
-  alert, not 288. Severe (and therefore emailed to every platform admin) only
-  for an **order** past its alert age — a diner is sitting at a table with a
+  (`payment_stuck:<paymentId>`), so a payment wedged for a day is **one** alert,
+  not 288 — and, uniquely so far, the dedupe spans **acknowledged** rows as well
+  as open ones (`dedupeAcrossAcknowledged`). It has to: the sweep re-reads the
+  same wedged row every five minutes, and with the ordinary open-only scope,
+  acknowledging the alert would make the next run raise a fresh one and mail
+  every platform admin again. Acknowledge it and it stays gone; the key names
+  one payment, so there is no second, genuinely-new occurrence to lose. Severe
+  (and therefore emailed to every platform admin) only for an **order** past its
+  alert age — a diner is sitting at a table with a
   charge in limbo and a kitchen that was never released. Stuck tips and
   unrecognised statuses are warnings on `/admin/alerts`. Look for
   `[stripe.reconcileStuckPayments]` in the Convex logs for the same facts

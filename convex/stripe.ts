@@ -2455,10 +2455,12 @@ export const reconcileStuckPayments = internalAction({
 						// THE ATTEMPT IS DEAD. RETIRE IT (carried from TAVLI-104's
 						// review).
 						//
-						// Stripe says `canceled`, or the intent fell back to
-						// `requires_payment_method` — the card was declined, or the
-						// diner opened the payment sheet and walked away. Either
-						// way nobody is going to pay with it.
+						// Stripe says `canceled`, or the intent has sat waiting on
+						// the customer (`requires_payment_method`, `requires_action`,
+						// `requires_confirmation`) for the kind's full patience — a
+						// declined card, or a payment sheet opened and walked away
+						// from. Either way nobody is going to pay with it, and an
+						// abandoned intent does not expire at Stripe on its own.
 						//
 						// Leaving the row `processing` is not neutral. A served,
 						// cash-owed round whose order still points at a
@@ -2536,11 +2538,32 @@ export const reconcileStuckPayments = internalAction({
 					}
 
 					case "alert": {
-						// One OPEN alert per payment, not per run — `dedupeKey` is
-						// what makes a five-minute cron survivable. Nothing is
-						// patched: the money is mid-flight at Stripe (or in a state
-						// this code has never seen) and only a human can say what it
-						// should become.
+						// ---------------------------------------------------------
+						// ONE ALERT PER PAYMENT, EVER (review round 1).
+						//
+						// Nothing is patched here: the intent is mid-flight at Stripe
+						// (or in a state this code has never seen), so only a human
+						// can say what it should become. Which means the row stays
+						// `processing` and stays a candidate — this branch re-runs
+						// against the same unchanged fact every five minutes until
+						// somebody resolves it.
+						//
+						// `dedupeKey` alone does not survive that, because it is
+						// scoped to OPEN alerts by design: the moment an admin
+						// acknowledges this row the next sweep raises a fresh severe
+						// one and mails every platform admin again — 288 times a day,
+						// punishing them for clearing their inbox. So the key is
+						// widened to collapse ACKNOWLEDGED rows too. It is safe
+						// precisely because the key names ONE PAYMENT: there is no
+						// second, genuinely-new occurrence of "this payment is stuck"
+						// to lose.
+						//
+						// The other half of the same finding lives in the decision
+						// table: the customer-side statuses now CLEAR at the alert
+						// age instead of alerting, so an abandoned `requires_action`
+						// intent — which never expires at Stripe — leaves
+						// `processing` rather than becoming a permanent alert.
+						// ---------------------------------------------------------
 						const minutes = Math.round(ageMs / 60000);
 						console.error(
 							`[stripe.reconcileStuckPayments] payment ${payment._id} (${kind}) has been ` +
@@ -2556,6 +2579,7 @@ export const reconcileStuckPayments = internalAction({
 							stripeObjectId: stripePaymentIntentId,
 							messageParams: { kind, minutes },
 							dedupeKey: `payment_stuck:${payment._id}`,
+							dedupeAcrossAcknowledged: true,
 						});
 						break;
 					}
