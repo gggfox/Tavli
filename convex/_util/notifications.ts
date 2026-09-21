@@ -41,6 +41,13 @@
  * events through `raiseOperatorAlert` (TAVLI-109), and a restaurant's bell is not
  * where Tavli's own incident traffic belongs.
  *
+ * A **soft-deleted restaurant notifies nobody**, matching
+ * `requireRestaurantManagerOrAbove`, which reports one as not found. A late
+ * payout event on a restaurant that has been taken down would otherwise ring a
+ * bell whose `href` leads to a page that answers "Restaurant not found" — and
+ * the row would then be deleted by the hard purge anyway. The operator alert is
+ * what makes sure Tavli still sees such an event.
+ *
  * `listRestaurantManagerEmails` exposes the same recipient set with the address
  * and language each person reads in, so TAVLI-103/102 can send the email
  * counterpart without re-deriving who "the managers" are. This module sends no
@@ -117,7 +124,11 @@ async function collectRecipientUserIds(
 	restaurantId: Id<"restaurants">
 ): Promise<string[]> {
 	const restaurant = await ctx.db.get(restaurantId);
-	if (!restaurant) return [];
+	// A soft-deleted restaurant has nobody to notify, exactly as
+	// `requireRestaurantManagerOrAbove` reports it as not found — see the module
+	// comment. `deletedAt` is checked here rather than at the call sites so the
+	// bell and the email counterpart can never disagree about it.
+	if (!restaurant || restaurant.deletedAt != null) return [];
 
 	const userIds: string[] = [];
 	const seen = new Set<string>();

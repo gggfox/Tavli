@@ -276,6 +276,37 @@ describe("notifyRestaurantManagers", () => {
 		expect(rows.map((row) => row.userId)).toEqual([cocina.ownerId]);
 	});
 
+	it("notifies nobody about a soft-deleted restaurant, by either helper", async () => {
+		const t = convexTest(schema, modules);
+		const cocina = await seedRestaurant(t, "la-cocina");
+		await seedMember(t, { ...cocina, userId: MANAGER_A });
+		await seedUserRole(t, { userId: MANAGER_A, email: "a@cocina.mx" });
+		await t.run(async (ctx) => {
+			await ctx.db.patch(cocina.restaurantId, {
+				deletedAt: NOW,
+				isActive: false,
+				hardDeleteAfterAt: NOW + 30 * 24 * 60 * 60 * 1000,
+			});
+		});
+
+		const count = await t.run(async (ctx) =>
+			notifyRestaurantManagers(ctx, {
+				restaurantId: cocina.restaurantId,
+				kind: NOTIFICATION_KIND.PAYOUT_FAILED,
+				href: "/admin/payments",
+			})
+		);
+
+		// `requireRestaurantManagerOrAbove` reports a soft-deleted restaurant as not
+		// found, so a bell row here would link to a page that says exactly that.
+		expect(count).toBe(0);
+		expect(await allNotifications(t)).toHaveLength(0);
+		// The email counterpart 103/102 send has to agree with the bell.
+		expect(
+			await t.run(async (ctx) => listRestaurantManagerEmails(ctx, cocina.restaurantId))
+		).toEqual([]);
+	});
+
 	it("skips a manager who has been removed from the restaurant", async () => {
 		const t = convexTest(schema, modules);
 		const cocina = await seedRestaurant(t, "la-cocina");
