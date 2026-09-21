@@ -557,7 +557,13 @@ describe("orders", () => {
 			);
 		});
 
-		it("ignores stale payment confirmations for non-active payment attempts", async () => {
+		// TAVLI-104: a confirmation for a payment the order stopped pointing at is
+		// no longer ignored. Stripe has the diner's money; the only question is
+		// whether it pays for what the order costs now. Here it does — both
+		// attempts are for the same 800 — so it settles and the loser is retired.
+		// The mismatching half (refund + operator alert) lives in
+		// `ordersStrandedCharge.test.ts`.
+		it("adopts a confirmation for a superseded attempt when the amount still fits", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
@@ -605,11 +611,17 @@ describe("orders", () => {
 			});
 
 			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
-			expect(order!.status).toBe("draft");
-			expect(order!.paymentState).toBe("processing");
+			expect(order!.status).toBe("submitted");
+			expect(order!.paymentState).toBe("paid");
+			// The order points at the payment that actually paid for it.
+			expect(order!.activePaymentId).toBe(firstPaymentId);
 
-			const stalePayment = await t.run(async (ctx) => ctx.db.get(firstPaymentId));
-			expect(stalePayment?.status).toBe("processing");
+			const { adopted, loser } = await t.run(async (ctx) => ({
+				adopted: await ctx.db.get(firstPaymentId),
+				loser: await ctx.db.get(secondPaymentId),
+			}));
+			expect(adopted?.status).toBe("succeeded");
+			expect(loser?.status).toBe("superseded");
 		});
 	});
 

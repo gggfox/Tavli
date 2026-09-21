@@ -1,6 +1,7 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { recordWalkInOccupancyForOrder } from "./walkInOccupancy";
 import {
@@ -33,10 +34,14 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
 	DEFAULT_PREP_STATION,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
 	ORDER_PAYMENT_STATE,
 	ORDER_STATUS,
 	PAYMENT_KIND,
+	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
+	PLATFORM_APPLICATION_FEE_RATE,
 	PREP_STATION,
 	type PrepStation,
 	RESTAURANT_MEMBER_ROLE,
@@ -44,6 +49,9 @@ import {
 	SHIFT_ROLE,
 	TABLE,
 } from "./constants";
+import { formatMoneyCents } from "./_shared/money";
+import { raiseOperatorAlert } from "./_util/operatorAlerts";
+import { currentOrderChargeAmount } from "./paymentSupersedeHelpers";
 import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
@@ -531,11 +539,106 @@ export const cancelActivePaymentInternal = internalMutation({
 });
 
 /**
+ * Sends a charge back that Tavli collected but cannot account for (TAVLI-104).
+ *
+ * Reached from `confirmPayment` when the money does not match what the order
+ * costs now, or when another payment already settled it. Both mean the same
+ * thing to the diner: they were charged for something that is not what they are
+ * buying, so the money goes back, in full, automatically. The alternative Tavli
+ * shipped before this ticket was a `console.warn` — the diner charged, the order
+ * unreleased, and nobody looking.
+ *
+ * What this writes, and why each piece:
+ * - The payment row goes to SUCCEEDED with `refundStatus: requested`. SUCCEEDED
+ *   because it is TRUE: Stripe collected the money, and a row that denied it
+ *   would leave the refund landing on a `failed` payment. `requested` is what
+ *   makes the intervening window honest — between this transaction and the
+ *   scheduled refund the row says "collected, refund on its way", which is
+ *   exactly the situation.
+ * - The ORDER goes back to unpaid with its payment pointer cleared, but only
+ *   when it was pointing at THIS payment. When it points at a newer attempt, that
+ *   attempt is the diner's live checkout and clearing it would strand them; the
+ *   order is not paid either way.
+ * - A severe operator alert, deduped per payment, carrying both amounts
+ *   pre-formatted (TAVLI-69's rule: neither the alerts page nor the email
+ *   formats money, so a raw `12200` would reach a human as "12200").
+ * - The Stripe refund itself is scheduled, because this is a mutation. See
+ *   `stripe.refundStrandedCharge`.
+ */
+async function refundStrandedPayment(
+	ctx: MutationCtx,
+	args: {
+		payment: Doc<"payments">;
+		order: Doc<"orders">;
+		/** What the order would cost to charge right now. */
+		currentCharge: number;
+		stripePaymentIntentId: string;
+		stripeChargeId?: string;
+	}
+): Promise<void> {
+	const { payment, order } = args;
+	const now = Date.now();
+
+	console.error(
+		`[orders.confirmPayment] REFUNDING A CHARGE THAT MATCHES NO ORDER TOTAL: ` +
+			`payment ${payment._id} collected ${payment.amount}, order ${order._id} now costs ${args.currentCharge}`
+	);
+
+	await ctx.db.patch(payment._id, {
+		status: PAYMENT_STATUS.SUCCEEDED,
+		stripePaymentIntentId: args.stripePaymentIntentId,
+		...(args.stripeChargeId !== undefined && { stripeChargeId: args.stripeChargeId }),
+		succeededAt: now,
+		refundStatus: PAYMENT_REFUND_STATUS.REQUESTED,
+		refundRequestedAt: now,
+		updatedAt: now,
+		updatedBy: AUDIT_SYSTEM_USER_ID,
+	});
+
+	if (order.activePaymentId === payment._id) {
+		await ctx.db.patch(order._id, {
+			paymentState: ORDER_PAYMENT_STATE.UNPAID,
+			activePaymentId: undefined,
+			stripePaymentIntentId: undefined,
+			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+		});
+	}
+
+	await raiseOperatorAlert(ctx, {
+		kind: OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED,
+		severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+		restaurantId: order.restaurantId,
+		orderId: order._id,
+		paymentId: payment._id,
+		stripeObjectId: args.stripePaymentIntentId,
+		messageParams: {
+			collected: formatMoneyCents(payment.amount),
+			expected: formatMoneyCents(args.currentCharge),
+			currency: payment.currency.toUpperCase(),
+		},
+		// One open alert per payment, not per delivery: Stripe redelivers, and the
+		// refund itself arrives back as `charge.refunded`.
+		dedupeKey: `charge_mismatched_refunded:${payment._id}`,
+	});
+
+	await ctx.scheduler.runAfter(0, internal.stripe.refundStrandedCharge, {
+		paymentId: payment._id,
+		orderId: order._id,
+	});
+}
+
+/**
  * Called by the Stripe webhook handler after payment_intent.succeeded.
  * Releases a paid order to the kitchen: `draft` or `awaiting_payment` (a diner
  * who switched from cash to card) flips to `submitted`, payment facts are
  * recorded, and the ADR 008 settlement stamps (`settledBy: "stripe"`,
  * `paidByUserId`) land on the order.
+ *
+ * A charge that does NOT line up with the order it names no longer stops here
+ * (TAVLI-104): it is either accepted (the amount still matches what the order
+ * costs) or refunded in full with a severe operator alert. See the three dead
+ * ends below.
  */
 export const confirmPayment = internalMutation({
 	args: {
@@ -559,28 +662,13 @@ export const confirmPayment = internalMutation({
 
 		const order = await ctx.db.get(paymentOrderId);
 		if (!order) throw new Error(`Order ${payment.orderId} not found`);
-		if (order.activePaymentId !== payment._id) {
-			console.warn(`Payment ${payment._id} is no longer active for order ${order._id}, skipping`);
-			return;
-		}
-		if (
-			payment.orderUpdatedAtSnapshot !== undefined &&
-			order.updatedAt !== payment.orderUpdatedAtSnapshot
-		) {
-			console.warn(`Order ${order._id} changed after payment intent ${payment._id}, skipping`);
-			return;
-		}
-		// New-model payments charge subtotal + fee, so the order total matches the
-		// payment's `subtotalAmount`; legacy per-order intents carry no
-		// `subtotalAmount` and charged the order total directly — the `??` keeps
-		// them settling. A mismatch means the order was edited after the intent
-		// was created: no-op, a fresh intent will supersede this one.
-		if (order.totalAmount !== (payment.subtotalAmount ?? payment.amount)) {
-			console.warn(
-				`Order ${order._id} total ${order.totalAmount} no longer matches payment ${payment.amount}`
-			);
-			return;
-		}
+
+		// Checked before anything else about the money, because it is the one
+		// precondition neither settling nor refunding can work around: an order
+		// that is cancelled or already served cannot be released to the kitchen by
+		// this charge. Unchanged in behaviour from before TAVLI-104 — both were
+		// no-ops — only moved above the three branches below so they do not have to
+		// consider an unsettleable order.
 		if (
 			order.status !== "draft" &&
 			order.status !== "submitted" &&
@@ -590,6 +678,95 @@ export const confirmPayment = internalMutation({
 				`Order ${order._id} is in status ${order.status}, skipping payment confirmation`
 			);
 			return;
+		}
+
+		// ---------------------------------------------------------------------
+		// THE THREE DEAD ENDS (TAVLI-104). Each of these used to be a
+		// `console.warn` and a `return`, which is the bug: Stripe had the diner's
+		// money and Tavli walked away from it, leaving the order unreleased and
+		// nobody told.
+		//
+		// A charge reaches one of them when the intent that produced it is no
+		// longer the one the order is waiting for: the order was edited (so
+		// `createPaymentIntent` minted a successor and moved `activePaymentId`),
+		// the tip slider changed, or — before this ticket — a stale client secret
+		// confirmed an intent that had already been superseded.
+		//
+		// "No longer the one we are waiting for" is not the same as "wrong". The
+		// only question that decides whether the money is owed is whether it
+		// matches what this order costs RIGHT NOW, recomputed through the same
+		// helper `createPaymentIntent` uses. Equal → accept it, whatever the
+		// pointer says. Not equal → the order was genuinely repriced, so the money
+		// goes back and an operator hears about it.
+		// ---------------------------------------------------------------------
+		const activePayment = order.activePaymentId ? await ctx.db.get(order.activePaymentId) : null;
+		const isNotActivePayment = order.activePaymentId !== payment._id;
+		const isStaleSnapshot =
+			payment.orderUpdatedAtSnapshot !== undefined &&
+			order.updatedAt !== payment.orderUpdatedAtSnapshot;
+		// New-model payments charge subtotal + fee, so the order total matches the
+		// payment's `subtotalAmount`; legacy per-order intents carry no
+		// `subtotalAmount` and charged the order total directly — the `??` keeps
+		// them settling.
+		const isTotalDrifted = order.totalAmount !== (payment.subtotalAmount ?? payment.amount);
+
+		if (isNotActivePayment || isStaleSnapshot || isTotalDrifted) {
+			const currentCharge = currentOrderChargeAmount(
+				order.totalAmount,
+				payment,
+				PLATFORM_APPLICATION_FEE_RATE
+			);
+			// A second successful charge for one order is never acceptable, however
+			// well the amount matches: the order is paid, and adopting this payment
+			// would take the settlement away from the one that actually paid for it.
+			const settledByAnotherPayment =
+				order.paymentState === ORDER_PAYMENT_STATE.PAID ||
+				(activePayment !== null &&
+					activePayment._id !== payment._id &&
+					activePayment.status === PAYMENT_STATUS.SUCCEEDED);
+
+			if (payment.amount !== currentCharge || settledByAnotherPayment) {
+				await refundStrandedPayment(ctx, {
+					payment,
+					order,
+					currentCharge,
+					stripePaymentIntentId: args.stripePaymentIntentId,
+					stripeChargeId: args.stripeChargeId,
+				});
+				return;
+			}
+
+			// ACCEPT. The money pays for exactly what this order costs today, so
+			// this payment becomes the order's payment — settlement continues below
+			// and the order patch re-points `activePaymentId` at this row.
+			console.info(
+				`[orders.confirmPayment] adopting payment ${payment._id} for order ${order._id}: ` +
+					`charge ${payment.amount} matches the current total charge ` +
+					`(notActive=${isNotActivePayment}, staleSnapshot=${isStaleSnapshot}, totalDrifted=${isTotalDrifted})`
+			);
+
+			// The successor loses. Its intent is unconfirmed — nobody has paid it —
+			// but it is live at Stripe until told otherwise, and leaving it would
+			// let the diner pay twice for an order that is already settling. The
+			// row is retired in this transaction and the Stripe cancel is scheduled,
+			// because a mutation cannot call Stripe; see
+			// `stripe.standDownSupersededIntent` for why that inversion is safe here.
+			if (
+				activePayment !== null &&
+				activePayment._id !== payment._id &&
+				(activePayment.status === PAYMENT_STATUS.PENDING ||
+					activePayment.status === PAYMENT_STATUS.PROCESSING)
+			) {
+				await ctx.db.patch(activePayment._id, {
+					status: PAYMENT_STATUS.SUPERSEDED,
+					updatedAt: Date.now(),
+				});
+				if (activePayment.stripePaymentIntentId) {
+					await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+						paymentId: activePayment._id,
+					});
+				}
+			}
 		}
 
 		const items = await ctx.db
@@ -647,6 +824,12 @@ export const confirmPayment = internalMutation({
 		await ctx.db.patch(order._id, {
 			status: "submitted",
 			paymentState: ORDER_PAYMENT_STATE.PAID,
+			// Written unconditionally: on the normal path it already holds this id,
+			// and on the accept-and-adopt path above it is how the order stops
+			// pointing at the successor that lost (TAVLI-104). A paid order must
+			// point at the payment that paid it — exports, receipts and refunds all
+			// read it.
+			activePaymentId: payment._id,
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			paidAt: now,
 			submittedAt: now,
