@@ -159,6 +159,19 @@ export const returnRecoveredFunds = internalAction({
 				amount: args.amount,
 			});
 		} catch (error) {
+			// Two calls sharing one idempotency key is a RACE, not a failure: the
+			// winner is transferring the money right now and will stamp the row.
+			// Alerting here would page an operator about a transfer that is in
+			// fact happening, which is how a severe alert stops meaning anything.
+			if (isIdempotencyKeyInUse(error)) {
+				console.log(
+					"[disputeActions.returnRecoveredFunds] another run holds the idempotency key; " +
+						"leaving the return to it",
+					JSON.stringify({ stripeDisputeId: redactExternalId(args.stripeDisputeId) })
+				);
+				return;
+			}
+
 			console.error("[disputeActions.returnRecoveredFunds] could not return recovered funds", {
 				...buildIntegrationErrorLog(error, {
 					integration: "stripe",
@@ -180,6 +193,27 @@ export const returnRecoveredFunds = internalAction({
 		}
 	},
 });
+
+/**
+ * Whether a Stripe error means "somebody else is already doing this".
+ *
+ * Stripe answers `idempotency_key_in_use` (HTTP 409) when a second request
+ * arrives while the first with the same key is still in flight. For every
+ * transfer in this module that is a race between the event-driven schedule and
+ * the daily sweep, and the correct response is to stand down — the winner is
+ * moving the money and will record it.
+ *
+ * Matched structurally rather than on the message, but with a message fallback:
+ * the error crosses no process boundary here, yet the SDK's shape has moved
+ * between major versions and a missed match would turn a benign race back into
+ * a severe alert.
+ */
+function isIdempotencyKeyInUse(error: unknown): boolean {
+	const candidate = error as { code?: string; type?: string; message?: string } | null;
+	if (candidate?.code === "idempotency_key_in_use") return true;
+	if (candidate?.type === "idempotency_error") return true;
+	return typeof candidate?.message === "string" && candidate.message.includes("idempotency");
+}
 
 /**
  * Return what a settled payment withheld but could not apply (TAVLI-102,
@@ -229,6 +263,14 @@ export const returnRecoveryShortfall = internalAction({
 				amount: args.amount,
 			});
 		} catch (error) {
+			if (isIdempotencyKeyInUse(error)) {
+				console.log(
+					"[disputeActions.returnRecoveryShortfall] another run holds the idempotency key",
+					JSON.stringify({ paymentId: redactExternalId(args.paymentId) })
+				);
+				return;
+			}
+
 			console.error("[disputeActions.returnRecoveryShortfall] could not return the shortfall", {
 				...buildIntegrationErrorLog(error, {
 					integration: "stripe",
@@ -241,6 +283,83 @@ export const returnRecoveryShortfall = internalAction({
 				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
 				paymentId: args.paymentId,
 				dedupeKey: `dispute_recovery_shortfall_failed:${args.paymentId}`,
+			});
+			throw error;
+		}
+	},
+});
+
+/**
+ * Take back part of a transfer Tavli made outside the charge (TAVLI-102,
+ * review round 2).
+ *
+ * Scheduled by `disputes.restoreLedgerForRefund` when a refunded payment's
+ * recovery had already been paid to the restaurant on a standalone transfer —
+ * the return of a reinstated dispute, or a settled payment's shortfall. A
+ * refund reverses the CHARGE's transfer and nothing else, so without this the
+ * restaurant keeps money paid against a sale Tavli has since refunded in full.
+ *
+ * `amount` is the **new** part only; `cumulative` is the total that should have
+ * come off this transfer, and it is in the idempotency key precisely so that a
+ * second, larger reversal is a different request while a redelivery of the same
+ * step is the same one.
+ *
+ * A failure raises a severe alert and is **not** silently swallowed: this is
+ * money Tavli is owed back, and an insufficient connected-account balance (the
+ * likely cause) needs a human, not a retry loop.
+ */
+export const reverseRecoveryTransfer = internalAction({
+	args: {
+		paymentId: v.id("payments"),
+		stripeTransferId: v.string(),
+		/** Smallest currency unit — only the part not yet reversed. */
+		amount: v.number(),
+		/** Total that should be reversed out of this transfer, including `amount`. */
+		cumulative: v.number(),
+		label: v.string(),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		if (args.amount <= 0) return;
+
+		const stripeClient = getStripeClient();
+		try {
+			const reversal: Stripe.TransferReversal = await stripeClient.transfers.createReversal(
+				args.stripeTransferId,
+				{
+					amount: args.amount,
+					description: `Refund claw-back (${args.label})`,
+					metadata: { paymentId: args.paymentId, reason: "dispute_return_reversal" },
+				},
+				{
+					idempotencyKey: `dispute-return-reversal:${args.paymentId}:${args.stripeTransferId}:${args.cumulative}`,
+				}
+			);
+
+			await ctx.runMutation(internal.disputes.markReturnReversalInternal, {
+				paymentId: args.paymentId,
+				stripeTransferId: args.stripeTransferId,
+				cumulative: args.cumulative,
+				stripeTransferReversalId: reversal.id,
+			});
+		} catch (error) {
+			if (isIdempotencyKeyInUse(error)) return;
+
+			console.error("[disputeActions.reverseRecoveryTransfer] could not reverse the transfer", {
+				...buildIntegrationErrorLog(error, {
+					integration: "stripe",
+					operation: "transfers.createReversal",
+				}),
+				paymentId: redactExternalId(args.paymentId),
+				stripeTransferId: redactExternalId(args.stripeTransferId),
+			});
+			// Usually an insufficient connected-account balance: the restaurant
+			// has already been paid out. That needs a human, not a retry.
+			await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+				kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				paymentId: args.paymentId,
+				stripeObjectId: args.stripeTransferId,
+				dedupeKey: `dispute_return_reversal_failed:${args.paymentId}:${args.stripeTransferId}`,
 			});
 			throw error;
 		}

@@ -885,6 +885,8 @@ export const AUDIT_EVENT = {
 	DISPUTE_RECOVERY_RESTORED: "payments.disputeRecoveryRestored",
 	/** Withheld at Stripe but not applicable to any ledger row; transferred back. */
 	DISPUTE_RECOVERY_SHORTFALL_RETURNED: "payments.disputeRecoveryShortfallReturned",
+	/** A refund clawed back money that had already been transferred to the restaurant. */
+	DISPUTE_RETURN_REVERSED: "payments.disputeReturnReversed",
 	/** 180 days elapsed with money still outstanding. */
 	DISPUTE_RECOVERY_WRITTEN_OFF: "payments.disputeRecoveryWrittenOff",
 	/** A platform admin changed a restaurant's recovery percentage. */
@@ -1959,6 +1961,19 @@ export const DISPUTE_RECOVERY_DEFAULT_PERCENT = 0;
 export const DISPUTE_RECOVERY_WRITE_OFF_DAYS = 180;
 
 export const DISPUTE_RECOVERY_WRITE_OFF_MS = DISPUTE_RECOVERY_WRITE_OFF_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * How long the daily sweep leaves a scheduled return alone before re-scheduling
+ * it.
+ *
+ * The sweep exists because Convex does not retry a scheduled function that
+ * throws, but a scheduled function that is merely *slow* must not be raced: two
+ * concurrent `transfers.create` calls share one Stripe idempotency key, and the
+ * loser fails with `idempotency_key_in_use` — a non-failure that would
+ * otherwise page an operator. A day is far longer than any action takes and far
+ * shorter than anyone would wait for their money.
+ */
+export const DISPUTE_RETURN_RESCHEDULE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /** In-app path the dispute notifications and their emails link to. */
 export const PAYMENTS_PAGE_PATH = "/admin/payments";

@@ -17,6 +17,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
 	DISPUTE_RECOVERY_WRITE_OFF_MS,
+	DISPUTE_RETURN_RESCHEDULE_AFTER_MS,
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
 } from "../constants";
@@ -1005,6 +1006,239 @@ describe("refunding a payment that repaid a dispute (review round 1)", () => {
 	});
 });
 
+describe("a refund after the money was already transferred out (review round 2)", () => {
+	/**
+	 * A settled payment that drew 2,000 off one row, where that row was then
+	 * reinstated and its recovery paid back to the restaurant on a transfer of
+	 * its own. The refund below reverses the CHARGE's transfer and nothing else.
+	 */
+	async function seedReturnedThenRefundable(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_clawback",
+		});
+		let recoveryId: Id<"disputeRecoveries">;
+		await t.run(async (ctx) => {
+			recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_clawback",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 2_000,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				returnedAt: 3_000,
+				returnedAmount: 2_000,
+				stripeTransferId: "tr_returned",
+				createdAt: 1_000,
+				updatedAt: 3_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 2_000,
+				disputeRecoveryAppliedAt: 2_500,
+				disputeRecoveryLegs: [{ recoveryId: recoveryId!, amount: 2_000 }],
+			});
+		});
+		return { paymentId, recoveryId: recoveryId! };
+	}
+
+	it("claws the returned money back when the sale is refunded in full", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedReturnedThenRefundable(t, restaurantId);
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_clawback" });
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		// Without this the restaurant nets +2,000 on a sale Tavli refunded in
+		// full out of its own balance, silently and every time.
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenCalledWith(
+			"tr_returned",
+			expect.objectContaining({ amount: 2_000 }),
+			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_returned:2000` }
+		);
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeReturnReversals).toEqual([
+			{ stripeTransferId: "tr_returned", amount: 2_000 },
+		]);
+	});
+
+	it("reverses only the difference across partial, full and redelivered refunds", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedReturnedThenRefundable(t, restaurantId);
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_step" });
+
+		// A quarter of the charge: 2,800 of 11,200 → 500 of the 2,000.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 2_800,
+			amountCaptured: 11_200,
+			isFullyRefunded: false,
+		});
+		await drainScheduled(t);
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenLastCalledWith(
+			"tr_returned",
+			expect.objectContaining({ amount: 500 }),
+			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_returned:500` }
+		);
+
+		// Then the rest: only the remaining 1,500 may be reversed.
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenLastCalledWith(
+			"tr_returned",
+			expect.objectContaining({ amount: 1_500 }),
+			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_returned:2000` }
+		);
+
+		// A redelivery of the same full refund reverses nothing further.
+		const callsBefore = mockStripeClient.transfers.createReversal.mock.calls.length;
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+		expect(mockStripeClient.transfers.createReversal.mock.calls.length).toBe(callsBefore);
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeReturnReversals).toEqual([
+			{ stripeTransferId: "tr_returned", amount: 2_000 },
+		]);
+	});
+
+	it("claws back a shortfall transfer too", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_shortfall_refund",
+		});
+		await t.run(async (ctx) => {
+			const recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_shortfall_refund",
+				amount: 5_000,
+				outstanding: 4_000,
+				recovered: 1_000,
+				currency: "mxn",
+				status: "outstanding",
+				lostAt: 1_000,
+				createdAt: 1_000,
+				updatedAt: 1_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 1_000,
+				disputeRecoveryAppliedAt: 2_000,
+				disputeRecoveryLegs: [{ recoveryId, amount: 1_000 }],
+				disputeRecoveryShortfall: 1_000,
+				disputeRecoveryShortfallTransferId: "tr_shortfall_out",
+				disputeRecoveryShortfallReturnedAt: 2_100,
+			});
+		});
+
+		mockStripeClient.transfers.createReversal.mockResolvedValue({ id: "trr_shortfall" });
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		expect(mockStripeClient.transfers.createReversal).toHaveBeenCalledWith(
+			"tr_shortfall_out",
+			expect.objectContaining({ amount: 1_000 }),
+			{ idempotencyKey: `dispute-return-reversal:${paymentId}:tr_shortfall_out:1000` }
+		);
+	});
+
+	it("raises a severe alert when the claw-back fails — usually an empty balance", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedReturnedThenRefundable(t, restaurantId);
+
+		mockStripeClient.transfers.createReversal.mockRejectedValue(new Error("balance_insufficient"));
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+		expect(
+			alerts.some((a) => a.dedupeKey === `dispute_return_reversal_failed:${paymentId}:tr_returned`)
+		).toBe(true);
+		// Nothing recorded as reversed, so a later attempt still targets 2,000.
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeReturnReversals ?? []).toEqual([]);
+	});
+
+	it("trims a pending return instead of reversing a transfer that never happened", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_pending_return",
+		});
+		let recoveryId: Id<"disputeRecoveries">;
+		await t.run(async (ctx) => {
+			recoveryId = await ctx.db.insert("disputeRecoveries", {
+				restaurantId,
+				stripeDisputeId: "dp_pending_return",
+				amount: 5_000,
+				outstanding: 0,
+				recovered: 2_000,
+				currency: "mxn",
+				status: "reinstated",
+				lostAt: 1_000,
+				reinstatedAt: 2_000,
+				createdAt: 1_000,
+				updatedAt: 2_000,
+			});
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 2_000,
+				disputeRecoveryAppliedAt: 2_500,
+				disputeRecoveryLegs: [{ recoveryId: recoveryId!, amount: 2_000 }],
+			});
+		});
+
+		await t.mutation(internal.stripeHelpers.recordChargeRefund, {
+			paymentId,
+			amountRefunded: 11_200,
+			amountCaptured: 11_200,
+			isFullyRefunded: true,
+		});
+		await drainScheduled(t);
+
+		// Nothing to reverse: the money has not left yet, so the pending return
+		// shrinks instead.
+		expect(mockStripeClient.transfers.createReversal).not.toHaveBeenCalled();
+		expect(await t.run(async (ctx) => (await ctx.db.get(recoveryId!))?.recovered)).toBe(0);
+	});
+});
+
 describe("won and reinstated", () => {
 	async function seedLostAndRecovered(t: SchemaAwareConvex, restaurantId: Id<"restaurants">) {
 		await seedPaidOrder(t, { restaurantId, subtotal: 30_000, paymentIntentId: "pi_win" });
@@ -1268,6 +1502,13 @@ describe("a return transfer that failed (review round 1)", () => {
 		await drainScheduled(t);
 
 		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_swept" });
+
+		// Not immediately: a sweep that raced the run still working would make
+		// the loser fail with `idempotency_key_in_use` and raise a severe alert
+		// about a transfer that was in fact succeeding (review round 2).
+		expect((await t.mutation(internal.disputes.sweepDisputeWriteOffs, {})).reScheduled).toBe(0);
+
+		vi.advanceTimersByTime(DISPUTE_RETURN_RESCHEDULE_AFTER_MS + 1);
 		const result = await t.mutation(internal.disputes.sweepDisputeWriteOffs, {});
 		expect(result.reScheduled).toBe(1);
 		await drainScheduled(t);
@@ -1282,6 +1523,120 @@ describe("a return transfer that failed (review round 1)", () => {
 
 		// And once it has settled, the sweep leaves it alone.
 		expect((await t.mutation(internal.disputes.sweepDisputeWriteOffs, {})).reScheduled).toBe(0);
+	});
+});
+
+describe("retries and races (review round 2)", () => {
+	it("the daily sweep retries a shortfall transfer that died", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_shortfall_retry",
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 0,
+				disputeRecoveryAppliedAt: Date.now(),
+				disputeRecoveryShortfall: 1_500,
+				disputeRecoveryShortfallPending: true,
+			});
+		});
+
+		mockStripeClient.transfers.create.mockResolvedValue({ id: "tr_shortfall_retry" });
+		const result = await t.mutation(internal.disputes.sweepDisputeWriteOffs, {});
+		expect(result.shortfallsReScheduled).toBe(1);
+		await drainScheduled(t);
+
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.disputeRecoveryShortfallTransferId).toBe("tr_shortfall_retry");
+		// The flag clears, so the next sweep leaves it alone.
+		expect(payment?.disputeRecoveryShortfallPending).toBeUndefined();
+		expect(
+			(await t.mutation(internal.disputes.sweepDisputeWriteOffs, {})).shortfallsReScheduled
+		).toBe(0);
+	});
+
+	it("never schedules a transfer to a closed connected account, and says why", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedPaidOrder(t, {
+			restaurantId,
+			subtotal: 10_000,
+			paymentIntentId: "pi_closed_account",
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(restaurantId, { stripeAccountStatus: "closed" });
+			await ctx.db.patch(paymentId, {
+				disputeRecoveryAmount: 0,
+				disputeRecoveryAppliedAt: Date.now(),
+				disputeRecoveryShortfall: 1_500,
+				disputeRecoveryShortfallPending: true,
+			});
+		});
+
+		const result = await t.mutation(internal.disputes.sweepDisputeWriteOffs, {});
+		expect(result.shortfallsReScheduled).toBe(0);
+		expect(mockStripeClient.transfers.create).not.toHaveBeenCalled();
+
+		const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+		expect(
+			alerts.some((a) => a.dedupeKey === `dispute_recovery_shortfall_blocked:${paymentId}`)
+		).toBe(true);
+	});
+
+	it("treats Stripe's idempotency_key_in_use as the race it is, not a failure", async () => {
+		const t = newTest();
+		const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: 25 });
+		await seedPaidOrder(t, { restaurantId, subtotal: 30_000, paymentIntentId: "pi_race" });
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_race_lost",
+				type: "charge.dispute.closed",
+				disputeId: "dp_race",
+				paymentIntentId: "pi_race",
+				status: "lost",
+				amount: 30_000,
+			})
+		);
+		await t.run(async (ctx) => {
+			const row = await ctx.db
+				.query("disputeRecoveries")
+				.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", "dp_race"))
+				.first();
+			await ctx.db.patch(row!._id, { outstanding: 23_000, recovered: 7_000 });
+		});
+
+		// What Stripe answers when a second call arrives while the first with the
+		// same idempotency key is still in flight.
+		const inUse = Object.assign(new Error("Keys for idempotent requests..."), {
+			code: "idempotency_key_in_use",
+			type: "idempotency_error",
+		});
+		mockStripeClient.transfers.create.mockRejectedValue(inUse);
+
+		await deliver(
+			t,
+			disputeEvent({
+				eventId: "evt_race_won",
+				type: "charge.dispute.funds_reinstated",
+				disputeId: "dp_race",
+				paymentIntentId: "pi_race",
+				status: "won",
+				amount: 30_000,
+				created: 1_700_400_000,
+			})
+		);
+		await drainScheduled(t);
+
+		// The winner is moving the money; paging an operator about it is how a
+		// severe alert stops meaning anything.
+		const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+		expect(alerts.some((a) => a.dedupeKey === "dispute_recovery_return_failed:dp_race")).toBe(
+			false
+		);
 	});
 });
 

@@ -1025,6 +1025,35 @@ export default defineSchema({
 		disputeRecoveryShortfallTransferId: v.optional(v.string()),
 		disputeRecoveryShortfallReturnedAt: v.optional(v.number()),
 		/**
+		 * `true` while a shortfall transfer has been scheduled but has not
+		 * settled. A separate flag rather than a derived predicate because it is
+		 * the leading column of `by_shortfall_pending`: Convex cannot index "a
+		 * number is present and another is absent", and nothing retries a
+		 * scheduled action that threw, so the daily sweep needs an exact probe
+		 * for "owed but not paid".
+		 */
+		disputeRecoveryShortfallPending: v.optional(v.boolean()),
+		/**
+		 * Money already reversed out of the standalone transfers this payment's
+		 * recovery produced — the return of a reinstated row, and the shortfall
+		 * — keyed by transfer id, cumulative.
+		 *
+		 * A refund reverses the CHARGE's transfer and nothing else, so a
+		 * `transfers.create` Tavli made separately survives the refund untouched.
+		 * Without these reversals a refunded sale leaves the restaurant holding
+		 * money it was paid twice for. Cumulative so a partial refund followed by
+		 * the rest reverses the difference rather than the whole amount again.
+		 */
+		disputeReturnReversals: v.optional(
+			v.array(
+				v.object({
+					stripeTransferId: v.string(),
+					/** Total reversed so far out of that transfer. */
+					amount: v.number(),
+				})
+			)
+		),
+		/**
 		 * Cumulative amount given back to the ledger because this payment was
 		 * refunded. A refund returns the diner's whole charge out of the platform
 		 * balance while reversing only the (already-reduced) transfer, so Tavli
@@ -1073,7 +1102,12 @@ export default defineSchema({
 		 * `processing` row with no `kind` is a pre-pivot order payment and is
 		 * swept as one; it is not skipped for want of a `kind`.
 		 */
-		.index("by_status_updated", ["status", "updatedAt"]),
+		.index("by_status_updated", ["status", "updatedAt"])
+		// Shortfall transfers the daily sweep has to retry (TAVLI-102, review
+		// round 2). `disputeRecoveryShortfallPending` is only ever `true` or
+		// absent, so this is an exact probe for the handful of payments that owe
+		// a transfer, never a range over the payments table.
+		.index("by_shortfall_pending", ["disputeRecoveryShortfallPending", "createdAt"]),
 
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: defineTable({
 		eventId: v.string(),
@@ -1200,6 +1234,15 @@ export default defineSchema({
 		returnedAt: v.optional(v.number()),
 		returnedAmount: v.optional(v.number()),
 		stripeTransferId: v.optional(v.string()),
+		/**
+		 * When a return transfer was last handed to the scheduler. The daily
+		 * sweep skips a row scheduled within the last day, so a re-schedule
+		 * cannot race the action still working on it — two concurrent
+		 * `transfers.create` calls sharing one idempotency key make the loser
+		 * fail with `idempotency_key_in_use`, which is not a real failure but
+		 * would otherwise raise a severe alert.
+		 */
+		returnScheduledAt: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})

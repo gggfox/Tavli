@@ -88,6 +88,12 @@ export const mockStripeClient = {
 	 */
 	transfers: {
 		create: vi.fn(),
+		/**
+		 * Taking part of a standalone transfer back when the sale behind it is
+		 * refunded. A refund reverses the CHARGE's transfer and nothing else, so
+		 * the returns this ticket makes have to be reversed explicitly.
+		 */
+		createReversal: vi.fn(),
 	},
 	/**
 	 * Read when a `charge.dispute.*` delivery arrives without

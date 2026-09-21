@@ -67,11 +67,13 @@ import {
 	DISPUTE_RECOVERY_DEFAULT_PERCENT,
 	DISPUTE_RECOVERY_MAX_PERCENT,
 	DISPUTE_RECOVERY_STATUS,
+	DISPUTE_RETURN_RESCHEDULE_AFTER_MS,
 	NOTIFICATION_KIND,
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
 	PAYMENT_STATUS,
 	PAYMENTS_PAGE_PATH,
+	STRIPE_ACCOUNT_STATUS,
 	TABLE,
 	type DisputePhase,
 	type DisputeRecoveryStatus,
@@ -797,6 +799,7 @@ async function ensureRecoveryReturnScheduled(
 		return 0;
 	}
 
+	await ctx.db.patch(recovery._id, { returnScheduledAt: Date.now(), updatedAt: Date.now() });
 	await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
 		recoveryId: recovery._id,
 		stripeAccountId: restaurant.stripeAccountId,
@@ -989,7 +992,10 @@ export const applyDisputeRecoveryOnSettleInternal = internalMutation({
 
 		if (shortfall > 0) {
 			const restaurant = await ctx.db.get(payment.restaurantId);
-			if (restaurant?.stripeAccountId) {
+			if (isPayableConnectedAccount(restaurant)) {
+				// Flagged BEFORE scheduling, so an action that dies leaves the
+				// daily sweep something to find. Cleared when the transfer settles.
+				await ctx.db.patch(payment._id, { disputeRecoveryShortfallPending: true });
 				await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveryShortfall, {
 					paymentId: payment._id,
 					stripeAccountId: restaurant.stripeAccountId,
@@ -1034,6 +1040,7 @@ export const markRecoveryShortfallReturnedInternal = internalMutation({
 		await ctx.db.patch(payment._id, {
 			disputeRecoveryShortfallReturnedAt: now,
 			disputeRecoveryShortfallTransferId: args.stripeTransferId,
+			disputeRecoveryShortfallPending: undefined,
 			updatedAt: now,
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
@@ -1083,21 +1090,22 @@ export const markRecoveryShortfallReturnedInternal = internalMutation({
 export async function restoreLedgerForRefund(
 	ctx: MutationCtx,
 	args: { paymentId: Id<"payments">; amountRefunded: number }
-): Promise<{ restored: number; skipped: number }> {
+): Promise<{ restored: number; skipped: number; clawedBack: number }> {
 	const payment = await ctx.db.get(args.paymentId);
-	if (!payment) return { restored: 0, skipped: 0 };
-	if (payment.disputeRecoveryAppliedAt === undefined) return { restored: 0, skipped: 0 };
+	const nothing = { restored: 0, skipped: 0, clawedBack: 0 };
+	if (!payment) return nothing;
+	if (payment.disputeRecoveryAppliedAt === undefined) return nothing;
 
 	const applied = payment.disputeRecoveryAmount ?? 0;
 	const legs = payment.disputeRecoveryLegs ?? [];
-	if (applied <= 0 || legs.length === 0) return { restored: 0, skipped: 0 };
+	if (applied <= 0 || legs.length === 0) return nothing;
 
 	const alreadyRestored = payment.disputeRecoveryRestored ?? 0;
 	const target = Math.min(
 		applied,
 		Math.floor((applied * Math.max(0, args.amountRefunded)) / Math.max(1, payment.amount))
 	);
-	if (target <= alreadyRestored) return { restored: 0, skipped: 0 };
+	if (target <= alreadyRestored) return nothing;
 
 	// Greedy over the legs in draw-down order. A pure function of the total, so
 	// the difference between two totals is the work still to do.
@@ -1115,17 +1123,46 @@ export async function restoreLedgerForRefund(
 	const now = Date.now();
 	let restored = 0;
 	let skipped = 0;
+	let clawedBack = 0;
+	let pendingReturnsTrimmed = 0;
 
 	for (const [index, leg] of legs.entries()) {
 		const delta = next[index] - previous[index];
 		if (delta <= 0) continue;
 
 		const row = await ctx.db.get(leg.recoveryId);
-		if (
-			!row ||
-			row.status === DISPUTE_RECOVERY_STATUS.REINSTATED ||
-			row.status === DISPUTE_RECOVERY_STATUS.WRITTEN_OFF
-		) {
+		if (!row || row.status === DISPUTE_RECOVERY_STATUS.WRITTEN_OFF) {
+			// A written-off row's money was never paid to anyone: Tavli kept it
+			// and then absorbed the rest. There is nothing to put back and
+			// nothing to claw back.
+			skipped += delta;
+			continue;
+		}
+
+		if (row.status === DISPUTE_RECOVERY_STATUS.REINSTATED) {
+			// The debt is cancelled, so the ledger cannot take the money back.
+			// What matters is where the money physically went.
+			if (row.stripeTransferId && row.returnedAt !== undefined) {
+				// Out to the restaurant, on a transfer of its own — and a refund
+				// reverses only the CHARGE's transfer, so that one is untouched.
+				// Left alone, the restaurant keeps it on a sale that was refunded
+				// in full from Tavli's balance. Reverse this payment's share.
+				clawedBack += await scheduleReturnReversal(ctx, {
+					payment,
+					stripeTransferId: row.stripeTransferId,
+					targetReversal: next[index],
+					label: `dispute ${row.stripeDisputeId}`,
+				});
+			} else {
+				// Reinstated but not yet paid out: trim the pending return instead,
+				// which is cheaper and exact — the transfer has not happened, so
+				// there is nothing to reverse.
+				await ctx.db.patch(row._id, {
+					recovered: Math.max(0, row.recovered - delta),
+					updatedAt: now,
+				});
+				pendingReturnsTrimmed += delta;
+			}
 			skipped += delta;
 			continue;
 		}
@@ -1145,6 +1182,25 @@ export async function restoreLedgerForRefund(
 			lostAt: row.lostAt,
 		});
 		restored += delta;
+	}
+
+	// The shortfall went out on a transfer of its own too, and a refund does not
+	// touch it either. Same claw-back, proportional to how much of the charge
+	// came back.
+	if (payment.disputeRecoveryShortfallTransferId && payment.disputeRecoveryShortfall) {
+		const shortfallTarget = Math.min(
+			payment.disputeRecoveryShortfall,
+			Math.floor(
+				(payment.disputeRecoveryShortfall * Math.max(0, args.amountRefunded)) /
+					Math.max(1, payment.amount)
+			)
+		);
+		clawedBack += await scheduleReturnReversal(ctx, {
+			payment,
+			stripeTransferId: payment.disputeRecoveryShortfallTransferId,
+			targetReversal: shortfallTarget,
+			label: "recovery shortfall",
+		});
 	}
 
 	// The cumulative total counts the skipped rows too: they were allocated and
@@ -1168,14 +1224,118 @@ export async function restoreLedgerForRefund(
 			restoredNow: restored,
 			restoredTotal: target,
 			skippedClosedRows: skipped,
+			clawedBackFromTransfers: clawedBack,
+			pendingReturnsTrimmed,
 			currency: payment.currency,
 		},
 		userId: AUDIT_SYSTEM_USER_ID,
 		idempotencyKey: `dispute_recovery_restored:${payment._id}:${target}`,
 	});
 
-	return { restored, skipped };
+	return { restored, skipped, clawedBack };
 }
+
+/**
+ * Take back part of a transfer Tavli made outside the charge.
+ *
+ * Two of this ticket's paths pay the restaurant with a **standalone**
+ * `transfers.create`: the return of a reinstated dispute's recovery, and the
+ * shortfall a settled payment withheld but could not apply. Refunding the
+ * charge reverses the charge's own transfer and **nothing else** — Stripe has
+ * no idea those two are related to it — so without this the restaurant keeps
+ * money paid against a sale that has since been refunded in full out of the
+ * platform balance. Silent, and in Tavli's disfavour every time.
+ *
+ * `targetReversal` is **cumulative**: the total that should have come off this
+ * transfer given everything refunded so far. Only the difference from what has
+ * already been reversed is sent, so a partial refund followed by the rest
+ * reverses the remainder rather than the whole amount twice, and a redelivered
+ * `charge.refunded` sends nothing at all.
+ *
+ * The Stripe idempotency key therefore carries the cumulative target as well as
+ * the payment and transfer: a fixed key would make the second, legitimate
+ * reversal return Stripe's record of the first instead of reversing anything.
+ */
+async function scheduleReturnReversal(
+	ctx: MutationCtx,
+	input: {
+		payment: Doc<"payments">;
+		stripeTransferId: string;
+		/** Cumulative amount that should be reversed out of this transfer. */
+		targetReversal: number;
+		/** For the log line: what this transfer was for. */
+		label: string;
+	}
+): Promise<number> {
+	const { payment, stripeTransferId, targetReversal } = input;
+	const reversals = payment.disputeReturnReversals ?? [];
+	const already = reversals.find((r) => r.stripeTransferId === stripeTransferId)?.amount ?? 0;
+	const delta = targetReversal - already;
+	if (delta <= 0) return 0;
+
+	await ctx.scheduler.runAfter(0, internal.disputeActions.reverseRecoveryTransfer, {
+		paymentId: payment._id,
+		stripeTransferId,
+		/** Only the new part. */
+		amount: delta,
+		cumulative: targetReversal,
+		label: input.label,
+	});
+	return delta;
+}
+
+/**
+ * Record how much of a standalone transfer has been reversed, cumulatively.
+ *
+ * Written only once Stripe confirms the reversal, so a failed reversal leaves
+ * the previous total in place and the next refund delivery — or an operator —
+ * can try again for the same target.
+ */
+export const markReturnReversalInternal = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		stripeTransferId: v.string(),
+		/** The new cumulative total reversed out of that transfer. */
+		cumulative: v.number(),
+		stripeTransferReversalId: v.string(),
+	},
+	handler: async (ctx, args): Promise<void> => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		const reversals = [...(payment.disputeReturnReversals ?? [])];
+		const index = reversals.findIndex((r) => r.stripeTransferId === args.stripeTransferId);
+		if (index >= 0) {
+			// Never let a late delivery lower the total: the money is reversed.
+			if (reversals[index].amount >= args.cumulative) return;
+			reversals[index] = { stripeTransferId: args.stripeTransferId, amount: args.cumulative };
+		} else {
+			reversals.push({ stripeTransferId: args.stripeTransferId, amount: args.cumulative });
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(payment._id, {
+			disputeReturnReversals: reversals,
+			updatedAt: now,
+			updatedBy: AUDIT_SYSTEM_USER_ID,
+		});
+
+		await appendAuditEvent(ctx, {
+			aggregateType: TABLE.PAYMENTS,
+			aggregateId: payment._id,
+			eventType: AUDIT_EVENT.DISPUTE_RETURN_REVERSED,
+			restaurantId: payment.restaurantId,
+			payload: {
+				stripeTransferId: args.stripeTransferId,
+				stripeTransferReversalId: args.stripeTransferReversalId,
+				reversedTotal: args.cumulative,
+				currency: payment.currency,
+			},
+			userId: AUDIT_SYSTEM_USER_ID,
+			idempotencyKey: `dispute_return_reversed:${payment._id}:${args.stripeTransferId}:${args.cumulative}`,
+		});
+	},
+});
 
 /**
  * Mark a reinstated row's return transfer as settled.
@@ -1241,7 +1401,9 @@ const WRITE_OFF_BATCH_SIZE = 50;
  */
 export const sweepDisputeWriteOffs = internalMutation({
 	args: {},
-	handler: async (ctx): Promise<{ writtenOff: number; reScheduled: number }> => {
+	handler: async (
+		ctx
+	): Promise<{ writtenOff: number; reScheduled: number; shortfallsReScheduled: number }> => {
 		const now = Date.now();
 		const cutoff = writeOffCutoff(now);
 
@@ -1289,8 +1451,9 @@ export const sweepDisputeWriteOffs = internalMutation({
 		}
 
 		const reScheduled = await rescheduleUnreturnedReturns(ctx);
+		const shortfallsReScheduled = await rescheduleUnpaidShortfalls(ctx);
 
-		return { writtenOff: due.length, reScheduled };
+		return { writtenOff: due.length, reScheduled, shortfallsReScheduled };
 	},
 });
 
@@ -1322,17 +1485,102 @@ async function rescheduleUnreturnedReturns(ctx: MutationCtx): Promise<number> {
 		)
 		.take(WRITE_OFF_BATCH_SIZE);
 
+	const now = Date.now();
 	let scheduled = 0;
 	for (const row of pending) {
 		if (row.recovered <= 0) continue;
+		// Do not race a run that is still working. Two concurrent
+		// `transfers.create` calls share one idempotency key and the loser fails
+		// with `idempotency_key_in_use` — harmless in itself, but it used to
+		// raise a severe alert about a transfer that was in fact succeeding.
+		if (
+			row.returnScheduledAt !== undefined &&
+			now - row.returnScheduledAt < DISPUTE_RETURN_RESCHEDULE_AFTER_MS
+		) {
+			continue;
+		}
+
 		const restaurant = await ctx.db.get(row.restaurantId);
-		if (!restaurant?.stripeAccountId) continue;
+		if (!isPayableConnectedAccount(restaurant)) {
+			await raiseOperatorAlert(ctx, {
+				kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				restaurantId: row.restaurantId,
+				stripeObjectId: row.stripeDisputeId,
+				dedupeKey: `dispute_recovery_return_blocked:${row.stripeDisputeId}`,
+			});
+			continue;
+		}
+
+		await ctx.db.patch(row._id, { returnScheduledAt: now, updatedAt: now });
 		await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveredFunds, {
 			recoveryId: row._id,
 			stripeAccountId: restaurant.stripeAccountId,
 			stripeDisputeId: row.stripeDisputeId,
 			amount: row.recovered,
 			currency: row.currency,
+		});
+		scheduled++;
+	}
+	return scheduled;
+}
+
+/**
+ * Whether a connected account can receive a transfer right now.
+ *
+ * A **closed** account cannot, and Stripe answers with an error rather than
+ * holding the money — so scheduling one is a guaranteed failed action plus a
+ * severe alert that says nothing useful. The caller alerts once, with a key
+ * that names what is stuck, and stops trying.
+ */
+function isPayableConnectedAccount(
+	restaurant: Doc<"restaurants"> | null
+): restaurant is Doc<"restaurants"> & { stripeAccountId: string } {
+	if (!restaurant?.stripeAccountId) return false;
+	return restaurant.stripeAccountStatus !== STRIPE_ACCOUNT_STATUS.CLOSED;
+}
+
+/**
+ * Re-schedule shortfall transfers that never settled (TAVLI-102, review round
+ * 2).
+ *
+ * Same story as the returns: the action that owed the restaurant money threw,
+ * Convex did not retry it, and an alert alone leaves the money on the platform
+ * balance until somebody acts on it. `by_shortfall_pending` is an exact probe —
+ * the flag is only ever `true` or absent — so this reads the handful of
+ * payments that owe a transfer, never a range over the payments table.
+ */
+async function rescheduleUnpaidShortfalls(ctx: MutationCtx): Promise<number> {
+	const pending = await ctx.db
+		.query(TABLE.PAYMENTS)
+		.withIndex("by_shortfall_pending", (q) => q.eq("disputeRecoveryShortfallPending", true))
+		.take(WRITE_OFF_BATCH_SIZE);
+
+	let scheduled = 0;
+	for (const payment of pending) {
+		const amount = payment.disputeRecoveryShortfall ?? 0;
+		if (amount <= 0 || payment.disputeRecoveryShortfallReturnedAt !== undefined) {
+			await ctx.db.patch(payment._id, { disputeRecoveryShortfallPending: undefined });
+			continue;
+		}
+
+		const restaurant = await ctx.db.get(payment.restaurantId);
+		if (!isPayableConnectedAccount(restaurant)) {
+			await raiseOperatorAlert(ctx, {
+				kind: OPERATOR_ALERT_KIND.DISPUTE_LOST,
+				severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+				restaurantId: payment.restaurantId,
+				paymentId: payment._id,
+				dedupeKey: `dispute_recovery_shortfall_blocked:${payment._id}`,
+			});
+			continue;
+		}
+
+		await ctx.scheduler.runAfter(0, internal.disputeActions.returnRecoveryShortfall, {
+			paymentId: payment._id,
+			stripeAccountId: restaurant.stripeAccountId,
+			amount,
+			currency: payment.currency,
 		});
 		scheduled++;
 	}
