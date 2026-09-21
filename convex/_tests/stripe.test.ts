@@ -1403,10 +1403,23 @@ describe("stripe actions", () => {
 				return id;
 			});
 
-			await t.mutation(internal.orders.confirmPayment, {
-				paymentId,
-				stripePaymentIntentId: "pi_drift",
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_drift",
+				status: "succeeded",
+				amount: 5600,
 			});
+			// The refund runs on a `runAfter(0)` hop, so the scheduled job has to be
+			// flushed here or it lands after the test's database is gone.
+			vi.useFakeTimers();
+			try {
+				await t.mutation(internal.orders.confirmPayment, {
+					paymentId,
+					stripePaymentIntentId: "pi_drift",
+				});
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			} finally {
+				vi.useRealTimers();
+			}
 
 			const { order, payment } = await t.run(async (ctx) => ({
 				order: await ctx.db.get(orderId),
@@ -1420,7 +1433,8 @@ describe("stripe actions", () => {
 			expect(order?.status).toBe("draft");
 			expect(order?.paymentState).toBe("unpaid");
 			expect(payment?.status).toBe("succeeded");
-			expect(payment?.refundStatus).toBe("requested");
+			expect(payment?.refundStatus).toBe("succeeded");
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
 			const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
 			expect(alerts.map((alert) => alert.kind)).toEqual(["charge_mismatched_refunded"]);
 		});
