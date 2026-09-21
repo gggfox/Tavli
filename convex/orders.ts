@@ -51,7 +51,7 @@ import {
 } from "./constants";
 import { formatMoneyCents } from "./_shared/money";
 import { raiseOperatorAlert } from "./_util/operatorAlerts";
-import { currentOrderChargeAmount } from "./paymentSupersedeHelpers";
+import { canRecordPaymentFailure, currentOrderChargeAmount } from "./paymentSupersedeHelpers";
 import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
@@ -1064,15 +1064,9 @@ export const failPayment = internalMutation({
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment?.orderId) return;
-		// Forward-only (review round 1). SUCCEEDED was always refused; so now is
-		// every other terminal status. The caller that made this matter is the
-		// stuck-payment sweep, which decides about a row it read minutes ago: if a
-		// fresh attempt superseded it in that gap, rewriting SUPERSEDED to FAILED
-		// would lose the more precise fact — "replaced", not "declined" — and the
-		// audit event below would claim a decline that never happened.
-		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
-			return;
-		}
+		// Forward-only, but FAILED → FAILED is allowed so a second decline on the
+		// same intent refreshes the reason. See `canRecordPaymentFailure`.
+		if (!canRecordPaymentFailure(payment)) return;
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

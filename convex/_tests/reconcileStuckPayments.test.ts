@@ -1012,6 +1012,119 @@ describe("stripe.reconcileStuckPayments (TAVLI-106)", () => {
 		});
 	});
 
+	/**
+	 * Review round 2. The forward-only guard must not freeze a FAILED row on its
+	 * FIRST reason: Stripe sends `payment_intent.payment_failed` once per
+	 * declined attempt, and an intent the diner retries in place declines more
+	 * than once. A row reading "insufficient funds" while the card has since
+	 * been reported lost is worse than no reason at all.
+	 */
+	it("lets a second decline on the same intent refresh the failure reason", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_two_declines",
+			amount: 2400,
+			ageMs: 8 * MINUTE,
+			kind: "order",
+		});
+
+		await t.mutation(internal.orders.failPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_two_declines",
+			failureCode: "insufficient_funds",
+			failureMessage: "Your card has insufficient funds.",
+		});
+		const firstFailedAt = await t.run(async (ctx) => {
+			const payment = await ctx.db.get(paymentId);
+			expect(payment!.status).toBe("failed");
+			expect(payment!.failureCode).toBe("insufficient_funds");
+			// Back-date it so the refresh is visible without waiting a millisecond.
+			await ctx.db.patch(paymentId, { failedAt: Date.now() - MINUTE });
+			return Date.now() - MINUTE;
+		});
+
+		await t.mutation(internal.orders.failPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_two_declines",
+			failureCode: "lost_card",
+			failureMessage: "Your card was reported lost.",
+		});
+
+		await t.run(async (ctx) => {
+			const payment = await ctx.db.get(paymentId);
+			expect(payment!.status).toBe("failed");
+			expect(payment!.failureCode).toBe("lost_card");
+			expect(payment!.failureMessage).toBe("Your card was reported lost.");
+			expect(payment!.failedAt).toBeGreaterThan(firstFailedAt);
+		});
+	});
+
+	it("lets a second decline refresh a tip row's failure reason too", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckTipPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_tip_two_declines",
+			amount: 600,
+			ageMs: 35 * MINUTE,
+		});
+
+		await t.mutation(internal.payments.failTipPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_tip_two_declines",
+			failureCode: "card_declined",
+		});
+		await t.mutation(internal.payments.failTipPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_tip_two_declines",
+			failureCode: "expired_card",
+		});
+
+		await t.run(async (ctx) => {
+			const payment = await ctx.db.get(paymentId);
+			expect(payment!.status).toBe("failed");
+			expect(payment!.failureCode).toBe("expired_card");
+		});
+	});
+
+	/**
+	 * The one state a FAILED row still refuses: money moved back. A manual
+	 * Stripe-dashboard refund writes its facts wherever it finds them, and a
+	 * "declined" stamp on top of a refund would be a lie in the ledger.
+	 */
+	it("refuses to re-fail a row that has seen refund activity", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedStuckOrderPayment(t, {
+			restaurantId,
+			stripePaymentIntentId: "pi_failed_then_refunded",
+			amount: 2400,
+			ageMs: 8 * MINUTE,
+			kind: "order",
+		});
+
+		await t.mutation(internal.orders.failPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_failed_then_refunded",
+			failureCode: "insufficient_funds",
+		});
+		await t.run(async (ctx) => {
+			await ctx.db.patch(paymentId, { refundStatus: "succeeded" });
+		});
+
+		await t.mutation(internal.orders.failPayment, {
+			paymentId,
+			stripePaymentIntentId: "pi_failed_then_refunded",
+			failureCode: "lost_card",
+		});
+
+		await t.run(async (ctx) => {
+			expect((await ctx.db.get(paymentId))!.failureCode).toBe("insufficient_funds");
+		});
+	});
+
 	it("leaves a superseded tip row alone for the same reason", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedRestaurant(t);

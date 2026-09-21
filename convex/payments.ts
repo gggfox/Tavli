@@ -25,6 +25,7 @@ import {
 import { formatMoneyCents } from "./_shared/money";
 import { hasFeeBreakdown, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { stuckPaymentReconcileAges, stuckPaymentSweepKind } from "./paymentReconcileHelpers";
+import { canRecordPaymentFailure } from "./paymentSupersedeHelpers";
 
 /**
  * Internal export query: returns denormalized payment rows whose bucketing
@@ -476,12 +477,10 @@ export const failTipPayment = internalMutation({
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment || payment.kind !== PAYMENT_KIND.TIP) return;
-		// Forward-only, matching `orders.failPayment` (review round 1): a tip row
-		// the diner replaced with a fresh attempt stays SUPERSEDED, even if the
-		// stuck-payment sweep decided about it a moment before that happened.
-		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
-			return;
-		}
+		// The same forward-only guard `orders.failPayment` uses, for the same
+		// reasons — including the FAILED → FAILED refresh a retried tip charge
+		// needs. See `canRecordPaymentFailure`.
+		if (!canRecordPaymentFailure(payment)) return;
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {
