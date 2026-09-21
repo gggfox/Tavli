@@ -380,6 +380,59 @@ export const attachIntentToPayment = internalMutation({
 	},
 });
 
+/**
+ * Records a create-path failure WITHOUT ever undoing a settlement (TAVLI-105,
+ * review round 2). The failure twin of {@link attachIntentToPayment}.
+ *
+ * The scenario this closes is the ugliest version of the off-session race.
+ * `createTipCharge` calls `paymentIntents.create` with `confirm: true`; Stripe
+ * charges the card and then the RESPONSE is lost — a timeout on the call and on
+ * both `maxNetworkRetries` replays. The money has moved, Stripe delivers
+ * `payment_intent.succeeded`, and the webhook settles the tip through the
+ * metadata fallback. Only then does the action's `catch` run, and a blind
+ * `updatePayment({ status: "failed" })` would take a SUCCEEDED row to FAILED:
+ * the credit gone, the event already deduped so no redelivery can restore it,
+ * and — because the action rethrows — the diner told to try again, which is a
+ * second charge for the same tip.
+ *
+ * So FAILED is written only from PENDING or PROCESSING. SUCCEEDED is reported
+ * back instead of overwritten, and callers on the racy path return success
+ * rather than rethrowing. SUPERSEDED and CANCELLED are left alone too: a
+ * superseding attempt owns the row by then, and resurrecting it as "the failed
+ * attempt" would confuse the retry logic that superseded it.
+ */
+export const failPaymentUnlessSettled = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		failureCode: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+	},
+	returns: v.object({ alreadySucceeded: v.boolean() }),
+	handler: async (ctx, args): Promise<{ alreadySucceeded: boolean }> => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return { alreadySucceeded: false };
+
+		// The charge went through and something else already recorded it. The
+		// caller needs to know, because "throw" and "return success" are very
+		// different things to show a diner who has been charged.
+		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return { alreadySucceeded: true };
+
+		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
+			return { alreadySucceeded: false };
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(args.paymentId, {
+			status: PAYMENT_STATUS.FAILED,
+			...(args.failureCode !== undefined && { failureCode: args.failureCode }),
+			...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
+			failedAt: now,
+			updatedAt: now,
+		});
+		return { alreadySucceeded: false };
+	},
+});
+
 export const updatePayment = internalMutation({
 	args: {
 		paymentId: v.id(TABLE.PAYMENTS),

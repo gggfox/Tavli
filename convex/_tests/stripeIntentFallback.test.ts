@@ -30,7 +30,7 @@
  */
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
@@ -223,6 +223,76 @@ async function seedOrderPaymentAwaitingIntentId(
 		await ctx.db.patch(orderId, { activePaymentId: paymentId, paymentState: "pending" });
 	});
 	return { orderId: orderId!, paymentId: paymentId! };
+}
+
+/**
+ * Everything `createTipCharge` needs to reach the one-tap branch for real: an
+ * active session the diner belongs to, a paid `kind: "order"` payment of theirs
+ * carrying a saved card (that is what `getSavedCardForSessionMemberInternal`
+ * reads), and a `stripeCustomers` row so the Customer is not created over the
+ * network. Returns the session.
+ */
+async function seedOneTapTipContext(
+	t: ReturnType<typeof convexTest>,
+	restaurantId: Id<"restaurants">
+): Promise<Id<"sessions">> {
+	let sessionId: Id<"sessions">;
+	await t.run(async (ctx) => {
+		const now = Date.now();
+		const tableId = await ctx.db.insert("tables", {
+			restaurantId,
+			tableNumber: 13,
+			isActive: true,
+			createdAt: now,
+		});
+		sessionId = await ctx.db.insert("sessions", {
+			restaurantId,
+			tableId,
+			userId: DINER,
+			status: "active",
+			startedAt: now,
+		});
+		const orderId = await ctx.db.insert("orders", {
+			sessionId,
+			restaurantId,
+			tableId,
+			status: "served",
+			totalAmount: 5000,
+			paymentState: "paid",
+			settledBy: "stripe",
+			paidByUserId: DINER,
+			paidAt: now,
+			submittedAt: now,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const orderPaymentId = await ctx.db.insert("payments", {
+			restaurantId,
+			orderId,
+			amount: 5600,
+			subtotalAmount: 5000,
+			feeAmount: 600,
+			kind: "order",
+			paidByUserId: DINER,
+			stripePaymentMethodId: "pm_saved",
+			currency: "usd",
+			status: "succeeded",
+			refundStatus: "none",
+			attemptNumber: 1,
+			stripePaymentIntentId: "pi_the_order",
+			succeededAt: now,
+			createdAt: now,
+			updatedAt: now,
+		});
+		await ctx.db.patch(orderId, { activePaymentId: orderPaymentId });
+		await ctx.db.insert("stripeCustomers", {
+			userId: DINER,
+			stripeCustomerId: "cus_fallback",
+			createdAt: now,
+			updatedAt: now,
+		});
+	});
+	return sessionId!;
 }
 
 function tipIntentEvent(args: {
@@ -771,5 +841,142 @@ describe("attachIntentToPayment — the create path cannot undo a settlement", (
 		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
 		expect(payment?.stripePaymentIntentId).toBe("pi_the_real_one");
 		expect(payment?.status).toBe("pending");
+	});
+});
+
+/**
+ * The create path's FAILURE write (TAVLI-105 review round 2).
+ *
+ * A thrown error out of `paymentIntents.create` does not prove the card was not
+ * charged. With `confirm: true` Stripe can take the money and then lose the
+ * response — a timeout on the call and on both `maxNetworkRetries` replays — so
+ * `payment_intent.succeeded` settles the tip through the fallback while the
+ * action is still unwinding. The blind `status: "failed"` that used to follow
+ * would erase the credit with no redelivery left to restore it, and the rethrow
+ * would send the diner back for a second charge.
+ */
+describe("failPaymentUnlessSettled — a failed call cannot erase a settled tip", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+		process.env.CONVEX_CLOUD_URL = `https://${OUR_DEPLOYMENT}.convex.cloud`;
+	});
+
+	it("reports the settlement instead of overwriting it", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			tipIntentEvent({
+				eventId: "evt_lost_response",
+				type: "payment_intent.succeeded",
+				paymentIntentId: "pi_lost_response",
+				amount: 2500,
+				metadataPaymentId: paymentId,
+				restaurantId,
+				deployment: OUR_DEPLOYMENT,
+			})
+		);
+		await fulfill(t);
+
+		// The action's catch now runs, believing the charge failed.
+		const result = await t.mutation(internal.stripeHelpers.failPaymentUnlessSettled, {
+			paymentId,
+			failureMessage: "Request timed out",
+		});
+
+		expect(result).toEqual({ alreadySucceeded: true });
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.status).toBe("succeeded");
+		expect(payment?.failedAt).toBeUndefined();
+		expect(payment?.failureMessage).toBeUndefined();
+		// The credit stands.
+		expect(await tipAuditEventsOf(t)).toHaveLength(1);
+	});
+
+	it("marks a pending row failed, as the normal decline does", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+
+		const result = await t.mutation(internal.stripeHelpers.failPaymentUnlessSettled, {
+			paymentId,
+			failureMessage: "Your card was declined.",
+		});
+
+		expect(result).toEqual({ alreadySucceeded: false });
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.status).toBe("failed");
+		expect(payment?.failureMessage).toBe("Your card was declined.");
+		expect(payment?.failedAt).toBeGreaterThan(0);
+	});
+
+	it("does not resurrect a superseded row as the failed attempt", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { paymentId } = await seedTipPaymentAwaitingIntentId(t, {
+			restaurantId,
+			tipAmount: 2500,
+		});
+		await t.run(async (ctx) => ctx.db.patch(paymentId, { status: "superseded" }));
+
+		const result = await t.mutation(internal.stripeHelpers.failPaymentUnlessSettled, {
+			paymentId,
+			failureMessage: "Request timed out",
+		});
+
+		expect(result).toEqual({ alreadySucceeded: false });
+		expect(await t.run(async (ctx) => (await ctx.db.get(paymentId))?.status)).toBe("superseded");
+	});
+
+	it("returns success from createTipCharge when the lost charge had already settled", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const sessionId = await seedOneTapTipContext(t, restaurantId);
+
+		// Stripe charges the card and the response never arrives. While the action
+		// is blocked here, the webhook for that charge lands and settles the row
+		// through the metadata fallback — which is only possible because the row
+		// does not have its intent id yet.
+		mockStripeClient.paymentIntents.create.mockImplementation(async () => {
+			const tipPaymentId = await t.run(async (ctx) => {
+				const rows = await ctx.db.query("payments").collect();
+				return rows.find((r) => r.kind === "tip" && r.status === "pending")!._id;
+			});
+			mockStripeClient.webhooks.constructEvent.mockReturnValue(
+				tipIntentEvent({
+					eventId: "evt_e2e_lost",
+					type: "payment_intent.succeeded",
+					paymentIntentId: "pi_e2e_lost",
+					amount: 2500,
+					metadataPaymentId: tipPaymentId,
+					restaurantId,
+					deployment: OUR_DEPLOYMENT,
+				})
+			);
+			await fulfill(t);
+			throw new Error("Request timed out");
+		});
+
+		// The diner is told the tip went through, NOT to try again — a retry here
+		// would be a second charge for the same tip.
+		const result = await t
+			.withIdentity({ subject: DINER })
+			.action(api.stripe.createTipCharge, { sessionId, tipAmount: 2500 });
+
+		expect(result.clientSecret).toBeNull();
+		const payment = await t.run(async (ctx) => ctx.db.get(result.paymentId));
+		expect(payment?.status).toBe("succeeded");
+		expect(payment?.stripePaymentIntentId).toBe("pi_e2e_lost");
+		expect(await tipAuditEventsOf(t)).toHaveLength(1);
+		expect(await alertsOf(t)).toHaveLength(0);
 	});
 });

@@ -561,11 +561,19 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   an unmarked intent (created before this shipped) whose row is missing. An
   unmarked intent whose row _is_ found still settles normally, so a tip charge in
   flight across the deploy is not lost.
-- The create path cannot undo a settlement: `stripeHelpers.attachIntentToPayment`
-  records the intent id but moves the status only `pending` → `processing`, so a
-  webhook that settled a tip while `paymentIntents.create` was still in flight is
-  never overwritten. Watch for `INTENT ID CONFLICT` — a payment row asked to
-  attach a second intent id.
+- The create path cannot undo a settlement, on either branch.
+  `stripeHelpers.attachIntentToPayment` records the intent id but moves the status
+  only `pending` → `processing`, and `stripeHelpers.failPaymentUnlessSettled`
+  writes `failed` only from `pending` / `processing`. The second one matters
+  because a thrown error out of `paymentIntents.create` does **not** prove the
+  card was not charged: with `confirm: true` Stripe can take the money and lose
+  the response (timeout on the call and on both `maxNetworkRetries` replays), the
+  webhook settles the tip through the fallback, and the action's `catch` arrives
+  afterwards. When it finds the row already `succeeded`, `createTipCharge` returns
+  success instead of rethrowing — telling the diner to retry would be a second
+  charge for the same tip — and logs
+  `CHARGE SETTLED DESPITE A FAILED CREATE CALL`. Also watch for
+  `INTENT ID CONFLICT`, a payment row asked to attach a second intent id.
 
 ## Post-launch monitoring
 
