@@ -1309,6 +1309,99 @@ describe("stripe actions", () => {
 			expect(payment?.status).toBe("processing");
 		});
 
+		/**
+		 * The webhook dedup in `fulfillPayment` is check-then-act across two
+		 * transactions, so it narrows the replay window but does not close it —
+		 * every handler has to be idempotent in its own right. The tab and tip
+		 * halves are pinned in `auditLifecycles.test.ts` ("writes no settlement
+		 * event when the webhook replays after success") and
+		 * `visitCloseout.test.ts` ("… — idempotently"); this is the order half.
+		 *
+		 * Deliberately a LEGACY row: no `orderUpdatedAtSnapshot`, and `amount`
+		 * equal to the order total. On an ADR 008 `kind: "order"` row the
+		 * `status === SUCCEEDED` early-return is belt-and-braces, because
+		 * settling patches `order.updatedAt` and the stale-snapshot check
+		 * short-circuits the replay first — so a test built on that shape passes
+		 * even with the early-return deleted, and proves nothing. Without a
+		 * snapshot the early-return is the only thing standing between a
+		 * redelivery and a second settlement, which is what this pins.
+		 *
+		 * The sentinel timestamps are what make the assertion clock-independent:
+		 * comparing against the first call's `Date.now()` would pass vacuously
+		 * whenever both calls land in the same millisecond.
+		 */
+		it("no-ops confirmation when the payment has already succeeded", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { orderId } = await seedDraftOrder(t, { restaurantId, totalAmount: 5000 });
+			await seedOrderItemFor(t, { restaurantId, orderId, lineTotal: 5000 });
+
+			const paymentId = await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					orderId,
+					amount: 5000,
+					currency: "usd",
+					status: "processing",
+					refundStatus: "none",
+					attemptNumber: 1,
+					stripePaymentIntentId: "pi_replay",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id });
+				return id;
+			});
+
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_replay",
+				stripeChargeId: "ch_replay",
+			});
+
+			const first = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(first.payment?.status).toBe("succeeded");
+			expect(first.order?.paymentState).toBe("paid");
+			expect(first.order?.dailyOrderNumber).toBe(1);
+
+			// Stamp both settlement timestamps with sentinels a re-run would
+			// overwrite with the replay's clock.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, { succeededAt: 111 });
+				await ctx.db.patch(orderId, { paidAt: 111 });
+			});
+
+			// Stripe redelivers the same success. Nothing may move a second time.
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_replay",
+				stripeChargeId: "ch_replay",
+			});
+
+			const second = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+				settlements: await ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("eventType"), "orders.paymentConfirmed"))
+					.collect(),
+			}));
+			expect(second.payment?.succeededAt).toBe(111);
+			expect(second.order?.paidAt).toBe(111);
+			// And the order number is not burned twice.
+			expect(second.order?.dailyOrderNumber).toBe(1);
+			expect(second.settlements).toHaveLength(1);
+		});
+
 		it("still settles a legacy payment that has no subtotalAmount (?? fallback)", async () => {
 			const t = convexTest(schema, modules);
 			const organizationId = await seedOrganization(t);

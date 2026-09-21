@@ -502,6 +502,36 @@ export const fulfillPayment = internalAction({
 
 			let paymentId: Id<"payments"> | undefined;
 
+			// =================================================================
+			// IDEMPOTENCY INVARIANT — read before adding a case below.
+			//
+			// The `stripeWebhookEvents` dedup above is CHECK-THEN-ACT ACROSS
+			// TRANSACTIONS: the `getProcessedStripeWebhookEventInternal` query
+			// and the `recordStripeWebhookEvent` mutation at the end of this
+			// handler are separate transactions, with every handler's work in
+			// between. Two deliveries of the same event that overlap in that
+			// window therefore BOTH see no dedup row and BOTH dispatch. Stripe
+			// retries on any non-2xx for days, and an action that fails after a
+			// partial success is retried too, so this is a real interleaving,
+			// not a theoretical one. The dedup row narrows the window; it does
+			// not close it.
+			//
+			// So idempotency lives in the handlers, and EVERY handler must be
+			// idempotent in its own right. For the payment paths that means an
+			// early return when the payment row is already in a terminal state
+			// (`SUCCEEDED` / `FAILED`) rather than re-applying the transition:
+			// `orders.confirmPayment`, `sessions.confirmTabPayment` and
+			// `payments.confirmTipPayment` each open with that check, and
+			// `appendAuditEvent` is additionally keyed on the PaymentIntent id
+			// so a settlement cannot be audited twice.
+			//
+			// ANY NEW CASE ADDED HERE MUST KEEP THAT PROPERTY. Re-running a
+			// handler must be observably a no-op, not a second charge recorded,
+			// a second refund persisted, a second order number burned, or a
+			// second email scheduled. Where the work is not naturally
+			// idempotent, guard it on a terminal state or an idempotency key —
+			// do not assume this switch runs once per event.
+			// =================================================================
 			switch (event.type) {
 				case "payment_intent.succeeded": {
 					paymentId = await handlePaymentIntentSuccess(ctx, event.data.object);

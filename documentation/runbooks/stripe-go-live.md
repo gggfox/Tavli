@@ -526,6 +526,11 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 
 - Replay an event; confirm it is recorded only once (`stripeWebhookEvents` dedup)
 - Send an invalid signature; confirm rejection without state mutation
+- A `payment_intent.succeeded` whose collected amount disagrees with the payment
+  row settles **nothing** and raises a severe `payment_amount_mismatch` operator
+  alert instead (TAVLI-69) — the money stays at Stripe until a human refunds the
+  charge or corrects the order, so treat one of these as an unpaid order, not a
+  paid one. Watch for `PAYMENT AMOUNT MISMATCH` in the Convex logs.
 
 ## Post-launch monitoring
 
