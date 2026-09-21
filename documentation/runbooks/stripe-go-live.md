@@ -368,9 +368,13 @@ Acknowledge it to clear it.
 
 **4. Prove the replay dedup.** Workbench → **Events** → find the
 `v2.core.account.closed` you just caused → **Resend** (available for events
-under 15 days old). The second delivery must still answer **200** while writing
-nothing: still one `stripeWebhookEvents` row, still one open alert. This is what
-stops Stripe's redeliveries from emailing every platform admin repeatedly.
+under 15 days old). Resend re-delivers **the same event under the same event
+id**, which is exactly what makes it a proof: the second POST finds that id
+already in `stripeWebhookEvents` via `getProcessedStripeWebhookEventInternal`
+and returns before the switch runs at all. So it must still answer **200** while
+writing nothing: still one `stripeWebhookEvents` row, still one open alert. This
+is what stops Stripe's redeliveries from emailing every platform admin
+repeatedly.
 
 #### Triage: 400 vs 500 on this route
 
