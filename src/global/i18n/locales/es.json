@@ -2115,7 +2115,7 @@
 			},
 			"paymentAmountMismatch": {
 				"title": "Cobro detenido: el monto no coincidía",
-				"explanation": "Stripe cobró un monto distinto al que Tavli pidió, así que no se marcó nada como pagado. Reembolsa el cargo en Stripe; la orden sigue sin pagarse y el comensal paga de nuevo."
+				"explanation": "Stripe cobró {{received}} en lugar de {{expected}} ({{currency}}), así que el pago se marcó como fallido en vez de liquidarse. Reembolsa el cargo en Stripe: el dinero sigue ahí y el comensal paga de nuevo."
 			},
 			"disputeLost": {
 				"title": "Disputa perdida",

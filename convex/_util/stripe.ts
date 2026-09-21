@@ -21,9 +21,11 @@ import type { Doc, Id } from "../_generated/dataModel";
 import {
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
+	PAYMENT_FAILURE_CODE,
 	PAYMENT_KIND,
 	USER_ROLES,
 } from "../constants";
+import { formatMoneyCents } from "../exportHelpers";
 import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
 import { buildIntegrationErrorLog, redactExternalId } from "../_shared/integrationLogging";
 import {
@@ -227,6 +229,51 @@ export async function handleAccountStatusChange(
  * tab payment, otherwise a pre-pivot per-order payment, both on their
  * original paths.
  */
+/**
+ * Routes a payment to its kind's failure mutation — the single place that
+ * decides which one that is.
+ *
+ * Two callers with the same routing question: `handlePaymentIntentFailure` (a
+ * declined card) and the amount-mismatch branch of `handlePaymentIntentSuccess`
+ * (a charge that succeeded for the wrong amount). They differ only in the
+ * `failureCode` they hand over.
+ *
+ * Dispatch order matters: `kind: "tip"` is checked before `sessionId`, because
+ * a tip row carries a `sessionId` too and must never be allowed to unlock a
+ * tab. Kind `order` rows carry an `orderId` and no `sessionId`, so they fall
+ * through to the order path exactly like legacy per-order rows.
+ *
+ * Every target mutation early-returns on an already-SUCCEEDED row, so this is
+ * safe to call on a replay.
+ */
+async function failPaymentByKind(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	payment: Doc<"payments">,
+	args: {
+		stripePaymentIntentId: string;
+		failureCode?: string;
+		failureMessage?: string;
+	}
+): Promise<void> {
+	const mutationArgs = { paymentId: payment._id, ...args };
+
+	if (payment.kind === PAYMENT_KIND.TIP) {
+		// A failed tip charge is marked failed so the diner can retry from the
+		// close-out screen (a fresh attempt supersedes the failed row).
+		await ctx.runMutation(internal.payments.failTipPayment, mutationArgs);
+		return;
+	}
+
+	if (payment.sessionId) {
+		// Unlocks the tab as well as failing the row.
+		await ctx.runMutation(internal.sessions.failTabPayment, mutationArgs);
+		return;
+	}
+
+	await ctx.runMutation(internal.orders.failPayment, mutationArgs);
+}
+
 export async function handlePaymentIntentSuccess(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	ctx: any,
@@ -294,10 +341,13 @@ export async function handlePaymentIntentSuccess(
 			orderId: payment.orderId,
 			paymentId: payment._id,
 			stripeObjectId: typeof paymentIntent.id === "string" ? paymentIntent.id : undefined,
+			// Pre-formatted, because neither renderer formats money: the alerts
+			// page substitutes through i18next and the email through
+			// `interpolate`, so a raw `5600` would reach the operator as "5600".
 			messageParams: {
-				expected: payment.amount,
-				received: receivedAmount,
-				currency: payment.currency,
+				expected: formatMoneyCents(payment.amount),
+				received: formatMoneyCents(receivedAmount),
+				currency: payment.currency.toUpperCase(),
 			},
 			// One open alert per payment, not per DETECTION. Stripe's own
 			// retries are not the reason — a redelivery carries the same `evt_`
@@ -308,6 +358,21 @@ export async function handlePaymentIntentSuccess(
 			// a mismatched tab stays locked until a human acts. Without the key
 			// that is one severe alert and one admin email per sweep.
 			dedupeKey: `amount_mismatch:${payment._id}`,
+		});
+
+		// Give the row an exit. Leaving it PROCESSING forever would strand the
+		// diner (a locked tab never unlocks, an order never returns to unpaid)
+		// and leave the next attempt with a live row to trip over. FAILED is the
+		// honest terminal state: the charge did not pay for what it claimed to.
+		// It lets `createOrderPaymentIntent` / `beginTabPayment` supersede this
+		// attempt cleanly, and it gives the operator's eventual refund a
+		// terminal row to land on. The money itself stays at Stripe until they
+		// refund it — that is the alert's job, not this mutation's, which is why
+		// the alert above is raised and kept regardless.
+		await failPaymentByKind(ctx, payment, {
+			stripePaymentIntentId: paymentIntent.id,
+			failureCode: PAYMENT_FAILURE_CODE.AMOUNT_MISMATCH,
+			failureMessage: `Stripe collected ${receivedAmount} but this payment expected ${payment.amount}`,
 		});
 
 		// Return rather than throw, deliberately. Throwing would make
@@ -395,10 +460,8 @@ export async function handlePaymentIntentSuccess(
  * PaymentIntent. Returns the payment id (or `undefined` when no matching
  * record exists, see `handlePaymentIntentSuccess`).
  *
- * Kind `order` rows (ADR 008) carry an `orderId` and no `sessionId`, so they
- * fall through to `failPayment` exactly like legacy per-order rows — the
- * routing needs no `kind` branch. Tip rows are dispatched by `kind` before the
- * `sessionId` check so a Phase 3 intent can never unlock a tab.
+ * Routing lives in `failPaymentByKind`, shared with the amount-mismatch branch
+ * of `handlePaymentIntentSuccess` — the two differ only in the `failureCode`.
  */
 export async function handlePaymentIntentFailure(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -414,30 +477,7 @@ export async function handlePaymentIntentFailure(
 	);
 	if (!payment) return undefined;
 
-	if (payment.kind === PAYMENT_KIND.TIP) {
-		// A declined tip charge is marked failed so the diner can retry from the
-		// close-out screen (a fresh attempt supersedes the failed row).
-		await ctx.runMutation(internal.payments.failTipPayment, {
-			paymentId: payment._id,
-			stripePaymentIntentId: paymentIntent.id,
-			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
-			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
-		});
-		return payment._id;
-	}
-
-	if (payment.sessionId) {
-		await ctx.runMutation(internal.sessions.failTabPayment, {
-			paymentId: payment._id,
-			stripePaymentIntentId: paymentIntent.id,
-			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
-			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
-		});
-		return payment._id;
-	}
-
-	await ctx.runMutation(internal.orders.failPayment, {
-		paymentId: payment._id,
+	await failPaymentByKind(ctx, payment, {
 		stripePaymentIntentId: paymentIntent.id,
 		failureCode: paymentIntent.last_payment_error?.code ?? undefined,
 		failureMessage: paymentIntent.last_payment_error?.message ?? undefined,

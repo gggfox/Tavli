@@ -371,10 +371,15 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 				order: await ctx.db.get(orderId),
 				payment: await ctx.db.get(paymentId),
 			}));
-			// Untouched: still processing, order still unpaid and out of the kitchen.
-			expect(payment?.status).toBe("processing");
+			// Not settled — and not left in limbo either. FAILED is a terminal
+			// state a retry can supersede and a refund can land on.
+			expect(payment?.status).toBe("failed");
+			expect(payment?.failureCode).toBe("amount_mismatch");
 			expect(payment?.succeededAt).toBeUndefined();
+			expect(payment?.failedAt).toBeGreaterThan(0);
+			// The order is still owed: unpaid and payable, not "refunded".
 			expect(order?.paymentState).toBe("unpaid");
+			expect(order?.paidAt).toBeUndefined();
 
 			const alerts = await alertsOf(t);
 			expect(alerts).toHaveLength(1);
@@ -387,7 +392,13 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 				dedupeKey: `amount_mismatch:${paymentId}`,
 			});
 			// The operator needs both numbers and the object to look up in Stripe.
-			expect(alerts[0].messageParams).toMatchObject({ expected: 5600, received: 100 });
+			// Pre-formatted: neither the alerts page nor the email formats money,
+			// so a raw 5600 would reach them as "5600".
+			expect(alerts[0].messageParams).toMatchObject({
+				expected: "56.00",
+				received: "1.00",
+				currency: "USD",
+			});
 			expect(alerts[0].stripeObjectId).toBe("pi_order_short");
 		});
 
@@ -464,7 +475,8 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 			await fulfill(t);
 
 			const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
-			expect(payment?.status).toBe("processing");
+			expect(payment?.status).toBe("failed");
+			expect(payment?.failureCode).toBe("amount_mismatch");
 			expect(payment?.succeededAt).toBeUndefined();
 
 			// No `sessions.tipPaid` audit event either: the tip is not recorded.
@@ -484,8 +496,18 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 				paymentId,
 				dedupeKey: `amount_mismatch:${paymentId}`,
 			});
-			expect(alerts[0].messageParams).toMatchObject({ expected: 2500, received: 25000 });
-			expect(sessionId).toBeDefined();
+			expect(alerts[0].messageParams).toMatchObject({
+				expected: "25.00",
+				received: "250.00",
+				currency: "USD",
+			});
+
+			// Failing a tip must not touch the session it hangs off — a tip row
+			// carries a sessionId too, and routing it down the tab path would
+			// unlock somebody's tab over a failed gratuity.
+			const session = await t.run(async (ctx) => ctx.db.get(sessionId));
+			expect(session?.status).toBe("active");
+			expect(session?.paymentState).toBeUndefined();
 		});
 	});
 
@@ -546,10 +568,15 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 				payment: await ctx.db.get(paymentId),
 				session: await ctx.db.get(sessionId),
 			}));
-			expect(payment?.status).toBe("processing");
+			expect(payment?.status).toBe("failed");
+			expect(payment?.failureCode).toBe("amount_mismatch");
 			expect(order?.paymentState).toBe("unpaid");
-			// The tab is emphatically not closed out.
+			// The tab is emphatically not closed out — but it IS unlocked, so the
+			// diner is not stranded behind a payment that will never complete and
+			// can start a fresh attempt.
 			expect(session?.status).toBe("active");
+			expect(session?.lockedForPaymentAt).toBeUndefined();
+			expect(session?.paymentState).toBe("failed");
 
 			const alerts = await alertsOf(t);
 			expect(alerts).toHaveLength(1);
@@ -559,7 +586,11 @@ describe("payment_intent.succeeded — amount assertion (TAVLI-69)", () => {
 				paymentId,
 				dedupeKey: `amount_mismatch:${paymentId}`,
 			});
-			expect(alerts[0].messageParams).toMatchObject({ expected: 1980, received: 1800 });
+			expect(alerts[0].messageParams).toMatchObject({
+				expected: "19.80",
+				received: "18.00",
+				currency: "USD",
+			});
 		});
 	});
 

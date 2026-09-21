@@ -527,13 +527,17 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 - Replay an event; confirm it is recorded only once (`stripeWebhookEvents` dedup)
 - Send an invalid signature; confirm rejection without state mutation
 - A `payment_intent.succeeded` whose collected amount disagrees with the payment
-  row settles **nothing** and raises a severe `payment_amount_mismatch` operator
-  alert instead (TAVLI-69). Resolve it by refunding the charge in Stripe: the
-  order stays unpaid and the diner pays again, because no mutation can settle a
-  mismatched payment. Treat one of these as an unpaid order, not a paid one, and
-  watch for `PAYMENT AMOUNT MISMATCH` in the Convex logs. The stuck-tab
-  reconciliation cron logs the same line but deliberately does **not** re-raise
-  the alert, so an acknowledged one staying quiet is correct, not a missed event.
+  row settles **nothing**: the payment is marked `failed` with failure code
+  `amount_mismatch` (so a tab unlocks and the order stays payable) and a severe
+  `payment_amount_mismatch` operator alert is raised, naming both amounts
+  (TAVLI-69). Resolve it by refunding the charge in Stripe — the money is still
+  there, and the diner pays again; no mutation can settle a mismatched payment.
+  That refund records itself on the payment row but deliberately does **not**
+  flip the order to refunded, because the order was never paid. Watch for
+  `PAYMENT AMOUNT MISMATCH` in the Convex logs. The stuck-tab reconciliation
+  cron logs the same line and fails the row, but deliberately does **not**
+  re-raise the alert, so an acknowledged one staying quiet is correct rather
+  than a missed event.
 
 ## Post-launch monitoring
 

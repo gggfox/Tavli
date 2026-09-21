@@ -49,6 +49,7 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
 	ORDER_STATUS,
+	PAYMENT_FAILURE_CODE,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
@@ -1859,12 +1860,20 @@ export const reconcileStuckTabPayments = internalAction({
 						// clearing their inbox.
 						//
 						// Detecting the same unchanged fact on a timer is not news.
-						// Log it and move on; the webhook already raised it once, and
-						// the alert is only resolved by a human refunding the charge.
+						// Log it and fail the row; the webhook already raised the
+						// alert, and it is only resolved by a human refunding the
+						// charge at Stripe.
+						//
+						// Failing it is also what stops the repetition at source:
+						// `failTabPayment` clears `lockedForPaymentAt`, so the tab
+						// drops out of `listStuckLockedTabs` and this branch runs
+						// once rather than every five minutes. (It is reached at all
+						// only when the webhook never arrived — otherwise the webhook
+						// already failed the row and the sweep never sees it.)
 						//
 						// TAVLI-106: when the order and tip sweeps land, they must
-						// keep this rule — compare before dispatching, and let the
-						// webhook own the alert.
+						// keep this rule — compare before dispatching, fail the row,
+						// and let the webhook own the alert.
 						// -------------------------------------------------------
 						const received =
 							typeof paymentIntent.amount_received === "number"
@@ -1887,6 +1896,15 @@ export const reconcileStuckTabPayments = internalAction({
 								expectedAmount: candidate.amount,
 								receivedAmount: received,
 								paymentIntentId: redactExternalId(candidate.stripePaymentIntentId),
+							});
+
+							// Every candidate here is a tab payment by construction —
+							// `listStuckLockedTabs` returns only session-locked rows.
+							await ctx.runMutation(internal.sessions.failTabPayment, {
+								paymentId: candidate.paymentId,
+								stripePaymentIntentId: candidate.stripePaymentIntentId,
+								failureCode: PAYMENT_FAILURE_CODE.AMOUNT_MISMATCH,
+								failureMessage: `Stripe collected ${received} but this payment expected ${candidate.amount}`,
 							});
 							break;
 						}

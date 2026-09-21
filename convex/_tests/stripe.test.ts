@@ -916,13 +916,17 @@ describe("stripe actions", () => {
 				expect(alerts[0]._id).toBe(alertId);
 				expect(alerts[0].status).toBe("acknowledged");
 
-				// And the sweep settled nothing on the way past.
+				// And the sweep settled nothing on the way past — it failed the row
+				// instead, which unlocks the tab and, incidentally, drops it out of
+				// `listStuckLockedTabs` so this cannot recur every five minutes.
 				const payment = await ctx.db.get(paymentId);
-				expect(payment!.status).toBe("processing");
+				expect(payment!.status).toBe("failed");
+				expect(payment!.failureCode).toBe("amount_mismatch");
 				expect(payment!.succeededAt).toBeUndefined();
 				const session = await ctx.db.get(sessionId);
 				expect(session!.status).toBe("active");
-				expect(session!.lockedForPaymentAt).toBeDefined();
+				expect(session!.lockedForPaymentAt).toBeUndefined();
+				expect(session!.paymentState).toBe("failed");
 			});
 
 			// Still visible to whoever is reading the logs.
