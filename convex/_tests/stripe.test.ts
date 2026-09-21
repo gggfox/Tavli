@@ -32,6 +32,7 @@ async function seedRestaurant(
 		organizationId: Id<"organizations">;
 		stripeAccountId?: string;
 		stripeOnboardingComplete?: boolean;
+		stripeAccountStatus?: "active" | "restricted" | "closed";
 	}
 ) {
 	let restaurantId: Id<"restaurants">;
@@ -46,6 +47,7 @@ async function seedRestaurant(
 			currency: "USD",
 			stripeAccountId: args.stripeAccountId,
 			stripeOnboardingComplete: args.stripeOnboardingComplete,
+			stripeAccountStatus: args.stripeAccountStatus,
 			isActive: true,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -272,6 +274,8 @@ describe("stripe actions", () => {
 			readyToReceivePayments: false,
 			onboardingComplete: false,
 			requirementsStatus: null,
+			// No account at all — distinct from a `closed` one (TAVLI-65).
+			accountStatus: null,
 		});
 	});
 
@@ -1856,6 +1860,145 @@ describe("stripe actions", () => {
 			} finally {
 				vi.useRealTimers();
 			}
+		});
+	});
+
+	/**
+	 * The payment gates (TAVLI-65). Every card path reads the same two fields
+	 * before it builds an intent; a closed or restricted connected account has
+	 * to stop at the gate with a code the diner's checkout can translate,
+	 * rather than reach Stripe and come back as an opaque failure.
+	 */
+	describe("payment gates — a restaurant that is not accepting payments (TAVLI-65)", () => {
+		it.each(["closed", "restricted"] as const)(
+			"refuses an order intent for a %s account with a stable code",
+			async (stripeAccountStatus) => {
+				const t = convexTest(schema, modules);
+				const organizationId = await seedOrganization(t);
+				const restaurantId = await seedRestaurant(t, {
+					ownerId: "owner-1",
+					organizationId,
+					stripeAccountId: "acct_dead",
+					// The pre-TAVLI-65 gate passed on this alone.
+					stripeOnboardingComplete: true,
+					stripeAccountStatus,
+				});
+				const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
+
+				await expect(diner.action(api.stripe.createPaymentIntent, { orderId })).rejects.toThrow(
+					/ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS/
+				);
+
+				expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+			}
+		);
+
+		it("refuses a post-visit tip charge for a closed account", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_dead_tip",
+				stripeOnboardingComplete: true,
+				stripeAccountStatus: "closed",
+			});
+
+			let sessionId: Id<"sessions">;
+			await t.run(async (ctx) => {
+				const tableId = await ctx.db.insert("tables", {
+					restaurantId,
+					tableNumber: 4,
+					isActive: true,
+					createdAt: Date.now(),
+				});
+				sessionId = await ctx.db.insert("sessions", {
+					restaurantId,
+					tableId,
+					userId: "diner-tip",
+					status: "active",
+					startedAt: Date.now() - 1000,
+				});
+			});
+
+			await expect(
+				t
+					.withIdentity({ subject: "diner-tip" })
+					.action(api.stripe.createTipCharge, { sessionId: sessionId!, tipAmount: 500 })
+			).rejects.toThrow(/ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS/);
+
+			expect(mockStripeClient.paymentIntents.create).not.toHaveBeenCalled();
+		});
+
+		it("still lets an active account through", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_alive",
+				stripeOnboardingComplete: true,
+				stripeAccountStatus: "active",
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
+
+			mockStripeClient.customers.create.mockResolvedValueOnce({ id: "cus_alive" });
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_alive",
+				client_secret: "cs_alive",
+			});
+
+			const result = await diner.action(api.stripe.createPaymentIntent, { orderId });
+			expect(result.clientSecret).toBe("cs_alive");
+		});
+
+		it("lets a legacy restaurant with no stored status through on the boolean alone", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_legacy",
+				stripeOnboardingComplete: true,
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10000 });
+
+			mockStripeClient.customers.create.mockResolvedValueOnce({ id: "cus_legacy" });
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_legacy",
+				client_secret: "cs_legacy",
+			});
+
+			const result = await diner.action(api.stripe.createPaymentIntent, { orderId });
+			expect(result.clientSecret).toBe("cs_legacy");
+		});
+
+		it("reports a closed account as connected-but-closed without calling Stripe", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_dead_status",
+				stripeOnboardingComplete: false,
+				stripeAccountStatus: "closed",
+			});
+			await seedUserRole(t, { userId: "owner-1", roles: ["owner"] });
+
+			const status = await t
+				.withIdentity({ subject: "owner-1" })
+				.action(api.stripe.getAccountStatus, { restaurantId });
+
+			expect(status).toEqual({
+				connected: true,
+				readyToReceivePayments: false,
+				onboardingComplete: false,
+				requirementsStatus: null,
+				accountStatus: "closed",
+			});
+			// A closed account is not retrievable in any useful sense, and asking
+			// would only risk a throw where the UI needs an answer.
+			expect(mockStripeClient.v2.core.accounts.retrieve).not.toHaveBeenCalled();
 		});
 	});
 });

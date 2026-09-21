@@ -54,10 +54,12 @@ import {
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
 	PLATFORM_APPLICATION_FEE_RATE,
+	STRIPE_ACCOUNT_STATUS,
 	SUBSTITUTION_PROPOSAL_STATUS,
 	TAB_RECONCILE_ALERT_AGE_MS,
 	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
+	type StripeAccountStatus,
 } from "./constants";
 import {
 	ConflictError,
@@ -89,8 +91,10 @@ import {
 } from "./_util/billing";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
 import {
+	assertRestaurantAcceptsPayments,
 	getOrCreateStripeCustomerId,
 	getStripeClient,
+	handleAccountClosed,
 	handleAccountStatusChange,
 	handleChargeDisputeClosed,
 	handleChargeDisputeCreated,
@@ -304,17 +308,42 @@ export const getAccountStatus = action({
 				readyToReceivePayments: false,
 				onboardingComplete: false,
 				requirementsStatus: null as string | null,
+				accountStatus: null as StripeAccountStatus | null,
+			};
+		}
+
+		// A closed account is answered from our own record, without asking Stripe
+		// (TAVLI-65). Two reasons: a retrieve on a closed account has nothing
+		// useful left to report and may simply fail, and the admin page needs a
+		// definite answer here — it is where the operator goes to find out why
+		// payments stopped, and a thrown status call would show them nothing.
+		if (restaurant.stripeAccountStatus === STRIPE_ACCOUNT_STATUS.CLOSED) {
+			return {
+				connected: true,
+				readyToReceivePayments: false,
+				onboardingComplete: false,
+				requirementsStatus: null as string | null,
+				accountStatus: STRIPE_ACCOUNT_STATUS.CLOSED as StripeAccountStatus | null,
 			};
 		}
 
 		const stripeClient = getStripeClient();
-		const { readyToReceivePayments, requirementsStatus, onboardingComplete, isComplete } =
-			await inferV2AccountStatus(stripeClient, restaurant.stripeAccountId);
+		const {
+			readyToReceivePayments,
+			requirementsStatus,
+			onboardingComplete,
+			isComplete,
+			accountStatus,
+		} = await inferV2AccountStatus(stripeClient, restaurant.stripeAccountId);
 
-		if (isComplete !== restaurant.stripeOnboardingComplete) {
+		if (
+			isComplete !== restaurant.stripeOnboardingComplete ||
+			accountStatus !== restaurant.stripeAccountStatus
+		) {
 			await ctx.runMutation(internal.stripeHelpers.updateOnboardingStatus, {
 				restaurantId: args.restaurantId,
 				stripeOnboardingComplete: isComplete,
+				stripeAccountStatus: accountStatus,
 			});
 		}
 
@@ -323,6 +352,7 @@ export const getAccountStatus = action({
 			readyToReceivePayments,
 			onboardingComplete,
 			requirementsStatus,
+			accountStatus: accountStatus as StripeAccountStatus | null,
 		};
 	},
 });
@@ -336,9 +366,12 @@ export const getAccountStatus = action({
  *
  * Thin events contain only a reference (event ID + type), not the full payload.
  * To get the details, we must fetch the full event from Stripe using
- * `stripeClient.v2.core.events.retrieve()`.
+ * `stripeClient.v2.core.events.retrieve()`, or re-read the account through
+ * `inferV2AccountStatus`.
  *
- * We handle two event types:
+ * The destination is subscribed to all 15 `v2.core.account*` types so it never
+ * has to be edited again (see `documentation/runbooks/stripe-go-live.md`). Of
+ * those, **three** change Tavli's state:
  *
  * 1. `v2.core.account[requirements].updated`
  *    Fired when an account's requirements change (e.g. regulators add new
@@ -350,11 +383,29 @@ export const getAccountStatus = action({
  *    from "pending" to "active"). We check if the account is now ready
  *    to receive payments.
  *
+ * 3. `v2.core.account.closed` (TAVLI-65)
+ *    Stripe closed or rejected the account. Nothing can be charged against it
+ *    again, so the restaurant is flipped out of `stripeOnboardingComplete`,
+ *    recorded as `closed`, and an operator alert is raised. Before this the
+ *    closure was invisible: the payment gates kept building intents and the
+ *    diner met an opaque Stripe failure at the card sheet.
+ *
+ * The remaining 12 are listed explicitly in the switch with the reason each is
+ * ignored, so "we never handled that" and "we decided that one is noise" stop
+ * looking identical in the logs. A type outside all 15 still warns.
+ *
+ * Every event id is recorded in `stripeWebhookEvents` exactly as
+ * `fulfillPayment` does, so Stripe's redeliveries cannot raise a second alert
+ * or re-run a handler.
+ *
  * Setup in Stripe Dashboard:
  *   1. Go to Developers > Webhooks > + Add destination
  *   2. In "Events from", select "Connected accounts"
  *   3. Select "Show advanced options" > Payload style: "Thin"
- *   4. Search for "v2" events and select the two types above
+ *   4. Subscribe to every `v2.core.account*` type
+ *
+ * Dormant until `STRIPE_CONNECT_WEBHOOK_SECRET` is set on the deployment —
+ * without it every delivery throws before the switch is reached.
  */
 export const handleThinEvent = internalAction({
 	args: {
@@ -395,6 +446,18 @@ export const handleThinEvent = internalAction({
 		}
 
 		try {
+			// Replay dedup, identical in shape to `fulfillPayment`: check first,
+			// record after the handler succeeds. Stripe redelivers a thin event
+			// for days until it gets a 2xx it believes, and without this a closure
+			// would raise its alert and re-fetch the event on every attempt.
+			const processedEvent = await ctx.runQuery(
+				internal.stripeHelpers.getProcessedStripeWebhookEventInternal,
+				{ eventId: eventNotification.id }
+			);
+			if (processedEvent) {
+				return;
+			}
+
 			switch (eventNotification.type) {
 				case "v2.core.account[requirements].updated":
 				case "v2.core.account[configuration.recipient].capability_status_updated": {
@@ -404,10 +467,93 @@ export const handleThinEvent = internalAction({
 					}
 					break;
 				}
+
+				// Stripe closed or rejected the account (TAVLI-65).
+				case "v2.core.account.closed": {
+					await handleAccountClosed(ctx, stripeClient, {
+						id: eventNotification.id,
+						relatedObjectId: eventNotification.related_object?.id,
+					});
+					break;
+				}
+
+				// -----------------------------------------------------------------
+				// Subscribed but deliberately ignored (TAVLI-65). Recorded for dedup
+				// and logged at info level; none of them changes anything Tavli
+				// stores. The reason is written down per type so a future ticket can
+				// promote one without first having to work out why it was dropped —
+				// and so "we never handled that" stops looking like "we decided that
+				// one is noise" in the logs.
+				//
+				// `.created`
+				//   The account `createConnectAccount` just made and whose id it
+				//   already persisted. Nothing to learn.
+				// `.updated`
+				//   Generic account mutation — name, metadata, dashboard edits. The
+				//   two fields Tavli reads (requirements, the recipient capability)
+				//   have their own events above, which fire alongside this one.
+				// `[identity].updated`
+				//   KYC identity details. Whether they are SUFFICIENT is what
+				//   `[requirements].updated` reports, and only that gates payments.
+				// `[future_requirements].updated`
+				//   Requirements with a FUTURE deadline. `inferV2AccountStatus` reads
+				//   `requirements.summary.minimum_deadline` only: acting on a deadline
+				//   that has not arrived would restrict a restaurant that can take
+				//   payments perfectly well today.
+				// `[defaults].updated`
+				//   Account-level defaults (currency, locale, responsibilities). Tavli
+				//   sets currency per Restaurant and never reads Stripe's copy.
+				// `[configuration.recipient].updated`
+				//   The recipient configuration itself (payout schedule, external
+				//   accounts). Only its CAPABILITY status decides whether transfers
+				//   work, and that has its own event above.
+				// `[configuration.merchant].updated` / `.capability_status_updated`
+				//   Tavli charges with destination charges on the PLATFORM account, so
+				//   the connected account never acts as merchant of record and its
+				//   `card_payments` capability gates nothing here.
+				// `[configuration.customer].updated` / `.capability_status_updated`
+				//   The customer configuration is for accounts that BUY from the
+				//   platform. Restaurants pay the platform subscription through Stripe
+				//   Billing on their own Customer (`convex/_util/billing.ts`).
+				// `account_person.created` / `.updated` / `.deleted`
+				//   People attached to the account (owners, directors, reps). Their
+				//   verification state reaches Tavli as the account's requirements;
+				//   Tavli stores no person records of its own and must not — that is
+				//   the restaurant's KYC data, not ours.
+				// -----------------------------------------------------------------
+				case "v2.core.account.created":
+				case "v2.core.account.updated":
+				case "v2.core.account[identity].updated":
+				case "v2.core.account[future_requirements].updated":
+				case "v2.core.account[defaults].updated":
+				case "v2.core.account[configuration.recipient].updated":
+				case "v2.core.account[configuration.merchant].updated":
+				case "v2.core.account[configuration.merchant].capability_status_updated":
+				case "v2.core.account[configuration.customer].updated":
+				case "v2.core.account[configuration.customer].capability_status_updated":
+				case "v2.core.account_person.created":
+				case "v2.core.account_person.updated":
+				case "v2.core.account_person.deleted": {
+					console.log(
+						`[stripe.handleThinEvent] ignored thin event type: ${eventNotification.type}`
+					);
+					break;
+				}
+
 				default: {
-					console.log(`Unhandled thin event type: ${eventNotification.type}`);
+					// Outside the 15 subscribed types — a new Stripe event, or a
+					// destination somebody widened by hand. Louder than the ignored
+					// set on purpose: this one nobody has decided about.
+					console.warn(
+						`[stripe.handleThinEvent] unhandled thin event type: ${eventNotification.type}`
+					);
 				}
 			}
+
+			await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
+				eventId: eventNotification.id,
+				eventType: eventNotification.type,
+			});
 		} catch (error) {
 			console.error(
 				"[stripe.handleThinEvent]",
@@ -1375,9 +1521,16 @@ export const createPaymentIntent = action({
 			internal.stripeHelpers.getRestaurantInternal,
 			{ restaurantId: order.restaurantId }
 		);
-		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
-			throw new Error("Restaurant is not set up for payments");
+		// The connected account has to exist AND be accepting payments. Narrowing
+		// `stripeAccountId` here is what later gives `transfer_data.destination` a
+		// `string`; the policy itself lives in `assertRestaurantAcceptsPayments`
+		// so a closed or restricted account is refused identically on every path.
+		if (!restaurant?.stripeAccountId) {
+			throw fromErrorObject(
+				new ConflictError("ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS").toObject()
+			);
 		}
+		assertRestaurantAcceptsPayments(restaurant);
 
 		// Integer cents throughout: the fee rounds half-up on the subtotal, and
 		// the diner's charge is the sum. `payments` rows record the split so
@@ -1951,9 +2104,16 @@ export const createTipCharge = action({
 			internal.stripeHelpers.getRestaurantInternal,
 			{ restaurantId: membership.restaurantId }
 		);
-		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
-			throw new Error("Restaurant is not set up for payments");
+		// The connected account has to exist AND be accepting payments. Narrowing
+		// `stripeAccountId` here is what later gives `transfer_data.destination` a
+		// `string`; the policy itself lives in `assertRestaurantAcceptsPayments`
+		// so a closed or restricted account is refused identically on every path.
+		if (!restaurant?.stripeAccountId) {
+			throw fromErrorObject(
+				new ConflictError("ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS").toObject()
+			);
 		}
+		assertRestaurantAcceptsPayments(restaurant);
 
 		const currency = restaurant.currency.toLowerCase();
 		const stripeClient = getStripeClient();
@@ -2188,9 +2348,16 @@ export const createTabPaymentIntent = action({
 			internal.stripeHelpers.getRestaurantInternal,
 			{ restaurantId: tab.restaurantId }
 		);
-		if (!restaurant?.stripeAccountId || !restaurant.stripeOnboardingComplete) {
-			throw new Error("Restaurant is not set up for payments");
+		// The connected account has to exist AND be accepting payments. Narrowing
+		// `stripeAccountId` here is what later gives `transfer_data.destination` a
+		// `string`; the policy itself lives in `assertRestaurantAcceptsPayments`
+		// so a closed or restricted account is refused identically on every path.
+		if (!restaurant?.stripeAccountId) {
+			throw fromErrorObject(
+				new ConflictError("ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS").toObject()
+			);
 		}
+		assertRestaurantAcceptsPayments(restaurant);
 
 		const currency = restaurant.currency.toLowerCase();
 		const totalAmount = tab.subtotal + args.tipAmount;

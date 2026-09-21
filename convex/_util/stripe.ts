@@ -18,8 +18,20 @@
 import Stripe from "stripe";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { PAYMENT_KIND, USER_ROLES } from "../constants";
-import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
+import {
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	PAYMENT_KIND,
+	STRIPE_ACCOUNT_STATUS,
+	USER_ROLES,
+	type StripeAccountStatus,
+} from "../constants";
+import {
+	ConflictError,
+	fromErrorObject,
+	NotAuthorizedError,
+	NotFoundError,
+} from "../_shared/errors";
 import { redactExternalId } from "../_shared/integrationLogging";
 import {
 	computeDisputeFacts,
@@ -167,6 +179,7 @@ export async function inferV2AccountStatus(
 	requirementsStatus: string | null;
 	onboardingComplete: boolean;
 	isComplete: boolean;
+	accountStatus: StripeAccountStatus;
 }> {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const account: any = await stripeClient.v2.core.accounts.retrieve(stripeAccountId, {
@@ -189,6 +202,10 @@ export async function inferV2AccountStatus(
 		requirementsStatus,
 		onboardingComplete,
 		isComplete,
+		// A retrieve can only ever answer "can this account take money or not":
+		// `closed` is not derivable here, it is asserted by
+		// `v2.core.account.closed` and then defended by the mutation layer.
+		accountStatus: isComplete ? STRIPE_ACCOUNT_STATUS.ACTIVE : STRIPE_ACCOUNT_STATUS.RESTRICTED,
 	};
 }
 
@@ -196,6 +213,10 @@ export async function inferV2AccountStatus(
  * Shared helper for thin event handlers: re-fetches the V2 account,
  * determines the current onboarding/payment status, and updates the
  * restaurant record in our DB.
+ *
+ * The stored `stripeAccountStatus` moves with the boolean so the admin page and
+ * the payment gates never disagree about the same account. A closed account is
+ * left alone — see `isClosedAndStaysClosed` in `convex/stripeHelpers.ts`.
  */
 export async function handleAccountStatusChange(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -203,12 +224,96 @@ export async function handleAccountStatusChange(
 	stripeClient: Stripe,
 	stripeAccountId: string
 ): Promise<void> {
-	const { isComplete } = await inferV2AccountStatus(stripeClient, stripeAccountId);
+	const { isComplete, accountStatus } = await inferV2AccountStatus(stripeClient, stripeAccountId);
 
 	await ctx.runMutation(internal.stripeHelpers.updateOnboardingByAccountId, {
 		stripeAccountId,
 		stripeOnboardingComplete: isComplete,
+		stripeAccountStatus: accountStatus,
 	});
+}
+
+/**
+ * Applies a `v2.core.account.closed` thin event (TAVLI-65).
+ *
+ * Thin events carry no object, only `related_object: {id, type, url}`, so the
+ * versioned event is fetched from Stripe before anything is written — the
+ * handler acts on Stripe's own record of the closure rather than on an
+ * unverified id lifted out of the payload. The account id still comes from the
+ * signed notification as a fallback, because a `v2.core.events.retrieve` that
+ * omits `related_object` must not turn a real closure into a silent no-op.
+ *
+ * Deliberately NOT `handleAccountStatusChange`: that helper retrieves the
+ * account, and a closed account has nothing useful left to report — the
+ * closure is the event, not something to be re-derived.
+ *
+ * The operator alert is raised even when no restaurant claims the account id.
+ * Dev and staging share one Stripe test account, so an unclaimed closure is
+ * usually another environment's — but it can equally be a restaurant whose
+ * `stripeAccountId` was cleared while Stripe was still delivering, and that is
+ * exactly the case nobody would otherwise ever see. `dedupeKey` caps it at one
+ * open row per account either way.
+ */
+export async function handleAccountClosed(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	stripeClient: Stripe,
+	notification: { id: string; relatedObjectId: string | undefined }
+): Promise<void> {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const event: any = await stripeClient.v2.core.events.retrieve(notification.id);
+	const stripeAccountId: string | undefined =
+		event?.related_object?.id ?? notification.relatedObjectId;
+
+	if (!stripeAccountId) {
+		console.error(
+			"[stripe.handleAccountClosed] account closed event carries no related object",
+			JSON.stringify({ eventId: notification.id })
+		);
+		return;
+	}
+
+	const closed: { restaurantId: Id<"restaurants"> } | null = await ctx.runMutation(
+		internal.stripeHelpers.markStripeAccountClosedByAccountId,
+		{ stripeAccountId }
+	);
+
+	await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+		kind: OPERATOR_ALERT_KIND.ACCOUNT_CLOSED,
+		severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+		...(closed && { restaurantId: closed.restaurantId }),
+		stripeObjectId: stripeAccountId,
+		dedupeKey: `account_closed:${stripeAccountId}`,
+	});
+}
+
+/**
+ * The one payment gate, shared by every path that builds a PaymentIntent
+ * against a restaurant's connected account (TAVLI-65).
+ *
+ * Callers narrow `stripeAccountId` themselves (they need it as a `string` for
+ * `transfer_data.destination`); this owns the *policy* — what makes an account
+ * chargeable — so a new status or a new rule lands in one place instead of
+ * three. The error is a stable code, not prose: `createPaymentIntent` surfaces
+ * straight to the diner's checkout sheet, which maps
+ * `ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS` to "this restaurant is not
+ * accepting payments right now" in the diner's own language. Before this, a
+ * closed account produced an opaque Stripe failure several seconds later.
+ *
+ * A restaurant with no stored status passes on `stripeOnboardingComplete`
+ * alone. That is not laxity: every restaurant onboarded before TAVLI-65 has an
+ * absent status until a thin event or a status refresh writes one, and a
+ * stricter rule would stop live restaurants from taking payments on deploy.
+ */
+export function assertRestaurantAcceptsPayments(restaurant: Doc<"restaurants">): void {
+	const status = restaurant.stripeAccountStatus;
+	if (
+		!restaurant.stripeOnboardingComplete ||
+		status === STRIPE_ACCOUNT_STATUS.CLOSED ||
+		status === STRIPE_ACCOUNT_STATUS.RESTRICTED
+	) {
+		throw fromErrorObject(new ConflictError("ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS").toObject());
+	}
 }
 
 /**

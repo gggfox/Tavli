@@ -632,6 +632,7 @@
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
+		"ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS": "Este restaurante no está aceptando pagos con tarjeta en este momento. Pide a tu mesero que cobre en persona.",
 		"ERROR_SUBSTITUTION_NOT_ELIGIBLE": "Esta línea no admite sustitución — el pedido debe estar pagado y aún en cocina.",
 		"ERROR_SUBSTITUTION_ITEM_UNAVAILABLE": "Ese artículo de reemplazo no está disponible.",
 		"ERROR_SUBSTITUTION_PROPOSAL_EXISTS": "Ya hay una sustitución esperando la respuesta del comensal para este artículo.",

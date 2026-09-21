@@ -264,6 +264,42 @@ export const JOIN_CODE_LENGTH = 6;
  */
 export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
+/**
+ * Where a Restaurant's Stripe connected account stands (TAVLI-65).
+ *
+ * Absent means **no account** — either the restaurant was never onboarded, or
+ * it was onboarded before this field existed and no thin event or status
+ * refresh has run since. That is the case the admin UI renders as "not set
+ * up", and it is why `closed` had to become a stored value: without it a
+ * closed account is indistinguishable from a restaurant that never had one,
+ * because `stripeOnboardingComplete: false` covers both.
+ *
+ * `restricted` deliberately does **not** distinguish "still onboarding" from
+ * "Stripe restricted this account": requirements outstanding, an inactive
+ * `stripe_transfers` capability and a Stripe-imposed restriction all land the
+ * restaurant in the same place — it cannot take card payments right now, and
+ * the fix is the same hosted onboarding link.
+ *
+ * `closed` is terminal **for that account id**. Stripe does not reopen a
+ * closed account, so the only ways out are the admin Reset (which clears
+ * `stripeAccountId` and this field) or onboarding a brand-new account. The
+ * mutations enforce that: a status refresh can never quietly promote a closed
+ * account back to `active`.
+ */
+export const STRIPE_ACCOUNT_STATUS = {
+	/** Onboarded, `stripe_transfers` active, no requirements due — can be charged against. */
+	ACTIVE: "active",
+	/** The account exists but cannot take payments right now. */
+	RESTRICTED: "restricted",
+	/** Stripe closed or rejected the account (`v2.core.account.closed`). */
+	CLOSED: "closed",
+} as const;
+
+export type StripeAccountStatus =
+	(typeof STRIPE_ACCOUNT_STATUS)[keyof typeof STRIPE_ACCOUNT_STATUS];
+
+export const STRIPE_ACCOUNT_STATUSES = Object.values(STRIPE_ACCOUNT_STATUS);
+
 /** Tip selector presets (percent of the member's own spend at Visit close-out; skipping is the zero option). */
 export const TIP_PERCENT_PRESETS = [10, 15, 20] as const;
 export const DEFAULT_TIP_PERCENT = 10;
