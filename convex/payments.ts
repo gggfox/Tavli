@@ -16,6 +16,7 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
+	ORDER_PAYMENT_RECONCILE_MIN_AGE_MS,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
@@ -23,6 +24,7 @@ import {
 } from "./constants";
 import { formatMoneyCents } from "./_shared/money";
 import { hasFeeBreakdown, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
+import { stuckPaymentReconcileAges, stuckPaymentSweepKind } from "./paymentReconcileHelpers";
 
 /**
  * Internal export query: returns denormalized payment rows whose bucketing
@@ -220,6 +222,69 @@ export const getActiveTipPaymentInternal = internalQuery({
 			if (!latest || payment.createdAt > latest.createdAt) latest = payment;
 		}
 		return latest;
+	},
+});
+
+/**
+ * Candidates for the stuck-payment sweep (TAVLI-106): order and tip payments
+ * left in `processing` because the confirming webhook never arrived.
+ *
+ * **One indexed range, no scan.** `by_status_updated` is `(status, updatedAt)`,
+ * so `eq(processing).lt(updatedAt, cutoff)` is a single contiguous range, read
+ * oldest-first and capped by `take(limit)`.
+ *
+ * **Two different ages, on purpose.**
+ * - The RANGE uses `updatedAt`, because every patch to a payment row bumps it
+ *   (`stripeHelpers.updatePayment` does it even for a status-preserving write).
+ *   So the bound means "untouched for N minutes" — which is precisely the
+ *   symptom of a dropped webhook, and a better trigger than true age: a row
+ *   that is still being written to is a row something is still handling.
+ * - The per-kind MINIMUM is applied here too, against `updatedAt`, for the same
+ *   reason. The range itself can only carry one cutoff, so it uses the shortest
+ *   of the per-kind minimums (an order's five minutes) and tips are held back
+ *   to their own thirty in code. The alternative — a second index range per
+ *   kind — buys nothing: the age bound is what keeps the read small, and both
+ *   ranges would overlap almost entirely.
+ * - TRUE age, from `createdAt`, is the sweep's business rather than this
+ *   query's: `stripe.reconcileStuckPayments` computes it off the returned rows
+ *   to decide when a straggler becomes an operator alert. That one has to be
+ *   `createdAt` — a late `stripeChargeId` write must not buy a stuck payment
+ *   another fifteen minutes of silence.
+ *
+ * Two kinds of row are dropped after the read rather than before it:
+ * - **Legacy tab payments** (no `kind`, `sessionId` set) — `reconcileStuck`
+ *   `TabPayments` owns those, because settling one must also unlock the
+ *   session. See `stuckPaymentSweepKind` for the full discriminator.
+ * - **Rows with no `stripePaymentIntentId`** — there is nothing to retrieve
+ *   from Stripe. A `processing` row always has one (`attachIntentToPayment` is
+ *   what moves a row into `processing`), so this is a belt-and-braces guard
+ *   rather than an expected case.
+ *
+ * Filtering after the `take` means the batch bound counts rows read, not rows
+ * returned, which is the bound that actually matters for the query's cost.
+ */
+export const listStuckPayments = internalQuery({
+	args: {
+		/** The sweep's clock, passed in so the query stays a pure function of it. */
+		now: v.number(),
+		limit: v.number(),
+	},
+	handler: async (ctx, args): Promise<Doc<"payments">[]> => {
+		const rows = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_status_updated", (q) =>
+				q
+					.eq("status", PAYMENT_STATUS.PROCESSING)
+					.lt("updatedAt", args.now - ORDER_PAYMENT_RECONCILE_MIN_AGE_MS)
+			)
+			.take(args.limit);
+
+		return rows.filter((payment) => {
+			if (!payment.stripePaymentIntentId) return false;
+			const kind = stuckPaymentSweepKind(payment);
+			if (kind === null) return false;
+			return args.now - payment.updatedAt >= stuckPaymentReconcileAges(kind).minAgeMs;
+		});
 	},
 });
 
