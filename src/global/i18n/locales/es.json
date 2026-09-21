@@ -1254,6 +1254,8 @@
 			"resetWarning": "Esto cierra la cuenta actual de Stripe y la desvincula de este restaurante. Tendrás que completar la configuración de nuevo. Cualquier producto vinculado a esta cuenta dejará de ser cobrable.",
 			"disconnectedClosed": "Desconectada y cerrada la cuenta de Stripe {{accountId}}. Ahora puedes configurar una nueva cuenta.",
 			"disconnectedLeftOpen": "Desconectado de Stripe. La cuenta anterior quedó abierta — ciérrala desde tu panel de Stripe si es necesario.",
+			"accountClosed": "Stripe cerró esta cuenta conectada, así que ya no puede recibir pagos. Su ID se conserva como referencia — restablece la configuración abajo para crear una cuenta nueva.",
+			"accountRestricted": "Stripe no permite que esta cuenta reciba pagos en este momento. Completa los requisitos pendientes para levantar la restricción.",
 			"statusFailed": "Error al verificar el estado de pagos",
 			"setupFailed": "Error al iniciar la configuración de Stripe",
 			"resetFailed": "Error al restablecer la configuración de Stripe"

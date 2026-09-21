@@ -1254,6 +1254,8 @@
 			"resetWarning": "This closes the current Stripe account and unlinks it from this restaurant. You'll need to complete onboarding again. Any existing products tied to this account will no longer be chargeable.",
 			"disconnectedClosed": "Disconnected and closed Stripe account {{accountId}}. You can now onboard a new account.",
 			"disconnectedLeftOpen": "Disconnected from Stripe. The previous account was left open — close it from your Stripe Dashboard if needed.",
+			"accountClosed": "Stripe has closed this connected account, so it can no longer take payments. Its ID is kept for reference — reset the setup below to onboard a new account.",
+			"accountRestricted": "Stripe is not letting this account take payments right now. Finish the outstanding requirements below to lift the restriction.",
 			"statusFailed": "Failed to check payment status",
 			"setupFailed": "Failed to start Stripe setup",
 			"resetFailed": "Failed to reset Stripe setup"
