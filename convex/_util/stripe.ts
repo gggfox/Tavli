@@ -353,6 +353,19 @@ async function resolvePaymentForIntent(
 			? paymentIntent.metadata.deployment
 			: undefined;
 	const ourMarker = getDeploymentMarker();
+	if (!ourMarker) {
+		// Neither `CONVEX_CLOUD_URL` nor `CONVEX_SITE_URL` resolved, which should not
+		// happen inside a deployment. Degraded, and worth saying out loud: with no
+		// marker of our own there is nothing to compare an intent's marker against,
+		// so no unplaceable charge can be attributed to us and NO `charge_unmatched`
+		// alert will be raised. The fallback still matches rows; only the alerting
+		// is blind. Once per event, not per problem — this is a configuration
+		// condition, not a payment one, so it stays a log rather than an alert.
+		console.warn("[stripe.fulfillPayment] DEPLOYMENT MARKER UNAVAILABLE", {
+			operation,
+			consequence: "unmatched charges will be logged, not alerted",
+		});
+	}
 
 	// Not ours, and cheaply provable: nothing to alert about. `paymentIntentId`
 	// missing lands here too — an event with no object id is malformed, and

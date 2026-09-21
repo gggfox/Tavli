@@ -552,15 +552,22 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   (from `CONVEX_CLOUD_URL`), because the two dev deployments and staging all
   charge the **same** Stripe test account and all of them stamp
   `metadata.paymentId` too. A severe `charge_unmatched` alert emails every
-  platform admin, so it is raised only for money _this_ deployment cannot account
-  for: the marker matches and the row is missing, or the row already holds a
-  different intent. Those are keyed `charge_unmatched:<pi_…>` and logged as
-  `CHARGE UNMATCHED` with a `reason`. Everything else is logged as
-  `FOREIGN PAYMENT INTENT IGNORED` with no alert — no `paymentId` at all, a
-  marker naming another deployment (whose `paymentId` is not even looked up), or
-  an unmarked intent (created before this shipped) whose row is missing. An
-  unmarked intent whose row _is_ found still settles normally, so a tip charge in
-  flight across the deploy is not lost.
+  platform admin, so exactly two situations raise one:
+  - the marker is **ours** and the row the intent names is **missing**; or
+  - the row **exists here** and already names a **different** intent — marked,
+    unmarked, does not matter, because a row in our own database is
+    unambiguously ours.
+
+  Both are keyed `charge_unmatched:<pi_…>` and logged as `CHARGE UNMATCHED` with
+  a `reason`. Everything else is logged as `FOREIGN PAYMENT INTENT IGNORED` with
+  no alert: no `paymentId` at all, a marker naming another deployment (whose
+  `paymentId` is not even looked up), or an unmarked intent whose row is missing —
+  unattributable rather than unaccounted-for. An unmarked intent whose row _is_
+  found still settles normally, so a tip charge in flight across the deploy is not
+  lost. If neither `CONVEX_CLOUD_URL` nor `CONVEX_SITE_URL` resolves, the webhook
+  logs `DEPLOYMENT MARKER UNAVAILABLE` and raises no unmatched-charge alerts at
+  all — matching still works, only the attribution is blind.
+
 - The create path cannot undo a settlement, on either branch.
   `stripeHelpers.attachIntentToPayment` records the intent id but moves the status
   only `pending` → `processing`, and `stripeHelpers.failPaymentUnlessSettled`
