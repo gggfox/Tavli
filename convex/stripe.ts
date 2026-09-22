@@ -85,6 +85,7 @@ import {
 	handleSubscriptionLifecycle,
 } from "./_util/billing";
 import { DINER_SESSION_ERRORS } from "./_util/dinerSession";
+import { getDeploymentMarker } from "./_util/env";
 import {
 	getOrCreateStripeCustomerId,
 	getStripeClient,
@@ -625,6 +626,21 @@ export const fulfillPayment = internalAction({
 				}
 			}
 
+			// The dedup row is written even when nothing was settled, and that is
+			// deliberate (TAVLI-105). An event we could not place is not a
+			// transient failure: the handlers looked for the payment row by
+			// `stripePaymentIntentId` AND by `metadata.paymentId`, so a redelivery
+			// would ask the same two questions and get the same two answers, for
+			// as long as Stripe keeps trying (days). Withholding the row to force
+			// retries buys nothing and hides the real ones behind a permanent 500.
+			//
+			// What used to make this dangerous was that recording the event was
+			// also the END of it — a tip charge that beat its own webhook was
+			// dropped here in silence. It is no longer silent: an intent carrying a
+			// `paymentId` we stamped that cannot be placed raises a severe
+			// `charge_unmatched` alert (money taken with no record), and an intent
+			// with no `paymentId` at all — somebody else's, on shared test keys —
+			// is logged and ignored. See `resolvePaymentForIntent`.
 			await ctx.runMutation(internal.stripeHelpers.recordStripeWebhookEvent, {
 				eventId: event.id,
 				eventType: event.type,
@@ -1233,6 +1249,8 @@ export const createPaymentIntent = action({
 			activePaymentId: paymentId,
 		});
 
+		const deploymentMarker = getDeploymentMarker();
+
 		try {
 			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
 				{
@@ -1256,6 +1274,11 @@ export const createPaymentIntent = action({
 						restaurantId: order.restaurantId,
 						sessionId: order.sessionId,
 						paymentId,
+						// Which deployment's `paymentId` this is (TAVLI-105). Several
+						// deployments share one Stripe test account, so the webhook needs
+						// this to tell a charge it cannot account for from a charge that
+						// was never its business.
+						...(deploymentMarker && { deployment: deploymentMarker }),
 						kind: PAYMENT_KIND.ORDER,
 						subtotalAmount: String(subtotalAmount),
 						feeAmount: String(feeAmount),
@@ -1267,9 +1290,14 @@ export const createPaymentIntent = action({
 				}
 			);
 
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			// `attachIntentToPayment`, not a blind patch: the status only moves
+			// PENDING -> PROCESSING, so a webhook that already settled this row
+			// cannot be overwritten (TAVLI-105). This path creates an unconfirmed
+			// intent, so the diner cannot have paid yet and the guard is belt and
+			// braces — but the four create paths should not differ in whether they
+			// can clobber a settlement.
+			await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 				paymentId,
-				status: PAYMENT_STATUS.PROCESSING,
 				stripePaymentIntentId: paymentIntent.id,
 			});
 			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
@@ -1284,17 +1312,31 @@ export const createPaymentIntent = action({
 				paymentId,
 			};
 		} catch (error) {
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
-				paymentId,
-				status: PAYMENT_STATUS.FAILED,
-				failureMessage: error instanceof Error ? error.message : "Failed to create payment intent",
-				failedAt: Date.now(),
-			});
-			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-				orderId: args.orderId,
-				paymentState: ORDER_PAYMENT_STATE.FAILED,
-				activePaymentId: paymentId,
-			});
+			// Guarded like the tip paths: FAILED is written only from
+			// PENDING/PROCESSING, never over a settlement. This intent is created
+			// unconfirmed — the diner has no client secret until the lines above
+			// return — so the race is not reachable here; the guard exists so the
+			// invariant holds at every create site rather than at some of them.
+			const { alreadySucceeded } = await ctx.runMutation(
+				internal.stripeHelpers.failPaymentUnlessSettled,
+				{
+					paymentId,
+					failureMessage:
+						error instanceof Error ? error.message : "Failed to create payment intent",
+				}
+			);
+			// The order summary follows the payment row: flipping a PAID order to
+			// `failed` would be the same erasure one level up.
+			if (!alreadySucceeded) {
+				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+					orderId: args.orderId,
+					paymentState: ORDER_PAYMENT_STATE.FAILED,
+					activePaymentId: paymentId,
+				});
+			}
+			// Rethrown either way, unlike the tip paths: an order payment sheet the
+			// diner never opened has nothing to show them, and `paymentState` already
+			// says `paid`, so the caller re-reading the order sees the truth.
 			throw error;
 		}
 	},
@@ -1517,6 +1559,7 @@ export const createTipCharge = action({
 			attemptNumber: existingPayment ? existingPayment.attemptNumber + 1 : 1,
 		});
 
+		const deploymentMarker = getDeploymentMarker();
 		const baseIntentParams = {
 			amount: args.tipAmount,
 			currency,
@@ -1531,6 +1574,8 @@ export const createTipCharge = action({
 				sessionId: args.sessionId,
 				restaurantId: membership.restaurantId,
 				paymentId,
+				// See the order path: names the deployment that owns `paymentId`.
+				...(deploymentMarker && { deployment: deploymentMarker }),
 				paidByUserId: userId,
 			},
 		} satisfies Stripe.PaymentIntentCreateParams;
@@ -1542,6 +1587,19 @@ export const createTipCharge = action({
 		const customerId = await getOrCreateStripeCustomerId(ctx, stripeClient, userId);
 
 		// ONE-TAP FIRST: charge the saved card off-session.
+		//
+		// `confirm: true` means the money moves inside this create call, so the
+		// row below cannot learn the intent id until after the charge exists —
+		// and `payment_intent.succeeded` can arrive first (TAVLI-105). There is
+		// no pre-create intent id to reach for: Stripe mints `pi_…` in its
+		// response, and the only way to hold it before the money moves is to
+		// split this into create-then-confirm. That was considered and rejected.
+		// It doubles the Stripe round trips on the hot path, and it trades this
+		// race for a worse one: a create that succeeds while the confirm call is
+		// lost leaves an unconfirmed intent and a `processing` row that no webhook
+		// will ever settle — and the stuck-payment sweep covers tabs, not tips.
+		// The webhook's `metadata.paymentId` fallback closes the race for every
+		// path at once, so it is the guarantee here, not a safety net.
 		if (savedPaymentMethodId) {
 			try {
 				const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
@@ -1557,9 +1615,14 @@ export const createTipCharge = action({
 					}
 				);
 
-				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+				// THE racy one. `confirm: true` above means the charge has already
+				// happened, so `payment_intent.succeeded` may already have been
+				// delivered and — via the metadata fallback — may already have
+				// SETTLED this row. `attachIntentToPayment` records the ids and
+				// moves the status only if the row is still PENDING, so it can
+				// never overwrite that settlement with PROCESSING (TAVLI-105).
+				await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 					paymentId,
-					status: PAYMENT_STATUS.PROCESSING,
 					stripePaymentIntentId: paymentIntent.id,
 					stripePaymentMethodId: savedPaymentMethodId,
 				});
@@ -1578,9 +1641,8 @@ export const createTipCharge = action({
 						);
 						clientSecret = retrieved.client_secret;
 					}
-					await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+					await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 						paymentId,
-						status: PAYMENT_STATUS.PROCESSING,
 						stripePaymentIntentId: errorIntent.id,
 					});
 					return { clientSecret, paymentId };
@@ -1588,13 +1650,40 @@ export const createTipCharge = action({
 
 				// Genuine decline (or Stripe failure): record it and surface the
 				// error — the diner can retry, superseding this row.
-				await ctx.runMutation(internal.stripeHelpers.updatePayment, {
-					paymentId,
-					status: PAYMENT_STATUS.FAILED,
-					failureMessage:
-						error instanceof Error ? error.message : "Failed to charge the saved card",
-					failedAt: Date.now(),
-				});
+				//
+				// Through `failPaymentUnlessSettled`, because a thrown error here does
+				// NOT prove the card was not charged (TAVLI-105). `confirm: true`
+				// means Stripe may have taken the money and then lost the response —
+				// a timeout on the call and on both `maxNetworkRetries` replays — in
+				// which case `payment_intent.succeeded` has already settled this row
+				// through the metadata fallback. Writing FAILED over that would erase
+				// the credit with no redelivery left to restore it.
+				const { alreadySucceeded } = await ctx.runMutation(
+					internal.stripeHelpers.failPaymentUnlessSettled,
+					{
+						paymentId,
+						failureMessage:
+							error instanceof Error ? error.message : "Failed to charge the saved card",
+					}
+				);
+
+				if (alreadySucceeded) {
+					// The charge worked; only our view of it failed. Rethrowing would
+					// tell the diner to retry, and the retry would be a SECOND charge
+					// for the same tip. Return what the success branch returns and let
+					// the recorded tip speak for itself. Loud in the logs, because a
+					// lost response on a confirmed charge is worth knowing about.
+					console.error(
+						"[stripe.createTipCharge] CHARGE SETTLED DESPITE A FAILED CREATE CALL",
+						buildIntegrationErrorLog(error, {
+							integration: "stripe",
+							operation: "createTipCharge",
+							restaurantId: membership.restaurantId,
+						})
+					);
+					return { clientSecret: null, paymentId };
+				}
+
 				throw error;
 			}
 		}
@@ -1613,21 +1702,36 @@ export const createTipCharge = action({
 				}
 			);
 
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			await ctx.runMutation(internal.stripeHelpers.attachIntentToPayment, {
 				paymentId,
-				status: PAYMENT_STATUS.PROCESSING,
 				stripePaymentIntentId: paymentIntent.id,
 			});
 
 			return { clientSecret: paymentIntent.client_secret, paymentId };
 		} catch (error) {
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
-				paymentId,
-				status: PAYMENT_STATUS.FAILED,
-				failureMessage:
-					error instanceof Error ? error.message : "Failed to create tip payment intent",
-				failedAt: Date.now(),
-			});
+			// Same guard as the one-tap branch above. This intent is created
+			// unconfirmed, so no money can have moved and the race is not reachable
+			// here — but "the create path's failure write can undo a settlement" is a
+			// bug class, and the tip row is the same row either way.
+			const { alreadySucceeded } = await ctx.runMutation(
+				internal.stripeHelpers.failPaymentUnlessSettled,
+				{
+					paymentId,
+					failureMessage:
+						error instanceof Error ? error.message : "Failed to create tip payment intent",
+				}
+			);
+			if (alreadySucceeded) {
+				console.error(
+					"[stripe.createTipCharge] CHARGE SETTLED DESPITE A FAILED CREATE CALL",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "createTipCharge",
+						restaurantId: membership.restaurantId,
+					})
+				);
+				return { clientSecret: null, paymentId };
+			}
 			throw error;
 		}
 	},
@@ -1749,6 +1853,8 @@ export const createTabPaymentIntent = action({
 			userId: identity.subject,
 		});
 
+		const deploymentMarker = getDeploymentMarker();
+
 		try {
 			const paymentIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.create(
 				{
@@ -1762,6 +1868,8 @@ export const createTabPaymentIntent = action({
 						sessionId: args.sessionId,
 						restaurantId: tab.restaurantId,
 						paymentId,
+						// See the order path: names the deployment that owns `paymentId`.
+						...(deploymentMarker && { deployment: deploymentMarker }),
 						gratuityAmount: String(args.tipAmount),
 					},
 				},

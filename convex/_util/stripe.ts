@@ -36,6 +36,7 @@ import {
 	stripeSecondsToMs,
 } from "../stripeWebhookHelpers";
 import { getCurrentUserId } from "./auth";
+import { getDeploymentMarker } from "./env";
 
 /**
  * The Stripe API version this codebase is written against.
@@ -219,9 +220,10 @@ export async function handleAccountStatusChange(
 
 /**
  * Confirms the matching payment record when Stripe reports a successful
- * PaymentIntent. Returns the payment id (or `undefined` if no matching
- * payment exists -- Stripe occasionally delivers events for payments we did
- * not create, e.g. tests run by another developer against shared keys).
+ * PaymentIntent. The row is found by {@link resolvePaymentForIntent} — the
+ * index on `stripePaymentIntentId` first, then `metadata.paymentId` — and
+ * `undefined` comes back only when the intent is genuinely not ours (see that
+ * function for which of those two answers gets an operator alert).
  *
  * Dispatch order (ADR 008): the payment row's `kind` decides first —
  * `order` settles that order via `confirmPayment`; `tip` records the
@@ -274,18 +276,237 @@ async function failPaymentByKind(
 	await ctx.runMutation(internal.orders.failPayment, mutationArgs);
 }
 
+/**
+ * Finds the payment row a `payment_intent.*` event belongs to, by two routes
+ * (TAVLI-105).
+ *
+ * The index on `stripePaymentIntentId` is the normal one. It is not enough on
+ * its own, because of the order the off-session tip charge is forced into:
+ * `createTipCharge` must write the payment row BEFORE calling Stripe (the
+ * intent's metadata carries the row id), and with `off_session: true, confirm:
+ * true` the money moves inside that same create call. So the row exists, the
+ * charge has happened, and the row does not yet know the intent id — and if
+ * `payment_intent.succeeded` arrives in that window, an index lookup finds
+ * nothing. Returning `undefined` there was permanent, not transient:
+ * `fulfillPayment` records the event as processed regardless, so every Stripe
+ * redelivery was then dropped by the dedup. Diner charged, tip never recorded,
+ * member never credited.
+ *
+ * Hence the fallback: `metadata.paymentId`, which every intent Tavli creates
+ * carries (order, tab and tip). A fallback match patches the intent id onto the
+ * row — the write the race lost — and the handler then proceeds exactly as it
+ * would have, amount assertion included.
+ *
+ * Returns `null` when the event cannot be placed, and the reason decides whether
+ * a human is told. A severe `charge_unmatched` alert emails every platform
+ * admin, so it has to mean something; the bar is "money THIS deployment took and
+ * cannot account for".
+ *
+ * - **No `paymentId` in the metadata.** Not ours at all: a charge made by hand
+ *   in the Stripe Dashboard, a Billing intent, a test from some other tool. Info
+ *   log, no alert.
+ * - **A `deployment` marker naming some OTHER deployment.** Also not ours, and
+ *   this is the common case, not an edge one: the two dev deployments and staging
+ *   all charge the same Stripe test account, and every one of them stamps
+ *   `metadata.paymentId`. Without the marker each of their tip charges would
+ *   raise a severe alert and mail every platform admin — the fastest way to
+ *   teach people that `/admin/alerts` is noise. Info log, no alert, and the row
+ *   is not even looked up: a `paymentId` minted in another deployment's database
+ *   has no business resolving in ours.
+ * - **No marker at all, and the row is missing.** Intents created before this
+ *   shipped carry no marker, so the fallback still RUNS for them (an in-flight
+ *   tip charge mid-deploy is exactly the case this ticket exists for) — but a
+ *   miss cannot be attributed, so it is logged rather than alerted.
+ * - **Our marker, and the row is gone or names a different intent.** Money this
+ *   deployment took with no record of it. Severe `charge_unmatched`, one open
+ *   alert per intent.
+ */
+async function resolvePaymentForIntent(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	paymentIntent: any,
+	operation: "handlePaymentIntentSuccess" | "handlePaymentIntentFailure"
+): Promise<Doc<"payments"> | null> {
+	const paymentIntentId: string | undefined =
+		typeof paymentIntent?.id === "string" && paymentIntent.id.length > 0
+			? paymentIntent.id
+			: undefined;
+
+	if (paymentIntentId) {
+		const byIntentId: Doc<"payments"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
+			{ stripePaymentIntentId: paymentIntentId }
+		);
+		if (byIntentId) return byIntentId;
+	}
+
+	const metadataPaymentId: string | undefined =
+		typeof paymentIntent?.metadata?.paymentId === "string" &&
+		paymentIntent.metadata.paymentId.length > 0
+			? paymentIntent.metadata.paymentId
+			: undefined;
+
+	const intentMarker: string | undefined =
+		typeof paymentIntent?.metadata?.deployment === "string" &&
+		paymentIntent.metadata.deployment.length > 0
+			? paymentIntent.metadata.deployment
+			: undefined;
+	const ourMarker = getDeploymentMarker();
+	if (!ourMarker) {
+		// Neither `CONVEX_CLOUD_URL` nor `CONVEX_SITE_URL` resolved, which should not
+		// happen inside a deployment. Degraded, and worth saying out loud: with no
+		// marker of our own there is nothing to compare an intent's marker against,
+		// so no unplaceable charge can be attributed to us and NO `charge_unmatched`
+		// alert will be raised. The fallback still matches rows; only the alerting
+		// is blind. Once per event, not per problem — this is a configuration
+		// condition, not a payment one, so it stays a log rather than an alert.
+		console.warn("[stripe.fulfillPayment] DEPLOYMENT MARKER UNAVAILABLE", {
+			operation,
+			consequence: "unmatched charges will be logged, not alerted",
+		});
+	}
+
+	// Not ours, and cheaply provable: nothing to alert about. `paymentIntentId`
+	// missing lands here too — an event with no object id is malformed, and
+	// there is no key to dedupe an alert on anyway.
+	//
+	// A marker naming another deployment is the same verdict reached sooner: its
+	// `paymentId` was minted in another database, so resolving it here would at
+	// best miss and at worst hit an unrelated row.
+	const foreignDeployment = Boolean(intentMarker && ourMarker && intentMarker !== ourMarker);
+	if (!paymentIntentId || !metadataPaymentId || foreignDeployment) {
+		console.info("[stripe.fulfillPayment] FOREIGN PAYMENT INTENT IGNORED", {
+			operation,
+			paymentIntentId: redactExternalId(paymentIntentId),
+			reason: !paymentIntentId
+				? "no_payment_intent_id"
+				: !metadataPaymentId
+					? "no_metadata_payment_id"
+					: "another_deployment",
+			...(foreignDeployment && { intentDeployment: intentMarker, ourDeployment: ourMarker }),
+		});
+		return null;
+	}
+
+	// Can a miss below be blamed on us? Only when the intent says it is ours.
+	// An unmarked intent predates the marker (created by the code this replaced),
+	// so it still gets the fallback — but not the alert, because a miss on it is
+	// indistinguishable from a stranger's charge.
+	const attributableToUs = Boolean(ourMarker) && intentMarker === ourMarker;
+
+	const {
+		payment,
+		restaurantId,
+	}: { payment: Doc<"payments"> | null; restaurantId: Id<"restaurants"> | null } =
+		await ctx.runQuery(internal.stripeHelpers.resolveStripeMetadataRefsInternal, {
+			paymentId: metadataPaymentId,
+			restaurantId:
+				typeof paymentIntent?.metadata?.restaurantId === "string"
+					? paymentIntent.metadata.restaurantId
+					: undefined,
+		});
+
+	// The row this intent names is gone (or the id never resolved). Money moved
+	// against a record we cannot produce.
+	if (!payment) {
+		if (!attributableToUs) {
+			console.info("[stripe.fulfillPayment] FOREIGN PAYMENT INTENT IGNORED", {
+				operation,
+				paymentIntentId: redactExternalId(paymentIntentId),
+				reason: "unmarked_intent_no_matching_row",
+			});
+			return null;
+		}
+		await raiseChargeUnmatched(ctx, {
+			operation,
+			paymentIntentId,
+			restaurantId,
+			reason: "metadata_payment_row_missing",
+		});
+		return null;
+	}
+
+	// Already claimed by a different intent. Settling here would credit this
+	// charge against a row that was paid by another one — a second charge
+	// recorded as the first. The row is left exactly as it is and a human is
+	// told which intent could not be placed.
+	if (payment.stripePaymentIntentId && payment.stripePaymentIntentId !== paymentIntentId) {
+		// Alerted regardless of the marker: the row is unambiguously ours, so the
+		// charge that cannot be placed on it is a real accounting hole either way.
+		await raiseChargeUnmatched(ctx, {
+			operation,
+			paymentIntentId,
+			restaurantId: restaurantId ?? payment.restaurantId,
+			paymentId: payment._id,
+			reason: "payment_row_holds_a_different_intent",
+		});
+		return null;
+	}
+
+	if (payment.stripePaymentIntentId !== paymentIntentId) {
+		// The patch the race lost. Done before any settlement so that a replay
+		// (or a second delivery racing this one) takes the index route above and
+		// meets the handlers' own already-terminal guards.
+		await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			paymentId: payment._id,
+			stripePaymentIntentId: paymentIntentId,
+		});
+		return { ...payment, stripePaymentIntentId: paymentIntentId };
+	}
+
+	return payment;
+}
+
+/**
+ * One severe alert per unplaceable PaymentIntent.
+ *
+ * `dedupeKey` is the intent, not the delivery: Stripe redelivers for days, and
+ * a success and a failure for the same intent are the same problem. The reason
+ * goes in the log rather than the alert copy — `charge_unmatched`'s explanation
+ * is the same instruction either way ("find the charge in Stripe and decide
+ * whose it is"), and the operator needs the intent id, which the alert carries
+ * in `stripeObjectId`.
+ */
+async function raiseChargeUnmatched(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	args: {
+		operation: string;
+		paymentIntentId: string;
+		restaurantId: Id<"restaurants"> | null;
+		paymentId?: Id<"payments">;
+		reason: string;
+	}
+): Promise<void> {
+	console.error("[stripe.fulfillPayment] CHARGE UNMATCHED", {
+		...buildIntegrationErrorLog(new Error("PaymentIntent could not be matched to a payment row"), {
+			integration: "stripe-webhook",
+			operation: args.operation,
+			...(args.restaurantId ? { restaurantId: args.restaurantId } : {}),
+		}),
+		reason: args.reason,
+		paymentIntentId: redactExternalId(args.paymentIntentId),
+		...(args.paymentId ? { paymentId: args.paymentId } : {}),
+	});
+
+	await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+		kind: OPERATOR_ALERT_KIND.CHARGE_UNMATCHED,
+		severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+		...(args.restaurantId ? { restaurantId: args.restaurantId } : {}),
+		...(args.paymentId ? { paymentId: args.paymentId } : {}),
+		stripeObjectId: args.paymentIntentId,
+		dedupeKey: `charge_unmatched:${args.paymentIntentId}`,
+	});
+}
+
 export async function handlePaymentIntentSuccess(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	ctx: any,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	paymentIntent: any
 ): Promise<Id<"payments"> | undefined> {
-	const payment: Doc<"payments"> | null = await ctx.runQuery(
-		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
-		{
-			stripePaymentIntentId: paymentIntent.id,
-		}
-	);
+	const payment = await resolvePaymentForIntent(ctx, paymentIntent, "handlePaymentIntentSuccess");
 	if (!payment) return undefined;
 
 	// ---------------------------------------------------------------------
@@ -457,8 +678,10 @@ export async function handlePaymentIntentSuccess(
 
 /**
  * Marks the matching payment record as failed when Stripe reports a failed
- * PaymentIntent. Returns the payment id (or `undefined` when no matching
- * record exists, see `handlePaymentIntentSuccess`).
+ * PaymentIntent. Finds the row through {@link resolvePaymentForIntent}, the same
+ * two routes as the success half: a declined off-session tip charge loses the
+ * race to its own webhook exactly as a successful one does, and a tip row left
+ * `pending` forever would block the diner from retrying.
  *
  * Routing lives in `failPaymentByKind`, shared with the amount-mismatch branch
  * of `handlePaymentIntentSuccess` — the two differ only in the `failureCode`.
@@ -469,12 +692,7 @@ export async function handlePaymentIntentFailure(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	paymentIntent: any
 ): Promise<Id<"payments"> | undefined> {
-	const payment: Doc<"payments"> | null = await ctx.runQuery(
-		internal.stripeHelpers.getPaymentByPaymentIntentIdInternal,
-		{
-			stripePaymentIntentId: paymentIntent.id,
-		}
-	);
+	const payment = await resolvePaymentForIntent(ctx, paymentIntent, "handlePaymentIntentFailure");
 	if (!payment) return undefined;
 
 	await failPaymentByKind(ctx, payment, {

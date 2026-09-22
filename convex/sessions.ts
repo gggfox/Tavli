@@ -552,11 +552,39 @@ export const markTabPaymentProcessing = internalMutation({
 		stripePaymentIntentId: v.string(),
 	},
 	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		// The tab mirror of `stripeHelpers.attachIntentToPayment` (TAVLI-105). A
+		// tab intent is created unconfirmed, so the diner cannot have paid before
+		// this runs and the webhook cannot have settled the row yet — but "the
+		// create path can overwrite a settlement" is a bug class, not a per-path
+		// accident, and the tab half should not be the one place it survives.
+		//
+		// Two intents cannot both be the one that charged this row, and the webhook
+		// is the half that knows which. Nothing is written when they disagree.
+		if (
+			payment.stripePaymentIntentId &&
+			payment.stripePaymentIntentId !== args.stripePaymentIntentId
+		) {
+			console.error("[sessions.markTabPaymentProcessing] INTENT ID CONFLICT", {
+				paymentId: payment._id,
+				status: payment.status,
+			});
+			return;
+		}
+
+		// Forward only: anything past PENDING has already been decided, by the
+		// webhook or by a superseding attempt, and that decision stands.
+		const alreadyDecided = payment.status !== PAYMENT_STATUS.PENDING;
+
 		await ctx.db.patch(args.paymentId, {
-			status: PAYMENT_STATUS.PROCESSING,
+			...(alreadyDecided ? {} : { status: PAYMENT_STATUS.PROCESSING }),
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			updatedAt: Date.now(),
 		});
+		if (alreadyDecided) return;
+
 		await ctx.db.patch(args.sessionId, {
 			paymentState: SESSION_PAYMENT_STATE.PROCESSING,
 		});

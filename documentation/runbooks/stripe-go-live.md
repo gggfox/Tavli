@@ -538,12 +538,60 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   cron logs the same line and fails the row, but deliberately does **not**
   re-raise the alert, so an acknowledged one staying quiet is correct rather
   than a missed event.
+- A `payment_intent.*` event is matched to its payment row by
+  `stripePaymentIntentId` **and**, failing that, by `metadata.paymentId`
+  (TAVLI-105). The fallback is what makes the one-tap tip safe: `createTipCharge`
+  charges the saved card with `off_session: true, confirm: true`, so the money
+  moves before the row can be told the intent id, and the success event can beat
+  that patch. On a fallback match the intent id is patched onto the row and
+  settlement proceeds normally. An event that neither route can place is still
+  recorded as processed — a redelivery would ask the same two questions — so the
+  alert is the only thing carrying it to a human.
+- **Which unplaceable events alert, and which are only logged.** Every intent
+  Tavli creates also stamps `metadata.deployment` with this deployment's slug
+  (from `CONVEX_CLOUD_URL`), because the two dev deployments and staging all
+  charge the **same** Stripe test account and all of them stamp
+  `metadata.paymentId` too. A severe `charge_unmatched` alert emails every
+  platform admin, so exactly two situations raise one:
+  - the marker is **ours** and the row the intent names is **missing**; or
+  - the row **exists here** and already names a **different** intent — marked,
+    unmarked, does not matter, because a row in our own database is
+    unambiguously ours.
+
+  Both are keyed `charge_unmatched:<pi_…>` and logged as `CHARGE UNMATCHED` with
+  a `reason`. Everything else is logged as `FOREIGN PAYMENT INTENT IGNORED` with
+  no alert: no `paymentId` at all, a marker naming another deployment (whose
+  `paymentId` is not even looked up), or an unmarked intent whose row is missing —
+  unattributable rather than unaccounted-for. An unmarked intent whose row _is_
+  found still settles normally, so a tip charge in flight across the deploy is not
+  lost. If neither `CONVEX_CLOUD_URL` nor `CONVEX_SITE_URL` resolves, the webhook
+  logs `DEPLOYMENT MARKER UNAVAILABLE` and raises no unmatched-charge alerts at
+  all — matching still works, only the attribution is blind.
+
+- The create path cannot undo a settlement, on either branch.
+  `stripeHelpers.attachIntentToPayment` records the intent id but moves the status
+  only `pending` → `processing`, and `stripeHelpers.failPaymentUnlessSettled`
+  writes `failed` only from `pending` / `processing`. The second one matters
+  because a thrown error out of `paymentIntents.create` does **not** prove the
+  card was not charged: with `confirm: true` Stripe can take the money and lose
+  the response (timeout on the call and on both `maxNetworkRetries` replays), the
+  webhook settles the tip through the fallback, and the action's `catch` arrives
+  afterwards. When it finds the row already `succeeded`, `createTipCharge` returns
+  success instead of rethrowing — telling the diner to retry would be a second
+  charge for the same tip — and logs
+  `CHARGE SETTLED DESPITE A FAILED CREATE CALL`. Also watch for
+  `INTENT ID CONFLICT`, a payment row asked to attach a second intent id.
 
 ## Post-launch monitoring
 
 - Convex logs for webhook signature failures
 - Convex logs for `REFUND ID UNRESOLVED` / `REFUND LOOKUP FAILED`
 - Convex logs for `CHARGE DISPUTE` — disputes hit the platform balance
+- Convex logs for `CHARGE UNMATCHED` — a charge this deployment cannot tie to a
+  payment row; always paired with a severe `charge_unmatched` alert on
+  `/admin/alerts`. `FOREIGN PAYMENT INTENT IGNORED` beside it is the benign
+  counterpart (another deployment's charge on the shared test account): expected
+  traffic in dev and staging, not a finding
 - `stripeWebhookEvents` rows are being created for processed events
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs

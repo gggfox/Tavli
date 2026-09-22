@@ -107,6 +107,44 @@ export const getPaymentByPaymentIntentIdInternal = internalQuery({
 	},
 });
 
+/**
+ * Resolves the `paymentId` / `restaurantId` a PaymentIntent carries in its
+ * metadata into real documents (TAVLI-105).
+ *
+ * Every intent Tavli creates stamps both — `createOrderPaymentIntent`,
+ * `createTabPaymentIntent` and `createTipCharge` alike — which is what lets the
+ * webhook find a payment row whose `stripePaymentIntentId` has not landed yet.
+ *
+ * Takes plain strings, not `v.id(...)`, and goes through `normalizeId`. That is
+ * the whole point: metadata is arbitrary text off the wire, and handing a
+ * `v.id(TABLE.PAYMENTS)` validator a string that is not an id of that table
+ * THROWS. A throw inside `fulfillPayment` means a non-2xx, which means Stripe
+ * redelivers the same event for days and throws again every time. A value that
+ * does not normalize is simply not one of our rows, and the caller treats it as
+ * such.
+ *
+ * The restaurant is resolved rather than passed through so an operator alert
+ * can never be filed against an id that names nothing.
+ */
+export const resolveStripeMetadataRefsInternal = internalQuery({
+	args: {
+		paymentId: v.optional(v.string()),
+		restaurantId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const paymentId = args.paymentId ? ctx.db.normalizeId(TABLE.PAYMENTS, args.paymentId) : null;
+		const restaurantId = args.restaurantId
+			? ctx.db.normalizeId(TABLE.RESTAURANTS, args.restaurantId)
+			: null;
+
+		const restaurant = restaurantId ? await ctx.db.get(restaurantId) : null;
+		return {
+			payment: paymentId ? await ctx.db.get(paymentId) : null,
+			restaurantId: restaurant?._id ?? null,
+		};
+	},
+});
+
 export const listPaymentsByOrderInternal = internalQuery({
 	args: { orderId: v.id(TABLE.ORDERS) },
 	handler: async (ctx, args) => {
@@ -278,6 +316,120 @@ export const createPayment = internalMutation({
 			createdAt: now,
 			updatedAt: now,
 		});
+	},
+});
+
+/**
+ * Records the PaymentIntent a payment row was charged on, WITHOUT ever moving
+ * the row backwards (TAVLI-105).
+ *
+ * This is the create-path half of the same race the webhook's metadata fallback
+ * fixes, and it is the more dangerous half. `createTipCharge` charges the saved
+ * card with `off_session: true, confirm: true`, so by the time
+ * `paymentIntents.create` returns, `payment_intent.succeeded` may already have
+ * been delivered and — now that the fallback can find the row without an intent
+ * id — may already have SETTLED it. The blind
+ * `updatePayment({ status: "processing", stripePaymentIntentId })` that used to
+ * run here would then overwrite `succeeded` with `processing`, permanently: the
+ * tip is uncredited, Stripe's redeliveries are already deduped, and the diner's
+ * retry is refused because an in-flight attempt exists. Fixing the webhook
+ * without fixing this would have moved the bug rather than closed it.
+ *
+ * So the status only ever moves PENDING → PROCESSING. A row that has reached
+ * `succeeded`, `failed`, `superseded` or `cancelled` keeps that status and only
+ * gains the ids, which are facts about the charge and safe to record either way.
+ *
+ * A row already naming a DIFFERENT intent is not touched at all: two intents
+ * cannot both be the one that charged it, and the webhook is the half that knows
+ * which. Logged rather than thrown — this runs after the money has moved, and
+ * throwing would show the diner an error for a charge that went through.
+ */
+export const attachIntentToPayment = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		stripePaymentIntentId: v.string(),
+		/** The saved card, on the one-tap path. */
+		stripePaymentMethodId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		if (
+			payment.stripePaymentIntentId &&
+			payment.stripePaymentIntentId !== args.stripePaymentIntentId
+		) {
+			console.error("[stripeHelpers.attachIntentToPayment] INTENT ID CONFLICT", {
+				paymentId: payment._id,
+				paymentKind: payment.kind ?? "legacy",
+				status: payment.status,
+			});
+			return;
+		}
+
+		await ctx.db.patch(args.paymentId, {
+			stripePaymentIntentId: args.stripePaymentIntentId,
+			...(args.stripePaymentMethodId !== undefined && {
+				stripePaymentMethodId: args.stripePaymentMethodId,
+			}),
+			// Forward only. Anything past PENDING has already been decided, by the
+			// webhook or by a superseding attempt, and that decision stands.
+			...(payment.status === PAYMENT_STATUS.PENDING && { status: PAYMENT_STATUS.PROCESSING }),
+			updatedAt: Date.now(),
+		});
+	},
+});
+
+/**
+ * Records a create-path failure WITHOUT ever undoing a settlement (TAVLI-105,
+ * review round 2). The failure twin of {@link attachIntentToPayment}.
+ *
+ * The scenario this closes is the ugliest version of the off-session race.
+ * `createTipCharge` calls `paymentIntents.create` with `confirm: true`; Stripe
+ * charges the card and then the RESPONSE is lost — a timeout on the call and on
+ * both `maxNetworkRetries` replays. The money has moved, Stripe delivers
+ * `payment_intent.succeeded`, and the webhook settles the tip through the
+ * metadata fallback. Only then does the action's `catch` run, and a blind
+ * `updatePayment({ status: "failed" })` would take a SUCCEEDED row to FAILED:
+ * the credit gone, the event already deduped so no redelivery can restore it,
+ * and — because the action rethrows — the diner told to try again, which is a
+ * second charge for the same tip.
+ *
+ * So FAILED is written only from PENDING or PROCESSING. SUCCEEDED is reported
+ * back instead of overwritten, and callers on the racy path return success
+ * rather than rethrowing. SUPERSEDED and CANCELLED are left alone too: a
+ * superseding attempt owns the row by then, and resurrecting it as "the failed
+ * attempt" would confuse the retry logic that superseded it.
+ */
+export const failPaymentUnlessSettled = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		failureCode: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+	},
+	returns: v.object({ alreadySucceeded: v.boolean() }),
+	handler: async (ctx, args): Promise<{ alreadySucceeded: boolean }> => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return { alreadySucceeded: false };
+
+		// The charge went through and something else already recorded it. The
+		// caller needs to know, because "throw" and "return success" are very
+		// different things to show a diner who has been charged.
+		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return { alreadySucceeded: true };
+
+		if (payment.status !== PAYMENT_STATUS.PENDING && payment.status !== PAYMENT_STATUS.PROCESSING) {
+			return { alreadySucceeded: false };
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(args.paymentId, {
+			status: PAYMENT_STATUS.FAILED,
+			...(args.failureCode !== undefined && { failureCode: args.failureCode }),
+			...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
+			failedAt: now,
+			updatedAt: now,
+		});
+		return { alreadySucceeded: false };
 	},
 });
 

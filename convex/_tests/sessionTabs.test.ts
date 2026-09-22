@@ -221,6 +221,90 @@ describe("session tabs", () => {
 			).rejects.toThrow(/balance changed/);
 		});
 
+		/**
+		 * `markTabPaymentProcessing` is the tab mirror of
+		 * `stripeHelpers.attachIntentToPayment` (TAVLI-105): the create path records
+		 * the intent id but must never move a row backwards, and must never hand a
+		 * row to a second intent.
+		 */
+		it("markTabPaymentProcessing never moves a settled row back to processing", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
+
+			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
+				sessionId,
+				restaurantId,
+				userId: "diner1",
+				amount: 1800,
+				currency: "usd",
+				gratuityAmount: 0,
+			});
+			await t.mutation(internal.sessions.markTabPaymentProcessing, {
+				sessionId,
+				paymentId,
+				stripePaymentIntentId: "pi_tab_guard",
+			});
+			await t.mutation(internal.sessions.confirmTabPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_tab_guard",
+				gratuityAmount: 0,
+			});
+
+			// The create path resumes after the webhook already settled the tab.
+			await t.mutation(internal.sessions.markTabPaymentProcessing, {
+				sessionId,
+				paymentId,
+				stripePaymentIntentId: "pi_tab_guard",
+			});
+
+			await t.run(async (ctx) => {
+				const payment = await ctx.db.get(paymentId);
+				expect(payment!.status).toBe("succeeded");
+				expect(payment!.stripePaymentIntentId).toBe("pi_tab_guard");
+				// The session stays closed and paid, not re-opened as "processing".
+				const session = await ctx.db.get(sessionId);
+				expect(session!.paymentState).toBe("paid");
+				expect(session!.status).toBe("closed");
+			});
+		});
+
+		it("markTabPaymentProcessing refuses a second, different intent id", async () => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, orderId } = await seedTabWithOrder(t);
+			await serveOrder(t, orderId);
+
+			const paymentId = await t.mutation(internal.sessions.beginTabPayment, {
+				sessionId,
+				restaurantId,
+				userId: "diner1",
+				amount: 1800,
+				currency: "usd",
+				gratuityAmount: 0,
+			});
+			await t.mutation(internal.sessions.markTabPaymentProcessing, {
+				sessionId,
+				paymentId,
+				stripePaymentIntentId: "pi_the_real_one",
+			});
+			// Superseded by a fresh attempt while the first was in flight.
+			await t.run(async (ctx) => ctx.db.patch(paymentId, { status: "superseded" }));
+
+			await t.mutation(internal.sessions.markTabPaymentProcessing, {
+				sessionId,
+				paymentId,
+				stripePaymentIntentId: "pi_an_imposter",
+			});
+
+			await t.run(async (ctx) => {
+				const payment = await ctx.db.get(paymentId);
+				// Neither the status nor the id moved: two intents cannot both be the
+				// one that charged this row.
+				expect(payment!.status).toBe("superseded");
+				expect(payment!.stripePaymentIntentId).toBe("pi_the_real_one");
+			});
+		});
+
 		it("confirmTabPayment marks every payable order paid, records the tip, and closes the tab", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, orderId, authed } = await seedTabWithOrder(t);
