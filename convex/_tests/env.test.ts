@@ -6,6 +6,7 @@ import {
 	ENABLE_DEV_ROLE_SWITCHER_ENV,
 	getAppUrl,
 	getConvexEnv,
+	getDeploymentMarker,
 	isDevEnv,
 	isDevRoleSwitcherEnabled,
 } from "../_util/env";
@@ -120,5 +121,62 @@ describe("convex env helpers", () => {
 				expect.objectContaining({ name: ERROR_NAMES.APP_URL_NOT_CONFIGURED })
 			);
 		});
+	});
+});
+
+/**
+ * The marker stamped onto every PaymentIntent so the webhook can tell a charge
+ * THIS deployment cannot account for from a charge that was never its business
+ * (TAVLI-105). Several deployments share one Stripe test account, so getting
+ * this wrong means either a severe alert per stranger's charge or no alert at
+ * all.
+ */
+describe("getDeploymentMarker", () => {
+	const originalCloudUrl = process.env.CONVEX_CLOUD_URL;
+	const originalSiteUrl = process.env.CONVEX_SITE_URL;
+
+	afterEach(() => {
+		if (originalCloudUrl === undefined) delete process.env.CONVEX_CLOUD_URL;
+		else process.env.CONVEX_CLOUD_URL = originalCloudUrl;
+		if (originalSiteUrl === undefined) delete process.env.CONVEX_SITE_URL;
+		else process.env.CONVEX_SITE_URL = originalSiteUrl;
+	});
+
+	it("is the deployment slug from CONVEX_CLOUD_URL, not the whole URL", () => {
+		process.env.CONVEX_CLOUD_URL = "https://brave-moose-354.convex.cloud";
+		delete process.env.CONVEX_SITE_URL;
+		// The slug because that is what an operator reading it off a Stripe object
+		// recognises from the dashboard and from `.env.local`.
+		expect(getDeploymentMarker()).toBe("brave-moose-354");
+	});
+
+	it("prefers CONVEX_CLOUD_URL when both are set", () => {
+		process.env.CONVEX_CLOUD_URL = "https://brave-moose-354.convex.cloud";
+		process.env.CONVEX_SITE_URL = "https://blessed-weasel-428.convex.site";
+		expect(getDeploymentMarker()).toBe("brave-moose-354");
+	});
+
+	it("falls back to CONVEX_SITE_URL, which yields the same slug", () => {
+		delete process.env.CONVEX_CLOUD_URL;
+		process.env.CONVEX_SITE_URL = "https://blessed-weasel-428.convex.site";
+		expect(getDeploymentMarker()).toBe("blessed-weasel-428");
+	});
+
+	it("uses a non-URL value as-is rather than giving up", () => {
+		process.env.CONVEX_CLOUD_URL = "  local-dev  ";
+		delete process.env.CONVEX_SITE_URL;
+		// Some stable string still separates this deployment from the others.
+		expect(getDeploymentMarker()).toBe("local-dev");
+	});
+
+	it("is undefined when neither variable is set, and when one is blank", () => {
+		delete process.env.CONVEX_CLOUD_URL;
+		delete process.env.CONVEX_SITE_URL;
+		// Callers must tolerate this: outside a deployment (these tests) there is
+		// no marker, and the webhook degrades to logging rather than alerting.
+		expect(getDeploymentMarker()).toBeUndefined();
+
+		process.env.CONVEX_CLOUD_URL = "   ";
+		expect(getDeploymentMarker()).toBeUndefined();
 	});
 });

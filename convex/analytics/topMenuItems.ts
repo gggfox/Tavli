@@ -63,7 +63,7 @@ export const compute = query({
 				.withIndex("by_order", (q) => q.eq("orderId", orderId))
 				.collect();
 			for (const item of items) {
-				// An 86'd line was never made or billed — it must not rank.
+				// A removed line was never made or billed — it must not rank.
 				if (item.cancelledAt !== undefined) continue;
 				const existing = tally.get(item.menuItemId) ?? {
 					menuItemId: item.menuItemId,

@@ -138,7 +138,7 @@ describe("StationTicketCard", () => {
 		expect(onMarkStationReady).toHaveBeenCalledWith({ orderId: "ord1", station: "bar" });
 	});
 
-	it("requires a confirmation before 86'ing an item", () => {
+	it("requires a confirmation before removing an item", () => {
 		const { onCancelItem } = renderCard(makeTicket());
 
 		fireEvent.click(screen.getByText(/orders.ticket.cancelItem/));
@@ -148,7 +148,7 @@ describe("StationTicketCard", () => {
 		expect(onCancelItem).toHaveBeenCalledWith("oi1");
 	});
 
-	it("abandons the 86 when the confirmation is dismissed", () => {
+	it("abandons the removal when the confirmation is dismissed", () => {
 		const { onCancelItem } = renderCard(makeTicket());
 
 		fireEvent.click(screen.getByText(/orders.ticket.cancelItem/));

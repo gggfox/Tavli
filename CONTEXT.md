@@ -99,8 +99,8 @@ visit. Members join by a short **join code**; each member pays for
 their own `Orders` as they place them, and each member is prompted for
 their own tip at **Visit close-out**. A session closes at Visit
 close-out, or the hourly stale sweep auto-closes it once nothing is
-owed; staff resolve cash walkouts by collecting or 86'ing
-**Awaiting payment** orders on the Orders dashboard.
+owed; staff resolve cash walkouts by collecting on **Awaiting payment**
+orders, or cancelling them, on the Orders dashboard.
 _Avoid_: check, bill; tab (pre-pivot language for the session as a
 settlement unit — see ADR 008).
 
@@ -139,13 +139,6 @@ way: the debt is `awaitingPaymentAt` with no `paidAt`, and it blocks
 visit close-out until settled.
 _Avoid_: pending (that is the diner-facing label for submitted), unpaid
 order on the tab.
-
-**Substitution**:
-A kitchen-proposed replacement for a paid line that can't be made —
-equal or higher cost, and the diner approves on their own device. Any
-price difference plus its service-fee share is charged on approval;
-declining means the line is **86**'d and refunded.
-_Avoid_: swap-out silently, edit the order.
 
 **Tavli service fee**:
 The 12% commission on an `Order`'s subtotal, paid by the diner on top
@@ -189,15 +182,23 @@ that station's rail so the rail shows only work still to do. A short
 undo window can put it back.
 _Avoid_: clear, close (those suggest the `Order` itself ended).
 
-**86**:
+**Remove a line from an order**:
 Staff cancelling a single `OrderItem` because it can't be made — the
 kitchen is out of an ingredient, the bar is out of a bottle. Stamps
 `cancelledAt` / `cancelledBy`; the line stays visible but leaves the
-`Order`'s `totalAmount`. On a paid order, the 86'd line's price and its
-share of the **Tavli service fee** are automatically refunded; on an
-unpaid (**Awaiting payment**) round it remains a free subtraction. When
-every line is 86'd, the `Order` becomes `cancelled`.
-_Avoid_: void, remove, delete (the line is kept, not erased).
+`Order`'s `totalAmount`. On a paid order, the removed line's price and
+its share of the **Tavli service fee** are automatically refunded, and
+the diner's own order view keeps the line, marked unavailable and
+refunded, with the refund as its own line under the amount charged; on
+an unpaid (**Awaiting payment**) round it is a free subtraction. When
+every line has been removed, the `Order` becomes `cancelled`. A dish
+that is unavailable after payment is settled this way and nothing
+else — whatever the restaurant offers instead is agreed with the diner
+**in person** (ADR 013).
+_Avoid_: kitchen slang for taking a dish off the order — never write it,
+in code, copy, tests or tickets; say "remove a line from an order". Also
+avoid void and delete (the line is kept, not erased), and any wording
+that implies the app offers a replacement dish — it does not (ADR 013).
 
 ### Employee management
 
@@ -574,15 +575,14 @@ a legal lifetime, not tidying).
 - A **Session** has many **Orders**; an **Order** has many **OrderItems**;
   an **OrderItem** references one **MenuItem** by id (live lookup for
   `prepStation`, snapshot for everything else).
-- An **Order** is "ready" when every **PrepStation** that has at least one
-  non-86'd **OrderItem** in that order has its `*ReadyAt` timestamp set.
+- An **Order** is "ready" when every **PrepStation** that still has at least
+  one live **OrderItem** in that order has its `*ReadyAt` timestamp set.
 - A **Payment** comes in kinds: an order payment settles one **Order**; a
-  tip payment records one member's tip on a **Session**; a substitution
-  payment covers one **Substitution**'s price difference; legacy tab
+  tip payment records one member's tip on a **Session**; legacy tab
   payments settle a whole pre-pivot **Session**.
-- An 86'd **OrderItem** contributes nothing to its **Order**'s
-  `totalAmount`; on a paid **Order** its price and service-fee share are
-  refunded.
+- An **OrderItem** removed from its **Order** contributes nothing to that
+  order's `totalAmount`; on a paid **Order** its price and service-fee share
+  are refunded.
 - A **Station ticket** is derived from one **Order** and one
   **PrepStation** — it is never stored.
 - A **RestaurantMember** works **Shifts**; each **Shift** has one

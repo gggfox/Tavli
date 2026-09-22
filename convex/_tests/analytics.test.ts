@@ -281,7 +281,7 @@ describe("analytics.itemsByCategory", () => {
 		]);
 	});
 
-	it("excludes 86'd lines from category revenue", async () => {
+	it("excludes removed lines from category revenue", async () => {
 		const t = convexTest(schema, modules);
 		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
 		const serverMemberId = await seedMembership(t, {
@@ -309,7 +309,7 @@ describe("analytics.itemsByCategory", () => {
 });
 
 describe("analytics.topMenuItems", () => {
-	it("excludes 86'd lines from the ranking", async () => {
+	it("excludes removed lines from the ranking", async () => {
 		const t = convexTest(schema, modules);
 		const { orgId, restaurantId } = await seedOrgAndRestaurant(t);
 		const serverMemberId = await seedMembership(t, {

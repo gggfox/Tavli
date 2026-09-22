@@ -21,7 +21,6 @@ export const TABLE = {
 	SESSIONS: "sessions",
 	ORDERS: "orders",
 	ORDER_ITEMS: "orderItems",
-	SUBSTITUTION_PROPOSALS: "substitutionProposals",
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
 	STRIPE_DISPUTES: "stripeDisputes",
@@ -259,8 +258,7 @@ export const JOIN_CODE_LENGTH = 6;
 /**
  * Tavli service fee, charged to the DINER on top of the order subtotal
  * (ADR 008 — reverses the pre-pivot restaurant-borne carve-out). Applied to
- * order subtotals and substitution deltas, never tips. The restaurant nets
- * the full subtotal.
+ * order subtotals, never tips. The restaurant nets the full subtotal.
  */
 export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
@@ -313,11 +311,85 @@ export const PAYMENT_KIND = {
 	ORDER: "order",
 	/** A member's post-visit tip on a session; never carries a service fee. */
 	TIP: "tip",
-	/** The price delta (+ fee on delta) of an accepted substitution. */
-	SUBSTITUTION: "substitution",
 } as const;
 
 export type PaymentKind = (typeof PAYMENT_KIND)[keyof typeof PAYMENT_KIND];
+
+/**
+ * `payments.failureCode` values Tavli writes itself.
+ *
+ * The field is otherwise free-form — a declined card carries Stripe's own code
+ * verbatim, and the stuck-tab sweep writes `reconcile_<intent status>`. These
+ * are the ones our code both writes and is expected to recognise, so they live
+ * here rather than being spelled out at each site.
+ */
+export const PAYMENT_FAILURE_CODE = {
+	/**
+	 * Stripe reported collecting a different amount than the row expected, so
+	 * the payment was failed instead of settled (TAVLI-69). The money is still
+	 * at Stripe until an operator refunds it — see the `payment_amount_mismatch`
+	 * operator alert raised alongside.
+	 */
+	AMOUNT_MISMATCH: "amount_mismatch",
+} as const;
+
+export type PaymentFailureCode = (typeof PAYMENT_FAILURE_CODE)[keyof typeof PAYMENT_FAILURE_CODE];
+
+/**
+ * Per-request timeout on the Stripe client (`_util/stripe.ts`
+ * `getStripeClient`), in milliseconds.
+ *
+ * Set explicitly rather than left to stripe-node's 80s default, because
+ * {@link PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS} is derived from it and a default
+ * that moves under a minor SDK bump would move that window with it.
+ *
+ * 60s, not the 30s this started at. Both are far longer than a healthy Stripe
+ * call, so the only thing the number really decides is who is right when the
+ * network is sick: a timeout shorter than the request Stripe is actually still
+ * processing turns a slow success into a client-side failure, and on the
+ * `confirm: true` tip path that failure is indistinguishable from a decline.
+ * Being slow costs a spinner; being wrong costs a charge nobody records.
+ */
+export const STRIPE_REQUEST_TIMEOUT_MS = 60 * 1000;
+
+/** `maxNetworkRetries` on the Stripe client. Stripe reuses the idempotency key. */
+export const STRIPE_MAX_NETWORK_RETRIES = 2;
+
+/**
+ * Slack added to the worst-case Stripe attempt before a `pending` row is
+ * treated as debris: stripe-node's retry backoff (~0.5s then ~1s with jitter,
+ * capped at 2s each) plus the Convex scheduling either side of the call.
+ */
+export const PAYMENT_CREATE_IN_FLIGHT_MARGIN_MS = 15 * 1000;
+
+/**
+ * How long a `pending` payment row that holds no intent id is assumed to still
+ * have its `paymentIntents.create` call in flight (TAVLI-104).
+ *
+ * Every create path inserts the row before calling Stripe, so this shape means
+ * either "the call is running right now" or "the process died between the two".
+ * A second tap inside the window must NOT supersede the row: on the one-tap tip
+ * path the money moves inside that very call, so retiring the row lets the
+ * second tap charge the card again for the same gesture.
+ *
+ * **Derived, not picked.** The first version of this was a flat 90s "against
+ * stripe-node's 80s default timeout", which was wrong in the one direction that
+ * costs money: the client also sets `maxNetworkRetries`, so the worst case is
+ * every attempt timing out, i.e. `(retries + 1) × timeout` plus backoff — about
+ * 4 minutes on the old defaults. A second tap at 100s would have superseded a
+ * create that was still running; that create then returns, and the webhook's
+ * metadata fallback settles the retired row. Member tipped twice, no alert.
+ * Tying the window to the same two constants the client is built from means the
+ * two cannot drift again.
+ *
+ * Past the window a row in this shape is debris a retry may claim — the cost of
+ * being wrong that way round is one extra tap a minute later, against a double
+ * charge the other way round. `stripeHelpers.attachIntentToPayment` is the
+ * backstop for the residue: it refuses to attach an intent to a row that has
+ * already been retired.
+ */
+export const PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS =
+	(STRIPE_MAX_NETWORK_RETRIES + 1) * STRIPE_REQUEST_TIMEOUT_MS + PAYMENT_CREATE_IN_FLIGHT_MARGIN_MS;
 
 /**
  * How an Order / Session was settled (ADR 008). `stripe` means a `payments`
@@ -331,21 +403,6 @@ export const SETTLED_BY = {
 } as const;
 
 export type SettledBy = (typeof SETTLED_BY)[keyof typeof SETTLED_BY];
-
-/**
- * Lifecycle of a kitchen-proposed substitution on a paid order (ADR 008).
- * `pending` awaits the diner's answer; `cancelled` is the kitchen retracting
- * its own proposal before the diner responds.
- */
-export const SUBSTITUTION_PROPOSAL_STATUS = {
-	PENDING: "pending",
-	ACCEPTED: "accepted",
-	DECLINED: "declined",
-	CANCELLED: "cancelled",
-} as const;
-
-export type SubstitutionProposalStatus =
-	(typeof SUBSTITUTION_PROPOSAL_STATUS)[keyof typeof SUBSTITUTION_PROPOSAL_STATUS];
 
 /**
  * Monthly platform subscription (2,000 MXN) in centavos. Display only — the
@@ -479,6 +536,93 @@ export const TAB_RECONCILE_MIN_AGE_MS = 10 * 60 * 1000;
  * the cron leaves the lock in place rather than guessing.
  */
 export const TAB_RECONCILE_ALERT_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * Stuck **order** payment reconciliation (TAVLI-106). The tab sweep above is
+ * the backstop for a dropped `payment_intent.succeeded` on a tab; these are the
+ * same backstop for the per-order and post-visit-tip payments, which had none.
+ *
+ * `MIN_AGE` is how long a `processing` row must have gone untouched before the
+ * sweep pulls its PaymentIntent from Stripe. Five minutes for an order, because
+ * the diner is sitting at a table waiting for the kitchen to be released: the
+ * cost of asking Stripe early is one API call, and the cost of asking late is a
+ * round nobody is cooking.
+ */
+export const ORDER_PAYMENT_RECONCILE_MIN_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * An order payment whose intent is still mid-flight at Stripe after this long
+ * raises a `payment_stuck` operator alert. Three sweep runs of patience: past
+ * fifteen minutes "Stripe is still thinking" stops being a plausible story for
+ * a card charge, and a human has to look.
+ */
+export const ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS = 15 * 60 * 1000;
+
+/**
+ * The tip equivalents, both far longer, because the situation is different in
+ * kind. A post-visit tip is charged off-session against a saved card after the
+ * meal: nobody is waiting at a table, nothing is blocked on it, and the only
+ * party affected is the member whose credit is late. Sweeping it at five
+ * minutes would buy nothing and spend a Stripe call on every tip that is merely
+ * slow.
+ */
+export const TIP_PAYMENT_RECONCILE_MIN_AGE_MS = 30 * 60 * 1000;
+
+/** Two hours before a stuck tip is worth an operator's attention. */
+export const TIP_PAYMENT_RECONCILE_ALERT_AGE_MS = 120 * 60 * 1000;
+
+/**
+ * How many `processing` payment rows one sweep run pulls from
+ * `payments.by_status_updated`.
+ *
+ * The index is ordered by `updatedAt` ascending within the status, so a `take`
+ * returns the OLDEST untouched rows first — the ones most likely to be genuinely
+ * dropped. Every candidate costs at least one `paymentIntents.retrieve`, so the
+ * bound is really a bound on how long one run can take.
+ *
+ * Note what does *not* drain: the `wait` and `alert` branches patch nothing, so
+ * a row Stripe keeps reporting as `processing` holds its place in the batch run
+ * after run. That is intended — it is the oldest row and it is exactly what the
+ * sweep exists to surface — and the `payment_stuck` alert is what gets a human
+ * to resolve it. A hundred simultaneously-wedged payments would starve newer
+ * candidates, which at that point is not the sweep's problem to solve quietly.
+ */
+export const STUCK_PAYMENT_RECONCILE_BATCH_SIZE = 100;
+
+/**
+ * How often both reconciliation crons run. Declared here rather than left as a
+ * literal in `crons.ts` because {@link PAYMENT_INTENT_REUSE_MAX_AGE_MS} is
+ * derived from it, and a schedule that moved without that derivation moving
+ * with it would silently reopen the race below.
+ */
+export const STUCK_PAYMENT_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * How old an existing PROCESSING attempt may be and still have its client
+ * secret handed back to a returning diner (`stripe.createPaymentIntent`).
+ *
+ * The sweep clears a customer-side intent at
+ * {@link ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS}. Reuse without this bound is a
+ * race Tavli would lose in the diner's favour exactly never: a diner reopens
+ * checkout at minute fourteen, gets the old secret, starts typing, and the next
+ * sweep run cancels the intent under them. They see a payment that fails for no
+ * reason they can understand.
+ *
+ * So reuse stops one full cron interval BEFORE the sweep would act, and an
+ * older row falls through to the path that already exists for a stale attempt:
+ * stand the intent down at Stripe, supersede the row, mint a fresh intent. The
+ * whole cost is one extra `paymentIntents.create` for a diner who left the
+ * sheet for ten minutes and came back — rare, cheap, and it hands them a secret
+ * with a full alert age of life left in it.
+ *
+ * The alternative — bump `updatedAt` on reuse and age the customer-side
+ * statuses from the last touch — was rejected: the alert threshold reads
+ * `createdAt` on purpose (a status-preserving write must never buy a stuck
+ * payment more silence), and splitting the sweep across two clocks to rescue a
+ * reuse that saves one API call is a worse trade than not reusing.
+ */
+export const PAYMENT_INTENT_REUSE_MAX_AGE_MS =
+	ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS - STUCK_PAYMENT_RECONCILE_INTERVAL_MS;
 
 export const SELECTION_TYPE = {
 	SINGLE: "single",
@@ -830,12 +974,6 @@ export const AUDIT_EVENT = {
 	ORDER_AWAITING_PAYMENT: "orders.awaitingPayment",
 	ORDER_PAID_IN_PERSON: "orders.paidInPerson",
 	ORDER_ITEM_REFUNDED: "orders.itemRefunded",
-
-	// -- Substitutions (ADR 008) --------------------------------------------
-	SUBSTITUTION_PROPOSED: "substitutions.proposed",
-	SUBSTITUTION_ACCEPTED: "substitutions.accepted",
-	SUBSTITUTION_DECLINED: "substitutions.declined",
-	SUBSTITUTION_CANCELLED: "substitutions.cancelled",
 
 	// -- Sessions (tabs) ----------------------------------------------------
 	SESSION_OPENED: "sessions.opened",
@@ -1383,7 +1521,6 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.ORDERS,
 	TABLE.ORDER_ITEMS,
 	TABLE.ORDER_DAY_COUNTERS,
-	TABLE.SUBSTITUTION_PROPOSALS,
 	// Payments
 	TABLE.PAYMENTS,
 	TABLE.STRIPE_WEBHOOK_EVENTS,
@@ -1476,6 +1613,25 @@ export const OPERATOR_ALERT_KIND = {
 	CHARGE_UNMATCHED: "charge_unmatched",
 	/** A charge's amount disagreed with the order's, so it was refunded. */
 	CHARGE_MISMATCHED_REFUNDED: "charge_mismatched_refunded",
+	/**
+	 * Stripe reported collecting a different amount than the payment row expected,
+	 * so the webhook refused to settle it (TAVLI-69). Distinct from
+	 * `charge_mismatched_refunded`: there the money was sent back, here it is
+	 * still sitting at Stripe awaiting a human decision.
+	 */
+	PAYMENT_AMOUNT_MISMATCH: "payment_amount_mismatch",
+	/**
+	 * Stripe charged a card against a payment attempt Tavli had already retired
+	 * (TAVLI-104) — a second tap, an edited order or a staff cancel replaced the
+	 * row while its create call was still in flight, or the stand-down lost the
+	 * race to the diner's confirm.
+	 *
+	 * The money is always resolved automatically: a tip is refunded, an order's
+	 * charge is applied to that order or refunded. The alert exists because a
+	 * duplicate charge is worth a human's eyes either way, and because the refund
+	 * is a scheduled Stripe call whose landing somebody should confirm.
+	 */
+	CHARGE_NEEDS_REVIEW: "charge_needs_review",
 	/** A dispute closed against the restaurant. */
 	DISPUTE_LOST: "dispute_lost",
 	/** A refund issued from the Stripe Dashboard rather than through Tavli. */
@@ -1541,6 +1697,11 @@ export const OPERATOR_ALERT_DEFAULT_SEVERITY: Record<OperatorAlertKind, Operator
 	// nobody knows whose it is.
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: OPERATOR_ALERT_SEVERITY.SEVERE,
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	// A card was charged an amount Tavli did not ask for and settlement is
+	// blocked: the diner has paid, the restaurant has not been credited, and
+	// only a human can decide which number was right.
+	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	[OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW]: OPERATOR_ALERT_SEVERITY.SEVERE,
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: OPERATOR_ALERT_SEVERITY.WARNING,
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: OPERATOR_ALERT_SEVERITY.WARNING,
 	// The restaurant is not getting paid.
@@ -1561,6 +1722,8 @@ export const OPERATOR_ALERT_TITLE_KEY: Record<OperatorAlertKind, string> = {
 	[OPERATOR_ALERT_KIND.PAYMENT_STUCK]: "alerts.kind.paymentStuck.title",
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.title",
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: "alerts.kind.chargeMismatchedRefunded.title",
+	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: "alerts.kind.paymentAmountMismatch.title",
+	[OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW]: "alerts.kind.chargeNeedsReview.title",
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.title",
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.title",
 	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.title",
@@ -1579,6 +1742,8 @@ export const OPERATOR_ALERT_EXPLANATION_KEY: Record<OperatorAlertKind, string> =
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.explanation",
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]:
 		"alerts.kind.chargeMismatchedRefunded.explanation",
+	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: "alerts.kind.paymentAmountMismatch.explanation",
+	[OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW]: "alerts.kind.chargeNeedsReview.explanation",
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.explanation",
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.explanation",
 	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.explanation",

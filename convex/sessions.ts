@@ -1,8 +1,14 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { DatabaseWriter } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { NotAuthorizedError, NotFoundError, fromErrorObject } from "./_shared/errors";
+import {
+	ConflictError,
+	NotAuthorizedError,
+	NotFoundError,
+	fromErrorObject,
+} from "./_shared/errors";
 import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId } from "./_util/auth";
 import {
@@ -35,6 +41,7 @@ import {
 	isPayableOrder,
 	sumOrderTotals,
 } from "./sessionHelpers";
+import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupersedeHelpers";
 
 async function insertSessionWithJoinCode(
 	ctx: { db: DatabaseWriter },
@@ -226,7 +233,7 @@ export const getTabSummary = query({
  * settled). A tab with a payable balance can only leave the active state via
  * payment (`confirmTabPayment` — legacy pre-pivot flow), and a session holding
  * an uncollected cash order (`awaiting_payment`) stays open until staff collect
- * the cash or 86 the order from the Orders dashboard — cash walkout is the
+ * the cash or cancel the order from the Orders dashboard — cash walkout is the
  * only walkout left under ADR 008.
  */
 export const close = mutation({
@@ -253,7 +260,7 @@ export const close = mutation({
 
 		// Uncollected cash is owed money too, just outside the tab balance
 		// (`awaiting_payment` is deliberately not tab-payable). Same reasoning as
-		// above: closing would erase debt staff still have to collect — or 86 —
+		// above: closing would erase debt staff still have to collect — or cancel —
 		// from the Orders dashboard.
 		if (orders.some(isAwaitingPaymentOrder)) {
 			throw fromErrorObject(
@@ -308,8 +315,8 @@ export const getVisitSummary = query({
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
 			.collect();
 
-		// The caller's own card spend: order totals already reflect 86'd lines
-		// and accepted substitutions, so summing them needs no per-line math.
+		// The caller's own card spend: order totals already reflect lines removed
+		// from an order, so summing them needs no per-line math.
 		const myPaidOrders = orders.filter(
 			(o) =>
 				o.paymentState === ORDER_PAYMENT_STATE.PAID &&
@@ -345,7 +352,7 @@ export const getVisitSummary = query({
 
 		// One-tap eligibility: the card persisted by the caller's own
 		// pay-at-submit charge in this session (mirrors
-		// `substitutions.getSavedCardForSessionMemberInternal`).
+		// `payments.getSavedCardForSessionMemberInternal`).
 		let hasSavedCard = false;
 		for (const order of orders) {
 			if (order.paidByUserId !== userId || !order.activePaymentId) continue;
@@ -455,6 +462,12 @@ export const beginTabPayment = internalMutation({
 		 * action has already verified membership via `verifyTabForPaymentInternal`.
 		 */
 		userId: v.string(),
+		/**
+		 * The attempt the calling action stood down at Stripe, or omitted when it
+		 * saw none (TAVLI-104). Re-checked against `session.activePaymentId` inside
+		 * this transaction — see the handler.
+		 */
+		supersededPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
 	},
 	handler: async (ctx, args): Promise<Id<typeof TABLE.PAYMENTS>> => {
 		const session = await ctx.db.get(args.sessionId);
@@ -484,10 +497,34 @@ export const beginTabPayment = internalMutation({
 			throw new Error("Tab balance changed, please retry");
 		}
 
+		// The attempt this transaction is allowed to retire is the one the action
+		// already stood down at Stripe — not "whatever `activePaymentId` holds
+		// now" (TAVLI-104 review round 1).
+		//
+		// Any tab member can pay, so two people tapping Pay 300ms apart is normal.
+		// Both read the same `activePaymentId` (P0), both cancel P0's intent, and
+		// both arrive here. Without this check the second one retires P1 — a row
+		// whose intent is live and whose client secret is on the first diner's
+		// screen — and points the session at P2. The first diner pays P1, and
+		// `confirmTabPayment` finds the session pointing elsewhere and warns.
+		//
+		// Convex serialises the two: both read the session document and both write
+		// it, so OCC re-runs the loser, which then sees an `activePaymentId` that
+		// is not the one it stood down and stops here instead.
+		if ((session.activePaymentId ?? undefined) !== args.supersededPaymentId) {
+			throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+		}
+
 		let attemptNumber = 1;
 		if (session.activePaymentId) {
 			const previous = await ctx.db.get(session.activePaymentId);
 			if (previous) {
+				// Its `paymentIntents.create` may still be running, in which case
+				// there was no intent for the action to cancel and retiring the row
+				// would let this tap charge the tab a second time.
+				if (isPaymentCreateInFlight(previous, Date.now())) {
+					throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+				}
 				attemptNumber = previous.attemptNumber + 1;
 				if (
 					previous.status !== PAYMENT_STATUS.SUCCEEDED &&
@@ -551,15 +588,67 @@ export const markTabPaymentProcessing = internalMutation({
 		paymentId: v.id(TABLE.PAYMENTS),
 		stripePaymentIntentId: v.string(),
 	},
-	handler: async (ctx, args) => {
+	/** See `stripeHelpers.attachIntentToPayment`: false means do not go on. */
+	returns: v.object({ attached: v.boolean() }),
+	handler: async (ctx, args): Promise<{ attached: boolean }> => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return { attached: false };
+
+		// The tab mirror of `stripeHelpers.attachIntentToPayment` (TAVLI-105). A
+		// tab intent is created unconfirmed, so the diner cannot have paid before
+		// this runs and the webhook cannot have settled the row yet — but "the
+		// create path can overwrite a settlement" is a bug class, not a per-path
+		// accident, and the tab half should not be the one place it survives.
+		//
+		// Two intents cannot both be the one that charged this row, and the webhook
+		// is the half that knows which. Nothing is written when they disagree.
+		if (
+			payment.stripePaymentIntentId &&
+			payment.stripePaymentIntentId !== args.stripePaymentIntentId
+		) {
+			console.error("[sessions.markTabPaymentProcessing] INTENT ID CONFLICT", {
+				paymentId: payment._id,
+				status: payment.status,
+			});
+			return { attached: false };
+		}
+
+		// A retired row is not given the id at all, and its intent is stood down
+		// instead — the same rule as the order and tip paths (sign-off nit). A tab
+		// attempt superseded while its create was running would otherwise hold a
+		// live intent whose client secret the caller is about to return.
+		if (
+			payment.status === PAYMENT_STATUS.SUPERSEDED ||
+			payment.status === PAYMENT_STATUS.CANCELLED
+		) {
+			console.error("[sessions.markTabPaymentProcessing] INTENT ARRIVED FOR A RETIRED ROW", {
+				paymentId: payment._id,
+				status: payment.status,
+			});
+			await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+				paymentId: payment._id,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			});
+			return { attached: false };
+		}
+
+		// Forward only: anything past PENDING has already been decided, by the
+		// webhook or by a superseding attempt, and that decision stands.
+		const alreadyDecided = payment.status !== PAYMENT_STATUS.PENDING;
+
 		await ctx.db.patch(args.paymentId, {
-			status: PAYMENT_STATUS.PROCESSING,
+			...(alreadyDecided ? {} : { status: PAYMENT_STATUS.PROCESSING }),
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			updatedAt: Date.now(),
 		});
+		// Decided elsewhere (the webhook settled it): the id is recorded, but the
+		// tab's own state is not this call's to move.
+		if (alreadyDecided) return { attached: true };
+
 		await ctx.db.patch(args.sessionId, {
 			paymentState: SESSION_PAYMENT_STATE.PROCESSING,
 		});
+		return { attached: true };
 	},
 });
 
@@ -658,11 +747,24 @@ export const failTabPayment = internalMutation({
 		stripePaymentIntentId: v.optional(v.string()),
 		failureCode: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
+		/**
+		 * Refuse a row that is not still in flight. Accepted so `failPaymentByKind`
+		 * can pass one set of arguments to all three kinds; the tab sweep itself
+		 * does not use it, and neither does the webhook.
+		 */
+		onlyIfInFlight: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment?.sessionId) return;
 		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+		if (
+			args.onlyIfInFlight &&
+			payment.status !== PAYMENT_STATUS.PENDING &&
+			payment.status !== PAYMENT_STATUS.PROCESSING
+		) {
+			return;
+		}
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {
@@ -874,6 +976,12 @@ export const listStuckLockedTabs = internalQuery({
 			paymentId: Id<typeof TABLE.PAYMENTS>;
 			stripePaymentIntentId: string;
 			lockedForPaymentAt: number;
+			/**
+			 * What we charged. Returned so the sweep can run the TAVLI-69 amount
+			 * assertion without a second read per candidate — see the `settle`
+			 * case in `stripe.reconcileStuckTabPayments`.
+			 */
+			amount: number;
 		}> = [];
 
 		for (const session of sessions) {
@@ -892,6 +1000,7 @@ export const listStuckLockedTabs = internalQuery({
 				paymentId: payment._id,
 				stripePaymentIntentId: payment.stripePaymentIntentId,
 				lockedForPaymentAt: session.lockedForPaymentAt,
+				amount: payment.amount,
 			});
 		}
 
