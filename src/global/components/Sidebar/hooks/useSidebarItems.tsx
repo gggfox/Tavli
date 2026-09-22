@@ -13,6 +13,7 @@ const STAFF_SIDEBAR_KEYS = new Set<string>([
 	SidebarKeys.OPTIONS,
 	SidebarKeys.ORDERS,
 	SidebarKeys.PAYMENTS,
+	SidebarKeys.PAYOUTS,
 	SidebarKeys.RESERVATIONS,
 	SidebarKeys.WHATSAPP,
 	SidebarKeys.TEAM,

@@ -287,6 +287,47 @@ to onboarding a replacement.
 _Avoid_: disconnected, disabled, deactivated — a closed account is still
 linked, and "not set up" is the absent case, not this one.
 
+**Payout**:
+Money moving from a `Restaurant`'s Stripe **connected account** to its
+bank, on a schedule Stripe runs. Not a **Payment** — a payment is a diner
+paying the restaurant, a payout is the restaurant being paid out. One row
+per Stripe payout id, with a `status` of `pending | in_transit | paid |
+failed | canceled` (Stripe's own vocabulary, stored verbatim; the payouts
+page renders it as "on the way", "arrived", "did not arrive"). Payout
+events fire on the **connected** account and arrive on their own webhook
+destination, which is why they reach neither of the other two.
+_Avoid_: transfer (that is the platform→connected leg of a destination
+charge), deposit in English copy, withdrawal, settlement.
+
+**Held total**:
+How much of a `Restaurant`'s money is stuck in Stripe: the sum of its
+**failed** payouts that no later payout has superseded. Stripe **never
+retries** a failed payout — the schedule simply runs again — so "resolved"
+is derived, not stored. Because Tavli never creates a manual payout, every
+automatic payout sweeps the **whole available balance**, and that balance
+already contains whatever bounced last time. So a later terminal payout
+that actually attempted the bank supersedes an earlier failure: a later
+`failed` already carries the older failure's money (counting both would
+double-count it), and a later `paid` resolves every earlier failure
+**regardless of amount** — a refund or a lost dispute can shrink the
+balance in between, and Stripe can settle it across two smaller payouts.
+A `canceled` payout supersedes nothing: it never attempted the bank. In
+practice the total is the newest failure, or zero. The money is never lost
+while it is held; it sits in the connected account's balance. Shown on
+`/admin/payouts` and as a banner on `/admin/payments`.
+_Avoid_: pending balance (Stripe's own term for something else), owed,
+outstanding, frozen funds.
+
+**Payout failure code**:
+Why a payout bounced, as one of a **closed** set derived from Stripe's
+`failure_code` (the fifteen Stripe documents, plus `unknown`). The closed
+set is what guarantees a manager is never shown a raw Stripe string:
+each code maps to a reason and a fix in their own language, and anything
+Stripe adds later lands on `unknown`. Stripe's raw `failure_message` is
+stored but is **operators only** — the manager-facing query does not
+return it.
+_Avoid_: error, decline reason (a decline is a card term).
+
 **Shift**:
 A scheduled work block for a `RestaurantMember`, carrying a
 `ShiftRole` (`server | bartender | host | kitchen | manager`).

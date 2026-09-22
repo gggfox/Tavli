@@ -24,6 +24,7 @@ export const TABLE = {
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
 	STRIPE_DISPUTES: "stripeDisputes",
+	STRIPE_PAYOUTS: "stripePayouts",
 	STRIPE_CUSTOMERS: "stripeCustomers",
 	RESERVATIONS: "reservations",
 	TABLE_LOCKS: "tableLocks",
@@ -1525,6 +1526,10 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.PAYMENTS,
 	TABLE.STRIPE_WEBHOOK_EVENTS,
 	TABLE.STRIPE_DISPUTES,
+	// Payout rows mirror Stripe for the restaurant's own visibility (TAVLI-103).
+	// Stripe keeps the authoritative ledger, so a purged restaurant's copies go
+	// with its other payment records rather than outliving it.
+	TABLE.STRIPE_PAYOUTS,
 	// Reservations
 	TABLE.RESERVATIONS,
 	TABLE.TABLE_LOCKS,
@@ -1849,3 +1854,131 @@ export const NOTIFICATION_BODY_KEY: Record<NotificationKind, string> = {
  * alert (TAVLI-109), which is Tavli's own inbox and never mixes with this one.
  */
 export const NOTIFICATION_RECIPIENT_MEMBER_ROLES = [RESTAURANT_MEMBER_ROLE.MANAGER] as const;
+
+// ============================================================================
+// Payouts (TAVLI-103)
+// ============================================================================
+
+/**
+ * Where one Stripe payout is in its life.
+ *
+ * The five values are Stripe's own `payout.status` verbatim, because this enum
+ * exists to *store* what Stripe reports, not to reinterpret it — a parallel
+ * vocabulary would only need translating back every time an operator compares
+ * a row with the Stripe Dashboard. What Tavli decides on top of them lives in
+ * `PAYOUT_STATUS_RANK` (`convex/payoutHelpers.ts`), not here.
+ */
+export const STRIPE_PAYOUT_STATUS = {
+	/** Created, not yet sent to the bank. */
+	PENDING: "pending",
+	/** On its way to the bank. */
+	IN_TRANSIT: "in_transit",
+	/** The bank took it. Money has left Stripe. */
+	PAID: "paid",
+	/** The bank refused it. The money is back in the Stripe balance. */
+	FAILED: "failed",
+	/** Cancelled before it left. */
+	CANCELED: "canceled",
+} as const;
+
+export type StripePayoutStatus = (typeof STRIPE_PAYOUT_STATUS)[keyof typeof STRIPE_PAYOUT_STATUS];
+
+export const STRIPE_PAYOUT_STATUSES = Object.values(STRIPE_PAYOUT_STATUS);
+
+/**
+ * Why a payout failed, as a **closed** set.
+ *
+ * The fifteen named values are the failure codes Stripe documents for
+ * `payout.failure_code`; `unknown` is the fallback for anything else. Closing
+ * the set is the whole point: `failure_code` is raw Stripe vocabulary
+ * (`bank_ownership_changed`, `debit_not_authorized`) and a restaurant manager
+ * must never be shown it — `PAYOUT_FAILURE_REASON_KEY` and
+ * `PAYOUT_FAILURE_FIX_KEY` turn each one into copy in their own language, and
+ * `normalizePayoutFailureCode` (`convex/payoutHelpers.ts`) guarantees a code
+ * Stripe invents next year lands on `unknown` instead of leaking through.
+ *
+ * The spellings deliberately match Stripe's. They are already stable
+ * identifiers, they are what an operator reads in the Dashboard beside the same
+ * payout, and renaming them would buy a second glossary and no safety: the
+ * safety comes from the set being closed and from the i18n keys, not from the
+ * strings being ours.
+ */
+export const PAYOUT_FAILURE_CODE = {
+	ACCOUNT_CLOSED: "account_closed",
+	ACCOUNT_FROZEN: "account_frozen",
+	BANK_ACCOUNT_RESTRICTED: "bank_account_restricted",
+	BANK_OWNERSHIP_CHANGED: "bank_ownership_changed",
+	COULD_NOT_PROCESS: "could_not_process",
+	DEBIT_NOT_AUTHORIZED: "debit_not_authorized",
+	DECLINED: "declined",
+	INSUFFICIENT_FUNDS: "insufficient_funds",
+	INVALID_ACCOUNT_NUMBER: "invalid_account_number",
+	INCORRECT_ACCOUNT_HOLDER_NAME: "incorrect_account_holder_name",
+	INCORRECT_ACCOUNT_HOLDER_ADDRESS: "incorrect_account_holder_address",
+	INCORRECT_ACCOUNT_HOLDER_TAX_ID: "incorrect_account_holder_tax_id",
+	INVALID_CURRENCY: "invalid_currency",
+	NO_ACCOUNT: "no_account",
+	UNSUPPORTED_CARD: "unsupported_card",
+	/** Anything Stripe sends that is not one of the fifteen above, or nothing at all. */
+	UNKNOWN: "unknown",
+} as const;
+
+export type PayoutFailureCode = (typeof PAYOUT_FAILURE_CODE)[keyof typeof PAYOUT_FAILURE_CODE];
+
+export const PAYOUT_FAILURE_CODES = Object.values(PAYOUT_FAILURE_CODE);
+
+/**
+ * i18n key for "why it failed", in the restaurant's own words. One per code,
+ * enforced by `locales.test.ts` in both `en.json` and `es.json`.
+ */
+export const PAYOUT_FAILURE_REASON_KEY: Record<PayoutFailureCode, string> = {
+	[PAYOUT_FAILURE_CODE.ACCOUNT_CLOSED]: "payouts.failure.accountClosed.reason",
+	[PAYOUT_FAILURE_CODE.ACCOUNT_FROZEN]: "payouts.failure.accountFrozen.reason",
+	[PAYOUT_FAILURE_CODE.BANK_ACCOUNT_RESTRICTED]: "payouts.failure.bankAccountRestricted.reason",
+	[PAYOUT_FAILURE_CODE.BANK_OWNERSHIP_CHANGED]: "payouts.failure.bankOwnershipChanged.reason",
+	[PAYOUT_FAILURE_CODE.COULD_NOT_PROCESS]: "payouts.failure.couldNotProcess.reason",
+	[PAYOUT_FAILURE_CODE.DEBIT_NOT_AUTHORIZED]: "payouts.failure.debitNotAuthorized.reason",
+	[PAYOUT_FAILURE_CODE.DECLINED]: "payouts.failure.declined.reason",
+	[PAYOUT_FAILURE_CODE.INSUFFICIENT_FUNDS]: "payouts.failure.insufficientFunds.reason",
+	[PAYOUT_FAILURE_CODE.INVALID_ACCOUNT_NUMBER]: "payouts.failure.invalidAccountNumber.reason",
+	[PAYOUT_FAILURE_CODE.INCORRECT_ACCOUNT_HOLDER_NAME]:
+		"payouts.failure.incorrectAccountHolderName.reason",
+	[PAYOUT_FAILURE_CODE.INCORRECT_ACCOUNT_HOLDER_ADDRESS]:
+		"payouts.failure.incorrectAccountHolderAddress.reason",
+	[PAYOUT_FAILURE_CODE.INCORRECT_ACCOUNT_HOLDER_TAX_ID]:
+		"payouts.failure.incorrectAccountHolderTaxId.reason",
+	[PAYOUT_FAILURE_CODE.INVALID_CURRENCY]: "payouts.failure.invalidCurrency.reason",
+	[PAYOUT_FAILURE_CODE.NO_ACCOUNT]: "payouts.failure.noAccount.reason",
+	[PAYOUT_FAILURE_CODE.UNSUPPORTED_CARD]: "payouts.failure.unsupportedCard.reason",
+	[PAYOUT_FAILURE_CODE.UNKNOWN]: "payouts.failure.unknown.reason",
+};
+
+/**
+ * i18n key for "what to do about it". Separate from the reason because the copy
+ * leads with reassurance, then the reason, then the fix — and only the fix is
+ * an instruction the manager can act on.
+ */
+export const PAYOUT_FAILURE_FIX_KEY: Record<PayoutFailureCode, string> = {
+	[PAYOUT_FAILURE_CODE.ACCOUNT_CLOSED]: "payouts.failure.accountClosed.fix",
+	[PAYOUT_FAILURE_CODE.ACCOUNT_FROZEN]: "payouts.failure.accountFrozen.fix",
+	[PAYOUT_FAILURE_CODE.BANK_ACCOUNT_RESTRICTED]: "payouts.failure.bankAccountRestricted.fix",
+	[PAYOUT_FAILURE_CODE.BANK_OWNERSHIP_CHANGED]: "payouts.failure.bankOwnershipChanged.fix",
+	[PAYOUT_FAILURE_CODE.COULD_NOT_PROCESS]: "payouts.failure.couldNotProcess.fix",
+	[PAYOUT_FAILURE_CODE.DEBIT_NOT_AUTHORIZED]: "payouts.failure.debitNotAuthorized.fix",
+	[PAYOUT_FAILURE_CODE.DECLINED]: "payouts.failure.declined.fix",
+	[PAYOUT_FAILURE_CODE.INSUFFICIENT_FUNDS]: "payouts.failure.insufficientFunds.fix",
+	[PAYOUT_FAILURE_CODE.INVALID_ACCOUNT_NUMBER]: "payouts.failure.invalidAccountNumber.fix",
+	[PAYOUT_FAILURE_CODE.INCORRECT_ACCOUNT_HOLDER_NAME]:
+		"payouts.failure.incorrectAccountHolderName.fix",
+	[PAYOUT_FAILURE_CODE.INCORRECT_ACCOUNT_HOLDER_ADDRESS]:
+		"payouts.failure.incorrectAccountHolderAddress.fix",
+	[PAYOUT_FAILURE_CODE.INCORRECT_ACCOUNT_HOLDER_TAX_ID]:
+		"payouts.failure.incorrectAccountHolderTaxId.fix",
+	[PAYOUT_FAILURE_CODE.INVALID_CURRENCY]: "payouts.failure.invalidCurrency.fix",
+	[PAYOUT_FAILURE_CODE.NO_ACCOUNT]: "payouts.failure.noAccount.fix",
+	[PAYOUT_FAILURE_CODE.UNSUPPORTED_CARD]: "payouts.failure.unsupportedCard.fix",
+	[PAYOUT_FAILURE_CODE.UNKNOWN]: "payouts.failure.unknown.fix",
+};
+
+/** In-app path the payout notifications and their emails link to. */
+export const PAYOUTS_PAGE_PATH = "/admin/payouts";

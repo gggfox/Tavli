@@ -90,6 +90,7 @@ const EXPECTED_DELETED = {
 	[TABLE.PAYMENTS]: 2,
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: 2,
 	[TABLE.STRIPE_DISPUTES]: 1,
+	[TABLE.STRIPE_PAYOUTS]: 1,
 	[TABLE.RESERVATIONS]: 1,
 	[TABLE.TABLE_LOCKS]: 1,
 	[TABLE.RESERVATION_SETTINGS]: 1,
@@ -330,6 +331,20 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			status: "needs_response",
 			amount: 90,
 			currency: "MXN",
+			createdAt: NOW,
+			updatedAt: NOW,
+		});
+
+		// A payout row (TAVLI-103): a local mirror of Stripe's ledger, so it goes
+		// with the restaurant's other payment records.
+		await ctx.db.insert("stripePayouts", {
+			restaurantId,
+			stripeAccountId: "acct_purge",
+			stripePayoutId: "po_1",
+			amount: 5_000,
+			currency: "MXN",
+			status: "failed",
+			failureCode: "no_account",
 			createdAt: NOW,
 			updatedAt: NOW,
 		});

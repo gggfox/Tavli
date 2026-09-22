@@ -73,6 +73,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.PAYMENTS]: 0,
 		[TABLE.STRIPE_WEBHOOK_EVENTS]: 0,
 		[TABLE.STRIPE_DISPUTES]: 0,
+		[TABLE.STRIPE_PAYOUTS]: 0,
 		[TABLE.RESERVATIONS]: 0,
 		[TABLE.TABLE_LOCKS]: 0,
 		[TABLE.RESERVATION_SETTINGS]: 0,
@@ -322,6 +323,16 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const d of disputes) await ctx.db.delete(d._id);
 	deleted[TABLE.STRIPE_DISPUTES] += disputes.length;
+
+	// Payout rows (TAVLI-103) are the same shape of record: a local mirror of
+	// Stripe's ledger, kept so the restaurant can see its own money. Stripe
+	// still has every one of them after the purge.
+	const payouts = await ctx.db
+		.query(TABLE.STRIPE_PAYOUTS)
+		.withIndex("by_restaurant_created", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const payout of payouts) await ctx.db.delete(payout._id);
+	deleted[TABLE.STRIPE_PAYOUTS] += payouts.length;
 
 	const orders = await ctx.db
 		.query(TABLE.ORDERS)

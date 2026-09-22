@@ -6,6 +6,7 @@ export * from "./menus";
 export * from "./notifications";
 export * from "./options";
 export * from "./ordering";
+export * from "./payouts";
 export * from "./organizations";
 export * from "./reservations";
 export * from "./restaurants";

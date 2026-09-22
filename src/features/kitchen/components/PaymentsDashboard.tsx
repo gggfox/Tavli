@@ -1,4 +1,5 @@
 /* eslint-disable boundaries/no-unknown -- feature-internal hooks/types not in eslint-boundaries map */
+import { PayoutsHeldBanner } from "@/features/payouts";
 import { usePaymentsDashboardPrefs } from "../hooks/usePaymentsDashboardPrefs";
 import type { PaymentsTimePeriod } from "../paymentsDashboardSearch";
 import { AdminTable, DashboardShell, SegmentedControl, Surface } from "@/global/components";
@@ -128,6 +129,13 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 			header={timeFrameControl}
 			gap="6"
 		>
+			{/*
+			 * A failed payout is exactly what this ledger cannot show: every charge
+			 * in it succeeded, and the money still has not reached the bank
+			 * (TAVLI-103). The banner renders nothing while nothing is held.
+			 */}
+			<PayoutsHeldBanner restaurantId={restaurantId} />
+
 			<div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
 				<SummaryCard
 					icon={<DollarSign size={20} />}

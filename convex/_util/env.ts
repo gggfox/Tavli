@@ -115,6 +115,35 @@ export function getStripePlatformFeePriceId(): string {
 	throw new ConflictError("ERROR_BILLING_PRICE_NOT_CONFIGURED");
 }
 
+/**
+ * The three Stripe webhook signing secrets, one per destination.
+ *
+ * They are **not** interchangeable and never share a destination: each Stripe
+ * event destination mints its own secret, and a delivery signed by one fails
+ * verification against another. Which handler reads which:
+ *
+ * | Env var                                    | Route                       | Handler                              |
+ * | ------------------------------------------ | --------------------------- | ------------------------------------ |
+ * | `STRIPE_WEBHOOK_SECRET`                    | `/stripe/webhook`           | `stripe.fulfillPayment`              |
+ * | `STRIPE_CONNECT_WEBHOOK_SECRET`            | `/stripe/connect-webhook`   | `stripe.handleThinEvent`             |
+ * | `STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET`  | `/stripe/connected-webhook` | `stripe.handleConnectedAccountEvent` |
+ *
+ * The third one (TAVLI-103) is for **v1 snapshot events on connected
+ * accounts** — `payout.*`, which fire on the restaurant's own account and
+ * carry `event.account`. It is a third destination rather than a widening of
+ * either existing one because the second is thin-payload-only (a different
+ * parser) and the first is scoped to Tavli's own account, where no payout of a
+ * restaurant's ever lands.
+ *
+ * Names are declared here so the set is countable in one place; the secrets
+ * themselves are read at call time in `convex/stripe.ts`, per deployment. See
+ * `documentation/runbooks/stripe-go-live.md`.
+ */
+export const STRIPE_WEBHOOK_SECRET_ENV = "STRIPE_WEBHOOK_SECRET";
+export const STRIPE_CONNECT_WEBHOOK_SECRET_ENV = "STRIPE_CONNECT_WEBHOOK_SECRET";
+export const STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET_ENV =
+	"STRIPE_CONNECTED_ACCOUNT_WEBHOOK_SECRET";
+
 /** Convex env var that must be set (truthy) to arm the first-admin bootstrap. */
 export const ALLOW_ADMIN_BOOTSTRAP_ENV = "ALLOW_ADMIN_BOOTSTRAP";
 
