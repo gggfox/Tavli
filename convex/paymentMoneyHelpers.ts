@@ -26,12 +26,19 @@
  * `serviceFee` / `netToRestaurant` report `null` rather than a fabricated
  * split. The cutover discontinuity is documented, not papered over.
  *
- * **Refunds are out of scope here.** These helpers report gross money in;
- * no aggregate has ever netted `amountRefunded` out of revenue and doing so
+ * **Partial refunds are out of scope here.** These helpers report gross money
+ * in; no aggregate has ever netted `amountRefunded` out of revenue and doing so
  * silently would restate history a second time.
+ *
+ * **A FULLY refunded row is not revenue** (TAVLI-104). That is not a netting
+ * rule, it is the same status question asked properly: the money came and went,
+ * and the restaurant sold nothing. It was survivable to count them while a full
+ * refund only happened when a human cancelled an order — now the webhook
+ * refunds a charge it cannot apply automatically, and the diner pays again for
+ * the same food. Counting both is the same sale twice.
  */
-import { PAYMENT_KIND, PAYMENT_STATUS, SETTLED_BY } from "./constants";
-import type { PaymentKind, PaymentStatus, SettledBy } from "./constants";
+import { PAYMENT_KIND, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, SETTLED_BY } from "./constants";
+import type { PaymentKind, PaymentRefundStatus, PaymentStatus, SettledBy } from "./constants";
 
 /**
  * Structural shape of the `payments` fields these helpers read. Deliberately
@@ -45,6 +52,8 @@ export type PaymentMoneyRow = {
 	gratuityAmount?: number;
 	kind?: PaymentKind;
 	status: PaymentStatus;
+	/** Absent on rows (and fixtures) that predate the field; treated as `none`. */
+	refundStatus?: PaymentRefundStatus;
 };
 
 /** Structural shape of the `orders` fields these helpers read. */
@@ -100,8 +109,25 @@ export function paymentMoneyBreakdown(payment: PaymentMoneyRow): PaymentMoneyBre
  * one payment row. Returns 0 for anything that is not a succeeded charge.
  */
 export function restaurantRevenueFromPayment(payment: PaymentMoneyRow): number {
-	if (payment.status !== PAYMENT_STATUS.SUCCEEDED) return 0;
+	if (!countsAsSettledMoney(payment)) return 0;
 	return paymentMoneyBreakdown(payment).restaurantRevenue;
+}
+
+/**
+ * Did this row leave money with the restaurant?
+ *
+ * `succeeded` is necessary and — since TAVLI-104 — no longer sufficient. A
+ * charge the webhook could not apply to its order is marked `succeeded`
+ * (Stripe really did collect) and refunded in full moments later, and the diner
+ * then pays again. Counting the refunded row books that sale twice.
+ *
+ * Only a FULL refund disqualifies a row. A partial one (a single line removed
+ * from a paid order) leaves real money behind, and netting it out here would
+ * restate every historical figure — see the module comment.
+ */
+function countsAsSettledMoney(payment: PaymentMoneyRow): boolean {
+	if (payment.status !== PAYMENT_STATUS.SUCCEEDED) return false;
+	return payment.refundStatus !== PAYMENT_REFUND_STATUS.SUCCEEDED;
 }
 
 /**
@@ -110,7 +136,7 @@ export function restaurantRevenueFromPayment(payment: PaymentMoneyRow): number {
  * settlement. Returns 0 for anything that is not a succeeded charge.
  */
 export function tipFromPayment(payment: PaymentMoneyRow): number {
-	if (payment.status !== PAYMENT_STATUS.SUCCEEDED) return 0;
+	if (!countsAsSettledMoney(payment)) return 0;
 	return paymentMoneyBreakdown(payment).tip;
 }
 

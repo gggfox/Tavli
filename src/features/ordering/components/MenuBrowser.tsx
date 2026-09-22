@@ -197,7 +197,7 @@ export function MenuBrowser({
 			.filter((item): item is (typeof menuItems)[number] => item !== undefined)
 			// Availability and photographs are read here rather than baked into
 			// the nightly ranking, because both change without the ranking
-			// changing: a dish 86'd at lunch must leave the strip immediately,
+			// changing: a dish pulled at lunch must leave the strip immediately,
 			// and one that gains a photo this morning should be able to appear.
 			.filter((item) => item.isAvailable && item.imageUrl);
 		// All-or-nothing below the floor. Two cards do not read as "our most

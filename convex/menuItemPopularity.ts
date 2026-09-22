@@ -110,7 +110,7 @@ export const recomputeForRestaurant = internalMutation({
 				.withIndex("by_order", (q) => q.eq("orderId", order._id))
 				.collect();
 			for (const item of items) {
-				// An 86'd line was never served. Counting it would rank a dish
+				// A removed line was never served. Counting it would rank a dish
 				// the kitchen could not make.
 				if (item.cancelledAt !== undefined) continue;
 				quantities.set(item.menuItemId, (quantities.get(item.menuItemId) ?? 0) + item.quantity);
@@ -229,7 +229,7 @@ export const sweepPopularity = internalMutation({
  * - the resolved objects are exactly the `MenuItemWithImage` the detail sheet
  *   takes, so tapping a card opens the same sheet a grid tap opens with no
  *   second shape to keep in sync;
- * - availability and photographs are read from *live* data, so a dish 86'd at
+ * - availability and photographs are read from *live* data, so a dish pulled at
  *   lunch disappears from the carousel immediately rather than at midnight;
  * - an item that is popular but not on the menu currently being browsed is
  *   skipped, so the carousel never offers something the diner cannot add.

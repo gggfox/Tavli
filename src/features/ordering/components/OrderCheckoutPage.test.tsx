@@ -362,6 +362,63 @@ describe("OrderCheckoutPage", () => {
 		expect(callLog).toEqual(["cancel"]);
 	});
 
+	describe("back to menu", () => {
+		// TAVLI-104. Plain navigation left the prepared intent live at Stripe with
+		// its client secret in a page the diner could come back to — or leave open
+		// in another tab — and confirming it later charged a card for an order
+		// that had moved on.
+		it("cancels the prepared charge before navigating away", async () => {
+			mockBackend(baseOrder());
+			const onBackToMenu = vi.fn(() => {
+				callLog.push("navigate");
+			});
+			renderPage({ onBackToMenu });
+
+			fireEvent.click(screen.getByText("Continue to payment"));
+			await waitFor(() => expect(screen.getByTestId("payment-element")).toBeTruthy());
+
+			fireEvent.click(screen.getByLabelText("Back to menu"));
+
+			await waitFor(() => expect(onBackToMenu).toHaveBeenCalled());
+			expect(cancelIntentMock).toHaveBeenCalledWith({ orderId: "orders:checkout" });
+			expect(callLog).toEqual(["createIntent", "cancel", "navigate"]);
+		});
+
+		it("cancels an intent prepared before a reload, without a payment sheet on screen", async () => {
+			mockBackend(baseOrder({ activePayment: { status: "processing" } }));
+			const onBackToMenu = vi.fn();
+			renderPage({ onBackToMenu });
+
+			fireEvent.click(screen.getByLabelText("Back to menu"));
+
+			await waitFor(() => expect(cancelIntentMock).toHaveBeenCalled());
+			expect(onBackToMenu).toHaveBeenCalled();
+		});
+
+		it("navigates without a round trip when nothing was prepared", async () => {
+			mockBackend(baseOrder({ activePayment: null }));
+			const onBackToMenu = vi.fn();
+			renderPage({ onBackToMenu });
+
+			fireEvent.click(screen.getByLabelText("Back to menu"));
+
+			await waitFor(() => expect(onBackToMenu).toHaveBeenCalled());
+			expect(cancelIntentMock).not.toHaveBeenCalled();
+		});
+
+		it("still leaves when the cancel fails — getting out must always work", async () => {
+			mockBackend(baseOrder({ activePayment: { status: "processing" } }));
+			cancelIntentMock.mockRejectedValueOnce(new Error("stripe is down"));
+			const onBackToMenu = vi.fn();
+			renderPage({ onBackToMenu });
+
+			fireEvent.click(screen.getByLabelText("Back to menu"));
+
+			// The supersede path stands the intent down on the next attempt.
+			await waitFor(() => expect(onBackToMenu).toHaveBeenCalled());
+		});
+	});
+
 	it("surfaces a webhook-reported decline and drops back to the summary", () => {
 		mockBackend(
 			baseOrder({

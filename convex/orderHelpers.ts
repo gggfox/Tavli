@@ -247,7 +247,7 @@ export function resolvePrepStation(
 	return menuItem?.prepStation ?? DEFAULT_PREP_STATION;
 }
 
-/** A line that has been 86'd is no longer prepared, billed, or counted. */
+/** A line removed from an order is no longer prepared, billed, or counted. */
 export function isCancelledOrderItem(item: { cancelledAt?: number }): boolean {
 	return item.cancelledAt !== undefined;
 }
@@ -258,7 +258,7 @@ export function isCancelledOrderItem(item: { cancelledAt?: number }): boolean {
  * `markStationReady` to decide when to flip `Order.status` to "ready"
  * (when every applicable station has a non-null `*ReadyAt`).
  *
- * Cancelled lines drop out so a station whose every item was 86'd stops
+ * Cancelled lines drop out so a station whose every item was removed stops
  * blocking the order: the remaining stations alone can complete it.
  *
  * Items whose menuItem can no longer be loaded (soft-deleted) fall back to
@@ -291,7 +291,7 @@ export async function recalculateTotal(ctx: { db: DatabaseWriter }, orderId: Id<
 		.withIndex("by_order", (q) => q.eq("orderId", orderId))
 		.collect();
 
-	// 86'd lines stay on the order but leave the bill, so this is also the
+	// Removed lines stay on the order but leave the bill, so this is also the
 	// recompute `cancelOrderItem` runs. Draft orders never carry cancelled
 	// items, so the draft callers are unaffected.
 	const total = items.reduce(

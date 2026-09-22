@@ -359,6 +359,17 @@ describe("stripe actions", () => {
 				id: "pi_replaced",
 				client_secret: "pi_secret_replaced",
 			});
+		// TAVLI-104: superseding now stands the old intent down at Stripe first,
+		// so the retrieve/cancel pair is part of this flow.
+		mockStripeClient.paymentIntents.retrieve.mockResolvedValue({
+			id: "pi_original",
+			status: "requires_payment_method",
+			client_secret: "pi_secret_original",
+		});
+		mockStripeClient.paymentIntents.cancel.mockResolvedValue({
+			id: "pi_original",
+			status: "canceled",
+		});
 
 		await diner.action(api.stripe.createPaymentIntent, {
 			orderId,
@@ -376,6 +387,8 @@ describe("stripe actions", () => {
 		});
 
 		expect(second.clientSecret).toBe("pi_secret_replaced");
+		// The abandoned intent is dead at Stripe, not just in our table.
+		expect(mockStripeClient.paymentIntents.cancel).toHaveBeenCalledWith("pi_original");
 
 		const payments = await t.run(async (ctx) => ctx.db.query("payments").collect());
 		expect(payments).toHaveLength(2);
@@ -847,6 +860,101 @@ describe("stripe actions", () => {
 			});
 		});
 
+		/**
+		 * The sweep is the one caller that can re-detect a mismatch forever.
+		 *
+		 * A mismatched tab never leaves this sweep's candidate list: the payment
+		 * stays `processing` (nothing patches `amount`) and `lockedForPaymentAt`
+		 * is never cleared, so `listStuckLockedTabs` returns it every five
+		 * minutes. The `amount_mismatch:${paymentId}` dedupeKey does not save us
+		 * either — `raiseOperatorAlert` scopes it to OPEN alerts on purpose, so
+		 * the moment an admin acknowledges the row the next sweep raises a fresh
+		 * severe alert and emails every platform admin again. Acknowledging
+		 * would make the noise worse, which is the opposite of what an
+		 * acknowledge button is for.
+		 *
+		 * So the sweep compares the amount itself and skips before reaching
+		 * `handlePaymentIntentSuccess`: the webhook already raised this alert
+		 * once, and a cron re-noticing the same unchanged fact is not news.
+		 */
+		it("does not re-alert a mismatched tab once the alert is acknowledged", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { sessionId, paymentId } = await seedLockedTab(t, {
+				restaurantId,
+				lockedForPaymentAt: Date.now() - 15 * 60 * 1000,
+				stripePaymentIntentId: "pi_stuck_mismatch",
+				amount: 1980,
+				gratuityAmount: 180,
+			});
+
+			// The webhook already caught this one and an admin has cleared it.
+			const alertId = await t.run(async (ctx) =>
+				ctx.db.insert("operatorAlerts", {
+					kind: "payment_amount_mismatch",
+					severity: "severe",
+					restaurantId,
+					paymentId,
+					stripeObjectId: "pi_stuck_mismatch",
+					messageKey: "alerts.kind.paymentAmountMismatch.explanation",
+					messageParams: { expected: 1980, received: 1800, currency: "usd" },
+					dedupeKey: `amount_mismatch:${paymentId}`,
+					status: "acknowledged",
+					acknowledgedBy: "admin-1",
+					acknowledgedAt: Date.now(),
+					createdAt: Date.now(),
+				})
+			);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_stuck_mismatch",
+				status: "succeeded",
+				amount: 1800,
+				amount_received: 1800,
+				latest_charge: "ch_stuck_mismatch",
+				metadata: { gratuityAmount: "180" },
+			});
+
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+			await t.action(internal.stripe.reconcileStuckTabPayments, {});
+			const calls = [...errorSpy.mock.calls];
+			errorSpy.mockRestore();
+
+			await t.run(async (ctx) => {
+				// No second alert, and the acknowledged one stays acknowledged.
+				const alerts = await ctx.db.query("operatorAlerts").collect();
+				expect(alerts).toHaveLength(1);
+				expect(alerts[0]._id).toBe(alertId);
+				expect(alerts[0].status).toBe("acknowledged");
+
+				// And the sweep settled nothing on the way past — it failed the row
+				// instead, which unlocks the tab and, incidentally, drops it out of
+				// `listStuckLockedTabs` so this cannot recur every five minutes.
+				const payment = await ctx.db.get(paymentId);
+				expect(payment!.status).toBe("failed");
+				expect(payment!.failureCode).toBe("amount_mismatch");
+				expect(payment!.succeededAt).toBeUndefined();
+				const session = await ctx.db.get(sessionId);
+				expect(session!.status).toBe("active");
+				expect(session!.lockedForPaymentAt).toBeUndefined();
+				expect(session!.paymentState).toBe("failed");
+			});
+
+			// Still visible to whoever is reading the logs.
+			expect(
+				calls.some(
+					(call) => typeof call[1] === "object" && call[1] !== null && "expectedAmount" in call[1]
+				),
+				"the sweep must still log the mismatch it skipped"
+			).toBe(true);
+		});
+
 		it("unlocks a stuck tab whose PaymentIntent was canceled", async () => {
 			const t = convexTest(schema, modules);
 			const organizationId = await seedOrganization(t);
@@ -1260,11 +1368,11 @@ describe("stripe actions", () => {
 			expect(order?.paidByUserId).toBe("diner-stripe");
 			expect(order?.dailyOrderNumber).toBe(1);
 			expect(payment?.status).toBe("succeeded");
-			// Needed for one-tap tips / substitution deltas later.
+			// Needed for one-tap tips later.
 			expect(payment?.stripePaymentMethodId).toBe("pm_saved_card");
 		});
 
-		it("no-ops confirmation when the order total drifted from the payment's subtotal", async () => {
+		it("refunds a confirmation whose order total drifted away from the payment", async () => {
 			const t = convexTest(schema, modules);
 			const organizationId = await seedOrganization(t);
 			const restaurantId = await seedRestaurant(t, {
@@ -1299,18 +1407,133 @@ describe("stripe actions", () => {
 				return id;
 			});
 
-			await t.mutation(internal.orders.confirmPayment, {
-				paymentId,
-				stripePaymentIntentId: "pi_drift",
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_drift",
+				status: "succeeded",
+				amount: 5600,
 			});
+			// The refund runs on a `runAfter(0)` hop, so the scheduled job has to be
+			// flushed here or it lands after the test's database is gone.
+			vi.useFakeTimers();
+			try {
+				await t.mutation(internal.orders.confirmPayment, {
+					paymentId,
+					stripePaymentIntentId: "pi_drift",
+				});
+				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+			} finally {
+				vi.useRealTimers();
+			}
 
 			const { order, payment } = await t.run(async (ctx) => ({
 				order: await ctx.db.get(orderId),
 				payment: await ctx.db.get(paymentId),
 			}));
-			// Warn-and-skip: a fresh intent will supersede this one.
+			// TAVLI-104: no longer warn-and-skip. The charge is real and pays for a
+			// 5000 order that now costs 6000, so the money goes back and the order
+			// stays owed. Full coverage of the decision lives in
+			// `ordersStrandedCharge.test.ts`; this pins that the total-drift branch
+			// reaches it.
 			expect(order?.status).toBe("draft");
-			expect(payment?.status).toBe("processing");
+			expect(order?.paymentState).toBe("unpaid");
+			expect(payment?.status).toBe("succeeded");
+			expect(payment?.refundStatus).toBe("succeeded");
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledTimes(1);
+			const alerts = await t.run(async (ctx) => ctx.db.query("operatorAlerts").collect());
+			expect(alerts.map((alert) => alert.kind)).toEqual(["charge_mismatched_refunded"]);
+		});
+
+		/**
+		 * The webhook dedup in `fulfillPayment` is check-then-act across two
+		 * transactions, so it narrows the replay window but does not close it —
+		 * every handler has to be idempotent in its own right. The tab and tip
+		 * halves are pinned in `auditLifecycles.test.ts` ("writes no settlement
+		 * event when the webhook replays after success") and
+		 * `visitCloseout.test.ts` ("… — idempotently"); this is the order half.
+		 *
+		 * Deliberately a LEGACY row: no `orderUpdatedAtSnapshot`, and `amount`
+		 * equal to the order total. On an ADR 008 `kind: "order"` row the
+		 * `status === SUCCEEDED` early-return is belt-and-braces, because
+		 * settling patches `order.updatedAt` and the stale-snapshot check
+		 * short-circuits the replay first — so a test built on that shape passes
+		 * even with the early-return deleted, and proves nothing. Without a
+		 * snapshot the early-return is the only thing standing between a
+		 * redelivery and a second settlement, which is what this pins.
+		 *
+		 * The sentinel timestamps are what make the assertion clock-independent:
+		 * comparing against the first call's `Date.now()` would pass vacuously
+		 * whenever both calls land in the same millisecond.
+		 */
+		it("no-ops confirmation when the payment has already succeeded", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { orderId } = await seedDraftOrder(t, { restaurantId, totalAmount: 5000 });
+			await seedOrderItemFor(t, { restaurantId, orderId, lineTotal: 5000 });
+
+			const paymentId = await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					orderId,
+					amount: 5000,
+					currency: "usd",
+					status: "processing",
+					refundStatus: "none",
+					attemptNumber: 1,
+					stripePaymentIntentId: "pi_replay",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id });
+				return id;
+			});
+
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_replay",
+				stripeChargeId: "ch_replay",
+			});
+
+			const first = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(first.payment?.status).toBe("succeeded");
+			expect(first.order?.paymentState).toBe("paid");
+			expect(first.order?.dailyOrderNumber).toBe(1);
+
+			// Stamp both settlement timestamps with sentinels a re-run would
+			// overwrite with the replay's clock.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, { succeededAt: 111 });
+				await ctx.db.patch(orderId, { paidAt: 111 });
+			});
+
+			// Stripe redelivers the same success. Nothing may move a second time.
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_replay",
+				stripeChargeId: "ch_replay",
+			});
+
+			const second = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+				settlements: await ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("eventType"), "orders.paymentConfirmed"))
+					.collect(),
+			}));
+			expect(second.payment?.succeededAt).toBe(111);
+			expect(second.order?.paidAt).toBe(111);
+			// And the order number is not burned twice.
+			expect(second.order?.dailyOrderNumber).toBe(1);
+			expect(second.settlements).toHaveLength(1);
 		});
 
 		it("still settles a legacy payment that has no subtotalAmount (?? fallback)", async () => {
@@ -1570,7 +1793,7 @@ describe("stripe actions", () => {
 		});
 	});
 
-	describe("refundOrderItem — 86 on a paid order (ADR 008)", () => {
+	describe("refunds on a paid ADR 008 order — line removal and whole-order cancel", () => {
 		/**
 		 * A paid pay-at-submit order (subtotal 1400 → charge 1568) with two live
 		 * lines, plus a staff identity. `activePaymentId` points at the succeeded
@@ -1579,9 +1802,9 @@ describe("stripe actions", () => {
 		async function seedPaidOrderWithTwoLines(t: ReturnType<typeof convexTest>) {
 			const organizationId = await seedOrganization(t);
 			const restaurantId = await seedRestaurant(t, {
-				ownerId: "owner-86",
+				ownerId: "owner-refunds",
 				organizationId,
-				stripeAccountId: "acct_86",
+				stripeAccountId: "acct_refunds",
 				stripeOnboardingComplete: true,
 			});
 
@@ -1592,7 +1815,7 @@ describe("stripe actions", () => {
 
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
-					userId: "owner-86",
+					userId: "owner-refunds",
 					roles: ["owner"],
 					organizationId,
 					createdAt: Date.now(),
@@ -1607,7 +1830,7 @@ describe("stripe actions", () => {
 				const sessionId = await ctx.db.insert("sessions", {
 					restaurantId,
 					tableId,
-					userId: "diner-86",
+					userId: "diner-refunds",
 					status: "active",
 					startedAt: Date.now(),
 				});
@@ -1675,12 +1898,12 @@ describe("stripe actions", () => {
 					subtotalAmount: 1400,
 					feeAmount: 168,
 					kind: "order",
-					paidByUserId: "diner-86",
+					paidByUserId: "diner-refunds",
 					currency: "usd",
 					status: "succeeded",
 					refundStatus: "none",
 					attemptNumber: 1,
-					stripePaymentIntentId: "pi_86",
+					stripePaymentIntentId: "pi_refunds",
 					succeededAt: Date.now(),
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
@@ -1693,11 +1916,11 @@ describe("stripe actions", () => {
 				tacosItemId: tacosItemId!,
 				drinkItemId: drinkItemId!,
 				paymentId: paymentId!,
-				staff: t.withIdentity({ subject: "owner-86" }),
+				staff: t.withIdentity({ subject: "owner-refunds" }),
 			};
 		}
 
-		it("refunds the line plus its fee share while the order keeps cooking", async () => {
+		it("refunds the removed line plus its fee share while the order keeps cooking", async () => {
 			vi.useFakeTimers();
 			try {
 				const t = convexTest(schema, modules);
@@ -1718,7 +1941,7 @@ describe("stripe actions", () => {
 				// 600 line + round(600 × 12%) = 672, keyed per (payment, line).
 				expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
 					{
-						payment_intent: "pi_86",
+						payment_intent: "pi_refunds",
 						amount: 672,
 						reverse_transfer: true,
 						refund_application_fee: true,
@@ -1745,7 +1968,7 @@ describe("stripe actions", () => {
 			}
 		});
 
-		it("sweeps the entire remaining balance when the last live line is 86'd", async () => {
+		it("sweeps the entire remaining balance when the last live line is removed", async () => {
 			vi.useFakeTimers();
 			try {
 				const t = convexTest(schema, modules);
@@ -1762,7 +1985,7 @@ describe("stripe actions", () => {
 				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 				// 672 + 896 = 1568 — the sum of line refunds is exactly the charge,
-				// so no rounding residue survives a fully-86'd order.
+				// so no rounding residue survives an order emptied line by line.
 				const amounts = mockStripeClient.refunds.create.mock.calls.map(
 					(call) => (call[0] as { amount: number }).amount
 				);
@@ -1821,7 +2044,7 @@ describe("stripe actions", () => {
 					feeAmount: undefined,
 				});
 				// Cancel the line by hand, as a buggy scheduler-caller would have.
-				await ctx.db.patch(drinkItemId, { cancelledAt: Date.now(), cancelledBy: "owner-86" });
+				await ctx.db.patch(drinkItemId, { cancelledAt: Date.now(), cancelledBy: "owner-refunds" });
 			});
 
 			await t.action(internal.stripe.refundOrderItem, {
@@ -1860,6 +2083,53 @@ describe("stripe actions", () => {
 			} finally {
 				vi.useRealTimers();
 			}
+		});
+
+		/**
+		 * The other refund this ticket keeps (TAVLI-110): a whole-order cancel on
+		 * a fee-inclusive ADR 008 payment returns the payment's **entire**
+		 * remaining balance, fee included — clamping to `orders.totalAmount` would
+		 * strand the diner's service fee on the charge forever. Asserted here at
+		 * the action level; the arithmetic itself is
+		 * `computeOrderRefundAmount`'s unit test.
+		 */
+		it("cancelOrderAndRefund returns the whole fee-inclusive charge, fee included", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, paymentId, staff } = await seedPaidOrderWithTwoLines(t);
+
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_whole",
+				status: "succeeded",
+				amount: 1568,
+			});
+
+			const [result, error] = await staff.action(api.stripe.cancelOrderAndRefund, { orderId });
+			expect(error).toBeNull();
+			expect(result).toMatchObject({
+				refunded: true,
+				amountRefunded: 1568,
+				stripeRefundId: "re_whole",
+			});
+
+			// A full refund omits `amount` entirely, and the key is (payment, order)
+			// — distinct from the per-line key, so a later line-level retry is not
+			// replayed as a no-op.
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
+				{
+					payment_intent: "pi_refunds",
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{ idempotencyKey: `refund:${paymentId}:${orderId}` }
+			);
+
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(order?.status).toBe("cancelled");
+			expect(order?.paymentState).toBe("refunded");
+			expect(payment?.refundStatus).toBe("succeeded");
 		});
 	});
 

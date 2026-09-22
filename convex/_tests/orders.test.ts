@@ -252,7 +252,8 @@ async function seedOwnerRole(
 
 /**
  * Seeds a staff-authenticated context over a submitted round with one kitchen
- * line and one bar line — the shape the station-ticket and 86 flows care about.
+ * line and one bar line — the shape the station-ticket and line-removal flows
+ * care about.
  */
 async function seedMixedStationOrder(
 	t: ReturnType<typeof convexTest>,
@@ -556,7 +557,13 @@ describe("orders", () => {
 			);
 		});
 
-		it("ignores stale payment confirmations for non-active payment attempts", async () => {
+		// TAVLI-104: a confirmation for a payment the order stopped pointing at is
+		// no longer ignored. Stripe has the diner's money; the only question is
+		// whether it pays for what the order costs now. Here it does — both
+		// attempts are for the same 800 — so it settles and the loser is retired.
+		// The mismatching half (refund + operator alert) lives in
+		// `ordersStrandedCharge.test.ts`.
+		it("adopts a confirmation for a superseded attempt when the amount still fits", async () => {
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
 			const menuItemId = await seedMenuItem(t, restaurantId);
@@ -590,6 +597,10 @@ describe("orders", () => {
 				attemptNumber: 2,
 				orderUpdatedAtSnapshot: (await authed.query(api.orders.getOrderWithItems, { orderId }))!
 					.updatedAt,
+				// A second attempt has to name the one it is replacing (TAVLI-104):
+				// `createPayment` re-checks inside the transaction and refuses to
+				// insert alongside a live attempt it was not told about.
+				supersededPaymentId: firstPaymentId,
 			});
 			await t.mutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 				orderId,
@@ -604,11 +615,17 @@ describe("orders", () => {
 			});
 
 			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
-			expect(order!.status).toBe("draft");
-			expect(order!.paymentState).toBe("processing");
+			expect(order!.status).toBe("submitted");
+			expect(order!.paymentState).toBe("paid");
+			// The order points at the payment that actually paid for it.
+			expect(order!.activePaymentId).toBe(firstPaymentId);
 
-			const stalePayment = await t.run(async (ctx) => ctx.db.get(firstPaymentId));
-			expect(stalePayment?.status).toBe("processing");
+			const { adopted, loser } = await t.run(async (ctx) => ({
+				adopted: await ctx.db.get(firstPaymentId),
+				loser: await ctx.db.get(secondPaymentId),
+			}));
+			expect(adopted?.status).toBe("succeeded");
+			expect(loser?.status).toBe("superseded");
 		});
 	});
 
@@ -1944,7 +1961,7 @@ describe("orders", () => {
 			expect(order?.status).toBe("preparing");
 		});
 
-		it("cancels the order and audits the transition when the last line is 86'd", async () => {
+		it("cancels the order and audits the transition when the last line is removed", async () => {
 			const t = convexTest(schema, modules);
 			const { orderId, kitchenItemId, barItemId, staff } = await seedMixedStationOrder(t);
 
@@ -1970,7 +1987,7 @@ describe("orders", () => {
 			});
 		});
 
-		it("completes a preparing order when 86 removes the last unstamped station's line", async () => {
+		it("completes a preparing order when the last unstamped station's line is removed", async () => {
 			const t = convexTest(schema, modules);
 			const { orderId, kitchenItemId, staff } = await seedMixedStationOrder(t);
 
@@ -2004,9 +2021,10 @@ describe("orders", () => {
 		});
 
 		it("rejects while a payment or refund is in flight", async () => {
-			// Paid orders are now 86-able (ADR 008 — the line is refunded, see
+			// A line can now be removed from a paid order (ADR 008 — it is refunded, see
 			// stripe.test.ts), but an open intent or pending refund still blocks:
-			// a double-86 while a refund is in flight must not double-refund.
+			// removing the same line twice while a refund is in flight must not
+			// double-refund.
 			const t = convexTest(schema, modules);
 			const pending = await seedMixedStationOrder(t, { paymentState: "pending" });
 			await expect(
@@ -2035,7 +2053,7 @@ describe("orders", () => {
 			// cooking, stamping each covered order paid with `activePaymentId`
 			// pointing at the session-level tab payment (no `subtotalAmount`).
 			// Line-refund math against that payment would refund a fee share the
-			// diner never paid, and a last-live-line 86 would sweep the OTHER
+			// diner never paid, and removing the last live line would sweep the OTHER
 			// orders' money plus the tip. Legacy money keeps the pre-pivot block.
 			const t = convexTest(schema, modules);
 			const { sessionId, restaurantId, orderId, barItemId, kitchenItemId, staff } =
@@ -2084,7 +2102,7 @@ describe("orders", () => {
 
 		it("rejects an awaiting_payment order while a card attempt is in flight", async () => {
 			// A diner switching cash→card holds an open intent (paymentState
-			// pending/processing) while the status stays awaiting_payment. 86'ing
+			// pending/processing) while the status stays awaiting_payment. Removing
 			// then would shift the total under the payment sheet and the webhook
 			// would no-op the settle on the snapshot mismatch — money moved, order
 			// stuck. The status gives no shortcut past the in-flight guard.
@@ -2111,7 +2129,7 @@ describe("orders", () => {
 			expect(error).toBeNull();
 		});
 
-		it("86s a line on an awaiting_payment order without touching Stripe", async () => {
+		it("removes a line from an awaiting_payment order without touching Stripe", async () => {
 			const t = convexTest(schema, modules);
 			const { orderId, barItemId, staff } = await seedMixedStationOrder(t, {
 				status: "awaiting_payment",
