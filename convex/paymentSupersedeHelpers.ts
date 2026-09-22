@@ -27,7 +27,11 @@
  */
 import type { Doc } from "./_generated/dataModel";
 import { computeOrderCharge } from "./_shared/tip";
-import { PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS, PAYMENT_STATUS } from "./constants";
+import {
+	PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS,
+	PAYMENT_REFUND_STATUS,
+	PAYMENT_STATUS,
+} from "./constants";
 
 /**
  * Stable, diner-facing codes the supersede paths return instead of quietly
@@ -124,4 +128,67 @@ export function currentOrderChargeAmount(
 	if (payment.subtotalAmount === undefined) return orderTotalAmount;
 	const { amount } = computeOrderCharge(orderTotalAmount, feeRate, 0);
 	return amount + (payment.gratuityAmount ?? 0);
+}
+
+/**
+ * May this payment row record a failure? The forward-only guard shared by
+ * `orders.failPayment` and `payments.failTipPayment` (review rounds 1 and 2).
+ *
+ * Round 1 tightened these from "refuse SUCCEEDED" to "accept PENDING or
+ * PROCESSING only", because the stuck-payment sweep acts on a row it read
+ * minutes earlier: if a fresh attempt superseded it in that gap, rewriting
+ * SUPERSEDED to FAILED would lose the more precise fact — "replaced", not
+ * "declined" — and log a decline that never happened.
+ *
+ * That went one state too far. FAILED → FAILED is not a backwards move, it is
+ * the **same** move with better information: Stripe delivers
+ * `payment_intent.payment_failed` once per declined attempt, and an intent the
+ * diner retries in place declines more than once. Refusing the second delivery
+ * froze the row on the FIRST reason, so a row would say "insufficient funds"
+ * while the card had since been reported lost — and `failedAt` would name the
+ * wrong moment. The failure fields are the only thing a re-fail rewrites, and
+ * they are exactly what is out of date.
+ *
+ * So the refusals are the states where a failure is no longer the truth:
+ * - **SUCCEEDED** — Stripe has the money. Always was refused.
+ * - **SUPERSEDED / CANCELLED** — retired deliberately, by a newer attempt or by
+ *   a staff cancel. The row already says something more precise.
+ * - **A row that saw refund activity** — money moved back, so this row's story
+ *   is about a refund, not a decline. Unreachable through the normal paths (a
+ *   refund lands on a SUCCEEDED row) but a manual Stripe-dashboard refund
+ *   writes refund facts wherever it finds them, and a "declined" stamp on top
+ *   of that would be a lie in the ledger.
+ */
+export function canRecordPaymentFailure(
+	payment: {
+		status: string;
+		refundStatus?: string;
+	},
+	options?: {
+		/**
+		 * Refuse a row that is already FAILED (`onlyIfInFlight` on the mutations).
+		 *
+		 * The FAILED → FAILED refresh belongs to `handlePaymentIntentFailure`,
+		 * whose reason IS the news: Stripe declined again, and the newer decline
+		 * is the truer one. It does NOT belong to the stuck-payment sweep, whose
+		 * "reason" is a sentence about reconciliation (`reconcile_canceled`). The
+		 * sweep decides about a row it read minutes ago; if a real
+		 * `payment_intent.payment_failed` landed in that gap, the row now carries
+		 * the decline code the diner's bank gave — and overwriting
+		 * "insufficient_funds" with "PaymentIntent status is canceled" would
+		 * destroy the only useful fact on the row, for a state change that had
+		 * already happened anyway.
+		 */
+		onlyIfInFlight?: boolean;
+	}
+): boolean {
+	const terminalIsAllowed = !options?.onlyIfInFlight;
+	if (
+		payment.status !== PAYMENT_STATUS.PENDING &&
+		payment.status !== PAYMENT_STATUS.PROCESSING &&
+		!(terminalIsAllowed && payment.status === PAYMENT_STATUS.FAILED)
+	) {
+		return false;
+	}
+	return payment.refundStatus === undefined || payment.refundStatus === PAYMENT_REFUND_STATUS.NONE;
 }

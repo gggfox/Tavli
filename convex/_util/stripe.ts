@@ -354,8 +354,12 @@ export async function handleAccountStatusChange(
  *
  * Every target mutation early-returns on an already-SUCCEEDED row, so this is
  * safe to call on a replay.
+ *
+ * Exported for the stuck-payment sweep (TAVLI-106), which needs exactly this
+ * routing question answered for a candidate it decided to retire — and must not
+ * answer it a second, slightly different way.
  */
-async function failPaymentByKind(
+export async function failPaymentByKind(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	ctx: any,
 	payment: Doc<"payments">,
@@ -363,6 +367,14 @@ async function failPaymentByKind(
 		stripePaymentIntentId: string;
 		failureCode?: string;
 		failureMessage?: string;
+		/**
+		 * Refuse a row that has already reached a terminal status. The
+		 * stuck-payment sweep passes it so its reconciliation prose cannot
+		 * overwrite a real Stripe decline recorded in the meantime; the webhook's
+		 * own decline path leaves it off, because there the newer reason is the
+		 * truer one.
+		 */
+		onlyIfInFlight?: boolean;
 	}
 ): Promise<void> {
 	const mutationArgs = { paymentId: payment._id, ...args };

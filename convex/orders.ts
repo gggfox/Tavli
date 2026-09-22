@@ -51,7 +51,7 @@ import {
 } from "./constants";
 import { formatMoneyCents } from "./_shared/money";
 import { raiseOperatorAlert } from "./_util/operatorAlerts";
-import { currentOrderChargeAmount } from "./paymentSupersedeHelpers";
+import { canRecordPaymentFailure, currentOrderChargeAmount } from "./paymentSupersedeHelpers";
 import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
@@ -488,17 +488,28 @@ export const requestPayInPerson = mutation({
  *
  * A payment that already `succeeded` is left untouched — the webhook owns that
  * settlement and cancelling it here would orphan real money.
+ *
+ * `expectedPaymentId` pins the cancel to one attempt (TAVLI-106). The diner's
+ * own abandon happens milliseconds after they decide, so it can read the
+ * pointer and act on it; the stuck-payment sweep decides about a row it read
+ * minutes ago, and in that gap the diner may have started a fresh checkout. A
+ * blind "cancel whatever the order points at" would then stand down their live
+ * attempt. Checked inside this transaction, so it is a guard rather than a
+ * hopeful pre-read.
  */
 export const cancelActivePaymentInternal = internalMutation({
 	args: {
 		orderId: v.id(TABLE.ORDERS),
 		/** Clerk subject of the diner who abandoned the intent (audit actor). */
 		userId: v.string(),
+		/** Cancel only while the order still points at this attempt. */
+		expectedPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
 	},
 	returns: v.boolean(),
 	handler: async (ctx, args) => {
 		const order = await ctx.db.get(args.orderId);
 		if (!order?.activePaymentId) return false;
+		if (args.expectedPaymentId && order.activePaymentId !== args.expectedPaymentId) return false;
 		if (order.status !== "draft" && order.status !== ORDER_STATUS.AWAITING_PAYMENT) return false;
 
 		const payment = await ctx.db.get(order.activePaymentId);
@@ -1049,11 +1060,20 @@ export const failPayment = internalMutation({
 		stripePaymentIntentId: v.string(),
 		failureCode: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
+		/**
+		 * Refuse a row that is already FAILED. The stuck-payment sweep passes
+		 * this so its reconciliation prose can never overwrite a real Stripe
+		 * decline code that landed between the candidate read and this call.
+		 */
+		onlyIfInFlight: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment?.orderId) return;
-		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+		// Forward-only. FAILED → FAILED is allowed so a second decline on the same
+		// intent refreshes the reason — unless the caller says otherwise. See
+		// `canRecordPaymentFailure`.
+		if (!canRecordPaymentFailure(payment, { onlyIfInFlight: args.onlyIfInFlight })) return;
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

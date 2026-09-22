@@ -45,7 +45,7 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		payment_stuck: {
 			title: "Payment stuck",
 			explanation:
-				"A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge.",
+				"A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge. (kind: {{kind}}, stuck {{minutes}} min)",
 		},
 		charge_unmatched: {
 			title: "Charge matches no order",
@@ -97,7 +97,7 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		payment_stuck: {
 			title: "Pago atorado",
 			explanation:
-				"Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute.",
+				"Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute. (tipo: {{kind}}, atorado {{minutes}} min)",
 		},
 		charge_unmatched: {
 			title: "Cargo sin orden asociada",

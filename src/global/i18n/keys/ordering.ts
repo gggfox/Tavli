@@ -69,6 +69,14 @@ export const OrderingKeys = {
 	CHECKOUT_INIT_FAILED: "ordering.checkout.initFailed",
 	CHECKOUT_PAYMENT_FAILED: "ordering.checkout.paymentFailed",
 	CHECKOUT_GENERIC_ERROR: "ordering.checkout.genericError",
+	/**
+	 * The intent this sheet holds was taken out of play before the diner
+	 * confirmed — the stuck-payment sweep retired an abandoned attempt, or a
+	 * newer attempt superseded it. Stripe answers that with an English
+	 * `payment_intent_unexpected_state` message; this says it in the diner's
+	 * language, and says the one thing they can act on.
+	 */
+	CHECKOUT_INTENT_EXPIRED: "ordering.checkout.intentExpired",
 	CHECKOUT_UNABLE_INIT: "ordering.checkout.unableInit",
 	CHECKOUT_RETRY: "ordering.checkout.retry",
 	CHECKOUT_PROCESSING: "ordering.checkout.processing",

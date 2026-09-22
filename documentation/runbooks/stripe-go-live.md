@@ -725,6 +725,80 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs
   every 5 minutes and settles or unlocks tabs locked longer than 10 minutes
+- The stuck-payment reconciliation cron (`stripe:reconcileStuckPayments`) runs
+  every 5 minutes beside it and covers the other two kinds — **order** and
+  **tip** payments — which until TAVLI-106 had no backstop at all: a dropped
+  `payment_intent.succeeded` left a diner who really paid with a round nobody
+  was cooking, or a tip charged and never credited, permanently. It reads
+  `payments` rows left in `processing` and untouched for longer than their
+  kind's minimum, pulls each PaymentIntent from Stripe and acts on what it
+  finds:
+
+  | Kind                                | Swept after | Alerts after |
+  | ----------------------------------- | ----------- | ------------ |
+  | `order` (and legacy pre-pivot rows) | 5 min       | 15 min       |
+  | `tip`                               | 30 min      | 120 min      |
+
+  Tips get far more rope on purpose: nobody is waiting at a table for one.
+  "Untouched" is `updatedAt`, which every patch bumps, so the trigger is "this
+  row stopped moving"; the alert thresholds use the row's true age from
+  `createdAt`, so a late status-preserving write cannot buy a stuck payment
+  another quarter of an hour of silence. Legacy tab rows (no `kind`, a
+  `sessionId`) are excluded — the tab sweep above owns those, because settling
+  one must also unlock the session.
+
+  What each branch does:
+  - **`succeeded`** → settles through `handlePaymentIntentSuccess`, the very
+    same handler the webhook calls, amount assertion and accept-or-refund
+    policies included. A mismatched amount therefore fails the row and raises
+    `payment_amount_mismatch` exactly once — the sweep adds no alert of its own
+    on top
+  - **`canceled`** → terminally dead at Stripe. The row is retired at once
+  - **`requires_payment_method` / `requires_action` / `requires_confirmation`**
+    (waiting on the **customer**) → left alone until the kind's alert age, then
+    treated as an abandoned checkout: the intent is cancelled at Stripe FIRST,
+    then the row is retired. The wait matters — a row is `processing` from the
+    moment its intent is created, so a diner still typing their card at minute
+    six is not abandoned. The clear matters more: without it a served, cash-owed
+    round is locked out of "mark paid in person" with
+    `ERROR_ORDER_PAYMENT_IN_FLIGHT` and no staff-side release, and an abandoned
+    3DS intent never expires at Stripe, so alerting instead would mean a
+    permanent alert about a permanent row. A tip is simply failed, so the diner
+    can tip again
+
+    How the row is retired depends on where the order has got to. While it is
+    still `draft` or `awaiting_payment` the attempt is **cancelled and the
+    order's payment pointer cleared**, exactly as the diner's own "back to menu"
+    does. Once the round has been released to the kitchen — the served,
+    cash-owed case — the pointer is left where a real card decline would have
+    left it and the row is simply **failed in place**, which is all
+    "mark paid in person" needs: it refuses a PENDING or PROCESSING attempt, not
+    a terminal one
+
+  - **`processing` / `requires_capture`** (waiting on **Stripe**) → genuinely
+    mid-flight, and not ours to cancel. Left alone until the kind's alert age,
+    then escalated
+  - **anything unrecognised** → escalated straight away; waiting does not
+    resolve a status this code has never seen
+
+  A diner whose attempt was retired under them sees "This payment session
+  expired. Start the payment again — you have not been charged." if they come
+  back to a stale sheet and confirm, rather than Stripe's English
+  `payment_intent_unexpected_state` text.
+
+- Stuck-payment alerts are `payment_stuck`, deduped per payment
+  (`payment_stuck:<paymentId>`), so a payment wedged for a day is **one** alert,
+  not 288 — and, uniquely so far, the dedupe spans **acknowledged** rows as well
+  as open ones (`dedupeAcrossAcknowledged`). It has to: the sweep re-reads the
+  same wedged row every five minutes, and with the ordinary open-only scope,
+  acknowledging the alert would make the next run raise a fresh one and mail
+  every platform admin again. Acknowledge it and it stays gone; the key names
+  one payment, so there is no second, genuinely-new occurrence to lose. Severe
+  (and therefore emailed to every platform admin) only for an **order** past its
+  alert age — a diner is sitting at a table with a
+  charge in limbo and a kitchen that was never released. Stuck tips and
+  unrecognised statuses are warnings on `/admin/alerts`. Look for
+  `[stripe.reconcileStuckPayments]` in the Convex logs for the same facts
 
 Reading Convex logs is not monitoring, because nobody does it on a normal day.
 Operator alerts (TAVLI-109) are the part that comes to you instead: money-path

@@ -775,6 +775,7 @@
 			"initFailed": "Error al inicializar el pago",
 			"paymentFailed": "El pago falló. Inténtalo de nuevo.",
 			"genericError": "El pago falló",
+			"intentExpired": "Esta sesión de pago expiró. Vuelve a iniciar el pago: no se te hizo ningún cargo.",
 			"unableInit": "No se pudo inicializar el pago. Inténtalo de nuevo.",
 			"retry": "Reintentar",
 			"processing": "Procesando...",
@@ -2106,7 +2107,7 @@
 		"kind": {
 			"paymentStuck": {
 				"title": "Pago atorado",
-				"explanation": "Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute."
+				"explanation": "Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute. (tipo: {{kind}}, atorado {{minutes}} min)"
 			},
 			"chargeUnmatched": {
 				"title": "Cargo sin orden asociada",

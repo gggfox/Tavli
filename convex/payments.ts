@@ -16,6 +16,7 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
+	ORDER_PAYMENT_RECONCILE_MIN_AGE_MS,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
@@ -23,6 +24,8 @@ import {
 } from "./constants";
 import { formatMoneyCents } from "./_shared/money";
 import { hasFeeBreakdown, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
+import { stuckPaymentReconcileAges, stuckPaymentSweepKind } from "./paymentReconcileHelpers";
+import { canRecordPaymentFailure } from "./paymentSupersedeHelpers";
 
 /**
  * Internal export query: returns denormalized payment rows whose bucketing
@@ -224,6 +227,82 @@ export const getActiveTipPaymentInternal = internalQuery({
 });
 
 /**
+ * Candidates for the stuck-payment sweep (TAVLI-106): order and tip payments
+ * left in `processing` because the confirming webhook never arrived.
+ *
+ * **One indexed range, no scan.** `by_status_updated` is `(status, updatedAt)`,
+ * so `eq(processing).lt(updatedAt, cutoff)` is a single contiguous range, read
+ * oldest-first and capped by `take(limit)`.
+ *
+ * **Two different ages, on purpose.**
+ * - The RANGE uses `updatedAt`, because every patch to a payment row bumps it
+ *   (`stripeHelpers.updatePayment` does it even for a status-preserving write).
+ *   So the bound means "untouched for N minutes" — which is precisely the
+ *   symptom of a dropped webhook, and a better trigger than true age: a row
+ *   that is still being written to is a row something is still handling.
+ * - The per-kind MINIMUM is applied here too, against `updatedAt`, for the same
+ *   reason. The range itself can only carry one cutoff, so it uses the shortest
+ *   of the per-kind minimums (an order's five minutes) and tips are held back
+ *   to their own thirty in code. The alternative — a second index range per
+ *   kind — buys nothing: the age bound is what keeps the read small, and both
+ *   ranges would overlap almost entirely.
+ * - TRUE age, from `createdAt`, is the sweep's business rather than this
+ *   query's: `stripe.reconcileStuckPayments` computes it off the returned rows
+ *   to decide when a straggler becomes an operator alert. That one has to be
+ *   `createdAt` — a late `stripeChargeId` write must not buy a stuck payment
+ *   another fifteen minutes of silence.
+ *
+ * Two kinds of row are dropped after the read rather than before it:
+ * - **Legacy tab payments** (no `kind`, `sessionId` set) — `reconcileStuck`
+ *   `TabPayments` owns those, because settling one must also unlock the
+ *   session. See `stuckPaymentSweepKind` for the full discriminator.
+ * - **Rows with no `stripePaymentIntentId`** — there is nothing to retrieve
+ *   from Stripe. A `processing` row always has one (`attachIntentToPayment` is
+ *   what moves a row into `processing`), so this is a belt-and-braces guard
+ *   rather than an expected case.
+ *
+ * The tab exclusion is pushed INTO the range, ahead of the `take` (review round
+ * 1). It has to be: `take` stops at the first `limit` rows the range yields, so
+ * a busy service's older tab rows would fill the batch and starve the order
+ * payments behind them — silently, and worst exactly when it matters. A
+ * `.filter` on an indexed range is not a scan: it is still bounded by the range,
+ * and it makes the bound count rows the sweep can actually use.
+ *
+ * The two remaining checks stay in code, because neither can starve a batch: a
+ * `processing` row always has an intent id, and the per-kind minimum only ever
+ * holds back rows *younger* than the ones already returned.
+ */
+export const listStuckPayments = internalQuery({
+	args: {
+		/** The sweep's clock, passed in so the query stays a pure function of it. */
+		now: v.number(),
+		limit: v.number(),
+	},
+	handler: async (ctx, args): Promise<Doc<"payments">[]> => {
+		const rows = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_status_updated", (q) =>
+				q
+					.eq("status", PAYMENT_STATUS.PROCESSING)
+					.lt("updatedAt", args.now - ORDER_PAYMENT_RECONCILE_MIN_AGE_MS)
+			)
+			// "Has a `kind`, or has no `sessionId`" — the negation of a legacy tab
+			// row, and the exact complement of `stuckPaymentSweepKind` returning
+			// null. The two must stay in step; the assertion below is what says so.
+			.filter((q) => q.or(q.neq(q.field("kind"), undefined), q.eq(q.field("sessionId"), undefined)))
+			.take(args.limit);
+
+		return rows.filter((payment) => {
+			if (!payment.stripePaymentIntentId) return false;
+			const kind = stuckPaymentSweepKind(payment);
+			// Unreachable while the index filter above and the discriminator agree.
+			if (kind === null) return false;
+			return args.now - payment.updatedAt >= stuckPaymentReconcileAges(kind).minAgeMs;
+		});
+	},
+});
+
+/**
  * Webhook half of the post-visit tip path (`payment_intent.succeeded`, kind
  * "tip" — see `_util/stripe.ts`). Marks the payment succeeded and records the
  * `sessions.tipPaid` audit event.
@@ -394,11 +473,16 @@ export const failTipPayment = internalMutation({
 		stripePaymentIntentId: v.string(),
 		failureCode: v.optional(v.string()),
 		failureMessage: v.optional(v.string()),
+		/** See `orders.failPayment` — the stuck-payment sweep passes this. */
+		onlyIfInFlight: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const payment = await ctx.db.get(args.paymentId);
 		if (!payment || payment.kind !== PAYMENT_KIND.TIP) return;
-		if (payment.status === PAYMENT_STATUS.SUCCEEDED) return;
+		// The same forward-only guard `orders.failPayment` uses, for the same
+		// reasons — including the FAILED → FAILED refresh a retried tip charge
+		// needs, and the sweep's opt-out from it. See `canRecordPaymentFailure`.
+		if (!canRecordPaymentFailure(payment, { onlyIfInFlight: args.onlyIfInFlight })) return;
 
 		const now = Date.now();
 		await ctx.db.patch(payment._id, {

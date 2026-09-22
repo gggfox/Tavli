@@ -500,6 +500,93 @@ export const TAB_RECONCILE_MIN_AGE_MS = 10 * 60 * 1000;
  */
 export const TAB_RECONCILE_ALERT_AGE_MS = 30 * 60 * 1000;
 
+/**
+ * Stuck **order** payment reconciliation (TAVLI-106). The tab sweep above is
+ * the backstop for a dropped `payment_intent.succeeded` on a tab; these are the
+ * same backstop for the per-order and post-visit-tip payments, which had none.
+ *
+ * `MIN_AGE` is how long a `processing` row must have gone untouched before the
+ * sweep pulls its PaymentIntent from Stripe. Five minutes for an order, because
+ * the diner is sitting at a table waiting for the kitchen to be released: the
+ * cost of asking Stripe early is one API call, and the cost of asking late is a
+ * round nobody is cooking.
+ */
+export const ORDER_PAYMENT_RECONCILE_MIN_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * An order payment whose intent is still mid-flight at Stripe after this long
+ * raises a `payment_stuck` operator alert. Three sweep runs of patience: past
+ * fifteen minutes "Stripe is still thinking" stops being a plausible story for
+ * a card charge, and a human has to look.
+ */
+export const ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS = 15 * 60 * 1000;
+
+/**
+ * The tip equivalents, both far longer, because the situation is different in
+ * kind. A post-visit tip is charged off-session against a saved card after the
+ * meal: nobody is waiting at a table, nothing is blocked on it, and the only
+ * party affected is the member whose credit is late. Sweeping it at five
+ * minutes would buy nothing and spend a Stripe call on every tip that is merely
+ * slow.
+ */
+export const TIP_PAYMENT_RECONCILE_MIN_AGE_MS = 30 * 60 * 1000;
+
+/** Two hours before a stuck tip is worth an operator's attention. */
+export const TIP_PAYMENT_RECONCILE_ALERT_AGE_MS = 120 * 60 * 1000;
+
+/**
+ * How many `processing` payment rows one sweep run pulls from
+ * `payments.by_status_updated`.
+ *
+ * The index is ordered by `updatedAt` ascending within the status, so a `take`
+ * returns the OLDEST untouched rows first — the ones most likely to be genuinely
+ * dropped. Every candidate costs at least one `paymentIntents.retrieve`, so the
+ * bound is really a bound on how long one run can take.
+ *
+ * Note what does *not* drain: the `wait` and `alert` branches patch nothing, so
+ * a row Stripe keeps reporting as `processing` holds its place in the batch run
+ * after run. That is intended — it is the oldest row and it is exactly what the
+ * sweep exists to surface — and the `payment_stuck` alert is what gets a human
+ * to resolve it. A hundred simultaneously-wedged payments would starve newer
+ * candidates, which at that point is not the sweep's problem to solve quietly.
+ */
+export const STUCK_PAYMENT_RECONCILE_BATCH_SIZE = 100;
+
+/**
+ * How often both reconciliation crons run. Declared here rather than left as a
+ * literal in `crons.ts` because {@link PAYMENT_INTENT_REUSE_MAX_AGE_MS} is
+ * derived from it, and a schedule that moved without that derivation moving
+ * with it would silently reopen the race below.
+ */
+export const STUCK_PAYMENT_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * How old an existing PROCESSING attempt may be and still have its client
+ * secret handed back to a returning diner (`stripe.createPaymentIntent`).
+ *
+ * The sweep clears a customer-side intent at
+ * {@link ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS}. Reuse without this bound is a
+ * race Tavli would lose in the diner's favour exactly never: a diner reopens
+ * checkout at minute fourteen, gets the old secret, starts typing, and the next
+ * sweep run cancels the intent under them. They see a payment that fails for no
+ * reason they can understand.
+ *
+ * So reuse stops one full cron interval BEFORE the sweep would act, and an
+ * older row falls through to the path that already exists for a stale attempt:
+ * stand the intent down at Stripe, supersede the row, mint a fresh intent. The
+ * whole cost is one extra `paymentIntents.create` for a diner who left the
+ * sheet for ten minutes and came back — rare, cheap, and it hands them a secret
+ * with a full alert age of life left in it.
+ *
+ * The alternative — bump `updatedAt` on reuse and age the customer-side
+ * statuses from the last touch — was rejected: the alert threshold reads
+ * `createdAt` on purpose (a status-preserving write must never buy a stuck
+ * payment more silence), and splitting the sweep across two clocks to rescue a
+ * reuse that saves one API call is a worse trade than not reusing.
+ */
+export const PAYMENT_INTENT_REUSE_MAX_AGE_MS =
+	ORDER_PAYMENT_RECONCILE_ALERT_AGE_MS - STUCK_PAYMENT_RECONCILE_INTERVAL_MS;
+
 export const SELECTION_TYPE = {
 	SINGLE: "single",
 	MULTI: "multi",

@@ -81,6 +81,29 @@ export function StripePaymentSection({ clientSecret, submitLabel }: StripePaymen
 	);
 }
 
+/**
+ * What to show the diner when `stripe.confirmPayment` refuses.
+ *
+ * Stripe's `error.message` is the right answer for everything the diner can act
+ * on — a declined card, an expiry in the past — and it comes back localized.
+ * One case is neither: the intent behind this sheet is no longer confirmable,
+ * because something retired it while the sheet sat open (the stuck-payment
+ * sweep cancelling an abandoned attempt, or a newer attempt superseding it).
+ * Stripe answers that with `payment_intent_unexpected_state` and an English
+ * sentence about the intent's status, which tells a diner at a table nothing
+ * and is not in their language. Replace it with the one instruction that helps:
+ * start again, and no, you were not charged.
+ */
+function resolveConfirmErrorMessage(
+	confirmError: Readonly<{ code?: string; message?: string }>,
+	t: (key: string) => string
+): string {
+	if (confirmError.code === "payment_intent_unexpected_state") {
+		return t(OrderingKeys.CHECKOUT_INTENT_EXPIRED);
+	}
+	return confirmError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR);
+}
+
 function StripePaymentForm({ submitLabel }: Readonly<{ submitLabel?: string }>) {
 	const { t } = useTranslation();
 	const stripe = useStripe();
@@ -117,7 +140,7 @@ function StripePaymentForm({ submitLabel }: Readonly<{ submitLabel?: string }>) 
 		});
 
 		if (confirmError) {
-			setError(confirmError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR));
+			setError(resolveConfirmErrorMessage(confirmError, t));
 			setProcessing(false);
 		}
 		// On success the webhook settles the payment; the caller's subscription

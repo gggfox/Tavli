@@ -56,7 +56,9 @@ import {
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
+	PAYMENT_INTENT_REUSE_MAX_AGE_MS,
 	PLATFORM_APPLICATION_FEE_RATE,
+	STUCK_PAYMENT_RECONCILE_BATCH_SIZE,
 	TAB_RECONCILE_ALERT_AGE_MS,
 	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
@@ -79,6 +81,12 @@ import {
 	ORDER_REFUND_BLOCK_REASON,
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
+import {
+	decidePaymentReconciliation,
+	stuckPaymentAlertSeverity,
+	stuckPaymentSweepKind,
+	STUCK_PAYMENT_SWEEP_KIND,
+} from "./paymentReconcileHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
 import {
 	handleSubscriptionCheckoutCompleted,
@@ -98,6 +106,7 @@ import {
 	handleChargeRefunded,
 	handlePaymentIntentFailure,
 	handlePaymentIntentSuccess,
+	failPaymentByKind,
 	inferV2AccountStatus,
 	INTENT_STAND_DOWN,
 	requireStripeRestaurantAccess,
@@ -1284,7 +1293,14 @@ export const createPaymentIntent = action({
 			// rows written before this feature carry no gratuity at all.
 			(latestPayment.gratuityAmount ?? 0) === gratuityAmount &&
 			latestPayment.currency === currency &&
-			!!latestPayment.stripePaymentIntentId;
+			!!latestPayment.stripePaymentIntentId &&
+			// Not so old that the stuck-payment sweep is about to cancel it
+			// (TAVLI-106 sign-off). Handing back a secret we are minutes from
+			// invalidating means a diner who reopened checkout gets their payment
+			// killed mid-typing, for no reason they could see. An older row falls
+			// through to the stand-down + supersede + fresh-intent path below,
+			// which is what a stale attempt already gets.
+			Date.now() - latestPayment.createdAt < PAYMENT_INTENT_REUSE_MAX_AGE_MS;
 
 		if (canReuseExistingIntent && latestPayment?.stripePaymentIntentId) {
 			const existingIntent: Stripe.PaymentIntent = await stripeClient.paymentIntents.retrieve(
@@ -2349,6 +2365,252 @@ export const reconcileStuckTabPayments = internalAction({
 						integration: "stripe",
 						operation: "reconcileStuckTab",
 						eventId: candidate.stripePaymentIntentId,
+					})
+				);
+			}
+		}
+	},
+});
+
+/**
+ * Stuck ORDER and TIP payment reconciliation (TAVLI-106).
+ *
+ * The sibling of {@link reconcileStuckTabPayments}, for the two payment kinds
+ * that had no backstop at all. Tab settlement has been protected since
+ * TAVLI-45; an order or a tip that lost its `payment_intent.succeeded` was
+ * simply lost. The diner's card was charged and the kitchen was never released
+ * to cook their round; or the post-visit tip was charged and the member who
+ * earned it was never credited. Every other path in the system is waiting for
+ * that same webhook, so nothing else was ever going to notice.
+ *
+ * The shape is deliberately the tab sweep's: candidates from one indexed range,
+ * one `paymentIntents.retrieve` each, a pure decision, then act. What differs:
+ *
+ * - **Settling reuses the webhook handler, unconditionally.**
+ *   `handlePaymentIntentSuccess` already asserts the amount (TAVLI-69), repairs
+ *   a row that lost the metadata race (TAVLI-105), refuses retired rows and
+ *   applies the accept-or-refund policies (TAVLI-104). Re-implementing any of
+ *   that here is how the two paths drift.
+ *
+ *   The tab sweep compares the amount itself *before* dispatching, and this one
+ *   deliberately does not. That pre-check exists because a mismatched TAB stays
+ *   a candidate forever — nothing clears `lockedForPaymentAt` — so the handler
+ *   would re-raise a severe alert every five minutes once an admin acknowledged
+ *   it. Here the handler's own mismatch branch fails the row, which takes it out
+ *   of `status = processing` and therefore out of this sweep's range for good.
+ *   One detection, one alert, no repetition.
+ *
+ *   The rule the two sweeps do share: **when the handler alerts, this action
+ *   does not.** `payment_stuck` is raised only by the `alert` branch below,
+ *   never on top of an `amount_mismatch` or a `charge_unmatched` the handler
+ *   just raised for the same payment.
+ *
+ * - **A dead attempt is cleared, not just marked** (carried from TAVLI-104's
+ *   review). See the `clear` branch.
+ *
+ * Per-candidate errors are caught and logged: one unreachable intent must not
+ * cost the other ninety-nine candidates their run. The action itself never
+ * throws, so the cron is never retried for a single bad row.
+ */
+export const reconcileStuckPayments = internalAction({
+	args: {},
+	handler: async (ctx): Promise<void> => {
+		const now = Date.now();
+		const candidates: Doc<"payments">[] = await ctx.runQuery(internal.payments.listStuckPayments, {
+			now,
+			limit: STUCK_PAYMENT_RECONCILE_BATCH_SIZE,
+		});
+		if (candidates.length === 0) return;
+
+		const stripeClient = getStripeClient();
+
+		for (const payment of candidates) {
+			const stripePaymentIntentId = payment.stripePaymentIntentId;
+			// Narrowing only — `listStuckPayments` drops rows without an intent.
+			if (!stripePaymentIntentId) continue;
+
+			// The candidate query excluded legacy tab rows, so this is never null.
+			const kind = stuckPaymentSweepKind(payment);
+			if (kind === null) continue;
+
+			// TRUE age, from `createdAt` — how long somebody has actually been
+			// waiting. Not `updatedAt`, which the candidate query uses for "this
+			// row stopped moving": a late status-preserving patch (a
+			// `stripeChargeId`, a `latestStripeEventId`) would otherwise buy a
+			// stuck payment another fifteen minutes of silence.
+			const ageMs = now - payment.createdAt;
+
+			try {
+				const paymentIntent: Stripe.PaymentIntent =
+					await stripeClient.paymentIntents.retrieve(stripePaymentIntentId);
+
+				const decision = decidePaymentReconciliation({
+					paymentIntentStatus: paymentIntent.status,
+					ageMs,
+					kind,
+				});
+
+				switch (decision) {
+					case "settle": {
+						// Exactly what the webhook would have done, including the
+						// amount assertion and its own alerting. Nothing is added.
+						await handlePaymentIntentSuccess(ctx, paymentIntent);
+						break;
+					}
+
+					case "clear": {
+						// ---------------------------------------------------------
+						// THE ATTEMPT IS DEAD. RETIRE IT (carried from TAVLI-104's
+						// review).
+						//
+						// Stripe says `canceled`, or the intent has sat waiting on
+						// the customer (`requires_payment_method`, `requires_action`,
+						// `requires_confirmation`) for the kind's full patience — a
+						// declined card, or a payment sheet opened and walked away
+						// from. Either way nobody is going to pay with it, and an
+						// abandoned intent does not expire at Stripe on its own.
+						//
+						// Leaving the row `processing` is not neutral. A served,
+						// cash-owed round whose order still points at a
+						// pending/processing attempt makes `markOrderPaidInPerson`
+						// throw ERROR_ORDER_PAYMENT_IN_FLIGHT, and there is no
+						// staff-side release: the diner has eaten, wants to pay
+						// cash, and the till refuses them because of a card sheet
+						// they closed twenty minutes ago.
+						//
+						// STRIPE FIRST. A `requires_payment_method` intent is still
+						// live, and its client secret may be sitting in a stale tab.
+						// Retiring our row first would leave a window in which staff
+						// take cash and that tab then charges the card. Skipped only
+						// when Stripe already reports `canceled`, where there is
+						// nothing left to stand down.
+						// ---------------------------------------------------------
+						if (paymentIntent.status !== "canceled") {
+							const { outcome } = await standDownPaymentIntent(
+								stripeClient,
+								stripePaymentIntentId,
+								"reconcileStuckPayments"
+							);
+							if (outcome === INTENT_STAND_DOWN.SUCCEEDED) {
+								// The card was charged between our retrieve and our
+								// cancel. Nothing is retired: the webhook settles it,
+								// and if that is dropped too the next run of this
+								// sweep sees `succeeded` and settles it here.
+								console.error(
+									"[stripe.reconcileStuckPayments] ABANDONED INTENT CHARGED MID-SWEEP",
+									{
+										paymentId: payment._id,
+										paymentIntentId: redactExternalId(stripePaymentIntentId),
+									}
+								);
+								break;
+							}
+							if (outcome === INTENT_STAND_DOWN.UNREACHABLE) {
+								// We do not know whether the intent is live, so we do
+								// not get to say the attempt is over. Already logged
+								// by `standDownPaymentIntent`; the next run retries.
+								break;
+							}
+						}
+
+						// An ORDER row gets the manager-cancel treatment first: it
+						// marks the row CANCELLED *and* clears the order's payment
+						// pointer, which is the state the diner's own abandon leaves
+						// behind. `expectedPaymentId` keeps it from touching a newer
+						// attempt the diner started while this run was in flight.
+						//
+						// It refuses an order past `awaiting_payment` — which is
+						// precisely the served, cash-owed round above — so the
+						// fallback is `failPaymentByKind`, the same routing the
+						// webhook's decline path uses. FAILED is terminal, so
+						// `markOrderPaidInPerson` stops refusing either way; the
+						// pointer simply stays where a real card decline would have
+						// left it.
+						const cancelled =
+							kind === STUCK_PAYMENT_SWEEP_KIND.ORDER && payment.orderId !== undefined
+								? await ctx.runMutation(internal.orders.cancelActivePaymentInternal, {
+										orderId: payment.orderId,
+										userId: AUDIT_SYSTEM_USER_ID,
+										expectedPaymentId: payment._id,
+									})
+								: false;
+
+						if (!cancelled) {
+							await failPaymentByKind(ctx, payment, {
+								stripePaymentIntentId,
+								failureCode: `reconcile_${paymentIntent.status}`,
+								failureMessage: `Reconciled by the stuck-payment sweep: PaymentIntent status is ${paymentIntent.status}`,
+								// Only while the row is still in flight (sign-off nit).
+								// A `payment_intent.payment_failed` may have landed
+								// between the candidate read and this call, in which
+								// case the row already carries the decline code the
+								// diner's bank gave — and "PaymentIntent status is
+								// canceled" would replace the only useful fact on it
+								// with a restatement of what the sweep just saw.
+								onlyIfInFlight: true,
+							});
+						}
+						break;
+					}
+
+					case "alert": {
+						// ---------------------------------------------------------
+						// ONE ALERT PER PAYMENT, EVER (review round 1).
+						//
+						// Nothing is patched here: the intent is mid-flight at Stripe
+						// (or in a state this code has never seen), so only a human
+						// can say what it should become. Which means the row stays
+						// `processing` and stays a candidate — this branch re-runs
+						// against the same unchanged fact every five minutes until
+						// somebody resolves it.
+						//
+						// `dedupeKey` alone does not survive that, because it is
+						// scoped to OPEN alerts by design: the moment an admin
+						// acknowledges this row the next sweep raises a fresh severe
+						// one and mails every platform admin again — 288 times a day,
+						// punishing them for clearing their inbox. So the key is
+						// widened to collapse ACKNOWLEDGED rows too. It is safe
+						// precisely because the key names ONE PAYMENT: there is no
+						// second, genuinely-new occurrence of "this payment is stuck"
+						// to lose.
+						//
+						// The other half of the same finding lives in the decision
+						// table: the customer-side statuses now CLEAR at the alert
+						// age instead of alerting, so an abandoned `requires_action`
+						// intent — which never expires at Stripe — leaves
+						// `processing` rather than becoming a permanent alert.
+						// ---------------------------------------------------------
+						const minutes = Math.round(ageMs / 60000);
+						console.error(
+							`[stripe.reconcileStuckPayments] payment ${payment._id} (${kind}) has been ` +
+								`${paymentIntent.status} for ${minutes}m. Needs operator attention.`
+						);
+
+						await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+							kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
+							severity: stuckPaymentAlertSeverity(kind, ageMs),
+							restaurantId: payment.restaurantId,
+							...(payment.orderId !== undefined && { orderId: payment.orderId }),
+							paymentId: payment._id,
+							stripeObjectId: stripePaymentIntentId,
+							messageParams: { kind, minutes },
+							dedupeKey: `payment_stuck:${payment._id}`,
+							dedupeAcrossAcknowledged: true,
+						});
+						break;
+					}
+
+					case "wait":
+						break;
+				}
+			} catch (error) {
+				console.error(
+					"[stripe.reconcileStuckPayments]",
+					buildIntegrationErrorLog(error, {
+						integration: "stripe",
+						operation: "reconcileStuckPayments",
+						restaurantId: payment.restaurantId,
+						eventId: stripePaymentIntentId,
 					})
 				);
 			}
