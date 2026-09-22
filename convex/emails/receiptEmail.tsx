@@ -17,7 +17,7 @@ import type { InviteEmailLocale } from "./locale";
 export type ReceiptEmailItem = {
 	readonly label: string;
 	readonly amount: string;
-	/** 86'd after payment and refunded: struck-through with the refunded note. */
+	/** Removed after payment and refunded: struck-through with the refunded note. */
 	readonly refunded: boolean;
 };
 

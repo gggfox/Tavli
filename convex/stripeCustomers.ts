@@ -2,9 +2,9 @@
  * Platform-level Stripe Customers, one per Clerk user (ADR 008).
  *
  * The pay-at-submit charge sets `setup_future_usage: "off_session"`, which
- * needs a Customer to attach the card to — that saved card is what one-tap
- * tips and substitution deltas charge later. The Customer lives on the
- * platform account and follows the diner across restaurants, which is why
+ * needs a Customer to attach the card to — that saved card is what a one-tap
+ * post-visit tip charges later. The Customer lives on the platform account and
+ * follows the diner across restaurants, which is why
  * this table carries no restaurant reference (and is purge-exempt by
  * construction — see `restaurantPurge.ts`).
  *

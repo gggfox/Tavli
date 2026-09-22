@@ -252,7 +252,7 @@ export async function loadSessionsOverlapping(
  * Loads the `orderItems` of every non-cancelled order whose timestamp falls in
  * `[from, to)`. Used by the per-dish-value and items-by-category widgets, which
  * aggregate at the line-item level. Cancelled orders are excluded so they don't
- * inflate quantity / revenue, and so are individually 86'd lines — they were
+ * inflate quantity / revenue, and so are individually removed lines — they were
  * never made and never billed.
  */
 export async function loadOrderItemsInRange(

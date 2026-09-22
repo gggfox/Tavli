@@ -76,6 +76,30 @@ export type RaiseOperatorAlertArgs = {
 	 * user-triggered event that cannot repeat for the same object.
 	 */
 	dedupeKey?: string;
+	/**
+	 * Make `dedupeKey` collapse ACKNOWLEDGED rows too, so the problem is
+	 * reported **once, ever** (TAVLI-106).
+	 *
+	 * The default deliberately scopes the key to OPEN alerts: acknowledging is
+	 * how an operator says "dealt with", and a genuine recurrence afterwards is
+	 * news. That is right for an event-driven caller, where a second alert means
+	 * a second event.
+	 *
+	 * It is wrong for a detector on a timer that reports an UNCHANGED FACT. The
+	 * stuck-payment sweep re-reads the same wedged row every five minutes; with
+	 * the default, the moment an admin acknowledges the alert the next run
+	 * raises a fresh one — and if it is severe, mails every platform admin
+	 * again. The operator is punished for clearing their inbox, 288 times a day,
+	 * and the only way to make it stop is to fix a payment that may need Stripe
+	 * support to resolve.
+	 *
+	 * So: pass this when re-detection carries no new information, and the row
+	 * the operator acknowledged still describes the situation exactly. The cost
+	 * is that a *genuinely* recurring problem under the same key is silent after
+	 * the first acknowledgement — which is why the key must then name a thing
+	 * that can only be wrong once (one payment, one payout), never a class.
+	 */
+	dedupeAcrossAcknowledged?: boolean;
 };
 
 /** One severe-alert recipient: a platform admin and the language they read in. */
@@ -145,12 +169,21 @@ export async function raiseOperatorAlert(
 	args: RaiseOperatorAlertArgs
 ): Promise<Id<"operatorAlerts">> {
 	if (args.dedupeKey) {
-		const existing = await ctx.db
-			.query(TABLE.OPERATOR_ALERTS)
-			.withIndex("by_dedupe_status", (q) =>
-				q.eq("dedupeKey", args.dedupeKey).eq("status", OPERATOR_ALERT_STATUS.OPEN)
-			)
-			.first();
+		// Both probes ride `by_dedupe_status` (dedupeKey, status). The wider one
+		// simply stops at the key, which is a prefix of the same index — still one
+		// bounded lookup, never a scan.
+		const dedupeKey = args.dedupeKey;
+		const existing = args.dedupeAcrossAcknowledged
+			? await ctx.db
+					.query(TABLE.OPERATOR_ALERTS)
+					.withIndex("by_dedupe_status", (q) => q.eq("dedupeKey", dedupeKey))
+					.first()
+			: await ctx.db
+					.query(TABLE.OPERATOR_ALERTS)
+					.withIndex("by_dedupe_status", (q) =>
+						q.eq("dedupeKey", dedupeKey).eq("status", OPERATOR_ALERT_STATUS.OPEN)
+					)
+					.first();
 		// Deliberately nothing else: no touched timestamp, no counter, no second
 		// email. The operator already has this on their screen.
 		if (existing) return existing._id;

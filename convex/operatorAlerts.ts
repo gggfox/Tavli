@@ -86,6 +86,8 @@ export const raiseOperatorAlertInternal = internalMutation({
 		messageKey: v.optional(v.string()),
 		messageParams: v.optional(v.record(v.string(), v.union(v.string(), v.number()))),
 		dedupeKey: v.optional(v.string()),
+		/** See `RaiseOperatorAlertArgs` — for detectors on a timer. */
+		dedupeAcrossAcknowledged: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args): Promise<OperatorAlertId> => raiseOperatorAlert(ctx, args),
 });

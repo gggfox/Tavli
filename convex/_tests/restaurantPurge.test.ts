@@ -88,7 +88,6 @@ const EXPECTED_DELETED = {
 	[TABLE.ORDERS]: 1,
 	[TABLE.ORDER_ITEMS]: 1,
 	[TABLE.ORDER_DAY_COUNTERS]: 1,
-	[TABLE.SUBSTITUTION_PROPOSALS]: 1,
 	[TABLE.PAYMENTS]: 2,
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: 2,
 	[TABLE.STRIPE_DISPUTES]: 1,
@@ -286,24 +285,6 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			lastIssuedNumber: 42,
 			updatedAt: NOW,
 		});
-		await ctx.db.insert("substitutionProposals", {
-			restaurantId,
-			sessionId,
-			orderId,
-			orderItemId,
-			proposedMenuItemId: menuItemId,
-			proposedMenuItemName: "Quesadillas",
-			proposedUnitPrice: 120,
-			quantity: 1,
-			proposedLineTotal: 120,
-			deltaAmount: 0,
-			feeOnDelta: 0,
-			status: "pending",
-			proposedBy: "member-user",
-			createdAt: NOW,
-			updatedAt: NOW,
-		});
-
 		const orderPaymentId = await ctx.db.insert("payments", {
 			restaurantId,
 			orderId,

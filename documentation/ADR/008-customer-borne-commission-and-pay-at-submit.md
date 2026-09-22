@@ -8,7 +8,7 @@
 | **Date**          | 2026-08-07                                                                               |
 | **Author(s)**     | Tavli team                                                                               |
 | **Supersedes**    | TAVLI-6 end-of-visit tab settlement (shipped by ticket + commit `a1d27dd`; no prior ADR) |
-| **Superseded by** | —                                                                                        |
+| **Superseded by** | [ADR-013](./013-no-substitution-flow.md) — substitution section only                     |
 
 ## Context
 
@@ -120,6 +120,16 @@ legacy tab payable set.
 > the trade they asked to make.
 
 ### Substitutions replace "sorry, refund" for out-of-stock on paid orders
+
+> [!IMPORTANT]
+> **Superseded by [ADR-013](./013-no-substitution-flow.md) (2026-09-20).** The
+> substitution proposal flow described in this section was removed outright: a
+> dish that is unavailable after payment has its line removed and refunded, and
+> the restaurant settles anything it wants to offer instead with the diner in
+> person. The per-line and whole-order refunds below are unchanged and still
+> live; only the proposal, the delta charge, and the `substitutionProposals`
+> table are gone. This section is kept as the historical record of why they
+> existed.
 
 When the kitchen can't make a paid line, staff propose a substitution: an
 equal-or-higher-priced alternative (`deltaAmount >= 0`, enforced in app code),

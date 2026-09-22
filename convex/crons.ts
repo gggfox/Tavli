@@ -7,6 +7,7 @@
  */
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
+import { STUCK_PAYMENT_RECONCILE_INTERVAL_MS } from "./constants";
 
 const crons = cronJobs();
 
@@ -50,6 +51,26 @@ crons.interval(
 	"stuck tab payment reconciliation",
 	{ minutes: 5 },
 	internal.stripe.reconcileStuckTabPayments
+);
+
+// The same backstop for ORDER and TIP payments (TAVLI-106), which had none: a
+// dropped `payment_intent.succeeded` left a diner who paid with a round nobody
+// was cooking, or a tip charged and never credited.
+//
+// A SIBLING job rather than a call appended to the tab sweep. They share a
+// cadence and nothing else: different candidate queries, different settlement
+// paths, different failure modes. Chaining them would mean a tab sweep that
+// throws (an unreachable Stripe, a bad candidate that escapes its catch) also
+// silently stops order and tip reconciliation, and the Convex dashboard's cron
+// list would show one job where two ran. Separate jobs fail, retry and are read
+// independently.
+crons.interval(
+	"stuck order and tip payment reconciliation",
+	// Derived, not a literal: `PAYMENT_INTENT_REUSE_MAX_AGE_MS` subtracts one
+	// interval from the alert age so a reused client secret is never one the
+	// next run is about to cancel. A schedule change has to move that with it.
+	{ minutes: STUCK_PAYMENT_RECONCILE_INTERVAL_MS / 60_000 },
+	internal.stripe.reconcileStuckPayments
 );
 
 // Confirmation codes for assistant-initiated cancellations expire in 10 minutes;

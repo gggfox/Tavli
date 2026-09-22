@@ -202,17 +202,17 @@ describe("recomputeForRestaurant", () => {
 		expect(rows.map((r) => r.menuItemId)).toEqual([real]);
 	});
 
-	it("ignores 86'd lines", async () => {
+	it("ignores removed lines", async () => {
 		// A cancelled line was never served. Ranking it puts a dish the kitchen
 		// could not make at the top of the menu.
 		const t = harness();
 		const seed = await seedRestaurant(t);
 		const served = await seedItem(t, seed, "Served");
-		const eightySixed = await seedItem(t, seed, "86ed");
+		const removedDish = await seedItem(t, seed, "Removed dish");
 
 		await seedOrder(t, seed, [
 			{ menuItemId: served, quantity: 1 },
-			{ menuItemId: eightySixed, quantity: 50, cancelled: true },
+			{ menuItemId: removedDish, quantity: 50, cancelled: true },
 		]);
 
 		await t.run(async (ctx) =>

@@ -3,7 +3,7 @@
  * and the payments ledger.
  */
 import { describe, expect, it } from "vitest";
-import { PAYMENT_KIND, PAYMENT_STATUS, SETTLED_BY } from "./constants";
+import { PAYMENT_KIND, PAYMENT_REFUND_STATUS, PAYMENT_STATUS, SETTLED_BY } from "./constants";
 import {
 	hasFeeBreakdown,
 	isCashSettledOrder,
@@ -12,6 +12,7 @@ import {
 	sumCashSettledOrderRevenue,
 	sumDisputeRecoveryFromPayments,
 	sumRestaurantRevenueFromPayments,
+	tipFromPayment,
 	type PaymentMoneyRow,
 } from "./paymentMoneyHelpers";
 
@@ -66,17 +67,6 @@ describe("paymentMoneyBreakdown", () => {
 		});
 	});
 
-	it("counts a substitution delta as restaurant revenue", () => {
-		const substitution: PaymentMoneyRow = {
-			amount: 2240,
-			subtotalAmount: 2000,
-			feeAmount: 240,
-			kind: PAYMENT_KIND.SUBSTITUTION,
-			status: PAYMENT_STATUS.SUCCEEDED,
-		};
-		expect(paymentMoneyBreakdown(substitution).restaurantRevenue).toBe(2000);
-	});
-
 	it("falls back to `amount` on legacy rows and reports no fee split", () => {
 		expect(paymentMoneyBreakdown(legacyPayment)).toEqual({
 			chargedToDiner: 5500,
@@ -110,6 +100,41 @@ describe("restaurantRevenueFromPayment", () => {
 
 	it("sums food value across mixed vintages, excluding fee and tips", () => {
 		expect(sumRestaurantRevenueFromPayments([orderPayment, tipPayment, legacyPayment])).toBe(15500);
+	});
+
+	/**
+	 * TAVLI-104. A charge the webhook cannot apply to its order is marked
+	 * SUCCEEDED — Stripe really did collect — and refunded in full, and the diner
+	 * then pays again for the same food. Counting the refunded row books that
+	 * sale twice.
+	 */
+	it("ignores a fully refunded charge — the money came and went", () => {
+		const refunded = { ...orderPayment, refundStatus: PAYMENT_REFUND_STATUS.SUCCEEDED };
+		expect(restaurantRevenueFromPayment(refunded)).toBe(0);
+		expect(tipFromPayment({ ...tipPayment, refundStatus: PAYMENT_REFUND_STATUS.SUCCEEDED })).toBe(
+			0
+		);
+		// The order's real payment is the only one left standing.
+		expect(sumRestaurantRevenueFromPayments([refunded, orderPayment])).toBe(10000);
+	});
+
+	it("still counts a partially refunded charge in full", () => {
+		// One line removed from a paid order leaves real money behind, and netting
+		// it out here would restate every historical figure — see the module note.
+		expect(
+			restaurantRevenueFromPayment({
+				...orderPayment,
+				refundStatus: PAYMENT_REFUND_STATUS.PARTIAL,
+			})
+		).toBe(10000);
+		// As does a refund that was only requested, or that failed.
+		for (const refundStatus of [
+			PAYMENT_REFUND_STATUS.NONE,
+			PAYMENT_REFUND_STATUS.REQUESTED,
+			PAYMENT_REFUND_STATUS.FAILED,
+		]) {
+			expect(restaurantRevenueFromPayment({ ...orderPayment, refundStatus })).toBe(10000);
+		}
 	});
 });
 

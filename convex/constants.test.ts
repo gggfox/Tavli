@@ -32,7 +32,6 @@ describe("TABLE constants", () => {
 			"stripeDisputes",
 			"stripePayouts",
 			"stripeCustomers",
-			"substitutionProposals",
 			"reservations",
 			"tableLocks",
 			"reservationSettings",
