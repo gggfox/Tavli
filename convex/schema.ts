@@ -947,7 +947,42 @@ export default defineSchema({
 		.index("by_order", ["orderId"])
 		.index("by_session", ["sessionId"])
 		.index("by_restaurant", ["restaurantId"])
-		.index("by_payment_intent", ["stripePaymentIntentId"]),
+		.index("by_payment_intent", ["stripePaymentIntentId"])
+		/**
+		 * Candidate lookup for the stuck-payment sweep (TAVLI-106): rows left in
+		 * `processing` because the confirming webhook never arrived. The exact
+		 * query it serves is
+		 *
+		 *   .withIndex("by_status_updated", (q) =>
+		 *       q.eq("status", PAYMENT_STATUS.PROCESSING).lt("updatedAt", cutoff))
+		 *
+		 * — one bounded range, no `filter` over the table.
+		 *
+		 * Mind what `updatedAt` measures: `stripeHelpers.updatePayment` stamps it
+		 * on every patch, including status-preserving ones (a late
+		 * `latestStripeEventId` or `stripeChargeId` write), so the range means
+		 * "untouched for N minutes", not "in processing for N minutes". TAVLI-106
+		 * should size N with that in mind — and read `createdAt` off the rows the
+		 * range returns if it needs the payment's true age.
+		 *
+		 * Why not `by_status_kind_updated` (status, kind, updatedAt)? The sweep
+		 * covers more than one `kind` (order and tip), and an index orders by
+		 * each field in turn, so putting `kind` in the middle would push
+		 * `updatedAt` out of reach of the range bound: covering two kinds would
+		 * mean one range per kind rather than one range in total. `kind` is also
+		 * the weaker filter here — almost every processing row is an order or a
+		 * tip, while the age bound is what keeps the scan small — so it belongs
+		 * in a cheap post-read check, not in the index.
+		 *
+		 * Leaving `kind` out of the index also sidesteps Convex's rule that
+		 * documents with an undefined indexed field sort before every defined
+		 * value: `kind` is optional, so legacy pre-pivot rows would have formed
+		 * their own leading range. Instead they land in the same `status` range
+		 * as everything else, and the sweep decides about them in code — a
+		 * `processing` row with no `kind` is a pre-pivot order payment and is
+		 * swept as one; it is not skipped for want of a `kind`.
+		 */
+		.index("by_status_updated", ["status", "updatedAt"]),
 
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: defineTable({
 		eventId: v.string(),

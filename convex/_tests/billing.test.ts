@@ -12,19 +12,11 @@ import type { Id } from "../_generated/dataModel";
 import { AUDIT_EVENT, BILLING_STATUS } from "../constants";
 import { insertMenuForRestaurant } from "../menus";
 import schema from "../schema";
+import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 
 const modules = import.meta.glob("../**/*.ts");
 
-const mockStripeClient = {
-	customers: { create: vi.fn() },
-	checkout: { sessions: { create: vi.fn() } },
-	billingPortal: { sessions: { create: vi.fn() } },
-	subscriptions: { update: vi.fn(), cancel: vi.fn() },
-	webhooks: { constructEvent: vi.fn() },
-	v2: { core: { accounts: { create: vi.fn(), retrieve: vi.fn() } } },
-};
-
-vi.mock("stripe", () => ({ default: vi.fn(() => mockStripeClient) }));
+vi.mock("stripe", async () => (await import("./_fixtures/stripeMock.fixture")).stripeModuleMock());
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
