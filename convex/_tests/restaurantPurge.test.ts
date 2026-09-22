@@ -17,7 +17,14 @@ import { describe, expect, it } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { BRANDING_IMAGE_SLOTS, BRANDING_SLOT_SPECS } from "../brandingImageHelpers";
-import { RESTAURANT_PURGE_DELETED_TABLES, TABLE } from "../constants";
+import {
+	OPERATOR_ALERT_EXPLANATION_KEY,
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	OPERATOR_ALERT_STATUS,
+	RESTAURANT_PURGE_DELETED_TABLES,
+	TABLE,
+} from "../constants";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -78,7 +85,6 @@ const EXPECTED_DELETED = {
 	[TABLE.ORDERS]: 1,
 	[TABLE.ORDER_ITEMS]: 1,
 	[TABLE.ORDER_DAY_COUNTERS]: 1,
-	[TABLE.SUBSTITUTION_PROPOSALS]: 1,
 	[TABLE.PAYMENTS]: 2,
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: 2,
 	[TABLE.STRIPE_DISPUTES]: 1,
@@ -101,6 +107,7 @@ const EXPECTED_DELETED = {
 	[TABLE.WHATSAPP_CONVERSATIONS]: 1,
 	[TABLE.WHATSAPP_MESSAGES]: 2,
 	[TABLE.WHATSAPP_PENDING_ACTIONS]: 1,
+	[TABLE.OPERATOR_ALERTS]: 1,
 } as const;
 
 /**
@@ -272,24 +279,6 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			lastIssuedNumber: 42,
 			updatedAt: NOW,
 		});
-		await ctx.db.insert("substitutionProposals", {
-			restaurantId,
-			sessionId,
-			orderId,
-			orderItemId,
-			proposedMenuItemId: menuItemId,
-			proposedMenuItemName: "Quesadillas",
-			proposedUnitPrice: 120,
-			quantity: 1,
-			proposedLineTotal: 120,
-			deltaAmount: 0,
-			feeOnDelta: 0,
-			status: "pending",
-			proposedBy: "member-user",
-			createdAt: NOW,
-			updatedAt: NOW,
-		});
-
 		const orderPaymentId = await ctx.db.insert("payments", {
 			restaurantId,
 			orderId,
@@ -544,6 +533,17 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			reservationId,
 			code: "123456",
 			expiresAt: NOW + 10 * 60 * 1000,
+			createdAt: NOW,
+		});
+
+		// An operator alert about this restaurant (TAVLI-109). Platform-wide
+		// alerts carry no `restaurantId` and survive any purge; this one does not.
+		await ctx.db.insert(TABLE.OPERATOR_ALERTS, {
+			kind: OPERATOR_ALERT_KIND.PAYMENT_STUCK,
+			severity: OPERATOR_ALERT_SEVERITY.WARNING,
+			status: OPERATOR_ALERT_STATUS.OPEN,
+			restaurantId,
+			messageKey: OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.PAYMENT_STUCK],
 			createdAt: NOW,
 		});
 

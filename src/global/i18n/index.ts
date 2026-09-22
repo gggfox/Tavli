@@ -1,6 +1,7 @@
 export * from "./config";
 export { default as i18n } from "./config";
 export { AdminStaffKeys, type AdminStaffKey } from "./keys/adminStaff";
+export { AlertsKeys, type AlertsKey } from "./keys/alerts";
 export { CommonKeys, type CommonKey } from "./keys/common";
 export { CustomerKeys, type CustomerKey } from "./keys/customer";
 export { DashboardKeys, type DashboardKey } from "./keys/dashboard";

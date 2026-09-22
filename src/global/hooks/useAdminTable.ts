@@ -109,5 +109,11 @@ export function useAdminTable<TData>({
 		refetch,
 		globalFilter,
 		setGlobalFilter: handleGlobalFilterChange,
+		// Exposed so a page can drive per-column filters from its own controls
+		// (e.g. the severity and restaurant selects on `/admin/alerts`). Kept as
+		// the table's own state rather than a second copy in the page, so the
+		// select and the rendered rows can never disagree.
+		columnFilters,
+		setColumnFilters,
 	};
 }

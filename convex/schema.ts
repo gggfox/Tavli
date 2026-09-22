@@ -10,6 +10,9 @@ import {
 	MENU_AI_IMAGE_DRAFT_STATUS,
 	MENU_AI_IMAGE_JOB_STATUS,
 	MENU_ITEM_IMAGE_SOURCE,
+	OPERATOR_ALERT_KINDS,
+	OPERATOR_ALERT_SEVERITY,
+	OPERATOR_ALERT_STATUS,
 	ORDER_PAYMENT_STATE,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
@@ -20,7 +23,6 @@ import {
 	RESTAURANT_MEMBER_ROLE,
 	SESSION_PAYMENT_STATE,
 	SHIFT_STATUS,
-	SUBSTITUTION_PROPOSAL_STATUS,
 	TABLE,
 	TABLE_ASSIGNED_BY,
 	TIP_DISTRIBUTION_RULE,
@@ -495,7 +497,7 @@ export default defineSchema({
 	[TABLE.MENU_ITEM_POPULARITY]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		menuItemId: v.id(TABLE.MENU_ITEMS),
-		/** Units sold in the window. Cancelled (86'd) lines are excluded. */
+		/** Units sold in the window. Lines removed from an order are excluded. */
 		quantity: v.number(),
 		/** 1-based, so the carousel can order without re-sorting. */
 		rank: v.number(),
@@ -814,15 +816,15 @@ export default defineSchema({
 		specialInstructions: v.optional(v.string()),
 		lineTotal: v.number(),
 		/**
-		 * Set by `orders.cancelOrderItem` (86). A cancelled line stays on the
+		 * Set by `orders.cancelOrderItem`. A cancelled line stays on the
 		 * order for history but is excluded from totals, station applicability,
 		 * and analytics. `undefined` means the line is live.
 		 */
 		cancelledAt: v.optional(v.number()),
-		/** Clerk subject of the staff member who 86'd the line. */
+		/** Clerk subject of the staff member who removed the line. */
 		cancelledBy: v.optional(v.string()),
 		/**
-		 * Set when 86'ing this line on a *paid* order produced a Stripe refund
+		 * Set when removing this line from a *paid* order produced a Stripe refund
 		 * (ADR 008). The tuple below is the per-line refund record — and the
 		 * idempotency marker `stripe.refundOrderItem` checks so a replayed
 		 * schedule can never refund the same line twice. `undefined` on lines
@@ -835,45 +837,6 @@ export default defineSchema({
 		stripeRefundId: v.optional(v.string()),
 		createdAt: v.number(),
 	}).index("by_order", ["orderId"]),
-
-	// Kitchen-proposed replacement for a paid line that can't be made (ADR 008).
-	// `deltaAmount >= 0` is enforced in app code (equal-or-higher rule);
-	// `feeOnDelta` is the service-fee share on that delta. The proposed* fields
-	// snapshot the replacement at proposal time, mirroring the `orderItems`
-	// denormalization, so the offer the diner accepted stays legible after menu
-	// edits.
-	[TABLE.SUBSTITUTION_PROPOSALS]: defineTable({
-		restaurantId: v.id(TABLE.RESTAURANTS),
-		sessionId: v.id(TABLE.SESSIONS),
-		orderId: v.id(TABLE.ORDERS),
-		orderItemId: v.id(TABLE.ORDER_ITEMS),
-		proposedMenuItemId: v.id(TABLE.MENU_ITEMS),
-		proposedMenuItemName: v.string(),
-		proposedUnitPrice: v.number(),
-		quantity: v.number(),
-		proposedLineTotal: v.number(),
-		/** proposedLineTotal - original lineTotal; >= 0 by the equal-or-higher rule. */
-		deltaAmount: v.number(),
-		feeOnDelta: v.number(),
-		status: v.union(
-			v.literal(SUBSTITUTION_PROPOSAL_STATUS.PENDING),
-			v.literal(SUBSTITUTION_PROPOSAL_STATUS.ACCEPTED),
-			v.literal(SUBSTITUTION_PROPOSAL_STATUS.DECLINED),
-			v.literal(SUBSTITUTION_PROPOSAL_STATUS.CANCELLED)
-		),
-		/** Payment covering deltaAmount + feeOnDelta; set when accepted with a positive delta. */
-		supplementalPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
-		/** Clerk subject of the staff member who proposed the substitution. */
-		proposedBy: v.string(),
-		/** Clerk subject of the diner who accepted/declined. */
-		respondedByUserId: v.optional(v.string()),
-		respondedAt: v.optional(v.number()),
-		createdAt: v.number(),
-		updatedAt: v.number(),
-	})
-		.index("by_order", ["orderId"])
-		.index("by_session_status", ["sessionId", "status"])
-		.index("by_restaurant_status", ["restaurantId", "status"]),
 
 	[TABLE.PAYMENTS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
@@ -890,19 +853,11 @@ export default defineSchema({
 		subtotalAmount: v.optional(v.number()),
 		feeAmount: v.optional(v.number()),
 		/** What this payment paid for (PAYMENT_KIND). Absent kind = legacy row (pre-pivot per-order or tab payment). */
-		kind: v.optional(
-			v.union(
-				v.literal(PAYMENT_KIND.ORDER),
-				v.literal(PAYMENT_KIND.TIP),
-				v.literal(PAYMENT_KIND.SUBSTITUTION)
-			)
-		),
+		kind: v.optional(v.union(v.literal(PAYMENT_KIND.ORDER), v.literal(PAYMENT_KIND.TIP))),
 		/** Clerk subject of the session member this payment belongs to (ADR 008). */
 		paidByUserId: v.optional(v.string()),
-		/** Saved card used for one-tap tips / substitution deltas (setup_future_usage off_session). */
+		/** Saved card used for one-tap tips (setup_future_usage off_session). */
 		stripePaymentMethodId: v.optional(v.string()),
-		/** Set on kind "substitution" rows: the proposal whose delta this payment covers. */
-		substitutionProposalId: v.optional(v.id(TABLE.SUBSTITUTION_PROPOSALS)),
 		currency: v.string(),
 		status: v.union(
 			v.literal(PAYMENT_STATUS.PENDING),
@@ -1030,8 +985,8 @@ export default defineSchema({
 
 	// Platform-level Stripe Customer per Clerk user (ADR 008). Needed so
 	// `setup_future_usage: "off_session"` on a pay-at-submit charge can attach
-	// the payment method somewhere reusable — one-tap tips and substitution
-	// deltas charge it later. Not restaurant-scoped: the customer follows the
+	// the payment method somewhere reusable — one-tap tips charge it later.
+	// Not restaurant-scoped: the customer follows the
 	// diner across restaurants.
 	[TABLE.STRIPE_CUSTOMERS]: defineTable({
 		userId: v.string(),
@@ -1766,6 +1721,55 @@ export default defineSchema({
 		optedOutAt: v.number(),
 		createdAt: v.number(),
 	}).index("by_phone", ["phone"]),
+
+	// ============================================================================
+	// Operator alerts (TAVLI-109)
+	// ============================================================================
+	// The one place a money path can say "a human at Tavli has to look at this".
+	// Raised through `_util/operatorAlerts.raiseOperatorAlert`, read on
+	// `/admin/alerts`, and — when severe — emailed to every platform admin.
+	//
+	// Restaurant-manager notifications are a different thing entirely and never
+	// come from here: an operator alert is Tavli's own inbox.
+	[TABLE.OPERATOR_ALERTS]: defineTable({
+		kind: v.union(...OPERATOR_ALERT_KINDS.map((kind) => v.literal(kind))),
+		severity: v.union(
+			v.literal(OPERATOR_ALERT_SEVERITY.INFO),
+			v.literal(OPERATOR_ALERT_SEVERITY.WARNING),
+			v.literal(OPERATOR_ALERT_SEVERITY.SEVERE)
+		),
+		// All four context ids are optional: an alert can be about a Stripe
+		// object Tavli never matched to anything (that is precisely the
+		// `charge_unmatched` case), and the page just renders fewer links.
+		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		stripeObjectId: v.optional(v.string()),
+		/** i18n key, never prose — the frontend and the email both translate it. */
+		messageKey: v.string(),
+		/** Interpolation values for `messageKey`. Ids and amounts, not sentences. */
+		messageParams: v.optional(v.record(v.string(), v.union(v.string(), v.number()))),
+		/**
+		 * Caller-chosen identity for "this same problem". While an alert with
+		 * this key is OPEN, raising it again is a no-op — so a webhook replayed
+		 * fifty times leaves one row, and acknowledging that row lets the next
+		 * occurrence through as a fresh alert.
+		 */
+		dedupeKey: v.optional(v.string()),
+		status: v.union(
+			v.literal(OPERATOR_ALERT_STATUS.OPEN),
+			v.literal(OPERATOR_ALERT_STATUS.ACKNOWLEDGED)
+		),
+		acknowledgedBy: v.optional(v.string()),
+		acknowledgedAt: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		// The page: open alerts newest first, then acknowledged ones.
+		.index("by_status_created", ["status", "createdAt"])
+		.index("by_restaurant", ["restaurantId"])
+		// Idempotency probe. `dedupeKey` is optional, so rows without one sort
+		// under `undefined` and are never reached by a keyed lookup.
+		.index("by_dedupe_status", ["dedupeKey", "status"]),
 
 	// ============================================================================
 	// Unified Event Store

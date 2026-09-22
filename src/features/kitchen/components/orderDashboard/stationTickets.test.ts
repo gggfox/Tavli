@@ -60,7 +60,7 @@ describe("deriveStationTickets", () => {
 		expect(deriveStationTickets([order], "kitchen")).toHaveLength(1);
 	});
 
-	it("drops the ticket when every one of the station's items was 86'd", () => {
+	it("drops the ticket when every one of the station's items was removed", () => {
 		const order = makeOrder({
 			items: [
 				makeItem({ _id: "bar1" as DashboardOrderItem["_id"], prepStation: "bar", cancelledAt: 5 }),

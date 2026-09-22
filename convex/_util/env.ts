@@ -132,3 +132,38 @@ export const ALLOW_ADMIN_BOOTSTRAP_ENV = "ALLOW_ADMIN_BOOTSTRAP";
 export function isAdminBootstrapEnabled(): boolean {
 	return isTruthyEnv(process.env[ALLOW_ADMIN_BOOTSTRAP_ENV]);
 }
+
+/**
+ * A stable name for THIS Convex deployment, for stamping onto Stripe objects
+ * (TAVLI-105).
+ *
+ * Several deployments share one Stripe test account — the two dev deployments
+ * and staging all point at `acct_1TGR41AdCrGPY0BG` — and each of them stamps
+ * `metadata.paymentId` onto every PaymentIntent it creates. Without a way to
+ * tell whose intent an event describes, the webhook cannot distinguish "money
+ * Tavli took and has no record of" (a severe operator alert, an email to every
+ * platform admin) from "a charge another deployment created" (not our problem,
+ * and constant). The marker is what separates them.
+ *
+ * Derived from `CONVEX_CLOUD_URL`, a system variable Convex sets in every
+ * deployment: `https://brave-moose-354.convex.cloud` becomes
+ * `brave-moose-354`. The slug rather than the URL because it is what appears in
+ * the dashboard and in `.env.local`, so an operator reading the value off a
+ * Stripe object recognises it. `CONVEX_SITE_URL` is the fallback — same slug,
+ * different apex — and `undefined` is a legitimate answer outside a deployment
+ * (unit tests), which every caller must tolerate.
+ */
+export function getDeploymentMarker(): string | undefined {
+	const raw = process.env.CONVEX_CLOUD_URL ?? process.env.CONVEX_SITE_URL;
+	if (!raw) return undefined;
+
+	try {
+		const host = new URL(raw).hostname;
+		const slug = host.split(".")[0]?.trim();
+		return slug || undefined;
+	} catch {
+		// Not a URL. Some other stable string is still better than nothing.
+		const trimmed = raw.trim();
+		return trimmed || undefined;
+	}
+}

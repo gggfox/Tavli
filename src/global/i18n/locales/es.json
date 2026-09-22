@@ -28,7 +28,8 @@
 			"adminUsers": "Usuarios",
 			"adminOrganizations": "Organizaciones",
 			"adminFeatureFlags": "Feature flags",
-			"adminWhatsappAllowlist": "Lista de WhatsApp"
+			"adminWhatsappAllowlist": "Lista de WhatsApp",
+			"adminAlerts": "Alertas de operación"
 		},
 		"theme": {
 			"darkMode": "Modo oscuro",
@@ -442,18 +443,6 @@
 			"markedReady": "{{station}}: marcado listo · #{{n}}",
 			"emptyAllDone": "Todo al día — nada pendiente para {{station}}."
 		},
-		"substitution": {
-			"propose": "Sustituir",
-			"pendingBadge": "Sustitución ofrecida",
-			"cancelProposal": "Retirar oferta",
-			"dialogTitle": "Proponer una sustitución",
-			"dialogSubtitle": "Reemplaza {{name}} por un artículo de precio igual o mayor. El comensal lo aprueba en su dispositivo; cualquier diferencia se le cobra a él.",
-			"dialogEmpty": "No hay artículos disponibles de ese precio o superior.",
-			"deltaFree": "Sin cargo extra",
-			"deltaPreview": "+${{amount}} (+${{fee}} tarifa de servicio)",
-			"confirm": "Enviar al comensal",
-			"dismiss": "Cancelar"
-		},
 		"servedWindow": {
 			"hint": "Los pedidos entregados salen de esta lista {{minutes}} minutos después de marcarse como entregados. Los anteriores permanecen en Pagos y en tus exportaciones."
 		},
@@ -471,8 +460,7 @@
 			"scopeFilter": "Filtrar pedidos por sección",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
-			"cancelItem": "Cancelar artículo {{name}}",
-			"proposeSubstitution": "Proponer sustitución para {{name}}"
+			"cancelItem": "Cancelar artículo {{name}}"
 		},
 		"payment": {
 			"toCollect": "Por cobrar",
@@ -628,15 +616,12 @@
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "El pago de este pedido ya está en curso o completado. Cancela el pedido completo para emitir un reembolso.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "Hay un pago en curso en esta cuenta. Espera a que termine antes de quitar artículos.",
 		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "Ya hay un pago con tarjeta en curso para este pedido. Cancélalo antes de elegir pagar en persona.",
+		"ERROR_PAYMENT_CANCEL_FAILED": "No pudimos comunicarnos con nuestro proveedor de pagos para cerrar tu intento anterior, así que no iniciamos uno nuevo. Inténtalo de nuevo en un momento.",
+		"ERROR_PAYMENT_ALREADY_PAID": "Esto ya está pagado. Danos un segundo para actualizarlo: no necesitas pagar otra vez.",
+		"ERROR_PAYMENT_IN_PROGRESS": "Tu pago ya se está procesando. Espera un momento en lugar de volver a tocar.",
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
-		"ERROR_SUBSTITUTION_NOT_ELIGIBLE": "Esta línea no admite sustitución — el pedido debe estar pagado y aún en cocina.",
-		"ERROR_SUBSTITUTION_ITEM_UNAVAILABLE": "Ese artículo de reemplazo no está disponible.",
-		"ERROR_SUBSTITUTION_PROPOSAL_EXISTS": "Ya hay una sustitución esperando la respuesta del comensal para este artículo.",
-		"ERROR_SUBSTITUTION_DELTA_NEGATIVE": "El reemplazo debe costar lo mismo o más que el artículo original.",
-		"ERROR_SUBSTITUTION_NOT_PENDING": "Esta sustitución ya fue respondida o retirada.",
-		"ERROR_SUBSTITUTION_REQUIRES_PAYMENT": "Esta sustitución tiene un costo extra — confirma el pago para aceptarla.",
 		"ERROR_TIP_INVALID_AMOUNT": "Ese monto de propina no es válido. Ingresa un monto mayor a cero.",
 		"ERROR_RECEIPT_ORDER_NOT_PAID": "Este pedido aún no se ha pagado, así que no hay recibo para enviar.",
 		"ERROR_RECEIPT_NO_VERIFIED_EMAIL": "Tu cuenta no tiene un correo verificado al cual enviar el recibo.",
@@ -675,6 +660,7 @@
 		"ERROR_TABLE_NUMBER_EXISTS": "Ya existe una mesa con ese número.",
 		"ERROR_PHONE_ALREADY_ALLOWLISTED": "Ese número de teléfono ya está en la lista de excepciones.",
 		"ERROR_ALLOWLIST_ENTRY_NOT_FOUND": "Esa excepción ya no existe.",
+		"ERROR_OPERATOR_ALERT_NOT_FOUND": "Esa alerta de operación ya no existe.",
 		"ERROR_INVITE_CROSS_ORG": "Esta persona ya pertenece a otra organización. Si acepta la invitación, saldrá de ella.",
 		"ERROR_INVITE_DUPLICATE_PENDING": "Esta persona ya tiene una invitación pendiente para esta organización.",
 		"ERROR_INVITE_DUPLICATE_IN_FILE": "Una fila anterior de este archivo ya invita a esta persona a esta organización.",
@@ -789,6 +775,7 @@
 			"initFailed": "Error al inicializar el pago",
 			"paymentFailed": "El pago falló. Inténtalo de nuevo.",
 			"genericError": "El pago falló",
+			"intentExpired": "Esta sesión de pago expiró. Vuelve a iniciar el pago: no se te hizo ningún cargo.",
 			"unableInit": "No se pudo inicializar el pago. Inténtalo de nuevo.",
 			"retry": "Reintentar",
 			"processing": "Procesando...",
@@ -819,6 +806,8 @@
 			"cancelled": "Pedido cancelado",
 			"items": "Productos",
 			"itemUnavailable": "No disponible",
+			"itemUnavailableRefunded": "No disponible · reembolsado",
+			"refundedLine": "Reembolsado",
 			"summary": "${{total}} · {{count}} productos",
 			"orderMore": "Pedir más",
 			"stepPlaced": "Pedido realizado",
@@ -827,7 +816,6 @@
 			"stepServed": "Entregado"
 		},
 		"receipt": {
-			"itemRefunded": "Reembolsado",
 			"emailCta": "Envíame el recibo por correo",
 			"emailSending": "Enviando...",
 			"emailSent": "Enviado a {{email}}"
@@ -903,27 +891,6 @@
 			"thanksBody": "Tu propina de ${{amount}} va directo al equipo.",
 			"paymentTitle": "Confirma tu propina",
 			"nothingPaid": "No tienes nada por pagar — no pagaste ningún pedido en esta visita.",
-			"done": "Listo"
-		},
-		"substitution": {
-			"title": "La cocina sugiere una sustitución",
-			"body": "Pedido #{{n}}: {{original}} no está disponible.",
-			"bodyNoNumber": "{{original}} no está disponible.",
-			"originalLabel": "Pediste",
-			"proposedLabel": "Sugerencia",
-			"noExtra": "Sin cargo extra",
-			"deltaLine": "Diferencia de precio",
-			"feeLine": "Tarifa de servicio Tavli",
-			"totalExtra": "Total extra",
-			"accept": "Aceptar sustitución",
-			"decline": "No, gracias — reembolsar ese artículo",
-			"declineConfirmTitle": "¿Rechazar esta sustitución?",
-			"declineConfirmBody": "{{original}} se quita de tu pedido y {{amount}} se reembolsa a tu tarjeta.",
-			"declineConfirmBodyNoAmount": "{{original}} se quita de tu pedido y se reembolsa a tu tarjeta.",
-			"declineConfirm": "Rechazar y reembolsar",
-			"back": "Volver",
-			"oneTapSuccess": "¡Listo! Se cobraron {{amount}} a tu tarjeta guardada.",
-			"paymentTitle": "Confirma el cargo extra",
 			"done": "Listo"
 		},
 		"geofence": {
@@ -2090,6 +2057,94 @@
 		},
 		"reservationLink": {
 			"label": "Abrir la conversación de WhatsApp"
+		}
+	},
+	"alerts": {
+		"page": {
+			"title": "Alertas de operación",
+			"description": "Problemas en los caminos del dinero de Tavli que alguien tiene que revisar. Las graves también le llegan por correo a cada administrador de la plataforma.",
+			"entity": "alertas",
+			"searchPlaceholder": "Buscar alertas...",
+			"emptyTitle": "Nada requiere intervención",
+			"emptyDescription": "No se ha levantado ninguna alerta de operación. Los pagos atorados, los cargos sin orden, los depósitos fallidos y las cuentas cerradas aparecen aquí cuando ocurren.",
+			"filteredEmptyTitle": "No hay alertas que coincidan",
+			"notAuthenticated": "Inicia sesión para ver las alertas de operación.",
+			"resultCount_one": "{{count}} alerta",
+			"resultCount_other": "{{count}} alertas"
+		},
+		"filter": {
+			"severity": "Gravedad",
+			"restaurant": "Restaurante",
+			"allSeverities": "Todas las gravedades",
+			"allRestaurants": "Todos los restaurantes",
+			"noRestaurant": "Sin restaurante"
+		},
+		"column": {
+			"alert": "Alerta",
+			"severity": "Gravedad",
+			"restaurant": "Restaurante",
+			"raised": "Levantada",
+			"status": "Estado"
+		},
+		"action": {
+			"acknowledge": "Marcar como vista",
+			"acknowledgedBy": "Vista por {{actor}}"
+		},
+		"link": {
+			"restaurant": "Restaurante",
+			"order": "Orden",
+			"payment": "Pago"
+		},
+		"severity": {
+			"info": "Informativa",
+			"warning": "Advertencia",
+			"severe": "Grave"
+		},
+		"status": {
+			"open": "Abierta",
+			"acknowledged": "Vista"
+		},
+		"kind": {
+			"paymentStuck": {
+				"title": "Pago atorado",
+				"explanation": "Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute. (tipo: {{kind}}, atorado {{minutes}} min)"
+			},
+			"chargeUnmatched": {
+				"title": "Cargo sin orden asociada",
+				"explanation": "Stripe cobró dinero que Tavli no puede ligar a ningún registro de pago. Nadie ha recibido ese crédito: busca el cargo en Stripe y define de quién es."
+			},
+			"chargeMismatchedRefunded": {
+				"title": "Cargo reembolsado: el monto no coincidía",
+				"explanation": "Stripe cobró {{collected}} por una orden que ahora cuesta {{expected}} ({{currency}}), así que Tavli reembolsó el cargo completo en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse: confirma en Stripe que el reembolso se aplicó."
+			},
+			"chargeNeedsReview": {
+				"title": "Cargo en un intento de pago retirado",
+				"explanation": "Stripe cobró {{collected}} ({{currency}}) en un intento de pago que Tavli ya había retirado: un segundo toque, una orden editada o una cancelación del personal lo reemplazó mientras su cargo estaba en curso. Una propina cobrada así se reembolsa automáticamente, y el cargo de una orden se aplica a esa orden o se reembolsa. Abre el cargo en Stripe y confirma que el resultado se haya aplicado."
+			},
+			"paymentAmountMismatch": {
+				"title": "Cobro detenido: el monto no coincidía",
+				"explanation": "Stripe cobró {{received}} en lugar de {{expected}} ({{currency}}), así que el pago se marcó como fallido en vez de liquidarse. Reembolsa el cargo en Stripe: el dinero sigue ahí y el comensal paga de nuevo."
+			},
+			"disputeLost": {
+				"title": "Disputa perdida",
+				"explanation": "Una red de tarjetas resolvió una disputa en contra del restaurante. El dinero y la comisión de la disputa se perdieron; hay que avisarle al restaurante."
+			},
+			"dashboardRefund": {
+				"title": "Reembolso hecho fuera de Tavli",
+				"explanation": "Se hizo un reembolso desde el panel de Stripe y no a través de Tavli, así que la orden y el depósito que alimenta ya no coinciden con Stripe."
+			},
+			"payoutFailed": {
+				"title": "Depósito fallido",
+				"explanation": "Stripe no pudo depositarle al restaurante. Hay que corregir sus datos bancarios o el estado de su cuenta para que el dinero pueda moverse."
+			},
+			"accountClosed": {
+				"title": "Cuenta conectada cerrada",
+				"explanation": "La cuenta de Stripe del restaurante fue cerrada o rechazada, así que no puede recibir pagos. Los comensales fallarán al pagar hasta que se restablezca."
+			},
+			"restaurantMissingContactEmail": {
+				"title": "El restaurante no tiene correo de contacto",
+				"explanation": "Este restaurante no tiene correo de contacto, así que Tavli no puede avisarle a su operador de nada: recibos, disputas ni esta alerta."
+			}
 		}
 	}
 }

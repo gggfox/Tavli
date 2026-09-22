@@ -100,16 +100,13 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_ORDER_ITEM_CANCEL_PAID",
 	"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED",
 	"ERROR_ORDER_PAYMENT_IN_FLIGHT",
+	// Superseding a payment attempt — convex/paymentSupersedeHelpers.ts (TAVLI-104)
+	"ERROR_PAYMENT_CANCEL_FAILED",
+	"ERROR_PAYMENT_ALREADY_PAID",
+	"ERROR_PAYMENT_IN_PROGRESS",
 	"ERROR_REFUND_FAILED",
 	"ERROR_REFUND_PAYMENT_UNRESOLVED",
 	"ERROR_REFUND_ALREADY_ISSUED",
-	// Substitutions — convex/substitutions.ts, convex/stripe.ts (TAVLI-71 Phase 3A)
-	"ERROR_SUBSTITUTION_NOT_ELIGIBLE",
-	"ERROR_SUBSTITUTION_ITEM_UNAVAILABLE",
-	"ERROR_SUBSTITUTION_PROPOSAL_EXISTS",
-	"ERROR_SUBSTITUTION_DELTA_NEGATIVE",
-	"ERROR_SUBSTITUTION_NOT_PENDING",
-	"ERROR_SUBSTITUTION_REQUIRES_PAYMENT",
 	// Post-visit tips — convex/stripe.ts (TAVLI-71 Phase 3B)
 	"ERROR_TIP_INVALID_AMOUNT",
 	// Receipt emails — convex/receiptActions.ts (TAVLI-71 Phase 3C)
@@ -172,6 +169,8 @@ export const BACKEND_ERROR_CODES = [
 	// WhatsApp spend allowlist — convex/whatsappSpendAllowlist.ts
 	"ERROR_PHONE_ALREADY_ALLOWLISTED",
 	"ERROR_ALLOWLIST_ENTRY_NOT_FOUND",
+	// Operator alerts — convex/operatorAlerts.ts
+	"ERROR_OPERATOR_ALERT_NOT_FOUND",
 	// AI menu images — convex/_shared/errors.ts
 	"AI_IMAGE_GENERATION_IN_PROGRESS",
 	"AI_IMAGE_MONTHLY_LIMIT_REACHED",

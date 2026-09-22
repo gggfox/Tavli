@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DemoRouteRouteImport } from './routes/demo/route'
 import { Route as HealthRouteImport } from './routes/health'
+import { Route as AdminAlertsRouteImport } from './routes/admin/alerts'
 import { Route as AdminFeatureFlagsRouteImport } from './routes/admin/feature-flags'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin/organizations'
@@ -72,6 +73,11 @@ const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAlertsRoute = AdminAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminFeatureFlagsRoute = AdminFeatureFlagsRouteImport.update({
   id: '/feature-flags',
@@ -245,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/health': typeof HealthRoute
+  '/admin/alerts': typeof AdminAlertsRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -285,6 +292,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/health': typeof HealthRoute
+  '/admin/alerts': typeof AdminAlertsRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -326,6 +334,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/health': typeof HealthRoute
+  '/admin/alerts': typeof AdminAlertsRoute
   '/admin/feature-flags': typeof AdminFeatureFlagsRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
@@ -368,6 +377,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/health'
+    | '/admin/alerts'
     | '/admin/feature-flags'
     | '/admin/orders'
     | '/admin/organizations'
@@ -408,6 +418,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/health'
+    | '/admin/alerts'
     | '/admin/feature-flags'
     | '/admin/orders'
     | '/admin/organizations'
@@ -448,6 +459,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/health'
+    | '/admin/alerts'
     | '/admin/feature-flags'
     | '/admin/orders'
     | '/admin/organizations'
@@ -529,6 +541,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/health'
       preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/alerts': {
+      id: '/admin/alerts'
+      path: '/alerts'
+      fullPath: '/admin/alerts'
+      preLoaderRoute: typeof AdminAlertsRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/feature-flags': {
       id: '/admin/feature-flags'
@@ -789,6 +808,7 @@ const DemoRouteRouteWithChildren = DemoRouteRoute._addFileChildren(
 )
 
 interface AdminRouteChildren {
+  AdminAlertsRoute: typeof AdminAlertsRoute
   AdminFeatureFlagsRoute: typeof AdminFeatureFlagsRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
@@ -805,6 +825,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAlertsRoute: AdminAlertsRoute,
   AdminFeatureFlagsRoute: AdminFeatureFlagsRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,

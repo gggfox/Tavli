@@ -70,7 +70,6 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.ORDERS]: 0,
 		[TABLE.ORDER_ITEMS]: 0,
 		[TABLE.ORDER_DAY_COUNTERS]: 0,
-		[TABLE.SUBSTITUTION_PROPOSALS]: 0,
 		[TABLE.PAYMENTS]: 0,
 		[TABLE.STRIPE_WEBHOOK_EVENTS]: 0,
 		[TABLE.STRIPE_DISPUTES]: 0,
@@ -93,6 +92,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.WHATSAPP_CONVERSATIONS]: 0,
 		[TABLE.WHATSAPP_MESSAGES]: 0,
 		[TABLE.WHATSAPP_PENDING_ACTIONS]: 0,
+		[TABLE.OPERATOR_ALERTS]: 0,
 	};
 	const patched: Record<RestaurantPurgePatchedTable, number> = {
 		[TABLE.INVITATIONS]: 0,
@@ -344,15 +344,6 @@ export async function hardDeleteRestaurantDataTyped(
 	for (const s of sessions) await ctx.db.delete(s._id);
 	deleted[TABLE.SESSIONS] += sessions.length;
 
-	// Deleted via the restaurant-prefixed index rather than per order, so
-	// proposals whose order is already gone are still swept.
-	const substitutionProposals = await ctx.db
-		.query(TABLE.SUBSTITUTION_PROPOSALS)
-		.withIndex("by_restaurant_status", (q) => q.eq("restaurantId", restaurantId))
-		.collect();
-	for (const sp of substitutionProposals) await ctx.db.delete(sp._id);
-	deleted[TABLE.SUBSTITUTION_PROPOSALS] += substitutionProposals.length;
-
 	const counters = await ctx.db
 		.query(TABLE.ORDER_DAY_COUNTERS)
 		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
@@ -500,6 +491,17 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const c of channels) await ctx.db.delete(c._id);
 	deleted[TABLE.WHATSAPP_CHANNELS] += channels.length;
+
+	// Operator alerts (TAVLI-109). Alerts with no `restaurantId` are
+	// platform-wide and survive; only this restaurant's are removed. What the
+	// alerts were about stays answerable through `allEvents`, which is
+	// purge-exempt.
+	const alerts = await ctx.db
+		.query(TABLE.OPERATOR_ALERTS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const alert of alerts) await ctx.db.delete(alert._id);
+	deleted[TABLE.OPERATOR_ALERTS] += alerts.length;
 
 	return { deleted, patched, storageFilesDeleted };
 }

@@ -30,6 +30,7 @@ export const SidebarKeys = {
 	ADMIN_USERS: "sidebar.nav.adminUsers",
 	ADMIN_ORGANIZATIONS: "sidebar.nav.adminOrganizations",
 	ADMIN_FEATURE_FLAGS: "sidebar.nav.adminFeatureFlags",
+	ADMIN_ALERTS: "sidebar.nav.adminAlerts",
 	ADMIN_WHATSAPP_ALLOWLIST: "sidebar.nav.adminWhatsappAllowlist",
 
 	// Theme
