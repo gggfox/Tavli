@@ -132,7 +132,6 @@ import type * as stripe from "../stripe.js";
 import type * as stripeCustomers from "../stripeCustomers.js";
 import type * as stripeHelpers from "../stripeHelpers.js";
 import type * as stripeWebhookHelpers from "../stripeWebhookHelpers.js";
-import type * as substitutions from "../substitutions.js";
 import type * as tableLocks from "../tableLocks.js";
 import type * as tables from "../tables.js";
 import type * as tips from "../tips.js";
@@ -289,7 +288,6 @@ declare const fullApi: ApiFromModules<{
   stripeCustomers: typeof stripeCustomers;
   stripeHelpers: typeof stripeHelpers;
   stripeWebhookHelpers: typeof stripeWebhookHelpers;
-  substitutions: typeof substitutions;
   tableLocks: typeof tableLocks;
   tables: typeof tables;
   tips: typeof tips;

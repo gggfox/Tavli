@@ -61,17 +61,6 @@ describe("paymentMoneyBreakdown", () => {
 		});
 	});
 
-	it("counts a substitution delta as restaurant revenue", () => {
-		const substitution: PaymentMoneyRow = {
-			amount: 2240,
-			subtotalAmount: 2000,
-			feeAmount: 240,
-			kind: PAYMENT_KIND.SUBSTITUTION,
-			status: PAYMENT_STATUS.SUCCEEDED,
-		};
-		expect(paymentMoneyBreakdown(substitution).restaurantRevenue).toBe(2000);
-	});
-
 	it("falls back to `amount` on legacy rows and reports no fee split", () => {
 		expect(paymentMoneyBreakdown(legacyPayment)).toEqual({
 			chargedToDiner: 5500,

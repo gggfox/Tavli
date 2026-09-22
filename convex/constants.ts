@@ -21,7 +21,6 @@ export const TABLE = {
 	SESSIONS: "sessions",
 	ORDERS: "orders",
 	ORDER_ITEMS: "orderItems",
-	SUBSTITUTION_PROPOSALS: "substitutionProposals",
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
 	STRIPE_DISPUTES: "stripeDisputes",
@@ -258,8 +257,7 @@ export const JOIN_CODE_LENGTH = 6;
 /**
  * Tavli service fee, charged to the DINER on top of the order subtotal
  * (ADR 008 — reverses the pre-pivot restaurant-borne carve-out). Applied to
- * order subtotals and substitution deltas, never tips. The restaurant nets
- * the full subtotal.
+ * order subtotals, never tips. The restaurant nets the full subtotal.
  */
 export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
 
@@ -276,8 +274,6 @@ export const PAYMENT_KIND = {
 	ORDER: "order",
 	/** A member's post-visit tip on a session; never carries a service fee. */
 	TIP: "tip",
-	/** The price delta (+ fee on delta) of an accepted substitution. */
-	SUBSTITUTION: "substitution",
 } as const;
 
 export type PaymentKind = (typeof PAYMENT_KIND)[keyof typeof PAYMENT_KIND];
@@ -294,21 +290,6 @@ export const SETTLED_BY = {
 } as const;
 
 export type SettledBy = (typeof SETTLED_BY)[keyof typeof SETTLED_BY];
-
-/**
- * Lifecycle of a kitchen-proposed substitution on a paid order (ADR 008).
- * `pending` awaits the diner's answer; `cancelled` is the kitchen retracting
- * its own proposal before the diner responds.
- */
-export const SUBSTITUTION_PROPOSAL_STATUS = {
-	PENDING: "pending",
-	ACCEPTED: "accepted",
-	DECLINED: "declined",
-	CANCELLED: "cancelled",
-} as const;
-
-export type SubstitutionProposalStatus =
-	(typeof SUBSTITUTION_PROPOSAL_STATUS)[keyof typeof SUBSTITUTION_PROPOSAL_STATUS];
 
 /**
  * Monthly platform subscription (2,000 MXN) in centavos. Display only — the
@@ -793,12 +774,6 @@ export const AUDIT_EVENT = {
 	ORDER_AWAITING_PAYMENT: "orders.awaitingPayment",
 	ORDER_PAID_IN_PERSON: "orders.paidInPerson",
 	ORDER_ITEM_REFUNDED: "orders.itemRefunded",
-
-	// -- Substitutions (ADR 008) --------------------------------------------
-	SUBSTITUTION_PROPOSED: "substitutions.proposed",
-	SUBSTITUTION_ACCEPTED: "substitutions.accepted",
-	SUBSTITUTION_DECLINED: "substitutions.declined",
-	SUBSTITUTION_CANCELLED: "substitutions.cancelled",
 
 	// -- Sessions (tabs) ----------------------------------------------------
 	SESSION_OPENED: "sessions.opened",
@@ -1346,7 +1321,6 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.ORDERS,
 	TABLE.ORDER_ITEMS,
 	TABLE.ORDER_DAY_COUNTERS,
-	TABLE.SUBSTITUTION_PROPOSALS,
 	// Payments
 	TABLE.PAYMENTS,
 	TABLE.STRIPE_WEBHOOK_EVENTS,

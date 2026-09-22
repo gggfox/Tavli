@@ -1,8 +1,8 @@
 /**
  * Shared Stripe Elements scaffolding for diner-facing payment sheets.
  *
- * Extracted from `OrderCheckoutPage` (TAVLI-71 Phase 3A) so the substitution
- * delta fallback (`SubstitutionPrompt`) mounts the exact same theme-aware
+ * Extracted from `OrderCheckoutPage` (TAVLI-71 Phase 3A) so every in-app
+ * payment sheet mounts the exact same theme-aware
  * PaymentElement instead of copy-pasting the Elements wiring. Success is
  * always observed by the caller through its own Convex subscription — the
  * webhook settles the money — so this component only surfaces synchronous

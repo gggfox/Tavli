@@ -98,6 +98,14 @@ export const OrderingKeys = {
 	ORDER_STATUS_CANCELLED: "ordering.orderStatus.cancelled",
 	ORDER_STATUS_ITEMS: "ordering.orderStatus.items",
 	ORDER_ITEM_UNAVAILABLE: "ordering.orderStatus.itemUnavailable",
+	/**
+	 * A line removed from a PAID order: unavailable *and* refunded (ADR 013).
+	 * The line stays on the order so the diner can see what happened to
+	 * something they paid for.
+	 */
+	ORDER_ITEM_UNAVAILABLE_REFUNDED: "ordering.orderStatus.itemUnavailableRefunded",
+	/** Label for the refund's own line in the paid-order breakdown (ADR 013). */
+	ORDER_STATUS_REFUNDED_LINE: "ordering.orderStatus.refundedLine",
 	ORDER_STATUS_SUMMARY: "ordering.orderStatus.summary",
 	ORDER_STATUS_ORDER_MORE: "ordering.orderStatus.orderMore",
 	ORDER_STATUS_STEP_PLACED: "ordering.orderStatus.stepPlaced",
@@ -108,7 +116,6 @@ export const OrderingKeys = {
 	// Receipt (ADR 008, TAVLI-71 Phase 3C): paid-order breakdown showing the
 	// CHARGED subtotal/fee split, plus the emailed restaurant-branded receipt.
 	// Breakdown amount labels reuse the checkout keys (subtotal/serviceFee/total).
-	RECEIPT_ITEM_REFUNDED: "ordering.receipt.itemRefunded",
 	RECEIPT_EMAIL_CTA: "ordering.receipt.emailCta",
 	RECEIPT_EMAIL_SENDING: "ordering.receipt.emailSending",
 	RECEIPT_EMAIL_SENT: "ordering.receipt.emailSent",
@@ -183,29 +190,6 @@ export const OrderingKeys = {
 	CLOSEOUT_PAYMENT_TITLE: "ordering.closeout.paymentTitle",
 	CLOSEOUT_NOTHING_PAID: "ordering.closeout.nothingPaid",
 	CLOSEOUT_DONE: "ordering.closeout.done",
-
-	// Substitution prompt (ADR 008, TAVLI-71 Phase 3A): the kitchen proposed a
-	// replacement for a paid line; the diner answers on their own device.
-	SUB_TITLE: "ordering.substitution.title",
-	SUB_BODY: "ordering.substitution.body",
-	SUB_BODY_NO_NUMBER: "ordering.substitution.bodyNoNumber",
-	SUB_ORIGINAL_LABEL: "ordering.substitution.originalLabel",
-	SUB_PROPOSED_LABEL: "ordering.substitution.proposedLabel",
-	SUB_NO_EXTRA: "ordering.substitution.noExtra",
-	SUB_DELTA_LINE: "ordering.substitution.deltaLine",
-	SUB_FEE_LINE: "ordering.substitution.feeLine",
-	SUB_TOTAL_EXTRA: "ordering.substitution.totalExtra",
-	SUB_ACCEPT: "ordering.substitution.accept",
-	SUB_DECLINE: "ordering.substitution.decline",
-	SUB_DECLINE_CONFIRM_TITLE: "ordering.substitution.declineConfirmTitle",
-	SUB_DECLINE_CONFIRM_BODY: "ordering.substitution.declineConfirmBody",
-	/** Used when the server could not price the refund (money unresolvable). */
-	SUB_DECLINE_CONFIRM_BODY_NO_AMOUNT: "ordering.substitution.declineConfirmBodyNoAmount",
-	SUB_DECLINE_CONFIRM: "ordering.substitution.declineConfirm",
-	SUB_BACK: "ordering.substitution.back",
-	SUB_ONE_TAP_SUCCESS: "ordering.substitution.oneTapSuccess",
-	SUB_PAYMENT_TITLE: "ordering.substitution.paymentTitle",
-	SUB_DONE: "ordering.substitution.done",
 
 	// Geofence gate (TAVLI-6): menu browsable, ordering hidden while away.
 	GEOFENCE_BLOCKED_TITLE: "ordering.geofence.blockedTitle",

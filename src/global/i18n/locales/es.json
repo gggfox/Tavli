@@ -443,18 +443,6 @@
 			"markedReady": "{{station}}: marcado listo · #{{n}}",
 			"emptyAllDone": "Todo al día — nada pendiente para {{station}}."
 		},
-		"substitution": {
-			"propose": "Sustituir",
-			"pendingBadge": "Sustitución ofrecida",
-			"cancelProposal": "Retirar oferta",
-			"dialogTitle": "Proponer una sustitución",
-			"dialogSubtitle": "Reemplaza {{name}} por un artículo de precio igual o mayor. El comensal lo aprueba en su dispositivo; cualquier diferencia se le cobra a él.",
-			"dialogEmpty": "No hay artículos disponibles de ese precio o superior.",
-			"deltaFree": "Sin cargo extra",
-			"deltaPreview": "+${{amount}} (+${{fee}} tarifa de servicio)",
-			"confirm": "Enviar al comensal",
-			"dismiss": "Cancelar"
-		},
 		"servedWindow": {
 			"hint": "Los pedidos entregados salen de esta lista {{minutes}} minutos después de marcarse como entregados. Los anteriores permanecen en Pagos y en tus exportaciones."
 		},
@@ -472,8 +460,7 @@
 			"scopeFilter": "Filtrar pedidos por sección",
 			"fullOrder": "Detalles del pedido",
 			"loading": "Cargando pedidos",
-			"cancelItem": "Cancelar artículo {{name}}",
-			"proposeSubstitution": "Proponer sustitución para {{name}}"
+			"cancelItem": "Cancelar artículo {{name}}"
 		},
 		"payment": {
 			"toCollect": "Por cobrar",
@@ -632,12 +619,6 @@
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
-		"ERROR_SUBSTITUTION_NOT_ELIGIBLE": "Esta línea no admite sustitución — el pedido debe estar pagado y aún en cocina.",
-		"ERROR_SUBSTITUTION_ITEM_UNAVAILABLE": "Ese artículo de reemplazo no está disponible.",
-		"ERROR_SUBSTITUTION_PROPOSAL_EXISTS": "Ya hay una sustitución esperando la respuesta del comensal para este artículo.",
-		"ERROR_SUBSTITUTION_DELTA_NEGATIVE": "El reemplazo debe costar lo mismo o más que el artículo original.",
-		"ERROR_SUBSTITUTION_NOT_PENDING": "Esta sustitución ya fue respondida o retirada.",
-		"ERROR_SUBSTITUTION_REQUIRES_PAYMENT": "Esta sustitución tiene un costo extra — confirma el pago para aceptarla.",
 		"ERROR_TIP_INVALID_AMOUNT": "Ese monto de propina no es válido. Ingresa un monto mayor a cero.",
 		"ERROR_RECEIPT_ORDER_NOT_PAID": "Este pedido aún no se ha pagado, así que no hay recibo para enviar.",
 		"ERROR_RECEIPT_NO_VERIFIED_EMAIL": "Tu cuenta no tiene un correo verificado al cual enviar el recibo.",
@@ -821,6 +802,8 @@
 			"cancelled": "Pedido cancelado",
 			"items": "Productos",
 			"itemUnavailable": "No disponible",
+			"itemUnavailableRefunded": "No disponible · reembolsado",
+			"refundedLine": "Reembolsado",
 			"summary": "${{total}} · {{count}} productos",
 			"orderMore": "Pedir más",
 			"stepPlaced": "Pedido realizado",
@@ -829,7 +812,6 @@
 			"stepServed": "Entregado"
 		},
 		"receipt": {
-			"itemRefunded": "Reembolsado",
 			"emailCta": "Envíame el recibo por correo",
 			"emailSending": "Enviando...",
 			"emailSent": "Enviado a {{email}}"
@@ -905,27 +887,6 @@
 			"thanksBody": "Tu propina de ${{amount}} va directo al equipo.",
 			"paymentTitle": "Confirma tu propina",
 			"nothingPaid": "No tienes nada por pagar — no pagaste ningún pedido en esta visita.",
-			"done": "Listo"
-		},
-		"substitution": {
-			"title": "La cocina sugiere una sustitución",
-			"body": "Pedido #{{n}}: {{original}} no está disponible.",
-			"bodyNoNumber": "{{original}} no está disponible.",
-			"originalLabel": "Pediste",
-			"proposedLabel": "Sugerencia",
-			"noExtra": "Sin cargo extra",
-			"deltaLine": "Diferencia de precio",
-			"feeLine": "Tarifa de servicio Tavli",
-			"totalExtra": "Total extra",
-			"accept": "Aceptar sustitución",
-			"decline": "No, gracias — reembolsar ese artículo",
-			"declineConfirmTitle": "¿Rechazar esta sustitución?",
-			"declineConfirmBody": "{{original}} se quita de tu pedido y {{amount}} se reembolsa a tu tarjeta.",
-			"declineConfirmBodyNoAmount": "{{original}} se quita de tu pedido y se reembolsa a tu tarjeta.",
-			"declineConfirm": "Rechazar y reembolsar",
-			"back": "Volver",
-			"oneTapSuccess": "¡Listo! Se cobraron {{amount}} a tu tarjeta guardada.",
-			"paymentTitle": "Confirma el cargo extra",
 			"done": "Listo"
 		},
 		"geofence": {

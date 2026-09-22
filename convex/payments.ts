@@ -144,6 +144,47 @@ export const internalListPaymentsForExportYear = internalQuery({
 // ============================================================================
 
 /**
+ * The saved card for one-tap charges: the payment method persisted by the
+ * member's latest succeeded pay-at-submit charge in this session
+ * (`setup_future_usage: "off_session"` attached it to their platform-level
+ * Stripe Customer). Kind-"order" payments carry `orderId` (not `sessionId`),
+ * so the lookup walks the session's orders.
+ *
+ * Read by `stripe.createTipCharge` to try the one-tap path before falling back
+ * to Elements.
+ */
+export const getSavedCardForSessionMemberInternal = internalQuery({
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		userId: v.string(),
+	},
+	returns: v.union(v.string(), v.null()),
+	handler: async (ctx, args): Promise<string | null> => {
+		const orders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+
+		let best: { paidAt: number; paymentMethodId: string } | null = null;
+		for (const order of orders) {
+			if (order.paidByUserId !== args.userId || !order.activePaymentId) continue;
+			const payment = await ctx.db.get(order.activePaymentId);
+			if (
+				payment?.status === PAYMENT_STATUS.SUCCEEDED &&
+				payment.kind === PAYMENT_KIND.ORDER &&
+				payment.stripePaymentMethodId
+			) {
+				const paidAt = payment.succeededAt ?? payment.createdAt;
+				if (!best || paidAt > best.paidAt) {
+					best = { paidAt, paymentMethodId: payment.stripePaymentMethodId };
+				}
+			}
+		}
+		return best?.paymentMethodId ?? null;
+	},
+});
+
+/**
  * The caller's in-flight tip payment for a session, if any — the double-submit
  * guard for `stripe.createTipCharge`. Multiple tips per member are allowed
  * (re-tipping), but only one may be pending/processing at a time; a fresh call

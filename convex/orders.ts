@@ -71,10 +71,7 @@ import {
 	resolvePrepStation,
 	selectedOptionValidator,
 } from "./orderHelpers";
-import {
-	cancelPendingProposalsForOrder,
-	executeOrderItemCancellation,
-} from "./orderItemCancellation";
+import { executeOrderItemCancellation } from "./orderItemCancellation";
 import { resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
@@ -966,18 +963,6 @@ export const updateStatus = mutation({
 		// A manager who calls this mutation directly leaves the order in
 		// `refund_requested`, which the orders tab surfaces as a pending refund.
 
-		// A cancelled order withdraws every pending substitution proposal on it —
-		// there is no line left for the diner to accept a replacement onto
-		// (TAVLI-71 Phase 3A). In-flight delta payments are retired in-app; the
-		// webhook race is closed by `confirmSubstitutionPayment`'s auto-refund.
-		if (args.newStatus === "cancelled") {
-			await cancelPendingProposalsForOrder(ctx, {
-				orderId: args.orderId,
-				actorUserId: userId,
-				reason: "order_cancelled",
-			});
-		}
-
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.ORDERS,
 			aggregateId: args.orderId,
@@ -1542,7 +1527,7 @@ export const getActiveOrdersByRestaurant = query({
 			}))
 			.filter((order) => {
 				if (!stationFilter) return true;
-				// An order whose only items at this station were 86'd has nothing
+				// An order whose only items at this station were removed has nothing
 				// left for it to prepare, so it drops out of that station's queue.
 				return order.items.some(
 					(it) => it.cancelledAt === undefined && stationFilter.has(it.prepStation)
@@ -1752,9 +1737,9 @@ export const unmarkStationReady = mutation({
 });
 
 /**
- * "86" a single line: the kitchen is out of an ingredient, the bar is out of a
- * bottle. Cancelling the whole round because one station cannot make one item
- * is the wrong blast radius — this drops just that line.
+ * Remove a single line from an order: the kitchen is out of an ingredient, the
+ * bar is out of a bottle. Cancelling the whole round because one station cannot
+ * make one item is the wrong blast radius — this drops just that line.
  *
  * Two payment worlds (ADR 008):
  * - **Unpaid rounds** (legacy tab flow, and `awaiting_payment` cash orders):
@@ -1762,12 +1747,13 @@ export const unmarkStationReady = mutation({
  *   no Stripe call is made.
  * - **Paid orders** (pay-at-submit): the line is refunded — its price plus its
  *   share of the customer-borne service fee — via a scheduled
- *   `stripe.refundOrderItem`. The order keeps cooking; only 86'ing the last
+ *   `stripe.refundOrderItem`. The order keeps cooking; only removing the last
  *   live line cancels it and refunds the payment's entire remaining balance.
  *
  * A payment or refund **in flight** (pending/processing/refund_*) still
- * refuses: 86'ing under an open intent shifts the total nobody agreed to, and
- * a double-86 while a refund is pending must not be able to double-refund.
+ * refuses: removing a line under an open intent shifts the total nobody agreed
+ * to, and removing the same line twice while a refund is pending must not be
+ * able to double-refund.
  * That includes an `awaiting_payment` order whose diner is mid cash→card
  * switch — the open intent, not the status, decides.
  *
@@ -1779,7 +1765,7 @@ export const unmarkStationReady = mutation({
  *
  * No station-level authorization exists in this codebase by design (ADR 005:
  * the station filter is a UI convenience, not an access boundary), so any
- * restaurant staff may 86 any line. `cancelledBy`/`cancelledAt` is the trail.
+ * restaurant staff may remove any line. `cancelledBy`/`cancelledAt` is the trail.
  */
 export const cancelOrderItem = mutation({
 	args: { orderItemId: v.id(TABLE.ORDER_ITEMS) },
@@ -1802,8 +1788,8 @@ export const cancelOrderItem = mutation({
 
 		// Drafts belong to the diner (`removeItem`), and once an order is ready
 		// the food is plated — comping that is a manager's whole-order call.
-		// `awaiting_payment` is 86-able like any un-fired round: the cash hasn't
-		// been collected, so the line just leaves what staff will collect.
+		// A line leaves an `awaiting_payment` round like any un-fired one: the
+		// cash hasn't been collected, so it just leaves what staff will collect.
 		if (
 			order.status !== "submitted" &&
 			order.status !== "preparing" &&
@@ -1815,7 +1801,7 @@ export const cancelOrderItem = mutation({
 		// "Unpaid" is decided by paymentState alone — `awaiting_payment` gets no
 		// shortcut. A diner switching cash→card holds an open intent while the
 		// status stays awaiting_payment (paymentState pending/processing);
-		// 86'ing under that intent would shift the total the payment sheet is
+		// removing a line under that intent would shift the total the payment sheet is
 		// about to charge, and the webhook would then no-op the settle on the
 		// snapshot mismatch — money moved, order stuck. requestPayInPerson
 		// leaves paymentState unpaid and failPayment stamps `failed`, so a cash
@@ -1865,12 +1851,8 @@ export const cancelOrderItem = mutation({
 			paidPaymentId = paidPayment._id;
 		}
 
-		// The cancellation itself — stamps, totals, last-live-line fallout, and
-		// the scheduled refund — is shared with `substitutions.declineProposal`
-		// (the diner declining a substitution 86's the line the same way). Any
-		// pending substitution proposal on the line is auto-cancelled in there:
-		// the 86 is the stronger signal, so staff never have to withdraw the
-		// proposal first.
+		// The removal itself — stamps, totals, last-live-line fallout, and the
+		// scheduled refund — lives in `orderItemCancellation.ts`.
 		await executeOrderItemCancellation(ctx, {
 			item,
 			order,
@@ -1890,15 +1872,13 @@ export const cancelOrderItem = mutation({
  *
  * Money per row follows `convex/paymentMoneyHelpers.ts`:
  * - `subtotalCents` is the food the restaurant sold. For an order this is the
- *   live `orders.totalAmount` (so an 86'd line leaves it, and an accepted
- *   substitution's delta is already in it), not the charge-time snapshot on
- *   the payment; tips contribute zero.
+ *   live `orders.totalAmount` (so a line removed from the order leaves it), not
+ *   the charge-time snapshot on the payment; tips contribute zero.
  * - `serviceFeeCents` is the customer-borne Tavli fee actually charged — the
- *   order payment's `feeAmount` **plus** every accepted substitution's
- *   `feeOnDelta`, which rode its own PaymentIntent — and is `null` when there
- *   is no fee-split payment behind the row (cash orders report a known 0;
- *   pre-pivot tab-settled orders report `null`, the commission having never
- *   been recorded on our side).
+ *   order payment's `feeAmount` — and is `null` when there is no fee-split
+ *   payment behind the row (cash orders report a known 0; pre-pivot tab-settled
+ *   orders report `null`, the commission having never been recorded on our
+ *   side).
  * - `netToRestaurantCents` is what the restaurant keeps (subtotal + tip), also
  *   `null` for legacy rows for the same reason.
  *
@@ -1962,20 +1942,6 @@ export const getPaymentsLedgerByRestaurant = query({
 				.collect()
 		).filter((p) => p.status === PAYMENT_STATUS.SUCCEEDED);
 
-		// Accepted substitutions charge their delta (+ fee on delta) on a separate
-		// PaymentIntent carrying the same `orderId`. The food value is already in
-		// `orders.totalAmount`; only the fee and the charge have to be folded back
-		// in here, or a substituted order reports full food against a submit-time
-		// fee that no longer covers it.
-		const substitutionPaymentsByOrder = new Map<string, Doc<"payments">[]>();
-		for (const payment of succeededPayments) {
-			if (payment.kind !== PAYMENT_KIND.SUBSTITUTION || !payment.orderId) continue;
-			const key = payment.orderId as string;
-			const bucket = substitutionPaymentsByOrder.get(key);
-			if (bucket) bucket.push(payment);
-			else substitutionPaymentsByOrder.set(key, [payment]);
-		}
-
 		const orderRows = ordersWithItems.map(({ order, items, tableNumber, payment }) => {
 			// Only a payment for THIS order may put money on this row — a tab
 			// payment is stamped on every order it covers (see the header note).
@@ -1984,23 +1950,10 @@ export const getPaymentsLedgerByRestaurant = query({
 				ownPayment && ownPayment.status === PAYMENT_STATUS.SUCCEEDED
 					? paymentMoneyBreakdown(ownPayment)
 					: null;
-			const substitutionMoney = (substitutionPaymentsByOrder.get(order._id as string) ?? []).map(
-				paymentMoneyBreakdown
-			);
-			const substitutionFeeCents = substitutionMoney.reduce(
-				(sum, m) => sum + (m.serviceFee ?? 0),
-				0
-			);
-			const substitutionChargedCents = substitutionMoney.reduce(
-				(sum, m) => sum + m.chargedToDiner,
-				0
-			);
 			// A cash order never went through Stripe, so no service fee was
 			// charged and the restaurant keeps the whole subtotal — a known zero,
 			// not the "we never recorded it" null of a pre-pivot tab payment.
-			const baseServiceFeeCents = isCashSettledOrder(order) ? 0 : (money?.serviceFee ?? null);
-			const serviceFeeCents =
-				baseServiceFeeCents === null ? null : baseServiceFeeCents + substitutionFeeCents;
+			const serviceFeeCents = isCashSettledOrder(order) ? 0 : (money?.serviceFee ?? null);
 			const tipCents = money?.tip ?? 0;
 			return {
 				id: order._id as string,
@@ -2012,7 +1965,7 @@ export const getPaymentsLedgerByRestaurant = query({
 				subtotalCents: order.totalAmount,
 				serviceFeeCents,
 				tipCents,
-				chargedCents: (money?.chargedToDiner ?? order.totalAmount) + substitutionChargedCents,
+				chargedCents: money?.chargedToDiner ?? order.totalAmount,
 				netToRestaurantCents: serviceFeeCents === null ? null : order.totalAmount + tipCents,
 				items: items.map((item) => ({
 					...item,
@@ -2160,7 +2113,7 @@ export const internalListOrdersForExportYear = internalQuery({
 					.collect();
 
 				const ITEM_PREVIEW_LIMIT = 5;
-				// 86'd lines stay in the export, flagged: the diner ordered them and
+				// Removed lines stay in the export, flagged: the diner ordered them and
 				// may ask about them, but `totalAmountCents` already excludes them.
 				const preview = items
 					.slice(0, ITEM_PREVIEW_LIMIT)

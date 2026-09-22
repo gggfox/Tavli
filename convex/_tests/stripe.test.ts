@@ -1256,7 +1256,7 @@ describe("stripe actions", () => {
 			expect(order?.paidByUserId).toBe("diner-stripe");
 			expect(order?.dailyOrderNumber).toBe(1);
 			expect(payment?.status).toBe("succeeded");
-			// Needed for one-tap tips / substitution deltas later.
+			// Needed for one-tap tips later.
 			expect(payment?.stripePaymentMethodId).toBe("pm_saved_card");
 		});
 
@@ -1566,7 +1566,7 @@ describe("stripe actions", () => {
 		});
 	});
 
-	describe("refundOrderItem — 86 on a paid order (ADR 008)", () => {
+	describe("refunds on a paid ADR 008 order — line removal and whole-order cancel", () => {
 		/**
 		 * A paid pay-at-submit order (subtotal 1400 → charge 1568) with two live
 		 * lines, plus a staff identity. `activePaymentId` points at the succeeded
@@ -1575,9 +1575,9 @@ describe("stripe actions", () => {
 		async function seedPaidOrderWithTwoLines(t: ReturnType<typeof convexTest>) {
 			const organizationId = await seedOrganization(t);
 			const restaurantId = await seedRestaurant(t, {
-				ownerId: "owner-86",
+				ownerId: "owner-refunds",
 				organizationId,
-				stripeAccountId: "acct_86",
+				stripeAccountId: "acct_refunds",
 				stripeOnboardingComplete: true,
 			});
 
@@ -1588,7 +1588,7 @@ describe("stripe actions", () => {
 
 			await t.run(async (ctx) => {
 				await ctx.db.insert("userRoles", {
-					userId: "owner-86",
+					userId: "owner-refunds",
 					roles: ["owner"],
 					organizationId,
 					createdAt: Date.now(),
@@ -1603,7 +1603,7 @@ describe("stripe actions", () => {
 				const sessionId = await ctx.db.insert("sessions", {
 					restaurantId,
 					tableId,
-					userId: "diner-86",
+					userId: "diner-refunds",
 					status: "active",
 					startedAt: Date.now(),
 				});
@@ -1671,12 +1671,12 @@ describe("stripe actions", () => {
 					subtotalAmount: 1400,
 					feeAmount: 168,
 					kind: "order",
-					paidByUserId: "diner-86",
+					paidByUserId: "diner-refunds",
 					currency: "usd",
 					status: "succeeded",
 					refundStatus: "none",
 					attemptNumber: 1,
-					stripePaymentIntentId: "pi_86",
+					stripePaymentIntentId: "pi_refunds",
 					succeededAt: Date.now(),
 					createdAt: Date.now(),
 					updatedAt: Date.now(),
@@ -1689,11 +1689,11 @@ describe("stripe actions", () => {
 				tacosItemId: tacosItemId!,
 				drinkItemId: drinkItemId!,
 				paymentId: paymentId!,
-				staff: t.withIdentity({ subject: "owner-86" }),
+				staff: t.withIdentity({ subject: "owner-refunds" }),
 			};
 		}
 
-		it("refunds the line plus its fee share while the order keeps cooking", async () => {
+		it("refunds the removed line plus its fee share while the order keeps cooking", async () => {
 			vi.useFakeTimers();
 			try {
 				const t = convexTest(schema, modules);
@@ -1714,7 +1714,7 @@ describe("stripe actions", () => {
 				// 600 line + round(600 × 12%) = 672, keyed per (payment, line).
 				expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
 					{
-						payment_intent: "pi_86",
+						payment_intent: "pi_refunds",
 						amount: 672,
 						reverse_transfer: true,
 						refund_application_fee: true,
@@ -1741,7 +1741,7 @@ describe("stripe actions", () => {
 			}
 		});
 
-		it("sweeps the entire remaining balance when the last live line is 86'd", async () => {
+		it("sweeps the entire remaining balance when the last live line is removed", async () => {
 			vi.useFakeTimers();
 			try {
 				const t = convexTest(schema, modules);
@@ -1758,7 +1758,7 @@ describe("stripe actions", () => {
 				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 				// 672 + 896 = 1568 — the sum of line refunds is exactly the charge,
-				// so no rounding residue survives a fully-86'd order.
+				// so no rounding residue survives an order emptied line by line.
 				const amounts = mockStripeClient.refunds.create.mock.calls.map(
 					(call) => (call[0] as { amount: number }).amount
 				);
@@ -1817,7 +1817,7 @@ describe("stripe actions", () => {
 					feeAmount: undefined,
 				});
 				// Cancel the line by hand, as a buggy scheduler-caller would have.
-				await ctx.db.patch(drinkItemId, { cancelledAt: Date.now(), cancelledBy: "owner-86" });
+				await ctx.db.patch(drinkItemId, { cancelledAt: Date.now(), cancelledBy: "owner-refunds" });
 			});
 
 			await t.action(internal.stripe.refundOrderItem, {
@@ -1856,6 +1856,53 @@ describe("stripe actions", () => {
 			} finally {
 				vi.useRealTimers();
 			}
+		});
+
+		/**
+		 * The other refund this ticket keeps (TAVLI-110): a whole-order cancel on
+		 * a fee-inclusive ADR 008 payment returns the payment's **entire**
+		 * remaining balance, fee included — clamping to `orders.totalAmount` would
+		 * strand the diner's service fee on the charge forever. Asserted here at
+		 * the action level; the arithmetic itself is
+		 * `computeOrderRefundAmount`'s unit test.
+		 */
+		it("cancelOrderAndRefund returns the whole fee-inclusive charge, fee included", async () => {
+			const t = convexTest(schema, modules);
+			const { orderId, paymentId, staff } = await seedPaidOrderWithTwoLines(t);
+
+			mockStripeClient.refunds.create.mockResolvedValueOnce({
+				id: "re_whole",
+				status: "succeeded",
+				amount: 1568,
+			});
+
+			const [result, error] = await staff.action(api.stripe.cancelOrderAndRefund, { orderId });
+			expect(error).toBeNull();
+			expect(result).toMatchObject({
+				refunded: true,
+				amountRefunded: 1568,
+				stripeRefundId: "re_whole",
+			});
+
+			// A full refund omits `amount` entirely, and the key is (payment, order)
+			// — distinct from the per-line key, so a later line-level retry is not
+			// replayed as a no-op.
+			expect(mockStripeClient.refunds.create).toHaveBeenCalledWith(
+				{
+					payment_intent: "pi_refunds",
+					reverse_transfer: true,
+					refund_application_fee: true,
+				},
+				{ idempotencyKey: `refund:${paymentId}:${orderId}` }
+			);
+
+			const { order, payment } = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(order?.status).toBe("cancelled");
+			expect(order?.paymentState).toBe("refunded");
+			expect(payment?.refundStatus).toBe("succeeded");
 		});
 	});
 });

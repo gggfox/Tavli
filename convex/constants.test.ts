@@ -30,7 +30,6 @@ describe("TABLE constants", () => {
 			"stripeWebhookEvents",
 			"stripeDisputes",
 			"stripeCustomers",
-			"substitutionProposals",
 			"reservations",
 			"tableLocks",
 			"reservationSettings",

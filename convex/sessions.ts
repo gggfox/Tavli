@@ -226,7 +226,7 @@ export const getTabSummary = query({
  * settled). A tab with a payable balance can only leave the active state via
  * payment (`confirmTabPayment` — legacy pre-pivot flow), and a session holding
  * an uncollected cash order (`awaiting_payment`) stays open until staff collect
- * the cash or 86 the order from the Orders dashboard — cash walkout is the
+ * the cash or cancel the order from the Orders dashboard — cash walkout is the
  * only walkout left under ADR 008.
  */
 export const close = mutation({
@@ -253,7 +253,7 @@ export const close = mutation({
 
 		// Uncollected cash is owed money too, just outside the tab balance
 		// (`awaiting_payment` is deliberately not tab-payable). Same reasoning as
-		// above: closing would erase debt staff still have to collect — or 86 —
+		// above: closing would erase debt staff still have to collect — or cancel —
 		// from the Orders dashboard.
 		if (orders.some(isAwaitingPaymentOrder)) {
 			throw fromErrorObject(
@@ -308,8 +308,8 @@ export const getVisitSummary = query({
 			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
 			.collect();
 
-		// The caller's own card spend: order totals already reflect 86'd lines
-		// and accepted substitutions, so summing them needs no per-line math.
+		// The caller's own card spend: order totals already reflect lines removed
+		// from an order, so summing them needs no per-line math.
 		const myPaidOrders = orders.filter(
 			(o) =>
 				o.paymentState === ORDER_PAYMENT_STATE.PAID &&
@@ -345,7 +345,7 @@ export const getVisitSummary = query({
 
 		// One-tap eligibility: the card persisted by the caller's own
 		// pay-at-submit charge in this session (mirrors
-		// `substitutions.getSavedCardForSessionMemberInternal`).
+		// `payments.getSavedCardForSessionMemberInternal`).
 		let hasSavedCard = false;
 		for (const order of orders) {
 			if (order.paidByUserId !== userId || !order.activePaymentId) continue;

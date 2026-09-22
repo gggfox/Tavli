@@ -112,8 +112,7 @@ export async function requireStripeRestaurantAccess(
 /**
  * Resolves the platform-level Stripe Customer for a Clerk user, creating it on
  * first charge (ADR 008). The Customer is what `setup_future_usage:
- * "off_session"` attaches the card to, enabling one-tap tips and substitution
- * deltas later.
+ * "off_session"` attaches the card to, enabling one-tap tips later.
  *
  * Race-safe twice over: the `customer:${userId}` idempotency key makes two
  * concurrent `customers.create` calls return the same Customer, and
@@ -218,9 +217,8 @@ export async function handleAccountStatusChange(
  * not create, e.g. tests run by another developer against shared keys).
  *
  * Dispatch order (ADR 008): the payment row's `kind` decides first —
- * `order` settles that order via `confirmPayment`; `substitution` applies the
- * swap via `confirmSubstitutionPayment`; `tip` records the post-visit tip via
- * `confirmTipPayment`. Rows without a `kind` are legacy: `sessionId` marks a
+ * `order` settles that order via `confirmPayment`; `tip` records the
+ * post-visit tip via `confirmTipPayment`. Rows without a `kind` are legacy: `sessionId` marks a
  * tab payment, otherwise a pre-pivot per-order payment, both on their
  * original paths.
  */
@@ -244,8 +242,8 @@ export async function handlePaymentIntentSuccess(
 			: (paymentIntent.latest_charge?.id ?? undefined);
 
 	// Persist the saved card (`setup_future_usage: "off_session"`) so one-tap
-	// tips and substitution deltas can charge it later (ADR 008). Done for
-	// every success — legacy rows simply never read it.
+	// tips can charge it later (ADR 008). Done for every success — legacy rows
+	// simply never read it.
 	const paymentMethodId =
 		typeof paymentIntent.payment_method === "string"
 			? paymentIntent.payment_method
@@ -264,18 +262,6 @@ export async function handlePaymentIntentSuccess(
 			: typeof gratuityRaw === "number"
 				? gratuityRaw
 				: 0;
-
-	if (payment.kind === PAYMENT_KIND.SUBSTITUTION) {
-		// Supplemental delta charge for an accepted substitution (Phase 3A):
-		// applies the swap, raises the order total by the delta, and marks the
-		// proposal accepted — idempotently.
-		await ctx.runMutation(internal.substitutions.confirmSubstitutionPayment, {
-			paymentId: payment._id,
-			stripePaymentIntentId: paymentIntent.id,
-			stripeChargeId: chargeId,
-		});
-		return payment._id;
-	}
 
 	if (payment.kind === PAYMENT_KIND.TIP) {
 		// Post-visit tip (Phase 3B): marks the payment succeeded and records the
@@ -327,9 +313,8 @@ export async function handlePaymentIntentSuccess(
  *
  * Kind `order` rows (ADR 008) carry an `orderId` and no `sessionId`, so they
  * fall through to `failPayment` exactly like legacy per-order rows — the
- * routing needs no `kind` branch. Tip/substitution rows are dispatched by
- * `kind` before the `sessionId` check so a Phase 3 intent can never unlock a
- * tab.
+ * routing needs no `kind` branch. Tip rows are dispatched by `kind` before the
+ * `sessionId` check so a Phase 3 intent can never unlock a tab.
  */
 export async function handlePaymentIntentFailure(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -344,18 +329,6 @@ export async function handlePaymentIntentFailure(
 		}
 	);
 	if (!payment) return undefined;
-
-	if (payment.kind === PAYMENT_KIND.SUBSTITUTION) {
-		// A declined delta charge leaves the proposal pending — the diner can
-		// retry from their device (a fresh intent supersedes the failed row).
-		await ctx.runMutation(internal.substitutions.failSubstitutionPayment, {
-			paymentId: payment._id,
-			stripePaymentIntentId: paymentIntent.id,
-			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
-			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
-		});
-		return payment._id;
-	}
 
 	if (payment.kind === PAYMENT_KIND.TIP) {
 		// A declined tip charge is marked failed so the diner can retry from the

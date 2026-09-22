@@ -9,7 +9,6 @@ export { MenuItemDetailSkeleton } from "./components/MenuItemDetailSkeleton";
 export { OrderCheckoutPage } from "./components/OrderCheckoutPage";
 export { OrderStatus } from "./components/OrderStatus";
 export { SessionOrdersList } from "./components/SessionOrdersList";
-export { SubstitutionPrompt } from "./components/SubstitutionPrompt";
 export { SessionOrdersListSkeleton } from "./components/SessionOrdersListSkeleton";
 export { TabCheckoutPage } from "./components/TabCheckoutPage";
 export { VisitCloseoutPage } from "./components/VisitCloseoutPage";

@@ -57,9 +57,8 @@ vi.mock("../../hooks/useOrders", () => ({
 	useOrderScopeContext: (...args: unknown[]) => useOrderScopeContextMock(...args),
 }));
 
-// OrderDashboard now subscribes to pending substitution proposals and wires
-// the propose/withdraw mutations directly (TAVLI-71 Phase 3A); stub the
-// react-query layer so the dashboard renders without a QueryClientProvider.
+// The dashboard's hooks reach for react-query; stub that layer so it renders
+// without a QueryClientProvider.
 vi.mock("@tanstack/react-query", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@tanstack/react-query")>();
 	return {
