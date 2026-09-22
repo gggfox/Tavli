@@ -107,6 +107,7 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_REFUND_FAILED",
 	"ERROR_REFUND_PAYMENT_UNRESOLVED",
 	"ERROR_REFUND_ALREADY_ISSUED",
+	"ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS",
 	// Post-visit tips — convex/stripe.ts (TAVLI-71 Phase 3B)
 	"ERROR_TIP_INVALID_AMOUNT",
 	// Receipt emails — convex/receiptActions.ts (TAVLI-71 Phase 3C)

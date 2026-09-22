@@ -9,6 +9,7 @@ import {
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
+	STRIPE_ACCOUNT_STATUS,
 	TABLE,
 } from "./constants";
 import { ConflictError, fromErrorObject } from "./_shared/errors";
@@ -31,6 +32,12 @@ const paymentRefundStatusValidator = v.union(
 	v.literal(PAYMENT_REFUND_STATUS.SUCCEEDED),
 	v.literal(PAYMENT_REFUND_STATUS.PARTIAL),
 	v.literal(PAYMENT_REFUND_STATUS.FAILED)
+);
+
+const stripeAccountStatusValidator = v.union(
+	v.literal(STRIPE_ACCOUNT_STATUS.ACTIVE),
+	v.literal(STRIPE_ACCOUNT_STATUS.RESTRICTED),
+	v.literal(STRIPE_ACCOUNT_STATUS.CLOSED)
 );
 
 const paymentKindValidator = v.union(v.literal(PAYMENT_KIND.ORDER), v.literal(PAYMENT_KIND.TIP));
@@ -209,6 +216,11 @@ export const saveStripeAccountId = internalMutation({
 	handler: async (ctx, args) => {
 		await ctx.db.patch(args.restaurantId, {
 			stripeAccountId: args.stripeAccountId,
+			// A brand-new account id starts with no status of its own. Clearing it
+			// is what lets a restaurant whose previous account Stripe CLOSED
+			// onboard again — `closed` is terminal per account id, not per
+			// restaurant, and the next status refresh writes the new one's.
+			stripeAccountStatus: undefined,
 			updatedAt: Date.now(),
 		});
 	},
@@ -218,10 +230,18 @@ export const updateOnboardingStatus = internalMutation({
 	args: {
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		stripeOnboardingComplete: v.boolean(),
+		stripeAccountStatus: v.optional(stripeAccountStatusValidator),
 	},
 	handler: async (ctx, args) => {
+		const restaurant = await ctx.db.get(args.restaurantId);
+		if (!restaurant) return;
+		if (isClosedAndStaysClosed(restaurant.stripeAccountStatus, args.stripeAccountStatus)) return;
+
 		await ctx.db.patch(args.restaurantId, {
 			stripeOnboardingComplete: args.stripeOnboardingComplete,
+			...(args.stripeAccountStatus !== undefined && {
+				stripeAccountStatus: args.stripeAccountStatus,
+			}),
 			updatedAt: Date.now(),
 		});
 	},
@@ -239,10 +259,31 @@ export const clearStripeConnection = internalMutation({
 		await ctx.db.patch(args.restaurantId, {
 			stripeAccountId: undefined,
 			stripeOnboardingComplete: undefined,
+			// The admin Reset is the documented way out of a `closed` account, so
+			// the status has to go with the link it described.
+			stripeAccountStatus: undefined,
 			updatedAt: Date.now(),
 		});
 	},
 });
+
+/**
+ * Whether a status write must be dropped because the account is already closed.
+ *
+ * Stripe does not reopen a closed account, but it does keep delivering
+ * `v2.core.account[...]` events about one, and `getAccountStatus` keeps being
+ * called from the admin page. Without this guard any of those could patch
+ * `stripeOnboardingComplete: true` back onto a dead account and re-open the
+ * payment gates. Only an explicit `closed` write (the closure handler itself,
+ * replayed) gets through; leaving the state is the admin Reset's job, or
+ * `saveStripeAccountId` with a new account id.
+ */
+function isClosedAndStaysClosed(
+	current: string | undefined,
+	incoming: string | undefined
+): boolean {
+	return current === STRIPE_ACCOUNT_STATUS.CLOSED && incoming !== STRIPE_ACCOUNT_STATUS.CLOSED;
+}
 
 /**
  * Updates onboarding status by looking up the restaurant via its Stripe account ID.
@@ -252,18 +293,61 @@ export const updateOnboardingByAccountId = internalMutation({
 	args: {
 		stripeAccountId: v.string(),
 		stripeOnboardingComplete: v.boolean(),
+		stripeAccountStatus: v.optional(stripeAccountStatusValidator),
 	},
 	handler: async (ctx, args) => {
 		const restaurant = await ctx.db
 			.query(TABLE.RESTAURANTS)
 			.withIndex("by_stripe_account", (q) => q.eq("stripeAccountId", args.stripeAccountId))
 			.first();
-		if (restaurant) {
-			await ctx.db.patch(restaurant._id, {
-				stripeOnboardingComplete: args.stripeOnboardingComplete,
-				updatedAt: Date.now(),
-			});
-		}
+		if (!restaurant) return;
+		if (isClosedAndStaysClosed(restaurant.stripeAccountStatus, args.stripeAccountStatus)) return;
+
+		await ctx.db.patch(restaurant._id, {
+			stripeOnboardingComplete: args.stripeOnboardingComplete,
+			...(args.stripeAccountStatus !== undefined && {
+				stripeAccountStatus: args.stripeAccountStatus,
+			}),
+			updatedAt: Date.now(),
+		});
+	},
+});
+
+/**
+ * Records that Stripe closed (or rejected) a connected account — TAVLI-65.
+ *
+ * Three things happen together, which is why this is one mutation rather than
+ * a `updateOnboardingByAccountId` call with different arguments:
+ *
+ * 1. `stripeOnboardingComplete: false` shuts the payment gates that read it.
+ * 2. `stripeAccountStatus: "closed"` is the only record that distinguishes a
+ *    closed account from a restaurant that never had one, and it is what the
+ *    admin page and the gates' error message both key off.
+ * 3. `stripeAccountId` is **kept**. The operator's next step is to look the
+ *    account up in the Stripe Dashboard, and an unlink here would throw away
+ *    the only handle on it. (The admin Reset does unlink — deliberately, as the
+ *    prelude to onboarding a replacement.)
+ *
+ * Returns the restaurant, so the caller can attach it to the operator alert
+ * without a second round trip. `null` means no restaurant in this deployment
+ * claims that account id — dev and staging share one Stripe test account, so a
+ * closure fired by another environment lands here too.
+ */
+export const markStripeAccountClosedByAccountId = internalMutation({
+	args: { stripeAccountId: v.string() },
+	handler: async (ctx, args): Promise<{ restaurantId: Id<"restaurants"> } | null> => {
+		const restaurant = await ctx.db
+			.query(TABLE.RESTAURANTS)
+			.withIndex("by_stripe_account", (q) => q.eq("stripeAccountId", args.stripeAccountId))
+			.first();
+		if (!restaurant) return null;
+
+		await ctx.db.patch(restaurant._id, {
+			stripeOnboardingComplete: false,
+			stripeAccountStatus: STRIPE_ACCOUNT_STATUS.CLOSED,
+			updatedAt: Date.now(),
+		});
+		return { restaurantId: restaurant._id };
 	},
 });
 

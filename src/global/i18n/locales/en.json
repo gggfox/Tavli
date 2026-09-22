@@ -622,6 +622,7 @@
 		"ERROR_REFUND_FAILED": "The order was cancelled, but the refund did not go through. Issue it from the Stripe dashboard.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "The order was cancelled, but we could not find its payment to refund. Check the Stripe dashboard.",
 		"ERROR_REFUND_ALREADY_ISSUED": "This payment has already been fully refunded.",
+		"ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS": "This restaurant is not accepting card payments right now. Ask your server to settle in person.",
 		"ERROR_TIP_INVALID_AMOUNT": "That tip amount isn't valid. Enter an amount above zero.",
 		"ERROR_RECEIPT_ORDER_NOT_PAID": "This order hasn't been paid yet, so there's no receipt to send.",
 		"ERROR_RECEIPT_NO_VERIFIED_EMAIL": "Your account has no verified email address to send the receipt to.",
@@ -1218,6 +1219,8 @@
 			"resetWarning": "This closes the current Stripe account and unlinks it from this restaurant. You'll need to complete onboarding again. Any existing products tied to this account will no longer be chargeable.",
 			"disconnectedClosed": "Disconnected and closed Stripe account {{accountId}}. You can now onboard a new account.",
 			"disconnectedLeftOpen": "Disconnected from Stripe. The previous account was left open — close it from your Stripe Dashboard if needed.",
+			"accountClosed": "Stripe has closed this connected account, so it can no longer take payments. Its ID is kept for reference — reset the setup below to onboard a new account.",
+			"accountRestricted": "Stripe is not letting this account take payments right now. Finish the outstanding requirements below to lift the restriction.",
 			"statusFailed": "Failed to check payment status",
 			"setupFailed": "Failed to start Stripe setup",
 			"resetFailed": "Failed to reset Stripe setup"

@@ -622,6 +622,7 @@
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
+		"ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS": "Este restaurante no está aceptando pagos con tarjeta en este momento. Pide a tu mesero que cobre en persona.",
 		"ERROR_TIP_INVALID_AMOUNT": "Ese monto de propina no es válido. Ingresa un monto mayor a cero.",
 		"ERROR_RECEIPT_ORDER_NOT_PAID": "Este pedido aún no se ha pagado, así que no hay recibo para enviar.",
 		"ERROR_RECEIPT_NO_VERIFIED_EMAIL": "Tu cuenta no tiene un correo verificado al cual enviar el recibo.",
@@ -1218,6 +1219,8 @@
 			"resetWarning": "Esto cierra la cuenta actual de Stripe y la desvincula de este restaurante. Tendrás que completar la configuración de nuevo. Cualquier producto vinculado a esta cuenta dejará de ser cobrable.",
 			"disconnectedClosed": "Desconectada y cerrada la cuenta de Stripe {{accountId}}. Ahora puedes configurar una nueva cuenta.",
 			"disconnectedLeftOpen": "Desconectado de Stripe. La cuenta anterior quedó abierta — ciérrala desde tu panel de Stripe si es necesario.",
+			"accountClosed": "Stripe cerró esta cuenta conectada, así que ya no puede recibir pagos. Su ID se conserva como referencia — restablece la configuración abajo para crear una cuenta nueva.",
+			"accountRestricted": "Stripe no permite que esta cuenta reciba pagos en este momento. Completa los requisitos pendientes para levantar la restricción.",
 			"statusFailed": "Error al verificar el estado de pagos",
 			"setupFailed": "Error al iniciar la configuración de Stripe",
 			"resetFailed": "Error al restablecer la configuración de Stripe"

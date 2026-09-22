@@ -24,6 +24,7 @@ import {
 	RESTAURANT_MEMBER_ROLE,
 	SESSION_PAYMENT_STATE,
 	SHIFT_STATUS,
+	STRIPE_ACCOUNT_STATUS,
 	TABLE,
 	TABLE_ASSIGNED_BY,
 	TIP_DISTRIBUTION_RULE,
@@ -269,6 +270,27 @@ export default defineSchema({
 		supportedLanguages: v.optional(v.array(v.string())),
 		stripeAccountId: v.optional(v.string()),
 		stripeOnboardingComplete: v.optional(v.boolean()),
+		/**
+		 * Where the connected account named by `stripeAccountId` stands
+		 * (`STRIPE_ACCOUNT_STATUS`, TAVLI-65). Absent means no account — a
+		 * restaurant that was never onboarded, or one onboarded before this
+		 * field existed whose status has not been refreshed since.
+		 *
+		 * Kept alongside `stripeOnboardingComplete` rather than replacing it:
+		 * that boolean is what the payment gates have always read and what a
+		 * v1 `account.updated` still writes, while this field is the only thing
+		 * that can tell a **closed** account from a restaurant with no Stripe
+		 * connection at all. `stripeAccountId` survives a closure on purpose —
+		 * the id is the audit trail an operator needs in the Stripe Dashboard,
+		 * unlike the admin Reset, which unlinks deliberately.
+		 */
+		stripeAccountStatus: v.optional(
+			v.union(
+				v.literal(STRIPE_ACCOUNT_STATUS.ACTIVE),
+				v.literal(STRIPE_ACCOUNT_STATUS.RESTRICTED),
+				v.literal(STRIPE_ACCOUNT_STATUS.CLOSED)
+			)
+		),
 		/**
 		 * Receipt tax block (ADR 008): rendered verbatim on restaurant-branded
 		 * receipt emails. Informational only — this is NOT CFDI e-invoicing.

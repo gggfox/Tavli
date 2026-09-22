@@ -24,17 +24,25 @@ import {
 	PAYMENT_FAILURE_CODE,
 	PAYMENT_KIND,
 	PAYMENT_STATUS,
+	STRIPE_ACCOUNT_STATUS,
 	STRIPE_MAX_NETWORK_RETRIES,
 	STRIPE_REQUEST_TIMEOUT_MS,
 	USER_ROLES,
+	type StripeAccountStatus,
 } from "../constants";
 import { formatMoneyCents } from "../exportHelpers";
-import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
+import {
+	ConflictError,
+	fromErrorObject,
+	NotAuthorizedError,
+	NotFoundError,
+} from "../_shared/errors";
 import { buildIntegrationErrorLog, redactExternalId } from "../_shared/integrationLogging";
 import {
 	computeDisputeFacts,
 	computeRefundFacts,
 	DISPUTE_PHASE,
+	STRIPE_NOT_CONFIGURED,
 	type DisputePhase,
 	stripeSecondsToMs,
 } from "../stripeWebhookHelpers";
@@ -66,8 +74,11 @@ export function getStripeClient(): Stripe {
 	// Get your key from https://dashboard.stripe.com/apikeys
 	const key = process.env.STRIPE_SECRET_KEY;
 	if (!key) {
+		// Marked like the two signing secrets: this is the same class of failure
+		// (the deployment is not configured), and the webhook HTTP routes must
+		// answer 500 for it rather than a 400 that reads as "wrong secret".
 		throw new Error(
-			"STRIPE_SECRET_KEY is not set. " +
+			`${STRIPE_NOT_CONFIGURED}: STRIPE_SECRET_KEY is not set. ` +
 				"Add it to your Convex deployment environment variables in the Convex Dashboard. " +
 				"You can find your secret key at https://dashboard.stripe.com/apikeys"
 		);
@@ -281,6 +292,7 @@ export async function inferV2AccountStatus(
 	requirementsStatus: string | null;
 	onboardingComplete: boolean;
 	isComplete: boolean;
+	accountStatus: StripeAccountStatus;
 }> {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const account: any = await stripeClient.v2.core.accounts.retrieve(stripeAccountId, {
@@ -303,6 +315,10 @@ export async function inferV2AccountStatus(
 		requirementsStatus,
 		onboardingComplete,
 		isComplete,
+		// A retrieve can only ever answer "can this account take money or not":
+		// `closed` is not derivable here, it is asserted by
+		// `v2.core.account.closed` and then defended by the mutation layer.
+		accountStatus: isComplete ? STRIPE_ACCOUNT_STATUS.ACTIVE : STRIPE_ACCOUNT_STATUS.RESTRICTED,
 	};
 }
 
@@ -310,6 +326,10 @@ export async function inferV2AccountStatus(
  * Shared helper for thin event handlers: re-fetches the V2 account,
  * determines the current onboarding/payment status, and updates the
  * restaurant record in our DB.
+ *
+ * The stored `stripeAccountStatus` moves with the boolean so the admin page and
+ * the payment gates never disagree about the same account. A closed account is
+ * left alone — see `isClosedAndStaysClosed` in `convex/stripeHelpers.ts`.
  */
 export async function handleAccountStatusChange(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -317,12 +337,125 @@ export async function handleAccountStatusChange(
 	stripeClient: Stripe,
 	stripeAccountId: string
 ): Promise<void> {
-	const { isComplete } = await inferV2AccountStatus(stripeClient, stripeAccountId);
+	const { isComplete, accountStatus } = await inferV2AccountStatus(stripeClient, stripeAccountId);
 
 	await ctx.runMutation(internal.stripeHelpers.updateOnboardingByAccountId, {
 		stripeAccountId,
 		stripeOnboardingComplete: isComplete,
+		stripeAccountStatus: accountStatus,
 	});
+}
+
+/**
+ * Applies a `v2.core.account.closed` thin event (TAVLI-65).
+ *
+ * Thin events carry no object, only `related_object: {id, type, url}`, so the
+ * versioned event is fetched from Stripe before anything is written — the
+ * handler acts on Stripe's own record of the closure rather than on an
+ * unverified id lifted out of the payload. The account id still comes from the
+ * signed notification as a fallback, because a `v2.core.events.retrieve` that
+ * omits `related_object` must not turn a real closure into a silent no-op.
+ *
+ * Deliberately NOT `handleAccountStatusChange`: that helper retrieves the
+ * account, and a closed account has nothing useful left to report — the
+ * closure is the event, not something to be re-derived.
+ *
+ * The operator alert is raised even when no restaurant claims the account id.
+ * Dev and staging share one Stripe test account, so an unclaimed closure is
+ * usually another environment's — but it can equally be a restaurant whose
+ * `stripeAccountId` was cleared while Stripe was still delivering, and that is
+ * exactly the case nobody would otherwise ever see. `dedupeKey` caps it at one
+ * open row per account either way.
+ */
+export async function handleAccountClosed(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	stripeClient: Stripe,
+	notification: { id: string; relatedObjectId: string | undefined }
+): Promise<void> {
+	// The retrieve is best-effort. Events are only readable through the v2 API
+	// for a limited window, and a redelivery of an old closure (or a key that
+	// cannot read events) would 404 here — which must not turn a real closure
+	// into a silent no-op, because the notification Stripe SIGNED already told
+	// us which account closed. So a failed retrieve falls back to it and says
+	// so, and only a closure with no account id anywhere is dropped.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let event: any = null;
+	try {
+		event = await stripeClient.v2.core.events.retrieve(notification.id);
+	} catch (error) {
+		console.warn(
+			"[stripe.handleAccountClosed] could not fetch the versioned event; " +
+				"falling back to the signed notification's related object",
+			buildIntegrationErrorLog(error, {
+				integration: "stripe-connect-webhook",
+				operation: "v2.core.events.retrieve",
+				eventId: notification.id,
+			})
+		);
+	}
+
+	const stripeAccountId: string | undefined =
+		event?.related_object?.id ?? notification.relatedObjectId;
+
+	if (!stripeAccountId) {
+		console.error(
+			"[stripe.handleAccountClosed] account closed event carries no related object",
+			JSON.stringify({ eventId: notification.id })
+		);
+		return;
+	}
+
+	const closed: { restaurantId: Id<"restaurants"> } | null = await ctx.runMutation(
+		internal.stripeHelpers.markStripeAccountClosedByAccountId,
+		{ stripeAccountId }
+	);
+
+	await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+		kind: OPERATOR_ALERT_KIND.ACCOUNT_CLOSED,
+		severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+		...(closed && { restaurantId: closed.restaurantId }),
+		stripeObjectId: stripeAccountId,
+		dedupeKey: `account_closed:${stripeAccountId}`,
+	});
+}
+
+/**
+ * The one payment gate, shared by every path that builds a PaymentIntent
+ * against a restaurant's connected account (TAVLI-65).
+ *
+ * Callers narrow `stripeAccountId` themselves (they need it as a `string` for
+ * `transfer_data.destination`); this owns the *policy* — what makes an account
+ * chargeable — so a new status or a new rule lands in one place instead of
+ * three. The error is a stable code, not prose: `createPaymentIntent` surfaces
+ * straight to the diner's checkout sheet, which maps
+ * `ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS` to "this restaurant is not
+ * accepting payments right now" in the diner's own language. Before this, a
+ * closed account produced an opaque Stripe failure several seconds later.
+ *
+ * **`stripeOnboardingComplete` owns "can this account be charged right now";
+ * the status only adds `closed`.** A `restricted` status does not by itself
+ * refuse, and that is deliberate twice over. The boolean is the field every
+ * writer maintains — including the v1 `account.updated` handler, which writes
+ * it with no status at all — so a restaurant can legitimately be
+ * `{ complete: true, status: "restricted" }` while the status is merely stale.
+ * And `restricted` is the same "not finished onboarding" the boolean already
+ * says `false` for, so making it refuse independently would only ever fire on
+ * the disagreement, which is the case where the boolean is the fresher fact.
+ * `closed` is different in kind: it is asserted by an event, it is terminal,
+ * and no writer of the boolean knows about it.
+ *
+ * A restaurant with no stored status therefore passes on the boolean alone —
+ * which is every restaurant onboarded before TAVLI-65, until a thin event or a
+ * status refresh writes one.
+ */
+export function assertRestaurantAcceptsPayments(restaurant: Doc<"restaurants">): void {
+	if (
+		!restaurant.stripeOnboardingComplete ||
+		restaurant.stripeAccountStatus === STRIPE_ACCOUNT_STATUS.CLOSED
+	) {
+		throw fromErrorObject(new ConflictError("ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS").toObject());
+	}
 }
 
 /**

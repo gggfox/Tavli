@@ -126,12 +126,19 @@ from the dev destination as dead weight.
 
 #### Connect destination events
 
-All 15 `v2.core.account*` types are subscribed. Only two are handled today:
+All 15 `v2.core.account*` types are subscribed. **Three** change Tavli's state:
 
 ```text
 v2.core.account[requirements].updated
 v2.core.account[configuration.recipient].capability_status_updated
+v2.core.account.closed
 ```
+
+The other 12 are recorded for replay dedup and logged at info level
+(`ignored thin event type: …`). `handleThinEvent` names each one with the reason
+it is ignored — read the switch there before promoting one. A type outside all
+15 logs `unhandled thin event type: …` as a **warning**, which is the line to
+grep for after Stripe adds an event.
 
 Beware the near-miss pair: you want
 `[configuration.recipient].capability_status_updated`, **not**
@@ -162,13 +169,15 @@ Nothing is charged or captured — no payment method is ever attached. Then chec
 the Convex deployment logs for the delivery:
 
 ```text
-Q  getProcessedStripeWebhookEventInternal   success
-M  recordStripeWebhookEvent                 success
-A  stripe:fulfillPayment                    success
-H  POST /stripe/webhook                     200
+Q  stripeHelpers:getProcessedStripeWebhookEventInternal      success
+M  stripeHelpers:recordStripeWebhookEvent                    success
+A  stripe:fulfillPayment                                     success
+H  POST /stripe/webhook                                      200
 ```
 
-A `400` on the POST means signature verification failed — the secret is wrong.
+A `400` on the POST means signature verification failed — the secret is wrong. A
+`500` means `STRIPE_WEBHOOK_SECRET` (or `STRIPE_SECRET_KEY`) is not set at all; see the 400-vs-500 triage
+table under step 4b, which applies to both destinations.
 
 > [!WARNING]
 > Do **not** use "the table looks empty" as evidence. Convex's `inferredSchema`
@@ -185,8 +194,10 @@ without a connected account. You do not have to wait for a real restaurant:
    destination.
 2. Watch the Convex logs for `POST /stripe/connect-webhook → 200` and
    `stripe:handleThinEvent success`. Lines reading
-   `Unhandled thin event type: …` are fine — reaching the handler at all proves
-   `parseEventNotification` accepted the signature.
+   `ignored thin event type: …` are fine — reaching the handler at all proves
+   `parseEventNotification` accepted the signature. A line reading
+   `unhandled thin event type: …` is not: that is a type outside the 15, and
+   somebody has to decide about it (see step 4b).
 3. **Stop at the Stripe Express onboarding screen — do not complete it.** It
    collects real KYC (government ID, tax ID, bank account). Completing it for a
    test restaurant would create a live merchant account under false pretenses.
@@ -257,6 +268,141 @@ Before enabling payments for a restaurant:
 Test-mode connected-account ids are **invalid in live mode**, and ids created
 under the dev Stripe account are unreachable with the production `sk_live`
 entirely. Any restaurant onboarded in test must be onboarded again in live.
+
+### 4b. Connected-account lifecycle — and the secret that was never set
+
+> [!CAUTION]
+> **`STRIPE_CONNECT_WEBHOOK_SECRET` has never been set on any deployment.**
+> Until it is, `handleThinEvent` throws before it reads the payload, the route
+> answers **500 `Stripe not configured`**, and every `v2.core.account*`
+> event Stripe delivers is lost. The whole connected-account lifecycle —
+> including account closure — is **dormant**. It must be set on **each**
+> deployment separately: dev, staging and production each have their own Convex
+> env and their own webhook destination (see "Two webhook destinations"). Dev
+> and staging share one Stripe **test** account, but not one destination, and
+> therefore not one secret.
+
+```bash
+# One per deployment. Run each against the deployment it names.
+npx convex env set STRIPE_CONNECT_WEBHOOK_SECRET whsec_...            # dev
+npx convex env set STRIPE_CONNECT_WEBHOOK_SECRET whsec_... --prod     # production
+# staging: run it with that deployment selected (CONVEX_DEPLOYMENT / --url),
+# NOT with --prod, or you will overwrite production's secret with staging's.
+```
+
+#### What a closure does (TAVLI-65)
+
+`v2.core.account.closed` is Stripe saying the connected account is finished —
+closed by the restaurant, or rejected/terminated by Stripe. On that event Tavli:
+
+1. patches the Restaurant to `stripeOnboardingComplete: false` and
+   `stripeAccountStatus: "closed"`;
+2. **keeps** `stripeAccountId`, so the dead account is still lookupable in the
+   Stripe Dashboard (the admin Reset is the thing that unlinks);
+3. refuses every new PaymentIntent on that restaurant with
+   `ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS`, which the diner's checkout renders
+   as "this restaurant is not accepting card payments right now" in their own
+   language — instead of the opaque Stripe failure they used to get several
+   seconds later;
+4. raises a **severe** `account_closed` operator alert (one per account id —
+   `dedupeKey`), which emails every platform admin;
+5. shows the admin Payment Setup panel a "closed" state with the Reset control,
+   not the "not set up" onboarding pitch.
+
+`closed` is terminal for that account id: a later `[requirements].updated`, or
+an admin hitting **Refresh**, cannot promote it back to active. The two ways out
+are **Restablecer configuración de Stripe** (unlinks, freeing the restaurant to
+onboard a new account) and onboarding a new account outright.
+
+A closure for an account id no restaurant in this deployment claims still raises
+the alert, with no restaurant attached. Dev and staging share one Stripe test
+account, so that is usually the other environment's account — but it can also be
+a restaurant whose link was cleared while Stripe was still delivering, which is
+the case that would otherwise be invisible.
+
+#### Verifying the thin-event path in test mode
+
+Do this once per deployment, after setting the secret, **in test mode only**.
+
+There is no `stripe trigger` for this: `trigger` fires v1 snapshot events only
+(`stripe trigger --help` lists them — no `v2.*` type appears). The way to
+produce a real `v2.core.account.closed` is to actually close a connected
+account, which Tavli's own admin Reset does for you.
+
+**1. Prove the pipe answers at all.**
+
+```bash
+curl -i -X POST https://<slug>.convex.site/stripe/connect-webhook
+# 400 "Missing stripe-signature header"  → route is live
+# 404                                    → wrong host (.convex.cloud, not .convex.site)
+```
+
+**2. Drive a genuine closure.** Sign in as an admin on the deployment under
+test and, on a **throwaway** restaurant:
+
+1. Click **Iniciar configuración para cobrar pagos**. `createConnectAccount`
+   creates a V2 connected account and several `v2.core.account*` events land on
+   the destination immediately — enough on its own to prove the signature is
+   accepted.
+2. **Stop at the Stripe onboarding screen — do not complete it.** It collects
+   real KYC even in test mode.
+3. Click **Restablecer configuración de Stripe**. `resetStripeConnection` calls
+   `v2.core.accounts.close`, which fires a genuine `v2.core.account.closed` at
+   the destination.
+
+**3. Read the deployment logs.** For the closure:
+
+```text
+H  POST /stripe/connect-webhook                             200
+A  stripe:handleThinEvent                                   success
+Q  stripeHelpers:getProcessedStripeWebhookEventInternal      success
+M  stripeHelpers:markStripeAccountClosedByAccountId          success
+M  operatorAlerts:raiseOperatorAlertInternal                 success
+M  stripeHelpers:recordStripeWebhookEvent                    success
+```
+
+Reset clears the Convex link **before** the closure arrives, so no restaurant
+claims the account id: the alert lands on `/admin/alerts` with no restaurant
+attached. That is correct, and it is the unclaimed case described above.
+Acknowledge it to clear it.
+
+**4. Prove the replay dedup.** Workbench → **Events** → find the
+`v2.core.account.closed` you just caused → **Resend** (available for events
+under 15 days old). Resend re-delivers **the same event under the same event
+id**, which is exactly what makes it a proof: the second POST finds that id
+already in `stripeWebhookEvents` via `getProcessedStripeWebhookEventInternal`
+and returns before the switch runs at all. So it must still answer **200** while
+writing nothing: still one `stripeWebhookEvents` row, still one open alert. This
+is what stops Stripe's redeliveries from emailing every platform admin
+repeatedly.
+
+#### Triage: 400 vs 500 on this route
+
+The two failures are opposite diagnoses and the status code now says which:
+
+| Response                                  | Means                                                                                | Fix                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| **500** `Stripe not configured`           | `STRIPE_CONNECT_WEBHOOK_SECRET` (or `STRIPE_SECRET_KEY`) is unset on this deployment | Set it (above). Nothing about the delivery is wrong.             |
+| **400** `Webhook handler failed`          | The delivery failed verification                                                     | Wrong secret, or the **other** destination's secret. Re-copy it. |
+| **400** `Missing stripe-signature header` | Not from Stripe                                                                      | Something else is POSTing at the route.                          |
+
+Tell them apart from the Convex side by the **log line**, not the status alone:
+a missing secret or API key logs `STRIPE_NOT_CONFIGURED` in the
+`[http.stripe/connect-webhook]` entry, naming the exact variable, while a verification failure logs
+`operation: "parseEventNotification"` from `[stripe.handleThinEvent]`. The same
+distinction applies to `POST /stripe/webhook`.
+
+#### Local development against thin events
+
+```bash
+stripe listen --thin-events 'v2.core.account*' \
+  --forward-thin-to https://<dev-slug>.convex.site/stripe/connect-webhook
+```
+
+The listen session mints **its own** signing secret and prints it; that is the
+value `STRIPE_CONNECT_WEBHOOK_SECRET` must hold while the session runs, and it
+rotates every session. A registered destination is preferable for anything but
+a debugging session, precisely because its secret is stable.
 
 ### 5. Platform subscription — the 2,000 MXN/month Price
 

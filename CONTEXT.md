@@ -268,6 +268,25 @@ two never mix. Distinct again from a **Toast**, the transient in-page
 message `NotificationCenter` renders and nothing persists.
 _Avoid_: alert (that is the operator's), message, notice.
 
+**Stripe account status**:
+Where a `Restaurant`'s Stripe **connected account** stands: `active`,
+`restricted`, or `closed`. **Absent** is its own answer and means no
+account — never onboarded, or onboarded before the field existed. That
+distinction is the whole point of storing it: `stripeOnboardingComplete:
+false` reads the same for a restaurant Stripe just **closed** and one
+that never had an account, and the first cannot take payments ever again
+while the second only has to finish onboarding.
+`restricted` deliberately does not separate "still onboarding" from
+"Stripe restricted it": both mean the account cannot be charged against
+right now and both are fixed by the same hosted onboarding link.
+`closed` arrives as a `v2.core.account.closed` thin event and is terminal
+**for that account id** — no status refresh can promote it back. The
+`stripeAccountId` is kept on a closure (it is the operator's handle on
+the dead account); only the admin **Reset** unlinks, which is the prelude
+to onboarding a replacement.
+_Avoid_: disconnected, disabled, deactivated — a closed account is still
+linked, and "not set up" is the absent case, not this one.
+
 **Shift**:
 A scheduled work block for a `RestaurantMember`, carrying a
 `ShiftRole` (`server | bartender | host | kitchen | manager`).

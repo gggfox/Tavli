@@ -52,6 +52,8 @@ export const mockStripeClient = {
 			accounts: {
 				create: vi.fn(),
 				retrieve: vi.fn(),
+				/** `resetStripeConnection` closes the connected account before unlinking. */
+				close: vi.fn(),
 			},
 			accountLinks: {
 				create: vi.fn(),

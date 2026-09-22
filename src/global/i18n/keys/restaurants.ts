@@ -324,6 +324,8 @@ export const RestaurantsKeys = {
 	STRIPE_RESET_WARNING: "restaurants.stripe.resetWarning",
 	STRIPE_DISCONNECTED_CLOSED: "restaurants.stripe.disconnectedClosed",
 	STRIPE_DISCONNECTED_LEFT_OPEN: "restaurants.stripe.disconnectedLeftOpen",
+	STRIPE_ACCOUNT_CLOSED: "restaurants.stripe.accountClosed",
+	STRIPE_ACCOUNT_RESTRICTED: "restaurants.stripe.accountRestricted",
 	STRIPE_STATUS_FAILED: "restaurants.stripe.statusFailed",
 	STRIPE_SETUP_FAILED: "restaurants.stripe.setupFailed",
 	STRIPE_RESET_FAILED: "restaurants.stripe.resetFailed",

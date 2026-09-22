@@ -1,7 +1,11 @@
 import { RestaurantsKeys } from "@/global/i18n";
-import { AlertCircle, Clock, ExternalLink, Loader2 } from "lucide-react";
+import { AlertCircle, Ban, Clock, ExternalLink, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
+import {
+	PLATFORM_APPLICATION_FEE_RATE,
+	STRIPE_ACCOUNT_STATUS,
+	type StripeAccountStatus,
+} from "convex/constants";
 import { ResetStripeControl } from "./ResetStripeControl";
 
 const PLATFORM_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
@@ -12,12 +16,18 @@ const PLATFORM_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
  * - readyToReceivePayments: stripe_transfers capability is active
  * - onboardingComplete: no outstanding currently_due/past_due requirements
  * - requirementsStatus: raw status string from Stripe (null if none)
+ * - accountStatus: the stored lifecycle status (TAVLI-65), `null` when there
+ *   is no connected account. This is the only field that tells a **closed**
+ *   account from a restaurant that was never onboarded — every other field
+ *   reads the same for both, which is why a closure used to render as "not set
+ *   up" with a setup button that could not work.
  */
 export interface AccountStatus {
 	connected: boolean;
 	readyToReceivePayments: boolean;
 	onboardingComplete: boolean;
 	requirementsStatus: string | null;
+	accountStatus?: StripeAccountStatus | null;
 }
 
 interface StripeStatusSectionProps {
@@ -89,11 +99,57 @@ export function StripeStatusSection({
 		);
 	}
 
+	// Stripe closed the account (TAVLI-65). There is no onboarding link that can
+	// revive it, so the only offer here is the Reset — which closes nothing (it
+	// is already closed) and unlinks, freeing the restaurant to onboard a new
+	// account. Rendering the "not set up" branch instead, as this did before,
+	// handed the operator a setup button that fails and no explanation.
+	if (status?.accountStatus === STRIPE_ACCOUNT_STATUS.CLOSED) {
+		return (
+			<div className="space-y-3">
+				<div
+					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
+					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
+					data-testid="stripe-account-closed"
+				>
+					<Ban size={14} className="mt-0.5 shrink-0" />
+					<span>{t(RestaurantsKeys.STRIPE_ACCOUNT_CLOSED)}</span>
+				</div>
+				<div className="flex flex-wrap items-center gap-2">
+					<button
+						onClick={onRefresh}
+						className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-(--bg-hover) text-muted-foreground border border-border"
+					>
+						{t(RestaurantsKeys.STRIPE_REFRESH)}
+					</button>
+					<ResetStripeControl
+						confirmingReset={confirmingReset}
+						resetLoading={resetLoading}
+						onRequestReset={onRequestReset}
+						onCancelReset={onCancelReset}
+						onConfirmReset={onConfirmReset}
+					/>
+				</div>
+			</div>
+		);
+	}
+
 	if (status?.connected) {
 		return (
 			<div className="space-y-3">
 				{/* Show detailed status for partially-onboarded accounts */}
 				<div className="space-y-2">
+					{status.accountStatus === STRIPE_ACCOUNT_STATUS.RESTRICTED && (
+						<div
+							className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-warning"
+							style={{ backgroundColor: "rgba(217, 119, 6, 0.1)" }}
+							data-testid="stripe-account-restricted"
+						>
+							<AlertCircle size={14} className="mt-0.5 shrink-0" />
+							<span>{t(RestaurantsKeys.STRIPE_ACCOUNT_RESTRICTED)}</span>
+						</div>
+					)}
+
 					{status.requirementsStatus && (
 						<div
 							className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-warning"

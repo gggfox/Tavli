@@ -15,6 +15,43 @@
  */
 import { PAYMENT_REFUND_STATUS } from "./constants";
 
+/**
+ * Marker embedded in the error a Stripe action throws when the deployment is
+ * not configured for Stripe at all — a missing signing secret or a missing
+ * `STRIPE_SECRET_KEY`.
+ *
+ * The HTTP routes in `convex/http.ts` catch everything `ctx.runAction` throws
+ * and, before TAVLI-65, answered 400 for all of it. That conflated two
+ * opposite diagnoses for whoever is reading the logs during a cutover: a 400 is
+ * "Stripe sent something we rejected" (wrong secret, tampered payload), while a
+ * missing secret is "Tavli is not configured" — nothing about the request is
+ * wrong and no amount of re-sending it will help. Since
+ * `STRIPE_CONNECT_WEBHOOK_SECRET` has never been set on any deployment, that
+ * was the case an operator was most likely to hit first, wearing the one label
+ * guaranteed to send them looking in the wrong place.
+ *
+ * A marker in the message rather than a custom error class because the throw
+ * crosses a Convex action boundary, which preserves the message and not the
+ * prototype.
+ *
+ * It covers the API key as well as the two signing secrets deliberately: a
+ * deployment missing `STRIPE_SECRET_KEY` fails inside `getStripeClient()`, and
+ * without the marker that too came back as a 400 the triage table would read as
+ * "the signing secret is wrong".
+ */
+export const STRIPE_NOT_CONFIGURED = "STRIPE_NOT_CONFIGURED";
+
+/**
+ * Whether a caught Stripe error is "this deployment is not configured" rather
+ * than "this delivery failed verification". Drives 500 vs 400 in
+ * `convex/http.ts`.
+ */
+export function isStripeNotConfiguredError(error: unknown): boolean {
+	const message =
+		error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+	return message.includes(STRIPE_NOT_CONFIGURED);
+}
+
 /** Narrow the `string | { id } | null | undefined` shape Stripe uses for expandable refs. */
 export function extractStripeId(
 	ref: string | { id?: string | null } | null | undefined
