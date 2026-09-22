@@ -5,6 +5,7 @@
  * never call OpenRouter.
  */
 import { convexTest } from "convex-test";
+import { registerDisputeComponents } from "./_fixtures/disputeComponents.fixture";
 import { Blob as NodeBlob } from "node:buffer";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
@@ -175,6 +176,7 @@ afterEach(() => {
 describe("restaurant purge", () => {
 	it("deletes jobs, drafts, and the blobs of pending drafts", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		await insertJobAndDraft(t, ids, "pending");
 		await insertJobAndDraft(t, ids, "approved");
@@ -237,6 +239,7 @@ describe("generate action", () => {
 		vi.stubGlobal("fetch", fetchMock);
 		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 
@@ -276,6 +279,7 @@ describe("generate action", () => {
 		);
 		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 
@@ -300,6 +304,7 @@ describe("generate action", () => {
 			);
 			vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t);
 			const jobId = await insertQueuedJob(t, ids, { retries: 2 });
 
@@ -325,6 +330,7 @@ describe("generate action", () => {
 		);
 		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 
@@ -346,6 +352,7 @@ describe("generate action", () => {
 		);
 		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids, { retries: MENU_AI_IMAGE_MAX_RETRIES });
 
@@ -365,6 +372,7 @@ describe("generate action", () => {
 		);
 		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids, { retries: MENU_AI_IMAGE_MAX_RETRIES });
 
@@ -379,6 +387,7 @@ describe("generate action", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 		await t.run(async (ctx) =>
@@ -399,6 +408,7 @@ describe("generate action", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 		await t.run(async (ctx) => ctx.db.delete(ids.menuItemId));
@@ -416,6 +426,7 @@ describe("generate action", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 		await t.run(async (ctx) =>
@@ -434,6 +445,7 @@ describe("generate action", () => {
 describe("recordDraft", () => {
 	it("drops the blob and records nothing when the job is no longer queued/running", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 		// Simulate stale-job recovery having already failed this job while the
@@ -485,6 +497,7 @@ describe("startGeneration", () => {
 			);
 			vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t);
 
 			const [result, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
@@ -505,6 +518,7 @@ describe("startGeneration", () => {
 
 	it("refuses an outsider", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const [, error] = await t
 			.withIdentity({ subject: OUTSIDER })
@@ -520,6 +534,7 @@ describe("startGeneration", () => {
 		vi.setSystemTime(NOW);
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t);
 			const runningId = await insertQueuedJob(t, ids, { status: "running" });
 
@@ -563,6 +578,7 @@ describe("startGeneration", () => {
 			);
 			vi.stubEnv("OPENROUTER_API_KEY", "test-key");
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t);
 			const { draftId } = await insertJobAndDraft(t, ids, "pending");
 			expect(await storedFileCount(t)).toBe(1);
@@ -584,6 +600,7 @@ describe("startGeneration", () => {
 		vi.useFakeTimers();
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t, { monthlyLimit: 2 });
 			await insertJobAndDraft(t, ids, "approved"); // done, counts
 			await t.run(async (ctx) =>
@@ -629,6 +646,7 @@ describe("startGeneration", () => {
 		vi.setSystemTime(NOW);
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t, { monthlyLimit: 1 });
 			const otherItemId = await t.run(async (ctx) =>
 				ctx.db.insert(TABLE.MENU_ITEMS, {
@@ -678,6 +696,7 @@ describe("startGeneration", () => {
 		vi.setSystemTime(NOW);
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t, { monthlyLimit: 1 });
 			const otherItemId = await t.run(async (ctx) =>
 				ctx.db.insert(TABLE.MENU_ITEMS, {
@@ -718,6 +737,7 @@ describe("startGeneration", () => {
 
 	it("counts a failed invalid_response attempt toward the monthly limit (it may have been billed)", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t, { monthlyLimit: 1 });
 		await t.run(async (ctx) =>
 			ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
@@ -743,6 +763,7 @@ describe("startGeneration", () => {
 
 	it("is switched off by a limit of 0", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t, { monthlyLimit: 0 });
 		const [, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
 			menuItemId: ids.menuItemId,
@@ -754,6 +775,7 @@ describe("startGeneration", () => {
 		vi.useFakeTimers();
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t, { monthlyLimit: 1 });
 			await t.run(async (ctx) =>
 				ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
@@ -788,6 +810,7 @@ describe("startGeneration", () => {
 describe("getItemGeneration", () => {
 	it("reports the pending draft with a url, the attempt count, and what is left", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		await insertJobAndDraft(t, ids, "pending");
 
@@ -804,6 +827,7 @@ describe("getItemGeneration", () => {
 
 	it("surfaces a recent failure so the panel can explain it", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const jobId = await insertQueuedJob(t, ids);
 		await t.run(async (ctx) =>
@@ -821,6 +845,7 @@ describe("getItemGeneration", () => {
 
 	it("refuses an outsider", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		await expect(
 			t
@@ -834,6 +859,7 @@ describe("getItemGeneration", () => {
 		vi.setSystemTime(NOW);
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t);
 			const jobId = await insertQueuedJob(t, ids, { status: "running" });
 			await t.run(async (ctx) =>
@@ -862,6 +888,7 @@ describe("getItemGeneration", () => {
 		vi.setSystemTime(NOW);
 		try {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const ids = await seed(t);
 			const jobId = await insertQueuedJob(t, ids, { status: "running" });
 
@@ -878,6 +905,7 @@ describe("getItemGeneration", () => {
 describe("approveDraft / rejectDraft", () => {
 	it("approve moves the blob onto the item, marks it generated, and supersedes an older approved draft", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const older = await insertJobAndDraft(t, ids, "approved"); // item currently shows this blob
 		const newer = await insertJobAndDraft(t, ids, "pending");
@@ -904,6 +932,7 @@ describe("approveDraft / rejectDraft", () => {
 
 	it("approve refuses a draft that is not pending", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const { draftId } = await insertJobAndDraft(t, ids, "approved");
 		const [, error] = await asManager(t).mutation(api.menuAIImageGen.approveDraft, { draftId });
@@ -912,6 +941,7 @@ describe("approveDraft / rejectDraft", () => {
 
 	it("reject deletes the blob and keeps the row", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const { draftId } = await insertJobAndDraft(t, ids, "pending");
 
@@ -926,6 +956,7 @@ describe("approveDraft / rejectDraft", () => {
 describe("imageSource on the upload paths", () => {
 	it("update with an uploaded image marks the source uploaded, and removeImage clears it", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		await insertJobAndDraft(t, ids, "approved");
 		const uploaded = await t.run(async (ctx) =>
@@ -953,6 +984,7 @@ describe("imageSource on the upload paths", () => {
 describe("menuItems.remove", () => {
 	it("deletes the item's AI jobs and drafts, and the pending draft's blob (the approved one goes with the item)", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		await insertJobAndDraft(t, ids, "pending");
 		await insertJobAndDraft(t, ids, "approved");
@@ -982,6 +1014,7 @@ describe("menuItems.remove", () => {
 describe("organizations.updateOrganization aiImageMonthlyLimit", () => {
 	it("lets an admin set it and refuses a manager", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const [, e1] = await t
 			.withIdentity({ subject: ADMIN })
@@ -1002,6 +1035,7 @@ describe("organizations.updateOrganization aiImageMonthlyLimit", () => {
 
 	it("rejects a negative or non-integer limit", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const ids = await seed(t);
 		const [, error] = await t
 			.withIdentity({ subject: ADMIN })

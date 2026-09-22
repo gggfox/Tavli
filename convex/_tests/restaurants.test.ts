@@ -1,4 +1,5 @@
 import { convexTest } from "convex-test";
+import { registerDisputeComponents } from "./_fixtures/disputeComponents.fixture";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -39,6 +40,7 @@ describe("restaurants", () => {
 	describe("create", () => {
 		it("creates a restaurant when authenticated", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -61,6 +63,7 @@ describe("restaurants", () => {
 
 		it("derives the slug from the name so the form never has to ask", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -78,6 +81,7 @@ describe("restaurants", () => {
 
 		it("settles repeated names with a dash counter", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -99,6 +103,7 @@ describe("restaurants", () => {
 
 		it("reuses the slug of a soft-deleted restaurant", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -134,6 +139,7 @@ describe("restaurants", () => {
 
 		it("normalizes an explicitly supplied slug", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -152,6 +158,7 @@ describe("restaurants", () => {
 
 		it("rejects an explicit slug that normalizes to nothing", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -170,6 +177,7 @@ describe("restaurants", () => {
 
 		it("fails when not authenticated", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const orgId = await seedOrganization(t);
 
 			const [value, error] = await t.mutation(api.restaurants.create, {
@@ -186,6 +194,7 @@ describe("restaurants", () => {
 
 		it("rejects duplicate slugs with a stable code", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -215,6 +224,7 @@ describe("restaurants", () => {
 	describe("getBySlug", () => {
 		it("returns the restaurant matching the slug", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -235,6 +245,7 @@ describe("restaurants", () => {
 
 		it("does not expose internal fields to anonymous callers", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "user1", roles: ["owner"], organizationId: orgId });
@@ -268,6 +279,7 @@ describe("restaurants", () => {
 
 		it("returns null for a non-existent slug", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const result = await t.query(api.restaurants.getBySlug, { slug: "nope" });
 			expect(result).toBeNull();
 		});
@@ -276,6 +288,7 @@ describe("restaurants", () => {
 	describe("getAll", () => {
 		it("returns every restaurant for platform admin", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			await seedUserRole(t, { userId: "admin1", roles: [USER_ROLES.ADMIN] });
 			const orgId = await seedOrganization(t);
 			await t.run(async (ctx) => {
@@ -310,6 +323,7 @@ describe("restaurants", () => {
 
 		it("includes all restaurants in an org for org-level owner", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, {
 				userId: "orgOwner",
@@ -348,6 +362,7 @@ describe("restaurants", () => {
 
 		it("scopes to active membership for org staff who are not org owners", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const orgId = await seedOrganization(t);
 			const rA = await t.run(async (ctx) => {
 				const now = Date.now();
@@ -404,6 +419,7 @@ describe("restaurants", () => {
 	describe("getByOwner", () => {
 		it("returns restaurants owned by the authenticated user", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "owner1" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, { userId: "owner1", roles: ["owner"], organizationId: orgId });
@@ -423,6 +439,7 @@ describe("restaurants", () => {
 
 		it("returns empty array when owner has no restaurants", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "owner2" });
 
 			const [restaurants, error] = await authed.query(api.restaurants.getByOwner);
@@ -434,6 +451,7 @@ describe("restaurants", () => {
 	describe("toggleActive", () => {
 		it("toggles the isActive state of a restaurant", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "user1" });
 			const orgId = await seedOrganization(t);
 
@@ -469,6 +487,7 @@ describe("restaurants", () => {
 
 		it("allows org-level owner who is not restaurants.ownerId to toggle active", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const orgId = await seedOrganization(t);
 			const restaurantId = await t.run(async (ctx) => {
 				const now = Date.now();
@@ -500,6 +519,7 @@ describe("restaurants", () => {
 
 		it("allows toggle when org owner match is on a non-first userRoles row", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const orgA = await seedOrganization(t);
 			const orgB = await t.run(async (ctx) => {
 				const now = Date.now();
@@ -555,6 +575,7 @@ describe("restaurants", () => {
 	describe("softDelete and restore", () => {
 		it("soft-deletes, hides from getBySlug and getAll, lists in getDeletedForAdmin, then restores", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "owner-del" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, {
@@ -595,6 +616,7 @@ describe("restaurants", () => {
 
 		it("rejects softDelete for restaurant manager without org/document owner", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const orgId = await seedOrganization(t);
 			const restaurantId = await t.run(async (ctx) => {
 				const now = Date.now();
@@ -637,6 +659,7 @@ describe("restaurants", () => {
 	describe("hard purge", () => {
 		it("purgeRestaurantInternal removes restaurant and menus", async () => {
 			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
 			const authed = t.withIdentity({ subject: "purge-owner" });
 			const orgId = await seedOrganization(t);
 			await seedUserRole(t, {
@@ -704,6 +727,7 @@ describe("setSharedEmployeeSubject", () => {
 
 	it("binds a valid Clerk subject for owner/admin", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
 			ownerId: "owner-subject",
 			slug: "subject-bind-ok",
@@ -721,6 +745,7 @@ describe("setSharedEmployeeSubject", () => {
 
 	it("rejects empty or malformed clerkSubject", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
 			ownerId: "owner-invalid-subject",
 			slug: "subject-bind-invalid",
@@ -739,6 +764,7 @@ describe("setSharedEmployeeSubject", () => {
 
 	it("rejects binding a subject already used by another restaurant", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const first = await seedOwnedRestaurant(t, {
 			ownerId: "owner-subject-a",
 			slug: "subject-bind-a",
@@ -765,6 +791,7 @@ describe("setSharedEmployeeSubject", () => {
 
 	it("allows rebinding the same subject to the same restaurant", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
 			ownerId: "owner-rebind",
 			slug: "subject-bind-rebind",
@@ -785,6 +812,7 @@ describe("setSharedEmployeeSubject", () => {
 
 	it("trims whitespace before validating and storing", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { restaurantId, authed } = await seedOwnedRestaurant(t, {
 			ownerId: "owner-trim",
 			slug: "subject-bind-trim",
@@ -802,6 +830,7 @@ describe("setSharedEmployeeSubject", () => {
 
 	it("rejects restaurant managers without owner/admin access", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const orgId = await seedOrganization(t);
 		const restaurantId = await t.run(async (ctx) => {
 			const now = Date.now();
@@ -860,6 +889,7 @@ describe("update — receipt tax fields (TAVLI-71 Phase 3C)", () => {
 
 	it("sets trimmed rfc / razonSocial / fiscalAddress", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -881,6 +911,7 @@ describe("update — receipt tax fields (TAVLI-71 Phase 3C)", () => {
 
 	it("clears a tax field when passed an empty string", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
 
 		await authed.mutation(api.restaurants.update, {
@@ -904,6 +935,7 @@ describe("update — receipt tax fields (TAVLI-71 Phase 3C)", () => {
 
 	it("does not expose tax fields on the public restaurant shape", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForUpdate(t);
 		await authed.mutation(api.restaurants.update, {
 			restaurantId,
@@ -938,6 +970,7 @@ describe("update — public profile", () => {
 
 	it("normalizes the phone to E.164 and canonicalizes social links on write", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -961,6 +994,7 @@ describe("update — public profile", () => {
 
 	it("rejects a national-format phone with the country-code code, pinned to the field", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -977,6 +1011,7 @@ describe("update — public profile", () => {
 
 	it("rejects a link that belongs to another platform", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -992,6 +1027,7 @@ describe("update — public profile", () => {
 
 	it("clears the WhatsApp flag when the number it pointed at is removed", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		await authed.mutation(api.restaurants.update, {
@@ -1014,6 +1050,7 @@ describe("update — public profile", () => {
 
 	it("refuses a WhatsApp flag with no number to reach", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -1029,6 +1066,7 @@ describe("update — public profile", () => {
 
 	it("withholds the contact email from diners until the profile has been reviewed", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		// A pre-existing row: the email was entered under the old copy, which
@@ -1055,6 +1093,7 @@ describe("update — public profile", () => {
 
 	it("builds the wa.me link only when the number is flagged", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 
 		await authed.mutation(api.restaurants.update, {
@@ -1078,6 +1117,7 @@ describe("update — public profile", () => {
 
 	it("omits the contact block entirely for a restaurant that published nothing", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { authed, restaurantId } = await seedRestaurantForProfile(t);
 		void authed;
 
@@ -1090,6 +1130,7 @@ describe("update — public profile", () => {
 
 	it("never exposes the review timestamp or raw social columns to diners", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedRestaurantForProfile(t);
 		await authed.mutation(api.restaurants.update, {
 			restaurantId,
@@ -1129,6 +1170,7 @@ describe("update — slug", () => {
 
 	it("normalizes whatever the operator typed", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -1147,6 +1189,7 @@ describe("update — slug", () => {
 		// patch fired on `args.slug !== undefined`, so "" skipped validation and
 		// was stored, leaving the restaurant reachable only at `/r//en/menu`.
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
 
 		const [value, error] = await authed.mutation(api.restaurants.update, {
@@ -1164,6 +1207,7 @@ describe("update — slug", () => {
 
 	it("reports a taken slug with a stable code", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
 
 		const [value, error] = await authed.mutation(api.restaurants.update, {
@@ -1181,6 +1225,7 @@ describe("update — slug", () => {
 
 	it("accepts the restaurant's own slug unchanged", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {
@@ -1196,6 +1241,7 @@ describe("update — slug", () => {
 
 	it("leaves the slug alone when the patch omits it", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const { orgId, authed, restaurantId } = await seedTwoRestaurants(t);
 
 		const [, error] = await authed.mutation(api.restaurants.update, {

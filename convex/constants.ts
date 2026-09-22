@@ -24,6 +24,7 @@ export const TABLE = {
 	PAYMENTS: "payments",
 	STRIPE_WEBHOOK_EVENTS: "stripeWebhookEvents",
 	STRIPE_DISPUTES: "stripeDisputes",
+	DISPUTE_RECOVERIES: "disputeRecoveries",
 	STRIPE_PAYOUTS: "stripePayouts",
 	STRIPE_CUSTOMERS: "stripeCustomers",
 	RESERVATIONS: "reservations",
@@ -999,6 +1000,36 @@ export const AUDIT_EVENT = {
 	RESTAURANT_SUBSCRIPTION_INVOICE_PAID: "restaurants.subscriptionInvoicePaid",
 	RESTAURANT_SUBSCRIPTION_PAYMENT_FAILED: "restaurants.subscriptionPaymentFailed",
 
+	// -- Disputes and the recovery ledger (TAVLI-102) -----------------------
+	// NOTE: `payments.disputeOpened` and `payments.disputeClosed` are HISTORICAL
+	// — they were emitted as inline literals before these constants existed and
+	// rows carrying them are already in `allEvents`. Rename the constants freely;
+	// never change the values.
+	DISPUTE_OPENED: "payments.disputeOpened",
+	DISPUTE_CLOSED: "payments.disputeClosed",
+	DISPUTE_UPDATED: "payments.disputeUpdated",
+	DISPUTE_FUNDS_REINSTATED: "payments.disputeFundsReinstated",
+	/** Tavli's own dispute fee, recorded per dispute from its balance transaction. */
+	DISPUTE_FEE_ABSORBED: "payments.disputeFeeAbsorbed",
+	/** A lost dispute opened a recovery ledger row against the restaurant. */
+	DISPUTE_RECOVERY_OPENED: "payments.disputeRecoveryOpened",
+	/** A settled order payment drew money off one or more ledger rows. */
+	DISPUTE_RECOVERY_APPLIED: "payments.disputeRecoveryApplied",
+	/** A won or reinstated dispute cancelled the debt and returned what was taken. */
+	DISPUTE_RECOVERY_REVERSED: "payments.disputeRecoveryReversed",
+	/** The return transfer to the connected account settled at Stripe. */
+	DISPUTE_RECOVERY_RETURNED: "payments.disputeRecoveryReturned",
+	/** A refund gave money back to the ledger rows the payment had drawn down. */
+	DISPUTE_RECOVERY_RESTORED: "payments.disputeRecoveryRestored",
+	/** Withheld at Stripe but not applicable to any ledger row; transferred back. */
+	DISPUTE_RECOVERY_SHORTFALL_RETURNED: "payments.disputeRecoveryShortfallReturned",
+	/** A refund clawed back money that had already been transferred to the restaurant. */
+	DISPUTE_RETURN_REVERSED: "payments.disputeReturnReversed",
+	/** 180 days elapsed with money still outstanding. */
+	DISPUTE_RECOVERY_WRITTEN_OFF: "payments.disputeRecoveryWrittenOff",
+	/** A platform admin changed a restaurant's recovery percentage. */
+	DISPUTE_RECOVERY_PERCENT_CHANGED: "restaurants.disputeRecoveryPercentChanged",
+
 	// -- Receipts -----------------------------------------------------------
 	RECEIPT_EMAIL_SENT: "receipts.emailSent",
 
@@ -1526,6 +1557,12 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	TABLE.PAYMENTS,
 	TABLE.STRIPE_WEBHOOK_EVENTS,
 	TABLE.STRIPE_DISPUTES,
+	// The recovery ledger (TAVLI-102) is a debt owed by a restaurant that no
+	// longer exists, against future payments it will never take. Nothing can
+	// draw it down and nobody can act on it, so it goes with the disputes that
+	// created it — and the purge also clears the restaurant's aggregate entries,
+	// which are NOT rows in any table (see `restaurantPurge.ts`).
+	TABLE.DISPUTE_RECOVERIES,
 	// Payout rows mirror Stripe for the restaurant's own visibility (TAVLI-103).
 	// Stripe keeps the authoritative ledger, so a purged restaurant's copies go
 	// with its other payment records rather than outliving it.
@@ -1982,3 +2019,126 @@ export const PAYOUT_FAILURE_FIX_KEY: Record<PayoutFailureCode, string> = {
 
 /** In-app path the payout notifications and their emails link to. */
 export const PAYOUTS_PAGE_PATH = "/admin/payouts";
+
+// ============================================================================
+// Disputes and the recovery ledger (TAVLI-102)
+// ============================================================================
+
+/**
+ * Which `charge.dispute.*` delivery produced a set of dispute facts.
+ *
+ * Lives here rather than in `stripeWebhookHelpers.ts` (where `created` /
+ * `closed` started life) because the phase is now more than a webhook detail:
+ * it names the bell notification's dedupe key, it decides whether a recovery
+ * ledger row is opened or credited back, and the manager-facing UI renders it.
+ *
+ * `funds_reinstated` is not a phase Stripe's own lifecycle has — it is
+ * `charge.dispute.funds_reinstated`, which Stripe sends when a dispute we had
+ * already lost is reversed and the money comes back. Treated as its own phase
+ * rather than folded into `closed` because the two mean opposite things to the
+ * ledger: `closed` may open a debt, `funds_reinstated` always cancels one.
+ */
+export const DISPUTE_PHASE = {
+	CREATED: "created",
+	UPDATED: "updated",
+	CLOSED: "closed",
+	FUNDS_REINSTATED: "funds_reinstated",
+} as const;
+
+export type DisputePhase = (typeof DISPUTE_PHASE)[keyof typeof DISPUTE_PHASE];
+
+export const DISPUTE_PHASES = Object.values(DISPUTE_PHASE);
+
+/**
+ * Where a dispute stands, as a **closed** set.
+ *
+ * The seven named values are Stripe's documented `dispute.status` strings;
+ * `unknown` catches anything Stripe adds later. The `stripeDisputes` row keeps
+ * Stripe's raw string (an operator comparing it with the Dashboard needs the
+ * word Stripe used), and `normalizeDisputeStatus` is what the UI and the money
+ * decisions read — so a status Stripe invents next year renders as "we are
+ * looking into it" instead of leaking an identifier, and can never be mistaken
+ * for `lost`.
+ */
+export const DISPUTE_STATUS = {
+	WARNING_NEEDS_RESPONSE: "warning_needs_response",
+	WARNING_UNDER_REVIEW: "warning_under_review",
+	WARNING_CLOSED: "warning_closed",
+	NEEDS_RESPONSE: "needs_response",
+	UNDER_REVIEW: "under_review",
+	WON: "won",
+	LOST: "lost",
+	/** Anything Stripe sends that is not one of the seven above. */
+	UNKNOWN: "unknown",
+} as const;
+
+export type DisputeStatus = (typeof DISPUTE_STATUS)[keyof typeof DISPUTE_STATUS];
+
+export const DISPUTE_STATUSES = Object.values(DISPUTE_STATUS);
+
+/**
+ * Where one recovery ledger row stands.
+ *
+ * Stored as a field (rather than derived from `outstanding > 0`) because it is
+ * the leading column of the two indexes that matter: the deduction query wants
+ * "this restaurant's outstanding rows, oldest first", and the write-off sweep
+ * wants "every outstanding row older than the cutoff" across all restaurants.
+ * Deriving it would mean scanning.
+ */
+export const DISPUTE_RECOVERY_STATUS = {
+	/** Money still owed. The only status the deduction reads. */
+	OUTSTANDING: "outstanding",
+	/** Fully recovered from later payments. */
+	RECOVERED: "recovered",
+	/** The dispute was won or the funds reinstated; nothing is owed any more. */
+	REINSTATED: "reinstated",
+	/** 180 days elapsed with money still outstanding. Tavli absorbs the rest. */
+	WRITTEN_OFF: "written_off",
+} as const;
+
+export type DisputeRecoveryStatus =
+	(typeof DISPUTE_RECOVERY_STATUS)[keyof typeof DISPUTE_RECOVERY_STATUS];
+
+export const DISPUTE_RECOVERY_STATUSES = Object.values(DISPUTE_RECOVERY_STATUS);
+
+/**
+ * The hard ceiling on `restaurants.disputeRecoveryPercent`.
+ *
+ * Fifty is not a round number chosen for looks: above it a single order's
+ * transfer would be more recovery than sale, which turns a chargeback the
+ * restaurant may not even have caused into a service outage for its cash flow.
+ * The admin control refuses anything higher and so does the mutation — the
+ * input is a convenience, the validator is the rule.
+ */
+export const DISPUTE_RECOVERY_MAX_PERCENT = 50;
+
+/** No deduction at all. What every restaurant gets until an admin says otherwise. */
+export const DISPUTE_RECOVERY_DEFAULT_PERCENT = 0;
+
+/**
+ * How long a lost dispute stays recoverable before Tavli absorbs the rest.
+ *
+ * 180 days is roughly two quarters: long enough that a seasonal restaurant gets
+ * a busy period to work the balance down, short enough that a ledger row cannot
+ * outlive the relationship it belongs to and quietly deduct from a restaurant
+ * that has forgotten the dispute ever happened.
+ */
+export const DISPUTE_RECOVERY_WRITE_OFF_DAYS = 180;
+
+export const DISPUTE_RECOVERY_WRITE_OFF_MS = DISPUTE_RECOVERY_WRITE_OFF_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * How long the daily sweep leaves a scheduled return alone before re-scheduling
+ * it.
+ *
+ * The sweep exists because Convex does not retry a scheduled function that
+ * throws, but a scheduled function that is merely *slow* must not be raced: two
+ * concurrent `transfers.create` calls share one Stripe idempotency key, and the
+ * loser fails with `idempotency_key_in_use` — a non-failure that would
+ * otherwise page an operator. A day is far longer than any action takes and far
+ * shorter than anyone would wait for their money.
+ */
+export const DISPUTE_RETURN_RESCHEDULE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** In-app path the dispute notifications and their emails link to. */
+export const PAYMENTS_PAGE_PATH = "/admin/payments";

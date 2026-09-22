@@ -131,9 +131,16 @@ charge.dispute.updated              charge.dispute.funds_reinstated
 radar.early_fraud_warning.created
 ```
 
-The last four have **no handler yet** (tracked on TAVLI-65). They are
-subscribed deliberately so the live destination never needs editing again;
-unhandled types fall through the switch and are recorded for dedup only.
+All four `charge.dispute.*` types are handled as of TAVLI-102 — `created`,
+`updated`, `closed` and `funds_reinstated` all reach
+`disputes.recordDisputeEventInternal`. `radar.early_fraud_warning.created` is
+still unhandled; it is subscribed deliberately so the live destination never
+needs editing again, and unhandled types fall through the switch and are
+recorded for dedup only.
+
+**Nothing needs enabling for TAVLI-102**: the four dispute types were already on
+this destination before the ticket. If you are setting up a new deployment, the
+`stripe webhook_endpoints create` command further down already lists them.
 
 Do **not** subscribe `checkout.session.*` — Tavli uses an embedded
 `PaymentElement`, never hosted Checkout. Three such subscriptions were pruned
@@ -288,6 +295,12 @@ either.
 Loss responsibility must be declared as **platform-managed** in the platform
 profile. `createConnectAccount` sets `losses_collector: "application"` on every
 account; if the profile says otherwise, account creation fails.
+
+That is still the liability model after TAVLI-102 — Stripe always takes a lost
+dispute out of the **platform** balance — but the loss is no longer permanent.
+It opens a row in `disputeRecoveries`, and the restaurant's subsequent ORDER
+payments repay it a capped percentage at a time (never tips, never tabs). See
+["Lost disputes are recovered"](#lost-disputes-are-recovered).
 
 ### 4. Connected-account readiness
 
@@ -802,7 +815,43 @@ stripe trigger invoice.paid
 ### The platform is `losses_collector`
 
 Disputes and chargebacks settle against the **platform** balance
-(`convex/stripe.ts`). Tavli absorbs them, not the restaurant.
+(`convex/stripe.ts`). Stripe takes the money from Tavli, not from the
+restaurant — and the restaurant keeps the transfer it already received.
+
+### Lost disputes are recovered
+
+Since TAVLI-102 that loss is written down rather than absorbed silently
+(`convex/disputes.ts`, `convex/disputeRecoveryHelpers.ts`).
+
+- A lost dispute opens **one** `disputeRecoveries` row for the **disputed amount
+  only**. Stripe's dispute fee is not in it: Tavli absorbs the fee deliberately
+  (a restaurant cannot influence it), and it is recorded on the `stripeDisputes`
+  row plus the per-month `disputeFeesByMonth` aggregate instead.
+- Every subsequent **order** payment for that restaurant carries an explicit
+  `transfer_data.amount` of `restaurantShare − deduction`, where the deduction
+  is `min(totalOutstanding, floor(foodSubtotal × disputeRecoveryPercent / 100))`.
+  Tips are outside the base, so the whole gratuity always reaches the
+  restaurant. Tip charges and tab charges are never deducted from.
+- **The diner's charge never changes**, and the order still reports full
+  revenue. The recovery is its own line in the payments export
+  (`dispute recovery withheld` / `settled to restaurant`), so a settlement
+  figure that differs from a sales figure differs visibly.
+- `restaurants.disputeRecoveryPercent` is **0 by default**, which means no
+  deduction at all. A platform admin sets it in the Stripe block of the admin
+  restaurants page; the mutation refuses anything but a whole 0–50.
+- The ledger is drawn down when the payment **settles**, oldest loss first. A
+  failed or superseded intent moved no money, so the debt stands.
+- A dispute later won — or a `charge.dispute.funds_reinstated` — zeroes the row
+  and returns anything already recovered to the connected account, with
+  idempotency key `dispute-recovery-return:<disputeId>`.
+- After **180 days** an outstanding row is written off by the daily
+  `dispute recovery write-off sweep` cron: `status: "written_off"`, an audit
+  event, and an **info** operator alert. The row keeps its `outstanding` figure
+  so what was never recovered stays answerable; `status` is what stops it
+  deducting.
+
+Evidence submission is **out of scope** — Tavli does not upload dispute
+evidence, and none of the manager-facing copy asks for any.
 
 ### Commission is 12%, and excludes tips
 
@@ -871,6 +920,14 @@ refunded, never re-charged at a different price (ADR 013).
 >
 > Prefer the in-app path (cancel the order in the orders tab), which handles
 > this automatically and records the refund against the payment.
+>
+> **This is now detected (TAVLI-102).** `handleChargeRefunded` fetches the
+> refund on every `charge.refunded` and, when it carries no `transfer_reversal`,
+> raises a **severe** operator alert (`dashboard_refund`, deduped per refund id,
+> carrying the payment and restaurant). No ledger entry is created: unlike a
+> chargeback, this is an action a Tavli operator took, and the right response is
+> a human looking at what they did rather than the next diner's order quietly
+> paying for it.
 
 ## Local development
 
@@ -897,7 +954,9 @@ stripe webhook_endpoints create \
   --enabled-events payment_intent.payment_failed \
   --enabled-events charge.refunded \
   --enabled-events charge.dispute.created \
-  --enabled-events charge.dispute.closed
+  --enabled-events charge.dispute.updated \
+  --enabled-events charge.dispute.closed \
+  --enabled-events charge.dispute.funds_reinstated
 npx convex env set STRIPE_WEBHOOK_SECRET whsec_...
 ```
 
@@ -933,11 +992,30 @@ curl -s https://api.stripe.com/v1/payment_intents -u "$STRIPE_SECRET_KEY:" \
   -d "transfer_data[destination]=acct_..."
 ```
 
-Close a dispute to fire `charge.dispute.closed`:
+Decide a dispute by **submitting evidence** — that is what makes test mode
+produce a real `won` or `lost`:
 
 ```bash
-curl -s -X POST "https://api.stripe.com/v1/disputes/du_.../close" -u "$STRIPE_SECRET_KEY:"
+# WINS: closed (status won), then charge.dispute.funds_reinstated
+curl -s -X POST "https://api.stripe.com/v1/disputes/du_.../" -u "$STRIPE_SECRET_KEY:" \
+  -d "evidence[uncategorized_text]=winning_evidence" -d submit=true
+
+# LOSES: closed (status lost) — the case the recovery ledger exists for
+curl -s -X POST "https://api.stripe.com/v1/disputes/du_.../" -u "$STRIPE_SECRET_KEY:" \
+  -d "evidence[uncategorized_text]=losing_evidence" -d submit=true
 ```
+
+> [!WARNING]
+> Do **not** use `POST /v1/disputes/du_.../close` to exercise the happy path. It
+> means "give up", and Stripe closes the dispute as **lost** — so a test meant
+> to prove the win path silently exercises the loss path and opens a recovery
+> ledger row.
+>
+> `stripe trigger charge.dispute.created` is also not a substitute: its dispute
+> belongs to no PaymentIntent of ours, so it only ever proves the **unlinked**
+> path (the row is written, the operator alert is raised, and no ledger row or
+> manager notification follows because no restaurant claims the charge). Use
+> `pm_card_createDispute` for anything that has to touch the ledger.
 
 Confirming a PaymentIntent server-side needs `--return-url` when
 `automatic_payment_methods.allow_redirects` is `always` — Link can redirect:
@@ -979,9 +1057,33 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 ### Disputes
 
 - Charge with `pm_card_createDispute`; confirm a `stripeDisputes` row is inserted
-  with `openedAt`
+  with `openedAt`, that the restaurant's managers get a bell notification **and**
+  an email (`dispute_opened`), and that no ledger row exists yet
 - Close the dispute; confirm the **same row** is updated with `closedAt` and the
   new status — not a second row
+- On a **lost** close, confirm all four of: one `disputeRecoveries` row for the
+  disputed amount (not the fee), a **severe** `dispute_lost` operator alert, a
+  `dispute_lost` notification whose body matches whether the restaurant's
+  `disputeRecoveryPercent` is 0, and the disputes card on `/admin/payments`
+- Redeliver the same close from the Dashboard and confirm nothing doubles: one
+  ledger row, one alert, one bell row per manager
+- With `disputeRecoveryPercent` set, place a new order and confirm the
+  PaymentIntent carries `transfer_data.amount` short by the deduction while
+  `amount` is unchanged; then confirm the ledger only moves once the charge
+  **settles**
+- Reinstate the funds by submitting `winning_evidence` on a dispute that was
+  lost in test mode (Stripe reopens it, closes it as won, and
+  `charge.dispute.funds_reinstated` follows). Confirm the row goes to
+  `reinstated` with `outstanding: 0`, and that exactly one `transfers.create`
+  fires for whatever had been recovered. Do **not** use
+  `POST /v1/disputes/du_.../close` — it means "give up" and closes as lost
+- Confirm refunding a disputed charge returns `ERROR_PAYMENT_UNDER_DISPUTE`
+  rather than Stripe's `charge_disputed`, and leaves the payment and the order
+  untouched
+- Write-off: the sweep is daily and the window is 180 days, so verify it by
+  back-dating a row's `lostAt` in the Convex dashboard and running
+  `disputes.sweepDisputeWriteOffs` — expect `status: "written_off"` and an
+  **info** alert
 
 ### Webhook safety
 
@@ -1166,7 +1268,12 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 
 - Convex logs for webhook signature failures
 - Convex logs for `REFUND ID UNRESOLVED` / `REFUND LOOKUP FAILED`
-- Convex logs for `CHARGE DISPUTE` — disputes hit the platform balance
+- Convex logs for `CHARGE DISPUTE` — disputes hit the platform balance, and are
+  then recovered from the restaurant's later orders (TAVLI-102)
+- `/admin/alerts` for `dispute_lost` (severe) and `dashboard_refund` (severe);
+  a written-off recovery shows up there as **info**
+- `disputeRecoveries` rows stuck at `outstanding` on a restaurant whose
+  `disputeRecoveryPercent` is 0 — expected, and they age out after 180 days
 - Convex logs for `[stripe.handleConnectedAccountEvent]` — one line per
   `payout.*`, carrying the held total after the write
 - Convex logs for `CHARGE UNMATCHED` — a charge this deployment cannot tie to a
@@ -1315,7 +1422,12 @@ transaction that recorded the problem.
 
 - [`deployment-and-secrets.md`](../internal-guides/deployment-and-secrets.md) — the env/secrets model
 - `convex/stripe.ts` — actions, webhook handlers, refunds
-- `convex/stripeHelpers.ts` — payment and dispute persistence
+- `convex/stripeHelpers.ts` — payment persistence
+- `convex/disputes.ts` — dispute persistence, the recovery ledger, the
+  notifications and the write-off sweep
+- `convex/disputeRecoveryHelpers.ts` — the deduction and draw-down arithmetic
+- `convex/disputeAggregates.ts` — per-month platform dispute fees, per-restaurant
+  opened/lost/won/recovered
 - `convex/stripeWebhookHelpers.ts` — pure event → state logic
 - `convex/payouts.ts` / `convex/payoutHelpers.ts` — payout persistence, the held total, who gets told
 - `convex/_util/env.ts` — the three webhook-secret env vars in one table

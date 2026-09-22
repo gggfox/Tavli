@@ -10,6 +10,7 @@ import {
 	paymentMoneyBreakdown,
 	restaurantRevenueFromPayment,
 	sumCashSettledOrderRevenue,
+	sumDisputeRecoveryFromPayments,
 	sumRestaurantRevenueFromPayments,
 	tipFromPayment,
 	type PaymentMoneyRow,
@@ -49,6 +50,8 @@ describe("paymentMoneyBreakdown", () => {
 			serviceFee: 1200,
 			tip: 0,
 			netToRestaurant: 10000,
+			disputeRecovery: 0,
+			settledToRestaurant: 10000,
 		});
 	});
 
@@ -59,6 +62,8 @@ describe("paymentMoneyBreakdown", () => {
 			serviceFee: 0,
 			tip: 2000,
 			netToRestaurant: 2000,
+			disputeRecovery: 0,
+			settledToRestaurant: 2000,
 		});
 	});
 
@@ -69,6 +74,8 @@ describe("paymentMoneyBreakdown", () => {
 			serviceFee: null,
 			tip: 500,
 			netToRestaurant: null,
+			disputeRecovery: 0,
+			settledToRestaurant: null,
 		});
 	});
 
@@ -156,5 +163,55 @@ describe("cash-settled orders", () => {
 				{ totalAmount: 700, paidAt: 2, settledBy: SETTLED_BY.STAFF },
 			])
 		).toBe(3700);
+	});
+});
+
+describe("dispute recovery is its own line (TAVLI-102)", () => {
+	const recovered = {
+		amount: 11_200,
+		subtotalAmount: 10_000,
+		feeAmount: 1_200,
+		kind: PAYMENT_KIND.ORDER,
+		status: PAYMENT_STATUS.SUCCEEDED,
+		disputeRecoveryAmount: 2_000,
+		disputeRecoveryAppliedAt: 1_700_000_000_000,
+	} as const;
+
+	it("leaves the sale alone and reports the withholding separately", () => {
+		const money = paymentMoneyBreakdown(recovered);
+		// The order sold 10,000 whether or not an old chargeback is being repaid.
+		expect(money.restaurantRevenue).toBe(10_000);
+		expect(money.netToRestaurant).toBe(10_000);
+		// What actually reached the bank is 2,000 less, and says so.
+		expect(money.disputeRecovery).toBe(2_000);
+		expect(money.settledToRestaurant).toBe(8_000);
+	});
+
+	it("reports nothing withheld until the draw-down actually ran", () => {
+		// Priced with a deduction, then the charge failed: no money moved, so
+		// reporting the intended withholding would be reporting a fiction.
+		const money = paymentMoneyBreakdown({
+			...recovered,
+			status: PAYMENT_STATUS.FAILED,
+			disputeRecoveryAppliedAt: undefined,
+		});
+		expect(money.disputeRecovery).toBe(0);
+	});
+
+	it("nets out what a refund gave back to the ledger", () => {
+		const money = paymentMoneyBreakdown({ ...recovered, disputeRecoveryRestored: 2_000 });
+		// The whole deduction was returned to the ledger, so Tavli kept nothing.
+		expect(money.disputeRecovery).toBe(0);
+		expect(money.settledToRestaurant).toBe(10_000);
+	});
+
+	it("sums only the recoveries that settled", () => {
+		expect(
+			sumDisputeRecoveryFromPayments([
+				recovered,
+				{ ...recovered, disputeRecoveryAmount: 500 },
+				{ ...recovered, disputeRecoveryAppliedAt: undefined },
+			])
+		).toBe(2_500);
 	});
 });

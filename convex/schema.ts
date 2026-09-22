@@ -6,6 +6,7 @@ import {
 	ATTENDANCE_STATUS,
 	CLOCK_EVENT_SOURCE,
 	CLOCK_EVENT_TYPE,
+	DISPUTE_RECOVERY_STATUS,
 	INVITATION_STATUS,
 	MENU_AI_IMAGE_DRAFT_STATUS,
 	MENU_AI_IMAGE_JOB_STATUS,
@@ -291,6 +292,21 @@ export default defineSchema({
 				v.literal(STRIPE_ACCOUNT_STATUS.CLOSED)
 			)
 		),
+		/**
+		 * How much of each subsequent order's food subtotal is withheld to pay
+		 * back this restaurant's lost disputes (TAVLI-102). Whole percent,
+		 * 0..`DISPUTE_RECOVERY_MAX_PERCENT`.
+		 *
+		 * Absent or `0` means **no deduction at all** — the recovery ledger still
+		 * records what a chargeback cost, but nothing is ever withheld. That is
+		 * the default for every restaurant, and it is deliberate: turning
+		 * recovery on is a commercial conversation, not a platform default.
+		 *
+		 * Only a platform admin can change it (`disputes.setDisputeRecoveryPercent`);
+		 * the validator refuses anything above the cap, so the admin input is a
+		 * convenience and the mutation is the rule.
+		 */
+		disputeRecoveryPercent: v.optional(v.number()),
 		/**
 		 * Receipt tax block (ADR 008): rendered verbatim on restaurant-branded
 		 * receipt emails. Informational only — this is NOT CFDI e-invoicing.
@@ -918,6 +934,116 @@ export default defineSchema({
 		amountRefunded: v.optional(v.number()),
 		/** Tip portion in smallest currency unit (e.g. cents). */
 		gratuityAmount: v.optional(v.number()),
+		/**
+		 * Dispute recovery withheld from this payment's transfer (TAVLI-102).
+		 *
+		 * Set when the PaymentIntent is created — it is the difference between
+		 * the restaurant's share and the `transfer_data.amount` we asked Stripe
+		 * for, so it is a fact about the charge, not a plan. The diner's `amount`
+		 * is untouched by it and the order still reports full revenue.
+		 *
+		 * The ledger is only drawn down when the payment SETTLES: a failed or
+		 * superseded intent moved no money, so `disputeRecoveryAppliedAt` stays
+		 * absent and the debt stands.
+		 */
+		disputeRecoveryAmount: v.optional(v.number()),
+		/** Ledger rows this payment was priced against, oldest first. */
+		disputeRecoveryIds: v.optional(v.array(v.id(TABLE.DISPUTE_RECOVERIES))),
+		/** Set once the draw-down ran. The idempotency marker for webhook replay. */
+		disputeRecoveryAppliedAt: v.optional(v.number()),
+		/**
+		 * What the draw-down actually took off which rows, in the order it took
+		 * it. Recorded rather than re-derived because the draw-down re-plans
+		 * against the ledger's *current* state, so the rows it touched need not
+		 * be the ones `disputeRecoveryIds` was priced against — and a later
+		 * refund has to give the money back to the rows it really came from.
+		 */
+		disputeRecoveryLegs: v.optional(
+			v.array(
+				v.object({
+					recoveryId: v.id(TABLE.DISPUTE_RECOVERIES),
+					amount: v.number(),
+					/**
+					 * How much of this leg was taken back by trimming the row's
+					 * *pending* return rather than by moving money.
+					 *
+					 * A reinstated row whose return has not gone out yet is trimmed
+					 * at source, so that share never reaches the restaurant. If the
+					 * transfer later goes out and a further refund arrives, the
+					 * claw-back must reverse only what actually travelled — the
+					 * leg's share MINUS what was trimmed before it left. Without
+					 * this the reversal asks Stripe for more than the transfer
+					 * carried and is rejected.
+					 */
+					trimmed: v.optional(v.number()),
+				})
+			)
+		),
+		/**
+		 * Withheld at Stripe but not applicable to any ledger row — the dispute
+		 * was reinstated between pricing and settlement, or another intent got
+		 * there first. This money is the restaurant's and is transferred back
+		 * (`dispute-recovery-shortfall:<paymentId>`); the field is what makes
+		 * that a visible, reconcilable state rather than a silent platform gain.
+		 */
+		disputeRecoveryShortfall: v.optional(v.number()),
+		disputeRecoveryShortfallTransferId: v.optional(v.string()),
+		disputeRecoveryShortfallReturnedAt: v.optional(v.number()),
+		/**
+		 * `true` while a shortfall transfer has been scheduled but has not
+		 * settled. A separate flag rather than a derived predicate because it is
+		 * the leading column of `by_shortfall_pending`: Convex cannot index "a
+		 * number is present and another is absent", and nothing retries a
+		 * scheduled action that threw, so the daily sweep needs an exact probe
+		 * for "owed but not paid".
+		 */
+		disputeRecoveryShortfallPending: v.optional(v.boolean()),
+		/**
+		 * Money already reversed out of the standalone transfers this payment's
+		 * recovery produced — the return of a reinstated row, and the shortfall
+		 * — keyed by transfer id, cumulative.
+		 *
+		 * A refund reverses the CHARGE's transfer and nothing else, so a
+		 * `transfers.create` Tavli made separately survives the refund untouched.
+		 * Without these reversals a refunded sale leaves the restaurant holding
+		 * money it was paid twice for. Cumulative so a partial refund followed by
+		 * the rest reverses the difference rather than the whole amount again.
+		 */
+		disputeReturnReversals: v.optional(
+			v.array(
+				v.object({
+					stripeTransferId: v.string(),
+					/** Total reversed so far out of that transfer. */
+					amount: v.number(),
+				})
+			)
+		),
+		/**
+		 * Reversal targets already handed to the scheduler but not yet confirmed
+		 * by Stripe.
+		 *
+		 * `disputeReturnReversals` only moves on success, so without this a
+		 * second, larger refund arriving before the first reversal settles would
+		 * read "nothing reversed yet" and re-send the whole new target —
+		 * reversing the first slice twice, or being rejected, depending on which
+		 * request Stripe sees second. The scheduler reads
+		 * `max(confirmed, pending)`, so each step only ever sends its own delta.
+		 */
+		disputeReturnReversalsPending: v.optional(
+			v.array(
+				v.object({
+					stripeTransferId: v.string(),
+					amount: v.number(),
+				})
+			)
+		),
+		/**
+		 * Cumulative amount given back to the ledger because this payment was
+		 * refunded. A refund returns the diner's whole charge out of the platform
+		 * balance while reversing only the (already-reduced) transfer, so Tavli
+		 * recovered nothing — the debt has to come back.
+		 */
+		disputeRecoveryRestored: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
@@ -960,7 +1086,12 @@ export default defineSchema({
 		 * `processing` row with no `kind` is a pre-pivot order payment and is
 		 * swept as one; it is not skipped for want of a `kind`.
 		 */
-		.index("by_status_updated", ["status", "updatedAt"]),
+		.index("by_status_updated", ["status", "updatedAt"])
+		// Shortfall transfers the daily sweep has to retry (TAVLI-102, review
+		// round 2). `disputeRecoveryShortfallPending` is only ever `true` or
+		// absent, so this is an exact probe for the handful of payments that owe
+		// a transfer, never a range over the payments table.
+		.index("by_shortfall_pending", ["disputeRecoveryShortfallPending", "createdAt"]),
 
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: defineTable({
 		eventId: v.string(),
@@ -999,6 +1130,20 @@ export default defineSchema({
 		openedAt: v.optional(v.number()),
 		/** Event timestamp of the `charge.dispute.closed` delivery (ms). */
 		closedAt: v.optional(v.number()),
+		/** Event timestamp of `charge.dispute.funds_reinstated` (ms): we got the money back. */
+		reinstatedAt: v.optional(v.number()),
+		/**
+		 * Stripe's dispute fee, from the dispute's balance transactions
+		 * (TAVLI-102). **Tavli absorbs it** — it is recorded here and in the
+		 * per-month fee aggregate so the platform can see what disputes cost it,
+		 * and it is deliberately never added to the restaurant's recovery ledger.
+		 *
+		 * Positive cents. Absent when Stripe has not exposed a fee yet (a warning
+		 * -stage dispute has none) or the balance transaction could not be read.
+		 */
+		disputeFeeAmount: v.optional(v.number()),
+		/** `YYYY-MM` (UTC) of the fee's balance transaction — the fee aggregate's key. */
+		disputeFeeMonth: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
@@ -1019,6 +1164,98 @@ export default defineSchema({
 	// detected at all. `failureMessage` is Stripe's raw English sentence and is
 	// for operators only — the manager-facing query maps `failureCode` to
 	// bilingual copy and never returns it.
+	// The recovery ledger: money a LOST dispute took off Tavli's balance that the
+	// restaurant's later payments pay back (TAVLI-102).
+	//
+	// The liability model is unchanged — `createConnectAccount` still sets
+	// `losses_collector: "application"`, so a chargeback settles against the
+	// PLATFORM balance while the restaurant keeps the transfer it already
+	// received. What changes is that the loss is now written down instead of
+	// vanishing: one row per lost dispute, drawn down a capped percentage at a
+	// time from subsequent ORDER payments (never tips, never tabs), credited
+	// back in full if the dispute is later won or the funds reinstated, and
+	// written off after `DISPUTE_RECOVERY_WRITE_OFF_DAYS`.
+	//
+	// `amount` is the disputed amount ONLY. Stripe's dispute fee is Tavli's to
+	// absorb (a decision, not an oversight) and is recorded on the
+	// `stripeDisputes` row and in the fee aggregate instead — putting it here
+	// would bill a restaurant for a fee it cannot influence.
+	//
+	// Invariant, maintained by every writer: `recovered + outstanding <= amount`,
+	// and `outstanding >= 0`. A row leaves `outstanding` at whatever is still
+	// owed when it is reinstated or written off, so the historical figure
+	// survives; `status` is what says it can no longer be deducted from.
+	[TABLE.DISPUTE_RECOVERIES]: defineTable({
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		/** The Stripe dispute this debt came from. One ledger row per dispute id. */
+		stripeDisputeId: v.string(),
+		/** The charge that was disputed, when we could resolve it. */
+		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
+		orderId: v.optional(v.id(TABLE.ORDERS)),
+		/** Disputed amount, smallest currency unit. Never includes the dispute fee. */
+		amount: v.number(),
+		/** Still owed. Deductions lower it; a credit-back zeroes it. */
+		outstanding: v.number(),
+		/** Drawn back so far from settled order payments. */
+		recovered: v.number(),
+		currency: v.string(),
+		/** `DISPUTE_RECOVERY_STATUS`. Leading column of both indexes. */
+		status: v.union(
+			v.literal(DISPUTE_RECOVERY_STATUS.OUTSTANDING),
+			v.literal(DISPUTE_RECOVERY_STATUS.RECOVERED),
+			v.literal(DISPUTE_RECOVERY_STATUS.REINSTATED),
+			v.literal(DISPUTE_RECOVERY_STATUS.WRITTEN_OFF)
+		),
+		/** When the dispute was lost (ms). Drives oldest-first draw-down and the write-off clock. */
+		lostAt: v.number(),
+		writtenOffAt: v.optional(v.number()),
+		reinstatedAt: v.optional(v.number()),
+		/**
+		 * Set once the return transfer for a reinstated row has settled at
+		 * Stripe, so a replayed `funds_reinstated` cannot pay the restaurant
+		 * twice. The Stripe idempotency key is the second line of defence.
+		 */
+		returnedAt: v.optional(v.number()),
+		returnedAmount: v.optional(v.number()),
+		stripeTransferId: v.optional(v.string()),
+		/**
+		 * When a return transfer was last handed to the scheduler. The daily
+		 * sweep skips a row scheduled within the last day, so a re-schedule
+		 * cannot race the action still working on it — two concurrent
+		 * `transfers.create` calls sharing one idempotency key make the loser
+		 * fail with `idempotency_key_in_use`, which is not a real failure but
+		 * would otherwise raise a severe alert.
+		 */
+		returnScheduledAt: v.optional(v.number()),
+		/**
+		 * Money taken back out of the return transfer because the row was
+		 * trimmed while that transfer was already in flight at Stripe.
+		 *
+		 * A refund on a payment that had drawn this row down lowers `recovered`,
+		 * but a transfer that has already left cannot be lowered — it can only
+		 * be reversed. Cumulative, so a second trim reverses the difference.
+		 */
+		returnExcessReversed: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		// The deduction query: this restaurant's outstanding debt, oldest first.
+		// `lostAt` in the index is what makes "oldest first" a range read rather
+		// than a sort over a collected set.
+		.index("by_restaurant_status_lost", ["restaurantId", "status", "lostAt"])
+		// The write-off sweep: every outstanding row across all restaurants whose
+		// `lostAt` is older than the cutoff. One bounded range, no table scan.
+		.index("by_status_lost", ["status", "lostAt"])
+		// Reinstated rows whose return transfer has not settled. Convex sorts an
+		// undefined indexed field before every defined value, which is exactly
+		// what makes `.eq("status", "reinstated").eq("returnedAt", undefined)` an
+		// exact probe for "owed but not yet paid back" rather than a scan of
+		// every dispute this platform has ever reinstated. The daily sweep uses
+		// it to re-schedule a return whose action died — Convex does not retry a
+		// scheduled function that throws.
+		.index("by_status_returned", ["status", "returnedAt"])
+		.index("by_dispute_id", ["stripeDisputeId"]),
+
 	[TABLE.STRIPE_PAYOUTS]: defineTable({
 		restaurantId: v.id(TABLE.RESTAURANTS),
 		stripeAccountId: v.string(),

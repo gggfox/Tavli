@@ -13,6 +13,7 @@
  */
 import { Blob as NodeBlob } from "node:buffer";
 import { convexTest } from "convex-test";
+import { registerDisputeComponents } from "./_fixtures/disputeComponents.fixture";
 import { describe, expect, it } from "vitest";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -90,6 +91,7 @@ const EXPECTED_DELETED = {
 	[TABLE.PAYMENTS]: 2,
 	[TABLE.STRIPE_WEBHOOK_EVENTS]: 2,
 	[TABLE.STRIPE_DISPUTES]: 1,
+	[TABLE.DISPUTE_RECOVERIES]: 1,
 	[TABLE.STRIPE_PAYOUTS]: 1,
 	[TABLE.RESERVATIONS]: 1,
 	[TABLE.TABLE_LOCKS]: 1,
@@ -331,6 +333,21 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			status: "needs_response",
 			amount: 90,
 			currency: "MXN",
+			createdAt: NOW,
+			updatedAt: NOW,
+		});
+
+		// The recovery ledger (TAVLI-102): a debt against a restaurant that will
+		// never take another payment, so it goes with the dispute that created it.
+		await ctx.db.insert("disputeRecoveries", {
+			restaurantId,
+			stripeDisputeId: "dp_purged",
+			amount: 90,
+			outstanding: 90,
+			recovered: 0,
+			currency: "MXN",
+			status: "outstanding",
+			lostAt: NOW,
 			createdAt: NOW,
 			updatedAt: NOW,
 		});
@@ -622,6 +639,7 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 describe("restaurant hard purge cascade", () => {
 	it("deletes every scoped row, keeps other restaurants and users intact, and records counts", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const orgId = await seedOrg(t, "Purge Org");
 		const aId = await seedRestaurant(t, { orgId, slug: "purged", softDeleted: true });
 		const bId = await seedRestaurant(t, { orgId, slug: "survivor", softDeleted: false });
@@ -880,6 +898,7 @@ describe("restaurant hard purge cascade", () => {
 
 	it("does not fight the sections/tables soft-delete cron over the same rows", async () => {
 		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
 		const orgId = await seedOrg(t, "Cron Org");
 		const aId = await seedRestaurant(t, { orgId, slug: "purged-cron", softDeleted: true });
 		const bId = await seedRestaurant(t, { orgId, slug: "survivor-cron", softDeleted: false });

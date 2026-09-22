@@ -48,6 +48,8 @@ import type Stripe from "stripe";
 import { api, internal } from "./_generated/api";
 import { formatMoneyCents } from "./_shared/money";
 import { computeOrderCharge } from "./_shared/tip";
+import { DISPUTE_ERRORS, type RecoveryQuote } from "./disputes";
+import { computeDisputeDeduction } from "./disputeRecoveryHelpers";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction } from "./_generated/server";
@@ -115,6 +117,8 @@ import {
 	handleAccountStatusChange,
 	handleChargeDisputeClosed,
 	handleChargeDisputeCreated,
+	handleChargeDisputeFundsReinstated,
+	handleChargeDisputeUpdated,
 	handleChargeRefunded,
 	handlePaymentIntentFailure,
 	handlePaymentIntentSuccess,
@@ -983,8 +987,36 @@ export const fulfillPayment = internalAction({
 					break;
 				}
 
+				// A dispute that moves without closing (evidence submitted, the
+				// bank moving it into review). Recorded so the disputes card
+				// shows where the dispute actually stands, and handled for the
+				// money too: Stripe can deliver a `lost` status here that never
+				// arrives as a `closed` (TAVLI-102).
+				case "charge.dispute.updated": {
+					paymentId = await handleChargeDisputeUpdated(
+						ctx,
+						event.data.object,
+						event.id,
+						event.created * 1000
+					);
+					break;
+				}
+
 				case "charge.dispute.closed": {
 					paymentId = await handleChargeDisputeClosed(
+						ctx,
+						event.data.object,
+						event.id,
+						event.created * 1000
+					);
+					break;
+				}
+
+				// We won a dispute we had already lost and Stripe has put the
+				// money back. Cancels the recovery ledger row and returns
+				// anything later orders had already paid down (TAVLI-102).
+				case "charge.dispute.funds_reinstated": {
+					paymentId = await handleChargeDisputeFundsReinstated(
 						ctx,
 						event.data.object,
 						event.id,
@@ -1138,6 +1170,30 @@ export const createRefund = internalAction({
 		// throw on the one path that has money to send back (review round 2).
 		if (patchOrderState && !targetOrderId) {
 			throw new Error("Refund requires an order: payment has no orderId and none was supplied");
+		}
+
+		// A disputed charge cannot be refunded (TAVLI-102). Stripe answers
+		// `charge_disputed`, which arrives several seconds later as an opaque
+		// integration error and, worse, only AFTER the payment row has been
+		// flipped to `refund_requested` and the order to `refund_requested` by
+		// the patches below — leaving staff looking at an order that says a
+		// refund is in progress when none ever will be.
+		//
+		// A LOST dispute is refused too, and that one is not Stripe's rule but
+		// ours: the money already went back to the diner through the chargeback,
+		// so refunding it would pay them twice, out of Tavli's balance. A WON
+		// dispute releases the charge and refunding is possible again.
+		//
+		// Checked here rather than in each caller so `cancelOrderAndRefund` and
+		// `refundOrderItem` cannot drift: both reach Stripe through this action.
+		const blockingDispute: { stripeDisputeId: string; status: string } | null = await ctx.runQuery(
+			internal.disputes.getBlockingDisputeForPaymentInternal,
+			{
+				paymentId: args.paymentId,
+			}
+		);
+		if (blockingDispute) {
+			throw fromErrorObject(new ConflictError(DISPUTE_ERRORS.PAYMENT_UNDER_DISPUTE).toObject());
 		}
 
 		// A partial refund leaves money on the charge, so the payment is `partial`
@@ -1756,6 +1812,28 @@ export const createPaymentIntent = action({
 			});
 		}
 
+		// Dispute recovery (TAVLI-102). A restaurant that lost a chargeback pays
+		// it back out of its later ORDER payments — never a tip charge, never a
+		// tab — a capped percentage at a time.
+		//
+		// `restaurantShare` is what Stripe would transfer with no deduction
+		// (`amount − application_fee_amount`, i.e. subtotal + gratuity), and
+		// `recoveryBase` is the food subtotal alone, so the whole gratuity
+		// always reaches the restaurant. The diner's `amount` is NOT touched:
+		// they pay exactly what the checkout sheet said, and the order still
+		// reports full revenue.
+		const recoveryQuote: RecoveryQuote = await ctx.runQuery(
+			internal.disputes.getRecoveryQuoteInternal,
+			{ restaurantId: order.restaurantId }
+		);
+		const restaurantShare = subtotalAmount + gratuityAmount;
+		const disputeRecoveryAmount = computeDisputeDeduction({
+			restaurantShare,
+			recoveryBase: subtotalAmount,
+			percent: recoveryQuote.percent,
+			totalOutstanding: recoveryQuote.totalOutstanding,
+		});
+
 		const attemptNumber = latestPayment ? latestPayment.attemptNumber + 1 : 1;
 		const paymentId: Id<"payments"> = await ctx.runMutation(internal.stripeHelpers.createPayment, {
 			restaurantId: order.restaurantId,
@@ -1771,6 +1849,10 @@ export const createPaymentIntent = action({
 			refundStatus: PAYMENT_REFUND_STATUS.NONE,
 			attemptNumber,
 			orderUpdatedAtSnapshot: order.updatedAt,
+			...(disputeRecoveryAmount > 0 && {
+				disputeRecoveryAmount,
+				disputeRecoveryIds: recoveryQuote.recoveryIds,
+			}),
 			// The attempt this call stood down, re-checked inside the inserting
 			// transaction (TAVLI-104 review round 1). Everything above ran against
 			// a snapshot; two diners tapping Pay within the same second both pass
@@ -1798,6 +1880,13 @@ export const createPaymentIntent = action({
 					application_fee_amount: feeAmount,
 					transfer_data: {
 						destination: restaurant.stripeAccountId,
+						// Explicit from TAVLI-102 onward. Left unset, Stripe
+						// transfers `amount − application_fee_amount`, which is
+						// exactly `restaurantShare` — so with no deduction this
+						// is byte-for-byte the previous behaviour, stated rather
+						// than inferred. With one, it is the only place the
+						// recovery actually moves money.
+						amount: restaurantShare - disputeRecoveryAmount,
 					},
 					on_behalf_of: restaurant.stripeAccountId,
 					metadata: {
@@ -1814,6 +1903,14 @@ export const createPaymentIntent = action({
 						subtotalAmount: String(subtotalAmount),
 						feeAmount: String(feeAmount),
 						gratuityAmount: String(gratuityAmount),
+						// Only when there is something to explain. An operator
+						// reading the PaymentIntent in the Stripe Dashboard needs
+						// to know why a transfer is short; a `0` on every intent
+						// that never had a dispute is noise, and it would make the
+						// request differ from the pre-TAVLI-102 one for no reason.
+						...(disputeRecoveryAmount > 0 && {
+							disputeRecoveryAmount: String(disputeRecoveryAmount),
+						}),
 					},
 				},
 				{

@@ -31,4 +31,27 @@ import aggregate from "@convex-dev/aggregate/convex.config.js";
 const app = defineApp();
 app.use(aggregate);
 
+// ---------------------------------------------------------------------------
+// Disputes (TAVLI-102)
+// ---------------------------------------------------------------------------
+
+/**
+ * What disputes cost **Tavli**, per calendar month: the Stripe dispute fee,
+ * which the platform absorbs. Key is `YYYY-MM` (UTC) and the id is the Stripe
+ * dispute id, so one dispute can only ever contribute one fee however many
+ * times its events are redelivered. Platform-wide on purpose — it is not a
+ * restaurant's number, it is the line item an operator checks against the
+ * Stripe balance.
+ */
+app.use(aggregate, { name: "disputeFeesByMonth" });
+
+/**
+ * What disputes cost **one restaurant**, namespaced by restaurant id and keyed
+ * by `[outcome, timestamp]` — opened, lost, won, recovered. The namespace is
+ * what lets the restaurant purge drop a restaurant's whole history in one call
+ * (aggregate entries are not rows, so nothing else would ever find them), and
+ * what keeps one busy restaurant's writes off another's B-tree shard.
+ */
+app.use(aggregate, { name: "disputeTotalsByRestaurant" });
+
 export default app;

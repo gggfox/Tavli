@@ -124,4 +124,22 @@ crons.daily(
 	internal.shiftTemplates.materializeAllTemplates
 );
 
+// Dispute recovery write-offs (TAVLI-102): a lost dispute's ledger row stops
+// being recoverable 180 days after the loss, and Tavli absorbs the rest.
+//
+// A cron rather than lazy-on-read, deliberately. Lazy evaluation would only
+// ever touch rows the deduction query happens to read — and that query does not
+// run at all for a restaurant with `disputeRecoveryPercent: 0`, which is every
+// restaurant by default. Those ledgers can never be paid down, so their debt
+// would sit at "outstanding" forever, be reported as recoverable on the
+// payments page, and start deducting the day somebody switched recovery on.
+// Daily is ample for a 180-day clock, and the sweep is one bounded range read
+// on `by_status_lost`.
+crons.daily(
+	"dispute recovery write-off sweep",
+	{ hourUTC: 10, minuteUTC: 0 },
+	internal.disputes.sweepDisputeWriteOffs,
+	{}
+);
+
 export default crons;

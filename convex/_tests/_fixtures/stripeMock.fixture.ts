@@ -73,8 +73,35 @@ export const mockStripeClient = {
 	},
 	refunds: {
 		create: vi.fn(),
-		/** Used to re-read a refund set the webhook only summarised. */
+		/**
+		 * Used to re-read a refund the webhook only summarised. Since TAVLI-102
+		 * this runs on EVERY `charge.refunded`, because the fetched refund is
+		 * the only place `transfer_reversal` exists — the field that tells a
+		 * refund Tavli issued from one typed into the Stripe Dashboard.
+		 */
 		list: vi.fn(),
+	},
+	/**
+	 * Returning what a reinstated dispute had already recovered (TAVLI-102).
+	 * The original charges are long settled, so a transfer to the connected
+	 * account is the only way to move the money back.
+	 */
+	transfers: {
+		create: vi.fn(),
+		/**
+		 * Taking part of a standalone transfer back when the sale behind it is
+		 * refunded. A refund reverses the CHARGE's transfer and nothing else, so
+		 * the returns this ticket makes have to be reversed explicitly.
+		 */
+		createReversal: vi.fn(),
+	},
+	/**
+	 * Read when a `charge.dispute.*` delivery arrives without
+	 * `balance_transactions`, to learn Stripe's dispute fee — the cost Tavli
+	 * absorbs and aggregates per month.
+	 */
+	disputes: {
+		retrieve: vi.fn(),
 	},
 	/**
 	 * Payout reads for reconciliation. No suite stubs these yet; they exist so

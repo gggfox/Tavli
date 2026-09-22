@@ -30,6 +30,14 @@
  * in; no aggregate has ever netted `amountRefunded` out of revenue and doing so
  * silently would restate history a second time.
  *
+ * **Dispute recovery is its own line, never a deduction from revenue**
+ * (TAVLI-102). When a lost chargeback is being repaid out of later orders, the
+ * order still sold what it sold — `restaurantRevenue` is unchanged — and the
+ * withheld amount appears as `disputeRecovery`, with `settledToRestaurant`
+ * showing what actually reached the bank. That is the whole point: a
+ * settlement figure that differs from a sales figure has to differ visibly, or
+ * the next person to reconcile a short deposit has no line to point at.
+ *
  * **A FULLY refunded row is not revenue** (TAVLI-104). That is not a netting
  * rule, it is the same status question asked properly: the money came and went,
  * and the restaurant sold nothing. It was survivable to count them while a full
@@ -52,6 +60,12 @@ export type PaymentMoneyRow = {
 	gratuityAmount?: number;
 	kind?: PaymentKind;
 	status: PaymentStatus;
+	/** Withheld from the transfer to repay a lost dispute (TAVLI-102). */
+	disputeRecoveryAmount?: number;
+	/** Set once the ledger was actually drawn down — i.e. the charge settled. */
+	disputeRecoveryAppliedAt?: number;
+	/** Given back to the ledger because this payment was refunded. */
+	disputeRecoveryRestored?: number;
 	/** Absent on rows (and fixtures) that predate the field; treated as `none`. */
 	refundStatus?: PaymentRefundStatus;
 };
@@ -77,6 +91,22 @@ export type PaymentMoneyBreakdown = {
 	 * legacy rows — Stripe carved an unrecorded 12% out of their proceeds.
 	 */
 	netToRestaurant: number | null;
+	/**
+	 * Withheld from this row's transfer to repay a lost dispute (TAVLI-102).
+	 * Zero on every row that carried no deduction, which is almost all of them.
+	 */
+	disputeRecovery: number;
+	/**
+	 * What actually reached the connected account: `netToRestaurant` minus the
+	 * recovery. `null` wherever `netToRestaurant` is.
+	 *
+	 * **This is a settlement figure, not a sales figure**, and the two differ on
+	 * purpose. The order sold what it sold; the recovery is the repayment of an
+	 * older chargeback and belongs on its own line, so a restaurant reconciling
+	 * a short bank deposit can see exactly which number moved and why. Netting
+	 * it out of revenue instead would restate the sale.
+	 */
+	settledToRestaurant: number | null;
 };
 
 /** True for rows written after the ADR 008 pivot (they carry the fee split). */
@@ -94,14 +124,45 @@ export function paymentMoneyBreakdown(payment: PaymentMoneyRow): PaymentMoneyBre
 	const tip = isTip ? payment.amount : (payment.gratuityAmount ?? 0);
 	const restaurantRevenue = isTip ? 0 : (payment.subtotalAmount ?? payment.amount);
 	const serviceFee = hasFeeBreakdown(payment) ? (payment.feeAmount ?? 0) : null;
+	const netToRestaurant = serviceFee === null ? null : restaurantRevenue + tip;
+	const disputeRecovery = disputeRecoveryFromPayment(payment);
 
 	return {
 		chargedToDiner: payment.amount,
 		restaurantRevenue,
 		serviceFee,
 		tip,
-		netToRestaurant: serviceFee === null ? null : restaurantRevenue + tip,
+		netToRestaurant,
+		disputeRecovery,
+		settledToRestaurant: netToRestaurant === null ? null : netToRestaurant - disputeRecovery,
 	};
+}
+
+/**
+ * Dispute recovery actually withheld from one payment row (TAVLI-102).
+ *
+ * Counted only once the draw-down ran (`disputeRecoveryAppliedAt`), which
+ * happens when the charge settles. A row that was priced with a deduction and
+ * then failed or was superseded moved no money at all, and reporting its
+ * intended deduction would show a restaurant a withholding that never happened.
+ * The same rule nets out `disputeRecoveryRestored`: a refunded charge gave the
+ * debt back to the ledger, so nothing was recovered from it either.
+ */
+export function disputeRecoveryFromPayment(payment: PaymentMoneyRow): number {
+	if (payment.disputeRecoveryAppliedAt === undefined) return 0;
+	// Net of anything a refund gave back: refunding the charge returns the
+	// diner's money out of the platform balance and reverses only the already
+	// -shortened transfer, so Tavli recovered nothing and the report must not
+	// claim it did.
+	const applied = payment.disputeRecoveryAmount ?? 0;
+	return Math.max(0, applied - (payment.disputeRecoveryRestored ?? 0));
+}
+
+/** Σ {@link disputeRecoveryFromPayment} over a payment set. */
+export function sumDisputeRecoveryFromPayments(payments: ReadonlyArray<PaymentMoneyRow>): number {
+	let total = 0;
+	for (const payment of payments) total += disputeRecoveryFromPayment(payment);
+	return total;
 }
 
 /**

@@ -49,6 +49,7 @@ describe("TABLE constants", () => {
 			"tipEntries",
 			"dashboardLayouts",
 			"dashboardTemplates",
+			"disputeRecoveries",
 			"employeeAccounts",
 			"rateLimits",
 			"whatsappChannels",

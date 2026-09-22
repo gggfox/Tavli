@@ -40,6 +40,7 @@ import {
 import { buildIntegrationErrorLog, redactExternalId } from "../_shared/integrationLogging";
 import {
 	computeDisputeFacts,
+	computeDisputeFee,
 	computeRefundFacts,
 	DISPUTE_PHASE,
 	STRIPE_NOT_CONFIGURED,
@@ -960,6 +961,15 @@ export async function handlePaymentIntentSuccess(
 			stripeChargeId: chargeId,
 			gratuityAmount: Number.isFinite(gratuityAmount) ? gratuityAmount : 0,
 		});
+		// The dispute recovery ledger is drawn down HERE, after the charge has
+		// settled, and never when the intent was priced (TAVLI-102). The
+		// deduction was applied to `transfer_data.amount` at creation time, but
+		// an intent that fails or is superseded moves no money — drawing the
+		// ledger down then would forgive a debt nobody ever paid. A no-op for
+		// every payment that carries no deduction, which is almost all of them.
+		await ctx.runMutation(internal.disputes.applyDisputeRecoveryOnSettleInternal, {
+			paymentId: payment._id,
+		});
 		return payment._id;
 	}
 
@@ -1051,43 +1061,86 @@ export async function handleChargeRefunded(
 	// Filter by PaymentIntent rather than charge: we early-return above unless
 	// `paymentIntentId` is set, so it is always available here, and it is the
 	// filter Stripe treats as canonical for destination charges.
+	//
+	// The lookup now runs on EVERY delivery, not only when the id is missing
+	// (TAVLI-102). The fetched refund is the only place `transfer_reversal`
+	// exists, and that field is what tells a refund Tavli issued from one an
+	// operator issued by hand in the Stripe Dashboard. The charge-supplied id
+	// still wins when there is one — the fetch is for the object, not the id.
 	let { latestRefundId, refundedAtMs } = facts;
-	if (!latestRefundId) {
-		try {
-			const { data } = await getStripeClient().refunds.list({
-				payment_intent: facts.paymentIntentId,
-				limit: 1,
-			});
-			const latest = data[0];
-			if (latest) {
-				latestRefundId = latest.id;
-				refundedAtMs = stripeSecondsToMs(latest.created);
-			}
-		} catch (error) {
-			console.error("[stripe.fulfillPayment] REFUND LOOKUP FAILED", {
-				integration: "stripe-webhook",
-				operation: "refunds.list",
-				eventId,
-				chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
-				paymentIntentId: redactExternalId(facts.paymentIntentId),
-				message: error instanceof Error ? error.message : String(error),
-			});
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let fetchedRefunds: any[] = [];
+	try {
+		// Ten, not one. A charge can carry several refunds — a per-line removal
+		// followed by a dashboard refund of the rest is the obvious case — and
+		// `charge.refunded` fires for each, so a limit of 1 would inspect the
+		// newest and never notice an older one that reversed no transfer.
+		const { data } = await getStripeClient().refunds.list({
+			payment_intent: facts.paymentIntentId,
+			limit: 10,
+		});
+		fetchedRefunds = data ?? [];
+		const latest = fetchedRefunds[0] ?? null;
+		if (latest && !latestRefundId) {
+			latestRefundId = latest.id;
+			refundedAtMs = stripeSecondsToMs(latest.created);
 		}
+	} catch (error) {
+		console.error("[stripe.fulfillPayment] REFUND LOOKUP FAILED", {
+			integration: "stripe-webhook",
+			operation: "refunds.list",
+			eventId,
+			chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
+			paymentIntentId: redactExternalId(facts.paymentIntentId),
+			message: error instanceof Error ? error.message : String(error),
+		});
+	}
 
-		// Never let this fail silently again: an unresolved refund id means the
-		// payment row has no link back to Stripe, which is exactly the defect
-		// this branch exists to prevent.
-		if (!latestRefundId) {
-			console.error("[stripe.fulfillPayment] REFUND ID UNRESOLVED", {
-				integration: "stripe-webhook",
-				operation: "handleChargeRefunded",
-				eventId,
-				chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
-				paymentIntentId: redactExternalId(facts.paymentIntentId),
-				chargeHadRefundsKey: charge.refunds !== undefined,
-				refundsListReturned: 0,
-			});
-		}
+	// Never let this fail silently: an unresolved refund id means the payment
+	// row has no link back to Stripe, which is exactly the defect this lookup
+	// exists to prevent.
+	if (!latestRefundId) {
+		console.error("[stripe.fulfillPayment] REFUND ID UNRESOLVED", {
+			integration: "stripe-webhook",
+			operation: "handleChargeRefunded",
+			eventId,
+			chargeId: redactExternalId(typeof charge.id === "string" ? charge.id : undefined),
+			paymentIntentId: redactExternalId(facts.paymentIntentId),
+			chargeHadRefundsKey: charge.refunds !== undefined,
+			refundsListReturned: fetchedRefunds.length,
+		});
+	}
+
+	// A refund Tavli issued goes through `createRefund`, which always passes
+	// `reverse_transfer: true`, so Stripe attaches a `transfer_reversal` and the
+	// restaurant's share comes back off the connected account. A refund typed
+	// into the Stripe Dashboard has no reversal unless the operator ticked the
+	// box: the diner is repaid out of the PLATFORM balance while the restaurant
+	// keeps its transfer, which is silently Tavli's loss — the same shape of
+	// hole a lost dispute used to be (TAVLI-102).
+	//
+	// Deliberately NO ledger entry: unlike a chargeback, this is an action a
+	// Tavli operator took, and the right response is for a human to look at what
+	// they did, not for the next diner's order to quietly pay for it.
+	//
+	// Judged only on the FETCHED refund. The charge's own `refunds` list is
+	// abbreviated and may omit the field, and inferring "no reversal" from an
+	// absent key would alert on every properly-reversed refund.
+	//
+	// One alert per refund, keyed on the refund id, so a charge that was
+	// partially refunded in-app and then finished off from the Dashboard raises
+	// exactly one alert about the second refund and none about the first.
+	for (const refund of fetchedRefunds) {
+		if (refund?.transfer_reversal) continue;
+		await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+			kind: OPERATOR_ALERT_KIND.DASHBOARD_REFUND,
+			severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+			restaurantId: payment.restaurantId,
+			paymentId: payment._id,
+			...(payment.orderId && { orderId: payment.orderId }),
+			stripeObjectId: refund.id,
+			dedupeKey: `dashboard_refund:${refund.id}`,
+		});
 	}
 
 	await ctx.runMutation(internal.stripeHelpers.recordChargeRefund, {
@@ -1104,10 +1157,53 @@ export async function handleChargeRefunded(
 }
 
 /**
- * Shared implementation for `charge.dispute.created` / `charge.dispute.closed`.
+ * Resolve Stripe's dispute fee when the delivered object does not carry it.
+ *
+ * Stripe puts `balance_transactions` on the dispute, but not on every
+ * delivery — a warning-stage dispute has none at all, and some payloads arrive
+ * without the array. Since the fee is the number the platform's own accounting
+ * turns on (Tavli absorbs it), it is worth one retrieve rather than leaving a
+ * gap somebody has to reconcile by hand in the Dashboard.
+ *
+ * Best-effort: a failed retrieve logs and returns nothing, because the fee is
+ * not what the dispute handler is fundamentally about and the next delivery
+ * will try again.
+ */
+async function resolveDisputeFee(
+	disputeId: string,
+	eventId?: string
+): Promise<{ feeAmount: number | undefined; feeAtMs: number | undefined }> {
+	try {
+		const dispute = await getStripeClient().disputes.retrieve(disputeId);
+		if (!dispute) return { feeAmount: undefined, feeAtMs: undefined };
+		return computeDisputeFee(dispute as unknown as Parameters<typeof computeDisputeFee>[0]);
+	} catch (error) {
+		console.warn(
+			"[stripe.fulfillPayment] could not read the dispute's balance transactions",
+			buildIntegrationErrorLog(error, {
+				integration: "stripe-webhook",
+				operation: "disputes.retrieve",
+				eventId,
+			})
+		);
+		return { feeAmount: undefined, feeAtMs: undefined };
+	}
+}
+
+/**
+ * Shared implementation for every `charge.dispute.*` event.
+ *
  * Resolves the payment (best-effort, via the dispute's PaymentIntent), logs the
- * dispute loudly for dashboard visibility (structured error tracking lands in
- * TAVLI-9), then upserts the dispute facts. Returns the payment id when known.
+ * dispute loudly for dashboard visibility, resolves Stripe's dispute fee, then
+ * hands the facts to `disputes.recordDisputeEventInternal`, which owns
+ * everything that follows: the upsert, the recovery ledger, the aggregates, the
+ * notifications and the operator alert.
+ *
+ * The phase is what the event says; the **status** is what decides the money.
+ * Stripe's delivery order is not guaranteed and `updated` overlaps `closed`, so
+ * a `charge.dispute.updated` carrying `lost` opens a ledger row exactly like a
+ * `closed` would — keying off the event name alone is how a real loss gets
+ * missed because it arrived under the "wrong" type.
  */
 async function handleChargeDispute(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1128,8 +1224,7 @@ async function handleChargeDispute(
 	}
 
 	// Loud, structured log so a chargeback is impossible to miss in the Convex
-	// logs until dedicated error tracking exists (TAVLI-9). External ids are
-	// redacted per the integration-logging convention.
+	// logs. External ids are redacted per the integration-logging convention.
 	console.error("[stripe.fulfillPayment] CHARGE DISPUTE", {
 		phase,
 		disputeId: redactExternalId(facts.disputeId),
@@ -1143,7 +1238,15 @@ async function handleChargeDispute(
 		restaurantId: payment?.restaurantId,
 	});
 
-	await ctx.runMutation(internal.stripeHelpers.recordChargeDispute, {
+	// The fee only has to be learned once; the mutation ignores it when the
+	// dispute row already carries one, so a retrieve is skipped whenever the
+	// delivery itself told us.
+	const fee =
+		facts.feeAmount !== undefined
+			? { feeAmount: facts.feeAmount, feeAtMs: facts.feeAtMs }
+			: await resolveDisputeFee(facts.disputeId, eventId);
+
+	await ctx.runMutation(internal.disputes.recordDisputeEventInternal, {
 		stripeDisputeId: facts.disputeId,
 		phase,
 		reason: facts.reason,
@@ -1158,6 +1261,8 @@ async function handleChargeDispute(
 		stripeChargeId: facts.chargeId,
 		stripePaymentIntentId: facts.paymentIntentId,
 		latestStripeEventId: eventId,
+		...(fee.feeAmount !== undefined && { feeAmount: fee.feeAmount }),
+		...(fee.feeAtMs !== undefined && { feeAtMs: fee.feeAtMs }),
 	});
 
 	return payment?._id;
@@ -1175,6 +1280,26 @@ export async function handleChargeDisputeCreated(
 	return handleChargeDispute(ctx, dispute, DISPUTE_PHASE.CREATED, eventId, eventCreatedMs);
 }
 
+/**
+ * Handles `charge.dispute.updated`: the dispute moved without closing.
+ *
+ * Usually evidence being submitted or the bank moving it into review — nothing
+ * that costs money. It is handled anyway because Stripe can deliver a status
+ * change here that never arrives as a `closed`, and because a manager watching
+ * the disputes card should see "under review" rather than a status frozen at
+ * the moment the chargeback landed.
+ */
+export async function handleChargeDisputeUpdated(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	dispute: any,
+	eventId?: string,
+	eventCreatedMs?: number
+): Promise<Id<"payments"> | undefined> {
+	return handleChargeDispute(ctx, dispute, DISPUTE_PHASE.UPDATED, eventId, eventCreatedMs);
+}
+
 /** Handles `charge.dispute.closed`: a chargeback was resolved (won or lost). */
 export async function handleChargeDisputeClosed(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1185,4 +1310,24 @@ export async function handleChargeDisputeClosed(
 	eventCreatedMs?: number
 ): Promise<Id<"payments"> | undefined> {
 	return handleChargeDispute(ctx, dispute, DISPUTE_PHASE.CLOSED, eventId, eventCreatedMs);
+}
+
+/**
+ * Handles `charge.dispute.funds_reinstated`: we won and the money is back.
+ *
+ * Its own phase rather than a variant of `closed`, because the two mean
+ * opposite things to the recovery ledger — `closed` may open a debt, this
+ * always cancels one and returns whatever was already recovered. Stripe sends
+ * it for a dispute that was lost and later reversed, which is exactly the case
+ * where a ledger row is already being drawn down.
+ */
+export async function handleChargeDisputeFundsReinstated(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	dispute: any,
+	eventId?: string,
+	eventCreatedMs?: number
+): Promise<Id<"payments"> | undefined> {
+	return handleChargeDispute(ctx, dispute, DISPUTE_PHASE.FUNDS_REINSTATED, eventId, eventCreatedMs);
 }

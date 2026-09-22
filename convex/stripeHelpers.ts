@@ -14,8 +14,8 @@ import {
 } from "./constants";
 import { ConflictError, fromErrorObject } from "./_shared/errors";
 import { appendAuditEvent } from "./_util/audit";
+import { restoreLedgerForRefund } from "./disputes";
 import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupersedeHelpers";
-import { DISPUTE_PHASE } from "./stripeWebhookHelpers";
 
 const paymentStatusValidator = v.union(
 	v.literal(PAYMENT_STATUS.PENDING),
@@ -396,6 +396,13 @@ export const createPayment = internalMutation({
 		failedAt: v.optional(v.number()),
 		refundRequestedAt: v.optional(v.number()),
 		refundedAt: v.optional(v.number()),
+		/**
+		 * Dispute recovery withheld from this payment's transfer (TAVLI-102).
+		 * Set by `createPaymentIntent` on ORDER rows only; the ledger itself is
+		 * drawn down later, when the charge settles.
+		 */
+		disputeRecoveryAmount: v.optional(v.number()),
+		disputeRecoveryIds: v.optional(v.array(v.id(TABLE.DISPUTE_RECOVERIES))),
 		/**
 		 * The attempt the calling action stood down at Stripe and retired before
 		 * asking for this row (TAVLI-104). Omitted when it saw no live attempt.
@@ -823,6 +830,16 @@ export const recordChargeRefund = internalMutation({
 			}
 		}
 
+		// A refund on a payment that repaid a lost dispute has to give the ledger
+		// its debt back (TAVLI-102): Stripe returns the diner's whole charge out
+		// of the platform balance and reverses only the already-reduced transfer,
+		// so Tavli recovered nothing. Same transaction as the refund record, so
+		// the two can never disagree.
+		await restoreLedgerForRefund(ctx, {
+			paymentId: args.paymentId,
+			amountRefunded: args.amountRefunded,
+		});
+
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.PAYMENTS,
 			aggregateId: args.paymentId,
@@ -844,91 +861,13 @@ export const recordChargeRefund = internalMutation({
 });
 
 /**
- * Upserts dispute facts from a `charge.dispute.created` / `charge.dispute.closed`
- * event into `stripeDisputes` (one row per Stripe dispute id) and appends an
- * audit event next to the resolved payment. Inserts on `created`, patches on
- * `closed`; re-delivery of either phase is idempotent.
+ * `recordChargeDispute` lived here until TAVLI-102 and is now
+ * `disputes.recordDisputeEventInternal`.
+ *
+ * It moved because the mutation stopped being "persist these facts": a dispute
+ * event now opens or credits back a recovery ledger row, maintains two
+ * aggregates, notifies the restaurant's managers, mails them, and raises an
+ * operator alert. That belongs beside the ledger it maintains rather than in
+ * the general-purpose Stripe helper file — and the move is what lets the
+ * webhook handlers and the ledger share one definition of what a phase means.
  */
-export const recordChargeDispute = internalMutation({
-	args: {
-		stripeDisputeId: v.string(),
-		phase: v.union(v.literal(DISPUTE_PHASE.CREATED), v.literal(DISPUTE_PHASE.CLOSED)),
-		reason: v.string(),
-		status: v.string(),
-		amount: v.number(),
-		currency: v.string(),
-		eventTimeMs: v.number(),
-		restaurantId: v.optional(v.id(TABLE.RESTAURANTS)),
-		paymentId: v.optional(v.id(TABLE.PAYMENTS)),
-		orderId: v.optional(v.id(TABLE.ORDERS)),
-		sessionId: v.optional(v.id(TABLE.SESSIONS)),
-		stripeChargeId: v.optional(v.string()),
-		stripePaymentIntentId: v.optional(v.string()),
-		latestStripeEventId: v.optional(v.string()),
-	},
-	handler: async (ctx, args): Promise<Id<"stripeDisputes">> => {
-		const now = Date.now();
-		const existing = await ctx.db
-			.query(TABLE.STRIPE_DISPUTES)
-			.withIndex("by_dispute_id", (q) => q.eq("stripeDisputeId", args.stripeDisputeId))
-			.first();
-
-		let disputeId: Id<"stripeDisputes">;
-		if (existing) {
-			await ctx.db.patch(existing._id, {
-				reason: args.reason,
-				status: args.status,
-				amount: args.amount,
-				currency: args.currency,
-				...(args.phase === DISPUTE_PHASE.CREATED && existing.openedAt === undefined
-					? { openedAt: args.eventTimeMs }
-					: {}),
-				...(args.phase === DISPUTE_PHASE.CLOSED ? { closedAt: args.eventTimeMs } : {}),
-				updatedAt: now,
-			});
-			disputeId = existing._id;
-		} else {
-			disputeId = await ctx.db.insert(TABLE.STRIPE_DISPUTES, {
-				stripeDisputeId: args.stripeDisputeId,
-				restaurantId: args.restaurantId,
-				paymentId: args.paymentId,
-				orderId: args.orderId,
-				sessionId: args.sessionId,
-				stripeChargeId: args.stripeChargeId,
-				stripePaymentIntentId: args.stripePaymentIntentId,
-				reason: args.reason,
-				status: args.status,
-				amount: args.amount,
-				currency: args.currency,
-				...(args.phase === DISPUTE_PHASE.CREATED
-					? { openedAt: args.eventTimeMs }
-					: { closedAt: args.eventTimeMs }),
-				createdAt: now,
-				updatedAt: now,
-			});
-		}
-
-		await appendAuditEvent(ctx, {
-			aggregateType: args.paymentId ? TABLE.PAYMENTS : TABLE.STRIPE_DISPUTES,
-			aggregateId: args.paymentId ?? disputeId,
-			eventType:
-				args.phase === DISPUTE_PHASE.CREATED ? "payments.disputeOpened" : "payments.disputeClosed",
-			// Best-effort like the dispute row itself: absent when the charge could
-			// not be linked back to one of our restaurants.
-			restaurantId: args.restaurantId ?? null,
-			payload: {
-				stripeDisputeId: args.stripeDisputeId,
-				reason: args.reason,
-				status: args.status,
-				amount: args.amount,
-				currency: args.currency,
-			},
-			userId: AUDIT_SYSTEM_USER_ID,
-			idempotencyKey: args.latestStripeEventId
-				? `charge.dispute.${args.phase}:${args.latestStripeEventId}`
-				: undefined,
-		});
-
-		return disputeId;
-	},
-});
