@@ -171,6 +171,8 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_ALLOWLIST_ENTRY_NOT_FOUND",
 	// Operator alerts — convex/operatorAlerts.ts
 	"ERROR_OPERATOR_ALERT_NOT_FOUND",
+	// Manager notifications — convex/notifications.ts
+	"ERROR_NOTIFICATION_NOT_FOUND",
 	// AI menu images — convex/_shared/errors.ts
 	"AI_IMAGE_GENERATION_IN_PROGRESS",
 	"AI_IMAGE_MONTHLY_LIMIT_REACHED",

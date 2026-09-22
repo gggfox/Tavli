@@ -18,6 +18,8 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { BRANDING_IMAGE_SLOTS, BRANDING_SLOT_SPECS } from "../brandingImageHelpers";
 import {
+	NOTIFICATION_BODY_KEY,
+	NOTIFICATION_KIND,
 	OPERATOR_ALERT_EXPLANATION_KEY,
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
@@ -108,6 +110,7 @@ const EXPECTED_DELETED = {
 	[TABLE.WHATSAPP_MESSAGES]: 2,
 	[TABLE.WHATSAPP_PENDING_ACTIONS]: 1,
 	[TABLE.OPERATOR_ALERTS]: 1,
+	[TABLE.NOTIFICATIONS]: 2,
 } as const;
 
 /**
@@ -547,6 +550,20 @@ async function seedFullGraph(t: T, orgId: Id<"organizations">, restaurantId: Id<
 			createdAt: NOW,
 		});
 
+		// Manager notifications about this restaurant (TAVLI-111). One row per
+		// recipient, so two managers means two rows — and the second recipient
+		// also has a row about the surviving restaurant, seeded below.
+		for (const userId of ["member-user", "second-manager"]) {
+			await ctx.db.insert("notifications", {
+				userId,
+				restaurantId,
+				kind: NOTIFICATION_KIND.PAYOUT_FAILED,
+				messageKey: NOTIFICATION_BODY_KEY[NOTIFICATION_KIND.PAYOUT_FAILED],
+				href: "/admin/payments",
+				createdAt: NOW,
+			});
+		}
+
 		// A materialised popularity row (TAVLI-98). It points at `menuItems`, so
 		// the purge has to delete it *before* the menu tree, or it is briefly a
 		// ranking of ids that no longer resolve.
@@ -674,6 +691,16 @@ describe("restaurant hard purge cascade", () => {
 				createdAt: NOW,
 			});
 
+			// Same person, other restaurant (TAVLI-111): the purge is scoped by
+			// restaurant, so this manager keeps the news about the one still open.
+			const notificationId = await ctx.db.insert("notifications", {
+				userId: "member-user",
+				restaurantId: bId,
+				kind: NOTIFICATION_KIND.DISPUTE_OPENED,
+				messageKey: NOTIFICATION_BODY_KEY[NOTIFICATION_KIND.DISPUTE_OPENED],
+				createdAt: NOW,
+			});
+
 			return {
 				memberId,
 				employeeAccountId,
@@ -683,6 +710,7 @@ describe("restaurant hard purge cascade", () => {
 				channelId,
 				conversationId,
 				messageId,
+				notificationId,
 			};
 		});
 
@@ -786,6 +814,7 @@ describe("restaurant hard purge cascade", () => {
 			expect(await ctx.db.get(bRows.channelId)).not.toBeNull();
 			expect(await ctx.db.get(bRows.conversationId)).not.toBeNull();
 			expect(await ctx.db.get(bRows.messageId)).not.toBeNull();
+			expect(await ctx.db.get(bRows.notificationId)).not.toBeNull();
 			expect(await ctx.db.get(portfolioLayoutId)).not.toBeNull();
 
 			// userRoles row survives, scrubbed down to the other restaurant.

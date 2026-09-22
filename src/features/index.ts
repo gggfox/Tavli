@@ -3,6 +3,7 @@ export * from "./auth";
 export * from "./featureFlags";
 export * from "./kitchen";
 export * from "./menus";
+export * from "./notifications";
 export * from "./options";
 export * from "./ordering";
 export * from "./organizations";

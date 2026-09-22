@@ -93,6 +93,7 @@ export async function hardDeleteRestaurantDataTyped(
 		[TABLE.WHATSAPP_MESSAGES]: 0,
 		[TABLE.WHATSAPP_PENDING_ACTIONS]: 0,
 		[TABLE.OPERATOR_ALERTS]: 0,
+		[TABLE.NOTIFICATIONS]: 0,
 	};
 	const patched: Record<RestaurantPurgePatchedTable, number> = {
 		[TABLE.INVITATIONS]: 0,
@@ -502,6 +503,18 @@ export async function hardDeleteRestaurantDataTyped(
 		.collect();
 	for (const alert of alerts) await ctx.db.delete(alert._id);
 	deleted[TABLE.OPERATOR_ALERTS] += alerts.length;
+
+	// Manager notifications (TAVLI-111). Every row is scoped to one restaurant,
+	// so all of them go: a bell entry about a restaurant that no longer exists
+	// links nowhere, and its `href` would resolve to a dead page. Rows belonging
+	// to a manager who still manages other restaurants are untouched — the index
+	// is on `restaurantId`, not on the person.
+	const notifications = await ctx.db
+		.query(TABLE.NOTIFICATIONS)
+		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
+		.collect();
+	for (const notification of notifications) await ctx.db.delete(notification._id);
+	deleted[TABLE.NOTIFICATIONS] += notifications.length;
 
 	return { deleted, patched, storageFilesDeleted };
 }

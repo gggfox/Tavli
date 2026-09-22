@@ -14,6 +14,7 @@ describe("TABLE constants", () => {
 			"sections",
 			"menus",
 			"operatorAlerts",
+			"notifications",
 			"menuCategories",
 			"menuItems",
 			"menuItemPopularity",

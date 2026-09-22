@@ -53,6 +53,7 @@ export const TABLE = {
 	WHATSAPP_SPEND_ALLOWLIST: "whatsappSpendAllowlist",
 	WHATSAPP_OPT_OUTS: "whatsappOptOuts",
 	OPERATOR_ALERTS: "operatorAlerts",
+	NOTIFICATIONS: "notifications",
 } as const;
 
 export type TableName = (typeof TABLE)[keyof typeof TABLE];
@@ -1517,6 +1518,10 @@ export const RESTAURANT_PURGE_DELETED_TABLES = [
 	// exists is an open item nobody can act on, and it carries that
 	// restaurant's ids in its message params.
 	TABLE.OPERATOR_ALERTS,
+	// In-app manager notifications (TAVLI-111). One row per recipient user, all
+	// of them scoped to this restaurant — a bell entry about a restaurant that
+	// no longer exists links nowhere and can never be acted on.
+	TABLE.NOTIFICATIONS,
 ] as const;
 
 export type RestaurantPurgeDeletedTable = (typeof RESTAURANT_PURGE_DELETED_TABLES)[number];
@@ -1726,3 +1731,85 @@ export const OPERATOR_ALERT_EXPLANATION_KEY: Record<OperatorAlertKind, string> =
  * read an alert is exactly whoever gets told about it.
  */
 export const OPERATOR_ALERT_EMAIL_ROLES = [USER_ROLES.ADMIN] as const;
+
+// ============================================================================
+// In-app notifications for restaurant managers (TAVLI-111)
+// ============================================================================
+
+/**
+ * What a restaurant's managers get told about.
+ *
+ * Deliberately not the same list as `OPERATOR_ALERT_KIND`, and deliberately
+ * not routine: a notification exists because the restaurant's **own money**
+ * did something it has to know about. "Your payout arrived" belongs on the
+ * payments page, not in a bell — every kind here is either a dispute changing
+ * state or payouts stopping and starting.
+ *
+ * Extended by the ticket that needs a new kind, which must also add its copy to
+ * `NOTIFICATION_TITLE_KEY` / `NOTIFICATION_BODY_KEY` and to both locale files
+ * (`locales.test.ts` enforces the second half).
+ */
+export const NOTIFICATION_KIND = {
+	/** A diner disputed a charge; the restaurant's money is on hold. */
+	DISPUTE_OPENED: "dispute_opened",
+	/** The dispute closed in the restaurant's favour. */
+	DISPUTE_WON: "dispute_won",
+	/** The dispute closed against the restaurant; the money is gone. */
+	DISPUTE_LOST: "dispute_lost",
+	/** Stripe could not pay out to the restaurant's bank account. */
+	PAYOUT_FAILED: "payout_failed",
+	/** Payouts are flowing again after a failure. */
+	PAYOUTS_RESUMED: "payouts_resumed",
+} as const;
+
+export type NotificationKind = (typeof NOTIFICATION_KIND)[keyof typeof NOTIFICATION_KIND];
+
+export const NOTIFICATION_KINDS = Object.values(NOTIFICATION_KIND);
+
+/**
+ * i18n key holding each kind's short title. The backend stores keys, never
+ * prose (CLAUDE.md): the same row is read by a manager in English and by their
+ * colleague in Spanish, and the email counterpart TAVLI-103/102 send renders
+ * from the same keys.
+ */
+export const NOTIFICATION_TITLE_KEY: Record<NotificationKind, string> = {
+	[NOTIFICATION_KIND.DISPUTE_OPENED]: "notifications.kind.disputeOpened.title",
+	[NOTIFICATION_KIND.DISPUTE_WON]: "notifications.kind.disputeWon.title",
+	[NOTIFICATION_KIND.DISPUTE_LOST]: "notifications.kind.disputeLost.title",
+	[NOTIFICATION_KIND.PAYOUT_FAILED]: "notifications.kind.payoutFailed.title",
+	[NOTIFICATION_KIND.PAYOUTS_RESUMED]: "notifications.kind.payoutsResumed.title",
+};
+
+/**
+ * i18n key holding each kind's one-line body — what happened, in the
+ * restaurant's terms. Used as the default `messageKey` when a caller does not
+ * pass one.
+ */
+export const NOTIFICATION_BODY_KEY: Record<NotificationKind, string> = {
+	[NOTIFICATION_KIND.DISPUTE_OPENED]: "notifications.kind.disputeOpened.body",
+	[NOTIFICATION_KIND.DISPUTE_WON]: "notifications.kind.disputeWon.body",
+	[NOTIFICATION_KIND.DISPUTE_LOST]: "notifications.kind.disputeLost.body",
+	[NOTIFICATION_KIND.PAYOUT_FAILED]: "notifications.kind.payoutFailed.body",
+	[NOTIFICATION_KIND.PAYOUTS_RESUMED]: "notifications.kind.payoutsResumed.body",
+};
+
+/**
+ * Which **membership** roles receive a notification.
+ *
+ * Only one of the three recipient sources — `_util/notifications.ts` also
+ * notifies the restaurant's own `ownerId` and every org-level `owner` of its
+ * organization, neither of which has a `restaurantMembers` row at all. Together
+ * those three are exactly `requireRestaurantManagerOrAbove` minus platform
+ * admins, so whoever may read the payments page is whoever gets told about it.
+ *
+ * `RESTAURANT_MEMBER_ROLE` has two values, so today this is the single role
+ * `manager` — written as a set rather than an equality check so a future role
+ * above manager joins the recipient list by being added here, not by somebody
+ * remembering to widen a comparison.
+ *
+ * `employee` is excluded on purpose: a dispute or a failed payout is the
+ * restaurant's money, and a server has neither the authority nor the context to
+ * act on it. Platform admins are excluded too — they are told by the operator
+ * alert (TAVLI-109), which is Tavli's own inbox and never mixes with this one.
+ */
+export const NOTIFICATION_RECIPIENT_MEMBER_ROLES = [RESTAURANT_MEMBER_ROLE.MANAGER] as const;

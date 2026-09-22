@@ -699,7 +699,8 @@
 		"AI_IMAGE_GENERATION_IN_PROGRESS": "Ya se está generando una imagen para este producto.",
 		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "Esta organización ya usó todas sus imágenes con IA del mes.",
 		"AI_IMAGE_CREDITS_EXHAUSTED": "Se agotaron los créditos de imágenes con IA. Contacta a soporte de Tavli.",
-		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo."
+		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo.",
+		"ERROR_NOTIFICATION_NOT_FOUND": "Esa notificación ya no existe."
 	},
 	"time": {
 		"relative": {
@@ -2144,6 +2145,42 @@
 			"restaurantMissingContactEmail": {
 				"title": "El restaurante no tiene correo de contacto",
 				"explanation": "Este restaurante no tiene correo de contacto, así que Tavli no puede avisarle a su operador de nada: recibos, disputas ni esta alerta."
+			}
+		}
+	},
+	"notifications": {
+		"bell": {
+			"label": "Notificaciones",
+			"unreadCount_one": "{{count}} notificación sin leer",
+			"unreadCount_other": "{{count}} notificaciones sin leer",
+			"panelTitle": "Notificaciones",
+			"close": "Cerrar notificaciones",
+			"markAllRead": "Marcar todas como leídas",
+			"markRead": "Marcar como leída",
+			"emptyTitle": "Nada nuevo",
+			"emptyDescription": "Aquí llegan las novedades sobre el dinero de tu restaurante: contracargos y depósitos.",
+			"loadFailed": "No se pudieron cargar tus notificaciones."
+		},
+		"kind": {
+			"disputeOpened": {
+				"title": "Contracargo abierto",
+				"body": "Un comensal disputó un cargo en tu restaurante. La red de tarjetas retiene ese monto hasta que se resuelva la disputa."
+			},
+			"disputeWon": {
+				"title": "Contracargo resuelto a tu favor",
+				"body": "La red de tarjetas resolvió el cargo disputado a tu favor. El monto retenido regresa en un depósito posterior."
+			},
+			"disputeLost": {
+				"title": "Contracargo perdido",
+				"body": "La red de tarjetas resolvió el cargo disputado en contra de tu restaurante. Se descontaron el monto y la comisión de la disputa."
+			},
+			"payoutFailed": {
+				"title": "Falló el depósito",
+				"body": "Tu cuenta bancaria no aceptó un depósito. Revisa los datos de la cuenta en Stripe; los depósitos siguen pausados hasta que se corrija."
+			},
+			"payoutsResumed": {
+				"title": "Depósitos reanudados",
+				"body": "Tu cuenta bancaria aceptó un depósito de nuevo. No necesitas hacer nada más."
 			}
 		}
 	}

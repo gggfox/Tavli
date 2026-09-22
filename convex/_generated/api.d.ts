@@ -24,6 +24,7 @@ import type * as _util_billing from "../_util/billing.js";
 import type * as _util_dinerSession from "../_util/dinerSession.js";
 import type * as _util_env from "../_util/env.js";
 import type * as _util_idempotency from "../_util/idempotency.js";
+import type * as _util_notifications from "../_util/notifications.js";
 import type * as _util_operatorAlerts from "../_util/operatorAlerts.js";
 import type * as _util_phone from "../_util/phone.js";
 import type * as _util_rateLimit from "../_util/rateLimit.js";
@@ -99,6 +100,7 @@ import type * as migrations_backfillRestaurantTimezone from "../migrations/backf
 import type * as migrations_backfillTableAssignedBy from "../migrations/backfillTableAssignedBy.js";
 import type * as migrations_backfillUpdatedBy from "../migrations/backfillUpdatedBy.js";
 import type * as migrations_backfillWhatsappShortCodes from "../migrations/backfillWhatsappShortCodes.js";
+import type * as notifications from "../notifications.js";
 import type * as operatorAlertActions from "../operatorAlertActions.js";
 import type * as operatorAlerts from "../operatorAlerts.js";
 import type * as optionGroups from "../optionGroups.js";
@@ -183,6 +185,7 @@ declare const fullApi: ApiFromModules<{
   "_util/dinerSession": typeof _util_dinerSession;
   "_util/env": typeof _util_env;
   "_util/idempotency": typeof _util_idempotency;
+  "_util/notifications": typeof _util_notifications;
   "_util/operatorAlerts": typeof _util_operatorAlerts;
   "_util/phone": typeof _util_phone;
   "_util/rateLimit": typeof _util_rateLimit;
@@ -258,6 +261,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/backfillTableAssignedBy": typeof migrations_backfillTableAssignedBy;
   "migrations/backfillUpdatedBy": typeof migrations_backfillUpdatedBy;
   "migrations/backfillWhatsappShortCodes": typeof migrations_backfillWhatsappShortCodes;
+  notifications: typeof notifications;
   operatorAlertActions: typeof operatorAlertActions;
   operatorAlerts: typeof operatorAlerts;
   optionGroups: typeof optionGroups;
