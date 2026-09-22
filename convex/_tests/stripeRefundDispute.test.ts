@@ -357,6 +357,62 @@ describe("charge.refunded / charge.dispute.* webhook handling", () => {
 		expect(order?.paymentState).toBe("paid");
 	});
 
+	/**
+	 * A refund can land on a payment that never settled. The amount-mismatch
+	 * path (TAVLI-69) fails the row and tells the operator to refund the charge
+	 * at Stripe; that refund arrives here as `charge.refunded`. Flipping the
+	 * order to `refunded` on the strength of it would be a lie in the worst
+	 * direction — the diner never paid for this order, so it must stay unpaid
+	 * and payable rather than look like money that came and went.
+	 */
+	it("does not flip an unpaid order to refunded when the payment never succeeded", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedRestaurant(t);
+		const { orderId, paymentId } = await seedPaidOrderPayment(t, {
+			restaurantId,
+			amount: 2400,
+			paymentIntentId: "pi_mismatch_refund",
+		});
+
+		// Put the row where the mismatch path leaves it: failed, order unpaid.
+		await t.run(async (ctx) => {
+			await ctx.db.patch(paymentId, {
+				status: "failed",
+				failureCode: "amount_mismatch",
+				succeededAt: undefined,
+				failedAt: Date.now(),
+			});
+			await ctx.db.patch(orderId, { paymentState: "unpaid", paidAt: undefined });
+		});
+
+		mockStripeClient.webhooks.constructEvent.mockReturnValue(
+			refundChargeEvent({
+				eventId: "evt_refund_mismatch",
+				paymentIntentId: "pi_mismatch_refund",
+				amountCaptured: 2400,
+				amountRefunded: 2400,
+				refunded: true,
+				refundId: "re_mismatch",
+			})
+		);
+
+		await t.action(internal.stripe.fulfillPayment, {
+			payloadString: "{}",
+			signatureHeader: "sig",
+		});
+
+		// The refund facts are still recorded — the operator needs the paper trail.
+		const payment = await t.run(async (ctx) => ctx.db.get(paymentId));
+		expect(payment?.refundStatus).toBe("succeeded");
+		expect(payment?.amountRefunded).toBe(2400);
+		expect(payment?.stripeRefundId).toBe("re_mismatch");
+		expect(payment?.status).toBe("failed");
+
+		// But the order is still owed.
+		const order = await t.run(async (ctx) => ctx.db.get(orderId));
+		expect(order?.paymentState).toBe("unpaid");
+	});
+
 	it("persists a created dispute, then updates it on close", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedRestaurant(t);

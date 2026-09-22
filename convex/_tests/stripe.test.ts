@@ -843,6 +843,101 @@ describe("stripe actions", () => {
 			});
 		});
 
+		/**
+		 * The sweep is the one caller that can re-detect a mismatch forever.
+		 *
+		 * A mismatched tab never leaves this sweep's candidate list: the payment
+		 * stays `processing` (nothing patches `amount`) and `lockedForPaymentAt`
+		 * is never cleared, so `listStuckLockedTabs` returns it every five
+		 * minutes. The `amount_mismatch:${paymentId}` dedupeKey does not save us
+		 * either — `raiseOperatorAlert` scopes it to OPEN alerts on purpose, so
+		 * the moment an admin acknowledges the row the next sweep raises a fresh
+		 * severe alert and emails every platform admin again. Acknowledging
+		 * would make the noise worse, which is the opposite of what an
+		 * acknowledge button is for.
+		 *
+		 * So the sweep compares the amount itself and skips before reaching
+		 * `handlePaymentIntentSuccess`: the webhook already raised this alert
+		 * once, and a cron re-noticing the same unchanged fact is not news.
+		 */
+		it("does not re-alert a mismatched tab once the alert is acknowledged", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { sessionId, paymentId } = await seedLockedTab(t, {
+				restaurantId,
+				lockedForPaymentAt: Date.now() - 15 * 60 * 1000,
+				stripePaymentIntentId: "pi_stuck_mismatch",
+				amount: 1980,
+				gratuityAmount: 180,
+			});
+
+			// The webhook already caught this one and an admin has cleared it.
+			const alertId = await t.run(async (ctx) =>
+				ctx.db.insert("operatorAlerts", {
+					kind: "payment_amount_mismatch",
+					severity: "severe",
+					restaurantId,
+					paymentId,
+					stripeObjectId: "pi_stuck_mismatch",
+					messageKey: "alerts.kind.paymentAmountMismatch.explanation",
+					messageParams: { expected: 1980, received: 1800, currency: "usd" },
+					dedupeKey: `amount_mismatch:${paymentId}`,
+					status: "acknowledged",
+					acknowledgedBy: "admin-1",
+					acknowledgedAt: Date.now(),
+					createdAt: Date.now(),
+				})
+			);
+
+			mockStripeClient.paymentIntents.retrieve.mockResolvedValueOnce({
+				id: "pi_stuck_mismatch",
+				status: "succeeded",
+				amount: 1800,
+				amount_received: 1800,
+				latest_charge: "ch_stuck_mismatch",
+				metadata: { gratuityAmount: "180" },
+			});
+
+			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+			await t.action(internal.stripe.reconcileStuckTabPayments, {});
+			const calls = [...errorSpy.mock.calls];
+			errorSpy.mockRestore();
+
+			await t.run(async (ctx) => {
+				// No second alert, and the acknowledged one stays acknowledged.
+				const alerts = await ctx.db.query("operatorAlerts").collect();
+				expect(alerts).toHaveLength(1);
+				expect(alerts[0]._id).toBe(alertId);
+				expect(alerts[0].status).toBe("acknowledged");
+
+				// And the sweep settled nothing on the way past — it failed the row
+				// instead, which unlocks the tab and, incidentally, drops it out of
+				// `listStuckLockedTabs` so this cannot recur every five minutes.
+				const payment = await ctx.db.get(paymentId);
+				expect(payment!.status).toBe("failed");
+				expect(payment!.failureCode).toBe("amount_mismatch");
+				expect(payment!.succeededAt).toBeUndefined();
+				const session = await ctx.db.get(sessionId);
+				expect(session!.status).toBe("active");
+				expect(session!.lockedForPaymentAt).toBeUndefined();
+				expect(session!.paymentState).toBe("failed");
+			});
+
+			// Still visible to whoever is reading the logs.
+			expect(
+				calls.some(
+					(call) => typeof call[1] === "object" && call[1] !== null && "expectedAmount" in call[1]
+				),
+				"the sweep must still log the mismatch it skipped"
+			).toBe(true);
+		});
+
 		it("unlocks a stuck tab whose PaymentIntent was canceled", async () => {
 			const t = convexTest(schema, modules);
 			const organizationId = await seedOrganization(t);
@@ -1307,6 +1402,99 @@ describe("stripe actions", () => {
 			// Warn-and-skip: a fresh intent will supersede this one.
 			expect(order?.status).toBe("draft");
 			expect(payment?.status).toBe("processing");
+		});
+
+		/**
+		 * The webhook dedup in `fulfillPayment` is check-then-act across two
+		 * transactions, so it narrows the replay window but does not close it —
+		 * every handler has to be idempotent in its own right. The tab and tip
+		 * halves are pinned in `auditLifecycles.test.ts` ("writes no settlement
+		 * event when the webhook replays after success") and
+		 * `visitCloseout.test.ts` ("… — idempotently"); this is the order half.
+		 *
+		 * Deliberately a LEGACY row: no `orderUpdatedAtSnapshot`, and `amount`
+		 * equal to the order total. On an ADR 008 `kind: "order"` row the
+		 * `status === SUCCEEDED` early-return is belt-and-braces, because
+		 * settling patches `order.updatedAt` and the stale-snapshot check
+		 * short-circuits the replay first — so a test built on that shape passes
+		 * even with the early-return deleted, and proves nothing. Without a
+		 * snapshot the early-return is the only thing standing between a
+		 * redelivery and a second settlement, which is what this pins.
+		 *
+		 * The sentinel timestamps are what make the assertion clock-independent:
+		 * comparing against the first call's `Date.now()` would pass vacuously
+		 * whenever both calls land in the same millisecond.
+		 */
+		it("no-ops confirmation when the payment has already succeeded", async () => {
+			const t = convexTest(schema, modules);
+			const organizationId = await seedOrganization(t);
+			const restaurantId = await seedRestaurant(t, {
+				ownerId: "owner-1",
+				organizationId,
+				stripeAccountId: "acct_ready",
+				stripeOnboardingComplete: true,
+			});
+			const { orderId } = await seedDraftOrder(t, { restaurantId, totalAmount: 5000 });
+			await seedOrderItemFor(t, { restaurantId, orderId, lineTotal: 5000 });
+
+			const paymentId = await t.run(async (ctx) => {
+				const id = await ctx.db.insert("payments", {
+					restaurantId,
+					orderId,
+					amount: 5000,
+					currency: "usd",
+					status: "processing",
+					refundStatus: "none",
+					attemptNumber: 1,
+					stripePaymentIntentId: "pi_replay",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				});
+				await ctx.db.patch(orderId, { activePaymentId: id });
+				return id;
+			});
+
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_replay",
+				stripeChargeId: "ch_replay",
+			});
+
+			const first = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+			}));
+			expect(first.payment?.status).toBe("succeeded");
+			expect(first.order?.paymentState).toBe("paid");
+			expect(first.order?.dailyOrderNumber).toBe(1);
+
+			// Stamp both settlement timestamps with sentinels a re-run would
+			// overwrite with the replay's clock.
+			await t.run(async (ctx) => {
+				await ctx.db.patch(paymentId, { succeededAt: 111 });
+				await ctx.db.patch(orderId, { paidAt: 111 });
+			});
+
+			// Stripe redelivers the same success. Nothing may move a second time.
+			await t.mutation(internal.orders.confirmPayment, {
+				paymentId,
+				stripePaymentIntentId: "pi_replay",
+				stripeChargeId: "ch_replay",
+			});
+
+			const second = await t.run(async (ctx) => ({
+				order: await ctx.db.get(orderId),
+				payment: await ctx.db.get(paymentId),
+				settlements: await ctx.db
+					.query("allEvents")
+					.filter((q) => q.eq(q.field("eventType"), "orders.paymentConfirmed"))
+					.collect(),
+			}));
+			expect(second.payment?.succeededAt).toBe(111);
+			expect(second.order?.paidAt).toBe(111);
+			// And the order number is not burned twice.
+			expect(second.order?.dailyOrderNumber).toBe(1);
+			expect(second.settlements).toHaveLength(1);
 		});
 
 		it("still settles a legacy payment that has no subtotalAmount (?? fallback)", async () => {

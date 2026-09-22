@@ -53,6 +53,26 @@ describe("operator alert copy", () => {
 		).toBe("Charge ch_1 for 500");
 	});
 
+	/**
+	 * The amount-mismatch alert is the one kind whose copy is useless without
+	 * its params: "Stripe collected a different amount" tells the operator
+	 * nothing they can act on, and the two numbers are the whole decision.
+	 * Both amounts arrive pre-formatted (neither renderer formats money).
+	 */
+	it.each(LOCALES)("%s names both amounts in the amount-mismatch explanation", (locale) => {
+		const rendered = translateOperatorAlertKey(
+			locale,
+			OPERATOR_ALERT_EXPLANATION_KEY[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH],
+			{ received: "18.00", expected: "19.80", currency: "MXN" }
+		);
+
+		expect(rendered).toContain("18.00");
+		expect(rendered).toContain("19.80");
+		expect(rendered).toContain("MXN");
+		// No placeholder survived — `interpolate` silently drops unknown keys.
+		expect(rendered).not.toContain("{{");
+	});
+
 	it("falls back to the key rather than sending an empty body", () => {
 		expect(translateOperatorAlertKey("en", "alerts.kind.notYetTranslated.explanation")).toBe(
 			"alerts.kind.notYetTranslated.explanation"

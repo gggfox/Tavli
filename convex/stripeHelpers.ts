@@ -423,7 +423,15 @@ export const recordChargeRefund = internalMutation({
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
 
-		if (args.isFullyRefunded && payment.orderId) {
+		// Only a payment that actually settled can be un-settled. A refund can
+		// land on a row that never reached SUCCEEDED — the amount-mismatch path
+		// (TAVLI-69) fails the row and asks an operator to refund the charge at
+		// Stripe, and that refund arrives here as `charge.refunded`. Flipping the
+		// order to REFUNDED then would be a lie in the worst direction: the
+		// diner never paid for it, so the order must stay unpaid and payable,
+		// not look like money that came and went. The refund facts are still
+		// recorded on the payment row above either way.
+		if (args.isFullyRefunded && payment.orderId && payment.status === PAYMENT_STATUS.SUCCEEDED) {
 			const order = await ctx.db.get(payment.orderId);
 			if (order) {
 				await ctx.db.patch(order._id, {

@@ -49,6 +49,7 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
 	ORDER_STATUS,
+	PAYMENT_FAILURE_CODE,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
@@ -67,7 +68,7 @@ import {
 	type NotAuthorizedErrorObject,
 	type NotFoundErrorObject,
 } from "./_shared/errors";
-import { buildIntegrationErrorLog } from "./_shared/integrationLogging";
+import { buildIntegrationErrorLog, redactExternalId } from "./_shared/integrationLogging";
 import type { AsyncReturn } from "./_shared/types";
 import {
 	buildLineRefundIdempotencyKey,
@@ -502,6 +503,36 @@ export const fulfillPayment = internalAction({
 
 			let paymentId: Id<"payments"> | undefined;
 
+			// =================================================================
+			// IDEMPOTENCY INVARIANT — read before adding a case below.
+			//
+			// The `stripeWebhookEvents` dedup above is CHECK-THEN-ACT ACROSS
+			// TRANSACTIONS: the `getProcessedStripeWebhookEventInternal` query
+			// and the `recordStripeWebhookEvent` mutation at the end of this
+			// handler are separate transactions, with every handler's work in
+			// between. Two deliveries of the same event that overlap in that
+			// window therefore BOTH see no dedup row and BOTH dispatch. Stripe
+			// retries on any non-2xx for days, and an action that fails after a
+			// partial success is retried too, so this is a real interleaving,
+			// not a theoretical one. The dedup row narrows the window; it does
+			// not close it.
+			//
+			// So idempotency lives in the handlers, and EVERY handler must be
+			// idempotent in its own right. For the payment paths that means an
+			// early return when the payment row is already in a terminal state
+			// (`SUCCEEDED` / `FAILED`) rather than re-applying the transition:
+			// `orders.confirmPayment`, `sessions.confirmTabPayment` and
+			// `payments.confirmTipPayment` each open with that check, and
+			// `appendAuditEvent` is additionally keyed on the PaymentIntent id
+			// so a settlement cannot be audited twice.
+			//
+			// ANY NEW CASE ADDED HERE MUST KEEP THAT PROPERTY. Re-running a
+			// handler must be observably a no-op, not a second charge recorded,
+			// a second refund persisted, a second order number burned, or a
+			// second email scheduled. Where the work is not naturally
+			// idempotent, guard it on a terminal state or an idempotency key —
+			// do not assume this switch runs once per event.
+			// =================================================================
 			switch (event.type) {
 				case "payment_intent.succeeded": {
 					paymentId = await handlePaymentIntentSuccess(ctx, event.data.object);
@@ -1808,6 +1839,76 @@ export const reconcileStuckTabPayments = internalAction({
 
 				switch (decision) {
 					case "settle": {
+						// -------------------------------------------------------
+						// AMOUNT ASSERTION, AHEAD OF THE HANDLER (TAVLI-69).
+						//
+						// `handlePaymentIntentSuccess` runs this same comparison and
+						// raises an operator alert on a mismatch. That is right for
+						// the webhook, which sees each PaymentIntent once, and wrong
+						// here: a mismatched tab is PERMANENTLY in this sweep's
+						// candidate list. Nothing patches `payments.amount`, nothing
+						// clears `lockedForPaymentAt`, and the row stays
+						// `processing` — so `listStuckLockedTabs` hands it back every
+						// five minutes, forever.
+						//
+						// The `amount_mismatch:${paymentId}` dedupeKey does not stop
+						// that, because `raiseOperatorAlert` scopes it to OPEN alerts
+						// by design (acknowledging a row is what lets a genuine
+						// recurrence through). So once an admin acknowledges this
+						// alert, the next sweep would raise a fresh severe one and
+						// email every platform admin again — punishing them for
+						// clearing their inbox.
+						//
+						// Detecting the same unchanged fact on a timer is not news.
+						// Log it and fail the row; the webhook already raised the
+						// alert, and it is only resolved by a human refunding the
+						// charge at Stripe.
+						//
+						// Failing it is also what stops the repetition at source:
+						// `failTabPayment` clears `lockedForPaymentAt`, so the tab
+						// drops out of `listStuckLockedTabs` and this branch runs
+						// once rather than every five minutes. (It is reached at all
+						// only when the webhook never arrived — otherwise the webhook
+						// already failed the row and the sweep never sees it.)
+						//
+						// TAVLI-106: when the order and tip sweeps land, they must
+						// keep this rule — compare before dispatching, fail the row,
+						// and let the webhook own the alert.
+						// -------------------------------------------------------
+						const received =
+							typeof paymentIntent.amount_received === "number"
+								? paymentIntent.amount_received
+								: typeof paymentIntent.amount === "number"
+									? paymentIntent.amount
+									: undefined;
+
+						if (received !== undefined && received !== candidate.amount) {
+							console.error("[stripe.reconcileStuckTabPayments] PAYMENT AMOUNT MISMATCH", {
+								...buildIntegrationErrorLog(
+									new Error("PaymentIntent amount does not match the payment row"),
+									{
+										integration: "stripe",
+										operation: "reconcileStuckTab",
+									}
+								),
+								paymentId: candidate.paymentId,
+								sessionId: candidate.sessionId,
+								expectedAmount: candidate.amount,
+								receivedAmount: received,
+								paymentIntentId: redactExternalId(candidate.stripePaymentIntentId),
+							});
+
+							// Every candidate here is a tab payment by construction —
+							// `listStuckLockedTabs` returns only session-locked rows.
+							await ctx.runMutation(internal.sessions.failTabPayment, {
+								paymentId: candidate.paymentId,
+								stripePaymentIntentId: candidate.stripePaymentIntentId,
+								failureCode: PAYMENT_FAILURE_CODE.AMOUNT_MISMATCH,
+								failureMessage: `Stripe collected ${received} but this payment expected ${candidate.amount}`,
+							});
+							break;
+						}
+
 						// Identical to the webhook path — routes tab payments to the
 						// idempotent `confirmTabPayment` mutation.
 						await handlePaymentIntentSuccess(ctx, paymentIntent);

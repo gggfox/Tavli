@@ -18,9 +18,16 @@
 import Stripe from "stripe";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { PAYMENT_KIND, USER_ROLES } from "../constants";
+import {
+	OPERATOR_ALERT_KIND,
+	OPERATOR_ALERT_SEVERITY,
+	PAYMENT_FAILURE_CODE,
+	PAYMENT_KIND,
+	USER_ROLES,
+} from "../constants";
+import { formatMoneyCents } from "../exportHelpers";
 import { fromErrorObject, NotAuthorizedError, NotFoundError } from "../_shared/errors";
-import { redactExternalId } from "../_shared/integrationLogging";
+import { buildIntegrationErrorLog, redactExternalId } from "../_shared/integrationLogging";
 import {
 	computeDisputeFacts,
 	computeRefundFacts,
@@ -222,6 +229,51 @@ export async function handleAccountStatusChange(
  * tab payment, otherwise a pre-pivot per-order payment, both on their
  * original paths.
  */
+/**
+ * Routes a payment to its kind's failure mutation — the single place that
+ * decides which one that is.
+ *
+ * Two callers with the same routing question: `handlePaymentIntentFailure` (a
+ * declined card) and the amount-mismatch branch of `handlePaymentIntentSuccess`
+ * (a charge that succeeded for the wrong amount). They differ only in the
+ * `failureCode` they hand over.
+ *
+ * Dispatch order matters: `kind: "tip"` is checked before `sessionId`, because
+ * a tip row carries a `sessionId` too and must never be allowed to unlock a
+ * tab. Kind `order` rows carry an `orderId` and no `sessionId`, so they fall
+ * through to the order path exactly like legacy per-order rows.
+ *
+ * Every target mutation early-returns on an already-SUCCEEDED row, so this is
+ * safe to call on a replay.
+ */
+async function failPaymentByKind(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	ctx: any,
+	payment: Doc<"payments">,
+	args: {
+		stripePaymentIntentId: string;
+		failureCode?: string;
+		failureMessage?: string;
+	}
+): Promise<void> {
+	const mutationArgs = { paymentId: payment._id, ...args };
+
+	if (payment.kind === PAYMENT_KIND.TIP) {
+		// A failed tip charge is marked failed so the diner can retry from the
+		// close-out screen (a fresh attempt supersedes the failed row).
+		await ctx.runMutation(internal.payments.failTipPayment, mutationArgs);
+		return;
+	}
+
+	if (payment.sessionId) {
+		// Unlocks the tab as well as failing the row.
+		await ctx.runMutation(internal.sessions.failTabPayment, mutationArgs);
+		return;
+	}
+
+	await ctx.runMutation(internal.orders.failPayment, mutationArgs);
+}
+
 export async function handlePaymentIntentSuccess(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	ctx: any,
@@ -235,6 +287,103 @@ export async function handlePaymentIntentSuccess(
 		}
 	);
 	if (!payment) return undefined;
+
+	// ---------------------------------------------------------------------
+	// AMOUNT ASSERTION (TAVLI-69). Does Stripe agree with us about how much
+	// was collected? Asked here, before any dispatch or side effect, so all
+	// three kinds get it: `payments.amount` is the gross the intent was
+	// created with on every path (order = subtotal + fee, tip = the tip,
+	// legacy tab = the tab total), so one field answers it for all of them.
+	//
+	// Not the same question `orders.confirmPayment` asks. That one compares
+	// the ORDER's total against the payment row and catches an order edited
+	// after the intent was created; it says nothing about what Stripe
+	// actually took, and the tab and tip paths compare nothing at all. Both
+	// checks stay: this one runs first and covers every kind.
+	// ---------------------------------------------------------------------
+	const receivedAmount =
+		typeof paymentIntent.amount_received === "number"
+			? paymentIntent.amount_received
+			: typeof paymentIntent.amount === "number"
+				? // Stripe always sends `amount_received` on a success. If a
+					// delivery somehow lacks it, `amount` is the documented
+					// equivalent for a succeeded intent — better than refusing to
+					// settle good money over a missing field.
+					paymentIntent.amount
+				: undefined;
+
+	if (receivedAmount !== undefined && receivedAmount !== payment.amount) {
+		// Loud first: the alert is for the operator, the log is for whoever is
+		// reading Convex logs when this fires. Ids redacted per convention.
+		console.error("[stripe.fulfillPayment] PAYMENT AMOUNT MISMATCH", {
+			...buildIntegrationErrorLog(
+				new Error("PaymentIntent amount does not match the payment row"),
+				{
+					integration: "stripe-webhook",
+					operation: "handlePaymentIntentSuccess",
+					restaurantId: payment.restaurantId,
+				}
+			),
+			paymentId: payment._id,
+			paymentKind: payment.kind ?? "legacy",
+			expectedAmount: payment.amount,
+			receivedAmount,
+			currency: payment.currency,
+			paymentIntentId: redactExternalId(
+				typeof paymentIntent.id === "string" ? paymentIntent.id : undefined
+			),
+		});
+
+		await ctx.runMutation(internal.operatorAlerts.raiseOperatorAlertInternal, {
+			kind: OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH,
+			severity: OPERATOR_ALERT_SEVERITY.SEVERE,
+			restaurantId: payment.restaurantId,
+			orderId: payment.orderId,
+			paymentId: payment._id,
+			stripeObjectId: typeof paymentIntent.id === "string" ? paymentIntent.id : undefined,
+			// Pre-formatted, because neither renderer formats money: the alerts
+			// page substitutes through i18next and the email through
+			// `interpolate`, so a raw `5600` would reach the operator as "5600".
+			messageParams: {
+				expected: formatMoneyCents(payment.amount),
+				received: formatMoneyCents(receivedAmount),
+				currency: payment.currency.toUpperCase(),
+			},
+			// One open alert per payment, not per DETECTION. Stripe's own
+			// retries are not the reason — a redelivery carries the same `evt_`
+			// id, so `stripeWebhookEvents` already collapses those (which is
+			// exactly what the comment below relies on). The reason is that
+			// this handler has a second caller: `reconcileStuckTabPayments`
+			// re-runs it every five minutes for a tab that is still locked, and
+			// a mismatched tab stays locked until a human acts. Without the key
+			// that is one severe alert and one admin email per sweep.
+			dedupeKey: `amount_mismatch:${payment._id}`,
+		});
+
+		// Give the row an exit. Leaving it PROCESSING forever would strand the
+		// diner (a locked tab never unlocks, an order never returns to unpaid)
+		// and leave the next attempt with a live row to trip over. FAILED is the
+		// honest terminal state: the charge did not pay for what it claimed to.
+		// It lets `createOrderPaymentIntent` / `beginTabPayment` supersede this
+		// attempt cleanly, and it gives the operator's eventual refund a
+		// terminal row to land on. The money itself stays at Stripe until they
+		// refund it — that is the alert's job, not this mutation's, which is why
+		// the alert above is raised and kept regardless.
+		await failPaymentByKind(ctx, payment, {
+			stripePaymentIntentId: paymentIntent.id,
+			failureCode: PAYMENT_FAILURE_CODE.AMOUNT_MISMATCH,
+			failureMessage: `Stripe collected ${receivedAmount} but this payment expected ${payment.amount}`,
+		});
+
+		// Return rather than throw, deliberately. Throwing would make
+		// `fulfillPayment` skip `recordStripeWebhookEvent` and hand Stripe a
+		// 500, so it would redeliver this event for days and re-raise on every
+		// attempt — and the answer would never change, because the disagreement
+		// is with the amount, not with a transient failure. Returning lets the
+		// dedup row be written, which stops the retries, while settlement stays
+		// undone until a human resolves the alert.
+		return payment._id;
+	}
 
 	const chargeId =
 		typeof paymentIntent.latest_charge === "string"
@@ -311,10 +460,8 @@ export async function handlePaymentIntentSuccess(
  * PaymentIntent. Returns the payment id (or `undefined` when no matching
  * record exists, see `handlePaymentIntentSuccess`).
  *
- * Kind `order` rows (ADR 008) carry an `orderId` and no `sessionId`, so they
- * fall through to `failPayment` exactly like legacy per-order rows — the
- * routing needs no `kind` branch. Tip rows are dispatched by `kind` before the
- * `sessionId` check so a Phase 3 intent can never unlock a tab.
+ * Routing lives in `failPaymentByKind`, shared with the amount-mismatch branch
+ * of `handlePaymentIntentSuccess` — the two differ only in the `failureCode`.
  */
 export async function handlePaymentIntentFailure(
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -330,30 +477,7 @@ export async function handlePaymentIntentFailure(
 	);
 	if (!payment) return undefined;
 
-	if (payment.kind === PAYMENT_KIND.TIP) {
-		// A declined tip charge is marked failed so the diner can retry from the
-		// close-out screen (a fresh attempt supersedes the failed row).
-		await ctx.runMutation(internal.payments.failTipPayment, {
-			paymentId: payment._id,
-			stripePaymentIntentId: paymentIntent.id,
-			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
-			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
-		});
-		return payment._id;
-	}
-
-	if (payment.sessionId) {
-		await ctx.runMutation(internal.sessions.failTabPayment, {
-			paymentId: payment._id,
-			stripePaymentIntentId: paymentIntent.id,
-			failureCode: paymentIntent.last_payment_error?.code ?? undefined,
-			failureMessage: paymentIntent.last_payment_error?.message ?? undefined,
-		});
-		return payment._id;
-	}
-
-	await ctx.runMutation(internal.orders.failPayment, {
-		paymentId: payment._id,
+	await failPaymentByKind(ctx, payment, {
 		stripePaymentIntentId: paymentIntent.id,
 		failureCode: paymentIntent.last_payment_error?.code ?? undefined,
 		failureMessage: paymentIntent.last_payment_error?.message ?? undefined,

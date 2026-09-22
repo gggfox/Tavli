@@ -2113,6 +2113,10 @@
 				"title": "Charge refunded: amount did not match",
 				"explanation": "A charge arrived for a different amount than the order it names, so Tavli refunded it rather than keep money it could not account for. The order is still unpaid."
 			},
+			"paymentAmountMismatch": {
+				"title": "Settlement blocked: amount did not match",
+				"explanation": "Stripe collected {{received}} instead of {{expected}} ({{currency}}), so the payment was marked failed rather than settled. Refund the charge in Stripe — the money is still sitting there, and the diner pays again."
+			},
 			"disputeLost": {
 				"title": "Dispute lost",
 				"explanation": "A card network decided a dispute against the restaurant. The money and the dispute fee are gone; the restaurant needs telling."

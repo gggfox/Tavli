@@ -57,6 +57,11 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 			explanation:
 				"A charge arrived for a different amount than the order it names, so Tavli refunded it rather than keep money it could not account for. The order is still unpaid.",
 		},
+		payment_amount_mismatch: {
+			title: "Settlement blocked: amount did not match",
+			explanation:
+				"Stripe collected {{received}} instead of {{expected}} ({{currency}}), so the payment was marked failed rather than settled. Refund the charge in Stripe — the money is still sitting there, and the diner pays again.",
+		},
 		dispute_lost: {
 			title: "Dispute lost",
 			explanation:
@@ -98,6 +103,11 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 			title: "Cargo reembolsado: el monto no coincidía",
 			explanation:
 				"Llegó un cargo por un monto distinto al de la orden que menciona, así que Tavli lo reembolsó en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse.",
+		},
+		payment_amount_mismatch: {
+			title: "Cobro detenido: el monto no coincidía",
+			explanation:
+				"Stripe cobró {{received}} en lugar de {{expected}} ({{currency}}), así que el pago se marcó como fallido en vez de liquidarse. Reembolsa el cargo en Stripe: el dinero sigue ahí y el comensal paga de nuevo.",
 		},
 		dispute_lost: {
 			title: "Disputa perdida",

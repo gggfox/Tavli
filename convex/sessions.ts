@@ -874,6 +874,12 @@ export const listStuckLockedTabs = internalQuery({
 			paymentId: Id<typeof TABLE.PAYMENTS>;
 			stripePaymentIntentId: string;
 			lockedForPaymentAt: number;
+			/**
+			 * What we charged. Returned so the sweep can run the TAVLI-69 amount
+			 * assertion without a second read per candidate — see the `settle`
+			 * case in `stripe.reconcileStuckTabPayments`.
+			 */
+			amount: number;
 		}> = [];
 
 		for (const session of sessions) {
@@ -892,6 +898,7 @@ export const listStuckLockedTabs = internalQuery({
 				paymentId: payment._id,
 				stripePaymentIntentId: payment.stripePaymentIntentId,
 				lockedForPaymentAt: session.lockedForPaymentAt,
+				amount: payment.amount,
 			});
 		}
 
