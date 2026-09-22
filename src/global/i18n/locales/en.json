@@ -616,6 +616,9 @@
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "This order's payment is already in progress or settled. Cancel the whole order to issue a refund.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "A payment is in progress on this tab. Wait for it to finish before removing items.",
 		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "A card payment is already in progress for this order. Cancel it before choosing to pay in person.",
+		"ERROR_PAYMENT_CANCEL_FAILED": "We couldn't reach our payment provider to close your previous attempt, so we didn't start a new one. Please try again in a moment.",
+		"ERROR_PAYMENT_ALREADY_PAID": "This has already been paid. Give us a second to catch up \u2014 no need to pay again.",
+		"ERROR_PAYMENT_IN_PROGRESS": "Your payment is already going through. Give it a moment rather than tapping again.",
 		"ERROR_REFUND_FAILED": "The order was cancelled, but the refund did not go through. Issue it from the Stripe dashboard.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "The order was cancelled, but we could not find its payment to refund. Check the Stripe dashboard.",
 		"ERROR_REFUND_ALREADY_ISSUED": "This payment has already been fully refunded.",
@@ -2111,7 +2114,11 @@
 			},
 			"chargeMismatchedRefunded": {
 				"title": "Charge refunded: amount did not match",
-				"explanation": "A charge arrived for a different amount than the order it names, so Tavli refunded it rather than keep money it could not account for. The order is still unpaid."
+				"explanation": "Stripe collected {{collected}} for an order that now costs {{expected}} ({{currency}}), so Tavli refunded the charge in full rather than keep money it could not account for. The order is still unpaid \u2014 confirm the refund landed in Stripe."
+			},
+			"chargeNeedsReview": {
+				"title": "Charge on a retired payment attempt",
+				"explanation": "Stripe collected {{collected}} ({{currency}}) on a payment attempt Tavli had already retired — a second tap, an edited order or a staff cancel replaced it while its charge was in flight. A tip charged this way is refunded automatically, and an order's charge is either applied to that order or refunded. Open the charge in Stripe and confirm the outcome landed."
 			},
 			"paymentAmountMismatch": {
 				"title": "Settlement blocked: amount did not match",

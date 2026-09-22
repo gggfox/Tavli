@@ -1,5 +1,7 @@
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./_generated/server";
 import {
 	AUDIT_SYSTEM_USER_ID,
@@ -9,7 +11,9 @@ import {
 	PAYMENT_STATUS,
 	TABLE,
 } from "./constants";
+import { ConflictError, fromErrorObject } from "./_shared/errors";
 import { appendAuditEvent } from "./_util/audit";
+import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupersedeHelpers";
 import { DISPUTE_PHASE } from "./stripeWebhookHelpers";
 
 const paymentStatusValidator = v.union(
@@ -308,16 +312,104 @@ export const createPayment = internalMutation({
 		failedAt: v.optional(v.number()),
 		refundRequestedAt: v.optional(v.number()),
 		refundedAt: v.optional(v.number()),
+		/**
+		 * The attempt the calling action stood down at Stripe and retired before
+		 * asking for this row (TAVLI-104). Omitted when it saw no live attempt.
+		 * Re-checked inside this transaction — see the handler.
+		 */
+		supersededPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
-		return await ctx.db.insert(TABLE.PAYMENTS, {
-			...args,
+		const { supersededPaymentId, ...row } = args;
+
+		// TRANSACTIONAL double-tap guard (TAVLI-104 review round 1).
+		//
+		// The action already stood the previous attempt down at Stripe and
+		// refused to proceed if it was still in flight — but it did that against
+		// a snapshot it read seconds earlier. Two members tapping Pay 300ms apart
+		// both read "no live attempt", both stand nothing down, and both insert.
+		// The question has to be asked again HERE, inside the transaction that
+		// does the inserting, where Convex's OCC can serialise the answer: the
+		// lookup reads the order document (or the session's payment rows), and
+		// the loser's own write to that same document makes one of the two
+		// transactions retry and see the other's row.
+		//
+		// `supersededPaymentId` is what the action believed the live attempt was
+		// and has already retired. Anything else live means somebody else got
+		// here first.
+		const live = await findLiveAttempt(ctx, row);
+		if (live && (live._id !== supersededPaymentId || isPaymentCreateInFlight(live, now))) {
+			throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+		}
+
+		const paymentId = await ctx.db.insert(TABLE.PAYMENTS, {
+			...row,
 			createdAt: now,
 			updatedAt: now,
 		});
+
+		// The order's pointer moves in the SAME transaction as the insert, not in
+		// a follow-up call from the action. That is what gives the guard above
+		// something to collide on: two concurrent taps both read and write this
+		// document, so OCC has to order them, and the second one re-runs and
+		// finds the first one's row.
+		if (row.orderId) {
+			const order = await ctx.db.get(row.orderId);
+			if (order) {
+				await ctx.db.patch(row.orderId, {
+					paymentState: ORDER_PAYMENT_STATE.PENDING,
+					activePaymentId: paymentId,
+					updatedAt: order.updatedAt,
+				});
+			}
+		}
+
+		return paymentId;
 	},
 });
+
+/**
+ * The live payment attempt for whatever this new row is about to pay for, or
+ * `null`. "Live" is `pending` or `processing` — a terminal row cannot be
+ * charged and does not block anything.
+ *
+ * Two scopes, because the two kinds of row are grouped differently (ADR 008):
+ * an order row is the one the ORDER points at, while a tip row is per member
+ * per visit and has no pointer to read, so it is found the same way
+ * `payments.getActiveTipPaymentInternal` finds it.
+ */
+async function findLiveAttempt(
+	ctx: MutationCtx,
+	row: { orderId?: Id<"orders">; sessionId?: Id<"sessions">; kind?: string; paidByUserId?: string }
+): Promise<Doc<"payments"> | null> {
+	const isLive = (payment: Doc<"payments">) =>
+		payment.status === PAYMENT_STATUS.PENDING || payment.status === PAYMENT_STATUS.PROCESSING;
+
+	if (row.orderId) {
+		const order = await ctx.db.get(row.orderId);
+		if (!order?.activePaymentId) return null;
+		const active = await ctx.db.get(order.activePaymentId);
+		return active && isLive(active) ? active : null;
+	}
+
+	if (row.kind === PAYMENT_KIND.TIP && row.sessionId && row.paidByUserId) {
+		const sessionPayments = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_session", (q) => q.eq("sessionId", row.sessionId))
+			.collect();
+		let latest: Doc<"payments"> | null = null;
+		for (const payment of sessionPayments) {
+			if (payment.kind !== PAYMENT_KIND.TIP) continue;
+			if (payment.paidByUserId !== row.paidByUserId) continue;
+			if (!isLive(payment)) continue;
+			if (!latest || payment.createdAt > latest.createdAt) latest = payment;
+		}
+		return latest;
+	}
+
+	return null;
+}
 
 /**
  * Records the PaymentIntent a payment row was charged on, WITHOUT ever moving
@@ -351,9 +443,15 @@ export const attachIntentToPayment = internalMutation({
 		/** The saved card, on the one-tap path. */
 		stripePaymentMethodId: v.optional(v.string()),
 	},
-	handler: async (ctx, args) => {
+	/**
+	 * `attached: false` means this intent is NOT the row's intent — the row is
+	 * gone, holds another one, or was retired. The caller must not go on to hand
+	 * its client secret to the diner or re-point the order at it (sign-off nit).
+	 */
+	returns: v.object({ attached: v.boolean() }),
+	handler: async (ctx, args): Promise<{ attached: boolean }> => {
 		const payment = await ctx.db.get(args.paymentId);
-		if (!payment) return;
+		if (!payment) return { attached: false };
 
 		if (
 			payment.stripePaymentIntentId &&
@@ -364,7 +462,36 @@ export const attachIntentToPayment = internalMutation({
 				paymentKind: payment.kind ?? "legacy",
 				status: payment.status,
 			});
-			return;
+			return { attached: false };
+		}
+
+		// A RETIRED row does not get the intent id at all (TAVLI-104 review round
+		// 1). This is the late return: the row was superseded or cancelled while
+		// its own `paymentIntents.create` was still running, and the call has now
+		// come back with an intent nobody is waiting for. Writing the id onto the
+		// row would hand the webhook's metadata fallback a target — and
+		// `confirmTipPayment` settles anything that is not already SUCCEEDED, so
+		// the retired attempt would be credited alongside the one that replaced
+		// it. That is the double tip, arriving by the back door.
+		//
+		// Instead the intent is stood down at Stripe by id. If it is unconfirmed
+		// it dies there and no money ever moves; if it already charged, the
+		// stand-down raises a severe alert, because that is money a human has to
+		// decide about. The row keeps its retired status either way.
+		if (
+			payment.status === PAYMENT_STATUS.SUPERSEDED ||
+			payment.status === PAYMENT_STATUS.CANCELLED
+		) {
+			console.error("[stripeHelpers.attachIntentToPayment] INTENT ARRIVED FOR A RETIRED ROW", {
+				paymentId: payment._id,
+				paymentKind: payment.kind ?? "legacy",
+				status: payment.status,
+			});
+			await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+				paymentId: payment._id,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			});
+			return { attached: false };
 		}
 
 		await ctx.db.patch(args.paymentId, {
@@ -377,6 +504,7 @@ export const attachIntentToPayment = internalMutation({
 			...(payment.status === PAYMENT_STATUS.PENDING && { status: PAYMENT_STATUS.PROCESSING }),
 			updatedAt: Date.now(),
 		});
+		return { attached: true };
 	},
 });
 
@@ -575,17 +703,34 @@ export const recordChargeRefund = internalMutation({
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
 
-		// Only a payment that actually settled can be un-settled. A refund can
-		// land on a row that never reached SUCCEEDED — the amount-mismatch path
-		// (TAVLI-69) fails the row and asks an operator to refund the charge at
-		// Stripe, and that refund arrives here as `charge.refunded`. Flipping the
-		// order to REFUNDED then would be a lie in the worst direction: the
-		// diner never paid for it, so the order must stay unpaid and payable,
-		// not look like money that came and went. The refund facts are still
-		// recorded on the payment row above either way.
+		// Only a payment that actually settled THIS ORDER can un-settle it. Three
+		// conditions, and each one is load-bearing:
+		//
+		// - `status === SUCCEEDED`: a refund can land on a row that never
+		//   settled. The amount-mismatch path (TAVLI-69) fails the row and asks an
+		//   operator to refund the charge at Stripe, and that refund arrives here
+		//   as `charge.refunded`. Flipping the order to REFUNDED then would be a
+		//   lie in the worst direction — the diner never paid for it, so the order
+		//   must stay unpaid and payable, not look like money that came and went.
+		// - `order.activePaymentId === payment._id`: SUCCEEDED is no longer
+		//   enough on its own (TAVLI-104). A charge the webhook could not place is
+		//   now marked SUCCEEDED — it is true, Stripe collected — and refunded
+		//   automatically, and that refund comes back through here. The order it
+		//   names was left UNPAID and still owed, or is paid by a DIFFERENT
+		//   payment; either way this row is not the one that settled it, and
+		//   REFUNDED would erase an order the diner still has to pay for, or
+		//   un-settle one that is genuinely paid.
+		// - `paymentState` is PAID or REFUND_REQUESTED: the only two states a
+		//   full refund can legitimately move to REFUNDED.
+		//
+		// The refund facts are recorded on the payment row above either way.
 		if (args.isFullyRefunded && payment.orderId && payment.status === PAYMENT_STATUS.SUCCEEDED) {
 			const order = await ctx.db.get(payment.orderId);
-			if (order) {
+			const settledThisOrder =
+				order?.activePaymentId === args.paymentId &&
+				(order.paymentState === ORDER_PAYMENT_STATE.PAID ||
+					order.paymentState === ORDER_PAYMENT_STATE.REFUND_REQUESTED);
+			if (order && settledThisOrder) {
 				await ctx.db.patch(order._id, {
 					paymentState: ORDER_PAYMENT_STATE.REFUNDED,
 					updatedAt: now,

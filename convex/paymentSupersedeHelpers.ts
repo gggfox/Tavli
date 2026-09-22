@@ -1,0 +1,127 @@
+/**
+ * Superseding a payment attempt, and the two questions that decide whether it
+ * is even allowed (TAVLI-104).
+ *
+ * Every checkout path in Tavli can produce a second PaymentIntent for the same
+ * thing: the diner edits the order, moves the tip slider, or simply taps twice.
+ * The row for the previous attempt is then patched to `superseded`. Until this
+ * ticket, nobody told Stripe — the old intent stayed live, and its client
+ * secret stayed confirmable by a stale tab, a back button or a retry. The money
+ * moved, the webhook could not place the charge against the order, and it gave
+ * up with a `console.warn`.
+ *
+ * The cure is Stripe-first ordering (`_util/stripe.ts`'s
+ * `standDownPaymentIntent`) plus the two guards below, which are pure so they
+ * can be reasoned about and tested without a Stripe client or a database:
+ *
+ * - {@link isPaymentCreateInFlight} — is the previous attempt's
+ *   `paymentIntents.create` call *still running*? Then there is no intent id to
+ *   cancel, and superseding the row would let a second call charge the card a
+ *   second time.
+ * - {@link currentOrderChargeAmount} — what would this order cost to charge
+ *   *right now*? The webhook asks this when a charge arrives that it cannot
+ *   place, to decide between accepting the money and refunding it.
+ *
+ * Zero Convex imports beyond types, so both are callable from a mutation, an
+ * action, or a unit test.
+ */
+import type { Doc } from "./_generated/dataModel";
+import { computeOrderCharge } from "./_shared/tip";
+import { PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS, PAYMENT_STATUS } from "./constants";
+
+/**
+ * Stable, diner-facing codes the supersede paths return instead of quietly
+ * creating a second intent. All three mean "we did not charge you, and here is
+ * what to do", and each maps to an `errors.<CODE>` entry in en.json/es.json.
+ */
+export const PAYMENT_SUPERSEDE_ERRORS = {
+	/**
+	 * Stripe could not be reached to stand the previous intent down, so a new
+	 * one is refused: creating it would leave two live intents for one order and
+	 * the diner one stale tab away from paying twice. The checkout shows "try
+	 * again".
+	 */
+	CANCEL_FAILED: "ERROR_PAYMENT_CANCEL_FAILED",
+	/**
+	 * The previous intent reads `succeeded` at Stripe — the diner has already
+	 * paid, whatever this screen thinks. Nothing new is created; the webhook (or
+	 * the TAVLI-105 metadata fallback) settles it moments later.
+	 */
+	ALREADY_PAID: "ERROR_PAYMENT_ALREADY_PAID",
+	/**
+	 * A `paymentIntents.create` for this payment is still in flight — a double
+	 * tap, a second tab, an impatient retry. See
+	 * {@link isPaymentCreateInFlight}.
+	 */
+	IN_PROGRESS: "ERROR_PAYMENT_IN_PROGRESS",
+} as const;
+
+export type PaymentSupersedeError =
+	(typeof PAYMENT_SUPERSEDE_ERRORS)[keyof typeof PAYMENT_SUPERSEDE_ERRORS];
+
+/** The fields the in-flight question actually needs. */
+type InFlightCandidate = Pick<Doc<"payments">, "status" | "stripePaymentIntentId" | "createdAt">;
+
+/**
+ * Is this row's `paymentIntents.create` call still running?
+ *
+ * Every create path writes the `payments` row FIRST and calls Stripe second, so
+ * the intent's metadata can carry the row id (TAVLI-105). That leaves a window
+ * in which the row is `pending` and holds no intent id, and the row shape alone
+ * cannot distinguish two situations:
+ *
+ * 1. The call is in flight. On the one-tap tip path (`off_session` +
+ *    `confirm: true`) the money moves *inside* that call, so treating the row as
+ *    a dead attempt and superseding it is how a double tap tips a server twice
+ *    for one gesture — the carried TAVLI-105 finding.
+ * 2. The process died between the insert and the call. Then the row is debris
+ *    and a retry should be free to supersede it.
+ *
+ * Age is the only available discriminator, hence
+ * {@link PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS}. Inside the window we assume (1)
+ * and refuse the second attempt; past it we assume (2). Getting it wrong in the
+ * first direction costs a diner one retry a minute later; getting it wrong in
+ * the second direction charges their card twice.
+ *
+ * A row that already carries an intent id is never "in flight" — the create
+ * returned, and the intent can be cancelled by id like any other.
+ */
+export function isPaymentCreateInFlight(payment: InFlightCandidate, nowMs: number): boolean {
+	if (payment.status !== PAYMENT_STATUS.PENDING) return false;
+	if (payment.stripePaymentIntentId) return false;
+	return nowMs - payment.createdAt < PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS;
+}
+
+/** The fields the recompute needs off the payment row. */
+type ChargeShapedPayment = Pick<Doc<"payments">, "subtotalAmount" | "gratuityAmount">;
+
+/**
+ * What this order would cost to charge right now, in the same shape the
+ * payment row records: subtotal + service fee + the tip the diner chose.
+ *
+ * Used by `orders.confirmPayment` to decide what to do with a charge it cannot
+ * place against the order (TAVLI-104). If the money collected equals this
+ * number, the charge pays for exactly what the order costs today and can be
+ * accepted whatever happened to `activePaymentId` or the `updatedAt` snapshot.
+ * If it does not, the order was genuinely repriced and the money goes back.
+ *
+ * The fee is re-derived with {@link computeOrderCharge} — the same helper
+ * `createPaymentIntent` uses, so the two can never drift apart. The **tip is
+ * not** re-derived: the order does not store the percentage the diner picked,
+ * and 10% of a repriced subtotal is not a number they ever agreed to. What the
+ * order controls (subtotal, fee) is recomputed; what the diner controls (the
+ * gratuity) is taken from the row.
+ *
+ * Legacy rows carry no `subtotalAmount`: those intents charged the order total
+ * flat, with no service fee and no separate gratuity. They keep exactly the
+ * comparison they always had.
+ */
+export function currentOrderChargeAmount(
+	orderTotalAmount: number,
+	payment: ChargeShapedPayment,
+	feeRate: number
+): number {
+	if (payment.subtotalAmount === undefined) return orderTotalAmount;
+	const { amount } = computeOrderCharge(orderTotalAmount, feeRate, 0);
+	return amount + (payment.gratuityAmount ?? 0);
+}

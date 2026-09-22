@@ -1,8 +1,14 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { DatabaseWriter } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { NotAuthorizedError, NotFoundError, fromErrorObject } from "./_shared/errors";
+import {
+	ConflictError,
+	NotAuthorizedError,
+	NotFoundError,
+	fromErrorObject,
+} from "./_shared/errors";
 import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId } from "./_util/auth";
 import {
@@ -35,6 +41,7 @@ import {
 	isPayableOrder,
 	sumOrderTotals,
 } from "./sessionHelpers";
+import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupersedeHelpers";
 
 async function insertSessionWithJoinCode(
 	ctx: { db: DatabaseWriter },
@@ -455,6 +462,12 @@ export const beginTabPayment = internalMutation({
 		 * action has already verified membership via `verifyTabForPaymentInternal`.
 		 */
 		userId: v.string(),
+		/**
+		 * The attempt the calling action stood down at Stripe, or omitted when it
+		 * saw none (TAVLI-104). Re-checked against `session.activePaymentId` inside
+		 * this transaction — see the handler.
+		 */
+		supersededPaymentId: v.optional(v.id(TABLE.PAYMENTS)),
 	},
 	handler: async (ctx, args): Promise<Id<typeof TABLE.PAYMENTS>> => {
 		const session = await ctx.db.get(args.sessionId);
@@ -484,10 +497,34 @@ export const beginTabPayment = internalMutation({
 			throw new Error("Tab balance changed, please retry");
 		}
 
+		// The attempt this transaction is allowed to retire is the one the action
+		// already stood down at Stripe — not "whatever `activePaymentId` holds
+		// now" (TAVLI-104 review round 1).
+		//
+		// Any tab member can pay, so two people tapping Pay 300ms apart is normal.
+		// Both read the same `activePaymentId` (P0), both cancel P0's intent, and
+		// both arrive here. Without this check the second one retires P1 — a row
+		// whose intent is live and whose client secret is on the first diner's
+		// screen — and points the session at P2. The first diner pays P1, and
+		// `confirmTabPayment` finds the session pointing elsewhere and warns.
+		//
+		// Convex serialises the two: both read the session document and both write
+		// it, so OCC re-runs the loser, which then sees an `activePaymentId` that
+		// is not the one it stood down and stops here instead.
+		if ((session.activePaymentId ?? undefined) !== args.supersededPaymentId) {
+			throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+		}
+
 		let attemptNumber = 1;
 		if (session.activePaymentId) {
 			const previous = await ctx.db.get(session.activePaymentId);
 			if (previous) {
+				// Its `paymentIntents.create` may still be running, in which case
+				// there was no intent for the action to cancel and retiring the row
+				// would let this tap charge the tab a second time.
+				if (isPaymentCreateInFlight(previous, Date.now())) {
+					throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject());
+				}
 				attemptNumber = previous.attemptNumber + 1;
 				if (
 					previous.status !== PAYMENT_STATUS.SUCCEEDED &&
@@ -551,9 +588,11 @@ export const markTabPaymentProcessing = internalMutation({
 		paymentId: v.id(TABLE.PAYMENTS),
 		stripePaymentIntentId: v.string(),
 	},
-	handler: async (ctx, args) => {
+	/** See `stripeHelpers.attachIntentToPayment`: false means do not go on. */
+	returns: v.object({ attached: v.boolean() }),
+	handler: async (ctx, args): Promise<{ attached: boolean }> => {
 		const payment = await ctx.db.get(args.paymentId);
-		if (!payment) return;
+		if (!payment) return { attached: false };
 
 		// The tab mirror of `stripeHelpers.attachIntentToPayment` (TAVLI-105). A
 		// tab intent is created unconfirmed, so the diner cannot have paid before
@@ -571,7 +610,26 @@ export const markTabPaymentProcessing = internalMutation({
 				paymentId: payment._id,
 				status: payment.status,
 			});
-			return;
+			return { attached: false };
+		}
+
+		// A retired row is not given the id at all, and its intent is stood down
+		// instead — the same rule as the order and tip paths (sign-off nit). A tab
+		// attempt superseded while its create was running would otherwise hold a
+		// live intent whose client secret the caller is about to return.
+		if (
+			payment.status === PAYMENT_STATUS.SUPERSEDED ||
+			payment.status === PAYMENT_STATUS.CANCELLED
+		) {
+			console.error("[sessions.markTabPaymentProcessing] INTENT ARRIVED FOR A RETIRED ROW", {
+				paymentId: payment._id,
+				status: payment.status,
+			});
+			await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+				paymentId: payment._id,
+				stripePaymentIntentId: args.stripePaymentIntentId,
+			});
+			return { attached: false };
 		}
 
 		// Forward only: anything past PENDING has already been decided, by the
@@ -583,11 +641,14 @@ export const markTabPaymentProcessing = internalMutation({
 			stripePaymentIntentId: args.stripePaymentIntentId,
 			updatedAt: Date.now(),
 		});
-		if (alreadyDecided) return;
+		// Decided elsewhere (the webhook settled it): the id is recorded, but the
+		// tab's own state is not this call's to move.
+		if (alreadyDecided) return { attached: true };
 
 		await ctx.db.patch(args.sessionId, {
 			paymentState: SESSION_PAYMENT_STATE.PROCESSING,
 		});
+		return { attached: true };
 	},
 });
 

@@ -126,15 +126,13 @@ export function monthIndexFromYmd(ymd: string | undefined | null, year: number):
 	return mo - 1;
 }
 
-/** Format integer cents as a decimal string ("12.34"). Empty for null/undefined. */
-export function formatMoneyCents(cents: number | undefined | null): string {
-	if (cents == null || !Number.isFinite(cents)) return "";
-	const sign = cents < 0 ? "-" : "";
-	const abs = Math.abs(cents);
-	const whole = Math.trunc(abs / 100);
-	const frac = abs % 100;
-	return `${sign}${whole}.${String(frac).padStart(2, "0")}`;
-}
+/**
+ * Format integer cents as a decimal string ("12.34"). Empty for null/undefined.
+ *
+ * Lives in `_shared/money.ts` and is re-exported here: mutations need it for
+ * operator-alert params and must not pull SheetJS in to get it (TAVLI-104).
+ */
+export { formatMoneyCents } from "./_shared/money";
 
 /**
  * Locale-aware long month names. The first element is January.

@@ -568,6 +568,125 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   logs `DEPLOYMENT MARKER UNAVAILABLE` and raises no unmatched-charge alerts at
   all — matching still works, only the attribution is blind.
 
+- **A superseded PaymentIntent is cancelled at Stripe before its row is retired**
+  (TAVLI-104). Editing an order, moving the tip slider or re-opening the tab
+  creates a replacement intent; the previous one is stood down first, through the
+  one shared helper `standDownPaymentIntent` (retrieve → `succeeded`? leave it
+  for the webhook; `canceled`? nothing to do; otherwise cancel). Order, tab and
+  tip all go through it, and so does "Back to menu" on the checkout page. If the
+  stand-down cannot be completed, **no new intent is created**: the diner sees
+  `ERROR_PAYMENT_CANCEL_FAILED` ("try again") when Stripe was unreachable, or
+  `ERROR_PAYMENT_ALREADY_PAID` when the old intent had already succeeded — the
+  webhook settles that one moments later. A second tap landing while the first
+  attempt's `paymentIntents.create` is still running (row `pending`, no intent
+  id, younger than `PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS`, which derives to 195s —
+  see the derivation below) gets
+  `ERROR_PAYMENT_IN_PROGRESS` rather than superseding a charge that is moving
+  money right now. That window is **derived**, not picked:
+  `(STRIPE_MAX_NETWORK_RETRIES + 1) × STRIPE_REQUEST_TIMEOUT_MS + margin` = 195s,
+  from the same two constants `getStripeClient` is built with, because the worst
+  case is every retry timing out. Changing the client's timeout or retry count
+  moves the window with it — that is the point; do not re-hardcode either.
+  The guard is asked **twice**: once in the action (against a snapshot) and again
+  inside the inserting transaction (`stripeHelpers.createPayment`, or
+  `sessions.beginTabPayment` for a tab), where Convex's OCC serialises two taps
+  that both got past the snapshot. `createPayment` moves the order's
+  `activePaymentId` in that same transaction so the two taps collide on one
+  document; a tab caller passes `supersededPaymentId` and the mutation refuses to
+  retire anything else.
+  If a create returns _after_ its row was retired,
+  `stripeHelpers.attachIntentToPayment` (and its tab mirror
+  `sessions.markTabPaymentProcessing`) refuses to write the intent id onto the
+  retired row (logged `INTENT ARRIVED FOR A RETIRED ROW`) and stands that intent
+  down at Stripe instead. It returns `{ attached: false }`, and the create path
+  then returns **no client secret** and does not re-point the order or the
+  session — it fails with `ERROR_PAYMENT_IN_PROGRESS` (logged
+  `INTENT CREATED FOR A ROW THAT NO LONGER OWNS IT`), because another attempt
+  owns that payment now and handing out a secret for an intent nothing is
+  watching is how a diner confirms a charge no row will ever settle. If that orphan had already charged, a severe
+  `charge_needs_review` alert is raised (`charge_on_retired_attempt:<paymentId>`).
+  **A retired row is never settled by the webhook either**: the metadata fallback
+  (TAVLI-105) exists to repair a row that lost a race, not to hand a settlement
+  target to one that was replaced, so it does **not** attach to a
+  SUPERSEDED/CANCELLED row (logged `CHARGE FOR A RETIRED PAYMENT ROW`).
+  `handlePaymentIntentSuccess` then decides what that money deserves: a **tip** is
+  refunded automatically via `payments.refundRetiredTipCharge`, which records the
+  ids and `refundStatus: requested`, keeps the row SUPERSEDED so it can never
+  enter the tip pool, raises the same `charge_on_retired_attempt:<paymentId>`
+  alert and schedules `stripe.refundStrandedCharge` — a tip has no "food already
+  eaten" argument, since the tip the member meant to leave was charged by the
+  attempt that replaced this one (logged
+  `REFUNDING A TIP CHARGED ON A RETIRED ATTEMPT`). An **order** row falls through
+  to `confirmPayment` and is accepted or refunded like any other unplaceable
+  charge. `payments.confirmTipPayment` carries the same guard directly (logged
+  `REFUSING TO SETTLE A RETIRED TIP ROW`), because the sweep can reach it too.
+  A cancel whose intent slips through — Stripe answers
+  `payment_intent_unexpected_state` because a stale tab confirmed it mid-cancel —
+  is re-read once and reported as `ERROR_PAYMENT_ALREADY_PAID`, not "try again". The tab path cancels inside `createTabPaymentIntent`, ahead of
+  `sessions.beginTabPayment`, because a mutation cannot call Stripe and a
+  scheduled cancel could land after the replacement intent exists.
+- **A `payment_intent.succeeded` that matches no active payment is accepted or
+  refunded, never dropped** (TAVLI-104). `orders.confirmPayment` used to warn and
+  return on three conditions — the payment is not the order's `activePaymentId`,
+  the order's `updatedAt` moved past the payment's snapshot, or the total drifted
+  — leaving Stripe holding the diner's money and the order unreleased. It now
+  recomputes what the order costs right now (same helper `createPaymentIntent`
+  uses: subtotal + 12% fee + the gratuity on the row) and either:
+  - **accepts** — settles the order with that payment, re-points
+    `activePaymentId` at it, retires any newer attempt and cancels that attempt's
+    intent through `stripe.standDownSupersededIntent`; logged as
+    `adopting payment …`; or
+  - **refunds in full** — the row goes `succeeded` with
+    `refundStatus: requested`, the order goes back to **unpaid and still owed**
+    (not "refunded" — it was never paid), a severe `charge_mismatched_refunded`
+    alert is raised carrying both amounts, and `stripe.refundStrandedCharge`
+    issues the refund on a `runAfter(0)` hop with idempotency key
+    `stranded-charge-refund:<paymentId>`. Logged as
+    `REFUNDING A CHARGE THAT MATCHES NO ORDER TOTAL`.
+    An order that **cannot be released by this charge at all** no longer just logs
+    and returns (it used to leave the row PROCESSING forever with money at Stripe):
+  - `cancelled` → the same full refund and `charge_mismatched_refunded` alert.
+    Nobody is cooking it, so the money goes back automatically.
+    `orders.updateStatus → cancelled` also lets go of a still-in-flight payment
+    in the same transaction that voids the ticket — row → CANCELLED, order
+    pointer and `paymentState` cleared — and stands the intent down at Stripe on
+    a scheduler hop. That closes the window rather than cleaning up after it, and
+    staff never see a cancelled order still "processing" a card. A payment that
+    already SUCCEEDED is left alone: that cancel is a refund, which
+    `cancelOrderAndRefund` owns.
+  - `served` (or `preparing` / `ready`) → the food has moved, so only the money
+    is open, and it is decidable. **Unpaid and the amount matches** → the money
+    settles (`paymentState: paid`, `activePaymentId`, `settledBy: "stripe"`,
+    `paidAt`) while the kitchen status is left alone — putting a finished round
+    back on the rail would be worse than the bug. This is the
+    `releaseCashOrdersImmediately` case (TAVLI-81): a round is served with its
+    cash uncollected and the diner pays by card from another tab, and leaving the
+    row SUCCEEDED beside an unpaid order is how staff then collect the cash too.
+    Logged `settling money on order … without touching the kitchen status`.
+    **Already paid** (by another card payment, or in cash — `settledBy: "staff"`
+    leaves no payment row at all, which is why `paymentState` is the test) **or
+    the amount does not match** → full refund, exactly like the repriced branch.
+- **A fully refunded payment row is not revenue.** `paymentMoneyHelpers` excludes
+  `refundStatus: "succeeded"` rows from restaurant revenue and tips, because an
+  automatically refunded stranded charge would otherwise be counted alongside the
+  payment the diner makes on their second attempt — the same sale twice. Partial
+  refunds are unchanged (still counted gross).
+- **A refunded card attempt never un-pays a cash settlement.** The stranded
+  refund clears the order's `activePaymentId` / `stripePaymentIntentId` whenever
+  they name the refunded payment, but only resets `paymentState` to `unpaid`
+  when the order is not already PAID. A cash-settled order keeps `settledBy:
+"staff"` and its `paidAt` — the restaurant has that money. To stop the race
+  reaching that point at all, `orders.markOrderPaidInPerson` now refuses with
+  `ERROR_ORDER_PAYMENT_IN_FLIGHT` while a PENDING/PROCESSING card attempt is
+  active, exactly as `requestPayInPerson` already does from the diner's side.
+  Staff clear it by having the diner tap "Pay in person" or leave the checkout
+  (both cancel the intent); the next attempt supersedes it, and the
+  stuck-payment sweep catches a `processing` row that stopped moving.
+- **The refund's own `charge.refunded` does not restate the order.**
+  `recordChargeRefund` flips an order to REFUNDED only when the refunded row is
+  the order's `activePaymentId` AND the order is PAID or REFUND_REQUESTED. A
+  stranded charge is SUCCEEDED but never settled its order, so the order stays
+  unpaid and owed.
 - The create path cannot undo a settlement, on either branch.
   `stripeHelpers.attachIntentToPayment` records the intent id but moves the status
   only `pending` → `processing`, and `stripeHelpers.failPaymentUnlessSettled`
@@ -592,6 +711,16 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   `/admin/alerts`. `FOREIGN PAYMENT INTENT IGNORED` beside it is the benign
   counterpart (another deployment's charge on the shared test account): expected
   traffic in dev and staging, not a finding
+- Convex logs for `REFUNDING A CHARGE THAT MATCHES NO ORDER TOTAL` — a charge
+  Tavli sent back because it no longer matched its order; always paired with a
+  severe `charge_mismatched_refunded` alert naming both amounts. Confirm the
+  refund landed in Stripe, then acknowledge the alert
+- Convex logs for `RETIRED INTENT ALREADY SUCCEEDED`,
+  `CHARGE FOR A RETIRED PAYMENT ROW` or
+  `REFUNDING A TIP CHARGED ON A RETIRED ATTEMPT` — a charge landed on a payment
+  attempt Tavli had retired. The money is resolved automatically (tips refunded,
+  order charges applied or refunded) and a severe `charge_needs_review` alert
+  asks you to confirm the outcome landed in Stripe
 - `stripeWebhookEvents` rows are being created for processed events
 - Payment and refund states match the Stripe Dashboard for spot-checked orders
 - The stuck-tab reconciliation cron (`stripe:reconcileStuckTabPayments`) runs

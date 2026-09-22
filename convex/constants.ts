@@ -299,6 +299,62 @@ export const PAYMENT_FAILURE_CODE = {
 export type PaymentFailureCode = (typeof PAYMENT_FAILURE_CODE)[keyof typeof PAYMENT_FAILURE_CODE];
 
 /**
+ * Per-request timeout on the Stripe client (`_util/stripe.ts`
+ * `getStripeClient`), in milliseconds.
+ *
+ * Set explicitly rather than left to stripe-node's 80s default, because
+ * {@link PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS} is derived from it and a default
+ * that moves under a minor SDK bump would move that window with it.
+ *
+ * 60s, not the 30s this started at. Both are far longer than a healthy Stripe
+ * call, so the only thing the number really decides is who is right when the
+ * network is sick: a timeout shorter than the request Stripe is actually still
+ * processing turns a slow success into a client-side failure, and on the
+ * `confirm: true` tip path that failure is indistinguishable from a decline.
+ * Being slow costs a spinner; being wrong costs a charge nobody records.
+ */
+export const STRIPE_REQUEST_TIMEOUT_MS = 60 * 1000;
+
+/** `maxNetworkRetries` on the Stripe client. Stripe reuses the idempotency key. */
+export const STRIPE_MAX_NETWORK_RETRIES = 2;
+
+/**
+ * Slack added to the worst-case Stripe attempt before a `pending` row is
+ * treated as debris: stripe-node's retry backoff (~0.5s then ~1s with jitter,
+ * capped at 2s each) plus the Convex scheduling either side of the call.
+ */
+export const PAYMENT_CREATE_IN_FLIGHT_MARGIN_MS = 15 * 1000;
+
+/**
+ * How long a `pending` payment row that holds no intent id is assumed to still
+ * have its `paymentIntents.create` call in flight (TAVLI-104).
+ *
+ * Every create path inserts the row before calling Stripe, so this shape means
+ * either "the call is running right now" or "the process died between the two".
+ * A second tap inside the window must NOT supersede the row: on the one-tap tip
+ * path the money moves inside that very call, so retiring the row lets the
+ * second tap charge the card again for the same gesture.
+ *
+ * **Derived, not picked.** The first version of this was a flat 90s "against
+ * stripe-node's 80s default timeout", which was wrong in the one direction that
+ * costs money: the client also sets `maxNetworkRetries`, so the worst case is
+ * every attempt timing out, i.e. `(retries + 1) × timeout` plus backoff — about
+ * 4 minutes on the old defaults. A second tap at 100s would have superseded a
+ * create that was still running; that create then returns, and the webhook's
+ * metadata fallback settles the retired row. Member tipped twice, no alert.
+ * Tying the window to the same two constants the client is built from means the
+ * two cannot drift again.
+ *
+ * Past the window a row in this shape is debris a retry may claim — the cost of
+ * being wrong that way round is one extra tap a minute later, against a double
+ * charge the other way round. `stripeHelpers.attachIntentToPayment` is the
+ * backstop for the residue: it refuses to attach an intent to a row that has
+ * already been retired.
+ */
+export const PAYMENT_CREATE_IN_FLIGHT_WINDOW_MS =
+	(STRIPE_MAX_NETWORK_RETRIES + 1) * STRIPE_REQUEST_TIMEOUT_MS + PAYMENT_CREATE_IN_FLIGHT_MARGIN_MS;
+
+/**
  * How an Order / Session was settled (ADR 008). `stripe` means a `payments`
  * row backs it; `staff` means it was collected in person and there is **no**
  * `payments` row at all — analytics and exports must derive that money from
@@ -1436,6 +1492,18 @@ export const OPERATOR_ALERT_KIND = {
 	 * still sitting at Stripe awaiting a human decision.
 	 */
 	PAYMENT_AMOUNT_MISMATCH: "payment_amount_mismatch",
+	/**
+	 * Stripe charged a card against a payment attempt Tavli had already retired
+	 * (TAVLI-104) — a second tap, an edited order or a staff cancel replaced the
+	 * row while its create call was still in flight, or the stand-down lost the
+	 * race to the diner's confirm.
+	 *
+	 * The money is always resolved automatically: a tip is refunded, an order's
+	 * charge is applied to that order or refunded. The alert exists because a
+	 * duplicate charge is worth a human's eyes either way, and because the refund
+	 * is a scheduled Stripe call whose landing somebody should confirm.
+	 */
+	CHARGE_NEEDS_REVIEW: "charge_needs_review",
 	/** A dispute closed against the restaurant. */
 	DISPUTE_LOST: "dispute_lost",
 	/** A refund issued from the Stripe Dashboard rather than through Tavli. */
@@ -1505,6 +1573,7 @@ export const OPERATOR_ALERT_DEFAULT_SEVERITY: Record<OperatorAlertKind, Operator
 	// blocked: the diner has paid, the restaurant has not been credited, and
 	// only a human can decide which number was right.
 	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: OPERATOR_ALERT_SEVERITY.SEVERE,
+	[OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW]: OPERATOR_ALERT_SEVERITY.SEVERE,
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: OPERATOR_ALERT_SEVERITY.WARNING,
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: OPERATOR_ALERT_SEVERITY.WARNING,
 	// The restaurant is not getting paid.
@@ -1526,6 +1595,7 @@ export const OPERATOR_ALERT_TITLE_KEY: Record<OperatorAlertKind, string> = {
 	[OPERATOR_ALERT_KIND.CHARGE_UNMATCHED]: "alerts.kind.chargeUnmatched.title",
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]: "alerts.kind.chargeMismatchedRefunded.title",
 	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: "alerts.kind.paymentAmountMismatch.title",
+	[OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW]: "alerts.kind.chargeNeedsReview.title",
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.title",
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.title",
 	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.title",
@@ -1545,6 +1615,7 @@ export const OPERATOR_ALERT_EXPLANATION_KEY: Record<OperatorAlertKind, string> =
 	[OPERATOR_ALERT_KIND.CHARGE_MISMATCHED_REFUNDED]:
 		"alerts.kind.chargeMismatchedRefunded.explanation",
 	[OPERATOR_ALERT_KIND.PAYMENT_AMOUNT_MISMATCH]: "alerts.kind.paymentAmountMismatch.explanation",
+	[OPERATOR_ALERT_KIND.CHARGE_NEEDS_REVIEW]: "alerts.kind.chargeNeedsReview.explanation",
 	[OPERATOR_ALERT_KIND.DISPUTE_LOST]: "alerts.kind.disputeLost.explanation",
 	[OPERATOR_ALERT_KIND.DASHBOARD_REFUND]: "alerts.kind.dashboardRefund.explanation",
 	[OPERATOR_ALERT_KIND.PAYOUT_FAILED]: "alerts.kind.payoutFailed.explanation",

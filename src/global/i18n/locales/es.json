@@ -616,6 +616,9 @@
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "El pago de este pedido ya está en curso o completado. Cancela el pedido completo para emitir un reembolso.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "Hay un pago en curso en esta cuenta. Espera a que termine antes de quitar artículos.",
 		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "Ya hay un pago con tarjeta en curso para este pedido. Cancélalo antes de elegir pagar en persona.",
+		"ERROR_PAYMENT_CANCEL_FAILED": "No pudimos comunicarnos con nuestro proveedor de pagos para cerrar tu intento anterior, así que no iniciamos uno nuevo. Inténtalo de nuevo en un momento.",
+		"ERROR_PAYMENT_ALREADY_PAID": "Esto ya está pagado. Danos un segundo para actualizarlo: no necesitas pagar otra vez.",
+		"ERROR_PAYMENT_IN_PROGRESS": "Tu pago ya se está procesando. Espera un momento en lugar de volver a tocar.",
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
@@ -2111,7 +2114,11 @@
 			},
 			"chargeMismatchedRefunded": {
 				"title": "Cargo reembolsado: el monto no coincidía",
-				"explanation": "Llegó un cargo por un monto distinto al de la orden que menciona, así que Tavli lo reembolsó en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse."
+				"explanation": "Stripe cobró {{collected}} por una orden que ahora cuesta {{expected}} ({{currency}}), así que Tavli reembolsó el cargo completo en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse: confirma en Stripe que el reembolso se aplicó."
+			},
+			"chargeNeedsReview": {
+				"title": "Cargo en un intento de pago retirado",
+				"explanation": "Stripe cobró {{collected}} ({{currency}}) en un intento de pago que Tavli ya había retirado: un segundo toque, una orden editada o una cancelación del personal lo reemplazó mientras su cargo estaba en curso. Una propina cobrada así se reembolsa automáticamente, y el cargo de una orden se aplica a esa orden o se reembolsa. Abre el cargo en Stripe y confirma que el resultado se haya aplicado."
 			},
 			"paymentAmountMismatch": {
 				"title": "Cobro detenido: el monto no coincidía",
