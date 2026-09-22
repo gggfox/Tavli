@@ -45,7 +45,7 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		payment_stuck: {
 			title: "Payment stuck",
 			explanation:
-				"A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge.",
+				"A payment has sat in a non-final state for too long. Check it in Stripe and settle or cancel it before the diner disputes the charge. (kind: {{kind}}, stuck {{minutes}} min)",
 		},
 		charge_unmatched: {
 			title: "Charge matches no order",
@@ -55,7 +55,17 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		charge_mismatched_refunded: {
 			title: "Charge refunded: amount did not match",
 			explanation:
-				"A charge arrived for a different amount than the order it names, so Tavli refunded it rather than keep money it could not account for. The order is still unpaid.",
+				"Stripe collected {{collected}} for an order that now costs {{expected}} ({{currency}}), so Tavli refunded the charge in full rather than keep money it could not account for. The order is still unpaid \u2014 confirm the refund landed in Stripe.",
+		},
+		charge_needs_review: {
+			title: "Charge on a retired payment attempt",
+			explanation:
+				"Stripe collected {{collected}} ({{currency}}) on a payment attempt Tavli had already retired — a second tap, an edited order or a staff cancel replaced it while its charge was in flight. A tip charged this way is refunded automatically, and an order's charge is either applied to that order or refunded. Open the charge in Stripe and confirm the outcome landed.",
+		},
+		payment_amount_mismatch: {
+			title: "Settlement blocked: amount did not match",
+			explanation:
+				"Stripe collected {{received}} instead of {{expected}} ({{currency}}), so the payment was marked failed rather than settled. Refund the charge in Stripe — the money is still sitting there, and the diner pays again.",
 		},
 		dispute_lost: {
 			title: "Dispute lost",
@@ -87,7 +97,7 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		payment_stuck: {
 			title: "Pago atorado",
 			explanation:
-				"Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute.",
+				"Un pago lleva demasiado tiempo sin llegar a un estado final. Revísalo en Stripe y complétalo o cancélalo antes de que el comensal lo dispute. (tipo: {{kind}}, atorado {{minutes}} min)",
 		},
 		charge_unmatched: {
 			title: "Cargo sin orden asociada",
@@ -97,7 +107,17 @@ const KIND_COPY: Record<InviteEmailLocale, Record<OperatorAlertKind, OperatorAle
 		charge_mismatched_refunded: {
 			title: "Cargo reembolsado: el monto no coincidía",
 			explanation:
-				"Llegó un cargo por un monto distinto al de la orden que menciona, así que Tavli lo reembolsó en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse.",
+				"Stripe cobró {{collected}} por una orden que ahora cuesta {{expected}} ({{currency}}), así que Tavli reembolsó el cargo completo en lugar de quedarse con dinero que no podía justificar. La orden sigue sin pagarse: confirma en Stripe que el reembolso se aplicó.",
+		},
+		charge_needs_review: {
+			title: "Cargo en un intento de pago retirado",
+			explanation:
+				"Stripe cobró {{collected}} ({{currency}}) en un intento de pago que Tavli ya había retirado: un segundo toque, una orden editada o una cancelación del personal lo reemplazó mientras su cargo estaba en curso. Una propina cobrada así se reembolsa automáticamente, y el cargo de una orden se aplica a esa orden o se reembolsa. Abre el cargo en Stripe y confirma que el resultado se haya aplicado.",
+		},
+		payment_amount_mismatch: {
+			title: "Cobro detenido: el monto no coincidía",
+			explanation:
+				"Stripe cobró {{received}} en lugar de {{expected}} ({{currency}}), así que el pago se marcó como fallido en vez de liquidarse. Reembolsa el cargo en Stripe: el dinero sigue ahí y el comensal paga de nuevo.",
 		},
 		dispute_lost: {
 			title: "Disputa perdida",

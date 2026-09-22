@@ -11,7 +11,7 @@ import type { PaymentsLedgerRow } from "./types";
  */
 export function OrderItemsTooltipTrigger({ row }: Readonly<{ row: PaymentsLedgerRow }>) {
 	const { t, i18n } = useTranslation();
-	// A paid order can still carry lines that were 86'd while it was open.
+	// A paid order can still carry lines that were removed while it was open.
 	// They were never charged, so listing them here would not add up to the
 	// subtotal right below.
 	const chargedItems = row.items.filter((item) => item.cancelledAt === undefined);

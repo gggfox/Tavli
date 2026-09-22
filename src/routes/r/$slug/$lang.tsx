@@ -1,4 +1,3 @@
-import { SubstitutionPrompt } from "@/features/ordering";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 /**
@@ -10,20 +9,11 @@ import { Outlet, createFileRoute } from "@tanstack/react-router";
  * the SSR pass and the first client render agree. Switching the language
  * after hydration would have re-introduced the flash this route existed to
  * avoid.
- *
- * `SubstitutionPrompt` mounts here — not on any single page — so a kitchen
- * substitution proposal (ADR 008) reaches the diner wherever they are in the
- * flow: menu, cart, orders, or checkout.
  */
 export const Route = createFileRoute("/r/$slug/$lang")({
 	component: LanguageLayout,
 });
 
 function LanguageLayout() {
-	return (
-		<>
-			<Outlet />
-			<SubstitutionPrompt />
-		</>
-	);
+	return <Outlet />;
 }

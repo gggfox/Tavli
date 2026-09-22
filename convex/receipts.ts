@@ -109,7 +109,7 @@ export const getReceiptEmailContextInternal = internalQuery({
 			.collect();
 
 		// Live lines plus post-payment refunded lines (struck-through on the
-		// receipt). Lines 86'd BEFORE payment were never part of the charge, so
+		// receipt). Lines removed BEFORE payment were never part of the charge, so
 		// they are excluded — this keeps the item column summing to the charged
 		// subtotal.
 		const items = orderItems

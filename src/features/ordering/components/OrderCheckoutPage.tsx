@@ -119,6 +119,44 @@ export function OrderCheckoutPage({
 		}
 	};
 
+	/**
+	 * Is there a card intent live at Stripe for this order right now?
+	 *
+	 * `clientSecret` covers the sheet mounted in this page; the payment row's
+	 * status covers an intent prepared before a reload. Read at click time, not
+	 * memoized, because both inputs change while the diner is deciding.
+	 */
+	const hasPreparedCharge = () =>
+		clientSecret !== null ||
+		order?.activePayment?.status === "pending" ||
+		order?.activePayment?.status === "processing";
+
+	/**
+	 * Leaving the checkout stands the prepared charge down at Stripe before
+	 * navigating (TAVLI-104).
+	 *
+	 * Plain navigation was the bug: the intent stayed live with its client secret
+	 * in a page the diner might come back to, or leave open in another tab, and
+	 * confirming it later charged a card for an order that had moved on. The
+	 * diner taps Pay again when they return — the page never auto-creates an
+	 * intent, so there is nothing to re-arm.
+	 *
+	 * Non-blocking on failure: getting out of the checkout must always work. A
+	 * cancel that does not reach Stripe leaves the intent for the supersede path
+	 * to stand down on the next attempt, which is the same guarantee the rest of
+	 * this ticket rests on.
+	 */
+	const handleBackToMenu = async () => {
+		if (hasPreparedCharge()) {
+			try {
+				await cancelPaymentIntent({ orderId });
+			} catch (err) {
+				console.error("[OrderCheckoutPage] failed to cancel the prepared charge", err);
+			}
+		}
+		onBackToMenu();
+	};
+
 	// While a card intent is mounted, switching to cash REQUIRES cancelling it
 	// first — the backend rejects `requestPayInPerson` with
 	// ERROR_ORDER_PAYMENT_IN_FLIGHT otherwise, so a stale payment sheet can
@@ -127,11 +165,7 @@ export function OrderCheckoutPage({
 		setCashSubmitting(true);
 		setError(null);
 		try {
-			const activeCardIntent =
-				clientSecret !== null ||
-				order?.activePayment?.status === "pending" ||
-				order?.activePayment?.status === "processing";
-			if (activeCardIntent) {
+			if (hasPreparedCharge()) {
 				const { settled } = await cancelPaymentIntent({ orderId });
 				if (settled) {
 					// The card charge won the race and the webhook is settling the
@@ -214,7 +248,7 @@ export function OrderCheckoutPage({
 			<div className="flex flex-col max-w-lg w-full mx-auto p-4 pb-8 space-y-6">
 				<div className="flex items-center gap-3">
 					<button
-						onClick={onBackToMenu}
+						onClick={handleBackToMenu}
 						className="p-2 rounded-lg hover:bg-(--bg-hover) text-foreground"
 						aria-label={t(OrderingKeys.BACK_TO_MENU_ARIA)}
 					>

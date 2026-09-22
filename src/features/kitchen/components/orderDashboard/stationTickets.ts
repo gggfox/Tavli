@@ -27,7 +27,7 @@ export interface StationTicket {
  *    where the restaurant releases cash orders immediately (TAVLI-81); by
  *    default the kitchen still sees an order only once its cash is collected,
  *    and the same status allowlist excludes it.
- * 2. Items are the station's own, minus 86'd lines — a station never sees the
+ * 2. Items are the station's own, minus removed lines — a station never sees the
  *    other station's work, and never sees what it no longer has to make.
  * 3. The ticket bumps (leaves the rail) once the station has stamped ready, or
  *    once it has no live items left. Stamping means the portion left the

@@ -375,7 +375,7 @@ interface PaymentExportRow {
 	orderId: string;
 	dailyOrderNumber: number | null;
 	tableNumber: number | null;
-	/** PAYMENT_KIND ("order" | "tip" | "substitution"); "" on legacy rows. */
+	/** PAYMENT_KIND ("order" | "tip"); "" on legacy rows. */
 	kind: string;
 	status: string;
 	refundStatus: string;
