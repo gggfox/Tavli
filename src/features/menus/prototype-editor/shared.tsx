@@ -206,20 +206,24 @@ export function EditorPage({
 						type="button"
 						className="flex items-center gap-1.5 text-sm text-primary hover:underline"
 					>
-						<ArrowLeft size={15} /> Volver a todos los menús
+						<ArrowLeft size={15} />
+						<span className="sm:hidden">Menús</span>
+						<span className="hidden sm:inline">Volver a todos los menús</span>
 					</button>
 					<div className="ml-auto flex items-center gap-2">
 						<button
 							type="button"
 							className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium hover-btn-primary"
 						>
-							<Plus size={16} /> Agregar categoría
+							<Plus size={16} />
+							<span className="sm:hidden">Categoría</span>
+							<span className="hidden sm:inline">Agregar categoría</span>
 						</button>
 						<button
 							type="button"
 							className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm hover-btn-secondary"
 						>
-							<Download size={15} /> Exportar
+							<Download size={15} /> <span className="hidden sm:inline">Exportar</span>
 						</button>
 					</div>
 				</div>
@@ -259,7 +263,8 @@ export function EditorPage({
 						/>
 					))}
 				</div>
-				<div className="hidden w-56 shrink-0 lg:block" style={aside ? { width: 400 } : undefined}>
+				{/* One fixed width for index and inspector alike, so rows never reflow. */}
+				<div className="hidden w-[22rem] shrink-0 lg:block">
 					{aside ?? (
 						<CategoryIndex
 							categories={visibleCategories}
@@ -691,12 +696,14 @@ export function IconButton({
 	onClick,
 	active,
 	danger,
+	className = "p-1.5",
 }: Readonly<{
 	children: ReactNode;
 	label: string;
 	onClick: () => void;
 	active?: boolean;
 	danger?: boolean;
+	className?: string;
 }>) {
 	return (
 		<button
@@ -704,7 +711,7 @@ export function IconButton({
 			title={label}
 			aria-label={label}
 			onClick={onClick}
-			className={`rounded-md p-1.5 hover:bg-hover ${
+			className={`rounded-md hover:bg-hover ${className} ${
 				active
 					? "text-primary"
 					: danger
@@ -958,7 +965,7 @@ export function StationPicker({
 		<div
 			role="radiogroup"
 			aria-label="Estación de preparación"
-			className="inline-flex rounded-lg bg-tertiary/60 p-0.5"
+			className="inline-flex gap-1 rounded-lg p-1 ring-1 ring-border-strong"
 		>
 			{(["kitchen", "bar"] as const).map((s) => (
 				<button
@@ -967,13 +974,17 @@ export function StationPicker({
 					role="radio"
 					aria-checked={value === s}
 					onClick={() => onChange(s)}
-					className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
+					className={`flex h-9 items-center gap-1.5 rounded-md px-3.5 text-sm font-medium transition-colors md:h-8 md:text-xs ${
 						value === s
-							? "bg-card text-foreground shadow-sm"
-							: "text-muted-foreground hover:text-foreground"
+							? `${STATION[s].chip} ring-1 ring-current`
+							: "text-muted-foreground hover:bg-hover hover:text-foreground"
 					}`}
 				>
-					<span className={`h-2 w-2 rounded-full ${STATION[s].dot}`} />
+					{value === s ? (
+						<Check size={14} strokeWidth={2.5} />
+					) : (
+						<span className={`h-2 w-2 rounded-full ${STATION[s].dot}`} />
+					)}
 					{STATION[s].label}
 				</button>
 			))}
@@ -1105,7 +1116,7 @@ export function ImageWell({
 				<button
 					type="button"
 					onClick={d.pickFile}
-					className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground ring-1 ring-border hover:bg-hover hover:text-foreground"
+					className="flex flex-1 items-center justify-center gap-1.5 h-10 rounded-lg px-2 text-sm text-muted-foreground ring-1 ring-border hover:bg-hover hover:text-foreground md:h-8 md:text-xs"
 				>
 					<ImagePlus size={14} /> {draft.image ? "Cambiar foto" : "Subir foto"}
 				</button>
@@ -1113,7 +1124,7 @@ export function ImageWell({
 					type="button"
 					onClick={d.generate}
 					disabled={generating}
-					className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground ring-1 ring-border hover:bg-hover hover:text-foreground disabled:opacity-50"
+					className="flex flex-1 items-center justify-center gap-1.5 h-10 rounded-lg px-2 text-sm text-muted-foreground ring-1 ring-border hover:bg-hover hover:text-foreground md:h-8 md:text-xs disabled:opacity-50"
 				>
 					<Sparkles size={14} className="text-primary" /> Generar con IA
 				</button>
