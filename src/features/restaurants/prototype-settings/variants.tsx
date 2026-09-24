@@ -8,7 +8,7 @@
  *  C  Scroll con índice     everything on one scroll + scrollspy index
  *  D  Tarjetas resumen      read-only summary cards, edit in a sheet
  */
-import { useIsNarrowViewport } from "@/global/hooks/useMediaQuery";
+import { useIsNarrowViewport, useMediaQuery } from "@/global/hooks/useMediaQuery";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GROUPS, SECTIONS, groupOf, useProtoStore, type SectionId, type SectionNav } from "./mock";
@@ -20,6 +20,7 @@ export const VARIANTS = {
 	B: { name: "Lista y detalle", Component: VariantB },
 	C: { name: "Scroll con índice", Component: VariantC },
 	D: { name: "Tarjetas resumen", Component: VariantD },
+	E: { name: "Elegida: C escritorio · B tablet/teléfono", Component: VariantE },
 } as const;
 
 export type VariantKey = keyof typeof VARIANTS;
@@ -442,4 +443,17 @@ function VariantD({ nav }: Readonly<{ nav: SectionNav }>) {
 			</Sheet>
 		</>
 	);
+}
+
+// ─── E (verdict) ────────────────────────────────────────────────────────────
+
+/**
+ * The user's pick (2026-09-23): C on desktop (≥ lg, where the app sidebar is
+ * full width and there is room for one scroll + an index), B below it
+ * (tablet master–detail, phone drill-in). Same ?section= deep link in both,
+ * so crossing the breakpoint keeps you on the same section.
+ */
+function VariantE({ nav }: Readonly<{ nav: SectionNav }>) {
+	const isDesktop = useMediaQuery("(min-width: 1024px)");
+	return isDesktop ? <VariantC key="C" nav={nav} /> : <VariantB key="B" nav={nav} />;
 }
