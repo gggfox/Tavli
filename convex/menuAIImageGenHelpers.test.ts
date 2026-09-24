@@ -151,6 +151,25 @@ describe("classifyHttpFailure", () => {
 			retry: true,
 		});
 	});
+	it("reads a moderation refusal out of a 400 body, never retried", () => {
+		const gemini = {
+			error: {
+				message: "Gemini blocked this request through content moderation.",
+				code: 400,
+				metadata: { provider_name: "Google", block_reason: "SAFETY" },
+			},
+		};
+		expect(classifyHttpFailure(400, gemini)).toEqual({
+			code: MENU_AI_IMAGE_FAILURE.CONTENT_BLOCKED,
+			retry: false,
+		});
+		expect(
+			classifyHttpFailure(400, { error: { message: "Blocked by content moderation" } }).code
+		).toBe(MENU_AI_IMAGE_FAILURE.CONTENT_BLOCKED);
+		expect(classifyHttpFailure(400, { error: { message: "Invalid model" } }).code).toBe(
+			MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR
+		);
+	});
 	it("does not retry other 4xx", () => {
 		expect(classifyHttpFailure(400)).toEqual({
 			code: MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR,

@@ -104,6 +104,7 @@ export const markJobFailed = internalMutation({
 		error: v.union(
 			v.literal(MENU_AI_IMAGE_FAILURE.CREDITS_EXHAUSTED),
 			v.literal(MENU_AI_IMAGE_FAILURE.RATE_LIMITED),
+			v.literal(MENU_AI_IMAGE_FAILURE.CONTENT_BLOCKED),
 			v.literal(MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR),
 			v.literal(MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE),
 			v.literal(MENU_AI_IMAGE_FAILURE.TIMEOUT),
