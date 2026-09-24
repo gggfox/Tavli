@@ -1,0 +1,60 @@
+/* View transitions (navigate({ viewTransition: true })).
+ *
+ * Restaurant row → canvas: the row's card grows into the settings/tables
+ * canvas while the name glides into the canvas title. Names are set inline
+ * by `restaurantCardTransition` / `restaurantTitleTransition`; the classes
+ * below style every restaurant at once. */
+
+:root {
+	--vt-duration: 320ms;
+	--vt-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Everything that isn't the morphing row just crossfades, quickly, so the
+   row reads as the one thing that moved. */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 160ms;
+}
+
+::view-transition-group(*.restaurant-card),
+::view-transition-group(*.restaurant-title) {
+	animation-duration: var(--vt-duration);
+	animation-timing-function: var(--vt-ease);
+}
+
+/* The card is a window that grows: clip both snapshots to its moving box
+   instead of stretching a 60px row into a full-height canvas. */
+::view-transition-image-pair(*.restaurant-card) {
+	overflow: hidden;
+	border-radius: 0.75rem;
+}
+::view-transition-old(*.restaurant-card),
+::view-transition-new(*.restaurant-card) {
+	height: auto;
+	object-fit: none;
+	object-position: top left;
+	animation-duration: var(--vt-duration);
+	animation-timing-function: var(--vt-ease);
+}
+/* The row's contents leave early; the canvas arrives once there's room. */
+::view-transition-old(*.restaurant-card) {
+	animation-duration: calc(var(--vt-duration) * 0.4);
+}
+
+/* Title: scale the text with its box rather than stretching it. */
+::view-transition-old(*.restaurant-title),
+::view-transition-new(*.restaurant-title) {
+	width: auto;
+	height: 100%;
+	animation-duration: var(--vt-duration);
+	animation-timing-function: var(--vt-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
+}

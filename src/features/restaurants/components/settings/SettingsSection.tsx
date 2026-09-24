@@ -15,7 +15,10 @@ interface SettingsSectionProps {
  * presentational -- every section owns its own form state and save.
  *
  * It is the container `SettingsRow` queries (`@container`), so a section's
- * rows go side-by-side only when the section itself has room.
+ * rows go side-by-side only when the section itself has room. The padding
+ * sits on an inner wrapper because a container query never matches the
+ * container itself: on the section, `@xl:px-6` stayed at 16px while the
+ * footer's `@xl:-mx-6` bled its divider past the border.
  */
 export function SettingsSection({
 	title,
@@ -27,14 +30,16 @@ export function SettingsSection({
 	return (
 		<section
 			data-testid={testId}
-			className="@container rounded-xl border border-border bg-muted/30 px-4 pt-4 @xl:px-6 @xl:pt-5"
+			className="@container rounded-xl border border-border bg-muted/30"
 		>
-			<header className="mb-4 space-y-1">
-				<h3 className="text-sm font-semibold text-foreground">{title}</h3>
-				{hint ? <p className="text-xs text-faint-foreground max-w-2xl">{hint}</p> : null}
-			</header>
-			<div className="pb-4 @xl:pb-5">{children}</div>
-			{footer}
+			<div className="px-4 pt-4 @xl:px-6 @xl:pt-5">
+				<header className="mb-4 space-y-1">
+					<h3 className="text-sm font-semibold text-foreground">{title}</h3>
+					{hint ? <p className="text-xs text-faint-foreground max-w-2xl">{hint}</p> : null}
+				</header>
+				<div className="pb-4 @xl:pb-5">{children}</div>
+				{footer}
+			</div>
 		</section>
 	);
 }

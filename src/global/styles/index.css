@@ -3,6 +3,7 @@
 @import "./theme.css";
 @import "./base.css";
 @import "./utilities.css";
+@import "./view-transitions.css";
 
 /* Tremor v3 + Tailwind v4: tremor builds its chart color classes as template
    literals (`fill-${color}-500`, `dark:fill-${color}-500`, etc.), so Tailwind's
