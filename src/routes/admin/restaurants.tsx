@@ -46,6 +46,8 @@ function AdminRestaurantsPage() {
 			to: "/admin/restaurants",
 			search: { manage: next ?? undefined, settings: undefined, section: undefined },
 			replace: false,
+			// The row morphs into its canvas (and back); see restaurantCardTransition.
+			viewTransition: true,
 		});
 	};
 
@@ -54,6 +56,8 @@ function AdminRestaurantsPage() {
 			to: "/admin/restaurants",
 			search: { settings: next ?? undefined, manage: undefined, section: undefined },
 			replace: false,
+			// The row morphs into its canvas (and back); see restaurantCardTransition.
+			viewTransition: true,
 		});
 	};
 
