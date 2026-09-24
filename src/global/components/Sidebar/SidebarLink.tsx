@@ -8,6 +8,8 @@ export type SidebarLinkProps = Readonly<{
 	icon: React.ReactNode;
 	to: LinkProps["to"];
 	search?: LinkProps["search"];
+	/** Overrides the router's own active match — set when the link covers several routes. */
+	isActive?: boolean;
 }>;
 
 export type SidebarLinkConfig = {
@@ -16,6 +18,8 @@ export type SidebarLinkConfig = {
 	icon: React.ReactNode;
 	to: LinkProps["to"];
 	search?: LinkProps["search"];
+	/** Path prefixes that also light this link up (one entry, several pages behind tabs). */
+	activePaths?: readonly string[];
 };
 
 export type SidebarGroupConfig = {
@@ -36,14 +40,27 @@ const navLinkClass = (isActive: boolean, isExpanded: boolean) =>
 		isExpanded ? "px-3 py-2" : "px-2 py-2 justify-center"
 	} ${isActive ? "bg-active" : "hover:bg-hover"}`;
 
-export function SidebarLink({ isExpanded, icon, translationKey, to, search }: SidebarLinkProps) {
+export function SidebarLink({
+	isExpanded,
+	icon,
+	translationKey,
+	to,
+	search,
+	isActive,
+}: SidebarLinkProps) {
 	const { t } = useTranslation();
 	return (
 		<Link
 			to={to}
 			{...(search === undefined ? {} : { search })}
-			className={`${navLinkClass(false, isExpanded)} text-muted-foreground`}
-			activeProps={{ className: navLinkClass(true, isExpanded) }}
+			className={
+				isActive
+					? navLinkClass(true, isExpanded)
+					: `${navLinkClass(false, isExpanded)} text-muted-foreground`
+			}
+			activeProps={
+				isActive === undefined ? { className: navLinkClass(true, isExpanded) } : undefined
+			}
 			title={isExpanded ? undefined : t(translationKey)}
 		>
 			{icon}

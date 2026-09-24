@@ -6,3 +6,4 @@ export {
 	type PayoutsDashboardProps,
 } from "./PayoutsDashboard";
 export { PayoutsHeldBanner, type PayoutsHeldBannerProps } from "./PayoutsHeldBanner";
+export { FinancesTabs } from "./FinancesTabs";

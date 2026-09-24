@@ -4,6 +4,7 @@ import {
 	PaymentsDashboardSkeleton,
 	validatePaymentsSearch,
 } from "@/features/kitchen";
+import { FinancesTabs } from "@/features/payouts";
 import { useRestaurant } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
 import { createFileRoute } from "@tanstack/react-router";
@@ -24,6 +25,7 @@ function PaymentsPage() {
 
 	return (
 		<AdminPageLayout
+			breadcrumb={<FinancesTabs />}
 			actions={
 				restaurant && canExport ? (
 					<ExportButton restaurantId={restaurant._id} kind="payments" />

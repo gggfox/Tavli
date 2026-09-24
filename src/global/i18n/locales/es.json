@@ -18,8 +18,7 @@
 			"menus": "Menús",
 			"options": "Opciones",
 			"orders": "Pedidos",
-			"payments": "Pagos",
-			"payouts": "Depósitos",
+			"finances": "Finanzas",
 			"reservations": "Reservaciones",
 			"whatsapp": "WhatsApp",
 			"team": "Miembros",
@@ -2296,6 +2295,11 @@
 		}
 	},
 	"payouts": {
+		"financesTabs": {
+			"aria": "Secciones de finanzas",
+			"payments": "Pagos",
+			"payouts": "Depósitos"
+		},
 		"page": {
 			"title": "Depósitos",
 			"description": "El dinero que va de Tavli a tu cuenta bancaria.",

@@ -15,6 +15,11 @@ export function RenderSidebarItem({
 				icon={item.icon}
 				to={item.to}
 				search={item.search}
+				isActive={
+					item.activePaths === undefined
+						? undefined
+						: item.activePaths.some((path) => pathname.startsWith(path))
+				}
 			/>
 		);
 	}

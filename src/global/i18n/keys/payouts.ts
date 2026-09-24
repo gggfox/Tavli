@@ -17,6 +17,11 @@
  * `SAFE_LINE` first, then the reason, then the fix.
  */
 export const PayoutsKeys = {
+	// The Payments | Payouts tab bar behind the sidebar's Finances entry
+	FINANCES_TABS_ARIA: "payouts.financesTabs.aria",
+	FINANCES_TABS_PAYMENTS: "payouts.financesTabs.payments",
+	FINANCES_TABS_PAYOUTS: "payouts.financesTabs.payouts",
+
 	// Page chrome
 	PAGE_TITLE: "payouts.page.title",
 	PAGE_DESCRIPTION: "payouts.page.description",
