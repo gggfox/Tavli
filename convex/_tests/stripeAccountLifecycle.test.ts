@@ -9,14 +9,21 @@
  * delivery is a no-op, and a type we deliberately ignore is logged rather than
  * warned about.
  *
+ * Readiness needs BOTH the recipient `stripe_transfers` and the merchant
+ * `card_payments` capability: every charge is created `on_behalf_of` the
+ * connected account, so an account with transfers active but card payments
+ * pending cannot take a single payment. The last block pins that.
+ *
  * Everything here runs against the shared Stripe mock — thin events are parsed
  * by `parseEventNotification` and the versioned event is re-fetched through
  * `v2.core.events.retrieve`, both of which the fixture stubs.
  */
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type Stripe from "stripe";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { inferV2AccountStatus } from "../_util/stripe";
 import schema from "../schema";
 import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 
@@ -69,6 +76,33 @@ async function seedConnectedRestaurant(
 		});
 	});
 	return restaurantId!;
+}
+
+type CapabilityStatus = "active" | "pending" | "restricted" | "unsupported";
+
+/**
+ * A V2 account as `accounts.retrieve` returns it with
+ * `include: ["configuration.merchant", "configuration.recipient", "requirements"]`.
+ */
+function v2Account(args: {
+	id: string;
+	transfers: CapabilityStatus;
+	cardPayments: CapabilityStatus;
+	requirements?: string | null;
+}) {
+	return {
+		id: args.id,
+		configuration: {
+			merchant: { capabilities: { card_payments: { status: args.cardPayments } } },
+			recipient: {
+				capabilities: { stripe_balance: { stripe_transfers: { status: args.transfers } } },
+			},
+		},
+		requirements:
+			args.requirements === null
+				? {}
+				: { summary: { minimum_deadline: { status: args.requirements ?? "eventually_due" } } },
+	};
 }
 
 describe("v2.core.account thin events (TAVLI-65)", () => {
@@ -211,7 +245,7 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 		warnSpy.mockRestore();
 	});
 
-	it("still refreshes onboarding state for the two handled status types", async () => {
+	it("still refreshes onboarding state for the three handled status types", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedConnectedRestaurant(t, {
 			stripeAccountId: "acct_requirements",
@@ -221,21 +255,21 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 		for (const [index, type] of [
 			"v2.core.account[requirements].updated",
 			"v2.core.account[configuration.recipient].capability_status_updated",
+			"v2.core.account[configuration.merchant].capability_status_updated",
 		].entries()) {
 			const notification = thinNotification(type, {
 				eventId: `evt_status_${index}`,
 				accountId: "acct_requirements",
 			});
 			mockStripeClient.parseEventNotification.mockReturnValueOnce(notification);
-			mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce({
-				id: "acct_requirements",
-				configuration: {
-					recipient: {
-						capabilities: { stripe_balance: { stripe_transfers: { status: "active" } } },
-					},
-				},
-				requirements: { summary: { minimum_deadline: { status: "currently_due" } } },
-			});
+			mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+				v2Account({
+					id: "acct_requirements",
+					transfers: "active",
+					cardPayments: "active",
+					requirements: "currently_due",
+				})
+			);
 
 			await t.action(internal.stripe.handleThinEvent, {
 				payloadString: JSON.stringify(notification),
@@ -243,12 +277,12 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 			});
 		}
 
-		// Transfers active but requirements outstanding → not complete, and the
-		// account reads as restricted rather than closed or absent.
+		// Both capabilities active but requirements outstanding → not complete,
+		// and the account reads as restricted rather than closed or absent.
 		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
 		expect(restaurant?.stripeOnboardingComplete).toBe(false);
 		expect(restaurant?.stripeAccountStatus).toBe("restricted");
-		expect(mockStripeClient.v2.core.accounts.retrieve).toHaveBeenCalledTimes(2);
+		expect(mockStripeClient.v2.core.accounts.retrieve).toHaveBeenCalledTimes(3);
 	});
 
 	it("falls back to the signed notification when the versioned event cannot be fetched", async () => {
@@ -378,17 +412,163 @@ describe("v2.core.account thin events (TAVLI-65)", () => {
 			accountId: "acct_reopened",
 		});
 		mockStripeClient.parseEventNotification.mockReturnValueOnce(notification);
-		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce({
-			id: "acct_reopened",
-			configuration: {
-				recipient: { capabilities: { stripe_balance: { stripe_transfers: { status: "active" } } } },
-			},
-			requirements: { summary: { minimum_deadline: { status: "verified" } } },
-		});
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({
+				id: "acct_reopened",
+				transfers: "active",
+				cardPayments: "active",
+				requirements: "verified",
+			})
+		);
 
 		await t.action(internal.stripe.handleThinEvent, {
 			payloadString: JSON.stringify(notification),
 			signatureHeader: "sig_after_close",
+		});
+
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.stripeAccountStatus).toBe("closed");
+		expect(restaurant?.stripeOnboardingComplete).toBe(false);
+	});
+});
+
+describe("Connect readiness needs card_payments as well as stripe_transfers", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		process.env.STRIPE_SECRET_KEY = "sk_test_123";
+		process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+		process.env.STRIPE_CONNECT_WEBHOOK_SECRET = "whsec_connect_test";
+	});
+
+	const stripeClient = mockStripeClient as unknown as Stripe;
+
+	it("asks Stripe for the merchant configuration, not just the recipient one", async () => {
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({ id: "acct_include", transfers: "active", cardPayments: "active" })
+		);
+
+		await inferV2AccountStatus(stripeClient, "acct_include");
+
+		// Without `configuration.merchant` in `include` the capability is simply
+		// absent from the response and every account would read as not ready.
+		const [, params] = mockStripeClient.v2.core.accounts.retrieve.mock.calls[0];
+		expect(params.include).toEqual(
+			expect.arrayContaining(["configuration.merchant", "configuration.recipient", "requirements"])
+		);
+	});
+
+	it("is not ready when transfers are active but card_payments is still pending", async () => {
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({ id: "acct_card_pending", transfers: "active", cardPayments: "pending" })
+		);
+
+		const status = await inferV2AccountStatus(stripeClient, "acct_card_pending");
+
+		// The case this fix exists for: requirements clear, transfers active, and
+		// yet every `on_behalf_of` charge would be refused at Stripe.
+		expect(status).toEqual({
+			readyToReceivePayments: false,
+			requirementsStatus: "eventually_due",
+			onboardingComplete: true,
+			isComplete: false,
+			accountStatus: "restricted",
+		});
+	});
+
+	it("is not ready when card_payments is active but transfers are not", async () => {
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({ id: "acct_transfers_pending", transfers: "pending", cardPayments: "active" })
+		);
+
+		const status = await inferV2AccountStatus(stripeClient, "acct_transfers_pending");
+
+		expect(status.readyToReceivePayments).toBe(false);
+		expect(status.accountStatus).toBe("restricted");
+	});
+
+	it("is ready when both capabilities are active and nothing is due", async () => {
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({
+				id: "acct_both_active",
+				transfers: "active",
+				cardPayments: "active",
+				requirements: null,
+			})
+		);
+
+		const status = await inferV2AccountStatus(stripeClient, "acct_both_active");
+
+		expect(status).toEqual({
+			readyToReceivePayments: true,
+			requirementsStatus: null,
+			onboardingComplete: true,
+			isComplete: true,
+			accountStatus: "active",
+		});
+	});
+
+	it("flips an active restaurant to restricted when the merchant thin event reports card_payments restricted", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedConnectedRestaurant(t, { stripeAccountId: "acct_card_lost" });
+		await t.run(async (ctx) => ctx.db.patch(restaurantId, { stripeAccountStatus: "active" }));
+
+		const notification = thinNotification(
+			"v2.core.account[configuration.merchant].capability_status_updated",
+			{ eventId: "evt_card_lost", accountId: "acct_card_lost" }
+		);
+		mockStripeClient.parseEventNotification.mockReturnValueOnce(notification);
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({ id: "acct_card_lost", transfers: "active", cardPayments: "restricted" })
+		);
+
+		await t.action(internal.stripe.handleThinEvent, {
+			payloadString: JSON.stringify(notification),
+			signatureHeader: "sig_card_lost",
+		});
+
+		// A restriction mid-service reaches the payment gates without anybody
+		// opening the Payment Setup panel.
+		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));
+		expect(restaurant?.stripeOnboardingComplete).toBe(false);
+		expect(restaurant?.stripeAccountStatus).toBe("restricted");
+		expect(mockStripeClient.v2.core.accounts.retrieve).toHaveBeenCalledWith(
+			"acct_card_lost",
+			expect.objectContaining({
+				include: expect.arrayContaining(["configuration.merchant"]),
+			})
+		);
+
+		const events = await t.run(async (ctx) => ctx.db.query("stripeWebhookEvents").collect());
+		expect(events).toHaveLength(1);
+		expect(events[0]?.eventType).toBe(
+			"v2.core.account[configuration.merchant].capability_status_updated"
+		);
+	});
+
+	it("keeps a closed account closed when a merchant capability event arrives after the closure", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedConnectedRestaurant(t, { stripeAccountId: "acct_closed_card" });
+		await t.mutation(internal.stripeHelpers.markStripeAccountClosedByAccountId, {
+			stripeAccountId: "acct_closed_card",
+		});
+
+		const notification = thinNotification(
+			"v2.core.account[configuration.merchant].capability_status_updated",
+			{ eventId: "evt_closed_card", accountId: "acct_closed_card" }
+		);
+		mockStripeClient.parseEventNotification.mockReturnValueOnce(notification);
+		mockStripeClient.v2.core.accounts.retrieve.mockResolvedValueOnce(
+			v2Account({
+				id: "acct_closed_card",
+				transfers: "active",
+				cardPayments: "active",
+				requirements: null,
+			})
+		);
+
+		await t.action(internal.stripe.handleThinEvent, {
+			payloadString: JSON.stringify(notification),
+			signatureHeader: "sig_closed_card",
 		});
 
 		const restaurant = await t.run(async (ctx) => ctx.db.get(restaurantId));

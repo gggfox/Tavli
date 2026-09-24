@@ -7,6 +7,7 @@ import {
 	CheckCircle2,
 	ChefHat,
 	Clock,
+	RotateCcw,
 	UtensilsCrossed,
 	XCircle,
 } from "lucide-react";
@@ -56,6 +57,10 @@ interface OrderCardProps {
 	onRequestMarkPaid: (orderId: string) => void;
 	onDismissMarkPaid: () => void;
 	onMarkPaidInPerson: (orderId: DashboardOrder["_id"]) => void;
+	/** Order id whose refund retry is in flight, if any. */
+	retryRefundPendingId: string | null;
+	/** Re-runs a `refund_failed` order's refund (manager-gated server-side). */
+	onRetryRefund: (orderId: DashboardOrder["_id"]) => void;
 	onUpdateStatus: (args: { orderId: DashboardOrder["_id"]; newStatus: NextOrderStatus }) => void;
 	onMarkStationReady: (args: {
 		orderId: DashboardOrder["_id"];
@@ -79,6 +84,8 @@ export function OrderCard({
 	onRequestMarkPaid,
 	onDismissMarkPaid,
 	onMarkPaidInPerson,
+	retryRefundPendingId,
+	onRetryRefund,
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
@@ -118,6 +125,10 @@ export function OrderCard({
 	// is undefined for every tab-paid order, which is all of them in practice.
 	// `paymentState` is the field that actually tracks the money.
 	const isPaid = order.paymentState === "paid";
+	// The diner is owed money and nothing will retry it on its own. Offered on
+	// every card in that state — a failed line refund leaves the order cooking.
+	const needsRefundRetry = order.paymentState === "refund_failed";
+	const isRetryRefundPending = retryRefundPendingId === order._id;
 	// Whether the money badge has anything to say — it renders next to the
 	// station chips, so the chip row has to exist for it even when the order
 	// has no station chips of its own.
@@ -359,6 +370,19 @@ export function OrderCard({
 					</div>
 				) : (
 					<>
+						{needsRefundRetry && (
+							<button
+								type="button"
+								onClick={() => onRetryRefund(order._id)}
+								disabled={isRetryRefundPending}
+								className="w-full flex items-center justify-center gap-1 py-2 rounded-lg text-sm font-medium border border-border text-destructive disabled:opacity-60"
+							>
+								<RotateCcw size={14} />
+								{isRetryRefundPending
+									? t(OrdersKeys.RETRY_REFUND_PENDING)
+									: t(OrdersKeys.ACTION_RETRY_REFUND)}
+							</button>
+						)}
 						{/* Money gets its own row only when the workflow row is already
 						    spoken for. A card with nothing to advance (today's
 						    awaiting-payment card) keeps the original side-by-side

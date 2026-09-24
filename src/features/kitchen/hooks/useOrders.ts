@@ -101,6 +101,10 @@ export function useOrders(
 	const cancelOrder = useMutation({
 		mutationFn: useConvexAction(api.stripe.cancelOrderAndRefund),
 	});
+	// A manager re-running a `refund_failed` order's refund — also an action.
+	const retryRefund = useMutation({
+		mutationFn: useConvexAction(api.stripe.retryOrderRefund),
+	});
 
 	return {
 		orders,
@@ -112,5 +116,6 @@ export function useOrders(
 		cancelOrderItem: cancelOrderItem.mutateAsync,
 		markOrderPaidInPerson: markOrderPaidInPerson.mutateAsync,
 		cancelOrderAndRefund: cancelOrder.mutateAsync,
+		retryOrderRefund: retryRefund.mutateAsync,
 	};
 }

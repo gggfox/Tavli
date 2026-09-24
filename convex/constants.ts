@@ -276,9 +276,9 @@ export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
  *
  * `restricted` deliberately does **not** distinguish "still onboarding" from
  * "Stripe restricted this account": requirements outstanding, an inactive
- * `stripe_transfers` capability and a Stripe-imposed restriction all land the
- * restaurant in the same place — it cannot take card payments right now, and
- * the fix is the same hosted onboarding link.
+ * `stripe_transfers` or `card_payments` capability and a Stripe-imposed
+ * restriction all land the restaurant in the same place — it cannot take card
+ * payments right now, and the fix is the same hosted onboarding link.
  *
  * `closed` is terminal **for that account id**. Stripe does not reopen a
  * closed account, so the only ways out are the admin Reset (which clears
@@ -287,7 +287,10 @@ export const PLATFORM_APPLICATION_FEE_RATE = 0.12;
  * account back to `active`.
  */
 export const STRIPE_ACCOUNT_STATUS = {
-	/** Onboarded, `stripe_transfers` active, no requirements due — can be charged against. */
+	/**
+	 * Onboarded, `stripe_transfers` AND `card_payments` active, no requirements
+	 * due — can be charged against.
+	 */
 	ACTIVE: "active",
 	/** The account exists but cannot take payments right now. */
 	RESTRICTED: "restricted",

@@ -35,7 +35,7 @@ import {
 
 /**
  * Stable, diner-facing codes the supersede paths return instead of quietly
- * creating a second intent. All three mean "we did not charge you, and here is
+ * creating a second intent. Every one means "we did not charge you, and here is
  * what to do", and each maps to an `errors.<CODE>` entry in en.json/es.json.
  */
 export const PAYMENT_SUPERSEDE_ERRORS = {
@@ -50,6 +50,10 @@ export const PAYMENT_SUPERSEDE_ERRORS = {
 	 * The previous intent reads `succeeded` at Stripe — the diner has already
 	 * paid, whatever this screen thinks. Nothing new is created; the webhook (or
 	 * the TAVLI-105 metadata fallback) settles it moments later.
+	 *
+	 * Also what `stripeHelpers.createPayment` throws when the order was settled
+	 * some other way — staff marked it paid in person — between the action's
+	 * snapshot and the insert. Same message, same truth: nothing more to pay.
 	 */
 	ALREADY_PAID: "ERROR_PAYMENT_ALREADY_PAID",
 	/**
@@ -58,6 +62,14 @@ export const PAYMENT_SUPERSEDE_ERRORS = {
 	 * {@link isPaymentCreateInFlight}.
 	 */
 	IN_PROGRESS: "ERROR_PAYMENT_IN_PROGRESS",
+	/**
+	 * The order moved between the snapshot `createPaymentIntent` priced the
+	 * charge from and the transaction that inserts the payment row: it was
+	 * edited (a shared draft gained or lost a line), left a payable status, or
+	 * was deleted. Charging it would take a stale total. Nothing was created at
+	 * Stripe; the diner reviews the order and taps Pay again.
+	 */
+	ORDER_CHANGED: "ERROR_PAYMENT_ORDER_CHANGED",
 } as const;
 
 export type PaymentSupersedeError =

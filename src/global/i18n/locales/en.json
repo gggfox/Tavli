@@ -423,7 +423,9 @@
 			"prompt": "Cancel this order?",
 			"paidPrompt": "This order has been paid. Cancelling refunds its amount to the diner. The tip is not refunded.",
 			"refundPending": "Cancelling and refunding…",
-			"refundFailedBanner": "Order #{{number}} was cancelled but the refund did not go through. Issue it from the Stripe dashboard."
+			"refundFailedBanner": "Order #{{number}} was cancelled but the refund did not go through. Issue it from the Stripe dashboard.",
+			"retryRefund": "Retry refund",
+			"retryRefundPending": "Retrying refund…"
 		},
 		"card": {
 			"table": "Table {{number}}",
@@ -685,9 +687,13 @@
 		"ERROR_PAYMENT_CANCEL_FAILED": "We couldn't reach our payment provider to close your previous attempt, so we didn't start a new one. Please try again in a moment.",
 		"ERROR_PAYMENT_ALREADY_PAID": "This has already been paid. Give us a second to catch up \u2014 no need to pay again.",
 		"ERROR_PAYMENT_IN_PROGRESS": "Your payment is already going through. Give it a moment rather than tapping again.",
+		"ERROR_PAYMENT_ORDER_CHANGED": "Your order changed while we were setting up the payment, so we didn't charge you. Check your order and try again.",
 		"ERROR_REFUND_FAILED": "The order was cancelled, but the refund did not go through. Issue it from the Stripe dashboard.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "The order was cancelled, but we could not find its payment to refund. Check the Stripe dashboard.",
 		"ERROR_REFUND_ALREADY_ISSUED": "This payment has already been fully refunded.",
+		"ERROR_REFUND_IN_PROGRESS": "Another refund on this order is still going through. Try again in a moment.",
+		"ERROR_REFUND_NOT_RETRYABLE": "There is no failed refund to retry on this order. Cancel the whole order to refund what remains, or issue it from the Stripe dashboard.",
+		"ERROR_REFUND_RETRY_FAILED": "The refund still did not go through. Try again later or issue it from the Stripe dashboard.",
 		"ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS": "This restaurant is not accepting card payments right now. Ask your server to settle in person.",
 		"ERROR_TIP_INVALID_AMOUNT": "That tip amount isn't valid. Enter an amount above zero.",
 		"ERROR_RECEIPT_ORDER_NOT_PAID": "This order hasn't been paid yet, so there's no receipt to send.",
@@ -1311,7 +1317,7 @@
 			"requirementsPrefix": "Requirements status:",
 			"requirementsCurrentlyDue": " — Action needed to complete onboarding.",
 			"requirementsPastDue": " — Overdue requirements must be completed immediately.",
-			"transfersInactive": "Payment transfers are not yet active. Complete onboarding to enable payments.",
+			"transfersInactive": "Stripe has not activated card payments and transfers for this account yet. Complete onboarding to enable payments.",
 			"partialRequirements": "Payments are enabled but additional requirements need attention.",
 			"redirecting": "Redirecting...",
 			"continueSetup": "Continue Stripe Setup",

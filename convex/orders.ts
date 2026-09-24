@@ -80,7 +80,12 @@ import {
 	selectedOptionValidator,
 } from "./orderHelpers";
 import { executeOrderItemCancellation } from "./orderItemCancellation";
-import { resolveSucceededPaymentForOrder } from "./orderRefundHelpers";
+import {
+	assertRefundClaimable,
+	claimRefund,
+	planOrderRefund,
+	resolveSucceededPaymentForOrder,
+} from "./orderRefundHelpers";
 
 type StaffAuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 
@@ -1352,12 +1357,38 @@ export const updateStatus = mutation({
 			}
 		}
 
+		// A cancel that owes the diner money reserves that refund here, in the
+		// transaction that decides it: a line refund still at Stripe refuses this
+		// cancel (`ERROR_REFUND_IN_PROGRESS`, nothing written) instead of both
+		// sizing themselves from the same balance and one over-asking Stripe.
+		// `refund_failed` still owes money too — a line refund that failed must
+		// not leave a later whole-order cancel reporting "nothing due".
+		// `stripe.cancelOrderAndRefund` executes the reserved plan next.
+		const cancelOwesRefund =
+			args.newStatus === ORDER_STATUS.CANCELLED &&
+			(order.paymentState === ORDER_PAYMENT_STATE.PAID ||
+				order.paymentState === ORDER_PAYMENT_STATE.REFUND_FAILED);
+		if (cancelOwesRefund) {
+			const { plan, payment } = await planOrderRefund(ctx, order);
+			if (plan && payment) {
+				await claimRefund(
+					ctx,
+					payment,
+					{
+						idempotencyKey: plan.idempotencyKey,
+						orderId: order._id,
+						...(!plan.isFullRefund && { amount: plan.amount }),
+					},
+					now
+				);
+			}
+		}
+
 		await ctx.db.patch(args.orderId, {
 			status: args.newStatus,
-			...(args.newStatus === "cancelled" &&
-				order.paymentState === ORDER_PAYMENT_STATE.PAID && {
-					paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
-				}),
+			...(cancelOwesRefund && {
+				paymentState: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+			}),
 			...(inFlightPaymentId !== undefined && {
 				paymentState: ORDER_PAYMENT_STATE.UNPAID,
 				activePaymentId: undefined,
@@ -1405,8 +1436,7 @@ export const updateStatus = mutation({
 				toStatus: args.newStatus,
 				// Whether this cancel leaves money to be returned. The refund itself
 				// is audited separately by `recordOrderRefundOutcomeInternal`.
-				refundEligible:
-					args.newStatus === "cancelled" && order.paymentState === ORDER_PAYMENT_STATE.PAID,
+				refundEligible: cancelOwesRefund,
 				totalAmount: order.totalAmount,
 			},
 			userId,
@@ -2290,10 +2320,10 @@ export const cancelOrderItem = mutation({
 		// Resolve the money **before** stamping the line: a paid order whose
 		// succeeded payment cannot be found must not end up with a cancelled line
 		// and no refund on its way.
-		let paidPaymentId: Id<typeof TABLE.PAYMENTS> | null = null;
+		let paidPayment: Doc<typeof TABLE.PAYMENTS> | null = null;
 		if (isPaid) {
-			const paidPayment = await resolveSucceededPaymentForOrder(ctx, order);
-			if (!paidPayment) {
+			const resolved = await resolveSucceededPaymentForOrder(ctx, order);
+			if (!resolved) {
 				throw new ConflictError("ERROR_REFUND_PAYMENT_UNRESOLVED");
 			}
 			// Line refunds only exist for fee-inclusive ADR 008 payments (kind
@@ -2306,10 +2336,15 @@ export const cancelOrderItem = mutation({
 			// subtotals and the tip. Restore the pre-pivot block for that money —
 			// the whole-order cancel path owns legacy refund math (per-order
 			// clamp, no fee).
-			if (paidPayment.kind !== PAYMENT_KIND.ORDER || paidPayment.subtotalAmount === undefined) {
+			if (resolved.kind !== PAYMENT_KIND.ORDER || resolved.subtotalAmount === undefined) {
 				throw new ConflictError("ERROR_ORDER_ITEM_CANCEL_PAID");
 			}
-			paidPaymentId = paidPayment._id;
+			// One refund at a time per charge: while an earlier line's refund is
+			// still at Stripe, this one's size would be computed from a balance
+			// that one is about to spend. Refused before anything is stamped, so
+			// the line stays live and staff simply try again in a moment.
+			assertRefundClaimable(resolved, Date.now());
+			paidPayment = resolved;
 		}
 
 		// The removal itself — stamps, totals, last-live-line fallout, and the
@@ -2318,7 +2353,7 @@ export const cancelOrderItem = mutation({
 			item,
 			order,
 			actorUserId: userId,
-			paidPaymentId,
+			paidPayment,
 		});
 
 		return [args.orderItemId, null];

@@ -148,23 +148,54 @@ from the dev destination as dead weight.
 
 #### Connect destination events
 
-All 15 `v2.core.account*` types are subscribed. **Three** change Tavli's state:
+All 15 `v2.core.account*` types are subscribed. **Four** change Tavli's state:
 
 ```text
 v2.core.account[requirements].updated
 v2.core.account[configuration.recipient].capability_status_updated
+v2.core.account[configuration.merchant].capability_status_updated
 v2.core.account.closed
 ```
 
-The other 12 are recorded for replay dedup and logged at info level
+The other 11 are recorded for replay dedup and logged at info level
 (`ignored thin event type: …`). `handleThinEvent` names each one with the reason
 it is ignored — read the switch there before promoting one. A type outside all
 15 logs `unhandled thin event type: …` as a **warning**, which is the line to
 grep for after Stripe adds an event.
 
-Beware the near-miss pair: you want
-`[configuration.recipient].capability_status_updated`, **not**
-`[configuration.recipient].updated`.
+Beware the near-miss pairs: you want
+`[configuration.recipient].capability_status_updated` and
+`[configuration.merchant].capability_status_updated`, **not** the
+`[configuration.recipient].updated` / `[configuration.merchant].updated` pair.
+
+**Why the merchant capability matters.** Every order, tip and tab
+PaymentIntent is a destination charge created `on_behalf_of` the restaurant's
+connected account, which makes that account the settlement merchant. Stripe
+refuses the charge unless the account's `card_payments` capability (merchant
+configuration) is active — `stripe_transfers` being active is not enough. So a
+restaurant only reads as ready when **both** capabilities are active
+(`inferV2AccountStatus`), and a `card_payments` restriction mid-service must
+flip it to `restricted` through this event. Until 2026-09 the merchant event was
+ignored on the (wrong) grounds that the connected account is never the merchant
+of record.
+
+> [!IMPORTANT]
+> **Manual step owed — merchant capability event.** Open the existing Connect
+> (thin) destination and confirm
+> `v2.core.account[configuration.merchant].capability_status_updated` is in its
+> event list; add it if it is not. Do this on **every** Connect destination:
+>
+> - the Stripe **test** account — both the **dev** and the **staging**
+>   destinations (they share the account but not the destination);
+> - the **production** account (`acct_1TGR3uAUMbq2vVG5`,
+>   `tavli-prod-connect-accounts`).
+>
+> Without it the code still works on **Refresh** — `getAccountStatus` reads
+> both capabilities every time the Payment Setup panel is opened — but a
+> `card_payments` restriction that lands mid-service is only noticed when
+> somebody opens that screen. Until then checkout keeps building intents that
+> Stripe declines. No new secret is involved: it is the same destination and the
+> same `STRIPE_CONNECT_WEBHOOK_SECRET`.
 
 > A thin payload carries **no `data.object`** — only
 > `{id, object: "v2.core.event", type, created, related_object: {id, type, url}}`.
@@ -307,7 +338,9 @@ payments repay it a capped percentage at a time (never tips, never tabs). See
 Before enabling payments for a restaurant:
 
 - The connected account exists and onboarding is complete
-- `stripe_transfers` capability is active
+- `stripe_transfers` (recipient configuration) **and** `card_payments`
+  (merchant configuration) capabilities are both active — charges are made
+  `on_behalf_of` the account, so transfers alone cannot take a payment
 - The restaurant is active in Tavli
 
 Test-mode connected-account ids are **invalid in live mode**, and ids created
@@ -827,9 +860,13 @@ Since TAVLI-102 that loss is written down rather than absorbed silently
   only**. Stripe's dispute fee is not in it: Tavli absorbs the fee deliberately
   (a restaurant cannot influence it), and it is recorded on the `stripeDisputes`
   row plus the per-month `disputeFeesByMonth` aggregate instead.
-- Every subsequent **order** payment for that restaurant carries an explicit
-  `transfer_data.amount` of `restaurantShare − deduction`, where the deduction
-  is `min(totalOutstanding, floor(foodSubtotal × disputeRecoveryPercent / 100))`.
+- Every subsequent **order** payment for that restaurant adds the deduction to
+  its `application_fee_amount` (`serviceFee + deduction`), so Stripe transfers
+  `restaurantShare − deduction`. The deduction is
+  `min(totalOutstanding, floor(foodSubtotal × disputeRecoveryPercent / 100))`.
+  The intent never carries `transfer_data.amount`: Stripe treats it as an
+  alternative to `application_fee_amount`, and sending both is rejected or
+  takes the fee twice.
   Tips are outside the base, so the whole gratuity always reaches the
   restaurant. Tip charges and tab charges are never deducted from.
 - **The diner's charge never changes**, and the order still reports full
@@ -1068,9 +1105,10 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
 - Redeliver the same close from the Dashboard and confirm nothing doubles: one
   ledger row, one alert, one bell row per manager
 - With `disputeRecoveryPercent` set, place a new order and confirm the
-  PaymentIntent carries `transfer_data.amount` short by the deduction while
-  `amount` is unchanged; then confirm the ledger only moves once the charge
-  **settles**
+  PaymentIntent's `application_fee_amount` is the service fee **plus** the
+  deduction (and it has no `transfer_data.amount`), so the transfer to the
+  connected account is short by the deduction while `amount` is unchanged;
+  then confirm the ledger only moves once the charge **settles**
 - Reinstate the funds by submitting `winning_evidence` on a dispute that was
   lost in test mode (Stripe reopens it, closes it as won, and
   `charge.dispute.funds_reinstated` follows). Confirm the row goes to

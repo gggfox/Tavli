@@ -89,10 +89,14 @@ export function normalizePayoutStatus(
  * is exactly how a late `payout.created` would otherwise reset a `failed` row
  * to `pending` and make stuck money disappear from the held total.
  *
- * A single payout's status only ever advances: `pending` → `in_transit` →
- * one terminal state. Ranking those three stages and refusing to move
- * backwards is therefore both sufficient and exact — no extra column, and no
- * dependence on delivery timing.
+ * A single payout's status advances `pending` → `in_transit` → a terminal
+ * state, with **one documented exception: `paid` → `failed`**. Stripe marks a
+ * payout `paid` when it hands it to the bank, and the bank can still return it
+ * — up to several business days later — at which point the same payout becomes
+ * `failed` (https://docs.stripe.com/payouts). `decidePayoutUpdate` allows that
+ * one move explicitly; the rank alone refuses everything else that goes
+ * backwards or sideways between terminals. There is no path out of `failed`
+ * or into or out of `canceled`.
  */
 export const PAYOUT_STATUS_RANK: Record<StripePayoutStatus, number> = {
 	[STRIPE_PAYOUT_STATUS.PENDING]: 0,
@@ -107,25 +111,47 @@ export type PayoutUpdateDecision = {
 	apply: boolean;
 	/** The status the row should hold afterwards. */
 	status: StripePayoutStatus;
-	/** Two different terminal statuses for one payout — impossible, so worth a warning. */
+	/** Two terminal statuses for one payout that no real lifecycle produces — worth a warning. */
 	conflict: boolean;
 };
 
 /**
+ * True for the one terminal-to-terminal move Stripe really makes: a payout that
+ * showed `paid` and was later returned by the bank.
+ */
+export function isPayoutReturn(
+	stored: { status: StripePayoutStatus },
+	incoming: { status: StripePayoutStatus }
+): boolean {
+	return (
+		stored.status === STRIPE_PAYOUT_STATUS.PAID && incoming.status === STRIPE_PAYOUT_STATUS.FAILED
+	);
+}
+
+/**
  * Whether an incoming event may overwrite what is stored for the same payout.
  *
+ * - `paid` → `failed` → apply. A bank return: the money came back to the
+ *   balance days after the payout showed paid. Refusing it would keep telling
+ *   the restaurant the money arrived when it did not.
  * - Higher rank → apply. The normal forward path.
  * - Same status → apply. Not a no-op: `payout.updated` can carry failure detail
  *   that the first `payout.failed` did not have yet.
- * - Same rank, different terminal status → keep what is stored and flag it.
- *   One payout cannot both be paid and refused; rather than pick, the caller
- *   logs it so a human decides.
+ * - Same rank, any other pair of terminals → keep what is stored and flag it.
+ *   `failed` → `paid` in particular is refused: Stripe never retries a failed
+ *   payout, so a `paid` behind a `failed` is a stale delivery from before the
+ *   return, and taking it would erase money that is still stuck. Nothing moves
+ *   into or out of `canceled` either.
  * - Lower rank → ignore. The out-of-order case above.
  */
 export function decidePayoutUpdate(
 	stored: { status: StripePayoutStatus },
 	incoming: { status: StripePayoutStatus }
 ): PayoutUpdateDecision {
+	if (isPayoutReturn(stored, incoming)) {
+		return { apply: true, status: STRIPE_PAYOUT_STATUS.FAILED, conflict: false };
+	}
+
 	const storedRank = PAYOUT_STATUS_RANK[stored.status];
 	const incomingRank = PAYOUT_STATUS_RANK[incoming.status];
 
@@ -232,7 +258,28 @@ export type HeldTotalInput = {
 	/** Stripe's payout `created`, in ms. */
 	createdAt: number;
 	status: StripePayoutStatus;
+	/**
+	 * Set on a payout that showed `paid` and was then returned (`paid` →
+	 * `failed`): when its money re-entered the balance. See
+	 * {@link failureSupersededAfter}.
+	 */
+	returnedAt?: number;
 };
+
+/**
+ * The instant after which a new payout could have carried this failure's money.
+ *
+ * For an ordinary failure that is the payout's own `createdAt` — the rule below
+ * as it has always been. A **returned** payout is different: its money left the
+ * balance at `createdAt`, showed as delivered, and only came back at
+ * `returnedAt`, days later. Every payout the schedule created in between swept
+ * a balance that did NOT contain it, so measuring "later" from `createdAt`
+ * would let Tuesday's routine payout "resolve" Monday's bank return and the
+ * money would never reach the held total — nor the manager's bell.
+ */
+export function failureSupersededAfter(failure: HeldTotalInput): number {
+	return Math.max(failure.createdAt, failure.returnedAt ?? failure.createdAt);
+}
 
 export type HeldTotal = {
 	/** Smallest currency unit, still sitting in the connected account's balance. */
@@ -278,9 +325,16 @@ export type HeldTotal = {
  * not on a successful transfer), so it would tell a restaurant their money had
  * moved when it had not. Only money actually reaching a bank proves that.
  *
+ * "Later" is measured from {@link failureSupersededAfter}: `createdAt` for an
+ * ordinary failure, the return time for a payout that went `paid` → `failed`.
+ * Once returned, such a payout is resolved exactly like a first-time failure —
+ * by the next attempted payout created after its money came back.
+ *
  * In practice the surviving set is the newest failure, or nothing. It can hold
- * more than one row only when two payouts were created at the very same instant
- * — a genuine split of one balance, where both amounts really are stuck.
+ * more than one row when two payouts were created at the very same instant —
+ * a genuine split of one balance, where both amounts really are stuck — or
+ * when a payout is returned after newer payouts had already swept a balance
+ * that did not yet contain it.
  */
 export function computeHeldTotal(rows: readonly HeldTotalInput[]): HeldTotal {
 	const failures = rows
@@ -299,13 +353,40 @@ export function computeHeldTotal(rows: readonly HeldTotalInput[]): HeldTotal {
 	for (const failure of failures) {
 		// Strictly later: a payout created at the same instant is a parallel
 		// sweep of the same balance, not a re-sweep of it.
-		const superseded = attempted.some((other) => other.createdAt > failure.createdAt);
+		const after = failureSupersededAfter(failure);
+		const superseded = attempted.some(
+			(other) => other.stripePayoutId !== failure.stripePayoutId && other.createdAt > after
+		);
 		if (superseded) continue;
 		heldCents += failure.amount;
 		unresolvedPayoutIds.push(failure.stripePayoutId);
 	}
 
 	return { heldCents, unresolvedPayoutIds };
+}
+
+/**
+ * The lowest `createdAt` a `paid` payout needs to be able to resolve anything
+ * in `failures`, or `null` when every failure is already superseded by another
+ * failure (so no `paid` row can change the answer).
+ *
+ * Lets the caller read only the successful payouts that matter instead of the
+ * restaurant's whole history. A failure superseded by a later failure is out
+ * of the question regardless of any `paid` row, so only the others set the
+ * bound — normally just the newest failure's `createdAt`, and a returned
+ * payout's `returnedAt` when one is still standing.
+ */
+export function heldTotalPaidLowerBound(failures: readonly HeldTotalInput[]): number | null {
+	let bound: number | null = null;
+	for (const failure of failures) {
+		const after = failureSupersededAfter(failure);
+		const supersededByFailure = failures.some(
+			(other) => other.stripePayoutId !== failure.stripePayoutId && other.createdAt > after
+		);
+		if (supersededByFailure) continue;
+		bound = bound === null ? after : Math.min(bound, after);
+	}
+	return bound;
 }
 
 // ============================================================================
