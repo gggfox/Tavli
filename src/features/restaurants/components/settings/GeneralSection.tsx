@@ -1,19 +1,21 @@
+import {
+	SettingsRow,
+	settingsInputClass,
+} from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { SettingsSectionFooter } from "@/features/restaurants/components/settings/SettingsSectionFooter";
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
-import { StatusBadge } from "@/global/components";
 import { RestaurantsKeys } from "@/global/i18n";
 import { useForm } from "@tanstack/react-form";
-import type { Id } from "convex/_generated/dataModel";
 import { sanitizeSlugInput, SLUG_ERROR } from "convex/slugHelpers";
-import { AlertTriangle, ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
+import { AlertTriangle, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-interface GeneralSectionProps extends RestaurantSettingsSectionProps {
-	/** Omitted for managers -- activation stays an admin/owner action. */
-	readonly onToggleActive?: (restaurantId: Id<"restaurants">) => void;
-}
-
+/**
+ * Name, public address and description. Active/inactive moved to the settings
+ * header and currency left the UI (every restaurant is MXN; the stored field
+ * stays) — see the settings grilling.
+ */
 export function GeneralSection({
 	restaurant,
 	onSave,
@@ -22,8 +24,7 @@ export function GeneralSection({
 	error,
 	errorCode,
 	onDismissError,
-	onToggleActive,
-}: Readonly<GeneralSectionProps>) {
+}: Readonly<RestaurantSettingsSectionProps>) {
 	const { t } = useTranslation();
 
 	const form = useForm({
@@ -31,14 +32,12 @@ export function GeneralSection({
 			name: restaurant.name,
 			slug: restaurant.slug,
 			description: restaurant.description ?? "",
-			currency: restaurant.currency,
 		},
 		onSubmit: async ({ value }) => {
 			const saved = await onSave({
 				name: value.name,
 				slug: value.slug,
 				description: value.description,
-				currency: value.currency,
 			});
 			if (saved) form.reset(value);
 		},
@@ -87,51 +86,10 @@ export function GeneralSection({
 					/>
 				}
 			>
-				{onToggleActive ? (
-					<div className="flex items-center justify-between px-4 py-3 rounded-lg bg-background border border-border">
-						<div className="flex items-center gap-3">
-							<span className="text-sm font-medium text-foreground">
-								{t(RestaurantsKeys.FORM_STATUS_LABEL)}
-							</span>
-							<StatusBadge
-								bgColor={restaurant.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
-								textColor={restaurant.isActive ? "white" : "var(--text-muted)"}
-								label={
-									restaurant.isActive
-										? t(RestaurantsKeys.LIST_STATUS_ACTIVE)
-										: t(RestaurantsKeys.LIST_STATUS_INACTIVE)
-								}
-							/>
-						</div>
-						<button
-							type="button"
-							onClick={() => onToggleActive(restaurant._id)}
-							className="p-1.5 rounded-md hover:bg-hover text-success"
-							title={
-								restaurant.isActive
-									? t(RestaurantsKeys.FORM_TOGGLE_DEACTIVATE_TITLE)
-									: t(RestaurantsKeys.FORM_TOGGLE_ACTIVATE_TITLE)
-							}
-						>
-							{restaurant.isActive ? (
-								<ToggleRight size={24} />
-							) : (
-								<ToggleLeft size={24} className="text-faint-foreground" />
-							)}
-						</button>
-					</div>
-				) : null}
-
 				<form.Field
 					name="name"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-name"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_NAME_LABEL)}
-							</label>
+						<SettingsRow label={t(RestaurantsKeys.FORM_NAME_LABEL)} htmlFor="restaurant-name">
 							<input
 								id="restaurant-name"
 								type="text"
@@ -139,9 +97,9 @@ export function GeneralSection({
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
 								required
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full max-w-md")}
 							/>
-						</div>
+						</SettingsRow>
 					)}
 				/>
 
@@ -157,13 +115,7 @@ export function GeneralSection({
 						/** Editing a live slug retires every link and QR code pointing at it. */
 						const slugChanged = slugValue !== restaurant.slug;
 						return (
-							<div>
-								<label
-									htmlFor="restaurant-slug"
-									className="block text-sm font-medium mb-1 text-foreground"
-								>
-									{t(RestaurantsKeys.FORM_SLUG_LABEL)}
-								</label>
+							<SettingsRow label={t(RestaurantsKeys.FORM_SLUG_LABEL)} htmlFor="restaurant-slug">
 								<input
 									id="restaurant-slug"
 									type="text"
@@ -173,9 +125,7 @@ export function GeneralSection({
 									required
 									aria-invalid={slugError ? true : undefined}
 									aria-describedby="restaurant-slug-url"
-									className={`w-full px-3 py-2 rounded-lg text-sm bg-muted border text-foreground ${
-										slugError ? "border-destructive" : "border-border"
-									}`}
+									className={settingsInputClass("w-full max-w-md", Boolean(slugError))}
 								/>
 								{/* The public address, with the editable part called out — the
 							    rest of the URL is fixed and must not read as editable. */}
@@ -223,7 +173,7 @@ export function GeneralSection({
 										{t(RestaurantsKeys.FORM_SLUG_CHANGE_WARNING, { slug: restaurant.slug })}
 									</p>
 								) : null}
-							</div>
+							</SettingsRow>
 						);
 					}}
 				/>
@@ -231,47 +181,19 @@ export function GeneralSection({
 				<form.Field
 					name="description"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-desc"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_DESCRIPTION_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.FORM_DESCRIPTION_LABEL)}
+							htmlFor="restaurant-desc"
+						>
 							<textarea
 								id="restaurant-desc"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
 								rows={3}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full")}
 							/>
-						</div>
-					)}
-				/>
-
-				<form.Field
-					name="currency"
-					children={(field) => (
-						<div className="max-w-xs">
-							<label
-								htmlFor="restaurant-currency"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_CURRENCY_LABEL)}
-							</label>
-							<select
-								id="restaurant-currency"
-								value={field.state.value}
-								onChange={(e) => field.handleChange(e.target.value)}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
-							>
-								<option value="USD">USD ($)</option>
-								<option value="EUR">EUR (&euro;)</option>
-								<option value="GBP">GBP (&pound;)</option>
-								<option value="MXN">MXN ($)</option>
-							</select>
-						</div>
+						</SettingsRow>
 					)}
 				/>
 			</SettingsSection>

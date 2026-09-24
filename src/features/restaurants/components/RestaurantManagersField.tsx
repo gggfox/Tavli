@@ -42,6 +42,11 @@ export type RestaurantManagersFieldProps = {
 	readonly onError?: (message: string) => void;
 };
 
+/**
+ * The managers picker: current managers as a list, plus a multi-select that
+ * adds or demotes them one toggle at a time (each toggle saves). The label and
+ * hint belong to the settings row that hosts it.
+ */
 export function RestaurantManagersField({
 	restaurantId,
 	onError,
@@ -149,18 +154,24 @@ export function RestaurantManagersField({
 	}
 
 	const hasSelection = selectedManagerUserIds.length > 0;
+	const selectedOptions = options.filter((opt) => selectedSet.has(opt.userId));
 	const triggerLabel = hasSelection ? summaryText : t(RestaurantsKeys.MANAGERS_PLACEHOLDER);
 
 	return (
-		<div className="relative space-y-2 max-w-lg">
-			<div>
-				<p className="text-sm font-medium text-foreground">
-					{t(RestaurantsKeys.MANAGERS_SECTION_TITLE)}
-				</p>
-				<p className="text-xs text-muted-foreground mt-0.5">
-					{t(RestaurantsKeys.MANAGERS_SECTION_HINT)}
-				</p>
-			</div>
+		<div className="relative space-y-2 max-w-md">
+			{/* Who manages it now, readable without opening the picker. */}
+			{hasSelection ? (
+				<ul className="flex flex-wrap gap-1.5" data-testid="settings-managers-list">
+					{selectedOptions.map((opt) => (
+						<li
+							key={opt.userId}
+							className="max-w-full truncate rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-foreground"
+						>
+							{opt.label}
+						</li>
+					))}
+				</ul>
+			) : null}
 			<button
 				ref={triggerRef}
 				type="button"
@@ -170,7 +181,7 @@ export function RestaurantManagersField({
 				aria-controls={listId}
 				aria-label={t(RestaurantsKeys.MANAGERS_ARIA)}
 				onClick={() => setOpen((o) => !o)}
-				className="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-muted px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted/80 disabled:cursor-not-allowed disabled:opacity-50"
+				className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-left text-sm text-foreground hover:bg-muted/80 disabled:cursor-not-allowed disabled:opacity-50"
 			>
 				<span className={hasSelection ? "truncate" : "truncate text-faint-foreground"}>
 					{triggerLabel}
@@ -185,7 +196,7 @@ export function RestaurantManagersField({
 					id={listId}
 					role="listbox"
 					aria-multiselectable
-					className="absolute z-50 mt-1 max-h-56 w-full max-w-lg overflow-y-auto rounded-md border border-border bg-card py-1 shadow-md"
+					className="absolute z-50 mt-1 max-h-56 w-full max-w-md overflow-y-auto rounded-md border border-border bg-card py-1 shadow-md"
 				>
 					{options.map((opt) => {
 						const checked = selectedSet.has(opt.userId);

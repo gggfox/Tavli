@@ -1,3 +1,7 @@
+import {
+	SettingsRow,
+	settingsInputClass,
+} from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { SettingsSectionFooter } from "@/features/restaurants/components/settings/SettingsSectionFooter";
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
@@ -71,66 +75,54 @@ export function TaxInfoSection({
 				<form.Field
 					name="rfc"
 					children={(field) => (
-						<div className="max-w-xs">
-							<label
-								htmlFor="restaurant-rfc"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.SETTINGS_TAX_RFC_LABEL)}
-							</label>
+						<SettingsRow label={t(RestaurantsKeys.SETTINGS_TAX_RFC_LABEL)} htmlFor="restaurant-rfc">
 							<input
 								id="restaurant-rfc"
 								type="text"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value.toUpperCase())}
 								onBlur={field.handleBlur}
-								className="w-full px-3 py-2 rounded-lg text-sm uppercase bg-muted border border-border text-foreground"
+								className={`uppercase ${settingsInputClass("w-full max-w-xs")}`}
 							/>
-						</div>
+						</SettingsRow>
 					)}
 				/>
 
 				<form.Field
 					name="razonSocial"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-razon-social"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.SETTINGS_TAX_RAZON_SOCIAL_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.SETTINGS_TAX_RAZON_SOCIAL_LABEL)}
+							htmlFor="restaurant-razon-social"
+						>
 							<input
 								id="restaurant-razon-social"
 								type="text"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full max-w-md")}
 							/>
-						</div>
+						</SettingsRow>
 					)}
 				/>
 
 				<form.Field
 					name="fiscalAddress"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-fiscal-address"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.SETTINGS_TAX_FISCAL_ADDRESS_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.SETTINGS_TAX_FISCAL_ADDRESS_LABEL)}
+							htmlFor="restaurant-fiscal-address"
+						>
 							<textarea
 								id="restaurant-fiscal-address"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								onBlur={field.handleBlur}
 								rows={2}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full")}
 							/>
-						</div>
+						</SettingsRow>
 					)}
 				/>
 			</SettingsSection>

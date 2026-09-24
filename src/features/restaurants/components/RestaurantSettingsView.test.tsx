@@ -1,5 +1,5 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => ({
@@ -51,6 +51,7 @@ vi.mock("@/features/restaurants/hooks/useOrganizations", () => ({
 
 vi.mock("@/features/restaurants/components/LocationPicker", () => ({
 	LocationPicker: () => <div data-testid="location-picker" />,
+	LocationPreview: () => <div data-testid="location-preview" />,
 }));
 
 vi.mock("@/features/restaurants/components/RestaurantManagersField", () => ({
@@ -92,19 +93,24 @@ function baseRestaurant(overrides: Record<string, any> = {}) {
 	} as any;
 }
 
-function setViewportMatches(matches: boolean) {
+/** Evaluates the min/max-width queries the settings layouts ask for. */
+function setViewportWidth(width: number) {
 	Object.defineProperty(globalThis, "matchMedia", {
 		writable: true,
-		value: (query: string) => ({
-			matches: matches && query.includes("orientation: portrait"),
-			media: query,
-			onchange: null,
-			addListener: () => {},
-			removeListener: () => {},
-			addEventListener: () => {},
-			removeEventListener: () => {},
-			dispatchEvent: () => false,
-		}),
+		value: (query: string) => {
+			const min = /min-width:\s*(\d+)px/.exec(query);
+			const max = /max-width:\s*(\d+)px/.exec(query);
+			return {
+				matches: (!min || width >= Number(min[1])) && (!max || width <= Number(max[1])),
+				media: query,
+				onchange: null,
+				addListener: () => {},
+				removeListener: () => {},
+				addEventListener: () => {},
+				removeEventListener: () => {},
+				dispatchEvent: () => false,
+			};
+		},
 	});
 }
 
@@ -131,7 +137,8 @@ describe("RestaurantSettingsView", () => {
 			{ _id: "organizations:1", name: "Grupo Tavli" },
 			{ _id: "organizations:2", name: "Otra Org" },
 		];
-		setViewportMatches(false);
+		// Desktop: every section on one scroll, which most tests below rely on.
+		setViewportWidth(1440);
 	});
 
 	it("renders every section of the old modal on one canvas", () => {
@@ -166,7 +173,6 @@ describe("RestaurantSettingsView", () => {
 		expect((screen.getByLabelText("Contact email") as HTMLInputElement).value).toBe(
 			"hola@lacocina.mx"
 		);
-		expect((screen.getByLabelText("Currency") as HTMLSelectElement).value).toBe("MXN");
 		expect((screen.getByLabelText("Timezone") as HTMLSelectElement).value).toBe(
 			"America/Mexico_City"
 		);
@@ -182,7 +188,8 @@ describe("RestaurantSettingsView", () => {
 		expect((screen.getByLabelText("Organization") as HTMLSelectElement).value).toBe(
 			"organizations:1"
 		);
-		expect(screen.getByTestId("location-picker")).toBeTruthy();
+		// The interactive picker only mounts in its drawer; the row shows a preview.
+		expect(screen.getByTestId("location-preview")).toBeTruthy();
 	});
 
 	it("gates each section's save on that section being dirty", () => {
@@ -216,8 +223,9 @@ describe("RestaurantSettingsView", () => {
 			name: "La Cocina Nueva",
 			slug: "la-cocina",
 			description: "Comida casera",
-			currency: "MXN",
 		});
+		// Currency left the UI; the stored value is left alone, not re-sent.
+		expect((hoisted.updateMock.mock.calls[0] as unknown[])[0]).not.toHaveProperty("currency");
 	});
 
 	it("saves Public profile on its own, and stamps the review that publishes the email", async () => {
@@ -576,18 +584,92 @@ describe("RestaurantSettingsView", () => {
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders on tablet portrait without the desktop-only currency chip", () => {
-		setViewportMatches(true);
+	it("never shows currency: every restaurant is MXN", () => {
 		renderView();
 
-		// Scoped to the page header: the Branding preview panes also render the
-		// restaurant name (that is what they are previewing), so a bare
-		// `getByText` here matches three elements.
-		const header = screen.getByTestId("restaurant-settings-header");
-		expect(within(header).getByText("La Cocina")).toBeTruthy();
-		expect(screen.getByTestId("settings-section-general")).toBeTruthy();
+		expect(screen.queryByLabelText("Currency")).toBeNull();
+		expect(screen.getByTestId("restaurant-settings-header").textContent).not.toContain("MXN");
+	});
+
+	it("moves the active switch into the header, for admins and owners only", () => {
+		const onToggleActive = vi.fn();
+		renderView({ onToggleActive });
+
+		const toggle = screen.getByTestId("restaurant-settings-active-toggle");
+		expect(toggle.getAttribute("role")).toBe("switch");
+		expect(toggle.getAttribute("aria-checked")).toBe("true");
+		fireEvent.click(toggle);
+		expect(onToggleActive).toHaveBeenCalledWith("restaurants:1");
+
+		cleanup();
+		hoisted.roles = [];
+		renderView({ settingsAccess: "manager" });
+		expect(screen.queryByTestId("restaurant-settings-active-toggle")).toBeNull();
+	});
+
+	it("indexes every visible section on desktop and follows the deep link", () => {
+		const onSectionChange = vi.fn();
+		renderView({ section: "tax", onSectionChange });
+
+		const nav = screen.getByRole("navigation", { name: "Settings sections" });
+		expect(
+			within(nav).getByRole("button", { name: "Tax information" }).getAttribute("aria-current")
+		).toBe("location");
+		fireEvent.click(within(nav).getByRole("button", { name: "Hours & time zone" }));
+		expect(onSectionChange).toHaveBeenCalledWith("hours", { replace: true });
+	});
+
+	it("offers the tables canvas only when it can be opened", () => {
+		const onManageTables = vi.fn();
+		renderView({ onManageTables });
+
+		fireEvent.click(screen.getByRole("button", { name: "Manage tables" }));
+		expect(onManageTables).toHaveBeenCalledTimes(1);
+
+		cleanup();
+		renderView();
+		expect(screen.queryByTestId("settings-section-tables")).toBeNull();
+	});
+
+	it("on a tablet lists the sections with their values beside the open one", () => {
+		setViewportWidth(820);
+		const onSectionChange = vi.fn();
+		renderView({ section: "tax", onSectionChange });
+
+		const nav = screen.getByRole("navigation", { name: "Settings sections" });
+		// Rows carry the current value, not just a title.
+		expect(within(nav).getByText("la-cocina", { exact: false })).toBeTruthy();
+		// Only the open section renders.
 		expect(screen.getByTestId("settings-section-tax")).toBeTruthy();
-		// The header currency chip is the one thing the narrow header drops.
-		expect(header.textContent).not.toContain("MXN");
+		expect(screen.queryByTestId("settings-section-general")).toBeNull();
+
+		fireEvent.click(within(nav).getByRole("button", { name: /Hours & time zone/ }));
+		expect(onSectionChange).toHaveBeenCalledWith("hours");
+	});
+
+	it("on a phone drills from the list into one section and back", () => {
+		setViewportWidth(390);
+		const onSectionChange = vi.fn();
+		renderView({ onSectionChange });
+
+		expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeTruthy();
+		expect(screen.queryByTestId("settings-section-general")).toBeNull();
+
+		cleanup();
+		renderView({ section: "general", onSectionChange });
+		expect(screen.getByTestId("settings-section-general")).toBeTruthy();
+		expect(screen.queryByRole("navigation", { name: "Settings sections" })).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: /All settings/ }));
+		expect(onSectionChange).toHaveBeenCalledWith(undefined);
+	});
+
+	it("ignores a deep link to a section this viewer cannot see", () => {
+		setViewportWidth(390);
+		hoisted.roles = [];
+		renderView({ settingsAccess: "manager", section: "organization", onSectionChange: vi.fn() });
+
+		// Falls back to the list rather than an empty screen.
+		expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeTruthy();
+		expect(screen.queryByTestId("settings-section-organization")).toBeNull();
 	});
 });

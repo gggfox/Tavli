@@ -1,3 +1,7 @@
+import {
+	SettingsRow,
+	settingsInputClass,
+} from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { SettingsSectionFooter } from "@/features/restaurants/components/settings/SettingsSectionFooter";
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
@@ -72,20 +76,14 @@ export function OrganizationSection({
 				<form.Field
 					name="organizationId"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-org"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_ORG_LABEL)}
-							</label>
+						<SettingsRow label={t(RestaurantsKeys.FORM_ORG_LABEL)} htmlFor="restaurant-org">
 							<select
 								id="restaurant-org"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
 								disabled={isSelectDisabled}
 								required
-								className="w-full max-w-sm px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground disabled:opacity-60"
+								className={`disabled:opacity-60 ${settingsInputClass("w-full max-w-xs")}`}
 							>
 								<option value="" disabled>
 									{t(RestaurantsKeys.FORM_ORG_PLACEHOLDER)}
@@ -123,7 +121,7 @@ export function OrganizationSection({
 									{t(RestaurantsKeys.SETTINGS_ORG_EMPTY)}
 								</p>
 							) : null}
-						</div>
+						</SettingsRow>
 					)}
 				/>
 			</SettingsSection>

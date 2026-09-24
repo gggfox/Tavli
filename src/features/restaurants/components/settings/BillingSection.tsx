@@ -1,3 +1,5 @@
+import { SettingsRow } from "@/features/restaurants/components/settings/SettingsRow";
+import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { RestaurantsKeys } from "@/global/i18n";
 import { formatCents, unwrapResult } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
@@ -162,22 +164,14 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 		});
 
 	return (
-		<div
-			data-testid="settings-billing"
-			className="rounded-xl p-6 space-y-4 bg-muted border border-border"
+		<SettingsSection
+			testId="settings-billing"
+			title={t(RestaurantsKeys.BILLING_HEADING)}
+			hint={t(RestaurantsKeys.BILLING_DESCRIPTION)}
 		>
-			<div>
-				<h3 className="text-sm font-semibold text-foreground">
-					{t(RestaurantsKeys.BILLING_HEADING)}
-				</h3>
-				<p className="text-xs mt-0.5 text-faint-foreground">
-					{t(RestaurantsKeys.BILLING_DESCRIPTION)}
-				</p>
-			</div>
-
 			{error ? (
 				<div
-					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
+					className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
 					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
 				>
 					<AlertCircle size={14} />
@@ -187,7 +181,7 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 
 			{notice ? (
 				<div
-					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-success"
+					className="mb-4 flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-success"
 					style={{ backgroundColor: "rgba(34, 197, 94, 0.1)" }}
 				>
 					<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
@@ -195,7 +189,11 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 				</div>
 			) : null}
 
-			<div className="flex items-start gap-3">
+			<SettingsRow
+				label={t(RestaurantsKeys.BILLING_ENABLE_LABEL)}
+				hint={t(isAdmin ? RestaurantsKeys.BILLING_ENABLE_HINT : RestaurantsKeys.BILLING_ADMIN_ONLY)}
+				htmlFor="platform-subscription-enabled"
+			>
 				<input
 					id="platform-subscription-enabled"
 					type="checkbox"
@@ -203,173 +201,168 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 					disabled={!isAdmin || togglePending}
 					onChange={(e) => handleToggle(e.target.checked)}
 					data-testid="settings-billing-toggle"
-					className="mt-1 h-4 w-4 rounded border-border disabled:opacity-50 disabled:cursor-not-allowed"
+					className="h-4 w-4 rounded border-border disabled:opacity-50 disabled:cursor-not-allowed"
 				/>
-				<div className="min-w-0">
-					<label
-						htmlFor="platform-subscription-enabled"
-						className="block text-sm font-medium text-foreground"
-					>
-						{t(RestaurantsKeys.BILLING_ENABLE_LABEL)}
-					</label>
-					<p className="text-xs text-faint-foreground">
-						{t(isAdmin ? RestaurantsKeys.BILLING_ENABLE_HINT : RestaurantsKeys.BILLING_ADMIN_ONLY)}
-					</p>
-				</div>
-			</div>
+			</SettingsRow>
 
 			{enabled ? (
-				<div className="space-y-3 border-t border-border pt-4">
-					<dl className="space-y-1.5 text-sm">
-						<div className="flex items-center justify-between gap-3">
-							<dt className="text-faint-foreground">{t(RestaurantsKeys.BILLING_PLAN_LABEL)}</dt>
-							<dd className="font-medium text-foreground" data-testid="settings-billing-amount">
-								{t(RestaurantsKeys.BILLING_PLAN_VALUE, {
-									amount: formatCents(PLATFORM_MONTHLY_FEE_MXN_CENTS),
-									currency: PLATFORM_SUBSCRIPTION_CURRENCY,
-								})}
-							</dd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<dt className="text-faint-foreground">{t(RestaurantsKeys.BILLING_STATUS_LABEL)}</dt>
-							<dd className="font-medium text-foreground" data-testid="settings-billing-status">
-								{t(statusKey)}
-							</dd>
-						</div>
-						{periodEnd ? (
-							<div className="flex items-center justify-between gap-3">
-								<dt className="text-faint-foreground">
-									{t(
-										cancelScheduled
-											? RestaurantsKeys.BILLING_ENDS_LABEL
-											: RestaurantsKeys.BILLING_RENEWS_LABEL
-									)}
-								</dt>
-								<dd className="font-medium text-foreground">{formattedDate(periodEnd)}</dd>
-							</div>
-						) : null}
-					</dl>
-
-					{cancelScheduled && periodEnd ? (
+				<>
+					<SettingsRow label={t(RestaurantsKeys.BILLING_PLAN_LABEL)}>
 						<p
-							className="text-xs text-faint-foreground"
-							data-testid="settings-billing-cancel-notice"
+							className="text-sm font-medium text-foreground"
+							data-testid="settings-billing-amount"
 						>
-							{t(RestaurantsKeys.BILLING_CANCEL_SCHEDULED, { date: formattedDate(periodEnd) })}
+							{t(RestaurantsKeys.BILLING_PLAN_VALUE, {
+								amount: formatCents(PLATFORM_MONTHLY_FEE_MXN_CENTS),
+								currency: PLATFORM_SUBSCRIPTION_CURRENCY,
+							})}
 						</p>
+					</SettingsRow>
+
+					{periodEnd ? (
+						<SettingsRow
+							label={t(
+								cancelScheduled
+									? RestaurantsKeys.BILLING_ENDS_LABEL
+									: RestaurantsKeys.BILLING_RENEWS_LABEL
+							)}
+						>
+							<p className="text-sm font-medium text-foreground">{formattedDate(periodEnd)}</p>
+						</SettingsRow>
 					) : null}
 
-					{status === BILLING_STATUS.PAST_DUE || status === BILLING_STATUS.UNPAID ? (
-						<p className="text-xs text-faint-foreground">
-							{t(RestaurantsKeys.BILLING_PAST_DUE_HINT)}
-						</p>
-					) : null}
-
-					{/*
-					 * Exactly one of these two is ever offered, and the backend enforces
-					 * the same split: Checkout STARTS a subscription (and refuses when
-					 * one exists), the Billing Portal MANAGES an existing one (and
-					 * refuses when none exists). That is what keeps a card swap from
-					 * accidentally minting a second subscription.
-					 */}
-					<div className="flex flex-wrap items-center gap-3">
-						{hasLiveSubscription ? (
-							<button
-								type="button"
-								onClick={handleOpenPortal}
-								disabled={portalPending}
-								data-testid="settings-billing-portal"
-								className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+					{/* Status and what to do about it, together. */}
+					<SettingsRow label={t(RestaurantsKeys.BILLING_STATUS_LABEL)}>
+						<div className="space-y-3">
+							<p
+								className="text-sm font-medium text-foreground"
+								data-testid="settings-billing-status"
 							>
-								{portalPending ? (
-									<span className="flex items-center gap-2">
-										<Loader2 size={14} className="animate-spin" />
-										{t(RestaurantsKeys.BILLING_SETUP_REDIRECTING)}
-									</span>
-								) : (
-									t(RestaurantsKeys.BILLING_PORTAL_BUTTON)
-								)}
-							</button>
-						) : (
-							<button
-								type="button"
-								onClick={handleCheckout}
-								disabled={checkoutPending}
-								data-testid="settings-billing-checkout"
-								className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								{checkoutPending ? (
-									<span className="flex items-center gap-2">
-										<Loader2 size={14} className="animate-spin" />
-										{t(RestaurantsKeys.BILLING_SETUP_REDIRECTING)}
-									</span>
-								) : (
-									t(RestaurantsKeys.BILLING_SETUP_BUTTON)
-								)}
-							</button>
-						)}
+								{t(statusKey)}
+							</p>
 
-						{/*
-						 * Deliberately an INLINE confirm rather than the `Modal` idiom
-						 * `ReservationCancelConfirmDialog` uses. The two destructive
-						 * actions differ in kind: cancelling a reservation is taken from a
-						 * timeline where the row would vanish under the operator, so it
-						 * needs a focus trap. This one already lives inside a full-canvas
-						 * settings page the admin navigated to on purpose, it is
-						 * reversible (cancel-at-period-end, undoable until the period
-						 * ends), and stacking a dialog over a canvas that Phase 4A just
-						 * un-modal-ed would undo that change locally.
-						 */}
-						{hasLiveSubscription && !cancelScheduled ? (
-							confirmingCancel ? (
-								<div className="space-y-2">
-									<p className="text-xs text-faint-foreground max-w-md">
-										{t(RestaurantsKeys.BILLING_CANCEL_CONFIRM)}
-									</p>
-									<div className="flex items-center gap-2">
-										<button
-											type="button"
-											onClick={handleCancel}
-											disabled={cancelPending}
-											data-testid="settings-billing-cancel-confirm"
-											className="px-3 py-1.5 rounded-lg text-xs font-medium text-destructive border border-border disabled:opacity-50"
-										>
-											{cancelPending
-												? t(RestaurantsKeys.BILLING_CANCELLING)
-												: t(RestaurantsKeys.BILLING_CANCEL_CONFIRM_YES)}
-										</button>
-										<button
-											type="button"
-											onClick={() => setConfirmingCancel(false)}
-											disabled={cancelPending}
-											className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-hover"
-										>
-											{t(RestaurantsKeys.BILLING_CANCEL_CONFIRM_NO)}
-										</button>
-									</div>
-								</div>
-							) : (
-								<button
-									type="button"
-									onClick={() => setConfirmingCancel(true)}
-									data-testid="settings-billing-cancel"
-									className="px-4 py-2 rounded-lg text-sm text-muted-foreground border border-border hover:bg-hover"
+							{cancelScheduled && periodEnd ? (
+								<p
+									className="text-xs text-faint-foreground"
+									data-testid="settings-billing-cancel-notice"
 								>
-									{t(RestaurantsKeys.BILLING_CANCEL_BUTTON)}
-								</button>
-							)
-						) : null}
-					</div>
-				</div>
+									{t(RestaurantsKeys.BILLING_CANCEL_SCHEDULED, { date: formattedDate(periodEnd) })}
+								</p>
+							) : null}
+
+							{status === BILLING_STATUS.PAST_DUE || status === BILLING_STATUS.UNPAID ? (
+								<p className="text-xs text-faint-foreground">
+									{t(RestaurantsKeys.BILLING_PAST_DUE_HINT)}
+								</p>
+							) : null}
+
+							{/*
+							 * Exactly one of these two is ever offered, and the backend enforces
+							 * the same split: Checkout STARTS a subscription (and refuses when
+							 * one exists), the Billing Portal MANAGES an existing one (and
+							 * refuses when none exists). That is what keeps a card swap from
+							 * accidentally minting a second subscription.
+							 */}
+							<div className="flex flex-wrap items-center gap-3">
+								{hasLiveSubscription ? (
+									<button
+										type="button"
+										onClick={handleOpenPortal}
+										disabled={portalPending}
+										data-testid="settings-billing-portal"
+										className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										{portalPending ? (
+											<span className="flex items-center gap-2">
+												<Loader2 size={14} className="animate-spin" />
+												{t(RestaurantsKeys.BILLING_SETUP_REDIRECTING)}
+											</span>
+										) : (
+											t(RestaurantsKeys.BILLING_PORTAL_BUTTON)
+										)}
+									</button>
+								) : (
+									<button
+										type="button"
+										onClick={handleCheckout}
+										disabled={checkoutPending}
+										data-testid="settings-billing-checkout"
+										className="px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										{checkoutPending ? (
+											<span className="flex items-center gap-2">
+												<Loader2 size={14} className="animate-spin" />
+												{t(RestaurantsKeys.BILLING_SETUP_REDIRECTING)}
+											</span>
+										) : (
+											t(RestaurantsKeys.BILLING_SETUP_BUTTON)
+										)}
+									</button>
+								)}
+
+								{/*
+								 * Deliberately an INLINE confirm rather than the `Modal` idiom
+								 * `ReservationCancelConfirmDialog` uses. The two destructive
+								 * actions differ in kind: cancelling a reservation is taken from a
+								 * timeline where the row would vanish under the operator, so it
+								 * needs a focus trap. This one already lives inside a full-canvas
+								 * settings page the admin navigated to on purpose, it is
+								 * reversible (cancel-at-period-end, undoable until the period
+								 * ends), and stacking a dialog over a canvas that Phase 4A just
+								 * un-modal-ed would undo that change locally.
+								 */}
+								{hasLiveSubscription && !cancelScheduled ? (
+									confirmingCancel ? (
+										<div className="space-y-2">
+											<p className="text-xs text-faint-foreground max-w-md">
+												{t(RestaurantsKeys.BILLING_CANCEL_CONFIRM)}
+											</p>
+											<div className="flex items-center gap-2">
+												<button
+													type="button"
+													onClick={handleCancel}
+													disabled={cancelPending}
+													data-testid="settings-billing-cancel-confirm"
+													className="px-3 py-1.5 rounded-lg text-xs font-medium text-destructive border border-border disabled:opacity-50"
+												>
+													{cancelPending
+														? t(RestaurantsKeys.BILLING_CANCELLING)
+														: t(RestaurantsKeys.BILLING_CANCEL_CONFIRM_YES)}
+												</button>
+												<button
+													type="button"
+													onClick={() => setConfirmingCancel(false)}
+													disabled={cancelPending}
+													className="px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-hover"
+												>
+													{t(RestaurantsKeys.BILLING_CANCEL_CONFIRM_NO)}
+												</button>
+											</div>
+										</div>
+									) : (
+										<button
+											type="button"
+											onClick={() => setConfirmingCancel(true)}
+											data-testid="settings-billing-cancel"
+											className="px-4 py-2 rounded-lg text-sm text-muted-foreground border border-border hover:bg-hover"
+										>
+											{t(RestaurantsKeys.BILLING_CANCEL_BUTTON)}
+										</button>
+									)
+								) : null}
+							</div>
+						</div>
+					</SettingsRow>
+				</>
 			) : (
-				<p className="text-xs text-faint-foreground border-t border-border pt-4">
+				<p className="border-b border-border py-4 text-xs text-faint-foreground">
 					{t(RestaurantsKeys.BILLING_DISABLED_STATE)}
 				</p>
 			)}
 
-			<p className="text-xs text-faint-foreground border-t border-border pt-3">
+			<p className="pt-4 text-xs text-faint-foreground">
 				{t(RestaurantsKeys.BILLING_DISTINCT_NOTE)}
 			</p>
-		</div>
+		</SettingsSection>
 	);
 }

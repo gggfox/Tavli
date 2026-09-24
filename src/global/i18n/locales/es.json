@@ -1032,6 +1032,8 @@
 			"deleteCancel": "Cancelar"
 		},
 		"form": {
+			"geofencePickerClose": "Listo",
+			"geofenceAdjustPin": "Ajustar pin",
 			"nameLabel": "Nombre del restaurante",
 			"slugLabel": "Slug (identificador de URL)",
 			"slugHint": "Tus clientes visitarán:",
@@ -1051,6 +1053,7 @@
 			"timezoneOptionOther": "Otra zona IANA…",
 			"timezoneOtherPlaceholder": "p. ej. Europe/Madrid",
 			"openTimeLabel": "Hora de apertura",
+			"operatingHoursLabel": "Horario de operación",
 			"closeTimeLabel": "Hora de cierre",
 			"operatingHoursHint": "El horario de operación define el rango visible en la línea de tiempo de reservaciones.",
 			"orderDayStartLabel": "Inicio del día de pedidos",
@@ -1144,6 +1147,7 @@
 			"brandingFontHint": "Se usa en todas tus páginas para comensales.",
 			"brandingFontSystem": "Predeterminada del sistema",
 			"brandingFontSample": "Tacos al pastor · $145.00",
+			"brandingPreviewClose": "Cerrar vista previa",
 			"brandingPreviewHeading": "Vista previa",
 			"brandingPreviewLight": "Claro",
 			"brandingPreviewDark": "Oscuro",
@@ -1164,7 +1168,39 @@
 			"brandingEncodeFailed": "No pudimos leer ese archivo. Intenta con un JPEG o PNG.",
 			"brandingTooLarge": "Esa imagen tiene demasiado detalle para el límite de tamaño. Prueba con una más simple o más pequeña.",
 			"brandingNoImage": "Aún no hay imagen",
-			"brandingPasteHint": "O haz clic en esta casilla y pega una imagen."
+			"brandingPasteHint": "O haz clic en esta casilla y pega una imagen.",
+			"nav": {
+				"label": "Secciones de configuración",
+				"back": "Toda la configuración",
+				"groupRestaurant": "Restaurante",
+				"groupPublicPage": "Página pública",
+				"groupOperations": "Operación",
+				"groupBusiness": "Negocio",
+				"general": "General",
+				"location": "Ubicación y geocerca",
+				"hours": "Horario y zona horaria",
+				"publicProfile": "Perfil público",
+				"branding": "Identidad",
+				"orders": "Pedidos",
+				"whatsapp": "Asistente de WhatsApp",
+				"tables": "Mesas y secciones",
+				"tax": "Información fiscal",
+				"payments": "Pagos y suscripción",
+				"managers": "Gerentes",
+				"organization": "Organización",
+				"whatsappHint": "Pedidos y reservaciones por WhatsApp",
+				"tablesHint": "Plano del salón, mesas y sus QR",
+				"paymentsHint": "Depósitos de Stripe y tu suscripción a Tavli",
+				"managersHint": "Quién administra este restaurante",
+				"organizationHint": "Qué organización es dueña",
+				"notSet": "Sin configurar",
+				"locationSummary": "Radio {{radius}} m · código {{code}}",
+				"ordersRelease": "Los pedidos con pago en persona van directo a cocina",
+				"ordersHold": "Los pedidos con pago en persona esperan al personal"
+			},
+			"tablesTitle": "Mesas y secciones",
+			"tablesHint": "El plano del salón, las mesas y sus QR se editan en su propio lienzo.",
+			"tablesOpen": "Administrar mesas"
 		},
 		"managers": {
 			"sectionTitle": "Gerentes del local",
@@ -1263,6 +1299,7 @@
 			"purgesIn": "Se eliminará en {{time}}"
 		},
 		"stripe": {
+			"statusLabel": "Estado",
 			"heading": "Configuración de pagos",
 			"description": "Conecta tu cuenta de Stripe para aceptar pagos de los clientes.",
 			"paymentsEnabled": "Pagos habilitados",
@@ -2053,6 +2090,8 @@
 	},
 	"whatsapp": {
 		"assistant": {
+			"qrRowLabel": "Enlace y código QR",
+			"statusLabel": "Asistente",
 			"title": "Asistente de Tavli en WhatsApp",
 			"hint": "Los comensales abren este enlace — o escanean este código en la mesa — y llegan a un chat de WhatsApp con el asistente de Tavli de este restaurante. El código del mensaje es lo que le dice a Tavli de qué restaurante se trata.",
 			"notEnabled": "Aún no está habilitado para este restaurante. Tavli activa el asistente.",
