@@ -291,6 +291,35 @@ describe("generate action", () => {
 		expect(await storedFileCount(t)).toBe(0);
 	});
 
+	it("fails a moderation refusal as content_blocked, without retrying, and logs the provider's reason", async () => {
+		const refusal = JSON.stringify({
+			error: {
+				message: "Gemini blocked this request through content moderation.",
+				code: 400,
+				metadata: { provider_name: "Google", block_reason: "SAFETY" },
+			},
+		});
+		const fetchMock = vi.fn(async () => new Response(refusal, { status: 400 }));
+		vi.stubGlobal("fetch", fetchMock);
+		vi.stubEnv("OPENROUTER_API_KEY", "test-key");
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+		const t = convexTest(schema, modules);
+		registerDisputeComponents(t);
+		const ids = await seed(t);
+		const jobId = await insertQueuedJob(t, ids);
+
+		await t.action(internal.menuAIImageGenActions.generate, { jobId });
+
+		const job = await t.run(async (ctx) => ctx.db.get(jobId));
+		expect(job?.status).toBe(MENU_AI_IMAGE_JOB_STATUS.FAILED);
+		expect(job?.error).toBe("content_blocked");
+		expect(job?.retries).toBe(0);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(errorLog).toHaveBeenCalledWith(expect.stringContaining("block_reason"));
+		expect(await storedFileCount(t)).toBe(0);
+		errorLog.mockRestore();
+	});
+
 	it("schedules a retry on 429 while retries remain, then fails when they run out", async () => {
 		// `ctx.scheduler.runAfter` schedules the retry with a real setTimeout
 		// under convex-test; fake timers let us fire it without an actual

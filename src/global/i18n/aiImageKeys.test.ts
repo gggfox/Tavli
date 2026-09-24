@@ -28,6 +28,7 @@ describe("AI image i18n", () => {
 		ERROR_CODE_KEYS.AI_IMAGE_GENERATION_IN_PROGRESS,
 		ERROR_CODE_KEYS.AI_IMAGE_MONTHLY_LIMIT_REACHED,
 		ERROR_CODE_KEYS.AI_IMAGE_CREDITS_EXHAUSTED,
+		ERROR_CODE_KEYS.AI_IMAGE_CONTENT_BLOCKED,
 		ERROR_CODE_KEYS.AI_IMAGE_GENERATION_FAILED,
 	])("%s resolves in both locales", (key) => {
 		expect(typeof resolve(en, key)).toBe("string");
