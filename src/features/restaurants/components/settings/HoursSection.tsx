@@ -1,3 +1,7 @@
+import {
+	SettingsRow,
+	settingsInputClass,
+} from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { SettingsSectionFooter } from "@/features/restaurants/components/settings/SettingsSectionFooter";
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
@@ -134,13 +138,7 @@ export function HoursSection({
 						const selectValue = timezoneSelectValue(field.state.value);
 						const showCustom = selectValue === TIMEZONE_OTHER;
 						return (
-							<div className="max-w-sm">
-								<label
-									htmlFor="restaurant-tz"
-									className="block text-sm font-medium mb-1 text-foreground"
-								>
-									{t(RestaurantsKeys.FORM_TIMEZONE_LABEL)}
-								</label>
+							<SettingsRow label={t(RestaurantsKeys.FORM_TIMEZONE_LABEL)} htmlFor="restaurant-tz">
 								<select
 									id="restaurant-tz"
 									value={selectValue}
@@ -154,7 +152,7 @@ export function HoursSection({
 										}
 										field.handleChange(next);
 									}}
-									className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+									className={settingsInputClass("w-full max-w-xs")}
 								>
 									{PRESET_TIMEZONES.map((preset) => (
 										<option key={preset.id} value={preset.value}>
@@ -172,7 +170,7 @@ export function HoursSection({
 										onChange={(e) => field.handleChange(e.target.value)}
 										onBlur={field.handleBlur}
 										placeholder={t(RestaurantsKeys.FORM_TIMEZONE_OTHER_PLACEHOLDER)}
-										className="mt-2 w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+										className={`mt-2 block ${settingsInputClass("w-full max-w-xs")}`}
 									/>
 								) : null}
 								{field.state.value.trim() && !isValidIanaTimezone(field.state.value.trim()) ? (
@@ -180,21 +178,23 @@ export function HoursSection({
 										{t(RestaurantsKeys.FORM_TIMEZONE_MISSING_HINT)}
 									</p>
 								) : null}
-							</div>
+							</SettingsRow>
 						);
 					}}
 				/>
 
-				<div>
-					<div className="grid grid-cols-2 gap-4 max-w-sm">
+				{/* Open and close are one setting — the range — so they share a row.
+				    Each input keeps its own (visually hidden) label. */}
+				<SettingsRow
+					label={t(RestaurantsKeys.FORM_OPERATING_HOURS_LABEL)}
+					hint={t(RestaurantsKeys.FORM_OPERATING_HOURS_HINT)}
+				>
+					<div className="flex items-center gap-2">
 						<form.Field
 							name="openTime"
 							children={(field) => (
-								<div>
-									<label
-										htmlFor="restaurant-open-time"
-										className="block text-sm font-medium mb-1 text-foreground"
-									>
+								<>
+									<label htmlFor="restaurant-open-time" className="sr-only">
 										{t(RestaurantsKeys.FORM_OPEN_TIME_LABEL)}
 									</label>
 									<input
@@ -202,19 +202,19 @@ export function HoursSection({
 										type="time"
 										value={field.state.value}
 										onChange={(e) => field.handleChange(e.target.value)}
-										className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+										className={settingsInputClass("w-32")}
 									/>
-								</div>
+								</>
 							)}
 						/>
+						<span aria-hidden="true" className="text-sm text-faint-foreground">
+							–
+						</span>
 						<form.Field
 							name="closeTime"
 							children={(field) => (
-								<div>
-									<label
-										htmlFor="restaurant-close-time"
-										className="block text-sm font-medium mb-1 text-foreground"
-									>
+								<>
+									<label htmlFor="restaurant-close-time" className="sr-only">
 										{t(RestaurantsKeys.FORM_CLOSE_TIME_LABEL)}
 									</label>
 									<input
@@ -222,38 +222,33 @@ export function HoursSection({
 										type="time"
 										value={field.state.value}
 										onChange={(e) => field.handleChange(e.target.value)}
-										className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+										className={settingsInputClass("w-32")}
 									/>
-								</div>
+								</>
 							)}
 						/>
 					</div>
-					<p className="mt-1 text-xs text-faint-foreground">
-						{t(RestaurantsKeys.FORM_OPERATING_HOURS_HINT)}
-					</p>
-				</div>
+				</SettingsRow>
 
 				<form.Field
 					name="orderDayStartTime"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-order-day-start"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_ORDER_DAY_START_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.FORM_ORDER_DAY_START_LABEL)}
+							htmlFor="restaurant-order-day-start"
+						>
 							<input
 								id="restaurant-order-day-start"
 								type="time"
 								value={field.state.value}
 								onChange={(e) => field.handleChange(e.target.value)}
-								className="w-full max-w-48 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-32")}
 							/>
+							{/* Two sentences with a worked example — too long for the row hint. */}
 							<p className="mt-1 text-xs text-faint-foreground">
 								{t(RestaurantsKeys.FORM_ORDER_DAY_START_HINT)}
 							</p>
-						</div>
+						</SettingsRow>
 					)}
 				/>
 
@@ -261,18 +256,15 @@ export function HoursSection({
 					<form.Field
 						name="orderNumberResetFrequency"
 						children={(field) => (
-							<div>
-								<label
-									htmlFor="restaurant-order-number-reset"
-									className="block text-sm font-medium mb-1 text-foreground"
-								>
-									{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_LABEL)}
-								</label>
+							<SettingsRow
+								label={t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_LABEL)}
+								htmlFor="restaurant-order-number-reset"
+							>
 								<select
 									id="restaurant-order-number-reset"
 									value={field.state.value}
 									onChange={(e) => field.handleChange(e.target.value as OrderNumberResetFrequency)}
-									className="w-full max-w-48 px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+									className={settingsInputClass("w-full max-w-48")}
 								>
 									<option value="daily">
 										{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_OPTION_DAILY)}
@@ -290,7 +282,7 @@ export function HoursSection({
 								<p className="mt-1 text-xs text-faint-foreground">
 									{t(RestaurantsKeys.FORM_ORDER_NUMBER_RESET_HINT)}
 								</p>
-							</div>
+							</SettingsRow>
 						)}
 					/>
 				) : null}

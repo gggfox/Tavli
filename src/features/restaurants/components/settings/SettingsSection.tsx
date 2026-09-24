@@ -11,8 +11,11 @@ interface SettingsSectionProps {
 }
 
 /**
- * Card shell for one section of the full-canvas restaurant settings view.
- * Purely presentational -- every section owns its own form state and save.
+ * Card shell for one section of the restaurant settings view. Purely
+ * presentational -- every section owns its own form state and save.
+ *
+ * It is the container `SettingsRow` queries (`@container`), so a section's
+ * rows go side-by-side only when the section itself has room.
  */
 export function SettingsSection({
 	title,
@@ -24,14 +27,14 @@ export function SettingsSection({
 	return (
 		<section
 			data-testid={testId}
-			className="rounded-xl border border-border bg-muted/30 p-4 sm:p-6 space-y-4"
+			className="@container rounded-xl border border-border bg-muted/30 px-4 pt-4 @xl:px-6 @xl:pt-5"
 		>
-			<header className="space-y-1">
+			<header className="mb-4 space-y-1">
 				<h3 className="text-sm font-semibold text-foreground">{title}</h3>
 				{hint ? <p className="text-xs text-faint-foreground max-w-2xl">{hint}</p> : null}
 			</header>
-			<div className="space-y-4 max-w-2xl">{children}</div>
-			{footer ? <div className="pt-1">{footer}</div> : null}
+			<div className="pb-4 @xl:pb-5">{children}</div>
+			{footer}
 		</section>
 	);
 }

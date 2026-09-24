@@ -5,7 +5,9 @@
 		},
 		"controls": {
 			"collapse": "Collapse sidebar",
-			"expand": "Expand sidebar"
+			"expand": "Expand sidebar",
+			"openMenu": "Open menu",
+			"closeMenu": "Close menu"
 		},
 		"nav": {
 			"home": "Dashboard",
@@ -1030,6 +1032,8 @@
 			"deleteCancel": "Cancel"
 		},
 		"form": {
+			"geofencePickerClose": "Done",
+			"geofenceAdjustPin": "Adjust pin",
 			"nameLabel": "Restaurant Name",
 			"slugLabel": "Slug (URL identifier)",
 			"slugHint": "Customers will visit:",
@@ -1049,6 +1053,7 @@
 			"timezoneOptionOther": "Other IANA timezone…",
 			"timezoneOtherPlaceholder": "e.g. Europe/Madrid",
 			"openTimeLabel": "Opening time",
+			"operatingHoursLabel": "Operating hours",
 			"closeTimeLabel": "Closing time",
 			"operatingHoursHint": "Operating hours define the visible range on the reservation timeline.",
 			"orderDayStartLabel": "Start of order day",
@@ -1142,6 +1147,7 @@
 			"brandingFontHint": "Used across your diner-facing pages.",
 			"brandingFontSystem": "System default",
 			"brandingFontSample": "Tacos al pastor · $145.00",
+			"brandingPreviewClose": "Close preview",
 			"brandingPreviewHeading": "Preview",
 			"brandingPreviewLight": "Light",
 			"brandingPreviewDark": "Dark",
@@ -1162,7 +1168,39 @@
 			"brandingEncodeFailed": "We could not read that file. Try a JPEG or PNG.",
 			"brandingTooLarge": "That image is too detailed to fit the size limit. Try a simpler or smaller picture.",
 			"brandingNoImage": "No image yet",
-			"brandingPasteHint": "Or click this slot and paste an image."
+			"brandingPasteHint": "Or click this slot and paste an image.",
+			"nav": {
+				"label": "Settings sections",
+				"back": "All settings",
+				"groupRestaurant": "Restaurant",
+				"groupPublicPage": "Public page",
+				"groupOperations": "Operations",
+				"groupBusiness": "Business",
+				"general": "General",
+				"location": "Location & geofence",
+				"hours": "Hours & time zone",
+				"publicProfile": "Public profile",
+				"branding": "Branding",
+				"orders": "Orders",
+				"whatsapp": "WhatsApp assistant",
+				"tables": "Tables & sections",
+				"tax": "Tax information",
+				"payments": "Payments & billing",
+				"managers": "Managers",
+				"organization": "Organization",
+				"whatsappHint": "Orders and reservations over WhatsApp",
+				"tablesHint": "Floor plan, tables and their QR codes",
+				"paymentsHint": "Stripe payouts and your Tavli subscription",
+				"managersHint": "Who runs this restaurant",
+				"organizationHint": "Which organization owns it",
+				"notSet": "Not set",
+				"locationSummary": "{{radius}} m radius · code {{code}}",
+				"ordersRelease": "Pay-in-person orders go straight to the kitchen",
+				"ordersHold": "Pay-in-person orders wait for staff"
+			},
+			"tablesTitle": "Tables & sections",
+			"tablesHint": "The floor plan, tables and their QR codes are edited on their own canvas.",
+			"tablesOpen": "Manage tables"
 		},
 		"managers": {
 			"sectionTitle": "Location managers",
@@ -1261,6 +1299,7 @@
 			"purgesIn": "Purges in {{time}}"
 		},
 		"stripe": {
+			"statusLabel": "Status",
 			"heading": "Payment Setup",
 			"description": "Connect your Stripe account to accept customer payments.",
 			"paymentsEnabled": "Payments Enabled",
@@ -2051,6 +2090,8 @@
 	},
 	"whatsapp": {
 		"assistant": {
+			"qrRowLabel": "Link & QR code",
+			"statusLabel": "Assistant",
 			"title": "Tavli assistant on WhatsApp",
 			"hint": "Diners open this link — or scan this code on a table — and land in a WhatsApp chat with the Tavli assistant for this restaurant. The code in the message is what tells Tavli which restaurant they mean.",
 			"notEnabled": "Not enabled for this restaurant yet. Tavli turns the assistant on.",

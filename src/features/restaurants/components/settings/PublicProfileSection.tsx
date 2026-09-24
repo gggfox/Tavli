@@ -1,3 +1,7 @@
+import {
+	SettingsRow,
+	settingsInputClass,
+} from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { SettingsSectionFooter } from "@/features/restaurants/components/settings/SettingsSectionFooter";
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
@@ -129,13 +133,17 @@ export function PublicProfileSection({
 				<form.Field
 					name="supportEmail"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-support-email"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.FORM_CONTACT_EMAIL_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.FORM_CONTACT_EMAIL_LABEL)}
+							// The hint says where the address goes, so it sits under the label
+							// and stays put when an error appears under the input.
+							hint={
+								<span id="restaurant-support-email-hint">
+									{t(RestaurantsKeys.FORM_CONTACT_EMAIL_HINT)}
+								</span>
+							}
+							htmlFor="restaurant-support-email"
+						>
 							<input
 								id="restaurant-support-email"
 								type="email"
@@ -146,7 +154,7 @@ export function PublicProfileSection({
 								aria-describedby={
 									emailError ? "restaurant-support-email-error" : "restaurant-support-email-hint"
 								}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full max-w-md", Boolean(emailError))}
 							/>
 							{emailError ? (
 								<p
@@ -156,28 +164,23 @@ export function PublicProfileSection({
 								>
 									{emailError}
 								</p>
-							) : (
-								<p
-									id="restaurant-support-email-hint"
-									className="mt-1 text-xs text-faint-foreground"
-								>
-									{t(RestaurantsKeys.FORM_CONTACT_EMAIL_HINT)}
-								</p>
-							)}
-						</div>
+							) : null}
+						</SettingsRow>
 					)}
 				/>
 
 				<form.Field
 					name="address"
 					children={(field) => (
-						<div>
-							<label
-								htmlFor="restaurant-address"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_ADDRESS_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_ADDRESS_LABEL)}
+							hint={
+								<span id="restaurant-address-hint">
+									{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_ADDRESS_HINT)}
+								</span>
+							}
+							htmlFor="restaurant-address"
+						>
 							<textarea
 								id="restaurant-address"
 								value={field.state.value}
@@ -188,7 +191,7 @@ export function PublicProfileSection({
 								aria-describedby={
 									addressError ? "restaurant-address-error" : "restaurant-address-hint"
 								}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full", Boolean(addressError))}
 							/>
 							{addressError ? (
 								<p
@@ -198,25 +201,20 @@ export function PublicProfileSection({
 								>
 									{addressError}
 								</p>
-							) : (
-								<p id="restaurant-address-hint" className="mt-1 text-xs text-faint-foreground">
-									{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_ADDRESS_HINT)}
-								</p>
-							)}
-						</div>
+							) : null}
+						</SettingsRow>
 					)}
 				/>
 
+				{/* The WhatsApp flag is a property of this number, so it shares the
+				    phone's row instead of standing as a setting of its own. */}
 				<form.Field
 					name="phone"
 					children={(field) => (
-						<div className="max-w-xs">
-							<label
-								htmlFor="restaurant-phone"
-								className="block text-sm font-medium mb-1 text-foreground"
-							>
-								{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_PHONE_LABEL)}
-							</label>
+						<SettingsRow
+							label={t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_PHONE_LABEL)}
+							htmlFor="restaurant-phone"
+						>
 							<input
 								id="restaurant-phone"
 								type="tel"
@@ -228,8 +226,9 @@ export function PublicProfileSection({
 								onBlur={field.handleBlur}
 								aria-invalid={phoneError ? true : undefined}
 								aria-describedby={phoneError ? "restaurant-phone-error" : "restaurant-phone-hint"}
-								className="w-full px-3 py-2 rounded-lg text-sm bg-muted border border-border text-foreground"
+								className={settingsInputClass("w-full max-w-xs", Boolean(phoneError))}
 							/>
+							{/* How to fill it, not what it does — so it stays under the input. */}
 							{phoneError ? (
 								<p
 									id="restaurant-phone-error"
@@ -243,121 +242,130 @@ export function PublicProfileSection({
 									{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_PHONE_HINT)}
 								</p>
 							)}
-						</div>
+
+							{/*
+							 * Subscribed to `phone` rather than reading `form.state.values`: the
+							 * section body does not re-render on a keystroke, so a direct read
+							 * would lag one edit behind and hide the box after it mattered.
+							 */}
+							<form.Subscribe
+								selector={(state) => state.values.phone.trim().length > 0}
+								children={(hasPhone) =>
+									hasPhone ? (
+										<form.Field
+											name="phoneHasWhatsApp"
+											children={(whatsAppField) => (
+												<div className="mt-3">
+													<label className="flex items-center gap-2 text-sm text-foreground">
+														<input
+															type="checkbox"
+															checked={whatsAppField.state.value}
+															onChange={(e) => whatsAppField.handleChange(e.target.checked)}
+															onBlur={whatsAppField.handleBlur}
+															aria-describedby="restaurant-whatsapp-hint"
+															className="rounded border-border"
+														/>
+														{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_WHATSAPP_LABEL)}
+													</label>
+													{whatsAppError ? (
+														<p role="alert" className="mt-1 text-xs text-destructive">
+															{whatsAppError}
+														</p>
+													) : (
+														<p
+															id="restaurant-whatsapp-hint"
+															className="mt-1 ml-6 text-xs text-faint-foreground"
+														>
+															{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_WHATSAPP_HINT)}
+														</p>
+													)}
+												</div>
+											)}
+										/>
+									) : null
+								}
+							/>
+						</SettingsRow>
 					)}
 				/>
 
-				{/*
-				 * Subscribed to `phone` rather than reading `form.state.values`: the
-				 * section body does not re-render on a keystroke, so a direct read
-				 * would lag one edit behind and hide the box after it mattered.
-				 */}
-				<form.Subscribe
-					selector={(state) => state.values.phone.trim().length > 0}
-					children={(hasPhone) =>
-						hasPhone ? (
-							<form.Field
-								name="phoneHasWhatsApp"
-								children={(field) => (
-									<div>
-										<label className="flex items-center gap-2 text-sm text-foreground">
-											<input
-												type="checkbox"
-												checked={field.state.value}
-												onChange={(e) => field.handleChange(e.target.checked)}
-												onBlur={field.handleBlur}
-												aria-describedby="restaurant-whatsapp-hint"
-												className="rounded border-border"
-											/>
-											{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_WHATSAPP_LABEL)}
-										</label>
-										{whatsAppError ? (
-											<p role="alert" className="mt-1 text-xs text-destructive">
-												{whatsAppError}
-											</p>
-										) : (
-											<p
-												id="restaurant-whatsapp-hint"
-												className="mt-1 text-xs text-faint-foreground"
-											>
-												{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_WHATSAPP_HINT)}
-											</p>
+				<SettingsRow
+					label={t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_SOCIAL_HEADING)}
+					testId="settings-public-profile-social"
+				>
+					{/* The row label is a plain paragraph; the fieldset keeps the five
+					    inputs announced as one group, named by the same heading. */}
+					<fieldset className="border-0 p-0 m-0 min-w-0">
+						<legend className="sr-only">
+							{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_SOCIAL_HEADING)}
+						</legend>
+						<div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+							{SOCIAL_PLATFORMS.map((platform) => {
+								const fieldName = SOCIAL_FIELD[platform];
+								const Icon = SOCIAL_ICON[platform];
+								const inputId = `restaurant-social-${platform}`;
+								// Fall back to marking every social input when the backend named
+								// no field: better to flag five than to swallow the message.
+								const fieldError =
+									socialError && (socialErrorField === fieldName || socialErrorField === null)
+										? socialError
+										: null;
+								return (
+									<form.Field
+										key={platform}
+										name={fieldName}
+										children={(field) => (
+											<div className="min-w-0">
+												<div className="flex items-center gap-2">
+													<span
+														className="text-faint-foreground shrink-0"
+														title={t(SOCIAL_LABEL_KEY[platform])}
+													>
+														<Icon size={18} />
+													</span>
+													<label htmlFor={inputId} className="sr-only">
+														{t(SOCIAL_LABEL_KEY[platform])}
+													</label>
+													<input
+														id={inputId}
+														type="text"
+														inputMode="url"
+														placeholder={t(SOCIAL_LABEL_KEY[platform])}
+														value={field.state.value}
+														// Store raw while typing — rewriting on every keystroke
+														// jumps the caret. Normalize once the field is left.
+														onChange={(e) => field.handleChange(e.target.value)}
+														onBlur={() => {
+															field.handleChange(normalizeSocialInput(platform, field.state.value));
+															field.handleBlur();
+														}}
+														aria-invalid={fieldError ? true : undefined}
+														aria-describedby={fieldError ? `${inputId}-error` : undefined}
+														className={settingsInputClass("w-full min-w-0", Boolean(fieldError))}
+													/>
+												</div>
+												{fieldError ? (
+													<p
+														id={`${inputId}-error`}
+														role="alert"
+														className="mt-1 ml-7 text-xs text-destructive"
+													>
+														{fieldError}
+													</p>
+												) : null}
+											</div>
 										)}
-									</div>
-								)}
-							/>
-						) : null
-					}
-				/>
-
-				<fieldset className="space-y-3 border-0 p-0 m-0">
-					<legend className="text-sm font-medium text-foreground">
-						{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_SOCIAL_HEADING)}
-					</legend>
-					<p className="text-xs text-faint-foreground">
-						{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_SOCIAL_HINT)}
-					</p>
-					{SOCIAL_PLATFORMS.map((platform) => {
-						const fieldName = SOCIAL_FIELD[platform];
-						const Icon = SOCIAL_ICON[platform];
-						const inputId = `restaurant-social-${platform}`;
-						// Fall back to marking every social input when the backend named
-						// no field: better to flag five than to swallow the message.
-						const fieldError =
-							socialError && (socialErrorField === fieldName || socialErrorField === null)
-								? socialError
-								: null;
-						return (
-							<form.Field
-								key={platform}
-								name={fieldName}
-								children={(field) => (
-									<div>
-										<div className="flex items-center gap-2">
-											<span
-												className="text-faint-foreground shrink-0"
-												title={t(SOCIAL_LABEL_KEY[platform])}
-											>
-												<Icon size={18} />
-											</span>
-											<label htmlFor={inputId} className="sr-only">
-												{t(SOCIAL_LABEL_KEY[platform])}
-											</label>
-											<input
-												id={inputId}
-												type="text"
-												inputMode="url"
-												placeholder={t(SOCIAL_LABEL_KEY[platform])}
-												value={field.state.value}
-												// Store raw while typing — rewriting on every keystroke
-												// jumps the caret. Normalize once the field is left.
-												onChange={(e) => field.handleChange(e.target.value)}
-												onBlur={() => {
-													field.handleChange(normalizeSocialInput(platform, field.state.value));
-													field.handleBlur();
-												}}
-												aria-invalid={fieldError ? true : undefined}
-												aria-describedby={fieldError ? `${inputId}-error` : undefined}
-												className={`w-full px-3 py-2 rounded-lg text-sm bg-muted text-foreground border ${
-													fieldError ? "border-destructive" : "border-border"
-												}`}
-											/>
-										</div>
-										{fieldError ? (
-											<p
-												id={`${inputId}-error`}
-												role="alert"
-												className="mt-1 ml-7 text-xs text-destructive"
-											>
-												{fieldError}
-											</p>
-										) : null}
-									</div>
-								)}
-							/>
-						);
-					})}
-				</fieldset>
+									/>
+								);
+							})}
+						</div>
+						{/* Guidance on what to paste, so it follows the inputs rather than
+						    sitting under the label as a description of the setting. */}
+						<p className="mt-2 text-xs text-faint-foreground">
+							{t(RestaurantsKeys.SETTINGS_PUBLIC_PROFILE_SOCIAL_HINT)}
+						</p>
+					</fieldset>
+				</SettingsRow>
 			</SettingsSection>
 		</form>
 	);

@@ -15,7 +15,7 @@ import { AuthDebugPanel } from "@/features";
 import { useNewReservationListener } from "@/features/reservations";
 import { RestaurantAdminProvider, useRestaurant } from "@/features/restaurants";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
-import { ErrorBoundary, NotificationCenter, Sidebar } from "@/global/components";
+import { ErrorBoundary, MobileTopBar, NotificationCenter, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
 import { i18n, normalizeLanguage, resolveLanguage } from "@/global/i18n";
@@ -156,9 +156,12 @@ function StaffLayout() {
 	const hideSidebar = pathname === "/" && !isLoading && !isAuthenticated;
 
 	return (
-		<div className="h-dvh flex overflow-hidden bg-background">
+		// Phones stack a top bar over the page (the sidebar is a drawer there);
+		// from md up the sidebar sits beside it.
+		<div className="h-dvh flex flex-col md:flex-row overflow-hidden bg-background">
+			{!hideSidebar && <MobileTopBar />}
 			{!hideSidebar && <Sidebar pathname={pathname} />}
-			<main className="flex-1 min-h-0 overflow-auto bg-background">
+			<main className="flex-1 min-h-0 min-w-0 overflow-auto bg-background">
 				<ErrorBoundary>
 					<Outlet />
 				</ErrorBoundary>

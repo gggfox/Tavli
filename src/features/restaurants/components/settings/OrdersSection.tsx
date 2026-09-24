@@ -1,3 +1,4 @@
+import { SettingsRow } from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { SettingsSectionFooter } from "@/features/restaurants/components/settings/SettingsSectionFooter";
 import type { RestaurantSettingsSectionProps } from "@/features/restaurants/components/settings/types";
@@ -70,22 +71,28 @@ export function OrdersSection({
 				<form.Field
 					name="releaseCashOrdersImmediately"
 					children={(field) => (
-						<div>
-							<label className="flex items-center gap-2 text-sm text-foreground">
+						<SettingsRow
+							label={t(RestaurantsKeys.SETTINGS_ORDERS_RELEASE_CASH_LABEL)}
+							htmlFor="restaurant-release-cash"
+						>
+							{/* The hint spells out both states and who carries the walkout
+							    risk — too long for the one-line row hint, so it sits beside
+							    the checkbox it describes. */}
+							<div className="flex items-start gap-3">
 								<input
+									id="restaurant-release-cash"
 									type="checkbox"
 									checked={field.state.value}
 									onChange={(e) => field.handleChange(e.target.checked)}
 									onBlur={field.handleBlur}
 									aria-describedby="restaurant-release-cash-hint"
-									className="rounded border-border"
+									className="mt-0.5 shrink-0 rounded border-border"
 								/>
-								{t(RestaurantsKeys.SETTINGS_ORDERS_RELEASE_CASH_LABEL)}
-							</label>
-							<p id="restaurant-release-cash-hint" className="mt-1 text-xs text-faint-foreground">
-								{t(RestaurantsKeys.SETTINGS_ORDERS_RELEASE_CASH_HINT)}
-							</p>
-						</div>
+								<p id="restaurant-release-cash-hint" className="text-xs text-faint-foreground">
+									{t(RestaurantsKeys.SETTINGS_ORDERS_RELEASE_CASH_HINT)}
+								</p>
+							</div>
+						</SettingsRow>
 					)}
 				/>
 			</SettingsSection>

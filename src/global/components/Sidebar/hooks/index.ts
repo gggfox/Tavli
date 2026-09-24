@@ -8,5 +8,8 @@ export {
 export {
 	LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED,
 	useSidebarHydration,
+	useSidebarStore,
+	useSidebarViewport,
 	useToggleSidebar,
+	type SidebarViewport,
 } from "./useSidebarStore";
