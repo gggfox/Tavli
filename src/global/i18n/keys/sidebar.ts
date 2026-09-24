@@ -8,6 +8,8 @@ export const SidebarKeys = {
 	// Sidebar controls
 	COLLAPSE_SIDEBAR: "sidebar.controls.collapse",
 	EXPAND_SIDEBAR: "sidebar.controls.expand",
+	OPEN_MENU: "sidebar.controls.openMenu",
+	CLOSE_MENU: "sidebar.controls.closeMenu",
 
 	// Navigation
 	HOME: "sidebar.nav.home",
