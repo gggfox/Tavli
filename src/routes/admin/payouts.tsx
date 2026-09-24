@@ -1,4 +1,4 @@
-import { PayoutsDashboard, PayoutsDashboardSkeleton } from "@/features/payouts";
+import { FinancesTabs, PayoutsDashboard, PayoutsDashboardSkeleton } from "@/features/payouts";
 import { useRestaurant } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
 import { PayoutsKeys } from "@/global/i18n";
@@ -12,9 +12,9 @@ import { useTranslation } from "react-i18next";
  * Thin like `/admin/payments`, and gated the same way: the authorization that
  * matters is on the backend (`api.payouts.listByRestaurant` and
  * `.getHeldTotal` both require `requireRestaurantManagerOrAbove`), so this route
- * only resolves the current Restaurant and hands it over. The sidebar entry sits
- * beside Payments in the staff group; an employee who types the URL gets a
- * refusal from Convex, not a page.
+ * only resolves the current Restaurant and hands it over. It has no sidebar
+ * entry of its own: it is the second tab behind Finances, beside Payments; an
+ * employee who types the URL gets a refusal from Convex, not a page.
  */
 export const Route = createFileRoute("/admin/payouts")({
 	component: PayoutsPage,
@@ -24,7 +24,7 @@ function PayoutsPage() {
 	const { restaurant, isLoading } = useRestaurant();
 
 	return (
-		<AdminPageLayout>
+		<AdminPageLayout breadcrumb={<FinancesTabs />}>
 			<PayoutsContent restaurantId={restaurant?._id} isLoading={isLoading} />
 		</AdminPageLayout>
 	);

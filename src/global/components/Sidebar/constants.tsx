@@ -7,7 +7,6 @@ import {
 	ClipboardList,
 	DollarSign,
 	Flag,
-	Landmark,
 	LayoutDashboard,
 	MessageSquare,
 	ListOrdered,
@@ -48,19 +47,14 @@ export const sidebarItems: SidebarItem[] = [
 		to: "/admin/orders",
 	},
 	{
+		// One entry for the restaurant's money: Payments (what diners paid) and
+		// Payouts (what reached the bank, TAVLI-103) are tabs behind it. Both keep
+		// their own URLs because notifications and emails link to them.
 		type: "link",
-		translationKey: SidebarKeys.PAYMENTS,
+		translationKey: SidebarKeys.FINANCES,
 		icon: <DollarSign size={18} className="shrink-0" />,
 		to: "/admin/payments",
-	},
-	{
-		// Beside Payments on purpose: a manager wondering about money looks in one
-		// place, and "what diners paid" and "what reached the bank" are two
-		// different answers (TAVLI-103). The real gate is on the backend.
-		type: "link",
-		translationKey: SidebarKeys.PAYOUTS,
-		icon: <Landmark size={18} className="shrink-0" />,
-		to: "/admin/payouts",
+		activePaths: ["/admin/payments", "/admin/payouts"],
 	},
 	{
 		type: "link",

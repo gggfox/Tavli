@@ -18,8 +18,7 @@
 			"menus": "Menus",
 			"options": "Options",
 			"orders": "Orders",
-			"payments": "Payments",
-			"payouts": "Payouts",
+			"finances": "Finances",
 			"reservations": "Reservations",
 			"whatsapp": "WhatsApp",
 			"team": "Members",
@@ -2297,6 +2296,11 @@
 		}
 	},
 	"payouts": {
+		"financesTabs": {
+			"aria": "Finances sections",
+			"payments": "Payments",
+			"payouts": "Payouts"
+		},
 		"page": {
 			"title": "Payouts",
 			"description": "Money moving from Tavli to your bank account.",
