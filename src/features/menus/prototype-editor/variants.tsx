@@ -59,11 +59,11 @@ function useSaveShortcut(d: ItemDraft, onDone: () => void) {
 	}, []);
 }
 
-function Fields({ d, wide = false }: Readonly<{ d: ItemDraft; wide?: boolean }>) {
+function Fields({ d }: Readonly<{ d: ItemDraft }>) {
 	const { draft, set } = d;
 	return (
 		<div className="space-y-4">
-			<div className={wide ? "grid grid-cols-[1fr_11rem] gap-3" : "space-y-4"}>
+			<div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-3">
 				<Field label="Nombre">
 					<input
 						autoFocus
@@ -237,7 +237,7 @@ function InlineCard({ item, onClose }: Readonly<{ item: MockItem; onClose: () =>
 		<div className="@container rounded-b-lg border-x-2 border-b-2 border-primary/70 bg-card">
 			<div className="grid gap-6 p-5 @2xl:grid-cols-[13rem_1fr]">
 				<ImageWell d={d} className="max-w-52" />
-				<Fields d={d} wide />
+				<Fields d={d} />
 			</div>
 			<footer className="border-t border-border px-5 py-3">
 				<SaveButtons d={d} onDone={onClose} />

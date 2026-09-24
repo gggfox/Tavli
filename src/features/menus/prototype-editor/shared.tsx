@@ -12,6 +12,7 @@
  */
 import {
 	ArrowLeft,
+	Ellipsis,
 	Check,
 	ChevronDown,
 	ChevronsDownUp,
@@ -193,6 +194,11 @@ export function EditorPage({
 	}, [editingId]);
 
 	const anyExpanded = visibleCategories.some((c) => !collapsed[c.id]);
+	const toggleAll = () => {
+		const next: Record<string, boolean> = {};
+		for (const c of visibleCategories) next[c.id] = anyExpanded;
+		setCollapsed(next);
+	};
 	const ctx = useMemo<PageCtx>(
 		() => ({ selected, toggle, setMany, editingId, onEdit, visibleItemsOf }),
 		[selected, toggle, setMany, editingId, onEdit, visibleItemsOf]
@@ -221,10 +227,31 @@ export function EditorPage({
 						</button>
 						<button
 							type="button"
-							className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm hover-btn-secondary"
+							className="hidden h-9 items-center gap-1.5 rounded-lg px-3 text-sm hover-btn-secondary md:flex"
 						>
-							<Download size={15} /> <span className="hidden sm:inline">Exportar</span>
+							<Download size={15} /> Exportar
 						</button>
+						<MoreMenu
+							items={[
+								[
+									<ListChecks key="i" size={17} />,
+									"Seleccionar todo",
+									() => setSelected(new Set(allVisibleIds)),
+								],
+								[
+									anyExpanded ? (
+										<ChevronsDownUp key="i" size={17} />
+									) : (
+										<ChevronsUpDown key="i" size={17} />
+									),
+									anyExpanded ? "Contraer todo" : "Expandir todo",
+									toggleAll,
+								],
+								[<Globe key="i" size={17} />, "Idiomas", () => {}],
+								[<LayoutGrid key="i" size={17} />, "Grupos de opciones", () => {}],
+								[<Download key="i" size={17} />, "Exportar", () => {}],
+							]}
+						/>
 					</div>
 				</div>
 			</div>
@@ -237,11 +264,7 @@ export function EditorPage({
 				clear={() => setSelected(new Set())}
 				selectAll={() => setSelected(new Set(allVisibleIds))}
 				anyExpanded={anyExpanded}
-				toggleAll={() => {
-					const next: Record<string, boolean> = {};
-					for (const c of visibleCategories) next[c.id] = anyExpanded;
-					setCollapsed(next);
-				}}
+				toggleAll={toggleAll}
 			/>
 
 			<div className="flex gap-8 px-4 pb-32 pt-4 md:px-6">
@@ -275,6 +298,53 @@ export function EditorPage({
 			</div>
 			{children}
 		</PageContext.Provider>
+	);
+}
+
+/** Phone-only overflow for the toolbar's secondary actions. */
+function MoreMenu({
+	items,
+}: Readonly<{ items: ReadonlyArray<readonly [ReactNode, string, () => void]> }>) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="relative md:hidden">
+			<button
+				type="button"
+				aria-label="Más acciones"
+				aria-expanded={open}
+				onClick={() => setOpen((o) => !o)}
+				className="flex h-9 w-9 items-center justify-center rounded-lg hover-btn-secondary"
+			>
+				<Ellipsis size={18} />
+			</button>
+			{open ? (
+				<>
+					<button
+						type="button"
+						aria-label="Cerrar"
+						className="fixed inset-0 z-30 cursor-default"
+						onClick={() => setOpen(false)}
+					/>
+					<ul className="absolute right-0 top-11 z-40 w-60 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-[var(--shadow-lg)]">
+						{items.map(([icon, label, onClick]) => (
+							<li key={label}>
+								<button
+									type="button"
+									onClick={() => {
+										onClick();
+										setOpen(false);
+									}}
+									className="flex h-11 w-full items-center gap-3 px-4 text-left text-sm text-foreground hover:bg-hover"
+								>
+									<span className="text-muted-foreground">{icon}</span>
+									{label}
+								</button>
+							</li>
+						))}
+					</ul>
+				</>
+			) : null}
+		</div>
 	);
 }
 
@@ -366,11 +436,11 @@ function Toolbar({
 						<button
 							type="button"
 							onClick={selectAll}
-							className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-hover"
+							className="hidden h-9 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-hover md:flex"
 						>
 							<ListChecks size={16} /> Seleccionar todo
 						</button>
-						<label className="flex h-9 min-w-48 max-w-md flex-1 items-center gap-2 rounded-lg border border-input-border bg-input px-3 focus-within:border-input-border-focus">
+						<label className="flex h-10 min-w-0 max-w-md flex-1 items-center md:h-9 md:min-w-48 gap-2 rounded-lg border border-input-border bg-input px-3 focus-within:border-input-border-focus">
 							<Search size={15} className="text-faint-foreground" />
 							<input
 								value={query}
@@ -379,7 +449,23 @@ function Toolbar({
 								className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-input-placeholder"
 							/>
 						</label>
-						<div className="ml-auto flex items-center gap-1">
+						<div
+							className="flex h-10 rounded-lg bg-muted p-0.5 text-xs md:hidden"
+							title="Español es el idioma predeterminado"
+						>
+							{(["es", "en"] as const).map((l) => (
+								<button
+									key={l}
+									type="button"
+									onClick={() => setLang(l)}
+									aria-pressed={lang === l}
+									className={`w-11 rounded-md font-medium uppercase ${lang === l ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+								>
+									{l}
+								</button>
+							))}
+						</div>
+						<div className="ml-auto hidden items-center gap-1 md:flex">
 							<button
 								type="button"
 								onClick={toggleAll}
