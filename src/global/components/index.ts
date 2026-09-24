@@ -34,7 +34,7 @@ export type { Toast, ToastKind } from "./NotificationCenter";
 export { SearchInput } from "./SearchInput";
 export { SegmentedControl } from "./SegmentedControl";
 export type { SegmentedControlOption, SegmentedControlProps } from "./SegmentedControl";
-export { Sidebar } from "./Sidebar";
+export { MobileTopBar, Sidebar } from "./Sidebar";
 export { Skeleton } from "./Skeleton";
 export { StatusBadge } from "./StatusBadge";
 export * from "./Surface";

@@ -1,4 +1,5 @@
 import { useUserSettings } from "@/features/users/hooks";
+import { useMediaQuery } from "@/global/hooks/useMediaQuery";
 import { useConvexAuth } from "convex/react";
 import { useEffect } from "react";
 import { create } from "zustand";
@@ -8,6 +9,32 @@ export const LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED = "sidebar-expanded";
 interface SidebarStore {
 	isExpanded: boolean;
 	setIsExpanded: (expanded: boolean) => void;
+	/**
+	 * Below desktop the sidebar floats over the page instead of taking width:
+	 * the phone drawer and the expanded tablet rail. Transient on purpose —
+	 * never persisted, so opening the drawer on a phone doesn't change the
+	 * desktop collapsed/expanded preference.
+	 */
+	overlayOpen: boolean;
+	setOverlayOpen: (open: boolean) => void;
+}
+
+/**
+ * How the sidebar sits in the layout. Boundaries match Tailwind's `md` and
+ * `lg`, which the container's classes use for the same switch.
+ *
+ * - phone (< 768px): off-canvas drawer, opened from `MobileTopBar`
+ * - tablet (768–1023px): 4rem icon rail; expanding overlays the page
+ * - desktop (>= 1024px): in the layout, collapse preference persisted
+ */
+export type SidebarViewport = "phone" | "tablet" | "desktop";
+
+export function useSidebarViewport(): SidebarViewport {
+	const isPhone = useMediaQuery("(max-width: 767px)");
+	const isTablet = useMediaQuery("(min-width: 768px) and (max-width: 1023px)");
+	if (isPhone) return "phone";
+	if (isTablet) return "tablet";
+	return "desktop";
 }
 
 /**
@@ -32,6 +59,8 @@ export const useSidebarStore = create<SidebarStore>((set) => ({
 			document.documentElement.dataset.sidebarExpanded = String(expanded);
 		}
 	},
+	overlayOpen: false,
+	setOverlayOpen: (open: boolean) => set({ overlayOpen: open }),
 }));
 
 /**
@@ -60,6 +89,9 @@ export function useSidebarHydration(): void {
 export function useToggleSidebar() {
 	const storeIsExpanded = useSidebarStore((state) => state.isExpanded);
 	const setIsExpanded = useSidebarStore((state) => state.setIsExpanded);
+	const overlayOpen = useSidebarStore((state) => state.overlayOpen);
+	const setOverlayOpen = useSidebarStore((state) => state.setOverlayOpen);
+	const viewport = useSidebarViewport();
 	const settings = useUserSettings();
 	const { isAuthenticated } = useConvexAuth();
 
@@ -89,11 +121,29 @@ export function useToggleSidebar() {
 		}
 	};
 
+	const closeOverlay = () => setOverlayOpen(false);
+
+	// Below desktop the toggle opens/closes the overlay and leaves the saved
+	// preference alone. The phone drawer always shows the full sidebar: it is
+	// either open or off screen, never a rail.
+	if (viewport !== "desktop") {
+		return {
+			viewport,
+			isExpanded: viewport === "phone" || overlayOpen,
+			overlayOpen,
+			closeOverlay,
+			toggleSidebar: async () => setOverlayOpen(!overlayOpen),
+		};
+	}
+
 	const isExpanded =
 		isAuthenticated && settings.settings ? settings.sidebarExpanded : storeIsExpanded;
 
 	return {
+		viewport,
 		isExpanded,
+		overlayOpen: false,
+		closeOverlay,
 		toggleSidebar,
 	};
 }

@@ -5,12 +5,25 @@ import { LogoSection } from "./LogoSection";
 import "./Sidebar.css";
 import { SidebarContainer } from "./SidebarContainer";
 import { SidebarItemsList } from "./SidebarItemsList";
-import { useSidebarGroupsHydration, useSidebarHydration, useSidebarItems } from "./hooks";
+import { useEffect } from "react";
+import {
+	useSidebarGroupsHydration,
+	useSidebarHydration,
+	useSidebarItems,
+	useSidebarStore,
+} from "./hooks";
 
 export function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
 	useSidebarHydration();
 	useSidebarGroupsHydration();
 	const { filteredSidebarItems } = useSidebarItems();
+	const setOverlayOpen = useSidebarStore((state) => state.setOverlayOpen);
+
+	// Following a link from the phone drawer or the expanded tablet rail
+	// should land on the page, not leave the menu covering it.
+	useEffect(() => {
+		setOverlayOpen(false);
+	}, [pathname, setOverlayOpen]);
 
 	return (
 		<SidebarContainer>

@@ -7,14 +7,22 @@
  * precedence on first paint so the sidebar lands at the correct width
  * before React hydrates, eliminating the layout shift that the previous
  * isMounted/LoadingSkeleton dance was working around.
+ *
+ * The saved preference is a desktop concept: phones get a drawer and
+ * tablets a rail regardless (see SidebarContainer), so the rule is scoped.
  */
 
-:root[data-sidebar-expanded="false"] .tavli-sidebar-width {
-	width: 4rem;
+@media (min-width: 1024px) {
+	:root[data-sidebar-expanded="false"] .tavli-sidebar-width {
+		width: 4rem;
+	}
 }
 
-@media (max-width: 1024px) and (orientation: portrait) {
-	:root:not([data-sidebar-expanded="false"]) .tavli-sidebar-width {
-		width: 13rem; /* w-52 */
+/* Tablet first paint: the server renders the desktop preference (media
+   queries are unknown there), which would flash an expanded sidebar over the
+   page. Hold it at the rail until someone actually opens it. */
+@media (min-width: 768px) and (max-width: 1023px) {
+	.tavli-sidebar-width:not([data-overlay-open]) {
+		width: 4rem;
 	}
 }

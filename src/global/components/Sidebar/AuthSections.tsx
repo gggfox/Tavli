@@ -12,7 +12,7 @@ export function AuthSections() {
 
 	const hasAuth = config.hasAuthConfig;
 	return (
-		<div className="shrink-0 pb-2 lg:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+		<div className="shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
 			{hasAuth && (
 				<>
 					<EmployeeClockCard isExpanded={isExpanded} />

@@ -5,7 +5,9 @@
 		},
 		"controls": {
 			"collapse": "Contraer barra lateral",
-			"expand": "Expandir barra lateral"
+			"expand": "Expandir barra lateral",
+			"openMenu": "Abrir menú",
+			"closeMenu": "Cerrar menú"
 		},
 		"nav": {
 			"home": "Panel de Control",
