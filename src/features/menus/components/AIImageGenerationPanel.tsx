@@ -23,6 +23,7 @@ const SCARCE_THRESHOLD = 20;
 
 const FAILURE_KEYS: Record<string, string> = {
 	[MENU_AI_IMAGE_FAILURE.CREDITS_EXHAUSTED]: "errors.AI_IMAGE_CREDITS_EXHAUSTED",
+	[MENU_AI_IMAGE_FAILURE.CONTENT_BLOCKED]: "errors.AI_IMAGE_CONTENT_BLOCKED",
 };
 
 export function AIImageGenerationPanel({ itemId }: Readonly<{ readonly itemId: Id<"menuItems"> }>) {

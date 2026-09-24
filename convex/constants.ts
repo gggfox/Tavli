@@ -687,6 +687,8 @@ export const MENU_AI_IMAGE_DRAFT_STATUS = {
 export const MENU_AI_IMAGE_FAILURE = {
 	CREDITS_EXHAUSTED: "credits_exhausted",
 	RATE_LIMITED: "rate_limited",
+	/** The provider's moderation refused the prompt — retrying the same prompt never helps. */
+	CONTENT_BLOCKED: "content_blocked",
 	PROVIDER_ERROR: "provider_error",
 	INVALID_RESPONSE: "invalid_response",
 	TIMEOUT: "timeout",

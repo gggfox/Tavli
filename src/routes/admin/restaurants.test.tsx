@@ -114,6 +114,7 @@ describe("admin/restaurants search params", () => {
 			to: "/admin/restaurants",
 			search: { settings: "restaurants:settings-target", manage: undefined },
 			replace: false,
+			viewTransition: true,
 		});
 	});
 
@@ -127,6 +128,7 @@ describe("admin/restaurants search params", () => {
 			to: "/admin/restaurants",
 			search: { settings: undefined, manage: undefined },
 			replace: false,
+			viewTransition: true,
 		});
 	});
 
@@ -140,6 +142,7 @@ describe("admin/restaurants search params", () => {
 			to: "/admin/restaurants",
 			search: { manage: "restaurants:manage-target", settings: undefined },
 			replace: false,
+			viewTransition: true,
 		});
 	});
 });

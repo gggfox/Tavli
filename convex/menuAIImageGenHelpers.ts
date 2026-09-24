@@ -126,11 +126,36 @@ export function readJpegDimensions(bytes: Uint8Array): { width: number; height: 
 	return null;
 }
 
-/** 402 is a credits problem nothing here can fix; 429 and 5xx are worth a retry. */
-export function classifyHttpFailure(status: number): { code: MenuAIImageFailure; retry: boolean } {
+/**
+ * Whether an OpenRouter error body is a moderation refusal. OpenRouter passes
+ * the upstream verdict through as `error.metadata.block_reason` (Gemini sends
+ * `"SAFETY"`), e.g. for "Sopa de almeja", whose name is also Spanish slang.
+ */
+export function isModerationBlock(body: unknown): boolean {
+	if (typeof body !== "object" || body === null) return false;
+	const error = (body as { error?: unknown }).error;
+	if (typeof error !== "object" || error === null) return false;
+	const { message, metadata } = error as { message?: unknown; metadata?: unknown };
+	const blockReason =
+		typeof metadata === "object" && metadata !== null
+			? (metadata as { block_reason?: unknown }).block_reason
+			: undefined;
+	if (typeof blockReason === "string" && blockReason.length > 0) return true;
+	return typeof message === "string" && /moderation/i.test(message);
+}
+
+/**
+ * 402 is a credits problem nothing here can fix; a moderation refusal will
+ * refuse the same prompt again; 429 and 5xx are worth a retry.
+ */
+export function classifyHttpFailure(
+	status: number,
+	body?: unknown
+): { code: MenuAIImageFailure; retry: boolean } {
 	if (status === 402) return { code: MENU_AI_IMAGE_FAILURE.CREDITS_EXHAUSTED, retry: false };
 	if (status === 429) return { code: MENU_AI_IMAGE_FAILURE.RATE_LIMITED, retry: true };
 	if (status >= 500) return { code: MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR, retry: true };
+	if (isModerationBlock(body)) return { code: MENU_AI_IMAGE_FAILURE.CONTENT_BLOCKED, retry: false };
 	return { code: MENU_AI_IMAGE_FAILURE.PROVIDER_ERROR, retry: false };
 }
 
@@ -162,7 +187,7 @@ export type MonthlyCapJob = {
  * - `failed` counts only for `invalid_response` and `timeout`: the provider
  *   may have generated (and billed for) an image in both cases even though
  *   Tavli could not use it. Every other failure reason (credits exhausted,
- *   rate limited, provider error, item missing) never reached — or never
+ *   rate limited, content blocked, provider error, item missing) never reached — or never
  *   billed — generation, so it costs nothing and does not count.
  */
 export function countsTowardMonthlyCap(job: MonthlyCapJob, now: number): boolean {

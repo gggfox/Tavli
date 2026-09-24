@@ -1,3 +1,7 @@
+import {
+	restaurantCardTransition,
+	restaurantTitleTransition,
+} from "@/features/restaurants/utils/viewTransition";
 import { GeneralSection } from "@/features/restaurants/components/settings/GeneralSection";
 import { HoursSection } from "@/features/restaurants/components/settings/HoursSection";
 import { LocationSection } from "@/features/restaurants/components/settings/LocationSection";
@@ -163,7 +167,10 @@ export function RestaurantSettingsView({
 	const Layout = isDesktop ? SettingsScrollLayout : SettingsListDetailLayout;
 
 	return (
-		<div className="flex min-h-full flex-col bg-background md:min-h-[calc(100vh-12rem)] md:rounded-xl md:border md:border-border">
+		<div
+			style={restaurantCardTransition(restaurant._id)}
+			className="flex min-h-full flex-col bg-background md:min-h-[calc(100vh-12rem)] md:rounded-xl md:border md:border-border"
+		>
 			<SettingsHeader restaurant={restaurant} onClose={onClose} onToggleActive={onToggleActive} />
 			{sideEffectError ? (
 				<div className="px-4 pt-4 md:px-6">
@@ -212,7 +219,10 @@ function SettingsHeader({
 				<ChevronLeft size={20} />
 			</button>
 			<div data-testid="restaurant-settings-header" className="min-w-0 flex-1">
-				<h2 className="truncate text-lg font-semibold text-foreground md:text-xl">
+				<h2
+					style={restaurantTitleTransition(restaurant._id)}
+					className="w-fit max-w-full truncate text-lg font-semibold text-foreground md:text-xl"
+				>
 					{restaurant.name}
 				</h2>
 			</div>

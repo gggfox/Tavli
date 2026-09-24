@@ -1,3 +1,7 @@
+import {
+	restaurantCardTransition,
+	restaurantTitleTransition,
+} from "@/features/restaurants/utils/viewTransition";
 import { AdminRestaurantsListSkeleton } from "@/features/restaurants/components/AdminRestaurantsListSkeleton";
 import { RestaurantSettingsView } from "@/features/restaurants/components/RestaurantSettingsView";
 import type { RestaurantSettingsNavId } from "@/features/restaurants/constants";
@@ -321,11 +325,17 @@ export function AdminRestaurantsList({
 					return (
 						<div
 							key={r._id}
+							style={restaurantCardTransition(r._id)}
 							className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted border border-border"
 						>
 							<div className="flex items-center gap-4 min-w-0">
 								<div className="w-40 shrink-0 min-w-0">
-									<div className="text-sm font-medium text-foreground truncate">{r.name}</div>
+									<div
+										style={restaurantTitleTransition(r._id)}
+										className="w-fit max-w-full truncate text-sm font-medium text-foreground"
+									>
+										{r.name}
+									</div>
 									<div className="text-xs text-faint-foreground truncate">/{r.slug}</div>
 								</div>
 								<StatusBadge
@@ -534,7 +544,10 @@ function ExpandedTablesRow({ restaurant, onClose }: Readonly<ExpandedTablesRowPr
 	const { t } = useTranslation();
 	const isTabletPortrait = useIsTabletPortraitViewport();
 	return (
-		<div className="rounded-xl bg-background border border-border min-h-[calc(100vh-12rem)] flex flex-col">
+		<div
+			style={restaurantCardTransition(restaurant._id)}
+			className="rounded-xl bg-background border border-border min-h-[calc(100vh-12rem)] flex flex-col"
+		>
 			<div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-6 py-4 bg-background border-b border-border rounded-t-xl">
 				<button
 					type="button"
@@ -546,7 +559,12 @@ function ExpandedTablesRow({ restaurant, onClose }: Readonly<ExpandedTablesRowPr
 					<ChevronLeft size={16} />
 				</button>
 				<div className="flex items-center gap-3 min-w-0 flex-1">
-					<h2 className="text-xl font-semibold text-foreground truncate">{restaurant.name}</h2>
+					<h2
+						style={restaurantTitleTransition(restaurant._id)}
+						className="w-fit max-w-full text-xl font-semibold text-foreground truncate"
+					>
+						{restaurant.name}
+					</h2>
 					<StatusBadge
 						bgColor={restaurant.isActive ? "var(--accent-success)" : "var(--bg-tertiary)"}
 						textColor={restaurant.isActive ? "white" : "var(--text-muted)"}

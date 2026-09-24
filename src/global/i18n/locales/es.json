@@ -766,6 +766,7 @@
 		"AI_IMAGE_GENERATION_IN_PROGRESS": "Ya se está generando una imagen para este producto.",
 		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "Esta organización ya usó todas sus imágenes con IA del mes.",
 		"AI_IMAGE_CREDITS_EXHAUSTED": "Se agotaron los créditos de imágenes con IA. Contacta a soporte de Tavli.",
+		"AI_IMAGE_CONTENT_BLOCKED": "El servicio de imágenes rechazó el nombre de este platillo. Agrega una descripción al producto o sube una foto.",
 		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo.",
 		"ERROR_NOTIFICATION_NOT_FOUND": "Esa notificación ya no existe.",
 		"ERROR_PAYMENT_UNDER_DISPUTE": "Este cargo está ligado a una disputa bancaria, así que no se puede reembolsar aquí. Tavli la está atendiendo — y si el banco ya resolvió a favor del comensal, su dinero ya le fue devuelto por el banco.",

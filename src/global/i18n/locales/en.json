@@ -766,6 +766,7 @@
 		"AI_IMAGE_GENERATION_IN_PROGRESS": "An image is already being generated for this item.",
 		"AI_IMAGE_MONTHLY_LIMIT_REACHED": "This organization has used all its AI images for the month.",
 		"AI_IMAGE_CREDITS_EXHAUSTED": "AI image credits are exhausted. Contact Tavli support.",
+		"AI_IMAGE_CONTENT_BLOCKED": "The image service rejected this dish's name. Add a description to the product, or upload a photo.",
 		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again.",
 		"ERROR_NOTIFICATION_NOT_FOUND": "That notification no longer exists.",
 		"ERROR_PAYMENT_UNDER_DISPUTE": "This charge is tied to a bank dispute, so it can't be refunded here. Tavli is handling it — and if the bank already decided in the diner's favour, they have their money back from the bank.",
