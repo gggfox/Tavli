@@ -95,8 +95,20 @@ export const generate = internalAction({
 		}
 
 		if (!response.ok) {
+			const text = await response.text().catch(() => "");
 			clearTimeout(timer);
-			const { code, retry } = classifyHttpFailure(response.status);
+			let body: unknown = null;
+			try {
+				body = JSON.parse(text);
+			} catch {
+				// Not JSON (a gateway page, an empty body): classify on status alone.
+			}
+			// The status alone can't tell a moderation refusal from a bad request;
+			// without the provider's own words the failure is undiagnosable.
+			console.error(
+				`[menuAIImageGen] OpenRouter HTTP ${response.status} for job ${jobId}: ${text.slice(0, 500)}`
+			);
+			const { code, retry } = classifyHttpFailure(response.status, body);
 			await retryOrFail(code, retry);
 			return null;
 		}
@@ -107,6 +119,9 @@ export const generate = internalAction({
 		clearTimeout(timer);
 		const decoded = decodeImageResponse(body);
 		if (!decoded.ok) {
+			console.error(
+				`[menuAIImageGen] Unusable OpenRouter response for job ${jobId}: ${decoded.reason}`
+			);
 			await fail(MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE);
 			return null;
 		}
