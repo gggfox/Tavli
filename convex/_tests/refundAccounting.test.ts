@@ -13,6 +13,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { REFUND_CLAIM_STALE_MS } from "../orderRefundHelpers";
 import schema from "../schema";
 import { mockStripeClient } from "./_fixtures/stripeMock.fixture";
 
@@ -504,5 +505,151 @@ describe("a failed refund is not a dead end", () => {
 		});
 		expect(error?.message).toBe("ERROR_REFUND_NOT_RETRYABLE");
 		expect(mockStripeClient.refunds.create).not.toHaveBeenCalled();
+	});
+});
+
+/** A Stripe error that came back with an HTTP response — a definitive answer. */
+function stripeApiError(message: string, statusCode = 400) {
+	return Object.assign(new Error(message), {
+		type: statusCode >= 500 ? "StripeAPIError" : "StripeInvalidRequestError",
+		statusCode,
+		requestId: "req_test",
+	});
+}
+
+/** No response at all: the refund may or may not exist at Stripe. */
+function connectionError() {
+	return Object.assign(new Error("Request timed out"), { type: "StripeConnectionError" });
+}
+
+describe("which idempotency key a retry sends", () => {
+	it("moves to a fresh :retry:1 key after a definitive Stripe error, and settles", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const staff = manager(t);
+
+		mockStripeClient.refunds.create
+			.mockRejectedValueOnce(stripeApiError("Insufficient funds in Stripe account"))
+			.mockResolvedValueOnce(refundResult("re_drink", DRINK_REFUND, DRINK_REFUND));
+
+		await staff.mutation(api.orders.cancelOrderItem, { orderItemId: ids.drinkItemId });
+		await flush(t);
+		expect((await read(t, ids)).payment?.pendingRefund?.lastFailureDefinitive).toBe(true);
+
+		const [, error] = await staff.action(api.stripe.retryOrderRefund, { orderId: ids.orderId });
+		expect(error).toBeNull();
+
+		const key = `refund:${ids.paymentId}:${ids.drinkItemId}`;
+		// Same amount, new key: the old one would only replay Stripe's stored error.
+		expect(refundCalls()).toEqual([
+			[DRINK_REFUND, key],
+			[DRINK_REFUND, `${key}:retry:1`],
+		]);
+		const { order, payment } = await read(t, ids);
+		expect(order?.paymentState).toBe("paid");
+		expect(payment?.pendingRefund).toBeUndefined();
+		expect(payment?.amountRefunded).toBe(DRINK_REFUND);
+	});
+
+	it("moves to :retry:2 after a second definitive error", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const staff = manager(t);
+
+		mockStripeClient.refunds.create
+			.mockRejectedValueOnce(stripeApiError("Insufficient funds"))
+			.mockRejectedValueOnce(stripeApiError("Stripe had an error", 500))
+			.mockResolvedValueOnce(refundResult("re_whole", CHARGE, CHARGE));
+
+		// A whole-order sweep: its 5xx counts as definitive (a fresh sweep key
+		// can only refund what remains).
+		await staff.action(api.stripe.cancelOrderAndRefund, { orderId: ids.orderId });
+		const [, firstRetryError] = await staff.action(api.stripe.retryOrderRefund, {
+			orderId: ids.orderId,
+		});
+		expect(firstRetryError?.message).toBe("ERROR_REFUND_RETRY_FAILED");
+		const [, secondRetryError] = await staff.action(api.stripe.retryOrderRefund, {
+			orderId: ids.orderId,
+		});
+		expect(secondRetryError).toBeNull();
+
+		const key = `refund:${ids.paymentId}:${ids.orderId}`;
+		expect(refundCalls()).toEqual([
+			[undefined, key],
+			[undefined, `${key}:retry:1`],
+			[undefined, `${key}:retry:2`],
+		]);
+		expect((await read(t, ids)).order?.paymentState).toBe("refunded");
+	});
+
+	it("reuses the original key after an unknown outcome (connection error)", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const staff = manager(t);
+
+		mockStripeClient.refunds.create
+			.mockRejectedValueOnce(connectionError())
+			.mockResolvedValueOnce(refundResult("re_drink", DRINK_REFUND, DRINK_REFUND));
+
+		await staff.mutation(api.orders.cancelOrderItem, { orderItemId: ids.drinkItemId });
+		await flush(t);
+		expect((await read(t, ids)).payment?.pendingRefund?.lastFailureDefinitive).toBe(false);
+
+		await staff.action(api.stripe.retryOrderRefund, { orderId: ids.orderId });
+
+		const key = `refund:${ids.paymentId}:${ids.drinkItemId}`;
+		expect(refundCalls()).toEqual([
+			[DRINK_REFUND, key],
+			[DRINK_REFUND, key],
+		]);
+	});
+
+	it("recovers an order a crashed refund left in refund_requested once its reservation is stale", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const staff = manager(t);
+
+		// The cancel reserved the refund and flipped the order, then the action
+		// died before Stripe answered — nothing recorded an outcome.
+		await staff.mutation(api.orders.updateStatus, {
+			orderId: ids.orderId,
+			newStatus: "cancelled",
+		});
+		await t.run(async (ctx) => {
+			const payment = await ctx.db.get(ids.paymentId);
+			await ctx.db.patch(ids.paymentId, {
+				pendingRefund: {
+					...payment!.pendingRefund!,
+					reservedAt: Date.now() - REFUND_CLAIM_STALE_MS - 1,
+				},
+			});
+		});
+		expect((await read(t, ids)).order?.paymentState).toBe("refund_requested");
+
+		mockStripeClient.refunds.create.mockResolvedValueOnce(refundResult("re_whole", CHARGE, CHARGE));
+		const [result, error] = await staff.action(api.stripe.retryOrderRefund, {
+			orderId: ids.orderId,
+		});
+		expect(error).toBeNull();
+		expect(result?.paymentState).toBe("refunded");
+		// Unknown outcome: the same key, so a refund that did land is replayed.
+		expect(refundCalls()).toEqual([[undefined, `refund:${ids.paymentId}:${ids.orderId}`]]);
+		expect((await read(t, ids)).payment?.pendingRefund).toBeUndefined();
+	});
+
+	it("still refuses a retry while a refund_requested order's reservation is fresh", async () => {
+		const t = convexTest(schema, modules);
+		const ids = await seed(t);
+		const staff = manager(t);
+
+		await staff.mutation(api.orders.updateStatus, {
+			orderId: ids.orderId,
+			newStatus: "cancelled",
+		});
+		const [, error] = await staff.action(api.stripe.retryOrderRefund, { orderId: ids.orderId });
+
+		expect(error?.message).toBe("ERROR_REFUND_IN_PROGRESS");
+		expect(mockStripeClient.refunds.create).not.toHaveBeenCalled();
+		expect((await read(t, ids)).order?.paymentState).toBe("refund_requested");
 	});
 });

@@ -950,9 +950,12 @@ export default defineSchema({
 		 * serializes two refunds racing on one charge: the second sees this and
 		 * is refused with `ERROR_REFUND_IN_PROGRESS` before it changes anything.
 		 * Cleared by the outcome mutation on success; kept with `failedAt` on
-		 * failure so the manager's retry re-sends the **same** idempotency key
-		 * and parameters (a refund that did land at Stripe is then replayed, not
-		 * duplicated). See `convex/orderRefundHelpers.ts`.
+		 * failure so the manager can retry it. A retry after an UNKNOWN outcome
+		 * (no Stripe response) re-sends the same key and parameters, so a refund
+		 * that did land is replayed, not duplicated; a retry after a DEFINITIVE
+		 * Stripe error moves to a fresh key (`attempt`), because Stripe caches
+		 * that error under the old key and would replay it for 24h. See
+		 * `convex/orderRefundHelpers.ts`.
 		 */
 		pendingRefund: v.optional(
 			v.object({
@@ -964,6 +967,18 @@ export default defineSchema({
 				amount: v.optional(v.number()),
 				reservedAt: v.number(),
 				failedAt: v.optional(v.number()),
+				/**
+				 * Retry generation: the key sent to Stripe is `idempotencyKey`
+				 * for 0/absent, `${idempotencyKey}:retry:${attempt}` after that.
+				 * `idempotencyKey` itself stays the logical refund's identity.
+				 */
+				attempt: v.optional(v.number()),
+				/**
+				 * Set by `createRefund` when the last attempt got a definitive
+				 * Stripe answer — nothing was refunded under that key, so the
+				 * next retry may (and must) use a fresh one.
+				 */
+				lastFailureDefinitive: v.optional(v.boolean()),
 			})
 		),
 		/** Tip portion in smallest currency unit (e.g. cents). */

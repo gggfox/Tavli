@@ -91,6 +91,7 @@ import {
 	buildLineRefundIdempotencyKey,
 	ORDER_REFUND_BLOCK_REASON,
 	REFUND_ERRORS,
+	refundAttemptKey,
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
 import {
@@ -1168,6 +1169,12 @@ export const createRefund = internalAction({
 		 * refund fields are still maintained either way.
 		 */
 		skipOrderStatePatch: v.optional(v.boolean()),
+		/**
+		 * The `payments.pendingRefund` key this call executes, when it executes
+		 * one. A failure is classified onto that reservation (definitive Stripe
+		 * answer vs unknown outcome), which decides the key a retry may send.
+		 */
+		reservationKey: v.optional(v.string()),
 	},
 	handler: async (
 		ctx,
@@ -1268,6 +1275,13 @@ export const createRefund = internalAction({
 			// outcome mutations settle the order instead of flagging it
 			// `refund_failed` and sending staff to refund the diner twice.
 			const alreadyRefunded = isChargeAlreadyRefunded(error);
+			if (args.reservationKey !== undefined) {
+				await ctx.runMutation(internal.orderRefundHelpers.noteRefundFailureInternal, {
+					paymentId: args.paymentId,
+					idempotencyKey: args.reservationKey,
+					definitive: isDefinitiveRefundFailure(error, args.amount === undefined),
+				});
+			}
 			await ctx.runMutation(internal.stripeHelpers.recordRefundResultInternal, {
 				paymentId: args.paymentId,
 				refundStatus: PAYMENT_REFUND_STATUS.FAILED,
@@ -1326,6 +1340,35 @@ export const createRefund = internalAction({
 		};
 	},
 });
+
+/**
+ * Whether a failed `refunds.create` got a definitive answer from Stripe, i.e.
+ * no refund exists under the key it sent — so a retry may use a fresh key, and
+ * must, because Stripe replays the stored error under the old one for 24h.
+ *
+ * Anything that is not clearly definitive counts as UNKNOWN and keeps its key,
+ * since a fresh key after a refund that did land would pay the diner twice:
+ * - no HTTP status (timeout, connection error, anything not from Stripe);
+ * - `StripeConnectionError`, and `StripeIdempotencyError` (a concurrent
+ *   request, or a changed body under a key that may already hold a refund);
+ * - `StripeRateLimitError` — not stored, so the same key is simply retried;
+ * - a 5xx on an explicit-amount refund: Stripe calls its result
+ *   indeterminate. On a sweep (no amount) a fresh key is safe anyway — Stripe
+ *   only refunds what remains — so a sweep's 5xx counts as definitive.
+ */
+function isDefinitiveRefundFailure(error: unknown, isSweep: boolean): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const { type, statusCode } = error as { type?: unknown; statusCode?: unknown };
+	if (typeof statusCode !== "number") return false;
+	if (
+		type === "StripeConnectionError" ||
+		type === "StripeIdempotencyError" ||
+		type === "StripeRateLimitError"
+	) {
+		return false;
+	}
+	return statusCode < 500 || isSweep;
+}
 
 /** Stripe's answer to refunding a charge that has nothing left to refund. */
 function isChargeAlreadyRefunded(error: unknown): boolean {
@@ -1447,7 +1490,10 @@ async function refundCancelledOrder(
 			// legacy per-order case, and every fee-inclusive ADR 008 cancel) so
 			// Stripe itself decides what "remaining" is.
 			...(plan.isFullRefund ? {} : { amount: plan.amount }),
-			idempotencyKey: plan.idempotencyKey,
+			// The reservation's current attempt: the original key, or a fresh
+			// `:retry:N` one after a definitive failure (see orderRefundHelpers).
+			idempotencyKey: plan.stripeIdempotencyKey,
+			reservationKey: plan.idempotencyKey,
 			// The outcome mutation below is the one writer of the order's money
 			// state, so a Stripe failure on an already fully refunded charge
 			// never flashes `refund_failed`.
@@ -1538,7 +1584,9 @@ async function refundCancelledOrder(
  * Idempotent: the order item's `refundedAt` short-circuits a replayed
  * schedule before Stripe is reached, and the (payment, orderItem) idempotency
  * key dedupes at Stripe below that — which is also what makes the manager's
- * retry safe after a "failure" that in fact reached Stripe.
+ * retry safe after a "failure" whose outcome was unknown. The key sent is the
+ * reservation's current attempt (`refundAttemptKey`): a fresh `:retry:N` one
+ * after a definitive Stripe error, which Stripe would otherwise replay.
  *
  * Order-state policy lives in `recordOrderItemRefundOutcomeInternal`: a
  * cooking order stays `paid` (only the item + audit + payment record the
@@ -1646,7 +1694,8 @@ export const refundOrderItem = internalAction({
 				paymentId: args.paymentId,
 				orderId: args.orderId,
 				...(claim.amount !== undefined && { amount: claim.amount }),
-				idempotencyKey,
+				idempotencyKey: refundAttemptKey(claim),
+				reservationKey: idempotencyKey,
 				skipOrderStatePatch: true,
 			});
 		} catch (error) {
@@ -1699,10 +1748,13 @@ export type RetryOrderRefundResult = {
  *
  * Authorized exactly like cancelling an order (manager or above; see
  * `orderRefundHelpers.armRefundRetryInternal`), and it re-sends the failed
- * reservation's own idempotency key and amount: if the refund that "failed"
- * had in fact reached Stripe, Stripe replays it instead of paying the diner
- * twice. A line refund re-runs through `refundOrderItem`, a whole-order
- * refund through the same path as {@link cancelOrderAndRefund}.
+ * reservation's own amount. After an unknown outcome it re-sends the same
+ * idempotency key, so a refund that had in fact reached Stripe is replayed
+ * instead of paying the diner twice; after a definitive Stripe error it moves
+ * to a fresh `:retry:N` key, because Stripe would replay that error for 24h.
+ * Also recovers an order left in `refund_requested` by a refund that crashed
+ * (stale reservation). A line refund re-runs through `refundOrderItem`, a
+ * whole-order refund through the same path as {@link cancelOrderAndRefund}.
  */
 export const retryOrderRefund = action({
 	args: { orderId: v.id(TABLE.ORDERS) },
@@ -1718,7 +1770,9 @@ export const retryOrderRefund = action({
 		);
 		if (armError) return [null, armError];
 
-		if (target.kind === "line") {
+		if (target.kind === "settled") {
+			// Nothing to send: the charge was already fully refunded.
+		} else if (target.kind === "line") {
 			await ctx.runAction(internal.stripe.refundOrderItem, {
 				orderId: args.orderId,
 				orderItemId: target.orderItemId,

@@ -1090,6 +1090,25 @@ stripe payment_intents confirm pi_... --payment-method pm_card_visa \
   does **not** flap to `succeeded` when `charge.refunded` arrives moments later
 - Confirm the order's `paymentState` becomes `refunded`, and other orders on the
   tab are untouched
+- Remove one line from a paid order, then quickly remove a second one: the
+  second is refused with `ERROR_REFUND_IN_PROGRESS` and the line stays live
+  until the first refund settles. `payments.pendingRefund` is set while a
+  refund is in flight and cleared when it lands
+- Remove the last live line: the refund request carries **no** `amount`
+  (Stripe refunds exactly what remains), and `payments.amountRefunded` equals
+  the charge's own `amount_refunded` — never more, whichever of the refund
+  result and `charge.refunded` lands first
+- After a failed refund the order shows **Retry refund**. After an unknown
+  outcome (timeout / connection error) the retry reuses the original
+  idempotency key, so a refund that actually landed at Stripe is replayed, not
+  repeated; after a definitive Stripe error it sends a fresh
+  `<key>:retry:<n>` key, because Stripe replays a stored error under the old
+  key for 24h. (A charge already fully refunded from the Dashboard is not a
+  failure — it settles as `refunded`.) An order left in `refund_requested` by
+  a refund that crashed becomes retryable once its reservation is 15 minutes
+  old
+- Cancel an order whose line refund failed: the cancel refunds whatever
+  remains instead of reporting "no refund due"
 
 ### Disputes
 

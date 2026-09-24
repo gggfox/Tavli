@@ -27,8 +27,22 @@
  * The reservation carries the idempotency key and the exact amount (absent for
  * "whatever remains"), so the Stripe call is fully decided inside the
  * transaction. The outcome mutation clears it on success and marks it failed
- * otherwise; the manager's retry then re-sends the same key and body, so a
- * refund that did land at Stripe is replayed rather than issued twice.
+ * otherwise, and the manager can retry it ({@link armRefundRetryInternal}).
+ *
+ * ## Which idempotency key a retry sends
+ *
+ * Stripe stores the first response under an idempotency key — success or
+ * failure, 5xx included — and replays it for 24h. So the key a retry sends
+ * depends on what the failed attempt learned:
+ * - **Unknown outcome** (no Stripe response: timeout, connection error, a
+ *   crashed action): the refund may exist, so the retry re-sends the SAME key
+ *   and body. Stripe replays it if it landed, or runs it now if it never
+ *   arrived. A fresh key here could pay the diner twice.
+ * - **Definitive failure** (Stripe answered with an error): no refund exists
+ *   under that key, and re-sending it would only replay the cached error. The
+ *   retry moves to `${key}:retry:${attempt}` ({@link refundAttemptKey}).
+ * `createRefund` classifies the error and records it on the reservation
+ * (`lastFailureDefinitive`) before the outcome mutation marks it failed.
  *
  * `payments.amountRefunded` is never summed locally: it is always Stripe's own
  * cumulative figure, and every writer keeps the larger of stored and incoming
@@ -113,13 +127,28 @@ export function assertRefundClaimable(payment: Doc<"payments">, now: number): vo
 	}
 }
 
+/** The idempotency key actually sent to Stripe for a reservation's current attempt. */
+export function refundAttemptKey(held: { idempotencyKey: string; attempt?: number }): string {
+	return held.attempt ? `${held.idempotencyKey}:retry:${held.attempt}` : held.idempotencyKey;
+}
+
+/**
+ * The attempt a retry of `held` must use: the same one after an unknown
+ * outcome, the next one after a definitive Stripe error (see the module doc).
+ */
+export function nextRefundAttempt(held: PendingRefund): number {
+	const attempt = held.attempt ?? 0;
+	return held.lastFailureDefinitive === true ? attempt + 1 : attempt;
+}
+
 /**
  * Reserves the refund on the payment row (see the module doc). Throws
  * `ERROR_REFUND_IN_PROGRESS` when another one is live.
  *
  * Re-reserving a key that was reserved before (a failed attempt) keeps the
  * original `amount`: Stripe only replays an idempotent request whose body is
- * identical, so a key must never be re-sent with a different amount.
+ * identical, so a key must never be re-sent with a different amount. The
+ * attempt carries over by {@link nextRefundAttempt}.
  */
 export async function claimRefund(
 	ctx: MutationCtx,
@@ -130,18 +159,23 @@ export async function claimRefund(
 		orderItemId?: Id<"orderItems">;
 		/** Omit to refund whatever remains on the charge. */
 		amount?: number;
+		/** Start on a retry generation other than 0 (see `armRefundRetryInternal`). */
+		attempt?: number;
 	},
 	now: number
 ): Promise<void> {
 	assertRefundClaimable(payment, now);
 	const held = payment.pendingRefund;
-	const amount = held?.idempotencyKey === claim.idempotencyKey ? held.amount : claim.amount;
+	const sameKey = held?.idempotencyKey === claim.idempotencyKey;
+	const amount = sameKey ? held.amount : claim.amount;
+	const attempt = sameKey ? nextRefundAttempt(held) : (claim.attempt ?? 0);
 	await ctx.db.patch(payment._id, {
 		pendingRefund: {
 			idempotencyKey: claim.idempotencyKey,
 			orderId: claim.orderId,
 			...(claim.orderItemId !== undefined && { orderItemId: claim.orderItemId }),
 			...(amount !== undefined && { amount }),
+			...(attempt > 0 && { attempt }),
 			reservedAt: now,
 		},
 		updatedAt: now,
@@ -362,7 +396,10 @@ export type OrderRefundPlan = {
 	amount: number;
 	/** Send no `amount` to Stripe: refund whatever remains on the charge. */
 	isFullRefund: boolean;
+	/** The logical refund's key — what the reservation is held under. */
 	idempotencyKey: string;
+	/** The key to send to Stripe for the reservation's current attempt. */
+	stripeIdempotencyKey: string;
 };
 
 /**
@@ -417,6 +454,7 @@ export async function planOrderRefund(
 				amount: held.amount ?? amount,
 				isFullRefund: held.amount === undefined,
 				idempotencyKey,
+				stripeIdempotencyKey: refundAttemptKey(held),
 			},
 			blocked: null,
 			payment,
@@ -428,7 +466,14 @@ export async function planOrderRefund(
 	}
 
 	return {
-		plan: { paymentId: payment._id, orderId: order._id, amount, isFullRefund, idempotencyKey },
+		plan: {
+			paymentId: payment._id,
+			orderId: order._id,
+			amount,
+			isFullRefund,
+			idempotencyKey,
+			stripeIdempotencyKey: idempotencyKey,
+		},
 		blocked: null,
 		payment,
 	};
@@ -627,9 +672,34 @@ export const releaseRefundClaimInternal = internalMutation({
 	},
 });
 
+/**
+ * Records whether a failed attempt got a definitive Stripe answer, so the retry
+ * knows whether it may move to a fresh key. Written by `createRefund` before it
+ * rethrows, i.e. before the caller's outcome mutation marks the reservation
+ * failed. An attempt that dies without reaching here stays "unknown".
+ */
+export const noteRefundFailureInternal = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		idempotencyKey: v.string(),
+		definitive: v.boolean(),
+	},
+	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		const held = payment?.pendingRefund;
+		if (!held || held.idempotencyKey !== args.idempotencyKey) return;
+		await ctx.db.patch(args.paymentId, {
+			pendingRefund: { ...held, lastFailureDefinitive: args.definitive },
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 export type RefundRetryTarget =
 	| { kind: "line"; paymentId: Id<"payments">; orderItemId: Id<"orderItems"> }
-	| { kind: "order" };
+	| { kind: "order" }
+	/** Nothing left to send: the charge is already fully refunded. */
+	| { kind: "settled" };
 
 /**
  * The transactional half of `stripe.retryOrderRefund`: authorizes the manager
@@ -638,14 +708,27 @@ export type RefundRetryTarget =
  * Gated exactly like cancelling an order (`orders.updateStatus`): restaurant
  * staff access, then manager or above — a retry moves money.
  *
- * The failed reservation is re-armed **as it was** — same idempotency key,
- * same amount — so if the "failed" refund actually landed at Stripe (a timeout
- * after Stripe processed it), the retry is replayed rather than paid twice.
+ * Accepts `refund_failed`, and also `refund_requested` when this order's
+ * reservation has gone stale — the refund action died between reserving (or a
+ * previous retry arming) and writing its outcome, which otherwise leaves the
+ * order stuck in `refund_requested` forever. A live reservation is refused
+ * with `ERROR_REFUND_IN_PROGRESS`.
+ *
+ * The failed reservation is re-armed with its own amount, on the key chosen by
+ * {@link nextRefundAttempt}: the same key after an unknown outcome (a refund
+ * that did land is replayed, not paid twice), a fresh one after a definitive
+ * Stripe error (the old key would only replay that error).
+ *
  * Only when the order has no reservation of its own (it failed before
  * reservations existed, or another order on the same legacy tab has since used
- * the slot) is a whole-order refund rebuilt from its deterministic plan; a
- * still-cooking order's line refund cannot be rebuilt that way, so it answers
- * `ERROR_REFUND_NOT_RETRYABLE` and a whole-order cancel remains the way out.
+ * the slot) is a whole-order refund rebuilt from its plan, and then nothing is
+ * known about earlier attempts. A sweep (no amount) is rebuilt on a fresh key —
+ * safe whatever happened, because Stripe refunds only what remains. An
+ * explicit amount keeps the deterministic key: if an earlier refund under it
+ * landed, Stripe replays it (or rejects a changed amount) instead of a fresh
+ * key paying the diner a second time. A still-cooking order's line refund
+ * cannot be rebuilt at all, so it answers `ERROR_REFUND_NOT_RETRYABLE` and a
+ * whole-order cancel remains the way out.
  */
 export const armRefundRetryInternal = internalMutation({
 	args: { orderId: v.id(TABLE.ORDERS) },
@@ -670,7 +753,9 @@ export const armRefundRetryInternal = internalMutation({
 		const [, managerError] = await requireRestaurantManagerOrAbove(ctx, userId, order.restaurantId);
 		if (managerError) return [null, managerError];
 
-		if (order.paymentState !== ORDER_PAYMENT_STATE.REFUND_FAILED) {
+		const isFailed = order.paymentState === ORDER_PAYMENT_STATE.REFUND_FAILED;
+		const isRequested = order.paymentState === ORDER_PAYMENT_STATE.REFUND_REQUESTED;
+		if (!isFailed && !isRequested) {
 			return [null, new ConflictError(REFUND_ERRORS.NOT_RETRYABLE).toObject()];
 		}
 
@@ -682,6 +767,25 @@ export const armRefundRetryInternal = internalMutation({
 		if (held && isRefundClaimLive(held, now)) {
 			return [null, new ConflictError(REFUND_ERRORS.IN_PROGRESS).toObject()];
 		}
+		// `refund_requested` is only retryable as the leftover of a crashed
+		// refund: this order's own reservation, stale (live was refused above).
+		if (isRequested && held?.orderId !== order._id) {
+			return [null, new ConflictError(REFUND_ERRORS.NOT_RETRYABLE).toObject()];
+		}
+
+		// The money is already back (e.g. the crashed refund did land and its
+		// webhook recorded it): settle instead of asking Stripe again.
+		if (isPaymentFullyRefunded(payment)) {
+			await ctx.db.patch(order._id, {
+				paymentState: ORDER_PAYMENT_STATE.REFUNDED,
+				updatedAt: now,
+				updatedBy: userId,
+			});
+			if (held?.orderId === order._id) {
+				await ctx.db.patch(payment._id, { pendingRefund: undefined, updatedAt: now });
+			}
+			return [{ kind: "settled" }, null];
+		}
 
 		const markRequested = () =>
 			ctx.db.patch(order._id, {
@@ -691,9 +795,15 @@ export const armRefundRetryInternal = internalMutation({
 			});
 
 		if (held?.orderId === order._id) {
-			const { failedAt: _failedAt, ...rearmed } = held;
+			const {
+				failedAt: _failedAt,
+				lastFailureDefinitive: _lastFailureDefinitive,
+				attempt: _attempt,
+				...rearmed
+			} = held;
+			const attempt = nextRefundAttempt(held);
 			await ctx.db.patch(payment._id, {
-				pendingRefund: { ...rearmed, reservedAt: now },
+				pendingRefund: { ...rearmed, ...(attempt > 0 && { attempt }), reservedAt: now },
 				updatedAt: now,
 			});
 			if (held.orderItemId !== undefined) {
@@ -714,7 +824,7 @@ export const armRefundRetryInternal = internalMutation({
 			{
 				idempotencyKey: plan.idempotencyKey,
 				orderId: order._id,
-				...(!plan.isFullRefund && { amount: plan.amount }),
+				...(plan.isFullRefund ? { attempt: 1 } : { amount: plan.amount }),
 			},
 			now
 		);
