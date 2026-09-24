@@ -47,7 +47,9 @@ function MenuEditorPage() {
 					search={{ view: "list" }}
 					className="flex items-center gap-1 text-sm hover:underline text-primary"
 				>
-					<ArrowLeft size={16} /> {t(MenusKeys.EDITOR_BACK_TO_LIST)}
+					<ArrowLeft size={16} />
+					<span className="md:hidden">{t(MenusKeys.EDITOR_BACK_SHORT)}</span>
+					<span className="hidden md:inline">{t(MenusKeys.EDITOR_BACK_TO_LIST)}</span>
 				</Link>
 			}
 			actions={
@@ -59,10 +61,16 @@ function MenuEditorPage() {
 							leadingIcon={<Plus size={14} />}
 							onClick={() => setAddCategoriesOpen(true)}
 						>
-							{t(MenusKeys.EDITOR_ADD_CATEGORY)}
+							<span className="md:hidden">{t(MenusKeys.EDITOR_ADD_CATEGORY_SHORT)}</span>
+							<span className="hidden md:inline">{t(MenusKeys.EDITOR_ADD_CATEGORY)}</span>
 						</Button>
 					) : null}
-					{restaurant && canExport ? <ExportMenuButton restaurantId={restaurant._id} /> : null}
+					{/* On phones Export lives in the toolbar's ⋯ menu. */}
+					{restaurant && canExport ? (
+						<div className="hidden md:block">
+							<ExportMenuButton restaurantId={restaurant._id} />
+						</div>
+					) : null}
 				</>
 			}
 		>
@@ -81,6 +89,7 @@ function MenuEditorPage() {
 					restaurantId={restaurant._id}
 					onTranslationModeChange={setIsTranslationMode}
 					onAddCategoriesClick={() => setAddCategoriesOpen(true)}
+					canExport={canExport}
 				/>
 			)}
 		</AdminPageLayout>

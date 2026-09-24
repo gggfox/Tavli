@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
 	NotAuthenticatedErrorObject,
@@ -20,6 +20,41 @@ import {
 import { PREP_STATION_VALIDATOR } from "./orderHelpers";
 
 type AuthErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject | NotFoundErrorObject;
+
+/**
+ * Replace an item's option-group links with `groupIds`, in that order: drop
+ * links not in the set, re-order the kept ones, insert the new ones. Callers
+ * have already checked every group belongs to the item's restaurant.
+ */
+async function setItemOptionGroups(
+	ctx: MutationCtx,
+	item: Doc<"menuItems">,
+	groupIds: readonly Id<"optionGroups">[]
+): Promise<void> {
+	const links = await ctx.db
+		.query(TABLE.MENU_ITEM_OPTION_GROUPS)
+		.withIndex("by_menuItem", (q) => q.eq("menuItemId", item._id))
+		.collect();
+	const byGroup = new Map(links.map((l) => [l.optionGroupId, l]));
+	const wanted = new Set(groupIds);
+
+	for (const link of links) {
+		if (!wanted.has(link.optionGroupId)) await ctx.db.delete(link._id);
+	}
+	for (const [displayOrder, optionGroupId] of groupIds.entries()) {
+		const link = byGroup.get(optionGroupId);
+		if (!link) {
+			await ctx.db.insert(TABLE.MENU_ITEM_OPTION_GROUPS, {
+				menuItemId: item._id,
+				optionGroupId,
+				restaurantId: item.restaurantId,
+				displayOrder,
+			});
+		} else if (link.displayOrder !== displayOrder) {
+			await ctx.db.patch(link._id, { displayOrder });
+		}
+	}
+}
 
 export const generateUploadUrl = mutation({
 	args: {
@@ -105,6 +140,13 @@ export const update = mutation({
 		displayOrder: v.optional(v.number()),
 		availableDays: v.optional(v.array(v.number())),
 		prepStation: v.optional(PREP_STATION_VALIDATOR),
+		/** Showing an item again clears its `unavailableReason`, as `toggleAvailability` does. */
+		isAvailable: v.optional(v.boolean()),
+		/**
+		 * The item's complete, ordered set of option groups. The editor saves
+		 * fields and option groups with one Guardar, so they commit together.
+		 */
+		optionGroupIds: v.optional(v.array(v.id(TABLE.OPTION_GROUPS))),
 	},
 	handler: async function (ctx, args): AsyncReturn<string, AuthErrors | NotFoundErrorObject> {
 		const [userId, error] = await getCurrentUserId(ctx);
@@ -115,6 +157,17 @@ export const update = mutation({
 
 		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, item.restaurantId);
 		if (error2) return [null, error2];
+
+		// Validate before any write: a returned error does not roll back.
+		const optionGroupIds = args.optionGroupIds ? [...new Set(args.optionGroupIds)] : undefined;
+		if (optionGroupIds) {
+			for (const groupId of optionGroupIds) {
+				const group = await ctx.db.get(groupId);
+				if (!group || group.restaurantId !== item.restaurantId) {
+					return [null, new NotFoundError("Option group not found").toObject()];
+				}
+			}
+		}
 
 		if (args.imageStorageId !== undefined && item.imageStorageId) {
 			await ctx.storage.delete(item.imageStorageId);
@@ -130,8 +183,16 @@ export const update = mutation({
 			...(args.displayOrder !== undefined && { displayOrder: args.displayOrder }),
 			...(args.availableDays !== undefined && { availableDays: args.availableDays }),
 			...(args.prepStation !== undefined && { prepStation: args.prepStation }),
+			...(args.isAvailable !== undefined && {
+				isAvailable: args.isAvailable,
+				...(args.isAvailable && { unavailableReason: undefined }),
+			}),
 			...stampUpdated(userId),
 		});
+
+		if (optionGroupIds) {
+			await setItemOptionGroups(ctx, item, optionGroupIds);
+		}
 
 		await appendAuditEvent(ctx, {
 			aggregateType: TABLE.MENU_ITEMS,
