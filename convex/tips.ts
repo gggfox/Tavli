@@ -13,6 +13,7 @@ import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent, stampUpdated } from "./_util/audit";
 import { getCurrentUserId, requireRestaurantManagerOrAbove } from "./_util/auth";
 import { getOrderServiceDateKey } from "./orderServiceDate";
+import { tipFromPayment } from "./paymentMoneyHelpers";
 import {
 	AUDIT_SYSTEM_USER_ID,
 	TABLE,
@@ -86,35 +87,82 @@ export const addTipEntry = mutation({
 	},
 });
 
+/**
+ * Card tips that were actually collected for one business date.
+ *
+ * **Only settled money counts**, by the same rule the tips analytics widget
+ * uses (`tipFromPayment`), so the pool a manager splits and the tips total
+ * they see on the dashboard agree. Every checkout attempt writes a row that
+ * carries the tip while it is still pending (TAVLI-99), so a diner who moves
+ * the slider and retries a declined card leaves superseded, failed and
+ * cancelled rows behind, each carrying a tip nobody paid. Summing
+ * `gratuityAmount` over every row put that phantom money into the pool and
+ * `finalizeTipPool` then split it among staff.
+ *
+ * A fully refunded row contributes nothing; a partially refunded one keeps its
+ * whole tip — `tipFromPayment` reports gross money in and only a FULL refund
+ * disqualifies a row (see `paymentMoneyHelpers.ts`).
+ *
+ * Which business date a payment belongs to is unchanged:
+ * - an order payment belongs to its order's `orderServiceDateKey`;
+ * - a session-level row with no `orderId` (a legacy tab settlement, or an
+ *   ADR 008 `kind: "tip"` row) is counted when any order in its session
+ *   carries the date — once, however many of those orders match.
+ *
+ * **Reads only that day.** One indexed range over the day's orders, one
+ * `by_order` read per order and one `by_session` read per distinct session —
+ * never the restaurant's whole payment history, which grows without bound and
+ * would eventually trip Convex's per-function read cap.
+ */
+async function sumCollectedCardTipsForDate(
+	ctx: { db: import("./_generated/server").MutationCtx["db"] },
+	restaurantId: Id<"restaurants">,
+	businessDate: string
+): Promise<number> {
+	const orders = await ctx.db
+		.query(TABLE.ORDERS)
+		.withIndex("by_restaurant_service_date", (q) =>
+			q.eq("restaurantId", restaurantId).eq("orderServiceDateKey", businessDate)
+		)
+		.collect();
+
+	let total = 0;
+	const sessionIds = new Set<Id<"sessions">>();
+	for (const order of orders) {
+		sessionIds.add(order.sessionId);
+		const orderPayments = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_order", (q) => q.eq("orderId", order._id))
+			.collect();
+		for (const p of orderPayments) {
+			if (p.restaurantId !== restaurantId) continue;
+			total += tipFromPayment(p);
+		}
+	}
+
+	for (const sessionId of sessionIds) {
+		const sessionPayments = await ctx.db
+			.query(TABLE.PAYMENTS)
+			.withIndex("by_session", (q) => q.eq("sessionId", sessionId))
+			.collect();
+		for (const p of sessionPayments) {
+			if (p.restaurantId !== restaurantId) continue;
+			// A row tied to an order belongs to THAT order's date and was counted
+			// (or deliberately not) above.
+			if (p.orderId) continue;
+			total += tipFromPayment(p);
+		}
+	}
+
+	return total;
+}
+
 async function refreshPoolTotal(
 	ctx: { db: import("./_generated/server").MutationCtx["db"] },
 	restaurantId: Id<"restaurants">,
 	businessDate: string
 ) {
-	const payments = await ctx.db
-		.query(TABLE.PAYMENTS)
-		.withIndex("by_restaurant", (q) => q.eq("restaurantId", restaurantId))
-		.collect();
-
-	let digitalTips = 0;
-	for (const p of payments) {
-		if ((p.gratuityAmount ?? 0) <= 0) continue;
-		if (p.orderId) {
-			const order = await ctx.db.get(p.orderId);
-			if (!order?.orderServiceDateKey || order.orderServiceDateKey !== businessDate) continue;
-		} else if (p.sessionId) {
-			// Tab payment: the tip belongs to the business date of the orders it
-			// settled. Count it when any order in the session carries that date.
-			const sessionOrders = await ctx.db
-				.query(TABLE.ORDERS)
-				.withIndex("by_session", (q) => q.eq("sessionId", p.sessionId!))
-				.collect();
-			if (!sessionOrders.some((o) => o.orderServiceDateKey === businessDate)) continue;
-		} else {
-			continue;
-		}
-		digitalTips += p.gratuityAmount ?? 0;
-	}
+	const digitalTips = await sumCollectedCardTipsForDate(ctx, restaurantId, businessDate);
 
 	const cashEntries = await ctx.db
 		.query(TABLE.TIP_ENTRIES)

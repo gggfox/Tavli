@@ -423,7 +423,9 @@
 			"prompt": "¿Cancelar este pedido?",
 			"paidPrompt": "Este pedido ha sido pagado. Cancelarlo reembolsa su importe al comensal. La propina no se reembolsa.",
 			"refundPending": "Cancelando y reembolsando…",
-			"refundFailedBanner": "El pedido #{{number}} se canceló pero el reembolso no se completó. Emítelo desde el panel de Stripe."
+			"refundFailedBanner": "El pedido #{{number}} se canceló pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
+			"retryRefund": "Reintentar reembolso",
+			"retryRefundPending": "Reintentando reembolso…"
 		},
 		"card": {
 			"table": "Mesa {{number}}",
@@ -685,9 +687,13 @@
 		"ERROR_PAYMENT_CANCEL_FAILED": "No pudimos comunicarnos con nuestro proveedor de pagos para cerrar tu intento anterior, así que no iniciamos uno nuevo. Inténtalo de nuevo en un momento.",
 		"ERROR_PAYMENT_ALREADY_PAID": "Esto ya está pagado. Danos un segundo para actualizarlo: no necesitas pagar otra vez.",
 		"ERROR_PAYMENT_IN_PROGRESS": "Tu pago ya se está procesando. Espera un momento en lugar de volver a tocar.",
+		"ERROR_PAYMENT_ORDER_CHANGED": "Tu pedido cambió mientras preparábamos el pago, así que no te cobramos. Revisa tu pedido e inténtalo de nuevo.",
 		"ERROR_REFUND_FAILED": "El pedido se canceló, pero el reembolso no se completó. Emítelo desde el panel de Stripe.",
 		"ERROR_REFUND_PAYMENT_UNRESOLVED": "El pedido se canceló, pero no encontramos su pago para reembolsar. Revisa el panel de Stripe.",
 		"ERROR_REFUND_ALREADY_ISSUED": "Este pago ya fue reembolsado por completo.",
+		"ERROR_REFUND_IN_PROGRESS": "Otro reembolso de este pedido todavía está en curso. Inténtalo de nuevo en un momento.",
+		"ERROR_REFUND_NOT_RETRYABLE": "Este pedido no tiene un reembolso fallido que reintentar. Cancela el pedido completo para reembolsar lo que queda, o emítelo desde el panel de Stripe.",
+		"ERROR_REFUND_RETRY_FAILED": "El reembolso sigue sin completarse. Inténtalo más tarde o emítelo desde el panel de Stripe.",
 		"ERROR_RESTAURANT_NOT_ACCEPTING_PAYMENTS": "Este restaurante no está aceptando pagos con tarjeta en este momento. Pide a tu mesero que cobre en persona.",
 		"ERROR_TIP_INVALID_AMOUNT": "Ese monto de propina no es válido. Ingresa un monto mayor a cero.",
 		"ERROR_RECEIPT_ORDER_NOT_PAID": "Este pedido aún no se ha pagado, así que no hay recibo para enviar.",
@@ -1311,7 +1317,7 @@
 			"requirementsPrefix": "Estado de requisitos:",
 			"requirementsCurrentlyDue": " — Se requiere acción para completar la configuración.",
 			"requirementsPastDue": " — Los requisitos vencidos deben completarse de inmediato.",
-			"transfersInactive": "Las transferencias de pago aún no están activas. Completa la configuración para habilitar los pagos.",
+			"transfersInactive": "Stripe aún no ha activado los pagos con tarjeta y las transferencias para esta cuenta. Completa la configuración para habilitar los pagos.",
 			"partialRequirements": "Los pagos están habilitados, pero hay requisitos adicionales pendientes.",
 			"redirecting": "Redirigiendo...",
 			"continueSetup": "Continuar configuración de Stripe",

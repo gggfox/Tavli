@@ -6,6 +6,9 @@ import {
 	buildRefundIdempotencyKey,
 	computeLineRefundAmount,
 	computeOrderRefundAmount,
+	isRefundClaimLive,
+	mergeRefundTotals,
+	REFUND_CLAIM_STALE_MS,
 } from "../orderRefundHelpers";
 
 const PAYMENT_A = "pay_a" as Id<"payments">;
@@ -260,5 +263,45 @@ describe("the whole-order key and the per-line key", () => {
 			buildLineRefundIdempotencyKey(PAYMENT_A, ITEM_A)
 		);
 		expect(buildRefundIdempotencyKey(PAYMENT_A, ORDER_A)).toBe(`refund:${PAYMENT_A}:${ORDER_A}`);
+	});
+});
+
+describe("mergeRefundTotals", () => {
+	const payment = { amount: 1568, amountRefunded: undefined, refundStatus: "none" as const };
+
+	it("takes Stripe's cumulative figure rather than adding to the stored one", () => {
+		// The webhook already stored 672; `createRefund` then reports the same
+		// cumulative 672 — it must not become 1344.
+		expect(
+			mergeRefundTotals(
+				{ ...payment, amountRefunded: 672, refundStatus: "partial" },
+				{ amountRefunded: 672, isFullyRefunded: false }
+			)
+		).toEqual({ amountRefunded: 672, isFullyRefunded: false });
+	});
+
+	it("never shrinks, and never un-refunds a fully refunded payment", () => {
+		expect(
+			mergeRefundTotals(
+				{ ...payment, amountRefunded: 1568, refundStatus: "succeeded" },
+				{ amountRefunded: 672, isFullyRefunded: false }
+			)
+		).toEqual({ amountRefunded: 1568, isFullyRefunded: true });
+	});
+
+	it("is full once the total reaches the captured amount", () => {
+		expect(mergeRefundTotals(payment, { amountRefunded: 1568, isFullyRefunded: false })).toEqual({
+			amountRefunded: 1568,
+			isFullyRefunded: true,
+		});
+	});
+});
+
+describe("isRefundClaimLive", () => {
+	it("blocks while reserved, not once failed or abandoned", () => {
+		const held = { idempotencyKey: "k", orderId: ORDER_A, reservedAt: 1_000 };
+		expect(isRefundClaimLive(held, 2_000)).toBe(true);
+		expect(isRefundClaimLive({ ...held, failedAt: 1_500 }, 2_000)).toBe(false);
+		expect(isRefundClaimLive(held, 1_000 + REFUND_CLAIM_STALE_MS)).toBe(false);
 	});
 });

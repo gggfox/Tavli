@@ -823,7 +823,14 @@ export default defineSchema({
 	})
 		.index("by_session", ["sessionId"])
 		.index("by_restaurant", ["restaurantId"])
-		.index("by_restaurant_status", ["restaurantId", "status"]),
+		.index("by_restaurant_status", ["restaurantId", "status"])
+		// One business day's orders, for the tip pool (`tips.refreshPoolTotal`).
+		// Without it the pool had to walk the restaurant's whole payment history
+		// to find a day's tips, which hits Convex's per-function read cap as
+		// history grows. Orders that never got a key (unpaid drafts, pre-backfill
+		// rows) sort into their own leading `undefined` range, so an `eq` on a
+		// date never touches them.
+		.index("by_restaurant_service_date", ["restaurantId", "orderServiceDateKey"]),
 
 	// One counter row per restaurant. `serviceDateKey` is a generic period key
 	// derived from `restaurants.orderNumberResetFrequency` — for daily resets
@@ -926,21 +933,64 @@ export default defineSchema({
 		refundRequestedAt: v.optional(v.number()),
 		refundedAt: v.optional(v.number()),
 		/**
-		 * Total amount refunded so far, in the smallest currency unit. Set by the
-		 * `charge.refunded` webhook (covers both app-initiated refunds and manual
-		 * Stripe-dashboard refunds). Equals the captured amount for a full refund;
-		 * less than it for a partial refund.
+		 * Total amount refunded so far, in the smallest currency unit — always
+		 * Stripe's cumulative `charge.amount_refunded`, never a local sum. Written
+		 * by `createRefund` (from the refund's expanded charge) and by the
+		 * `charge.refunded` webhook (which also covers Stripe-dashboard refunds).
+		 * Monotonic: every writer stores `max(stored, incoming)`, so a late or
+		 * out-of-order delivery can never shrink it. Equals the captured amount
+		 * for a full refund; less than it for a partial refund.
 		 */
 		amountRefunded: v.optional(v.number()),
+		/**
+		 * The one refund being issued against this payment right now, or the
+		 * last one that failed (`failedAt` set). Reserved in the same mutation
+		 * that decides the refund — `orders.cancelOrderItem` for a removed line,
+		 * `orders.updateStatus` for a whole-order cancel — so Convex's OCC
+		 * serializes two refunds racing on one charge: the second sees this and
+		 * is refused with `ERROR_REFUND_IN_PROGRESS` before it changes anything.
+		 * Cleared by the outcome mutation on success; kept with `failedAt` on
+		 * failure so the manager can retry it. A retry after an UNKNOWN outcome
+		 * (no Stripe response) re-sends the same key and parameters, so a refund
+		 * that did land is replayed, not duplicated; a retry after a DEFINITIVE
+		 * Stripe error moves to a fresh key (`attempt`), because Stripe caches
+		 * that error under the old key and would replay it for 24h. See
+		 * `convex/orderRefundHelpers.ts`.
+		 */
+		pendingRefund: v.optional(
+			v.object({
+				idempotencyKey: v.string(),
+				orderId: v.id(TABLE.ORDERS),
+				/** Set for a single removed line; absent for a whole-order refund. */
+				orderItemId: v.optional(v.id(TABLE.ORDER_ITEMS)),
+				/** Omitted = refund whatever remains (no `amount` is sent to Stripe). */
+				amount: v.optional(v.number()),
+				reservedAt: v.number(),
+				failedAt: v.optional(v.number()),
+				/**
+				 * Retry generation: the key sent to Stripe is `idempotencyKey`
+				 * for 0/absent, `${idempotencyKey}:retry:${attempt}` after that.
+				 * `idempotencyKey` itself stays the logical refund's identity.
+				 */
+				attempt: v.optional(v.number()),
+				/**
+				 * Set by `createRefund` when the last attempt got a definitive
+				 * Stripe answer — nothing was refunded under that key, so the
+				 * next retry may (and must) use a fresh one.
+				 */
+				lastFailureDefinitive: v.optional(v.boolean()),
+			})
+		),
 		/** Tip portion in smallest currency unit (e.g. cents). */
 		gratuityAmount: v.optional(v.number()),
 		/**
 		 * Dispute recovery withheld from this payment's transfer (TAVLI-102).
 		 *
-		 * Set when the PaymentIntent is created — it is the difference between
-		 * the restaurant's share and the `transfer_data.amount` we asked Stripe
-		 * for, so it is a fact about the charge, not a plan. The diner's `amount`
-		 * is untouched by it and the order still reports full revenue.
+		 * Set when the PaymentIntent is created — it is the part of the intent's
+		 * `application_fee_amount` above `feeAmount` (the transfer is short by
+		 * exactly this), so it is a fact about the charge, not a plan. The
+		 * diner's `amount` is untouched by it and the order still reports full
+		 * revenue.
 		 *
 		 * The ledger is only drawn down when the payment SETTLES: a failed or
 		 * superseded intent moved no money, so `disputeRecoveryAppliedAt` stays
@@ -1279,6 +1329,16 @@ export default defineSchema({
 		 * payout" test reads this field, so it has to be Stripe's clock.
 		 */
 		createdAt: v.number(),
+		/**
+		 * When a payout that had already been `paid` came back `failed` — a bank
+		 * return, which Stripe documents can land days after the payout showed
+		 * as paid (ms, Tavli's clock at recording). Absent on every other row.
+		 *
+		 * The returned money re-entered the balance at this moment, not at
+		 * `createdAt`, so only a payout created AFTER it can have carried it:
+		 * `computeHeldTotal` measures "a later payout" from here for this row.
+		 */
+		returnedAt: v.optional(v.number()),
 		updatedAt: v.number(),
 	})
 		.index("by_restaurant_created", ["restaurantId", "createdAt"])

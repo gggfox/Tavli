@@ -14,7 +14,9 @@
  *
  * - `recordPayoutEventInternal` upserts one row per Stripe payout id, and on a
  *   transition **into** `failed` tells the restaurant's managers (bell + email)
- *   and raises a severe operator alert. On the payout that clears the last
+ *   and raises a severe operator alert. That includes a payout that already
+ *   showed `paid` and was then returned by the bank (`paid` → `failed`), which
+ *   takes exactly the same path. On the payout that clears the last
  *   unresolved failure it tells them payouts have resumed.
  * - `listByRestaurant` and `getHeldTotal` are what the payouts page and the
  *   payments-page banner read, both gated on `requireRestaurantManagerOrAbove`.
@@ -62,6 +64,8 @@ import {
 	computeHeldTotal,
 	decidePayoutUpdate,
 	formatPayoutAmount,
+	heldTotalPaidLowerBound,
+	isPayoutReturn,
 	normalizePayoutFailureCode,
 	type HeldTotal,
 	type HeldTotalInput,
@@ -92,11 +96,12 @@ type HeldTotalRow = HeldTotalInput & { currency: string };
  *
  * Both reads are indexed on `by_restaurant_status_created`. The failed set is
  * naturally tiny. The successful set is bounded to payouts created **after the
- * newest failure**: a `paid` older than that cannot resolve anything, because
- * the newest failure itself supersedes every failure before it (see
- * `computeHeldTotal`). So a restaurant with a clean history reads one empty
- * range and stops, and even a restaurant with an ancient unresolved failure
- * reads only what came after its most recent bounce.
+ * newest failure** (after its return, for a payout that went `paid` →
+ * `failed` — `heldTotalPaidLowerBound`): a `paid` older than that cannot
+ * resolve anything, because the newest failure itself supersedes every failure
+ * before it (see `computeHeldTotal`). So a restaurant with a clean history
+ * reads one empty range and stops, and even a restaurant with an ancient
+ * unresolved failure reads only what came after its most recent bounce.
  */
 async function readHeldTotalInputs(
 	ctx: PayoutReadCtx,
@@ -110,24 +115,29 @@ async function readHeldTotalInputs(
 		.collect();
 	if (failures.length === 0) return [];
 
-	const newestFailureAt = Math.max(...failures.map((row) => row.createdAt));
+	const toRow = (row: PayoutDoc): HeldTotalRow => ({
+		stripePayoutId: row.stripePayoutId,
+		amount: row.amount,
+		createdAt: row.createdAt,
+		status: row.status as StripePayoutStatus,
+		currency: row.currency,
+		...(row.returnedAt !== undefined && { returnedAt: row.returnedAt }),
+	});
+	const failureRows = failures.map(toRow);
+
+	const paidAfter = heldTotalPaidLowerBound(failureRows);
+	if (paidAfter === null) return failureRows;
 	const successes = await ctx.db
 		.query(TABLE.STRIPE_PAYOUTS)
 		.withIndex("by_restaurant_status_created", (q) =>
 			q
 				.eq("restaurantId", restaurantId)
 				.eq("status", STRIPE_PAYOUT_STATUS.PAID)
-				.gt("createdAt", newestFailureAt)
+				.gt("createdAt", paidAfter)
 		)
 		.collect();
 
-	return [...failures, ...successes].map((row) => ({
-		stripePayoutId: row.stripePayoutId,
-		amount: row.amount,
-		createdAt: row.createdAt,
-		status: row.status as StripePayoutStatus,
-		currency: row.currency,
-	}));
+	return [...failureRows, ...successes.map(toRow)];
 }
 
 /** The held total for one restaurant, plus the currency to render it in. */
@@ -168,8 +178,13 @@ async function readHeldTotal(
 export type RecordPayoutOutcome = {
 	/** `"inserted"`, `"updated"`, `"stale"` (an older event), or `"conflict"`. */
 	action: "inserted" | "updated" | "stale" | "conflict";
-	/** True when this event moved the payout into `failed` for the first time. */
+	/**
+	 * True when this event moved the payout into `failed` for the first time —
+	 * including a payout that had shown `paid` and was returned by the bank.
+	 */
 	becameFailed: boolean;
+	/** True when that failure was a bank return: the payout had already shown `paid`. */
+	returned: boolean;
 	/**
 	 * True when that failure arrived already superseded by a later payout, so
 	 * nobody was told about money that is no longer stuck.
@@ -237,6 +252,7 @@ export const recordPayoutEventInternal = internalMutation({
 
 		let action: RecordPayoutOutcome["action"];
 		let becameFailed: boolean;
+		let returned = false;
 
 		if (!existing) {
 			await ctx.db.insert(TABLE.STRIPE_PAYOUTS, fields);
@@ -271,6 +287,7 @@ export const recordPayoutEventInternal = internalMutation({
 				return {
 					action: decision.conflict ? "conflict" : "stale",
 					becameFailed: false,
+					returned: false,
 					supersededOnArrival: false,
 					payoutsResumed: false,
 					heldCents: heldBefore.heldCents,
@@ -279,7 +296,25 @@ export const recordPayoutEventInternal = internalMutation({
 				};
 			}
 
-			await ctx.db.patch(existing._id, { ...fields, status: decision.status });
+			// A bank return (`paid` → `failed`, Stripe documents it can land days
+			// after the payout showed paid). From here on it is an ordinary new
+			// failure: `becameFailed` below sends it down the same bell / email /
+			// alert path as a first-time `payout.failed`, and the per-payout
+			// dedupe keys are fresh because this payout was never failed before.
+			// The one difference is WHEN its money came back to the balance —
+			// now, not at `createdAt` — which is what stops the routine payouts
+			// Stripe made in between from "resolving" it (`computeHeldTotal`).
+			// Stamped once: a redelivered `payout.failed` is failed → failed and
+			// leaves the original return time alone.
+			returned = isPayoutReturn(
+				{ status: existing.status as StripePayoutStatus },
+				{ status: args.status }
+			);
+			await ctx.db.patch(existing._id, {
+				...fields,
+				status: decision.status,
+				...(returned && { returnedAt: now }),
+			});
 			action = "updated";
 			becameFailed =
 				existing.status !== STRIPE_PAYOUT_STATUS.FAILED &&
@@ -369,6 +404,7 @@ export const recordPayoutEventInternal = internalMutation({
 		return {
 			action,
 			becameFailed,
+			returned,
 			supersededOnArrival,
 			payoutsResumed,
 			heldCents: heldAfter.heldCents,

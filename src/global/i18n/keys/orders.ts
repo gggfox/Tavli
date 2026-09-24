@@ -56,6 +56,8 @@ export const OrdersKeys = {
 	CANCEL_PAID_PROMPT: "orders.cancel.paidPrompt",
 	CANCEL_REFUND_PENDING: "orders.cancel.refundPending",
 	CANCEL_REFUND_FAILED_BANNER: "orders.cancel.refundFailedBanner",
+	ACTION_RETRY_REFUND: "orders.cancel.retryRefund",
+	RETRY_REFUND_PENDING: "orders.cancel.retryRefundPending",
 
 	/** Money the table still owes in person — the badge that follows a cash round. */
 	PAYMENT_TO_COLLECT: "orders.payment.toCollect",

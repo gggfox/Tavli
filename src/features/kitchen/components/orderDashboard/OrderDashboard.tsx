@@ -101,9 +101,14 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 	// diner is owed money, and the cancelled order it belongs to is filtered out
 	// of the default dashboard view, so a message that disappears would be the
 	// only trace of it.
-	const [refundFailure, setRefundFailure] = useState<{ number: string; message: string } | null>(
-		null
-	);
+	// `retry` drops the "was cancelled" prefix: a failed line refund's order is
+	// still cooking, and the retry's own error message says what happened.
+	const [refundFailure, setRefundFailure] = useState<{
+		number: string;
+		message: string;
+		retry?: boolean;
+	} | null>(null);
+	const [retryRefundPendingId, setRetryRefundPendingId] = useState<string | null>(null);
 	const [fullOrder, setFullOrder] = useState<DashboardOrder | null>(null);
 	const [now, setNow] = useState(() => Date.now());
 	const [cancelItemPendingId, setCancelItemPendingId] = useState<string | null>(null);
@@ -183,6 +188,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		unmarkStationReady,
 		cancelOrderItem,
 		cancelOrderAndRefund,
+		retryOrderRefund,
 		markOrderPaidInPerson,
 	} = useOrders(restaurantId, queryStatuses, queryStations, selectedServiceDate, selectedScope);
 
@@ -220,6 +226,33 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			}
 		},
 		[orders, cancelOrderAndRefund, t]
+	);
+
+	// Success needs no handling: the order leaves `refund_failed` through the
+	// live query. Failure reuses the persistent refund banner — the diner is
+	// still owed money.
+	const handleRetryRefund = useCallback(
+		async (orderId: DashboardOrder["_id"]) => {
+			const order = (orders as ReadonlyArray<DashboardOrder>).find((o) => o._id === orderId);
+			const orderLabel = order?.dailyOrderNumber?.toString() ?? orderId;
+			setRetryRefundPendingId(orderId);
+			setRefundFailure(null);
+			try {
+				const [, retryError] = await retryOrderRefund({ orderId });
+				if (retryError) {
+					setRefundFailure({
+						number: orderLabel,
+						message: getErrorMessage(retryError, t),
+						retry: true,
+					});
+				}
+			} catch (err) {
+				setRefundFailure({ number: orderLabel, message: getErrorMessage(err, t), retry: true });
+			} finally {
+				setRetryRefundPendingId(null);
+			}
+		},
+		[orders, retryOrderRefund, t]
 	);
 
 	// On success the order flips to `submitted` server-side and leaves the
@@ -458,6 +491,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 				onRequestMarkPaid={handleRequestMarkPaid}
 				onDismissMarkPaid={handleDismissMarkPaid}
 				onMarkPaidInPerson={handleMarkPaidInPerson}
+				retryRefundPendingId={retryRefundPendingId}
+				onRetryRefund={handleRetryRefund}
 				onUpdateStatus={updateStatus}
 				onMarkStationReady={markStationReady}
 			/>
@@ -474,6 +509,8 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 			handleRequestMarkPaid,
 			handleDismissMarkPaid,
 			handleMarkPaidInPerson,
+			retryRefundPendingId,
+			handleRetryRefund,
 			updateStatus,
 			markStationReady,
 		]
@@ -532,7 +569,9 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 					}}
 				>
 					<span className="flex-1">
-						{t(OrdersKeys.CANCEL_REFUND_FAILED_BANNER, { number: refundFailure.number })}{" "}
+						{!refundFailure.retry && (
+							<>{t(OrdersKeys.CANCEL_REFUND_FAILED_BANNER, { number: refundFailure.number })} </>
+						)}
 						{refundFailure.message}
 					</span>
 					<button
