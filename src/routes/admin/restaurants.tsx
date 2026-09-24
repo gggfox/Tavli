@@ -60,12 +60,15 @@ function AdminRestaurantsPage() {
 	/**
 	 * Picking a section pushes history (phone back returns to the list);
 	 * the desktop scrollspy replaces, so scrolling doesn't fill history.
+	 * `resetScroll: false` because the layout owns scrolling here: the
+	 * router's reset-to-top would cancel the index's smooth scroll mid-flight.
 	 */
 	const setSection = (next: RestaurantSettingsNavId | undefined, opts?: { replace?: boolean }) => {
 		navigate({
 			to: "/admin/restaurants",
 			search: (prev) => ({ ...prev, section: next }),
 			replace: opts?.replace ?? false,
+			resetScroll: false,
 		});
 	};
 
