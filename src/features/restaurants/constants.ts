@@ -27,3 +27,33 @@ export const RESTAURANT_SETTINGS_SECTION = {
 
 export type RestaurantSettingsSection =
 	(typeof RESTAURANT_SETTINGS_SECTION)[keyof typeof RESTAURANT_SETTINGS_SECTION];
+
+/**
+ * Every entry in the settings navigation, in display order within its group.
+ * A superset of `RESTAURANT_SETTINGS_SECTION`: WhatsApp, tables, payments and
+ * managers act immediately (no section save), so they have no save key but
+ * still need a place in the index and a `?section=` deep link.
+ */
+export const RESTAURANT_SETTINGS_NAV = {
+	GENERAL: "general",
+	LOCATION: "location",
+	HOURS: "hours",
+	PUBLIC_PROFILE: "publicProfile",
+	BRANDING: "branding",
+	ORDERS: "orders",
+	WHATSAPP: "whatsapp",
+	TABLES: "tables",
+	TAX: "tax",
+	PAYMENTS: "payments",
+	MANAGERS: "managers",
+	ORGANIZATION: "organization",
+} as const;
+
+export type RestaurantSettingsNavId =
+	(typeof RESTAURANT_SETTINGS_NAV)[keyof typeof RESTAURANT_SETTINGS_NAV];
+
+const SETTINGS_NAV_IDS: ReadonlySet<string> = new Set(Object.values(RESTAURANT_SETTINGS_NAV));
+
+export function isRestaurantSettingsNavId(value: unknown): value is RestaurantSettingsNavId {
+	return typeof value === "string" && SETTINGS_NAV_IDS.has(value);
+}

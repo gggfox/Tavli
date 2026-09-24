@@ -1,5 +1,6 @@
 import { AdminRestaurantsListSkeleton } from "@/features/restaurants/components/AdminRestaurantsListSkeleton";
 import { RestaurantSettingsView } from "@/features/restaurants/components/RestaurantSettingsView";
+import type { RestaurantSettingsNavId } from "@/features/restaurants/constants";
 import { useRestaurant } from "@/features/restaurants/RestaurantAdminScope";
 import { useOrganizations } from "@/features/restaurants/hooks/useOrganizations";
 import { TablesManager } from "@/features/restaurants/components/TablesManager";
@@ -57,6 +58,12 @@ interface AdminRestaurantsListProps {
 	 */
 	settingsId?: Id<"restaurants"> | null;
 	onSettingsChange?: (next: Id<"restaurants"> | null) => void;
+	/** Which settings section is open/visible (`?section=`), with the settings canvas. */
+	settingsSection?: RestaurantSettingsNavId;
+	onSettingsSectionChange?: (
+		next: RestaurantSettingsNavId | undefined,
+		opts?: { replace?: boolean }
+	) => void;
 }
 
 export function AdminRestaurantsList({
@@ -64,6 +71,8 @@ export function AdminRestaurantsList({
 	onManageChange,
 	settingsId,
 	onSettingsChange,
+	settingsSection,
+	onSettingsSectionChange,
 }: Readonly<AdminRestaurantsListProps> = {}) {
 	const { t } = useTranslation();
 	const isTabletPortrait = useIsTabletPortraitViewport();
@@ -290,13 +299,22 @@ export function AdminRestaurantsList({
 								restaurant={r}
 								settingsAccess={canManage ? "full" : "manager"}
 								onClose={() => setOpenSettingsId(null)}
-								onToggleActive={async (restaurantId) => {
-									try {
-										unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
-									} catch (err) {
-										setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
-									}
-								}}
+								section={settingsSection}
+								onSectionChange={onSettingsSectionChange}
+								// Activation and the tables canvas stay admin/owner actions,
+								// exactly as on the list rows.
+								onToggleActive={
+									canManage
+										? async (restaurantId) => {
+												try {
+													unwrapResult(await toggleActiveMutation.mutateAsync({ restaurantId }));
+												} catch (err) {
+													setError(getErrorMessage(err, t, RestaurantsKeys.LIST_TOGGLE_FAILED));
+												}
+											}
+										: undefined
+								}
+								onManageTables={canManage ? () => setExpandedTablesId(r._id) : undefined}
 							/>
 						);
 					}

@@ -16,6 +16,10 @@ interface SettingsSectionFooterProps {
 /**
  * Per-section save affordance: dirty-gated submit plus that section's own
  * error / saved feedback, so one failing section never blanks another.
+ *
+ * While the section has unsaved edits the bar sticks to the bottom of the
+ * scroll area (within its own section), so Save stays reachable on a phone
+ * after scrolling past the last field.
  */
 export function SettingsSectionFooter({
 	canSave,
@@ -27,7 +31,11 @@ export function SettingsSectionFooter({
 }: Readonly<SettingsSectionFooterProps>) {
 	const { t } = useTranslation();
 	return (
-		<div className="space-y-3">
+		<div
+			className={`-mx-4 space-y-3 border-t border-border px-4 py-3 @xl:-mx-6 @xl:px-6 ${
+				canSave ? "sticky bottom-0 z-10 rounded-b-xl bg-background/95 backdrop-blur" : ""
+			}`}
+		>
 			{error ? <InlineError message={error} onDismiss={onDismissError} /> : null}
 			<div className="flex items-center gap-3">
 				<button

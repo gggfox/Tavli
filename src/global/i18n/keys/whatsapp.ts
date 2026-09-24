@@ -10,6 +10,8 @@
 export const WhatsappKeys = {
 	// Distribution surfaces — deep link and QR (ADR 012)
 	ASSISTANT_TITLE: "whatsapp.assistant.title",
+	ASSISTANT_STATUS_LABEL: "whatsapp.assistant.statusLabel",
+	ASSISTANT_QR_ROW_LABEL: "whatsapp.assistant.qrRowLabel",
 	ASSISTANT_HINT: "whatsapp.assistant.hint",
 	ASSISTANT_NOT_ENABLED: "whatsapp.assistant.notEnabled",
 	ASSISTANT_PAUSED: "whatsapp.assistant.paused",

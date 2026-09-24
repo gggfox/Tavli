@@ -37,6 +37,11 @@ export interface LocationPickerMapProps {
 	searchButtonLabel: string;
 	searchNotFoundLabel: string;
 	onChange: (coords: { latitude: number; longitude: number }) => void;
+	/**
+	 * Grow the map to fill the parent's height (the full-screen picker overlay)
+	 * instead of the fixed inline height. The parent must be a sized flex item.
+	 */
+	fill?: boolean;
 }
 
 function MapRecenter({
@@ -101,6 +106,7 @@ export function LocationPickerMap({
 	searchButtonLabel,
 	searchNotFoundLabel,
 	onChange,
+	fill = false,
 }: Readonly<LocationPickerMapProps>) {
 	const { theme } = useTheme();
 	const [searchQuery, setSearchQuery] = useState("");
@@ -133,7 +139,7 @@ export function LocationPickerMap({
 	};
 
 	return (
-		<div className="space-y-2">
+		<div className={fill ? "flex h-full min-h-0 flex-col gap-2" : "space-y-2"}>
 			<div className="flex gap-2">
 				<input
 					type="search"
@@ -162,7 +168,9 @@ export function LocationPickerMap({
 			</div>
 			{searchError ? <p className="text-xs text-destructive">{searchNotFoundLabel}</p> : null}
 
-			<div className="h-64 rounded-lg overflow-hidden border border-border z-0">
+			<div
+				className={`${fill ? "min-h-64 flex-1" : "h-64"} rounded-lg overflow-hidden border border-border z-0`}
+			>
 				<MapContainer center={center} zoom={zoom} className="h-full w-full" scrollWheelZoom>
 					<TileLayer key={theme} attribution={CARTO_ATTRIBUTION} url={CARTO_TILE_URL[theme]} />
 					<MapRecenter center={center} zoom={zoom} recenterKey={recenterKey} />
@@ -191,5 +199,71 @@ export function LocationPickerMap({
 				</MapContainer>
 			</div>
 		</div>
+	);
+}
+
+export interface LocationPreviewMapProps {
+	latitude: number | null;
+	longitude: number | null;
+	radiusMeters: number;
+}
+
+/** Keeps the static preview on the pin without the picker's fly-to animation. */
+function PreviewRecenter({ center, zoom }: { center: L.LatLngExpression; zoom: number }) {
+	const map = useMap();
+	useEffect(() => {
+		map.setView(center, zoom, { animate: false });
+	}, [center, zoom, map]);
+	return null;
+}
+
+/**
+ * Read-only thumbnail of the pin and ordering radius. Every Leaflet
+ * interaction is off and the map ignores the pointer, so on a phone a scroll
+ * that starts on it scrolls the page instead of panning a map nobody meant to
+ * touch. Editing happens in the full `LocationPickerMap`.
+ */
+export function LocationPreviewMap({
+	latitude,
+	longitude,
+	radiusMeters,
+}: Readonly<LocationPreviewMapProps>) {
+	const { theme } = useTheme();
+	const hasPin = latitude != null && longitude != null;
+	const center = useMemo<L.LatLngExpression>(
+		() => (hasPin ? [latitude, longitude] : DEFAULT_CENTER),
+		[hasPin, latitude, longitude]
+	);
+	// One step wider than the picker so the whole radius circle usually fits.
+	const zoom = hasPin ? 16 : 12;
+	const effectiveRadius = radiusMeters > 0 ? radiusMeters : DEFAULT_GEOFENCE_RADIUS_METERS;
+
+	return (
+		<MapContainer
+			center={center}
+			zoom={zoom}
+			className="pointer-events-none h-full w-full"
+			dragging={false}
+			touchZoom={false}
+			doubleClickZoom={false}
+			scrollWheelZoom={false}
+			boxZoom={false}
+			keyboard={false}
+			zoomControl={false}
+		>
+			<TileLayer key={theme} attribution={CARTO_ATTRIBUTION} url={CARTO_TILE_URL[theme]} />
+			<PreviewRecenter center={center} zoom={zoom} />
+			{hasPin ? (
+				<>
+					<Marker position={[latitude, longitude]} icon={defaultMarkerIcon} interactive={false} />
+					<Circle
+						center={[latitude, longitude]}
+						radius={effectiveRadius}
+						interactive={false}
+						pathOptions={{ color: "var(--btn-primary-bg)", fillOpacity: 0.12 }}
+					/>
+				</>
+			) : null}
+		</MapContainer>
 	);
 }

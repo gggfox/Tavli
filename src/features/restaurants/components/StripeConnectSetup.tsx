@@ -1,15 +1,18 @@
+import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { RestaurantsKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexAction } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { StripeStatusSection, type AccountStatus } from "./StripeStatusSection";
 
 interface StripeConnectSetupProps {
 	restaurantId: Id<"restaurants">;
+	/** Further Connect-side controls, rendered inside this card below the status row. */
+	children?: ReactNode;
 }
 
 /**
@@ -23,7 +26,7 @@ interface StripeConnectSetupProps {
  * Status is always fetched from the Stripe API directly (not cached in DB)
  * to ensure the UI reflects the latest state.
  */
-export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetupProps>) {
+export function StripeConnectSetup({ restaurantId, children }: Readonly<StripeConnectSetupProps>) {
 	const { t } = useTranslation();
 	const createAccount = useConvexAction(api.stripe.createConnectAccount);
 	const createLink = useConvexAction(api.stripe.createAccountLink);
@@ -113,76 +116,63 @@ export function StripeConnectSetup({ restaurantId }: Readonly<StripeConnectSetup
 		}
 	};
 
-	if (loading) {
-		return (
-			<div className="rounded-xl p-6 bg-muted border border-border">
+	// The "Payments enabled" badge lives in the status row now, not the header.
+	const isFullySetUp =
+		status?.connected && status.readyToReceivePayments && status.onboardingComplete;
+
+	// One tree for both states: the children stay at the same position, so a
+	// status refresh does not remount them (and lose, say, a half-typed draft).
+	return (
+		<SettingsSection
+			title={t(RestaurantsKeys.STRIPE_HEADING)}
+			hint={t(RestaurantsKeys.STRIPE_DESCRIPTION)}
+			testId="settings-stripe"
+		>
+			{loading ? (
 				<div className="flex items-center gap-2">
 					<Loader2 size={16} className="animate-spin text-faint-foreground" />
 					<span className="text-sm text-faint-foreground">
 						{t(RestaurantsKeys.STRIPE_CHECKING)}
 					</span>
 				</div>
-			</div>
-		);
-	}
+			) : (
+				<>
+					{error && (
+						<div
+							className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
+							style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
+						>
+							<AlertCircle size={14} />
+							{error}
+						</div>
+					)}
 
-	const isFullySetUp =
-		status?.connected && status.readyToReceivePayments && status.onboardingComplete;
+					{resetNotice && (
+						<div
+							className="mb-4 flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-success"
+							style={{ backgroundColor: "rgba(34, 197, 94, 0.1)" }}
+						>
+							<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+							<span>{resetNotice}</span>
+						</div>
+					)}
 
-	return (
-		<div className="rounded-xl p-6 space-y-4 bg-muted border border-border">
-			<div className="flex items-center justify-between">
-				<div>
-					<h3 className="text-sm font-semibold text-foreground">
-						{t(RestaurantsKeys.STRIPE_HEADING)}
-					</h3>
-					<p className="text-xs mt-0.5 text-faint-foreground">
-						{t(RestaurantsKeys.STRIPE_DESCRIPTION)}
-					</p>
-				</div>
-				{isFullySetUp && (
-					<span
-						className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-success"
-						style={{ color: "white" }}
-					>
-						<CheckCircle2 size={12} />
-						{t(RestaurantsKeys.STRIPE_PAYMENTS_ENABLED)}
-					</span>
-				)}
-			</div>
-
-			{error && (
-				<div
-					className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-destructive"
-					style={{ backgroundColor: "rgba(220, 38, 38, 0.1)" }}
-				>
-					<AlertCircle size={14} />
-					{error}
-				</div>
+					<StripeStatusSection
+						status={status}
+						isFullySetUp={!!isFullySetUp}
+						actionLoading={actionLoading}
+						resetLoading={resetLoading}
+						confirmingReset={confirmingReset}
+						onSetup={handleSetup}
+						onRefresh={refreshStatus}
+						onRequestReset={() => setConfirmingReset(true)}
+						onCancelReset={() => setConfirmingReset(false)}
+						onConfirmReset={handleReset}
+					/>
+				</>
 			)}
-
-			{resetNotice && (
-				<div
-					className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs text-success"
-					style={{ backgroundColor: "rgba(34, 197, 94, 0.1)" }}
-				>
-					<CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-					<span>{resetNotice}</span>
-				</div>
-			)}
-
-			<StripeStatusSection
-				status={status}
-				isFullySetUp={!!isFullySetUp}
-				actionLoading={actionLoading}
-				resetLoading={resetLoading}
-				confirmingReset={confirmingReset}
-				onSetup={handleSetup}
-				onRefresh={refreshStatus}
-				onRequestReset={() => setConfirmingReset(true)}
-				onCancelReset={() => setConfirmingReset(false)}
-				onConfirmReset={handleReset}
-			/>
-		</div>
+			{/* `empty:hidden`: a child that renders nothing leaves no gap. */}
+			{children ? <div className="mt-4 empty:hidden">{children}</div> : null}
+		</SettingsSection>
 	);
 }

@@ -25,6 +25,11 @@ interface BrandingImageUploaderProps {
 	readonly restaurantId: Id<"restaurants">;
 	readonly slot: BrandingImageSlot;
 	readonly label: string;
+	/**
+	 * When the slot is the whole of a settings row, the row already shows the
+	 * name — keep the label for the file input, but only for screen readers.
+	 */
+	readonly labelHidden?: boolean;
 	readonly hint?: string;
 	readonly image: { url: string; width: number; height: number } | undefined;
 	/** Slots this upload should also populate, encoded from the same source. */
@@ -36,6 +41,7 @@ export function BrandingImageUploader({
 	restaurantId,
 	slot,
 	label,
+	labelHidden = false,
 	hint,
 	image,
 	alsoFill,
@@ -133,7 +139,10 @@ export function BrandingImageUploader({
 			className="space-y-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
 		>
 			<div className="flex items-baseline justify-between gap-2">
-				<label htmlFor={inputId} className="text-sm font-medium text-foreground">
+				<label
+					htmlFor={inputId}
+					className={labelHidden ? "sr-only" : "text-sm font-medium text-foreground"}
+				>
 					{label}
 				</label>
 				<span className="text-[11px] tabular-nums text-faint-foreground">

@@ -1,3 +1,4 @@
+import { SettingsRow } from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
 import { WhatsappAssistantPanel } from "@/features/whatsapp";
 import { InlineError, StatusBadge } from "@/global/components";
@@ -95,6 +96,33 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 		</button>
 	);
 
+	const toggleEnabledButton = enablement ? (
+		<button
+			type="button"
+			disabled={isBusy}
+			onClick={() => run(() => setEnabled({ restaurantId, isActive: !enablement.isActive }))}
+			className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover-secondary disabled:opacity-50"
+		>
+			{enablement.isActive ? t(WhatsappKeys.ASSISTANT_PAUSE) : t(WhatsappKeys.ASSISTANT_ENABLE)}
+		</button>
+	) : null;
+
+	// The status row carries a badge only when the assistant is off; an active
+	// assistant at an active restaurant shows nothing here but the admin's Pause.
+	const statusBadge = !enablement ? null : restaurantInactive ? (
+		<StatusBadge
+			bgColor="var(--bg-tertiary)"
+			textColor="var(--text-muted)"
+			label={t(WhatsappKeys.ASSISTANT_OFF_RESTAURANT_INACTIVE)}
+		/>
+	) : !enablement.isActive ? (
+		<StatusBadge
+			bgColor="var(--bg-tertiary)"
+			textColor="var(--text-muted)"
+			label={t(WhatsappKeys.ASSISTANT_PAUSED)}
+		/>
+	) : null;
+
 	return (
 		<SettingsSection
 			title={t(WhatsappKeys.ASSISTANT_TITLE)}
@@ -102,7 +130,7 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 			testId="settings-whatsapp-assistant"
 		>
 			{error ? (
-				<div className="space-y-2">
+				<div className="mb-4 space-y-2">
 					<InlineError
 						message={error}
 						onDismiss={() => {
@@ -131,64 +159,53 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 			) : null}
 
 			{enablement ? (
-				<div className="space-y-4">
-					{restaurantInactive ? (
-						<div className="flex flex-wrap items-center gap-2">
-							<StatusBadge
-								bgColor="var(--bg-tertiary)"
-								textColor="var(--text-muted)"
-								label={t(WhatsappKeys.ASSISTANT_OFF_RESTAURANT_INACTIVE)}
-							/>
-							{isAdmin ? activateButton : null}
-						</div>
-					) : !enablement.isActive ? (
-						<StatusBadge
-							bgColor="var(--bg-tertiary)"
-							textColor="var(--text-muted)"
-							label={t(WhatsappKeys.ASSISTANT_PAUSED)}
-						/>
+				<>
+					{/* Staff at an active restaurant would get an empty row — skip it. */}
+					{statusBadge || isAdmin ? (
+						<SettingsRow
+							label={t(WhatsappKeys.ASSISTANT_STATUS_LABEL)}
+							testId="settings-whatsapp-status"
+						>
+							<div className="flex flex-wrap items-center gap-2">
+								{statusBadge}
+								{isAdmin ? toggleEnabledButton : null}
+								{restaurantInactive && isAdmin ? activateButton : null}
+							</div>
+						</SettingsRow>
 					) : null}
 
-					<WhatsappAssistantPanel
-						restaurantName={enablement.restaurantName}
-						formattedShortCode={enablement.formattedShortCode}
-						deepLinkUrl={enablement.deepLinkUrl}
-						deepLinkText={enablement.deepLinkText}
-					/>
+					<SettingsRow label={t(WhatsappKeys.ASSISTANT_QR_ROW_LABEL)} testId="settings-whatsapp-qr">
+						<WhatsappAssistantPanel
+							restaurantName={enablement.restaurantName}
+							formattedShortCode={enablement.formattedShortCode}
+							deepLinkUrl={enablement.deepLinkUrl}
+							deepLinkText={enablement.deepLinkText}
+						/>
+					</SettingsRow>
 
 					{isAdmin ? (
-						<div className="space-y-2 border-t border-border pt-3">
-							<div className="flex flex-wrap gap-2">
-								<button
-									type="button"
-									disabled={isBusy}
-									onClick={() =>
-										run(() => setEnabled({ restaurantId, isActive: !enablement.isActive }))
-									}
-									className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover-secondary disabled:opacity-50"
-								>
-									{enablement.isActive
-										? t(WhatsappKeys.ASSISTANT_PAUSE)
-										: t(WhatsappKeys.ASSISTANT_ENABLE)}
-								</button>
-								<button
-									type="button"
-									disabled={isBusy}
-									onClick={() => run(() => regenerate({ restaurantId }))}
-									className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover-secondary disabled:opacity-50"
-								>
-									{t(WhatsappKeys.ASSISTANT_REGENERATE)}
-								</button>
-							</div>
-							<p className="text-xs text-faint-foreground">
-								{t(WhatsappKeys.ASSISTANT_REGENERATE_HINT)}
-							</p>
-						</div>
+						<SettingsRow
+							label={t(WhatsappKeys.ASSISTANT_REGENERATE)}
+							hint={t(WhatsappKeys.ASSISTANT_REGENERATE_HINT)}
+							testId="settings-whatsapp-regenerate"
+						>
+							<button
+								type="button"
+								disabled={isBusy}
+								onClick={() => run(() => regenerate({ restaurantId }))}
+								className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover-secondary disabled:opacity-50"
+							>
+								{t(WhatsappKeys.ASSISTANT_REGENERATE)}
+							</button>
+						</SettingsRow>
 					) : null}
-				</div>
+				</>
 			) : (
-				<div className="space-y-2">
-					<p className="text-xs text-faint-foreground">{t(WhatsappKeys.ASSISTANT_NOT_ENABLED)}</p>
+				<SettingsRow
+					label={t(WhatsappKeys.ASSISTANT_STATUS_LABEL)}
+					hint={t(WhatsappKeys.ASSISTANT_NOT_ENABLED)}
+					testId="settings-whatsapp-status"
+				>
 					{isAdmin ? (
 						<button
 							type="button"
@@ -201,7 +218,7 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 					) : (
 						<p className="text-xs text-faint-foreground">{t(WhatsappKeys.ASSISTANT_ADMIN_ONLY)}</p>
 					)}
-				</div>
+				</SettingsRow>
 			)}
 		</SettingsSection>
 	);
