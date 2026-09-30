@@ -654,4 +654,84 @@ describe("whatsappChannels enablement", () => {
 		// Derived, not written: the channel row is untouched (TAVLI-107).
 		expect(paused).toMatchObject({ isActive: true, restaurantIsActive: false });
 	});
+
+	describe("custom deep-link message", () => {
+		it("lets a manager set the message; the code is appended and it still routes", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+			const owner = t.withIdentity({ subject: "owner-wa" });
+
+			const result = await owner.mutation(api.whatsappChannels.setDeepLinkMessage, {
+				restaurantId,
+				message: "  ¡Hola! Quiero reservar  ",
+			});
+
+			expect(result?.deepLinkMessage).toBe("¡Hola! Quiero reservar");
+			expect(result?.deepLinkText).toBe("¡Hola! Quiero reservar · VRN-8F3");
+			expect(new URL(result!.deepLinkUrl!).searchParams.get("text")).toBe(
+				"¡Hola! Quiero reservar · VRN-8F3"
+			);
+			const read = await owner.query(api.whatsappChannels.getForRestaurant, { restaurantId });
+			expect(read?.deepLinkText).toBe("¡Hola! Quiero reservar · VRN-8F3");
+		});
+
+		it("an empty message goes back to the default sentence", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+			const owner = t.withIdentity({ subject: "owner-wa" });
+
+			await owner.mutation(api.whatsappChannels.setDeepLinkMessage, {
+				restaurantId,
+				message: "Hola",
+			});
+			const reset = await owner.mutation(api.whatsappChannels.setDeepLinkMessage, {
+				restaurantId,
+				message: "",
+			});
+
+			expect(reset?.deepLinkMessage).toBeUndefined();
+			expect(reset?.deepLinkText).toBe("Hola, quiero información sobre Vernáculo · VRN-8F3");
+		});
+
+		it("refuses anyone below manager", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+
+			await expect(
+				t.mutation(api.whatsappChannels.setDeepLinkMessage, { restaurantId, message: "Hola" })
+			).rejects.toThrow();
+			const stranger = t.withIdentity({ subject: "someone-else" });
+			await expect(
+				stranger.mutation(api.whatsappChannels.setDeepLinkMessage, {
+					restaurantId,
+					message: "Hola",
+				})
+			).rejects.toThrow();
+		});
+
+		it("refuses a message with a code in it, with a stable code, and stores nothing", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t, { name: "Vernáculo", shortCode: "VRN8F3" });
+			const owner = t.withIdentity({ subject: "owner-wa" });
+
+			await expect(
+				owner.mutation(api.whatsappChannels.setDeepLinkMessage, {
+					restaurantId,
+					message: "Hola TQR-4K7",
+				})
+			).rejects.toThrow("ERROR_WHATSAPP_MESSAGE_HAS_CODE");
+			const channel = await t.run((ctx) => ctx.db.query("whatsappChannels").first());
+			expect(channel?.deepLinkMessage).toBeUndefined();
+		});
+
+		it("says the assistant is not enabled when there is no channel", async () => {
+			const t = convexTest(schema, modules);
+			const restaurantId = await seedRestaurant(t, { name: "Vernáculo", enabled: false });
+			const owner = t.withIdentity({ subject: "owner-wa" });
+
+			await expect(
+				owner.mutation(api.whatsappChannels.setDeepLinkMessage, { restaurantId, message: "Hola" })
+			).rejects.toThrow("ERROR_WHATSAPP_NOT_ENABLED");
+		});
+	});
 });
