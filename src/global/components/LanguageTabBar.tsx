@@ -9,6 +9,8 @@ interface LanguageTabBarProps {
 	selectedLanguage: string;
 	onSelect: (lang: string) => void;
 	className?: string;
+	/** Language codes only (ES | EN) in 44px targets, for phone toolbars. */
+	compact?: boolean;
 }
 
 export function LanguageTabBar({
@@ -17,11 +19,14 @@ export function LanguageTabBar({
 	selectedLanguage,
 	onSelect,
 	className,
+	compact = false,
 }: Readonly<LanguageTabBarProps>) {
 	if (languages.length <= 1) return null;
 
 	return (
-		<div className={`flex h-9 items-center gap-1 rounded-lg bg-muted p-1 ${className ?? ""}`}>
+		<div
+			className={`flex items-center gap-1 rounded-lg bg-muted p-1 ${compact ? "h-11" : "h-9"} ${className ?? ""}`}
+		>
 			{languages.map((lang) => {
 				const isActive = lang === selectedLanguage;
 				const isDefault = lang === defaultLanguage;
@@ -30,14 +35,16 @@ export function LanguageTabBar({
 						key={lang}
 						type="button"
 						onClick={() => onSelect(lang)}
-						className="h-7 rounded-md px-3 text-xs font-medium transition-colors"
+						aria-pressed={isActive}
+						title={compact ? (LANGUAGE_LABELS[lang] ?? lang.toUpperCase()) : undefined}
+						className={`rounded-md text-xs font-medium transition-colors ${compact ? "h-9 w-11 uppercase" : "h-7 px-3"}`}
 						style={{
 							backgroundColor: isActive ? "var(--btn-primary-bg)" : "transparent",
 							color: isActive ? "var(--btn-primary-text)" : "var(--text-secondary)",
 						}}
 					>
-						{LANGUAGE_LABELS[lang] ?? lang.toUpperCase()}
-						{isDefault && (
+						{compact ? lang : (LANGUAGE_LABELS[lang] ?? lang.toUpperCase())}
+						{isDefault && !compact && (
 							<span className="ml-1 opacity-60" style={{ fontSize: "0.65rem" }}>
 								(default)
 							</span>

@@ -2,7 +2,7 @@
  * Pull an image out of a paste.
  *
  * Lives in `global` rather than beside the first caller: menu item photos
- * (`ItemImageManager`) and restaurant branding slots (`BrandingImageUploader`)
+ * (`ItemImageWell`) and restaurant branding slots (`BrandingImageUploader`)
  * both take pasted images, and they sit in different feature slices. The
  * reading of a `DataTransfer` has nothing to do with either domain.
  *
