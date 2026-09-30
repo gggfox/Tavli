@@ -1,6 +1,6 @@
 import { getStatusToneStyle, Surface } from "@/global/components";
 import { OrdersKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { getRelativeTime } from "@/global/utils/relativeTime";
 import {
 	BadgeDollarSign,
@@ -82,6 +82,7 @@ export function OrderCard({
 	onUpdateStatus,
 	onMarkStationReady,
 }: Readonly<OrderCardProps>) {
+	const formatMoney = useFormatMoney();
 	const { t, i18n } = useTranslation();
 	// The money UI on an awaiting-payment card — amount due, mark-paid confirm
 	// panel, mark-paid button — takes that status's own tone, so recoloring the
@@ -166,7 +167,7 @@ export function OrderCard({
 						className="min-w-0 truncate text-xl font-bold leading-tight text-foreground"
 					/>
 					<span className="text-sm font-semibold shrink-0 text-foreground">
-						${formatCents(order.totalAmount)}
+						{formatMoney(order.totalAmount)}
 					</span>
 				</div>
 
@@ -196,7 +197,7 @@ export function OrderCard({
 								{t(OrdersKeys.MARK_PAID_AMOUNT_DUE)}
 							</span>
 							<span className="block text-xl font-bold tabular-nums leading-tight">
-								${formatCents(order.totalAmount)}
+								{formatMoney(order.totalAmount)}
 							</span>
 						</div>
 					</div>
@@ -326,7 +327,7 @@ export function OrderCard({
 						</p>
 						<p className="text-xs text-muted-foreground">
 							{t(OrdersKeys.MARK_PAID_PROMPT_BODY, {
-								amount: `$${formatCents(order.totalAmount)}`,
+								amount: formatMoney(order.totalAmount),
 							})}
 						</p>
 						{markPaidError && (

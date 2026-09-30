@@ -22,7 +22,7 @@
  * the sort of thing that gets screenshotted.
  */
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import {
 	TIP_MAX_PERCENT,
 	TIP_MIN_PERCENT,
@@ -50,13 +50,14 @@ export function TipSlider({
 	onChange,
 	disabled = false,
 }: Readonly<TipSliderProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(false);
 	const sliderId = useId();
 
 	const tipAmount = computeTipAmount(subtotalAmount, tipPercent);
 	const mood = tipMood(tipPercent);
-	const valueText = `${tipPercent}% — $${formatCents(tipAmount)}`;
+	const valueText = `${tipPercent}% — ${formatMoney(tipAmount)}`;
 
 	return (
 		<div className="space-y-2">
@@ -65,7 +66,7 @@ export function TipSlider({
 					{t(OrderingKeys.CHECKOUT_TIP_LABEL, { percent: tipPercent })}
 				</span>
 				<div className="flex items-center gap-2">
-					<span className="text-muted-foreground tabular-nums">${formatCents(tipAmount)}</span>
+					<span className="text-muted-foreground tabular-nums">{formatMoney(tipAmount)}</span>
 					<button
 						type="button"
 						onClick={() => setExpanded((previous) => !previous)}

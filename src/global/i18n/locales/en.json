@@ -229,6 +229,8 @@
 			"drawerPublishedWarn": "This shift is already published. Saving will quietly update the published version — be sure to let the assigned member know.",
 			"drawerTemplateDetachWarn": "Editing detaches this shift from its weekly template.",
 			"drawerErrorTime": "End time must be after start time.",
+			"drawerErrorZeroLength": "Start and end time can't be the same.",
+			"drawerEndsNextDayHint": "Ends next day, {{time}}",
 			"drawerErrorOverlap": "Another non-cancelled shift overlaps this window.",
 			"drawerErrorGeneric": "Could not save the shift. Try again.",
 			"drawerErrorNoDays": "Pick at least one day of the week.",
@@ -258,6 +260,10 @@
 			"gridPendingAsteriskAria": "{{count}} pending day-off request(s)",
 			"chipPendingSuffix": ", pending day-off request",
 			"chipApprovedSuffix": ", approved day off",
+			"chipEndsLaterMarker": "+{{count}}",
+			"chipEndsLaterSuffix_one": " (ends next day)",
+			"chipEndsLaterSuffix_other": " (ends {{count}} days later)",
+			"gridLoadingAria": "Loading schedule",
 			"filterSegmentAll": "All",
 			"filterSegmentWithShifts": "With shifts",
 			"filterSegmentNoShifts": "No shifts",
@@ -613,7 +619,12 @@
 			"x": "X",
 			"youtube": "YouTube"
 		},
-		"reservationsUnavailable": "This restaurant isn't taking reservations right now."
+		"reservationsUnavailable": "This restaurant isn't taking reservations right now.",
+		"notFound": {
+			"title": "We couldn't find this restaurant",
+			"body": "The link may be mistyped, or the restaurant isn't available right now. Check the QR code or ask the staff for the right link.",
+			"pageTitle": "We couldn't find this page"
+		}
 	},
 	"roles": {
 		"admin": "Admin",
@@ -682,6 +693,14 @@
 		"ERROR_ORDER_ITEM_CANCEL_PAID": "This order's payment is already in progress or settled. Cancel the whole order to issue a refund.",
 		"ERROR_ORDER_ITEM_CANCEL_TAB_LOCKED": "A payment is in progress on this tab. Wait for it to finish before removing items.",
 		"ERROR_ORDER_PAYMENT_IN_FLIGHT": "A card payment is already in progress for this order. Cancel it before choosing to pay in person.",
+		"ERROR_ORDER_SESSION_ENDED": "This visit has ended. Scan the table's QR code to start a new one.",
+		"ERROR_ORDER_TABLE_NOT_FOUND": "That table isn't available any more. Pick your table again and try once more.",
+		"ERROR_ORDER_EMPTY": "Your order is empty. Add a dish before continuing.",
+		"ERROR_ORDER_TOO_MANY_LINES": "That's more dishes than one order can hold. Split it into two orders.",
+		"ERROR_ORDER_ITEM_QUANTITY_INVALID": "One of your dishes has a quantity we can't take. Adjust it and try again.",
+		"ERROR_MENU_ITEM_NOT_FOUND": "One of your dishes is no longer on the menu. Remove it and try again.",
+		"ERROR_MENU_ITEM_UNAVAILABLE": "One of your dishes is no longer available. Remove it and try again.",
+		"ERROR_MENU_ITEM_OPTION_NOT_FOUND": "An option you chose for one of your dishes is no longer offered. Remove the dish and add it again.",
 		"ERROR_PAYMENT_CANCEL_FAILED": "We couldn't reach our payment provider to close your previous attempt, so we didn't start a new one. Please try again in a moment.",
 		"ERROR_PAYMENT_ALREADY_PAID": "This has already been paid. Give us a second to catch up \u2014 no need to pay again.",
 		"ERROR_PAYMENT_IN_PROGRESS": "Your payment is already going through. Give it a moment rather than tapping again.",
@@ -785,9 +804,10 @@
 			"errorNotFound": "This restaurant was not found or is currently unavailable. Please check the link.",
 			"errorGeneric": "Something went wrong. Please try refreshing the page.",
 			"signInRequired": "Sign in to order",
-			"signInPrompt": "Create an account or sign in to browse the menu and place orders at this restaurant.",
+			"signInPrompt": "Your orders, checkout and receipts are tied to your account. Sign in or create one to continue — the menu is open to everyone.",
 			"oops": "Oops!",
 			"noSession": "No active session. Please return to the menu.",
+			"loading": "Loading…",
 			"viewOrders": "View your orders",
 			"myOrders": "My orders"
 		},
@@ -821,7 +841,9 @@
 			"tableInUse": "· in use",
 			"tableInUseSelected": "Someone else is already ordering at this table. That's fine — just make sure it's yours.",
 			"generatedImage": "AI image",
-			"generatedImageDetail": "This image was AI-generated and may differ from the actual dish."
+			"generatedImageDetail": "This image was AI-generated and may differ from the actual dish.",
+			"submitFailed": "We couldn't save your order. Check your connection and try again.",
+			"removeUnavailableDish": "Remove it from my order"
 		},
 		"item": {
 			"required": "Required",
@@ -868,7 +890,13 @@
 			"viewOrders": "View my orders",
 			"checkoutTipLabel": "Tip ({{percent}}%)",
 			"checkoutTipChange": "Change",
-			"checkoutTipSliderAria": "Tip percentage"
+			"checkoutTipSliderAria": "Tip percentage",
+			"confirmingTitle": "Confirming your payment",
+			"confirmingDesc": "This usually takes a few seconds. Please keep this page open.",
+			"confirmingSlowTitle": "Still confirming your payment",
+			"confirmingSlowDesc": "This is taking longer than usual. Please don't pay again. If your card was charged, this order will update on its own within a few minutes. If you need help, show this screen to a staff member.",
+			"confirmingReference": "Order reference {{ref}}",
+			"redirectFailed": "Your bank didn't approve the payment, so you weren't charged. Please try again or choose another way to pay."
 		},
 		"orderStatus": {
 			"loading": "Loading order...",
@@ -879,12 +907,15 @@
 			"itemUnavailable": "Unavailable",
 			"itemUnavailableRefunded": "Unavailable · refunded",
 			"refundedLine": "Refunded",
-			"summary": "${{total}} · {{count}} items",
+			"summary": "{{total}} · {{count}} items",
 			"orderMore": "Order More",
 			"stepPlaced": "Order Placed",
 			"stepPreparing": "Preparing",
 			"stepReady": "Ready",
-			"stepServed": "Served"
+			"stepServed": "Served",
+			"notFoundTitle": "We can't find this order",
+			"notFoundDesc": "The link may be wrong, or the order belongs to another account. Check your orders or go back to the menu.",
+			"unpaidNote": "This order hasn't been paid yet, so the kitchen hasn't received it."
 		},
 		"receipt": {
 			"emailCta": "Email me a receipt",
@@ -927,7 +958,7 @@
 			"blockedNotice_other": "{{count}} orders haven't reached your table yet. You can pay once they arrive.",
 			"blockedHeading": "Your food is still on its way",
 			"blockedBody": "You can pay as soon as everything reaches your table. If something isn't coming, ask your server to cancel it and it will come off your tab.",
-			"payCta": "Pay tab · ${{amount}}",
+			"payCta": "Pay tab · {{amount}}",
 			"joinHeading": "Joining a friend's tab?",
 			"joinPlaceholder": "Enter tab code",
 			"joinCta": "Join",
@@ -955,11 +986,11 @@
 			"presetAria": "Tip {{percent}}%",
 			"tipCustom": "Custom",
 			"tipCustomPlaceholder": "Tip amount",
-			"addTipCta": "Add tip · ${{amount}}",
+			"addTipCta": "Add tip · {{amount}}",
 			"skip": "Skip",
-			"tipsGiven": "Tip added · ${{amount}}",
+			"tipsGiven": "Tip added · {{amount}}",
 			"thanksTitle": "Thank you!",
-			"thanksBody": "Your ${{amount}} tip goes straight to the team.",
+			"thanksBody": "Your {{amount}} tip goes straight to the team.",
 			"paymentTitle": "Confirm your tip",
 			"nothingPaid": "You have nothing to settle — you didn't pay for any orders on this visit.",
 			"done": "Done"
@@ -1340,7 +1371,7 @@
 			"adminOnly": "Only Tavli admins can turn this on or off.",
 			"disabledState": "This restaurant isn't on the Tavli subscription.",
 			"planLabel": "Plan",
-			"planValue": "${{amount}} {{currency}} / month",
+			"planValue": "{{amount}} / month",
 			"statusLabel": "Status",
 			"statusNone": "Not set up",
 			"statusActive": "Active",

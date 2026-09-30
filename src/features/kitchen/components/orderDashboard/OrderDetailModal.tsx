@@ -1,6 +1,6 @@
 import { DialogHeader, getStatusToneStyle, Modal, StatusBadge, Surface } from "@/global/components";
 import { CommonKeys, OrdersKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { getRelativeTime } from "@/global/utils/relativeTime";
 import { Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +23,7 @@ interface OrderDetailModalProps {
 }
 
 export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDetailModalProps>) {
+	const formatMoney = useFormatMoney();
 	const { t, i18n } = useTranslation();
 	const fullOrderConfig =
 		fullOrder && isDashboardStatus(fullOrder.status) ? STATUS_CONFIG[fullOrder.status] : null;
@@ -86,7 +87,7 @@ export function OrderDetailModal({ fullOrder, now, onClose }: Readonly<OrderDeta
 							</span>
 						</div>
 						<span className="font-medium text-foreground">
-							${formatCents(fullOrder.totalAmount)}
+							{formatMoney(fullOrder.totalAmount)}
 						</span>
 					</div>
 

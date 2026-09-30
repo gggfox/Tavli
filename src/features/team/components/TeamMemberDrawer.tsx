@@ -12,7 +12,7 @@ import { DialogHeader, Drawer } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
 import { getMondayYmdOfWeek, startOfDayMs, utcMsToYmdInTimezone } from "@/global/utils/timezone";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -393,6 +393,7 @@ function PerformanceSection({ isOwner, row, currency }: Readonly<PerformanceSect
 
 function PerformanceBody({ isOwner, row, currency }: Readonly<PerformanceSectionProps>) {
 	const { t } = useTranslation();
+	const formatMoney = useFormatMoney(currency);
 	if (isOwner) {
 		return (
 			<p className="text-sm text-faint-foreground">
@@ -415,7 +416,7 @@ function PerformanceBody({ isOwner, row, currency }: Readonly<PerformanceSection
 			/>
 			<KpiCard
 				label={t(AdminStaffKeys.TEAM_DRAWER_PERFORMANCE_REVENUE)}
-				value={`${row.attributedRevenue.toFixed(2)} ${currency}`}
+				value={formatMoney(row.attributedRevenue)}
 			/>
 			<KpiCard
 				label={t(AdminStaffKeys.TEAM_DRAWER_PERFORMANCE_HOURS)}
@@ -453,6 +454,7 @@ function TipsSection({ isOwner, totalCents, perDay, currency }: Readonly<TipsSec
 
 function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectionProps>) {
 	const { t } = useTranslation();
+	const formatMoney = useFormatMoney(currency);
 	if (isOwner) {
 		return (
 			<p className="text-sm text-faint-foreground">
@@ -471,9 +473,7 @@ function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectio
 				<span className="text-xs text-faint-foreground">
 					{t(AdminStaffKeys.TEAM_DRAWER_TIPS_TOTAL)}
 				</span>
-				<span className="text-base font-semibold text-foreground">
-					{formatCents(totalCents)} {currency}
-				</span>
+				<span className="text-base font-semibold text-foreground">{formatMoney(totalCents)}</span>
 			</div>
 			<div className="text-xs text-faint-foreground mb-2">
 				{t(AdminStaffKeys.TEAM_DRAWER_TIPS_PER_DAY)}
@@ -488,7 +488,7 @@ function TipsBody({ isOwner, totalCents, perDay, currency }: Readonly<TipsSectio
 							</span>
 						</div>
 						<span className="text-sm font-medium text-foreground tabular-nums shrink-0">
-							{formatCents(d.amountCents)} {currency}
+							{formatMoney(d.amountCents)}
 						</span>
 					</li>
 				))}

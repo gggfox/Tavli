@@ -1,9 +1,14 @@
 /**
  * Schedule grid: rows = members, columns = Mon→Sun.
  *
- * Each cell shows the shifts assigned to that member on that day, rendered as
- * `ShiftCellChip`s. Empty cells are clickable and open the `ShiftDrawer`
- * pre-filled with `(memberId, ymd)`. The sticky left-column member row header
+ * Each cell shows the shifts assigned to that member that *start* on that
+ * restaurant-local day, rendered as `ShiftCellChip`s (an overnight shift stays
+ * in its start day's cell; the chip marks the next-day end). When
+ * `onCreateShift` is supplied every cell carries a "+" — full-height when
+ * empty, slim under the chips otherwise — that opens the `ShiftDrawer`
+ * pre-filled with `(memberId, ymd)`. Column headers are labelled from the ymd
+ * strings themselves so they never drift with the browser's timezone. The
+ * sticky left-column member row header
  * is also clickable when `onOpenMemberDrawer` is supplied — used by both
  * `/admin/schedule` — managers click any row, employees click their own
  * single row to open the attendance drawer.
@@ -18,14 +23,16 @@
  * The component is purely presentational — it doesn't fetch data or own any
  * mutation; the parent route shapes shifts + members and passes callbacks.
  */
+import { Skeleton } from "@/global/components";
 import { AdminStaffKeys } from "@/global/i18n";
 import { useIsTabletViewport } from "@/global/hooks";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { addDaysToYmd, utcMsToYmdInTimezone } from "../timezone";
+import { addDaysToYmd, formatYmd } from "../timezone";
 import { dayLabel } from "../roles";
+import { groupShiftsByMemberAndDay } from "../shiftWindow";
 import type { ChipAbsenceState } from "./ShiftCellChip";
 import type { AssignableMember, ScheduledShiftView } from "../types";
 
@@ -81,6 +88,75 @@ interface DayInfo {
 	readonly index: number;
 }
 
+function gridColumnsFor(isTablet: boolean): string {
+	return isTablet
+		? "minmax(72px, 0.9fr) repeat(7, minmax(52px, 1fr))"
+		: "minmax(160px, 1.2fr) repeat(7, minmax(120px, 1fr))";
+}
+
+function headerClassFor(isTablet: boolean): string {
+	return isTablet
+		? "bg-muted text-[10px] font-semibold text-faint-foreground px-1.5 py-1.5 border-b border-border"
+		: "bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-border";
+}
+
+const SKELETON_ROW_COUNT = 4;
+
+/**
+ * Placeholder with the grid's exact column layout, shown while the members
+ * or the week's shifts are still loading — so the page neither flashes an
+ * empty week of "+" buttons nor the "no team members" empty state.
+ */
+export function ScheduleWeekGridSkeleton() {
+	const { t } = useTranslation();
+	const isTablet = useIsTabletViewport();
+	const headerClass = headerClassFor(isTablet);
+	const cellPadding = isTablet ? "p-1" : "p-1.5";
+	return (
+		<div
+			role="status"
+			aria-busy="true"
+			aria-label={t(AdminStaffKeys.SCHEDULE_GRID_LOADING_ARIA)}
+			className="overflow-x-auto rounded-lg border border-border"
+		>
+			<div
+				className={isTablet ? "min-w-0 grid" : "min-w-[720px] grid"}
+				style={{ gridTemplateColumns: gridColumnsFor(isTablet) }}
+			>
+				<div className={`sticky left-0 z-10 ${headerClass}`}>
+					<Skeleton className="h-3 w-16 my-0.5" />
+				</div>
+				<Skeleton.Repeat count={7} keyPrefix="sched-skel-head" className="contents">
+					{() => (
+						<div className={`border-l border-border ${headerClass}`}>
+							<Skeleton className="h-3 w-3/4 my-0.5" />
+						</div>
+					)}
+				</Skeleton.Repeat>
+				<Skeleton.Repeat count={SKELETON_ROW_COUNT} keyPrefix="sched-skel-row" className="contents">
+					{(row) => (
+						<>
+							<div className="sticky left-0 z-10 bg-background border-b border-border flex items-center gap-1.5 px-3 py-2 min-w-0">
+								<Skeleton rounded="full" className="w-5 h-5 shrink-0" />
+								<Skeleton className="h-3 flex-1" />
+							</div>
+							<Skeleton.Repeat count={7} keyPrefix={`sched-skel-cell-${row}`} className="contents">
+								{(col) => (
+									<div
+										className={`border-b border-l border-border min-h-20 bg-background ${cellPadding}`}
+									>
+										{(row + col) % 3 === 0 ? <Skeleton className="h-10 w-full" /> : null}
+									</div>
+								)}
+							</Skeleton.Repeat>
+						</>
+					)}
+				</Skeleton.Repeat>
+			</div>
+		</div>
+	);
+}
+
 export function ScheduleWeekGrid({
 	members,
 	shifts,
@@ -104,37 +180,14 @@ export function ScheduleWeekGrid({
 		}));
 	}, [mondayYmd]);
 
-	const dateFormatter = useMemo(
-		() =>
-			new Intl.DateTimeFormat(localeTag, {
-				month: "short",
-				day: "numeric",
-			}),
-		[localeTag]
+	const shiftsByMemberAndDay = useMemo(
+		() => groupShiftsByMemberAndDay(shifts, timezone),
+		[shifts, timezone]
 	);
 
-	const shiftsByMemberAndDay = useMemo(() => {
-		const map = new Map<string, ScheduledShiftView[]>();
-		for (const s of shifts) {
-			const ymd = utcMsToYmdInTimezone(s.startsAt, timezone);
-			const key = `${s.memberId}|${ymd}`;
-			const list = map.get(key);
-			if (list) list.push(s);
-			else map.set(key, [s]);
-		}
-		for (const list of map.values()) {
-			list.sort((a, b) => a.startsAt - b.startsAt);
-		}
-		return map;
-	}, [shifts, timezone]);
-
 	const isTablet = useIsTabletViewport();
-	const gridTemplateColumns = isTablet
-		? "minmax(72px, 0.9fr) repeat(7, minmax(52px, 1fr))"
-		: "minmax(160px, 1.2fr) repeat(7, minmax(120px, 1fr))";
-	const headerClass = isTablet
-		? "bg-muted text-[10px] font-semibold text-faint-foreground px-1.5 py-1.5 border-b border-border"
-		: "bg-muted text-xs font-semibold text-faint-foreground px-3 py-2 border-b border-border";
+	const gridTemplateColumns = gridColumnsFor(isTablet);
+	const headerClass = headerClassFor(isTablet);
 
 	return (
 		<div className="overflow-x-auto rounded-lg border border-border">
@@ -150,8 +203,7 @@ export function ScheduleWeekGrid({
 					{t(AdminStaffKeys.SCHEDULE_COL_MEMBER)}
 				</div>
 				{days.map((d) => {
-					const date = new Date(`${d.ymd}T00:00:00Z`);
-					const dateStr = dateFormatter.format(date);
+					const dateStr = formatYmd(d.ymd, localeTag);
 					return (
 						<div
 							key={d.ymd}
@@ -319,16 +371,11 @@ function DayCellContent({
 	absenceState,
 }: Readonly<DayCellContentProps>) {
 	const { t } = useTranslation();
+	const hasShifts = cellShifts.length > 0;
 
-	if (cellShifts.length > 0) {
-		return (
-			<div className="flex flex-col gap-1">
-				{renderCell({ day, member, shifts: cellShifts, absenceState })}
-			</div>
-		);
-	}
-	if (!onCreateShift) return null;
-	return (
+	// A day with shifts keeps a slim "+" under its chips so a split shift
+	// (lunch + dinner) can be added straight from the grid.
+	const addButton = onCreateShift ? (
 		<button
 			type="button"
 			onClick={() => onCreateShift(String(member.memberId), day.ymd)}
@@ -336,9 +383,21 @@ function DayCellContent({
 				member: label,
 				date: day.ymd,
 			})}
-			className="w-full h-full min-h-16 flex items-center justify-center rounded border border-dashed border-border/60 text-faint-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+			className={`w-full flex items-center justify-center rounded border border-dashed border-border/60 text-faint-foreground hover:text-foreground hover:border-foreground/40 transition-colors ${
+				hasShifts ? "h-6" : "h-full min-h-16"
+			}`}
 		>
-			<Plus size={14} />
+			<Plus size={hasShifts ? 12 : 14} />
 		</button>
-	);
+	) : null;
+
+	if (hasShifts) {
+		return (
+			<div className="flex flex-col gap-1">
+				{renderCell({ day, member, shifts: cellShifts, absenceState })}
+				{addButton}
+			</div>
+		);
+	}
+	return addButton;
 }

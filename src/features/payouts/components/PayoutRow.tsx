@@ -1,4 +1,5 @@
 import { CopyableId, StatusBadge, Surface } from "@/global/components";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { PayoutsKeys } from "@/global/i18n";
 import { formatDate } from "@/global/utils/date";
 import {
@@ -9,12 +10,7 @@ import {
 	type StripePayoutStatus,
 } from "convex/constants";
 import { useTranslation } from "react-i18next";
-import {
-	formatPayoutMoney,
-	PAYOUT_STATUS_BADGE,
-	PAYOUT_STATUS_ICON,
-	PAYOUT_STATUS_LABEL_KEY,
-} from "../constants";
+import { PAYOUT_STATUS_BADGE, PAYOUT_STATUS_ICON, PAYOUT_STATUS_LABEL_KEY } from "../constants";
 
 export interface PayoutRowData {
 	readonly stripePayoutId: string;
@@ -41,6 +37,9 @@ export interface PayoutRowData {
  */
 export function PayoutRow({ payout }: { readonly payout: PayoutRowData }) {
 	const { t, i18n } = useTranslation();
+	// Stripe money carries its own currency, so each call passes it rather
+	// than trusting the restaurant's.
+	const formatMoney = useFormatMoney();
 
 	const isFailed = payout.status === STRIPE_PAYOUT_STATUS.FAILED;
 	const StatusIcon = PAYOUT_STATUS_ICON[payout.status];
@@ -79,7 +78,7 @@ export function PayoutRow({ payout }: { readonly payout: PayoutRowData }) {
 					</span>
 					<div className="min-w-0">
 						<p className="text-base font-semibold text-foreground">
-							{formatPayoutMoney(payout.amount, payout.currency)}
+							{formatMoney(payout.amount, payout.currency)}
 						</p>
 						<p className="text-xs text-faint-foreground">
 							{t(PayoutsKeys.LIST_SENT_ON, { date: formatDate(payout.createdAt, locale) })}

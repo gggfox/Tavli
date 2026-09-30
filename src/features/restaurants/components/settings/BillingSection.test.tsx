@@ -106,7 +106,7 @@ describe("BillingSection", () => {
 
 		// Thousands separator, matching Tavli's own platform-fee receipt email
 		// (`formatPlatformFeeAmount`) — the in-app figure used to read "$2000.00".
-		expect(screen.getByTestId("settings-billing-amount").textContent).toBe("$2,000.00 MXN / month");
+		expect(screen.getByTestId("settings-billing-amount").textContent).toBe("$2,000.00 / month");
 		expect(screen.getByTestId("settings-billing-status").textContent).toBe("Not set up");
 		expect(screen.getByTestId("settings-billing-checkout")).toBeTruthy();
 	});

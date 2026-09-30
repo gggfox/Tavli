@@ -57,9 +57,107 @@ function mockBackend(order: Record<string, any> | null | undefined) {
 	vi.mocked(useConvexAction).mockReturnValue(sendReceiptMock as any);
 }
 
-function renderPage() {
-	return render(<OrderStatus orderId={"orders:status" as any} onBackToMenu={() => {}} />);
+function renderPage(
+	props: Partial<{
+		onBackToMenu: () => void;
+		onViewOrders: () => void;
+		onContinueToPayment: () => void;
+	}> = {}
+) {
+	return render(
+		<OrderStatus
+			orderId={"orders:status" as any}
+			onBackToMenu={props.onBackToMenu ?? (() => {})}
+			onViewOrders={props.onViewOrders ?? (() => {})}
+			onContinueToPayment={props.onContinueToPayment ?? (() => {})}
+		/>
+	);
 }
+
+describe("OrderStatus loading vs not found", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("shows the loading copy while the subscription has not answered", () => {
+		mockBackend(undefined);
+
+		renderPage();
+
+		expect(screen.getByText("Loading order...")).toBeTruthy();
+		expect(screen.queryByText("We can't find this order")).toBeNull();
+	});
+
+	it("shows not-found, with a way to the orders list and the menu, when the query answers null", () => {
+		// `getOrderWithItems` answers null for a missing order AND for someone
+		// else's. That used to be an infinite "Loading order...".
+		mockBackend(null);
+		const onViewOrders = vi.fn();
+		const onBackToMenu = vi.fn();
+
+		renderPage({ onViewOrders, onBackToMenu });
+
+		expect(screen.getByText("We can't find this order")).toBeTruthy();
+		expect(screen.queryByText("Loading order...")).toBeNull();
+		fireEvent.click(screen.getByText("View my orders"));
+		fireEvent.click(screen.getByText("Back to menu"));
+		expect(onViewOrders).toHaveBeenCalledTimes(1);
+		expect(onBackToMenu).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows not-found when the query errors (an id the validator rejects), without retrying", () => {
+		vi.mocked(useQuery).mockReturnValue({ data: undefined, isError: true } as any);
+
+		renderPage();
+
+		expect(screen.getByText("We can't find this order")).toBeTruthy();
+		expect(vi.mocked(useQuery).mock.calls[0][0]).toMatchObject({ retry: false });
+	});
+});
+
+describe("OrderStatus for a round that is not placed yet", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("offers Continue to payment on an unpaid draft instead of an all-grey stepper", () => {
+		mockBackend(baseOrder({ status: "draft", paymentState: "unpaid", paidPayment: null }));
+		const onContinueToPayment = vi.fn();
+
+		renderPage({ onContinueToPayment });
+
+		expect(
+			screen.getByText("This order hasn't been paid yet, so the kitchen hasn't received it.")
+		).toBeTruthy();
+		expect(screen.queryByText("Order Placed")).toBeNull();
+		fireEvent.click(screen.getByText("Continue to payment"));
+		expect(onContinueToPayment).toHaveBeenCalledTimes(1);
+		// "Order more" is still there beside it.
+		expect(screen.getByText("Order More")).toBeTruthy();
+	});
+
+	it("offers Continue to payment on a round committed to pay at the table", () => {
+		mockBackend(
+			baseOrder({ status: "awaiting_payment", paymentState: "unpaid", paidPayment: null })
+		);
+
+		renderPage();
+
+		expect(
+			screen.getByText("Your order will go to the kitchen once the staff confirms your payment.")
+		).toBeTruthy();
+		expect(screen.getByText("Continue to payment")).toBeTruthy();
+	});
+
+	it("does not offer payment once the order is placed", () => {
+		mockBackend(baseOrder());
+
+		renderPage();
+
+		expect(screen.getByText("Order Placed")).toBeTruthy();
+		expect(screen.queryByText("Continue to payment")).toBeNull();
+	});
+});
 
 describe("OrderStatus receipt breakdown (TAVLI-71 Phase 3C)", () => {
 	beforeEach(() => {

@@ -34,10 +34,16 @@ import {
 } from "@/features/users/components/UserSettingsService";
 import { i18n } from "@/global";
 import type { Language } from "@/global/i18n";
-import { Languages, normalizeLanguage, writeLanguageCookie } from "@/global/i18n";
+import {
+	Languages,
+	languageFromPathname,
+	normalizeLanguage,
+	writeLanguageCookie,
+} from "@/global/i18n";
 import { useUser } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { UserSettingsId } from "convex/constants";
 import { useConvex, useConvexAuth } from "convex/react";
@@ -316,15 +322,28 @@ export function useUserSettings(): UseUserSettingsReturn {
 		[client]
 	);
 
+	// On a diner route (`/r/:slug/:lang/*`) the URL's language is on screen,
+	// not the account's. `null` everywhere else.
+	const urlLanguage = useRouterState({
+		select: (state) => languageFromPathname(state.location.pathname),
+	});
+
 	// Sync i18n language when settings change (for initial load and real-time
 	// updates). Mirror it into the cookie so the next SSR pass starts from the
 	// account's language instead of the pre-login one.
+	//
+	// Skipped on diner routes: a signed-in manager opening their Spanish QR
+	// must see the Spanish menu their diners see, not their own English
+	// account setting. Neither the account nor the cookie is touched there
+	// (see `global/i18n/config.ts`); `urlLanguage` is a dependency so leaving
+	// the diner route re-applies the account language.
 	useEffect(() => {
+		if (urlLanguage) return;
 		if (settings?.language && i18n.language !== settings.language) {
 			i18n.changeLanguage(settings.language);
 			writeLanguageCookie(settings.language);
 		}
-	}, [settings?.language]);
+	}, [settings?.language, urlLanguage]);
 
 	// Detect and save browser language on first login
 	// This runs when user is authenticated but has no settings yet
@@ -335,7 +354,15 @@ export function useUserSettings(): UseUserSettingsReturn {
 		// 2. Settings don't exist (first login)
 		// 3. We haven't already attempted initialization
 		// 4. i18n has detected a language
-		if (isAuthenticated && settings === null && !hasInitializedLanguage.current && i18n.language) {
+		// 5. That language is not merely a diner URL's — `es` from a Spanish QR
+		//    says nothing about the language this person wants to work in
+		if (
+			isAuthenticated &&
+			settings === null &&
+			!hasInitializedLanguage.current &&
+			i18n.language &&
+			!urlLanguage
+		) {
 			// Normalize the language i18n detected from the browser/cookie to a
 			// supported code ("en-US" -> "en", "es-ES" -> "es").
 			const normalizedLanguage = normalizeLanguage(i18n.language);
@@ -357,7 +384,7 @@ export function useUserSettings(): UseUserSettingsReturn {
 		if (!isAuthenticated || settings !== null) {
 			hasInitializedLanguage.current = false;
 		}
-	}, [isAuthenticated, settings, updateLanguage]);
+	}, [isAuthenticated, settings, updateLanguage, urlLanguage]);
 
 	return {
 		settings,

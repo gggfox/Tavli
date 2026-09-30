@@ -1,9 +1,9 @@
 import { Button, InlineError, Surface } from "@/global/components";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { PayoutsKeys } from "@/global/i18n";
 import type { Id } from "convex/_generated/dataModel";
 import { ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { formatPayoutMoney } from "../constants";
 import { useUpdateBankDetails } from "../hooks/useUpdateBankDetails";
 
 export interface HeldTotalCardProps {
@@ -37,6 +37,9 @@ export function HeldTotalCard({
 	failedCount,
 }: HeldTotalCardProps) {
 	const { t } = useTranslation();
+	// Stripe money carries its own currency, so each call passes it rather
+	// than trusting the restaurant's.
+	const formatMoney = useFormatMoney();
 	const { openBankDetails, isPending, error } = useUpdateBankDetails(restaurantId);
 
 	return (
@@ -48,7 +51,7 @@ export function HeldTotalCard({
 				<div className="space-y-1">
 					<p className="text-sm font-semibold text-success">{t(PayoutsKeys.SAFE_LINE)}</p>
 					<h2 className="text-lg font-semibold text-foreground">
-						{t(PayoutsKeys.HELD_TITLE, { amount: formatPayoutMoney(heldCents, currency) })}
+						{t(PayoutsKeys.HELD_TITLE, { amount: formatMoney(heldCents, currency) })}
 					</h2>
 					<p className="text-sm text-muted-foreground">{t(PayoutsKeys.HELD_BODY)}</p>
 					<p className="text-xs text-faint-foreground">

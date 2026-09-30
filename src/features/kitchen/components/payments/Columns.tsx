@@ -1,7 +1,7 @@
 import { CopyableId } from "@/global/components";
 import { PaymentsKeys } from "@/global/i18n";
 import { formatDate } from "@/global/utils/date";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { type ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,8 +12,9 @@ const columnHelper = createColumnHelper<PaymentsLedgerRow>();
 
 /** Renders cents, or an em dash when the amount was never recorded. */
 function Money({ cents }: Readonly<{ cents: number | null }>) {
+	const formatMoney = useFormatMoney();
 	if (cents === null) return <span className="text-faint-foreground">—</span>;
-	return <span className="text-foreground tabular-nums">${formatCents(cents)}</span>;
+	return <span className="text-foreground tabular-nums">{formatMoney(cents)}</span>;
 }
 
 /**
@@ -28,6 +29,7 @@ function Money({ cents }: Readonly<{ cents: number | null }>) {
  * into a single total.
  */
 export function usePaymentsColumns(): ColumnDef<PaymentsLedgerRow, unknown>[] {
+	const formatMoney = useFormatMoney();
 	const { t, i18n } = useTranslation();
 
 	return useMemo(
@@ -96,7 +98,7 @@ export function usePaymentsColumns(): ColumnDef<PaymentsLedgerRow, unknown>[] {
 					header: t(PaymentsKeys.TABLE_SUBTOTAL),
 					cell: (info) => (
 						<span className="font-medium text-foreground tabular-nums">
-							${formatCents(info.getValue())}
+							{formatMoney(info.getValue())}
 						</span>
 					),
 				}),
@@ -117,6 +119,6 @@ export function usePaymentsColumns(): ColumnDef<PaymentsLedgerRow, unknown>[] {
 					),
 				}),
 			] as ColumnDef<PaymentsLedgerRow, unknown>[],
-		[t, i18n.language]
+		[t, i18n.language, formatMoney]
 	);
 }

@@ -133,10 +133,44 @@ export function startOfDayMs(ymd: string, timezone: string): number {
 	return ymdHmToUtcMs(ymd, 0, timezone);
 }
 
-/** Return the UTC ms 7 calendar days after the local midnight of `mondayYmd`. */
+/**
+ * Return the UTC ms of the local midnight 7 calendar days after `mondayYmd`
+ * (i.e. the following Monday's `00:00`). Resolved per calendar day rather
+ * than `+ 24h` so a week containing a DST switch is 167 or 169 hours long,
+ * matching the restaurant's wall clock.
+ */
 export function endOfWeekMs(mondayYmd: string, timezone: string): number {
-	const sunday = addDaysToYmd(mondayYmd, 6);
-	return startOfDayMs(sunday, timezone) + MS_PER_DAY;
+	return startOfDayMs(addDaysToYmd(mondayYmd, 7), timezone);
+}
+
+/**
+ * Whole calendar days from `fromYmd` to `toYmd` (negative when `toYmd` is
+ * earlier). Pure string-date math — independent of any timezone.
+ */
+export function ymdDayDiff(fromYmd: string, toYmd: string): number {
+	const [fy, fm, fd] = fromYmd.split("-").map(Number);
+	const [ty, tm, td] = toYmd.split("-").map(Number);
+	return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / MS_PER_DAY);
+}
+
+/**
+ * Format a `YYYY-MM-DD` calendar date for display (e.g. "Sep 28" / "28 sept").
+ *
+ * The label always names the day in `ymd`, whatever the browser's timezone:
+ * the date is pinned to UTC midnight and formatted in UTC, so a browser at
+ * UTC-6 can't roll "2026-09-28" back to the 27th. Use this for day/week
+ * labels derived from restaurant-local ymd strings instead of formatting a
+ * `Date` in the viewer's zone.
+ */
+export function formatYmd(
+	ymd: string,
+	localeTag: string,
+	options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
+): string {
+	const [y, mo, d] = ymd.split("-").map(Number);
+	return new Intl.DateTimeFormat(localeTag, { ...options, timeZone: "UTC" }).format(
+		new Date(Date.UTC(y, mo - 1, d))
+	);
 }
 
 /** Standard 7-day Mon-start week labels, e.g. ["2026-05-04", ..., "2026-05-10"]. */

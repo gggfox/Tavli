@@ -1,6 +1,6 @@
 import { EmptyState } from "@/global/components";
 import { localizeName, OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -26,6 +26,7 @@ interface CartProps {
  * wait on. The spinner now lives on the checkout's own pay buttons.
  */
 export function Cart({ orderId, onBack, onSubmit, onRemoveItem }: Readonly<CartProps>) {
+	const formatMoney = useFormatMoney();
 	const { t, i18n } = useTranslation();
 	const { data: orderData } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
 
@@ -74,7 +75,7 @@ export function Cart({ orderId, onBack, onSubmit, onRemoveItem }: Readonly<CartP
 								</div>
 								<div className="flex items-center gap-2">
 									<span className="text-sm font-medium text-foreground">
-										${formatCents(item.lineTotal)}
+										{formatMoney(item.lineTotal)}
 									</span>
 									<button
 										onClick={() => onRemoveItem(item._id)}
@@ -93,7 +94,7 @@ export function Cart({ orderId, onBack, onSubmit, onRemoveItem }: Readonly<CartP
 				<div className="px-4 pb-4 pt-3 space-y-3 border-t border-border">
 					<div className="flex justify-between text-base font-semibold text-foreground">
 						<span>{t(OrderingKeys.CART_TOTAL)}</span>
-						<span>${formatCents(totalAmount)}</span>
+						<span>{formatMoney(totalAmount)}</span>
 					</div>
 					<button
 						onClick={onSubmit}

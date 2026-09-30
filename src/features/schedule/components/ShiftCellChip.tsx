@@ -11,6 +11,9 @@
  *     off-day and likely needs reassignment.
  *   - Dashed-border + reduced opacity for SCHEDULED (drafts not yet published).
  *   - Repeating-arrow ↻ glyph for shifts materialized from a `shiftTemplates` row.
+ *   - A superscript "+1" after the end time when the shift ends on a later
+ *     restaurant-local day than it starts (overnight), so "18:00–02:00" doesn't
+ *     read as ending before it starts. The aria-label spells it out.
  *
  * Tablet (≤1024px): time range on line 1; role, notes, and badges on line 2.
  * Desktop: time + badges on line 1; role and notes on separate rows.
@@ -22,6 +25,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { utcMsToHmInTimezone } from "../timezone";
 import { shiftRoleChipStyle, shiftRoleLabel } from "../roles";
+import { shiftEndDayOffset } from "../shiftWindow";
 import type { ScheduledShiftView } from "../types";
 
 export type ChipAbsenceState = "pending" | "approved";
@@ -103,12 +107,17 @@ export function ShiftCellChip({
 	const isDraft = shift.status === SHIFT_STATUS.SCHEDULED;
 	const startHm = utcMsToHmInTimezone(shift.startsAt, timezone);
 	const endHm = utcMsToHmInTimezone(shift.endsAt, timezone);
+	const endDayOffset = shiftEndDayOffset(shift.startsAt, shift.endsAt, timezone);
 	const role = shift.shiftRole ? shiftRoleLabel(shift.shiftRole, t) : null;
 
+	const endsLaterSuffix =
+		endDayOffset > 0
+			? t(AdminStaffKeys.SCHEDULE_CHIP_ENDS_LATER_SUFFIX, { count: endDayOffset })
+			: "";
 	const roleSuffix = role ? ` · ${role}` : "";
 	const suffixKey = absenceSuffixKey(absenceState);
 	const absenceSuffix = suffixKey ? t(suffixKey) : "";
-	const ariaLabel = `${startHm}–${endHm}${roleSuffix}${absenceSuffix}`;
+	const ariaLabel = `${startHm}–${endHm}${endsLaterSuffix}${roleSuffix}${absenceSuffix}`;
 	const timeStruck = absenceState === "approved";
 	const tabletMeta = tabletMetaText(role, shift.notes);
 	const showTabletMetaRow =
@@ -133,6 +142,11 @@ export function ShiftCellChip({
 					{startHm}
 					<span className="opacity-60">–</span>
 					{endHm}
+					{endDayOffset > 0 ? (
+						<sup aria-hidden="true" className="ml-0.5 text-[9px] font-semibold opacity-80">
+							{t(AdminStaffKeys.SCHEDULE_CHIP_ENDS_LATER_MARKER, { count: endDayOffset })}
+						</sup>
+					) : null}
 				</span>
 				<span className="hidden lg:flex">
 					<ChipBadges shift={shift} isDraft={isDraft} t={t} />

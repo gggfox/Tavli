@@ -1,3 +1,4 @@
+import { useCurrencySymbol } from "@/global/hooks/useFormatMoney";
 import { MenusKeys } from "@/global/i18n";
 import type { Id } from "convex/_generated/dataModel";
 import { useId, type ReactNode } from "react";
@@ -37,6 +38,7 @@ export function ItemEditorFields({
 	restaurantId,
 }: Readonly<{ draft: MenuItemDraft; restaurantId: Id<"restaurants"> }>) {
 	const { t } = useTranslation();
+	const currencySymbol = useCurrencySymbol();
 	const id = useId();
 	const { fields, set } = draft;
 
@@ -56,7 +58,7 @@ export function ItemEditorFields({
 				<Field label={t(MenusKeys.ITEM_EDITOR_PRICE)} htmlFor={`${id}-price`}>
 					<div className="flex items-center rounded-lg border border-input-border bg-input focus-within:border-input-border-focus">
 						<span aria-hidden className="pl-3 text-sm text-faint-foreground">
-							$
+							{currencySymbol}
 						</span>
 						<input
 							id={`${id}-price`}

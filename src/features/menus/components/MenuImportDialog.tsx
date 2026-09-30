@@ -1,6 +1,6 @@
 import { Modal } from "@/global/components/Modal";
 import { MenusKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { FileUp, Loader2, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -22,6 +22,7 @@ export function MenuImportDialog({
 	restaurantId,
 	menus,
 }: Readonly<MenuImportDialogProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [targetMenuId, setTargetMenuId] = useState<Id<"menus"> | "__new__">(
@@ -72,7 +73,7 @@ export function MenuImportDialog({
 
 	const formatPrice = (cents: number) => {
 		if (cents === 0) return "—";
-		return `$${formatCents(cents)}`;
+		return formatMoney(cents);
 	};
 
 	const totalItems = extraction?.categories.reduce((sum, cat) => sum + cat.items.length, 0) ?? 0;

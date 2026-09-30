@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	addDaysToYmd,
 	endOfWeekMs,
 	formatHm,
+	formatYmd,
 	getMondayYmdOfWeek,
 	getWeekYmds,
 	getZoneOffsetMs,
@@ -10,6 +11,7 @@ import {
 	startOfDayMs,
 	utcMsToHmInTimezone,
 	utcMsToYmdInTimezone,
+	ymdDayDiff,
 	ymdHmToUtcMs,
 	ymdToDayOfWeekMonStart,
 } from "./timezone";
@@ -135,5 +137,57 @@ describe("startOfDayMs / endOfWeekMs", () => {
 		const monday = startOfDayMs("2026-05-04", "UTC");
 		const end = endOfWeekMs("2026-05-04", "UTC");
 		expect(end - monday).toBe(7 * 24 * HOUR_MS);
+	});
+
+	it("endOfWeekMs lands on next Monday's local midnight across a DST fall-back Sunday", () => {
+		// NY falls back on Sunday 2026-11-01, so that week is 169 hours long.
+		const monday = startOfDayMs("2026-10-26", "America/New_York");
+		const end = endOfWeekMs("2026-10-26", "America/New_York");
+		expect(end - monday).toBe(169 * HOUR_MS);
+		expect(utcMsToYmdInTimezone(end, "America/New_York")).toBe("2026-11-02");
+		expect(utcMsToHmInTimezone(end, "America/New_York")).toBe("00:00");
+	});
+});
+
+describe("ymdDayDiff", () => {
+	it("counts calendar days across month and year ends", () => {
+		expect(ymdDayDiff("2026-09-28", "2026-09-29")).toBe(1);
+		expect(ymdDayDiff("2026-12-31", "2027-01-01")).toBe(1);
+		expect(ymdDayDiff("2026-09-29", "2026-09-28")).toBe(-1);
+		expect(ymdDayDiff("2026-09-28", "2026-09-28")).toBe(0);
+	});
+});
+
+describe("formatYmd", () => {
+	const originalTz = process.env.TZ;
+	beforeAll(() => {
+		// A browser in Monterrey (UTC-6) — where the day headers used to show
+		// the previous day.
+		process.env.TZ = "America/Monterrey";
+	});
+	afterAll(() => {
+		process.env.TZ = originalTz;
+	});
+
+	it("names the ymd's own day in a UTC-6 browser", () => {
+		expect(new Date("2026-09-28T00:00:00Z").getDate()).toBe(27); // the old trap
+		expect(formatYmd("2026-09-28", "en-US")).toBe("Sep 28");
+		expect(formatYmd("2026-09-28", "es-MX")).toMatch(/^28 sept?\.?$/);
+	});
+
+	it("labels every day of a week, including month rollover", () => {
+		expect(getWeekYmds("2026-09-28").map((ymd) => formatYmd(ymd, "en-US"))).toEqual([
+			"Sep 28",
+			"Sep 29",
+			"Sep 30",
+			"Oct 1",
+			"Oct 2",
+			"Oct 3",
+			"Oct 4",
+		]);
+	});
+
+	it("accepts custom format options", () => {
+		expect(formatYmd("2026-09-28", "en-US", { weekday: "long" })).toBe("Monday");
 	});
 });

@@ -1,7 +1,8 @@
 import { SettingsRow } from "@/features/restaurants/components/settings/SettingsRow";
 import { SettingsSection } from "@/features/restaurants/components/settings/SettingsSection";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { RestaurantsKeys } from "@/global/i18n";
-import { formatCents, unwrapResult } from "@/global/utils";
+import { unwrapResult } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
@@ -49,6 +50,9 @@ const STATUS_KEYS: Record<string, string> = {
  */
 export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionProps>) {
 	const { t } = useTranslation();
+	// Tavli's own price, not the restaurant's menu money: pinned to the
+	// platform currency whatever `restaurant.currency` says.
+	const formatMoney = useFormatMoney(PLATFORM_SUBSCRIPTION_CURRENCY);
 	const setEnabled = useConvexMutation(api.billingHelpers.setPlatformSubscriptionEnabled);
 	const createCheckout = useConvexAction(api.billing.createSubscriptionCheckout);
 	const createPortalSession = useConvexAction(api.billing.createBillingPortalSession);
@@ -213,8 +217,7 @@ export function BillingSection({ restaurant, isAdmin }: Readonly<BillingSectionP
 							data-testid="settings-billing-amount"
 						>
 							{t(RestaurantsKeys.BILLING_PLAN_VALUE, {
-								amount: formatCents(PLATFORM_MONTHLY_FEE_MXN_CENTS),
-								currency: PLATFORM_SUBSCRIPTION_CURRENCY,
+								amount: formatMoney(PLATFORM_MONTHLY_FEE_MXN_CENTS),
 							})}
 						</p>
 					</SettingsRow>

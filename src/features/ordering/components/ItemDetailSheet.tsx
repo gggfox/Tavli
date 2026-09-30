@@ -1,12 +1,12 @@
 import { StatusBadge } from "@/global/components";
 import { Modal } from "@/global/components/Modal/Modal";
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
-import { MENU_ITEM_IMAGE_SOURCE } from "convex/constants";
+import { MAX_ORDER_ITEM_QUANTITY, MENU_ITEM_IMAGE_SOURCE } from "convex/constants";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { Check, Minus, Plus, Trash2, UtensilsCrossed, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -47,6 +47,7 @@ export function ItemDetailSheet({
 	onRemove,
 	onClose,
 }: Readonly<ItemDetailSheetProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const isEditing = !!existingSelection;
 
@@ -152,7 +153,7 @@ export function ItemDetailSheet({
 						<h2 className="text-lg font-bold text-foreground">{getTranslatedField(item, lang)}</h2>
 						{description && <p className="text-sm mt-1 text-muted-foreground">{description}</p>}
 						<p className="text-base font-semibold mt-1.5 text-foreground">
-							${formatCents(item.basePrice)}
+							{formatMoney(item.basePrice)}
 						</p>
 						{item.imageSource === MENU_ITEM_IMAGE_SOURCE.GENERATED ? (
 							<p className="text-xs mt-1.5 text-faint-foreground">
@@ -229,7 +230,7 @@ export function ItemDetailSheet({
 													<span className="flex-1 text-left">{getTranslatedField(opt, lang)}</span>
 													{opt.priceModifier > 0 && (
 														<span className="text-xs shrink-0 text-faint-foreground">
-															+${formatCents(opt.priceModifier)}
+															+{formatMoney(opt.priceModifier)}
 														</span>
 													)}
 												</button>
@@ -254,9 +255,12 @@ export function ItemDetailSheet({
 						<span className="text-lg font-semibold w-8 text-center text-foreground">
 							{quantity}
 						</span>
+						{/* Stops at the server's per-line cap, so the diner never meets
+						    its refusal (`orders.saveDraftFromMenu`). */}
 						<button
-							onClick={() => setQuantity(quantity + 1)}
-							className="p-2 rounded-full transition-colors bg-muted border border-border text-foreground"
+							onClick={() => setQuantity(Math.min(MAX_ORDER_ITEM_QUANTITY, quantity + 1))}
+							disabled={quantity >= MAX_ORDER_ITEM_QUANTITY}
+							className="p-2 rounded-full transition-colors bg-muted border border-border text-foreground disabled:opacity-50"
 						>
 							<Plus size={16} />
 						</button>
@@ -267,7 +271,7 @@ export function ItemDetailSheet({
 						className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary"
 					>
 						{isEditing ? t(OrderingKeys.ITEM_UPDATE_CART) : t(OrderingKeys.ITEM_ADD_TO_CART)}{" "}
-						&mdash; ${formatCents(lineTotal)}
+						&mdash; {formatMoney(lineTotal)}
 					</button>
 
 					{isEditing && onRemove && (

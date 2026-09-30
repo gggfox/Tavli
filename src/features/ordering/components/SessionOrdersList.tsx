@@ -1,5 +1,5 @@
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -265,6 +265,7 @@ function TabSummaryCard({
 	tab: TabSummary;
 	onPayTab: () => void;
 }>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	// The tab still bills this food; it just can't be settled until it lands.
 	const blocked = tab.unservedOrderIds.length > 0;
@@ -276,7 +277,7 @@ function TabSummaryCard({
 					<CreditCard size={16} className="text-muted-foreground" />
 					<span>{t(OrderingKeys.TAB_PAY_HEADING)}</span>
 				</div>
-				<span className="text-sm font-semibold text-foreground">${formatCents(tab.subtotal)}</span>
+				<span className="text-sm font-semibold text-foreground">{formatMoney(tab.subtotal)}</span>
 			</div>
 
 			{/* Locked wins: while a payment is in flight there is nothing the diner
@@ -300,7 +301,7 @@ function TabSummaryCard({
 				className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold hover-btn-primary disabled:opacity-50"
 			>
 				<CreditCard size={16} />
-				{t(OrderingKeys.TAB_PAY_CTA, { amount: formatCents(tab.subtotal) })}
+				{t(OrderingKeys.TAB_PAY_CTA, { amount: formatMoney(tab.subtotal) })}
 			</button>
 		</div>
 	);
@@ -315,6 +316,7 @@ function OrderCard({
 	onViewOrder: (orderId: Id<"orders">) => void;
 	onContinueCheckout: (orderId: Id<"orders">) => void;
 }>) {
+	const formatMoney = useFormatMoney();
 	const { t, i18n } = useTranslation();
 	const meta = getStatusMeta(order, t);
 	const Icon = meta.icon;
@@ -355,7 +357,7 @@ function OrderCard({
 							</span>
 						)}
 						<span className="text-sm font-semibold text-foreground">
-							${formatCents(order.totalAmount)}
+							{formatMoney(order.totalAmount)}
 						</span>
 					</span>
 				</div>
