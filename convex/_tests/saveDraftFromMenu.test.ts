@@ -67,6 +67,8 @@ async function seedRestaurant(t: TestConvex, slug: string) {
 		const tacosId = await dish("Tacos", 1000);
 		const soupId = await dish("Soup", 600);
 		const pulledId = await dish("Pozole", 900, false);
+		// Imported without a price: stored as 0, hidden from diners.
+		const unpricedId = await dish("Shrimp", 0);
 
 		const optionGroupId = await ctx.db.insert("optionGroups", {
 			restaurantId,
@@ -107,6 +109,7 @@ async function seedRestaurant(t: TestConvex, slug: string) {
 			tacosId,
 			soupId,
 			pulledId,
+			unpricedId,
 			optionGroupId,
 			optionId,
 			tableOneId,
@@ -307,6 +310,24 @@ describe("orders.saveDraftFromMenu", () => {
 		expect(orders).toHaveLength(0);
 		const session = await t.run(async (ctx) => ctx.db.get(sessionId));
 		expect(session!.tableId).toBeUndefined();
+	});
+
+	it("refuses a dish with no price yet, as it would a switched-off one", async () => {
+		const { t, authed, sessionId, tacosId, unpricedId, tableOneId } = await seed();
+
+		const [value, error] = await authed.mutation(api.orders.saveDraftFromMenu, {
+			sessionId,
+			tableId: tableOneId,
+			items: [
+				{ menuItemId: tacosId, quantity: 1, selectedOptions: [] },
+				{ menuItemId: unpricedId, quantity: 2, selectedOptions: [] },
+			],
+		});
+
+		expect(value).toBeNull();
+		expect(error!.message).toBe(`items.1: ${DRAFT_ORDER_ERRORS.MENU_ITEM_UNAVAILABLE}`);
+		const orders = await t.run(async (ctx) => ctx.db.query("orders").collect());
+		expect(orders).toHaveLength(0);
 	});
 
 	it("keeps an existing draft intact when the resubmission is refused", async () => {

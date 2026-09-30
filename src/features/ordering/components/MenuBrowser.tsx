@@ -1,4 +1,5 @@
 import { SearchInput } from "@/global/components";
+import { hasListedPrice } from "convex/_shared/menuPricing";
 import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { OrderingKeys } from "@/global/i18n";
 import { useFormatMoney } from "@/global/hooks/useFormatMoney";
@@ -229,11 +230,12 @@ export function MenuBrowser({
 		const resolved = popularIds
 			.map((id) => byId.get(id as string))
 			.filter((item): item is (typeof menuItems)[number] => item !== undefined)
-			// Availability and photographs are read here rather than baked into
-			// the nightly ranking, because both change without the ranking
-			// changing: a dish pulled at lunch must leave the strip immediately,
-			// and one that gains a photo this morning should be able to appear.
-			.filter((item) => item.isAvailable && item.imageUrl);
+			// Availability, price and photographs are read here rather than baked
+			// into the nightly ranking, because all three change without the
+			// ranking changing: a dish pulled at lunch must leave the strip
+			// immediately, and one that gains a photo this morning should be able
+			// to appear. A dish with no price yet is off the menu entirely.
+			.filter((item) => item.isAvailable && hasListedPrice(item.basePrice) && item.imageUrl);
 		// All-or-nothing below the floor. Two cards do not read as "our most
 		// popular" — they read as a strip that failed to load.
 		return resolved.length >= POPULARITY_MIN_ITEMS ? resolved : [];

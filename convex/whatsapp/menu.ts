@@ -10,6 +10,7 @@
  * (which requires manager auth and carries staff-only fields) — the bot acts for
  * an anonymous customer.
  */
+import { hasListedPrice } from "../_shared/menuPricing";
 import { v } from "convex/values";
 import { internalQuery } from "../_generated/server";
 import { TABLE } from "../constants";
@@ -68,7 +69,10 @@ export const internalGetMenuForBot = internalQuery({
 					.withIndex("by_category", (q) => q.eq("categoryId", cat._id))
 					.collect();
 				for (const it of catItems) {
-					if (!it.isAvailable) continue;
+					// The assistant quotes prices to diners: a dish with no price yet
+					// (basePrice 0) would be offered at "0.00", so it stays off the
+					// list just as it stays off the diner menu.
+					if (!it.isAvailable || !hasListedPrice(it.basePrice)) continue;
 					items.push({
 						id: it._id as string,
 						category: localized(cat.name, cat.translations, args.locale, "name"),

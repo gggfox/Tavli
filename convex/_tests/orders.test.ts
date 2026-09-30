@@ -426,6 +426,28 @@ describe("orders", () => {
 			expect(order!.items[0].selectedOptions[0].optionName).toBe("Extra cheese");
 		});
 
+		it.each([
+			["no price yet", { basePrice: 0 }],
+			["switched off", { isAvailable: false }],
+		])("refuses a dish that is %s", async (_label, patch) => {
+			const t = convexTest(schema, modules);
+			const { sessionId, restaurantId, tableId, authed } = await seedRestaurantAndSession(t);
+			const menuItemId = await seedMenuItem(t, restaurantId);
+			await t.run(async (ctx) => ctx.db.patch(menuItemId, patch));
+			const orderId = await authed.mutation(api.orders.createDraft, { sessionId, tableId });
+
+			await expect(
+				authed.mutation(api.orders.addItem, {
+					orderId,
+					menuItemId,
+					quantity: 1,
+					selectedOptions: [],
+				})
+			).rejects.toMatchObject({ name: ERROR_NAMES.VALIDATION_ERROR });
+			const order = await authed.query(api.orders.getOrderWithItems, { orderId });
+			expect(order!.items).toHaveLength(0);
+		});
+
 		it.each([0, -1, -5, 1.5, NaN, Infinity])(
 			"rejects invalid quantity %s on addItem",
 			async (quantity) => {

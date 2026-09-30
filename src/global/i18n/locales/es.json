@@ -1482,7 +1482,9 @@
 			"moreActions": "Más acciones",
 			"addCategoryShort": "Categoría",
 			"backShort": "Menús",
-			"defaultLanguageHint": "{{language}} es el idioma predeterminado"
+			"defaultLanguageHint": "{{language}} es el idioma predeterminado",
+			"unpricedBanner_one": "{{count}} platillo no tiene precio y los comensales no lo ven. Agrégale un precio para ponerlo en el menú.",
+			"unpricedBanner_other": "{{count}} platillos no tienen precio y los comensales no los ven. Agrégales un precio para ponerlos en el menú."
 		},
 		"addCategories": {
 			"modalAria": "Agregar categorías del menú",
@@ -1518,7 +1520,8 @@
 			"prepStationLabel": "Estación de preparación",
 			"prepStationKitchen": "Cocina",
 			"prepStationBar": "Barra",
-			"hiddenBadge": "Oculto"
+			"hiddenBadge": "Oculto",
+			"noPriceBadge": "Sin precio · no visible para comensales"
 		},
 		"itemEditor": {
 			"title": "Editar producto",
@@ -1544,7 +1547,8 @@
 			"uploadPhoto": "Subir foto",
 			"removePhoto": "Quitar foto",
 			"aiDraft": "Borrador IA · se guarda con Guardar",
-			"newGroup": "Nuevo grupo"
+			"newGroup": "Nuevo grupo",
+			"noPriceHint": "Los comensales no verán este platillo hasta que tenga precio."
 		},
 		"translation": {
 			"namePlaceholder": "Traducción de {{name}}...",
