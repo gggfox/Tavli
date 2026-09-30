@@ -1,17 +1,25 @@
-import { EmptyState, LanguageTabBar, SearchInput } from "@/global/components";
-import { useAdminPageToolbar } from "@/global/hooks/useAdminPageToolbar";
+import { useMenuExport } from "@/features/exports";
+import { EmptyState } from "@/global/components";
+import { useAdminPageToolbar, useConvexMutate, useMediaQuery } from "@/global/hooks";
 import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
-import { Languages, MenusKeys } from "@/global/i18n";
+import { ExportsKeys, Languages, MenusKeys } from "@/global/i18n";
+import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
-import type { Id } from "convex/_generated/dataModel";
-import { ChevronsDownUp, ChevronsUpDown, Globe, LayoutGrid } from "lucide-react";
+import type { Doc, Id } from "convex/_generated/dataModel";
+import { PREP_STATION } from "convex/constants";
+import { LayoutGrid } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { EditableMenuItem } from "../hooks/useMenuItemDraft";
 import { useCategories, useMenus } from "../hooks/useMenus";
+import { toggleSection, toggleSelection } from "../utils/selection";
+import { CategoryIndex } from "./CategoryIndex";
 import { CategorySection } from "./CategorySection";
-import { MenuBulkActionBar } from "./MenuBulkActionBar";
+import { ItemEditorDialog } from "./itemEditor/ItemEditorDialog";
+import { ItemEditorInspector } from "./itemEditor/ItemEditorInspector";
+import { MenuEditorToolbar } from "./MenuEditorToolbar";
 import { MenuLanguageSettings } from "./MenuLanguageSettings";
 import { OptionGroupManagerModal } from "./OptionGroupManagerModal";
 
@@ -20,21 +28,34 @@ interface MenuEditorProps {
 	restaurantId: Id<"restaurants">;
 	onTranslationModeChange?: (isTranslationMode: boolean) => void;
 	onAddCategoriesClick?: () => void;
+	/** Offer Export in the phone toolbar's ⋯ menu (the page header hides it there). */
+	canExport?: boolean;
 }
 
-const toolbarButtonClass =
-	"flex h-9 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-hover";
+interface EditingTarget {
+	itemId: Id<"menuItems">;
+	categoryId: Id<"menuCategories">;
+}
+
+/** Where the item editor opens: the right column from this width, a dialog below it. */
+const DESKTOP_QUERY = "(min-width: 1024px)";
 
 export function MenuEditor({
 	menuId,
 	restaurantId,
 	onTranslationModeChange,
 	onAddCategoriesClick,
+	canExport = false,
 }: Readonly<MenuEditorProps>) {
 	const { t } = useTranslation();
 	const { data: menu } = useQuery(convexQuery(api.menus.getByIdForStaff, { menuId }));
 	const { categories } = useCategories(menuId);
 	const { deleteCategory, updateMenu } = useMenus(restaurantId);
+	const { exportMenu } = useMenuExport(restaurantId);
+	const bulkRemoveItems = useConvexMutate(api.menuItems.bulkRemove);
+	const bulkSetAvailability = useConvexMutate(api.menuItems.bulkSetAvailability);
+	const bulkSetPrepStation = useConvexMutate(api.menuItems.bulkSetPrepStation);
+	const isDesktop = useMediaQuery(DESKTOP_QUERY);
 
 	const defaultLang = menu?.defaultLanguage ?? Languages.EN;
 	const supportedLangs = useMemo(
@@ -52,130 +73,111 @@ export function MenuEditor({
 	const { isActive: isFilterActive } = useFuzzyMatch(deferredSearchQuery);
 	const [filterVisibility, setFilterVisibility] = useState<Record<string, boolean>>({});
 	const [selectedIds, setSelectedIds] = useState(() => new Set<Id<"menuItems">>());
+	const selectionAnchor = useRef<Id<"menuItems"> | null>(null);
 	const [visibleItemIdsByCategory, setVisibleItemIdsByCategory] = useState<
 		Record<string, Id<"menuItems">[]>
 	>({});
 	const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>({});
-	const selectAllRef = useRef<HTMLInputElement>(null);
+	const [editing, setEditing] = useState<EditingTarget | null>(null);
 
 	useEffect(() => {
 		onTranslationModeChange?.(isTranslationMode);
 	}, [isTranslationMode, onTranslationModeChange]);
 
 	useEffect(() => {
-		if (isTranslationMode) setSelectedIds(new Set());
+		if (isTranslationMode) {
+			setSelectedIds(new Set());
+			setEditing(null);
+		}
 	}, [isTranslationMode]);
 
 	const sorted = [...categories].sort((a, b) => a.displayOrder - b.displayOrder);
-	const categoryIdsFingerprint = useMemo(() => sorted.map((c) => c._id).join(","), [sorted]);
+	const categoryIdsFingerprint = sorted.map((c) => c._id).join(",");
 
 	useEffect(() => {
 		setFilterVisibility({});
 		setVisibleItemIdsByCategory({});
 	}, [deferredSearchQuery, categoryIdsFingerprint]);
 
-	useEffect(() => {
-		setCategoryExpanded((prev) => {
-			const next: Record<string, boolean> = {};
-			let changed = false;
-			for (const cat of sorted) {
-				next[cat._id] = prev[cat._id] ?? true;
-				if (prev[cat._id] === undefined) changed = true;
-			}
-			if (Object.keys(prev).length !== sorted.length) changed = true;
-			return changed ? next : prev;
-		});
-	}, [categoryIdsFingerprint, sorted]);
-
 	const handleFilterVisibility = useCallback((categoryId: string, visible: boolean) => {
-		setFilterVisibility((prev) => {
-			if (prev[categoryId] === visible) return prev;
-			return { ...prev, [categoryId]: visible };
-		});
+		setFilterVisibility((prev) =>
+			prev[categoryId] === visible ? prev : { ...prev, [categoryId]: visible }
+		);
 	}, []);
 
 	const handleVisibleItemIdsChange = useCallback(
 		(categoryId: string, itemIds: Id<"menuItems">[]) => {
-			setVisibleItemIdsByCategory((prev) => {
-				const prevIds = prev[categoryId];
-				const nextIds = itemIds.join(",");
-				if (prevIds?.join(",") === nextIds) return prev;
-				return { ...prev, [categoryId]: itemIds };
-			});
+			setVisibleItemIdsByCategory((prev) =>
+				prev[categoryId]?.join(",") === itemIds.join(",")
+					? prev
+					: { ...prev, [categoryId]: itemIds }
+			);
 		},
 		[]
 	);
 
-	const visibleCategoryIds = useMemo(() => {
-		if (!isFilterActive) return sorted.map((cat) => cat._id);
-		return sorted.filter((cat) => filterVisibility[cat._id] === true).map((cat) => cat._id);
-	}, [sorted, isFilterActive, filterVisibility]);
-
-	const allVisibleItemIds = useMemo(() => {
-		const ids = new Set<Id<"menuItems">>();
-		for (const categoryId of visibleCategoryIds) {
-			for (const itemId of visibleItemIdsByCategory[categoryId] ?? []) {
-				ids.add(itemId);
-			}
-		}
-		return ids;
-	}, [visibleCategoryIds, visibleItemIdsByCategory]);
-
-	const allVisibleItemIdsFingerprint = useMemo(
-		() => [...allVisibleItemIds].sort((a, b) => a.localeCompare(b)).join(","),
-		[allVisibleItemIds]
+	const visibleCategories = isFilterActive
+		? sorted.filter((cat) => filterVisibility[cat._id] === true)
+		: sorted;
+	/** Every visible item, in on-screen order — the order Shift+click ranges follow. */
+	const orderedVisibleIds = visibleCategories.flatMap(
+		(cat) => visibleItemIdsByCategory[cat._id] ?? []
 	);
+	const orderedVisibleKey = orderedVisibleIds.join(",");
 
+	// Items that leave the view (filtered out, deleted) leave the selection.
 	useEffect(() => {
+		const visible = new Set(orderedVisibleKey.split(","));
 		setSelectedIds((prev) => {
-			let changed = false;
-			const next = new Set<Id<"menuItems">>();
-			for (const id of prev) {
-				if (allVisibleItemIds.has(id)) next.add(id);
-				else changed = true;
-			}
-			return changed ? next : prev;
+			const next = new Set([...prev].filter((id) => visible.has(id)));
+			return next.size === prev.size ? prev : next;
 		});
-	}, [allVisibleItemIdsFingerprint, allVisibleItemIds]);
+	}, [orderedVisibleKey]);
 
-	const allSelected =
-		allVisibleItemIds.size > 0 && [...allVisibleItemIds].every((id) => selectedIds.has(id));
-
+	// Esc clears the selection, unless an editor is open (Esc closes that first).
 	useEffect(() => {
-		const el = selectAllRef.current;
-		if (!el) return;
-		el.indeterminate = selectedIds.size > 0 && !allSelected;
-	}, [selectedIds, allSelected]);
+		if (editing || selectedIds.size === 0) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setSelectedIds(new Set());
+		};
+		globalThis.addEventListener("keydown", onKey);
+		return () => globalThis.removeEventListener("keydown", onKey);
+	}, [editing, selectedIds.size]);
 
-	const anyVisibleCategoryExpanded = visibleCategoryIds.some(
-		(categoryId) => categoryExpanded[categoryId] !== false
+	const toggleItem = (itemId: Id<"menuItems">, e: { shiftKey: boolean }) => {
+		setSelectedIds((prev) =>
+			toggleSelection(prev, itemId, orderedVisibleIds, selectionAnchor.current, e.shiftKey)
+		);
+		selectionAnchor.current = itemId;
+	};
+
+	const anyVisibleCategoryExpanded = visibleCategories.some(
+		(cat) => categoryExpanded[cat._id] !== false
 	);
-
-	const handleToggleSelectAll = useCallback(() => {
-		if (allSelected) {
-			setSelectedIds(new Set());
-			return;
-		}
-		setSelectedIds(new Set(allVisibleItemIds));
-	}, [allSelected, allVisibleItemIds]);
-
-	const handleToggleAllCategories = useCallback(() => {
+	const toggleAllCategories = () => {
 		const nextExpanded = !anyVisibleCategoryExpanded;
 		setCategoryExpanded((prev) => {
 			const next = { ...prev };
-			for (const categoryId of visibleCategoryIds) {
-				next[categoryId] = nextExpanded;
-			}
+			for (const cat of visibleCategories) next[cat._id] = nextExpanded;
 			return next;
 		});
-	}, [anyVisibleCategoryExpanded, visibleCategoryIds]);
+	};
+
+	const selectedCategoryCount = visibleCategories.filter((cat) =>
+		(visibleItemIdsByCategory[cat._id] ?? []).some((id) => selectedIds.has(id))
+	).length;
+
+	const runBulk = async (fn: (itemIds: Id<"menuItems">[]) => Promise<unknown>) => {
+		const itemIds = [...selectedIds];
+		if (itemIds.length === 0) return;
+		await fn(itemIds);
+		setSelectedIds(new Set());
+	};
 
 	const reportedCount = Object.keys(filterVisibility).length;
 	const hasFilterMatch = !isFilterActive || Object.values(filterVisibility).some(Boolean);
 	const showFilterNoMatches =
 		isFilterActive && sorted.length > 0 && reportedCount === sorted.length && !hasFilterMatch;
-
-	const showBulkBar = !isTranslationMode && selectedIds.size > 0;
 
 	const handleDefaultLangChange = async (lang: string) => {
 		const newSupported = supportedLangs.includes(lang) ? supportedLangs : [...supportedLangs, lang];
@@ -192,191 +194,229 @@ export function MenuEditor({
 		if (!newSupported.includes(selectedLang)) setSelectedLang(defaultLang);
 	};
 
-	const toolbar = useMemo(
-		() => (
-			<div className="flex flex-col gap-2">
-				<div className="flex min-h-9 items-center justify-between gap-3">
-					<div className="flex min-w-0 flex-1 items-center gap-3">
-						{!isTranslationMode ? (
-							<label className="flex h-9 shrink-0 cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground">
-								<input
-									ref={selectAllRef}
-									type="checkbox"
-									checked={allSelected}
-									disabled={allVisibleItemIds.size === 0}
-									onChange={handleToggleSelectAll}
-									className="h-4 w-4 rounded border-border accent-[var(--btn-primary-bg)]"
-								/>
-								<span className="hidden sm:inline">
-									{allSelected ? t(MenusKeys.EDITOR_DESELECT_ALL) : t(MenusKeys.EDITOR_SELECT_ALL)}
-								</span>
-							</label>
-						) : null}
-						<SearchInput
-							className="h-9"
-							inputClassName="py-0"
-							placeholder={t(MenusKeys.EDITOR_FILTER_PLACEHOLDER)}
-							value={searchQuery}
-							onChange={setSearchQuery}
-						/>
-					</div>
-					<div className="flex shrink-0 items-center gap-2">
-						<button
-							type="button"
-							onClick={handleToggleAllCategories}
-							disabled={visibleCategoryIds.length === 0}
-							className={`${toolbarButtonClass} text-faint-foreground disabled:opacity-50`}
-							title={
-								anyVisibleCategoryExpanded
-									? t(MenusKeys.EDITOR_COLLAPSE_ALL)
-									: t(MenusKeys.EDITOR_EXPAND_ALL)
-							}
-						>
-							{anyVisibleCategoryExpanded ? (
-								<ChevronsDownUp size={16} />
-							) : (
-								<ChevronsUpDown size={16} />
-							)}
-							<span className="hidden text-xs lg:inline">
-								{anyVisibleCategoryExpanded
-									? t(MenusKeys.EDITOR_COLLAPSE_ALL)
-									: t(MenusKeys.EDITOR_EXPAND_ALL)}
-							</span>
-						</button>
-						<LanguageTabBar
-							languages={supportedLangs}
-							defaultLanguage={defaultLang}
-							selectedLanguage={selectedLang}
-							onSelect={setSelectedLang}
-						/>
-						<button
-							type="button"
-							onClick={() => setLangSettingsOpen((prev) => !prev)}
-							className={toolbarButtonClass}
-							title={t(MenusKeys.EDITOR_LANGUAGES_TITLE)}
-						>
-							<Globe
-								size={16}
-								style={{
-									color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)",
-								}}
-							/>
-							<span
-								className="text-xs"
-								style={{
-									color: langSettingsOpen ? "var(--btn-primary-bg)" : "var(--text-muted)",
-								}}
-							>
-								{t(MenusKeys.EDITOR_LANGUAGES_LABEL)}
-							</span>
-						</button>
-						<button
-							type="button"
-							onClick={() => setOptionGroupsModalOpen(true)}
-							className={`${toolbarButtonClass} text-faint-foreground`}
-							title={t(MenusKeys.EDITOR_OPTIONS_TITLE)}
-						>
-							<LayoutGrid size={16} />
-							<span className="text-xs text-faint-foreground">
-								{t(MenusKeys.EDITOR_OPTIONS_LABEL)}
-							</span>
-						</button>
-					</div>
-				</div>
-				{showBulkBar ? (
-					<MenuBulkActionBar
-						restaurantId={restaurantId}
-						selectedIds={selectedIds}
-						onClearSelection={() => setSelectedIds(new Set())}
-					/>
-				) : null}
-			</div>
-		),
-		[
-			allSelected,
-			allVisibleItemIds.size,
-			anyVisibleCategoryExpanded,
-			defaultLang,
-			isTranslationMode,
-			langSettingsOpen,
-			searchQuery,
-			selectedIds,
-			selectedLang,
-			showBulkBar,
-			supportedLangs,
-			t,
-			visibleCategoryIds.length,
-			restaurantId,
-			handleToggleAllCategories,
-			handleToggleSelectAll,
-		]
+	const toolbar = (
+		<MenuEditorToolbar
+			isTranslationMode={isTranslationMode}
+			search={searchQuery}
+			onSearchChange={setSearchQuery}
+			languages={supportedLangs}
+			defaultLanguage={defaultLang}
+			selectedLanguage={selectedLang}
+			onSelectLanguage={setSelectedLang}
+			languageSettingsOpen={langSettingsOpen}
+			onToggleLanguageSettings={() => setLangSettingsOpen((prev) => !prev)}
+			onOpenOptionGroups={() => setOptionGroupsModalOpen(true)}
+			anyExpanded={anyVisibleCategoryExpanded}
+			canToggleAll={visibleCategories.length > 0}
+			onToggleAll={toggleAllCategories}
+			visibleItemCount={orderedVisibleIds.length}
+			onSelectAll={() => setSelectedIds(new Set(orderedVisibleIds))}
+			onExport={canExport ? () => void exportMenu() : undefined}
+			exportLabel={t(ExportsKeys.BUTTON)}
+			selection={{
+				count: selectedIds.size,
+				categoryCount: selectedCategoryCount,
+				onClear: () => setSelectedIds(new Set()),
+				onHide: () =>
+					void runBulk(async (itemIds) =>
+						unwrapResult(
+							await bulkSetAvailability.mutateAsync({ restaurantId, itemIds, isAvailable: false })
+						)
+					),
+				onShow: () =>
+					void runBulk(async (itemIds) =>
+						unwrapResult(
+							await bulkSetAvailability.mutateAsync({ restaurantId, itemIds, isAvailable: true })
+						)
+					),
+				onKitchen: () =>
+					void runBulk(async (itemIds) =>
+						unwrapResult(
+							await bulkSetPrepStation.mutateAsync({
+								restaurantId,
+								itemIds,
+								prepStation: PREP_STATION.KITCHEN,
+							})
+						)
+					),
+				onBar: () =>
+					void runBulk(async (itemIds) =>
+						unwrapResult(
+							await bulkSetPrepStation.mutateAsync({
+								restaurantId,
+								itemIds,
+								prepStation: PREP_STATION.BAR,
+							})
+						)
+					),
+				onDelete: () => {
+					if (
+						!globalThis.confirm(
+							t(MenusKeys.EDITOR_BULK_DELETE_CONFIRM, { count: selectedIds.size })
+						)
+					)
+						return;
+					void runBulk(async (itemIds) =>
+						unwrapResult(await bulkRemoveItems.mutateAsync({ restaurantId, itemIds }))
+					);
+				},
+			}}
+		/>
 	);
-
 	useAdminPageToolbar(toolbar);
 
-	return (
-		<div className="flex flex-col gap-6">
-			<OptionGroupManagerModal
-				restaurantId={restaurantId}
-				isOpen={optionGroupsModalOpen}
-				onClose={() => setOptionGroupsModalOpen(false)}
+	const editingCategory = editing ? sorted.find((c) => c._id === editing.categoryId) : undefined;
+	const editor =
+		editing && editingCategory ? (
+			<EditingItem
+				key={editing.itemId}
+				target={editing}
+				category={editingCategory}
+				mode={isDesktop ? "inspector" : "dialog"}
+				siblingIds={visibleItemIdsByCategory[editing.categoryId] ?? []}
+				onGo={(itemId) => setEditing({ itemId, categoryId: editing.categoryId })}
+				onClose={() => setEditing(null)}
 			/>
+		) : null;
 
-			{langSettingsOpen && (
-				<MenuLanguageSettings
-					defaultLanguage={defaultLang}
-					supportedLanguages={supportedLangs}
-					onDefaultChange={handleDefaultLangChange}
-					onToggleLanguage={handleToggleLanguage}
-				/>
-			)}
-
-			{isTranslationMode && (
-				<p className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_TRANSLATING_HINT)}</p>
-			)}
-
-			{showFilterNoMatches ? (
-				<p className="text-sm text-muted-foreground">{t(MenusKeys.EDITOR_FILTER_NO_MATCHES)}</p>
-			) : null}
-
-			{sorted.map((cat) => (
-				<CategorySection
-					key={cat._id}
-					category={cat}
+	return (
+		<div className="flex gap-8">
+			<div className="flex min-w-0 flex-1 flex-col gap-5 pb-16">
+				<OptionGroupManagerModal
 					restaurantId={restaurantId}
-					onDeleteCategory={() => deleteCategory({ categoryId: cat._id })}
-					selectedLang={isTranslationMode ? selectedLang : undefined}
-					searchQuery={deferredSearchQuery}
-					filterLang={filterLang}
-					onFilterVisibility={(visible) => handleFilterVisibility(cat._id, visible)}
-					expanded={categoryExpanded[cat._id] ?? true}
-					onExpandedChange={(nextExpanded) =>
-						setCategoryExpanded((prev) => ({ ...prev, [cat._id]: nextExpanded }))
-					}
-					selectedIds={selectedIds}
-					onSelectedIdsChange={setSelectedIds}
-					onVisibleItemIdsChange={(itemIds) => handleVisibleItemIdsChange(cat._id, itemIds)}
+					isOpen={optionGroupsModalOpen}
+					onClose={() => setOptionGroupsModalOpen(false)}
 				/>
-			))}
-			{sorted.length === 0 && !isTranslationMode && (
-				<EmptyState
-					fill
-					icon={LayoutGrid}
-					title={t(MenusKeys.EDITOR_NO_CATEGORIES_TITLE)}
-					description={t(MenusKeys.EDITOR_NO_CATEGORIES_DESCRIPTION)}
-					action={
-						onAddCategoriesClick ? (
-							<button
-								type="button"
-								onClick={onAddCategoriesClick}
-								className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
-							>
-								{t(MenusKeys.EDITOR_NO_CATEGORIES_ACTION)}
-							</button>
-						) : undefined
-					}
-				/>
-			)}
+
+				{langSettingsOpen && (
+					<MenuLanguageSettings
+						defaultLanguage={defaultLang}
+						supportedLanguages={supportedLangs}
+						onDefaultChange={handleDefaultLangChange}
+						onToggleLanguage={handleToggleLanguage}
+					/>
+				)}
+
+				{isTranslationMode && (
+					<p className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_TRANSLATING_HINT)}</p>
+				)}
+
+				{showFilterNoMatches ? (
+					<p className="text-sm text-muted-foreground">{t(MenusKeys.EDITOR_FILTER_NO_MATCHES)}</p>
+				) : null}
+
+				{sorted.map((cat) => (
+					<CategorySection
+						key={cat._id}
+						category={cat}
+						restaurantId={restaurantId}
+						onDeleteCategory={() => deleteCategory({ categoryId: cat._id })}
+						selectedLang={isTranslationMode ? selectedLang : undefined}
+						searchQuery={deferredSearchQuery}
+						filterLang={filterLang}
+						onFilterVisibility={(visible) => handleFilterVisibility(cat._id, visible)}
+						expanded={categoryExpanded[cat._id] ?? true}
+						onExpandedChange={(nextExpanded) =>
+							setCategoryExpanded((prev) => ({ ...prev, [cat._id]: nextExpanded }))
+						}
+						selectedIds={selectedIds}
+						onToggleSelect={toggleItem}
+						onToggleSection={(itemIds) => setSelectedIds((prev) => toggleSection(prev, itemIds))}
+						editingItemId={editing?.itemId ?? null}
+						onEditItem={(itemId) => setEditing({ itemId, categoryId: cat._id })}
+						onVisibleItemIdsChange={(itemIds) => handleVisibleItemIdsChange(cat._id, itemIds)}
+					/>
+				))}
+				{sorted.length === 0 && !isTranslationMode && (
+					<EmptyState
+						fill
+						icon={LayoutGrid}
+						title={t(MenusKeys.EDITOR_NO_CATEGORIES_TITLE)}
+						description={t(MenusKeys.EDITOR_NO_CATEGORIES_DESCRIPTION)}
+						action={
+							onAddCategoriesClick ? (
+								<button
+									type="button"
+									onClick={onAddCategoriesClick}
+									className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
+								>
+									{t(MenusKeys.EDITOR_NO_CATEGORIES_ACTION)}
+								</button>
+							) : undefined
+						}
+					/>
+				)}
+			</div>
+
+			{/* One fixed width for the index and the editor alike, so rows never reflow. */}
+			{sorted.length > 0 ? (
+				<div className="hidden w-[22rem] shrink-0 lg:block">
+					{editor && isDesktop ? (
+						editor
+					) : (
+						<CategoryIndex
+							entries={visibleCategories.map((cat) => {
+								const ids = visibleItemIdsByCategory[cat._id] ?? [];
+								return {
+									id: cat._id,
+									name: isTranslationMode
+										? cat.translations?.[selectedLang]?.name || cat.name
+										: cat.name,
+									itemCount: ids.length,
+									selectedCount: ids.filter((id) => selectedIds.has(id)).length,
+								};
+							})}
+							onJump={(id) => setCategoryExpanded((prev) => ({ ...prev, [id]: true }))}
+							onAddCategory={isTranslationMode ? undefined : onAddCategoriesClick}
+						/>
+					)}
+				</div>
+			) : null}
+			{editor && !isDesktop ? editor : null}
 		</div>
+	);
+}
+
+/**
+ * Resolves the item being edited from its category's live list (the same
+ * query the section already holds, so no extra fetch) and mounts the editor
+ * shell for the viewport.
+ */
+function EditingItem({
+	target,
+	category,
+	mode,
+	siblingIds,
+	onGo,
+	onClose,
+}: Readonly<{
+	target: EditingTarget;
+	category: Doc<"menuCategories">;
+	mode: "inspector" | "dialog";
+	siblingIds: Id<"menuItems">[];
+	onGo: (itemId: Id<"menuItems">) => void;
+	onClose: () => void;
+}>) {
+	const { data: items } = useQuery(
+		convexQuery(api.menuItems.listByCategoryForStaff, { categoryId: target.categoryId })
+	);
+	const item = (items as EditableMenuItem[] | undefined)?.find((i) => i._id === target.itemId);
+
+	// The item was deleted (here or elsewhere) while open.
+	useEffect(() => {
+		if (items && !item) onClose();
+	}, [items, item, onClose]);
+
+	if (!item) return null;
+	return mode === "inspector" ? (
+		<ItemEditorInspector item={item} categoryName={category.name} onClose={onClose} />
+	) : (
+		<ItemEditorDialog
+			item={item}
+			categoryName={category.name}
+			siblingIds={siblingIds}
+			onGo={onGo}
+			onClose={onClose}
+		/>
 	);
 }

@@ -17,7 +17,7 @@ interface OptionGroupManagerModalProps {
  * Reached from two places on purpose: the menu editor toolbar (manage every
  * group for the restaurant) and the item edit panel (the manager is already
  * looking at one item and needs to add the actual choices to a group). Linking
- * a group to an item happens in `ItemOptionGroupPicker`; this is where the
+ * a group to an item happens in the item editor (`ItemOptionGroupChips`); this is where the
  * groups and their options are authored.
  */
 export function OptionGroupManagerModal({

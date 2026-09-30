@@ -15,7 +15,7 @@ interface ItemOptionGroupsBadgeProps {
  *
  * Replaces a dot on a toggle button that only told you *that* an item had
  * option groups after you went looking. The groups themselves are edited in
- * the item edit panel (`ItemOptionGroupPicker`), so this is read-only.
+ * the item editor (`ItemOptionGroupChips`), so this is read-only.
  */
 export function ItemOptionGroupsBadge({ itemId }: Readonly<ItemOptionGroupsBadgeProps>) {
 	const { t } = useTranslation();
@@ -33,9 +33,9 @@ export function ItemOptionGroupsBadge({ itemId }: Readonly<ItemOptionGroupsBadge
 	return (
 		<span
 			title={t(MenusKeys.PICKER_BADGE_LABEL, { names: label })}
-			className="ml-3 inline-flex max-w-[16rem] items-center gap-1 rounded-full px-2 py-0.5 align-middle text-xs bg-muted text-muted-foreground"
+			className="inline-flex max-w-[16rem] items-center gap-1 rounded-full bg-tertiary px-1.5 py-px text-[11px] text-muted-foreground"
 		>
-			<ListChecks size={12} className="shrink-0" />
+			<ListChecks size={11} className="shrink-0" />
 			<span className="truncate">{label}</span>
 		</span>
 	);
