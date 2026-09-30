@@ -1,4 +1,4 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { formatMoney, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -49,12 +49,8 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 	if (query.error) return <WidgetError error={query.error as Error} />;
 	if (!query.data) return <WidgetEmpty />;
 
-	const currency = context.currency ?? "USD";
-	const totalDollars = query.data.totalCents / 100;
-	const formatted = new Intl.NumberFormat(i18n.language, {
-		style: "currency",
-		currency,
-	}).format(totalDollars);
+	const currency = context.currency;
+	const formatted = formatMoney(query.data.totalCents, currency, i18n.language);
 
 	let deltaNode: React.ReactNode = null;
 	if (query.data.previousTotalCents !== null) {
@@ -74,10 +70,7 @@ function TipsTotalWidget({ context }: WidgetProps<Options>) {
 				<span>
 					{pct !== null
 						? `${(Math.abs(pct) * 100).toFixed(1)}%`
-						: new Intl.NumberFormat(i18n.language, {
-								style: "currency",
-								currency,
-							}).format(Math.abs(diff) / 100)}
+						: formatMoney(Math.abs(diff), currency, i18n.language)}
 				</span>
 				<span className="text-faint-foreground">{t(DashboardKeys.WIDGET_DELTA_VS_PREV)}</span>
 			</div>

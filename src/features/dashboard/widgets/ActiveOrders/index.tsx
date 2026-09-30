@@ -1,5 +1,5 @@
 import { DashboardKeys } from "@/global/i18n";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { formatMoney, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -36,10 +36,8 @@ function ActiveOrdersWidget({ context }: WidgetProps<Options>) {
 	if (query.error) return <WidgetError error={query.error as Error} />;
 	if (!data) return <WidgetEmpty />;
 
-	const money = new Intl.NumberFormat(i18n.language, {
-		style: "currency",
-		currency: context.currency ?? "USD",
-	}).format(data.activeOrderValue);
+	// `activeOrderValue` is Σ `orders.totalAmount`, in minor units (centavos).
+	const money = formatMoney(data.activeOrderValue, context.currency, i18n.language);
 
 	return (
 		<div className="h-full flex flex-col">

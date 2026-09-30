@@ -1,5 +1,5 @@
 import { DashboardKeys } from "@/global/i18n";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { formatMoney, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -53,10 +53,13 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 	if (query.error) return <WidgetError error={query.error as Error} />;
 	if (!data) return <WidgetEmpty />;
 
-	const currency = context.currency ?? "USD";
+	// Money metrics arrive in minor units (centavos): revenue totals, and the
+	// per-order / per-dish means computed from them. `formatMoney` divides by
+	// the currency's own exponent; formatting them as whole units was 100×.
+	const currency = context.currency;
 	const isMoney = MONEY_METRICS.has(options.metric);
 	const formatted = isMoney
-		? formatMoney(data.current, i18n.language, currency)
+		? formatMoney(data.current, currency, i18n.language)
 		: formatNumber(data.current, i18n.language);
 
 	const deltaPct = data.deltaPct;
@@ -84,7 +87,7 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 			<div className="text-xs text-faint-foreground">
 				{deltaAbs > 0 ? "+" : ""}
 				{isMoney
-					? formatMoney(deltaAbs, i18n.language, currency)
+					? formatMoney(deltaAbs, currency, i18n.language)
 					: formatNumber(deltaAbs, i18n.language)}{" "}
 				{t(DashboardKeys.WIDGET_DELTA_VS_PREV)}
 			</div>
@@ -108,11 +111,4 @@ export function NumberWithDeltaWidget({ options, context }: WidgetProps<NumberWi
 
 function formatNumber(value: number, locale: string): string {
 	return new Intl.NumberFormat(locale).format(value);
-}
-
-function formatMoney(value: number, locale: string, currency: string): string {
-	return new Intl.NumberFormat(locale, {
-		style: "currency",
-		currency,
-	}).format(value);
 }

@@ -3,8 +3,10 @@ import {
 	currencySymbol,
 	DEFAULT_DISPLAY_CURRENCY,
 	formatMoney,
+	formatMoneyCompact,
 	moneyLocale,
 	parseDollarsToCents,
+	toMajorUnits,
 } from "./money";
 
 describe("moneyLocale", () => {
@@ -79,5 +81,40 @@ describe("currencySymbol", () => {
 
 	it("falls back to the code for an invalid currency", () => {
 		expect(currencySymbol("US", "en")).toBe("US");
+	});
+});
+
+describe("toMajorUnits", () => {
+	it("divides by the currency's own exponent", () => {
+		expect(toMajorUnits(269729700, "MXN")).toBe(2697297);
+		expect(toMajorUnits(1500, "JPY")).toBe(1500);
+	});
+
+	it("uses the default currency's exponent when none is given", () => {
+		expect(toMajorUnits(12345, null)).toBe(123.45);
+	});
+
+	it("treats an invalid code as two decimals, like formatMoney's fallback", () => {
+		expect(toMajorUnits(12345, "US")).toBe(123.45);
+	});
+});
+
+describe("formatMoneyCompact", () => {
+	it("takes minor units, like formatMoney", () => {
+		// 220 000 000 centavos is $2.2M, not $220M.
+		expect(formatMoneyCompact(220000000, "MXN", "en")).toBe("$2.2M");
+		expect(formatMoneyCompact(220000, "MXN", "en")).toBe("$2.2K");
+	});
+
+	it("uses the market locale in Spanish, with the narrow symbol", () => {
+		expect(formatMoneyCompact(220000000, "MXN", "es")).toMatch(/^\$2\.2\sM$/);
+	});
+
+	it("respects a zero-decimal currency", () => {
+		expect(formatMoneyCompact(2200, "JPY", "en")).toBe("¥2.2K");
+	});
+
+	it("falls back to a plain number and the code for an invalid currency", () => {
+		expect(formatMoneyCompact(12345, "US", "en")).toBe("123.45 US");
 	});
 });

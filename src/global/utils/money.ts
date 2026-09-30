@@ -122,6 +122,67 @@ export function formatMoney(
 }
 
 /**
+ * The currency's minor-unit exponent (2 for MXN, 0 for JPY), or 2 for a code
+ * `Intl` rejects — the same fallback {@link formatMoney} prints with.
+ */
+function fractionDigitsFor(currency: string | null | undefined): number {
+	const code = (currency?.trim() || DEFAULT_DISPLAY_CURRENCY).toUpperCase();
+	return getFormatter("en-US", code)?.fractionDigits ?? 2;
+}
+
+/**
+ * Converts an integer minor-unit amount to the currency's major unit as a
+ * plain number: `toMajorUnits(269729700, "MXN")` → `2697297`.
+ *
+ * For machine-read output (CSV exports), where a spreadsheet needs a number,
+ * not a formatted string — and where exporting the raw minor units would read
+ * as a value 100× too large.
+ */
+export function toMajorUnits(minorUnits: number, currency: string | null | undefined): number {
+	return minorUnits / 10 ** fractionDigitsFor(currency);
+}
+
+/**
+ * Keyed by `locale|CURRENCY`, like {@link FORMATTERS}, for the compact
+ * notation. `null` remembers a currency `Intl` rejects.
+ */
+const COMPACT_FORMATTERS = new Map<string, Intl.NumberFormat | null>();
+
+/**
+ * {@link formatMoney} in compact notation, for chart axes where a full amount
+ * does not fit: `formatMoneyCompact(220000000, "MXN", "en")` → `"$2.2M"`,
+ * `"es"` → `"$2.2 M"`. Same minor-unit input, locale mapping and
+ * `narrowSymbol` as {@link formatMoney}; not for anything a person needs the
+ * exact figure of (tooltips and totals use {@link formatMoney}).
+ */
+export function formatMoneyCompact(
+	minorUnits: number,
+	currency: string | null | undefined,
+	language: string | null | undefined
+): string {
+	const code = (currency?.trim() || DEFAULT_DISPLAY_CURRENCY).toUpperCase();
+	const locale = moneyLocale(language);
+	const key = `${locale}|${code}`;
+	let compact = COMPACT_FORMATTERS.get(key);
+	if (compact === undefined) {
+		try {
+			compact = new Intl.NumberFormat(locale, {
+				style: "currency",
+				currency: code,
+				currencyDisplay: "narrowSymbol",
+				notation: "compact",
+				maximumFractionDigits: 1,
+			});
+		} catch {
+			compact = null;
+		}
+		COMPACT_FORMATTERS.set(key, compact);
+	}
+	const major = toMajorUnits(minorUnits, code);
+	return compact ? compact.format(major) : `${FALLBACK_NUMBER.format(major)} ${code}`;
+}
+
+/**
  * The symbol {@link formatMoney} would print for `currency` (`$`, `€`, `¥`) —
  * for a price **input's** adornment, where the field holds the bare number.
  * Falls back to the upper-cased code for a currency `Intl` rejects.
