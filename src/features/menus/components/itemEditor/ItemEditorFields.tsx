@@ -1,6 +1,9 @@
 import { useCurrencySymbol } from "@/global/hooks/useFormatMoney";
 import { MenusKeys } from "@/global/i18n";
+import { parseDollarsToCents } from "@/global/utils/money";
 import type { Id } from "convex/_generated/dataModel";
+import { hasListedPrice } from "convex/_shared/menuPricing";
+import { AlertTriangle } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MenuItemDraft } from "../../hooks/useMenuItemDraft";
@@ -41,6 +44,8 @@ export function ItemEditorFields({
 	const currencySymbol = useCurrencySymbol();
 	const id = useId();
 	const { fields, set } = draft;
+	// Parsed the way saving parses it, so the hint and the saved value agree.
+	const unpriced = !hasListedPrice(parseDollarsToCents(fields.price));
 
 	return (
 		<div className="space-y-4">
@@ -65,11 +70,18 @@ export function ItemEditorFields({
 							inputMode="decimal"
 							value={fields.price}
 							onChange={(e) => set("price", e.target.value)}
+							aria-describedby={unpriced ? `${id}-price-hint` : undefined}
 							className="w-full min-w-0 bg-transparent px-2 py-2 text-right text-sm tabular-nums text-foreground outline-none"
 						/>
 					</div>
 				</Field>
 			</div>
+			{unpriced ? (
+				<p id={`${id}-price-hint`} className="-mt-2 flex items-center gap-1.5 text-xs text-warning">
+					<AlertTriangle size={13} aria-hidden="true" />
+					{t(MenusKeys.ITEM_EDITOR_NO_PRICE_HINT)}
+				</p>
+			) : null}
 			<Field
 				label={t(MenusKeys.ITEM_EDITOR_DESCRIPTION)}
 				hint={`${fields.description.length}/${DESCRIPTION_MAX}`}

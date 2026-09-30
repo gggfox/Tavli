@@ -318,6 +318,16 @@ describe("whatsapp internalGetMenuForBot", () => {
 		});
 	});
 
+	it("excludes items with no price yet, which the bot would quote as 0.00", async () => {
+		const t = convexTest(schema, modules);
+		const restaurantId = await seedChannel(t);
+		await seedMenuItem(t, restaurantId, { name: "Rib eye", basePrice: 100000 });
+		await seedMenuItem(t, restaurantId, { name: "Shrimp", basePrice: 0 });
+
+		const menu = await t.query(internal.whatsapp.menu.internalGetMenuForBot, { restaurantId });
+		expect(menu.items.map((item) => item.name)).toEqual(["Rib eye"]);
+	});
+
 	it("excludes items whose parent menu is inactive", async () => {
 		const t = convexTest(schema, modules);
 		const restaurantId = await seedChannel(t);

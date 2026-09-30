@@ -81,7 +81,7 @@ Rules:
    - One item for the bundle with the quantity in the name (e.g. "Birria (3x)" at 1500 cents)
 5. Put category-level notes (e.g. "All dishes served with two sides: rice, salad or fries") into the category description field.
 6. Put per-item modifiers or add-on info (e.g. "*Add cheese for $0.99") into the item description field, not as separate items.
-7. If an item has no explicit price, set priceInCents to 0 and add "(price not listed)" to the description.
+7. If an item has no explicit price, set priceInCents to 0. Do not mention the missing price anywhere in the description — the app flags unpriced items for staff on its own.
 8. Sub-options listed under an item (e.g. bullet points like "• Shrimp • Octopus • Ceviche") should be noted in the item description as available variants.
 9. Preserve the original language of the menu (do not translate).
 10. Maintain the order of categories and items as they appear in the document.

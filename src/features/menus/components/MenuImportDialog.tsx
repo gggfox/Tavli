@@ -2,7 +2,8 @@ import { Modal } from "@/global/components/Modal";
 import { MenusKeys } from "@/global/i18n";
 import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import type { Doc, Id } from "convex/_generated/dataModel";
-import { FileUp, Loader2, Upload } from "lucide-react";
+import { hasListedPrice, stripPriceNotListedNote } from "convex/_shared/menuPricing";
+import { AlertTriangle, FileUp, Loader2, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMenuImport } from "../hooks/useMenuImport";
@@ -71,12 +72,14 @@ export function MenuImportDialog({
 		}
 	}, [extraction, targetMenuId, newMenuName, confirmImport, t]);
 
-	const formatPrice = (cents: number) => {
-		if (cents === 0) return "—";
-		return formatMoney(cents);
-	};
-
 	const totalItems = extraction?.categories.reduce((sum, cat) => sum + cat.items.length, 0) ?? 0;
+	// Items the document showed without a price. They import as-is and stay
+	// hidden from diners until a price is set, so say so before confirming.
+	const unpricedItems =
+		extraction?.categories.reduce(
+			(sum, cat) => sum + cat.items.filter((item) => !hasListedPrice(item.priceInCents)).length,
+			0
+		) ?? 0;
 
 	return (
 		<Modal
@@ -170,6 +173,16 @@ export function MenuImportDialog({
 							</span>
 						</div>
 
+						{unpricedItems > 0 ? (
+							<p
+								role="status"
+								className="flex items-start gap-2 rounded-lg bg-warning-subtle px-3 py-2.5 text-sm text-warning"
+							>
+								<AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+								{t(MenusKeys.EDITOR_UNPRICED_BANNER, { count: unpricedItems })}
+							</p>
+						) : null}
+
 						<div className="max-h-96 overflow-y-auto border border-border rounded-lg">
 							<table className="w-full text-sm">
 								<thead className="bg-muted sticky top-0">
@@ -194,14 +207,23 @@ export function MenuImportDialog({
 												</td>
 												<td className="px-3 py-2 text-foreground">
 													<span>{item.name}</span>
-													{item.description && (
+													{/* As it will be saved: the import strips the old
+													    "(price not listed)" note. */}
+													{stripPriceNotListedNote(item.description) && (
 														<span className="block text-xs text-muted-foreground mt-0.5">
-															{item.description}
+															{stripPriceNotListedNote(item.description)}
 														</span>
 													)}
 												</td>
 												<td className="px-3 py-2 text-right text-foreground tabular-nums">
-													{formatPrice(item.priceInCents)}
+													{hasListedPrice(item.priceInCents) ? (
+														formatMoney(item.priceInCents)
+													) : (
+														<span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-warning-subtle px-1.5 py-px text-[11px] font-medium text-warning">
+															<AlertTriangle size={11} aria-hidden="true" />
+															{t(MenusKeys.ITEM_NO_PRICE_BADGE)}
+														</span>
+													)}
 												</td>
 											</tr>
 										))

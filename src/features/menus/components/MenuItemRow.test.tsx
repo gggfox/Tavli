@@ -69,4 +69,18 @@ describe("MenuItemRow", () => {
 		expect(props.onEdit).toHaveBeenCalledTimes(2);
 		expect(props.onToggleSelect).toHaveBeenCalledWith({ shiftKey: false });
 	});
+
+	it("flags a dish with no price instead of showing $0.00", () => {
+		setup({ item: { ...ITEM, basePrice: 0 } });
+
+		expect(screen.getByText(/noPriceBadge|No price/)).toBeInTheDocument();
+		expect(screen.queryByText("$0.00")).toBeNull();
+	});
+
+	it("shows the price and no warning for a priced dish", () => {
+		setup();
+
+		expect(screen.getByText("$800.00")).toBeInTheDocument();
+		expect(screen.queryByText(/noPriceBadge|No price/)).toBeNull();
+	});
 });

@@ -1,3 +1,4 @@
+import { hasListedPrice } from "./_shared/menuPricing";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -184,6 +185,14 @@ export const addItem = mutation({
 
 		const menuItem = await ctx.db.get(args.menuItemId);
 		if (!menuItem) throw new NotFoundError("Menu item not found");
+		// Same refusal `saveDraftFromMenu` makes: a dish that is switched off, or
+		// has no price yet (stored as 0), is not on the diner's menu and must not
+		// become a line priced at nothing.
+		if (!menuItem.isAvailable || !hasListedPrice(menuItem.basePrice)) {
+			throw new UserInputValidationError({
+				fields: [{ field: "menuItemId", message: DRAFT_ORDER_ERRORS.MENU_ITEM_UNAVAILABLE }],
+			});
+		}
 
 		const normalizedSelectedOptions = await normalizeSelectedOptions(
 			ctx,
@@ -385,7 +394,9 @@ export const saveDraftFromMenu = mutation({
 			if (!menuItem || menuItem.restaurantId !== session.restaurantId) {
 				return [null, lineError(field, DRAFT_ORDER_ERRORS.MENU_ITEM_NOT_FOUND)];
 			}
-			if (!menuItem.isAvailable) {
+			// An unpriced dish (basePrice 0 — see `hasListedPrice`) is hidden from
+			// the diner's menu, so to the diner it is as gone as a switched-off one.
+			if (!menuItem.isAvailable || !hasListedPrice(menuItem.basePrice)) {
 				return [null, lineError(field, DRAFT_ORDER_ERRORS.MENU_ITEM_UNAVAILABLE)];
 			}
 			let selectedOptions: NormalizedSelectedOption[];

@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { PREP_STATION } from "convex/constants";
-import { LayoutGrid } from "lucide-react";
+import { AlertTriangle, LayoutGrid } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EditableMenuItem } from "../hooks/useMenuItemDraft";
@@ -49,6 +49,11 @@ export function MenuEditor({
 }: Readonly<MenuEditorProps>) {
 	const { t } = useTranslation();
 	const { data: menu } = useQuery(convexQuery(api.menus.getByIdForStaff, { menuId }));
+	// Menu-wide, not per category: an unpriced dish in a collapsed or
+	// scrolled-away section is just as hidden from diners.
+	const { data: unpricedCount } = useQuery(
+		convexQuery(api.menuItems.countUnpricedForStaff, { menuId })
+	);
 	const { categories } = useCategories(menuId);
 	const { deleteCategory, updateMenu } = useMenus(restaurantId);
 	const { exportMenu } = useMenuExport(restaurantId);
@@ -296,6 +301,16 @@ export function MenuEditor({
 						onToggleLanguage={handleToggleLanguage}
 					/>
 				)}
+
+				{unpricedCount ? (
+					<p
+						role="status"
+						className="flex items-start gap-2 rounded-lg bg-warning-subtle px-3 py-2.5 text-sm text-warning"
+					>
+						<AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+						{t(MenusKeys.EDITOR_UNPRICED_BANNER, { count: unpricedCount })}
+					</p>
+				) : null}
 
 				{isTranslationMode && (
 					<p className="text-xs text-faint-foreground">{t(MenusKeys.EDITOR_TRANSLATING_HINT)}</p>

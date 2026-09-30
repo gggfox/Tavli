@@ -1482,7 +1482,9 @@
 			"moreActions": "More actions",
 			"addCategoryShort": "Category",
 			"backShort": "Menus",
-			"defaultLanguageHint": "{{language}} is the default language"
+			"defaultLanguageHint": "{{language}} is the default language",
+			"unpricedBanner_one": "{{count}} dish has no price, so diners can't see it. Add a price to put it on the menu.",
+			"unpricedBanner_other": "{{count}} dishes have no price, so diners can't see them. Add a price to put them on the menu."
 		},
 		"addCategories": {
 			"modalAria": "Add menu categories",
@@ -1518,7 +1520,8 @@
 			"prepStationLabel": "Prep station",
 			"prepStationKitchen": "Kitchen",
 			"prepStationBar": "Bar",
-			"hiddenBadge": "Hidden"
+			"hiddenBadge": "Hidden",
+			"noPriceBadge": "No price · hidden from diners"
 		},
 		"itemEditor": {
 			"title": "Edit item",
@@ -1544,7 +1547,8 @@
 			"uploadPhoto": "Upload photo",
 			"removePhoto": "Remove photo",
 			"aiDraft": "AI draft · saves with Save",
-			"newGroup": "New group"
+			"newGroup": "New group",
+			"noPriceHint": "Diners won't see this dish until it has a price."
 		},
 		"translation": {
 			"namePlaceholder": "{{name}} translation...",
