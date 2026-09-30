@@ -23,7 +23,8 @@ export type WidgetRenderContext = {
 	/**
 	 * ISO currency code for formatting money in widgets. Restaurant scope: the
 	 * restaurant's `currency`. Portfolio scope: the first restaurant's currency
-	 * (best-effort, mirrors `revenueOverTime`). `null` falls back to "USD".
+	 * (best-effort, mirrors `revenueOverTime`). `null` falls back to
+	 * `DEFAULT_DISPLAY_CURRENCY` inside `formatMoney`.
 	 */
 	currency: string | null;
 	/** Resolved date range to query. */

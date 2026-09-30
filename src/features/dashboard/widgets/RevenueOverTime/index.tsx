@@ -1,5 +1,10 @@
 import { DashboardKeys } from "@/global/i18n";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import {
+	formatMoneyCompact,
+	toMajorUnits,
+	unwrapResult,
+	type UnwrappedValue,
+} from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart } from "@tremor/react";
@@ -75,7 +80,12 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 		categories.push(t(DashboardKeys.WIDGET_DELTA_VS_PREV));
 	}
 
-	const exportRows = query.data.buckets.map((b) => ({ date: b.date, revenue: b.amount }));
+	// Bucket amounts are minor units (centavos); a spreadsheet wants pesos.
+	const currency = query.data.currency;
+	const exportRows = query.data.buckets.map((b) => ({
+		date: b.date,
+		revenue: toMajorUnits(b.amount, currency),
+	}));
 
 	return (
 		<div className="h-full flex flex-col">
@@ -88,14 +98,7 @@ function RevenueOverTimeWidget({ context }: WidgetProps<Options>) {
 				index="date"
 				categories={categories}
 				colors={["blue", "slate"]}
-				valueFormatter={(v) =>
-					new Intl.NumberFormat(i18n.language, {
-						style: "currency",
-						currency: query.data?.currency ?? "USD",
-						notation: "compact",
-						maximumFractionDigits: 1,
-					}).format(v)
-				}
+				valueFormatter={(v) => formatMoneyCompact(v, currency, i18n.language)}
 				showLegend={false}
 				showGridLines={false}
 				yAxisWidth={96}

@@ -1,4 +1,4 @@
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { toMajorUnits, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { DashboardKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -45,7 +45,8 @@ function TopMenuItemsWidget({ options, context }: WidgetProps<Options>) {
 	const exportRows = query.data.map((row) => ({
 		item: row.menuItemName,
 		quantity: row.quantity,
-		revenue: row.revenue,
+		// `revenue` is Σ `lineTotal` in minor units; a spreadsheet wants pesos.
+		revenue: toMajorUnits(row.revenue, context.currency),
 	}));
 
 	return (
