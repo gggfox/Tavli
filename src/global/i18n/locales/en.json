@@ -727,6 +727,8 @@
 		"ERROR_TABLE_NUMBER_EXISTS": "A table with that number already exists.",
 		"ERROR_PHONE_ALREADY_ALLOWLISTED": "That phone number is already on the allowlist.",
 		"ERROR_ALLOWLIST_ENTRY_NOT_FOUND": "That allowlist entry no longer exists.",
+		"ERROR_WHATSAPP_MESSAGE_TOO_LONG": "That message is too long. Keep it under {{max}} characters.",
+		"ERROR_WHATSAPP_MESSAGE_HAS_CODE": "Leave the code out — Tavli adds this restaurant's code at the end for you.",
 		"ERROR_OPERATOR_ALERT_NOT_FOUND": "That operator alert no longer exists.",
 		"ERROR_INVITE_CROSS_ORG": "This person already belongs to a different organization. Accepting the invitation would move them out of it.",
 		"ERROR_INVITE_DUPLICATE_PENDING": "This person already has an invitation waiting for this organization.",
@@ -2160,7 +2162,14 @@
 			"noTablesLink": "Set up tables",
 			"consentNote": "By messaging us you agree to receive replies on WhatsApp. Send STOP to opt out at any time.",
 			"offRestaurantInactive": "Off · restaurant inactive",
-			"activateRestaurant": "Activate restaurant"
+			"activateRestaurant": "Activate restaurant",
+			"messageLabel": "Message",
+			"messageHint": "What diners see in WhatsApp before they hit send. Tavli adds the code at the end. Leave it empty to use the default.",
+			"messagePlaceholder": "Hi, I'd like to see the menu",
+			"messageSave": "Save message",
+			"messageSaving": "Saving…",
+			"messageSaved": "Saved",
+			"messageUseDefault": "Use default"
 		},
 		"page": {
 			"setupRestaurantFirst": "Please set up your restaurant first."

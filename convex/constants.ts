@@ -1441,6 +1441,14 @@ export const WHATSAPP_SHORT_CODE_MAX_CANDIDATES = 5;
 export const WHATSAPP_SHORT_CODE_MAX_ATTEMPTS = 8;
 
 /**
+ * Longest custom deep-link message a restaurant may set. The code is appended
+ * after it, and the whole sentence sits in the diner's message box before they
+ * hit send — past a couple of lines it stops reading like something a person
+ * would type.
+ */
+export const WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH = 200;
+
+/**
  * How far back a phone's own history may bind an inbound message with no code.
  *
  * A diner who has been talking to exactly one restaurant this month can just

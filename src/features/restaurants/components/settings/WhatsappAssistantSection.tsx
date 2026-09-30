@@ -11,6 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
+import { WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH } from "convex/constants";
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -183,6 +185,18 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 						/>
 					</SettingsRow>
 
+					<SettingsRow
+						label={t(WhatsappKeys.ASSISTANT_MESSAGE_LABEL)}
+						hint={t(WhatsappKeys.ASSISTANT_MESSAGE_HINT)}
+						htmlFor="whatsapp-deep-link-message"
+						testId="settings-whatsapp-message"
+					>
+						<DeepLinkMessageEditor
+							restaurantId={restaurantId}
+							savedMessage={enablement.deepLinkMessage}
+						/>
+					</SettingsRow>
+
 					{isAdmin ? (
 						<SettingsRow
 							label={t(WhatsappKeys.ASSISTANT_REGENERATE)}
@@ -221,5 +235,103 @@ export function WhatsappAssistantSection({ restaurantId, isAdmin }: WhatsappAssi
 				</SettingsRow>
 			)}
 		</SettingsSection>
+	);
+}
+
+/**
+ * The restaurant's own wording for the message its link prefills. Only the
+ * wording: the backend appends the code, so nothing typed here can stop a
+ * printed QR from routing. Blank goes back to the default sentence.
+ *
+ * Every viewer of this section is manager or above (Settings is not reachable
+ * below that), which is exactly who `setDeepLinkMessage` accepts.
+ */
+function DeepLinkMessageEditor({
+	restaurantId,
+	savedMessage,
+}: Readonly<{ restaurantId: Id<"restaurants">; savedMessage: string | undefined }>) {
+	const { t } = useTranslation();
+	// `null` while untouched, so a save elsewhere (another tab, another manager)
+	// shows through instead of being shadowed by a stale local copy.
+	const [draft, setDraft] = useState<string | null>(null);
+	const [isSaving, setIsSaving] = useState(false);
+	const [isSaved, setIsSaved] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const setDeepLinkMessage = useConvexMutation(api.whatsappChannels.setDeepLinkMessage);
+
+	const saved = savedMessage ?? "";
+	const value = draft ?? saved;
+	const isDirty = draft !== null && draft.trim() !== saved;
+
+	const save = async (message: string) => {
+		setError(null);
+		setIsSaved(false);
+		setIsSaving(true);
+		try {
+			await setDeepLinkMessage({ restaurantId, message });
+			setDraft(null);
+			setIsSaved(true);
+		} catch (caught) {
+			const code = extractErrorCode(caught);
+			setError(
+				code
+					? t(ERROR_CODE_KEYS[code], { max: WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH })
+					: t(WhatsappKeys.ASSISTANT_ACTION_FAILED)
+			);
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
+	return (
+		<div className="space-y-2">
+			<textarea
+				id="whatsapp-deep-link-message"
+				data-testid="settings-whatsapp-message-input"
+				rows={2}
+				maxLength={WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH}
+				value={value}
+				placeholder={t(WhatsappKeys.ASSISTANT_MESSAGE_PLACEHOLDER)}
+				onChange={(e) => {
+					setDraft(e.target.value);
+					setIsSaved(false);
+				}}
+				className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+			/>
+			{error ? <InlineError message={error} onDismiss={() => setError(null)} /> : null}
+			<div className="flex flex-wrap items-center gap-2">
+				<button
+					type="button"
+					data-testid="settings-whatsapp-message-save"
+					disabled={!isDirty || isSaving}
+					onClick={() => save(value)}
+					className="rounded-full px-3 py-1.5 text-xs font-medium hover-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{isSaving
+						? t(WhatsappKeys.ASSISTANT_MESSAGE_SAVING)
+						: t(WhatsappKeys.ASSISTANT_MESSAGE_SAVE)}
+				</button>
+				{saved ? (
+					<button
+						type="button"
+						data-testid="settings-whatsapp-message-reset"
+						disabled={isSaving}
+						onClick={() => save("")}
+						className="rounded-full border border-border px-3 py-1.5 text-xs font-medium hover-secondary disabled:opacity-50"
+					>
+						{t(WhatsappKeys.ASSISTANT_MESSAGE_USE_DEFAULT)}
+					</button>
+				) : null}
+				{isSaved && !isDirty && !isSaving ? (
+					<span className="flex items-center gap-1 text-xs font-medium text-success">
+						<Check size={14} aria-hidden />
+						{t(WhatsappKeys.ASSISTANT_MESSAGE_SAVED)}
+					</span>
+				) : null}
+				<span className="ml-auto text-xs text-faint-foreground">
+					{value.length}/{WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH}
+				</span>
+			</div>
+		</div>
 	);
 }

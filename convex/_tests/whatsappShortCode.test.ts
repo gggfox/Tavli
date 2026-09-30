@@ -9,8 +9,13 @@ import {
 	isShortCodeShape,
 	normalizeShortCode,
 	stripShortCode,
+	validateDeepLinkMessage,
 } from "../whatsapp/shortCode";
-import { WHATSAPP_LOCALE, WHATSAPP_SHORT_CODE_MAX_CANDIDATES } from "../constants";
+import {
+	WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH,
+	WHATSAPP_LOCALE,
+	WHATSAPP_SHORT_CODE_MAX_CANDIDATES,
+} from "../constants";
 
 /**
  * The short code is a ROUTER, not a secret (ADR 012). These tests pin the two
@@ -173,5 +178,55 @@ describe("deep link", () => {
 	it("returns null without a configured Tavli number rather than a broken link", () => {
 		expect(buildDeepLinkUrl(undefined, "Vernáculo", "VRN8F3", WHATSAPP_LOCALE.ES)).toBeNull();
 		expect(buildDeepLinkUrl("", "Vernáculo", "VRN8F3", WHATSAPP_LOCALE.ES)).toBeNull();
+	});
+});
+
+describe("custom deep-link message", () => {
+	it("uses the restaurant's own words and appends the code, so routing cannot break", () => {
+		const text = buildDeepLinkText(
+			"Vernáculo",
+			"VRN8F3",
+			WHATSAPP_LOCALE.EN,
+			"¡Hola! Quiero una mesa"
+		);
+		expect(text).toBe("¡Hola! Quiero una mesa · VRN-8F3");
+		expect(extractShortCodeCandidates(text)).toEqual(["VRN8F3"]);
+		expect(stripShortCode(text, "VRN8F3")).toBe("¡Hola! Quiero una mesa");
+	});
+
+	it("falls back to the default sentence when there is no custom message", () => {
+		const fallback = "Hola, quiero información sobre Vernáculo · VRN-8F3";
+		expect(buildDeepLinkText("Vernáculo", "VRN8F3", WHATSAPP_LOCALE.ES, undefined)).toBe(fallback);
+		expect(buildDeepLinkText("Vernáculo", "VRN8F3", WHATSAPP_LOCALE.ES, "   ")).toBe(fallback);
+	});
+
+	it("carries the custom message into the wa.me url", () => {
+		const url = buildDeepLinkUrl("+14155238886", "Vernáculo", "VRN8F3", WHATSAPP_LOCALE.ES, "Hola");
+		expect(new URL(url!).searchParams.get("text")).toBe("Hola · VRN-8F3");
+	});
+
+	it("trims, and treats an empty message as a reset to the default", () => {
+		expect(validateDeepLinkMessage("  Hola  ")).toEqual({ ok: true, message: "Hola" });
+		expect(validateDeepLinkMessage("   ")).toEqual({ ok: true, message: undefined });
+	});
+
+	it("refuses a message longer than the limit", () => {
+		const long = "a".repeat(WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH + 1);
+		expect(validateDeepLinkMessage(long)).toEqual({
+			ok: false,
+			code: "ERROR_WHATSAPP_MESSAGE_TOO_LONG",
+		});
+		expect(validateDeepLinkMessage("a".repeat(WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH)).ok).toBe(
+			true
+		);
+	});
+
+	it("refuses a message carrying a code of its own — it could route to another restaurant", () => {
+		expect(validateDeepLinkMessage("Hola, mesa para ABC-2D4")).toEqual({
+			ok: false,
+			code: "ERROR_WHATSAPP_MESSAGE_HAS_CODE",
+		});
+		// Ordinary Spanish in the same 3+3 shape is not a code (no digit).
+		expect(validateDeepLinkMessage("Hola, quiero la cuenta").ok).toBe(true);
 	});
 });
