@@ -14,6 +14,7 @@ const hoisted = vi.hoisted(() => ({
 	setEnabled: vi.fn(async () => null),
 	toggleActive: vi.fn(async () => [true, null]),
 	regenerate: vi.fn(async () => null),
+	setDeepLinkMessage: vi.fn(async (_args: unknown): Promise<unknown> => null),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -31,6 +32,7 @@ vi.mock("@convex-dev/react-query", () => ({
 		const name = getFunctionName(ref);
 		if (name === "whatsappChannels:setEnabled") return hoisted.setEnabled;
 		if (name === "restaurants:toggleActive") return hoisted.toggleActive;
+		if (name === "whatsappChannels:setDeepLinkMessage") return hoisted.setDeepLinkMessage;
 		return hoisted.regenerate;
 	},
 }));
@@ -213,5 +215,66 @@ describe("WhatsappAssistantSection at an inactive restaurant", () => {
 
 		await waitFor(() => expect(screen.getByText(/that didn't work/i)).toBeTruthy());
 		expect(screen.queryByRole("button", { name: /activate restaurant/i })).toBeNull();
+	});
+});
+
+describe("WhatsappAssistantSection custom message", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		hoisted.settings = settings({ hasActiveTables: true, acceptingReservations: true });
+	});
+
+	it("lets staff edit the message and saves only the wording", async () => {
+		hoisted.enablement = enablement();
+		render(<WhatsappAssistantSection restaurantId={RESTAURANT_ID} isAdmin={false} />);
+
+		const save = screen.getByTestId("settings-whatsapp-message-save") as HTMLButtonElement;
+		expect(save.disabled).toBe(true);
+
+		fireEvent.change(screen.getByTestId("settings-whatsapp-message-input"), {
+			target: { value: "Hola, quiero ver el menú" },
+		});
+		expect(save.disabled).toBe(false);
+		fireEvent.click(save);
+
+		await waitFor(() =>
+			expect(hoisted.setDeepLinkMessage).toHaveBeenCalledWith({
+				restaurantId: RESTAURANT_ID,
+				message: "Hola, quiero ver el menú",
+			})
+		);
+		expect(await screen.findByText(/saved/i)).toBeTruthy();
+	});
+
+	it("shows the saved message and offers to go back to the default", async () => {
+		hoisted.enablement = enablement({ deepLinkMessage: "Hola" });
+		render(<WhatsappAssistantSection restaurantId={RESTAURANT_ID} isAdmin={false} />);
+
+		expect(
+			(screen.getByTestId("settings-whatsapp-message-input") as HTMLTextAreaElement).value
+		).toBe("Hola");
+		fireEvent.click(screen.getByTestId("settings-whatsapp-message-reset"));
+
+		await waitFor(() =>
+			expect(hoisted.setDeepLinkMessage).toHaveBeenCalledWith({
+				restaurantId: RESTAURANT_ID,
+				message: "",
+			})
+		);
+	});
+
+	it("explains a refused message by its code", async () => {
+		hoisted.enablement = enablement();
+		hoisted.setDeepLinkMessage.mockRejectedValueOnce(
+			new Error("message: ERROR_WHATSAPP_MESSAGE_HAS_CODE")
+		);
+		render(<WhatsappAssistantSection restaurantId={RESTAURANT_ID} isAdmin={false} />);
+
+		fireEvent.change(screen.getByTestId("settings-whatsapp-message-input"), {
+			target: { value: "Hola ABC-2D4" },
+		});
+		fireEvent.click(screen.getByTestId("settings-whatsapp-message-save"));
+
+		expect(await screen.findByText(/leave the code out/i)).toBeTruthy();
 	});
 });

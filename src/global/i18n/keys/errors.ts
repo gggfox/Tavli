@@ -182,6 +182,9 @@ export const BACKEND_ERROR_CODES = [
 	// WhatsApp spend allowlist — convex/whatsappSpendAllowlist.ts
 	"ERROR_PHONE_ALREADY_ALLOWLISTED",
 	"ERROR_ALLOWLIST_ENTRY_NOT_FOUND",
+	// WhatsApp deep-link message — convex/whatsapp/shortCode.ts (`validateDeepLinkMessage`)
+	"ERROR_WHATSAPP_MESSAGE_TOO_LONG",
+	"ERROR_WHATSAPP_MESSAGE_HAS_CODE",
 	// Operator alerts — convex/operatorAlerts.ts
 	"ERROR_OPERATOR_ALERT_NOT_FOUND",
 	// Manager notifications — convex/notifications.ts

@@ -19,8 +19,13 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { ConflictError, NotFoundError } from "./_shared/errors";
-import { getCurrentUserId, requireAdminRole, requireRestaurantStaffAccess } from "./_util/auth";
+import { ConflictError, NotFoundError, UserInputValidationError } from "./_shared/errors";
+import {
+	getCurrentUserId,
+	requireAdminRole,
+	requireRestaurantManagerOrAbove,
+	requireRestaurantStaffAccess,
+} from "./_util/auth";
 import { TABLE, WHATSAPP_SHORT_CODE_MAX_ATTEMPTS, type WhatsappLocale } from "./constants";
 import { resolveLocale } from "./whatsapp/copy";
 import {
@@ -28,6 +33,7 @@ import {
 	buildDeepLinkUrl,
 	formatShortCode,
 	generateShortCode,
+	validateDeepLinkMessage,
 } from "./whatsapp/shortCode";
 
 /** What every surface that shows the deep link needs, and nothing more. */
@@ -51,6 +57,8 @@ export type WhatsappEnablement = {
 	deepLinkUrl: string | null;
 	/** The sentence the link prefills, so staff can see what a diner will send. */
 	deepLinkText: string;
+	/** The restaurant's own wording, without the code; absent when it uses the default. */
+	deepLinkMessage?: string;
 	defaultLocale?: string;
 };
 
@@ -83,9 +91,16 @@ function toEnablement(
 			process.env.TWILIO_WHATSAPP_NUMBER,
 			restaurant.name,
 			channel.shortCode,
-			locale
+			locale,
+			channel.deepLinkMessage
 		),
-		deepLinkText: buildDeepLinkText(restaurant.name, channel.shortCode, locale),
+		deepLinkText: buildDeepLinkText(
+			restaurant.name,
+			channel.shortCode,
+			locale,
+			channel.deepLinkMessage
+		),
+		deepLinkMessage: channel.deepLinkMessage,
 		defaultLocale: channel.defaultLocale,
 	};
 }
@@ -251,6 +266,51 @@ export const regenerateShortCode = mutation({
 
 		await ctx.db.patch(channel._id, {
 			shortCode: await mintUniqueShortCode(ctx, restaurant.name),
+			updatedAt: Date.now(),
+			updatedBy: userId,
+		});
+
+		const updated = await ctx.db.get(channel._id);
+		return updated ? toEnablement(updated, restaurant) : null;
+	},
+});
+
+/**
+ * Set the wording of the message the deep link prefills. Blank resets it to
+ * the default sentence.
+ *
+ * Manager-level, unlike the rest of this file: it costs Tavli nothing and it
+ * is the restaurant's own voice on its own tables. It cannot break routing —
+ * the code is appended by `buildDeepLinkText`, never part of what is stored —
+ * so a QR already printed keeps working with the new wording.
+ */
+export const setDeepLinkMessage = mutation({
+	args: {
+		restaurantId: v.id(TABLE.RESTAURANTS),
+		message: v.string(),
+	},
+	handler: async (ctx, args): Promise<WhatsappEnablement | null> => {
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) throw authError;
+		const [restaurant, accessError] = await requireRestaurantManagerOrAbove(
+			ctx,
+			userId,
+			args.restaurantId
+		);
+		if (accessError) throw accessError;
+
+		const channel = await getChannelByRestaurant(ctx, args.restaurantId);
+		if (!channel) throw new NotFoundError("ERROR_WHATSAPP_NOT_ENABLED");
+
+		const validated = validateDeepLinkMessage(args.message);
+		if (!validated.ok) {
+			throw new UserInputValidationError({
+				fields: [{ field: "message", message: validated.code }],
+			});
+		}
+
+		await ctx.db.patch(channel._id, {
+			deepLinkMessage: validated.message,
 			updatedAt: Date.now(),
 			updatedBy: userId,
 		});

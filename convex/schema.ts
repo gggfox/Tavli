@@ -1821,6 +1821,12 @@ export default defineSchema({
 		// Fallback reply locale for this restaurant ("en" | "es") before per-message
 		// detection; falls back further to restaurant.defaultLanguage.
 		defaultLocale: v.optional(v.string()),
+		/**
+		 * The restaurant's own wording for the message the wa.me link prefills,
+		 * without the code — `buildDeepLinkText` appends that, so no edit can
+		 * break routing. Absent means the default sentence in `defaultLocale`.
+		 */
+		deepLinkMessage: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		updatedBy: v.optional(v.string()),
