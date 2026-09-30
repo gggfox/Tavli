@@ -13,6 +13,10 @@ function Page() {
 		<CustomerOrderPage
 			orderId={orderId}
 			onBackToMenu={() => navigate({ to: "/r/$slug/$lang/menu", params: { slug, lang } })}
+			onViewOrders={() => navigate({ to: "/r/$slug/$lang/orders", params: { slug, lang } })}
+			onContinueToPayment={() =>
+				navigate({ to: "/r/$slug/$lang/checkout", params: { slug, lang }, search: { orderId } })
+			}
 		/>
 	);
 }

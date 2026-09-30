@@ -23,6 +23,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
 import {
+	ANY_TITLE,
 	collectPageErrors,
 	fixtures,
 	gotoSettled,
@@ -73,7 +74,7 @@ test.describe("Diner per-order checkout (ADR 008)", () => {
 	}) => {
 		const errors = collectPageErrors(page);
 		await restoreDinerSession(page);
-		await gotoSettled(page, checkoutUrl());
+		await gotoSettled(page, checkoutUrl(), ANY_TITLE);
 
 		await expect(page.getByRole("heading", { name: "Checkout" })).toBeVisible();
 		// The fee line is the headline product change: it must name the rate the
@@ -96,7 +97,7 @@ test.describe("Diner per-order checkout (ADR 008)", () => {
 	}) => {
 		const errors = collectPageErrors(page);
 		await restoreDinerSession(page);
-		await gotoSettled(page, checkoutUrl());
+		await gotoSettled(page, checkoutUrl(), ANY_TITLE);
 
 		await page.getByRole("button", { name: "Pay in person" }).click();
 

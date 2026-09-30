@@ -1,12 +1,16 @@
 import { OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { track } from "@/global/utils/telemetry";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { DEFAULT_TIP_PERCENT, PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
+import {
+	DEFAULT_TIP_PERCENT,
+	PAYMENT_STATUS,
+	PLATFORM_APPLICATION_FEE_RATE,
+} from "convex/constants";
 import {
 	ArrowLeft,
 	CheckCircle2,
@@ -21,15 +25,40 @@ import { useTranslation } from "react-i18next";
 import { computeOrderCharge } from "convex/_shared/tip";
 import { EmailReceiptButton } from "./EmailReceiptButton";
 import { TipSlider } from "./TipSlider";
-import { StripePaymentSection } from "./StripePaymentSection";
+import { StripePaymentSection, type ConfirmedPaymentIntent } from "./StripePaymentSection";
+import {
+	PAYMENT_CONFIRMATION_ESCALATE_AFTER_MS,
+	forgetPaymentConfirmation,
+	isConfirmedIntentStatus,
+	readPaymentConfirmation,
+	rememberPaymentConfirmation,
+	useStoredPaymentConfirmation,
+	type PaymentConfirmation,
+} from "../utils/paymentConfirmation";
 
 /** Customer-borne service-fee rate as a display percentage (e.g. 12). */
 const SERVICE_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
+
+/**
+ * Payment-row statuses under which a confirmed charge is still on its way.
+ * `succeeded` is included for the instant between the payment row settling
+ * and the order's `paymentState` following it; `pending` is not, because a
+ * pending row has no intent the diner could have confirmed.
+ */
+const CONFIRMING_PAYMENT_STATUSES = new Set<string>([
+	PAYMENT_STATUS.PROCESSING,
+	PAYMENT_STATUS.SUCCEEDED,
+]);
 
 interface OrderCheckoutPageProps {
 	orderId: Id<"orders">;
 	onBackToMenu: () => void;
 	onViewOrders: () => void;
+	/**
+	 * Stripe's `payment_intent` / `redirect_status` query params when the diner
+	 * lands here back from a redirect-based 3-D Secure challenge.
+	 */
+	stripeRedirect?: { paymentIntentId: string; status: string };
 }
 
 /**
@@ -52,12 +81,21 @@ interface OrderCheckoutPageProps {
  * Success is detected by subscription: the Stripe webhook flips the order's
  * `paymentState` to "paid", which this page observes through
  * `orders.getOrderWithItems`.
+ *
+ * Between the diner confirming and that webhook, the page shows
+ * {@link PaymentConfirmingScreen} and no pay button — across a reload and a
+ * 3-D Secure redirect too. The backend's `processing` alone cannot drive that
+ * (a row is `processing` from the moment its intent exists, before any card is
+ * typed), so the confirmation itself is remembered client-side; see
+ * `utils/paymentConfirmation.ts`.
  */
 export function OrderCheckoutPage({
 	orderId,
 	onBackToMenu,
 	onViewOrders,
+	stripeRedirect,
 }: Readonly<OrderCheckoutPageProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const createPaymentIntent = useConvexAction(api.stripe.createPaymentIntent);
 	const cancelPaymentIntent = useConvexAction(api.stripe.cancelOrderPaymentIntent);
@@ -72,17 +110,76 @@ export function OrderCheckoutPage({
 	const [initializing, setInitializing] = useState(false);
 	const [cashSubmitting, setCashSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Set the moment `confirmPayment` succeeds in this page. The stored copy
+	// below is what survives a reload; this one covers a browser whose storage
+	// is unavailable.
+	const [inPageConfirmation, setInPageConfirmation] = useState<PaymentConfirmation | null>(null);
+	const storedConfirmation = useStoredPaymentConfirmation(orderId);
 
-	const { data: order } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
+	const { data: order, isError } = useQuery({
+		...convexQuery(api.orders.getOrderWithItems, { orderId }),
+		// A rejected id fails identically on every retry; see OrderStatus.
+		retry: false,
+	});
 
 	// A webhook-reported decline surfaces through the subscription; drop the
 	// Elements form so the next attempt creates a fresh intent.
 	useEffect(() => {
 		if (order?.paymentState === "failed") {
 			setClientSecret(null);
+			setInPageConfirmation(null);
+			forgetPaymentConfirmation(orderId);
 			setError(order.activePayment?.failureMessage ?? t(OrderingKeys.CHECKOUT_PAYMENT_FAILED));
 		}
-	}, [order?.paymentState, order?.activePayment?.failureMessage, t]);
+	}, [order?.paymentState, order?.activePayment?.failureMessage, orderId, t]);
+
+	// Settled: the confirmation has done its job.
+	useEffect(() => {
+		if (order?.paymentState === "paid") forgetPaymentConfirmation(orderId);
+	}, [order?.paymentState, orderId]);
+
+	// Back from a redirect-based 3-D Secure challenge. Stripe's
+	// `redirect_status` says whether the diner got through; it only counts for
+	// the intent this order still points at, so a stale URL from an earlier
+	// attempt changes nothing.
+	const redirectForActiveIntent =
+		stripeRedirect !== undefined &&
+		order?.stripePaymentIntentId !== undefined &&
+		order.stripePaymentIntentId === stripeRedirect.paymentIntentId
+			? stripeRedirect
+			: undefined;
+	const redirectConfirmed =
+		redirectForActiveIntent !== undefined &&
+		isConfirmedIntentStatus(redirectForActiveIntent.status);
+	const redirectFailed = redirectForActiveIntent !== undefined && !redirectConfirmed;
+
+	// Persist a successful redirect like an in-page confirmation, so a reload
+	// (which keeps the query string, but not forever) keeps the diner on the
+	// confirming screen with the escalation clock where it was.
+	useEffect(() => {
+		if (!redirectConfirmed || !stripeRedirect) return;
+		if (readPaymentConfirmation(orderId)?.paymentIntentId === stripeRedirect.paymentIntentId) {
+			return;
+		}
+		rememberPaymentConfirmation(orderId, {
+			paymentIntentId: stripeRedirect.paymentIntentId,
+			confirmedAt: Date.now(),
+		});
+	}, [redirectConfirmed, stripeRedirect, orderId]);
+
+	const confirmation = inPageConfirmation ?? storedConfirmation;
+	const confirmedIntentId =
+		confirmation?.paymentIntentId ?? (redirectConfirmed ? stripeRedirect?.paymentIntentId : null);
+
+	const handleConfirmed = (paymentIntent: ConfirmedPaymentIntent) => {
+		const confirmed = { paymentIntentId: paymentIntent.id, confirmedAt: Date.now() };
+		setInPageConfirmation(confirmed);
+		rememberPaymentConfirmation(orderId, confirmed);
+		// The confirming screen replaces the sheet. If the webhook later reports
+		// a decline, the failure effect above brings the diner back to a fresh
+		// "Continue to payment".
+		setClientSecret(null);
+	};
 
 	// `order_placed` is the settled moment, not the tap. An order leaves "draft"
 	// exactly once — into "awaiting_payment" on a cash commitment, or paid by the
@@ -107,6 +204,9 @@ export function OrderCheckoutPage({
 	const handleStartPayment = async () => {
 		setInitializing(true);
 		setError(null);
+		// A new attempt: whatever an earlier one confirmed no longer describes it.
+		setInPageConfirmation(null);
+		forgetPaymentConfirmation(orderId);
 		try {
 			const result = await createPaymentIntent({ orderId, tipPercent });
 			setClientSecret(result?.clientSecret ?? null);
@@ -191,16 +291,16 @@ export function OrderCheckoutPage({
 		}
 	};
 
+	if (order === null || (order === undefined && isError)) {
+		return <OrderCheckoutFallback onBackToMenu={onBackToMenu} />;
+	}
+
 	if (order === undefined) {
 		return (
 			<div className="flex items-center justify-center h-full p-8">
 				<Loader2 size={24} className="animate-spin text-faint-foreground" />
 			</div>
 		);
-	}
-
-	if (order === null) {
-		return <OrderCheckoutFallback onBackToMenu={onBackToMenu} />;
 	}
 
 	if (order.paymentState === "paid") {
@@ -214,7 +314,34 @@ export function OrderCheckoutPage({
 		);
 	}
 
+	// The diner confirmed this order's live intent and the webhook has not
+	// settled it. No pay button, no cash switch: either would be a second
+	// attempt at money that may already be moving. A decline flips
+	// `paymentState` to "failed" and drops back to the summary below.
+	const isConfirming =
+		confirmedIntentId !== null &&
+		confirmedIntentId !== undefined &&
+		order.stripePaymentIntentId === confirmedIntentId &&
+		order.paymentState !== "failed" &&
+		order.activePayment !== null &&
+		CONFIRMING_PAYMENT_STATUSES.has(order.activePayment.status);
+
+	if (isConfirming) {
+		return (
+			<PaymentConfirmingScreen
+				orderId={orderId}
+				confirmedAt={confirmation?.confirmedAt ?? null}
+				onViewOrders={onViewOrders}
+			/>
+		);
+	}
+
 	const liveItems = order.items.filter((item) => item.cancelledAt === undefined);
+	// Back from 3-D Secure without getting through. The webhook's decline
+	// message (in `error`) is more specific when it has landed; until then,
+	// say plainly that nothing was charged.
+	const displayError =
+		error ?? (redirectFailed && !clientSecret ? t(OrderingKeys.CHECKOUT_REDIRECT_FAILED) : null);
 	// One shared computation with the server, so the number on screen is the
 	// number charged — see `convex/_shared/tip.ts`.
 	const {
@@ -231,7 +358,7 @@ export function OrderCheckoutPage({
 			<PayInPersonScreen
 				dailyOrderNumber={order.dailyOrderNumber ?? null}
 				totalAmount={order.totalAmount}
-				error={error}
+				error={displayError}
 				switching={initializing}
 				onPayByCard={handleStartPayment}
 				onViewOrders={onViewOrders}
@@ -270,16 +397,16 @@ export function OrderCheckoutPage({
 							<span className="min-w-0 truncate">
 								{item.quantity}x {item.menuItemName}
 							</span>
-							<span className="shrink-0">${formatCents(item.lineTotal)}</span>
+							<span className="shrink-0">{formatMoney(item.lineTotal)}</span>
 						</div>
 					))}
 					<div className="flex justify-between pt-2 text-sm border-t border-border text-muted-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_SUBTOTAL)}</span>
-						<span>${formatCents(subtotal)}</span>
+						<span>{formatMoney(subtotal)}</span>
 					</div>
 					<div className="flex justify-between text-sm text-muted-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_SERVICE_FEE, { rate: SERVICE_FEE_PERCENT })}</span>
-						<span>${formatCents(feeAmount)}</span>
+						<span>{formatMoney(feeAmount)}</span>
 					</div>
 					{/*
 					 * Locked once a payment sheet is mounted. Stripe fixes the
@@ -295,18 +422,18 @@ export function OrderCheckoutPage({
 					/>
 					<div className="flex justify-between pt-2 text-sm font-semibold border-t border-border text-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
-						<span>${formatCents(total)}</span>
+						<span>{formatMoney(total)}</span>
 					</div>
 				</div>
 
-				{error && (
+				{displayError && (
 					<div className="px-4 py-3 rounded-lg text-sm text-destructive bg-destructive-subtle">
-						{error}
+						{displayError}
 					</div>
 				)}
 
 				{clientSecret ? (
-					<StripePaymentSection clientSecret={clientSecret} />
+					<StripePaymentSection clientSecret={clientSecret} onConfirmed={handleConfirmed} />
 				) : (
 					<button
 						type="button"
@@ -395,6 +522,7 @@ function PayInPersonScreen({
 	onPayByCard: () => void;
 	onViewOrders: () => void;
 }>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	return (
 		<div className="flex flex-col items-center justify-center h-full p-8 gap-4 text-center">
@@ -407,7 +535,7 @@ function PayInPersonScreen({
 					{t(OrderingKeys.CHECKOUT_CASH_ORDER_NUMBER, { n: dailyOrderNumber })}
 				</p>
 			)}
-			<p className="text-2xl font-semibold text-foreground">${formatCents(totalAmount)}</p>
+			<p className="text-2xl font-semibold text-foreground">{formatMoney(totalAmount)}</p>
 			<p className="text-sm max-w-xs text-muted-foreground">
 				{t(OrderingKeys.CHECKOUT_CASH_SHOW_SERVER)}
 			</p>
@@ -442,6 +570,77 @@ function PayInPersonScreen({
 					t(OrderingKeys.CHECKOUT_PAY_BY_CARD_INSTEAD)
 				)}
 			</button>
+		</div>
+	);
+}
+
+/**
+ * The diner confirmed a card payment; the webhook has not settled it yet.
+ *
+ * Calm for {@link PAYMENT_CONFIRMATION_ESCALATE_AFTER_MS}, then explicit: do
+ * not pay again, and show this screen to staff. The order reference is the
+ * same `#` + last six characters of the id the staff Orders dashboard prints
+ * on a card with no daily number yet, which an unpaid draft never has — so a
+ * server can find the order from what is on the diner's phone.
+ *
+ * The clock runs from `confirmedAt` when it is known (it survives a reload),
+ * or from mount otherwise. The subscription keeps listening throughout: a
+ * late webhook, or the stuck-payment sweep minutes later, still moves the
+ * parent to the paid screen.
+ */
+function PaymentConfirmingScreen({
+	orderId,
+	confirmedAt,
+	onViewOrders,
+}: Readonly<{
+	orderId: Id<"orders">;
+	confirmedAt: number | null;
+	onViewOrders: () => void;
+}>) {
+	const { t } = useTranslation();
+	const [mountedAt] = useState(() => Date.now());
+	const since = confirmedAt ?? mountedAt;
+	const [escalated, setEscalated] = useState(false);
+
+	useEffect(() => {
+		const remaining = since + PAYMENT_CONFIRMATION_ESCALATE_AFTER_MS - Date.now();
+		const timer = setTimeout(() => setEscalated(true), Math.max(0, remaining));
+		return () => clearTimeout(timer);
+	}, [since]);
+
+	return (
+		<div
+			role="status"
+			aria-live="polite"
+			className="flex flex-col items-center justify-center h-full p-8 gap-4 text-center"
+		>
+			<div className="w-16 h-16 rounded-full flex items-center justify-center bg-muted">
+				<Loader2 size={32} className="animate-spin text-foreground" />
+			</div>
+			<h2 className="text-lg font-bold text-foreground">
+				{escalated
+					? t(OrderingKeys.CHECKOUT_CONFIRMING_SLOW_TITLE)
+					: t(OrderingKeys.CHECKOUT_CONFIRMING_TITLE)}
+			</h2>
+			<p className="text-sm max-w-xs text-muted-foreground">
+				{escalated
+					? t(OrderingKeys.CHECKOUT_CONFIRMING_SLOW_DESC)
+					: t(OrderingKeys.CHECKOUT_CONFIRMING_DESC)}
+			</p>
+			<p
+				className={`tabular-nums ${escalated ? "text-base font-semibold text-foreground" : "text-xs text-faint-foreground"}`}
+			>
+				{t(OrderingKeys.CHECKOUT_CONFIRMING_REFERENCE, { ref: `#${orderId.slice(-6)}` })}
+			</p>
+			{escalated && (
+				<button
+					type="button"
+					onClick={onViewOrders}
+					className="mt-2 px-6 py-2.5 rounded-xl text-sm font-medium border border-border text-foreground hover:bg-(--bg-hover)"
+				>
+					{t(OrderingKeys.CHECKOUT_VIEW_ORDERS)}
+				</button>
+			)}
 		</div>
 	);
 }

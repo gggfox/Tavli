@@ -1,14 +1,10 @@
 import { CopyableId, StatusBadge, Surface } from "@/global/components";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { DisputesKeys } from "@/global/i18n";
 import { formatDate } from "@/global/utils/date";
 import { DISPUTE_STATUS, type DisputeRecoveryStatus, type DisputeStatus } from "convex/constants";
 import { useTranslation } from "react-i18next";
-import {
-	DISPUTE_STATUS_BADGE,
-	DISPUTE_STATUS_ICON,
-	DISPUTE_STATUS_LABEL_KEY,
-	formatDisputeMoney,
-} from "../constants";
+import { DISPUTE_STATUS_BADGE, DISPUTE_STATUS_ICON, DISPUTE_STATUS_LABEL_KEY } from "../constants";
 
 export interface DisputeRowData {
 	readonly stripeDisputeId: string;
@@ -53,6 +49,9 @@ export interface DisputeRowProps {
  */
 export function DisputeRow({ dispute, recoveryPercent, showLedger }: DisputeRowProps) {
 	const { t, i18n } = useTranslation();
+	// Stripe money carries its own currency, so each call passes it rather
+	// than trusting the restaurant's.
+	const formatMoney = useFormatMoney();
 
 	const isLost = dispute.status === DISPUTE_STATUS.LOST;
 	const StatusIcon = DISPUTE_STATUS_ICON[dispute.status];
@@ -106,7 +105,7 @@ export function DisputeRow({ dispute, recoveryPercent, showLedger }: DisputeRowP
 					</span>
 					<div className="min-w-0">
 						<p className="text-base font-semibold text-foreground">
-							{formatDisputeMoney(dispute.amount, dispute.currency)}
+							{formatMoney(dispute.amount, dispute.currency)}
 						</p>
 						<p className="text-xs text-faint-foreground">
 							{dispute.dailyOrderNumber === null
@@ -132,7 +131,7 @@ export function DisputeRow({ dispute, recoveryPercent, showLedger }: DisputeRowP
 					<p className="text-sm text-foreground">
 						{t(nextKey, {
 							percent: recoveryPercent,
-							outstanding: formatDisputeMoney(dispute.outstanding, dispute.currency),
+							outstanding: formatMoney(dispute.outstanding, dispute.currency),
 						})}
 					</p>
 				</div>
@@ -150,8 +149,8 @@ export function DisputeRow({ dispute, recoveryPercent, showLedger }: DisputeRowP
 						</p>
 						<p className="text-sm text-foreground">
 							{t(DisputesKeys.LIST_LEDGER_LINE, {
-								recovered: formatDisputeMoney(dispute.recovered, dispute.currency),
-								outstanding: formatDisputeMoney(dispute.outstanding, dispute.currency),
+								recovered: formatMoney(dispute.recovered, dispute.currency),
+								outstanding: formatMoney(dispute.outstanding, dispute.currency),
 								status: dispute.recoveryStatus,
 							})}
 						</p>

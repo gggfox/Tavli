@@ -6,7 +6,7 @@ import type { PaymentsTimePeriod } from "../paymentsDashboardSearch";
 import { AdminTable, DashboardShell, SegmentedControl, Surface } from "@/global/components";
 import { useAdminTable } from "@/global/hooks";
 import { PaymentsKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -88,6 +88,7 @@ function deriveAggregates(rows: ReadonlyArray<PaymentsLedgerRow>): PaymentsAggre
 }
 
 export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const { period, setPeriod, q, setSearch } = usePaymentsDashboardPrefs(restaurantId);
 
@@ -148,7 +149,7 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 				<SummaryCard
 					icon={<DollarSign size={20} />}
 					label={t(PaymentsKeys.SUMMARY_TOTAL_REVENUE)}
-					value={`$${formatCents(aggregates.totalRevenue)}`}
+					value={formatMoney(aggregates.totalRevenue)}
 				/>
 				<SummaryCard
 					icon={<Hash size={20} />}
@@ -158,17 +159,17 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 				<SummaryCard
 					icon={<TrendingUp size={20} />}
 					label={t(PaymentsKeys.SUMMARY_AVG_ORDER)}
-					value={`$${formatCents(aggregates.averageOrder)}`}
+					value={formatMoney(aggregates.averageOrder)}
 				/>
 				<SummaryCard
 					icon={<Receipt size={20} />}
 					label={t(PaymentsKeys.SUMMARY_SERVICE_FEES)}
-					value={`$${formatCents(aggregates.serviceFees)}`}
+					value={formatMoney(aggregates.serviceFees)}
 				/>
 				<SummaryCard
 					icon={<HandCoins size={20} />}
 					label={t(PaymentsKeys.SUMMARY_TIPS)}
-					value={`$${formatCents(aggregates.tips)}`}
+					value={formatMoney(aggregates.tips)}
 				/>
 			</div>
 

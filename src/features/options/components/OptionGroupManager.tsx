@@ -1,7 +1,8 @@
 import { CollapsibleCard, InlineEditInput, LanguageTabBar } from "@/global/components";
 import { useConvexMutate } from "@/global/hooks";
 import { Languages, OptionsKeys } from "@/global/i18n";
-import { formatCents, formatCentsInput, parseDollarsToCents } from "@/global/utils/money";
+import { useCurrencySymbol, useFormatMoney } from "@/global/hooks/useFormatMoney";
+import { formatCentsInput, parseDollarsToCents } from "@/global/utils/money";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
@@ -218,6 +219,8 @@ function GroupCard({
 	onDeleteOption: (args: { optionId: Id<"options"> }) => Promise<unknown>;
 	selectedLang?: string;
 }>) {
+	const formatMoney = useFormatMoney();
+	const currencySymbol = useCurrencySymbol();
 	const { t } = useTranslation();
 	const isTranslating = !!selectedLang;
 	const [expanded, setExpanded] = useState(false);
@@ -324,7 +327,7 @@ function GroupCard({
 							/>
 							{opt.priceModifier > 0 && (
 								<span className="text-xs shrink-0 text-success">
-									+${formatCents(opt.priceModifier)}
+									+{formatMoney(opt.priceModifier)}
 								</span>
 							)}
 							{!translated && <AlertTriangle size={14} className="shrink-0 text-warning" />}
@@ -354,7 +357,7 @@ function GroupCard({
 							}}
 							className="text-sm w-20 shrink-0"
 							inputMode="decimal"
-							prefix="$"
+							prefix={currencySymbol}
 						/>
 						<button
 							onClick={() => void onDeleteOption({ optionId: opt._id })}

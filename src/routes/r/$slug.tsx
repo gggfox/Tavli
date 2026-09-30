@@ -1,6 +1,7 @@
 import { useCustomerSession } from "@/features/ordering";
 import { BrandingProvider } from "@/features/ordering/hooks/useBranding";
-import { ErrorFallback, RouteErrorComponent } from "@/global/components";
+import { ErrorFallback, LoadingState, RouteErrorComponent } from "@/global/components";
+import { MoneyCurrencyProvider } from "@/global/hooks/useFormatMoney";
 import { CustomerKeys, OrderingKeys } from "@/global/i18n";
 import { SignInButton, SignUpButton, useAuth } from "@clerk/tanstack-react-start";
 import { convexQuery } from "@convex-dev/react-query";
@@ -9,10 +10,12 @@ import {
 	Link,
 	Outlet,
 	createFileRoute,
+	notFound,
 	useNavigate,
 	useParams,
 	useRouterState,
 	type ErrorComponentProps,
+	type NotFoundRouteProps,
 } from "@tanstack/react-router";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -21,6 +24,14 @@ import { buildBrandingCss } from "@/features/ordering/brandingCss";
 import { loadBranding } from "@/features/ordering/brandingLoader";
 import { CalendarClock, LogIn, Receipt, UserPlus, UtensilsCrossed } from "lucide-react";
 import { useTranslation } from "react-i18next";
+
+/**
+ * Tags the not-found the loader throws. This route's `notFoundComponent` also
+ * catches — under the router's default fuzzy mode — any path under a *real*
+ * restaurant that matched no page (`/r/<slug>/en/typo`), and telling that
+ * diner "we couldn't find this restaurant" would be false.
+ */
+const RESTAURANT_MISSING = "restaurant-missing";
 
 export const Route = createFileRoute("/r/$slug")({
 	/**
@@ -31,8 +42,17 @@ export const Route = createFileRoute("/r/$slug")({
 	 *
 	 * `loadBranding` never throws — every failure degrades to unbranded — so
 	 * this cannot turn a Convex blip into an error page for a diner mid-order.
+	 *
+	 * The one thing it does turn into a different page is a *definite* miss: a
+	 * slug Convex says has no active restaurant renders `notFoundComponent`
+	 * (and a 404 on SSR) instead of a sign-in card for a restaurant that does
+	 * not exist. A timeout or a throw never sets `notFound`.
 	 */
-	loader: async ({ context, params }) => loadBranding(context.queryClient, params.slug),
+	loader: async ({ context, params }) => {
+		const data = await loadBranding(context.queryClient, params.slug);
+		if (data.notFound) throw notFound({ data: RESTAURANT_MISSING });
+		return data;
+	},
 
 	/**
 	 * **A pure function of `loaderData`.** TanStack re-runs `head()` on
@@ -43,7 +63,12 @@ export const Route = createFileRoute("/r/$slug")({
 	head: ({ loaderData }) => {
 		const css = buildBrandingCss(loaderData?.branding);
 		const fontId = loaderData?.branding?.fontId;
+		const restaurantName = loaderData?.restaurantName;
 		return {
+			// The deepest route's `title` wins over the root's "Tavli". Absent when
+			// the lookup did not settle, so the tab keeps the app name rather than
+			// going blank.
+			...(restaurantName ? { meta: [{ title: restaurantName }] } : {}),
 			...(css ? { styles: [{ children: css }] } : {}),
 			...(fontId
 				? {
@@ -66,7 +91,58 @@ export const Route = createFileRoute("/r/$slug")({
 	},
 	component: CustomerLayout,
 	errorComponent: CustomerErrorComponent,
+	notFoundComponent: CustomerNotFound,
 });
+
+export function CustomerNotFound({ data }: Readonly<Pick<NotFoundRouteProps, "data">>) {
+	return data === RESTAURANT_MISSING ? <RestaurantNotFound /> : <CustomerPageNotFound />;
+}
+
+/** A real restaurant, a page that does not exist: point back at its menu. */
+function CustomerPageNotFound() {
+	const { t } = useTranslation();
+	const { slug } = Route.useParams();
+	return (
+		<div className="flex-1 flex items-center justify-center p-6">
+			<div className="text-center max-w-sm space-y-3">
+				<h1 className="text-xl font-semibold text-foreground">
+					{t(CustomerKeys.PAGE_NOT_FOUND_TITLE)}
+				</h1>
+				<BackToMenuLink slug={slug} />
+			</div>
+		</div>
+	);
+}
+
+/**
+ * An unknown (or inactive) slug. Deliberately bare: no branded header — there
+ * is no restaurant to brand it with — and no sign-in buttons, because an
+ * account would not make this restaurant exist.
+ */
+function RestaurantNotFound() {
+	const { t } = useTranslation();
+	return (
+		<div className="flex-1 flex items-center justify-center p-6">
+			<div className="text-center max-w-sm space-y-2">
+				<h1 className="text-xl font-semibold text-foreground">{t(CustomerKeys.NOT_FOUND_TITLE)}</h1>
+				<p className="text-sm text-muted-foreground">{t(CustomerKeys.NOT_FOUND_BODY)}</p>
+			</div>
+		</div>
+	);
+}
+
+/**
+ * Pages a signed-out diner may see: the menu (either URL shape) and the
+ * reservation form. Both read only anonymous-safe queries —
+ * `reservations.create` takes identity as optional — so neither needs a
+ * Session. Everything else under `/r/$slug` is about *your* orders and keeps
+ * the sign-in card.
+ */
+const BROWSABLE_WITHOUT_SESSION = [/^\/r\/[^/]+(?:\/[^/]+)?\/menu\/?$/, /^\/r\/[^/]+\/reserve\/?$/];
+
+export function isBrowsableWithoutSession(pathname: string): boolean {
+	return BROWSABLE_WITHOUT_SESSION.some((pattern) => pattern.test(pathname));
+}
 
 /**
  * Customer-facing recovery differs from the staff default: a diner who hits
@@ -102,9 +178,15 @@ function CustomerErrorComponent(props: Readonly<ErrorComponentProps>) {
  */
 function CustomerLayout() {
 	const { branding } = Route.useLoaderData();
+	const { slug } = Route.useParams();
+	// Same `getBySlug` key the branding loader prefetched: a cache hit, and the
+	// currency is already there for the SSR pass.
+	const { data: restaurant } = useQuery(convexQuery(api.restaurants.getBySlug, { slug }));
 	return (
 		<BrandingProvider branding={branding}>
-			<CustomerLayoutContent />
+			<MoneyCurrencyProvider currency={restaurant?.currency}>
+				<CustomerLayoutContent />
+			</MoneyCurrencyProvider>
 		</BrandingProvider>
 	);
 }
@@ -112,17 +194,17 @@ function CustomerLayout() {
 function CustomerLayoutContent() {
 	const { t } = useTranslation();
 	const { slug } = Route.useParams();
+	const pathname = useRouterState({ select: (s) => s.location.pathname });
 	const { isLoaded, isSignedIn, sessionId, errorKey, retry } = useCustomerSession(slug);
 
-	if (!isLoaded) {
-		return (
-			<div className="flex-1 flex items-center justify-center p-6">
-				<p className="text-sm text-muted-foreground">{t(OrderingKeys.SESSION_NO_SESSION)}</p>
-			</div>
-		);
-	}
+	if (!isLoaded) return <CustomerLoading />;
 
 	if (!isSignedIn) {
+		// The menu and the reservation form render for real; the menu gates
+		// ordering at its order bar instead of here.
+		if (isBrowsableWithoutSession(pathname)) {
+			return <CustomerShell slug={slug} sessionId={null} />;
+		}
 		return (
 			<div className="flex-1 flex flex-col min-h-0">
 				<header className="px-3 py-2 shrink-0 border-b border-border bg-muted space-y-1.5">
@@ -161,6 +243,9 @@ function CustomerLayoutContent() {
 								</button>
 							</SignUpButton>
 						</div>
+						{/* The menu no longer needs an account, so this card is never
+						    a dead end: the diner can always go and read it. */}
+						<BackToMenuLink slug={slug} />
 					</div>
 				</div>
 			</div>
@@ -183,14 +268,17 @@ function CustomerLayoutContent() {
 		);
 	}
 
-	if (!sessionId) {
-		return (
-			<div className="flex-1 flex items-center justify-center p-6">
-				<p className="text-sm text-muted-foreground">{t(OrderingKeys.SESSION_NO_SESSION)}</p>
-			</div>
-		);
-	}
+	// Signed in and the Session is still being restored or opened. This used to
+	// say "No active session", which read as an error on every first visit.
+	if (!sessionId) return <CustomerLoading />;
 
+	return <CustomerShell slug={slug} sessionId={sessionId} />;
+}
+
+function CustomerShell({
+	slug,
+	sessionId,
+}: Readonly<{ slug: string; sessionId: Id<"sessions"> | null }>) {
 	return (
 		<div className="flex-1 flex flex-col min-h-0 overflow-hidden">
 			<CustomerHeader slug={slug} sessionId={sessionId} />
@@ -198,6 +286,32 @@ function CustomerLayoutContent() {
 				<Outlet />
 			</div>
 		</div>
+	);
+}
+
+/** Neutral, not an error: Clerk is resolving or the Session is being opened. */
+function CustomerLoading() {
+	const { t } = useTranslation();
+	return (
+		<div className="flex-1 flex items-center justify-center p-6" role="status" aria-live="polite">
+			<LoadingState variant="spinner" message={t(OrderingKeys.SESSION_LOADING)} />
+		</div>
+	);
+}
+
+function BackToMenuLink({ slug }: Readonly<{ slug: string }>) {
+	const { t } = useTranslation();
+	const params = useParams({ strict: false });
+	const lang = (params as { lang?: string }).lang;
+	const className = "inline-block text-sm font-medium text-muted-foreground hover:text-foreground";
+	return lang ? (
+		<Link to="/r/$slug/$lang/menu" params={{ slug, lang }} className={className}>
+			{t(OrderingKeys.BACK_TO_MENU)}
+		</Link>
+	) : (
+		<Link to="/r/$slug/menu" params={{ slug }} className={className}>
+			{t(OrderingKeys.BACK_TO_MENU)}
+		</Link>
 	);
 }
 
@@ -389,6 +503,12 @@ function TabLink(props: Readonly<TabLinkProps>) {
 	);
 }
 
+/**
+ * A quiet way back in for a returning diner. Deliberately one plain link, not
+ * a Sign in / Sign up pair: the menu's order bar already carries the primary
+ * "Sign in to order" action, and a filled button up here competed with it for
+ * the same decision. Clerk's sign-in page links to sign-up for new diners.
+ */
 function CustomerAuthAction() {
 	const { t } = useTranslation();
 	const { isLoaded, isSignedIn } = useAuth();
@@ -396,28 +516,15 @@ function CustomerAuthAction() {
 	if (!isLoaded || isSignedIn) return null;
 
 	return (
-		<div className="flex items-center gap-1.5">
-			<SignInButton mode="redirect">
-				<button
-					type="button"
-					className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium hover-secondary transition-colors"
-					aria-label={t(CustomerKeys.SIGN_IN)}
-				>
-					<LogIn size={14} />
-					<span>{t(CustomerKeys.SIGN_IN)}</span>
-				</button>
-			</SignInButton>
-			<SignUpButton mode="redirect">
-				<button
-					type="button"
-					className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium hover-btn-primary transition-colors"
-					aria-label={t(CustomerKeys.SIGN_UP)}
-				>
-					<UserPlus size={14} />
-					<span>{t(CustomerKeys.SIGN_UP)}</span>
-				</button>
-			</SignUpButton>
-		</div>
+		<SignInButton mode="redirect">
+			<button
+				type="button"
+				className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium hover-secondary transition-colors"
+			>
+				<LogIn size={14} />
+				<span>{t(CustomerKeys.SIGN_IN)}</span>
+			</button>
+		</SignInButton>
 	);
 }
 

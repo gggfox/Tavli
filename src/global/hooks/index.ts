@@ -9,6 +9,7 @@ export * from "./useConvexMutate";
 export * from "./useDialogCancel";
 export * from "./useDialogPhase";
 export * from "./useEscapeKey";
+export * from "./useFormatMoney";
 export * from "./useLongPress";
 export * from "./useFuzzyMatch";
 export * from "./useMediaQuery";

@@ -4,6 +4,11 @@
 export const CustomerKeys = {
 	MENU: "customer.nav.menu",
 	RESERVATIONS_UNAVAILABLE: "customer.reservationsUnavailable",
+	/** `/r/<slug>` for a slug Convex says has no (active) restaurant. */
+	NOT_FOUND_TITLE: "customer.notFound.title",
+	NOT_FOUND_BODY: "customer.notFound.body",
+	/** A path under a real restaurant that matches no page. */
+	PAGE_NOT_FOUND_TITLE: "customer.notFound.pageTitle",
 	RESERVE: "customer.nav.reserve",
 	SIGN_IN: "customer.auth.signIn",
 	SIGN_UP: "customer.auth.signUp",

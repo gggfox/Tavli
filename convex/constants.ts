@@ -107,6 +107,21 @@ export const ORDER_STATUS = {
 export type OrderStatus = (typeof ORDER_STATUS)[keyof typeof ORDER_STATUS];
 
 /**
+ * Most of one dish a diner can put on a single order line. A sanity bound, not
+ * a business rule: nobody orders 100 of anything from a phone, and a number
+ * past it is a stuck stepper or a crafted request. The item sheet's stepper
+ * stops here too, so the diner never meets the server-side refusal.
+ */
+export const MAX_ORDER_ITEM_QUANTITY = 99;
+
+/**
+ * Most lines one menu submission may carry (`orders.saveDraftFromMenu`). Each
+ * line costs a few reads (the dish, then its options), so the bound also keeps
+ * the mutation far inside Convex's per-function read budget.
+ */
+export const MAX_DRAFT_ORDER_LINES = 50;
+
+/**
  * How often the per-restaurant order-number counter resets. Stored on
  * `restaurants.orderNumberResetFrequency`; missing rows behave as
  * `DEFAULT_ORDER_NUMBER_RESET_FREQUENCY`.

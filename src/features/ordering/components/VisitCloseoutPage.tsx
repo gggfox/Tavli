@@ -22,7 +22,7 @@
  */
 import { ErrorKeys, OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -49,6 +49,7 @@ function blockedReasonMessage(t: TFunction, code: string | null): string | null 
 }
 
 export function VisitCloseoutPage({ onBackToOrders, onDone }: Readonly<VisitCloseoutPageProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const { sessionId, clearSession } = useSessionStore();
 	const closeSession = useConvexMutation(api.sessions.close);
@@ -135,7 +136,7 @@ export function VisitCloseoutPage({ onBackToOrders, onDone }: Readonly<VisitClos
 				<div className="rounded-xl p-4 space-y-2 bg-muted border border-border">
 					<div className="flex justify-between text-sm text-muted-foreground">
 						<span>{t(OrderingKeys.CLOSEOUT_VISIT_TOTAL)}</span>
-						<span className="font-semibold text-foreground">${formatCents(myPaidTotal)}</span>
+						<span className="font-semibold text-foreground">{formatMoney(myPaidTotal)}</span>
 					</div>
 					<div className="flex justify-between text-xs text-faint-foreground">
 						<span>{t(OrderingKeys.CLOSEOUT_ORDER_COUNT, { count: summary.myOrderCount })}</span>
@@ -147,7 +148,7 @@ export function VisitCloseoutPage({ onBackToOrders, onDone }: Readonly<VisitClos
 						>
 							<Heart size={14} />
 							<span>
-								{t(OrderingKeys.CLOSEOUT_TIPS_GIVEN, { amount: formatCents(tipsGivenTotal) })}
+								{t(OrderingKeys.CLOSEOUT_TIPS_GIVEN, { amount: formatMoney(tipsGivenTotal) })}
 							</span>
 						</div>
 					)}

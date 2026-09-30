@@ -10,6 +10,8 @@ export const OrderingKeys = {
 	SESSION_SIGN_IN_PROMPT: "ordering.session.signInPrompt",
 	SESSION_OOPS: "ordering.session.oops",
 	SESSION_NO_SESSION: "ordering.session.noSession",
+	/** Neutral copy while Clerk resolves or the Session is being opened. */
+	SESSION_LOADING: "ordering.session.loading",
 	SESSION_VIEW_ORDERS: "ordering.session.viewOrders",
 	SESSION_MY_ORDERS: "ordering.session.myOrders",
 
@@ -48,6 +50,8 @@ export const OrderingKeys = {
 	MENU_FULL_MENU_CLOSE: "ordering.menu.fullMenuClose",
 	MENU_GENERATED_IMAGE: "ordering.menu.generatedImage",
 	MENU_GENERATED_IMAGE_DETAIL: "ordering.menu.generatedImageDetail",
+	MENU_SUBMIT_FAILED: "ordering.menu.submitFailed",
+	MENU_REMOVE_UNAVAILABLE_DISH: "ordering.menu.removeUnavailableDish",
 
 	ITEM_REQUIRED: "ordering.item.required",
 	ITEM_PICK_ONE: "ordering.item.pickOne",
@@ -99,6 +103,19 @@ export const OrderingKeys = {
 	CHECKOUT_PAID_DESC: "ordering.checkout.paidDesc",
 	CHECKOUT_PAID_DESC_NO_NUMBER: "ordering.checkout.paidDescNoNumber",
 	CHECKOUT_VIEW_ORDERS: "ordering.checkout.viewOrders",
+	/**
+	 * The diner confirmed a card payment and the webhook has not settled it
+	 * yet. No pay button on this screen: a second tap is a second attempt.
+	 */
+	CHECKOUT_CONFIRMING_TITLE: "ordering.checkout.confirmingTitle",
+	CHECKOUT_CONFIRMING_DESC: "ordering.checkout.confirmingDesc",
+	/** Same state past the escalation delay: do not pay again, show staff. */
+	CHECKOUT_CONFIRMING_SLOW_TITLE: "ordering.checkout.confirmingSlowTitle",
+	CHECKOUT_CONFIRMING_SLOW_DESC: "ordering.checkout.confirmingSlowDesc",
+	/** Short order reference staff can match on their dashboard (`#` + last 6 of the id). */
+	CHECKOUT_CONFIRMING_REFERENCE: "ordering.checkout.confirmingReference",
+	/** Stripe redirected back from 3-D Secure with a failure: nothing was charged. */
+	CHECKOUT_REDIRECT_FAILED: "ordering.checkout.redirectFailed",
 
 	ORDER_STATUS_LOADING: "ordering.orderStatus.loading",
 	ORDER_STATUS_HEADING: "ordering.orderStatus.heading",
@@ -120,6 +137,11 @@ export const OrderingKeys = {
 	ORDER_STATUS_STEP_PREPARING: "ordering.orderStatus.stepPreparing",
 	ORDER_STATUS_STEP_READY: "ordering.orderStatus.stepReady",
 	ORDER_STATUS_STEP_SERVED: "ordering.orderStatus.stepServed",
+	/** The order id is malformed, missing, or belongs to another diner. */
+	ORDER_STATUS_NOT_FOUND_TITLE: "ordering.orderStatus.notFoundTitle",
+	ORDER_STATUS_NOT_FOUND_DESC: "ordering.orderStatus.notFoundDesc",
+	/** A draft the diner has not paid yet: the kitchen has not seen it. */
+	ORDER_STATUS_UNPAID_NOTE: "ordering.orderStatus.unpaidNote",
 
 	// Receipt (ADR 008, TAVLI-71 Phase 3C): paid-order breakdown showing the
 	// CHARGED subtotal/fee split, plus the emailed restaurant-branded receipt.

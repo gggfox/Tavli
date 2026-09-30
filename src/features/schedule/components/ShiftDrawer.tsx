@@ -9,6 +9,12 @@
  *     of the drawer always uses the One-off tab — template editing happens
  *     elsewhere in V1.
  *
+ * Overnight shifts: in the One-off tab an end time before the start time
+ * means the shift ends the next day in the restaurant timezone (see
+ * `shiftWindow.ts`); an inline hint says so. Both tabs show that hint when
+ * the shift crosses midnight. Start === end is rejected as zero-length.
+ * "Today" defaults are the restaurant's today, not the browser's.
+ *
  * Authorization:
  *   The caller is responsible for filtering `members` to only those the
  *   current actor can target. The convex layer re-checks via
@@ -17,7 +23,6 @@
 import { AppDatePicker, DialogHeader, Drawer, FieldLabel } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
-import { todayLocalYmd } from "@/global/utils/calendarMonth";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -26,14 +31,9 @@ import type { Doc, Id } from "convex/_generated/dataModel";
 import { SHIFT_STATUS, type ShiftRole } from "convex/constants";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	formatHm,
-	parseHm,
-	utcMsToHmInTimezone,
-	utcMsToYmdInTimezone,
-	ymdHmToUtcMs,
-} from "../timezone";
+import { formatHm, parseHm, utcMsToHmInTimezone, utcMsToYmdInTimezone } from "../timezone";
 import { dayLabel, SHIFT_ROLE_OPTIONS, shiftRoleLabel } from "../roles";
+import { endsNextDay, templateEnd, validateOneOffShift } from "../shiftWindow";
 import type { AssignableMember, ShiftDrawerInitial } from "../types";
 
 interface ShiftDrawerProps {
@@ -122,7 +122,10 @@ export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {
 		}
 		return {
 			memberId: initial.mode === "create" && initial.memberId ? initial.memberId : "",
-			ymd: initial.mode === "create" && initial.ymd ? initial.ymd : todayLocalYmd(),
+			ymd:
+				initial.mode === "create" && initial.ymd
+					? initial.ymd
+					: utcMsToYmdInTimezone(Date.now(), tz),
 			startMin: DEFAULT_START_MIN,
 			endMin: DEFAULT_END_MIN,
 			role: "",
@@ -138,10 +141,10 @@ export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {
 			durationMin: DEFAULT_DURATION_MIN,
 			role: "",
 			notes: "",
-			activeFromYmd: todayLocalYmd(),
+			activeFromYmd: utcMsToYmdInTimezone(Date.now(), tz),
 			activeUntilYmd: "",
 		}),
-		[initial]
+		[initial, tz]
 	);
 
 	const [tab, setTab] = useState<"oneoff" | "recurring">("oneoff");
@@ -180,16 +183,13 @@ export function ShiftDrawer(props: Readonly<ShiftDrawerProps>) {
 
 	const handleSaveOneOff = async () => {
 		setError(null);
-		if (!oneoff.memberId) {
-			setError(t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_NO_MEMBER));
+		const validation = validateOneOffShift(oneoff, tz);
+		if (!validation.ok) {
+			setError(t(validation.errorKey));
 			return;
 		}
-		if (oneoff.endMin <= oneoff.startMin) {
-			setError(t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_TIME));
-			return;
-		}
-		const startsAt = ymdHmToUtcMs(oneoff.ymd, oneoff.startMin, tz);
-		const endsAt = ymdHmToUtcMs(oneoff.ymd, oneoff.endMin, tz);
+		if (!oneoff.memberId) return; // narrows the type; validation already checked it
+		const { startsAt, endsAt } = validation.window;
 		try {
 			if (editingShift) {
 				unwrapResult(
@@ -443,6 +443,7 @@ function OneOffTab({ state, setState, members, isEdit, idPrefix, localeTag }: On
 	const dateId = `${idPrefix}-date`;
 	const startId = `${idPrefix}-start`;
 	const endId = `${idPrefix}-end`;
+	const endHintId = `${idPrefix}-end-hint`;
 	const roleId = `${idPrefix}-role`;
 	const notesId = `${idPrefix}-notes`;
 
@@ -499,8 +500,12 @@ function OneOffTab({ state, setState, members, isEdit, idPrefix, localeTag }: On
 					label={t(AdminStaffKeys.SCHEDULE_DRAWER_END_LABEL)}
 					value={state.endMin}
 					onChange={(v) => setState({ ...state, endMin: v })}
+					describedById={endsNextDay(state.startMin, state.endMin) ? endHintId : undefined}
 				/>
 			</div>
+			{endsNextDay(state.startMin, state.endMin) ? (
+				<EndsNextDayHint id={endHintId} endMin={state.endMin} />
+			) : null}
 			<RoleSelect
 				id={roleId}
 				value={state.role}
@@ -538,6 +543,7 @@ function RecurringTab({ state, setState, members, idPrefix, localeTag }: Recurri
 	const roleId = `${idPrefix}-r-role`;
 	const notesId = `${idPrefix}-r-notes`;
 	const daysGroupId = `${idPrefix}-r-days`;
+	const recurringEnd = templateEnd(state.startMin, state.durationMin);
 
 	const toggleDay = (day: number) => {
 		const next = new Set(state.selectedDays);
@@ -590,6 +596,9 @@ function RecurringTab({ state, setState, members, idPrefix, localeTag }: Recurri
 					onChangeMin={(v) => setState({ ...state, durationMin: v })}
 				/>
 			</div>
+			{recurringEnd.dayOffset > 0 ? (
+				<EndsNextDayHint id={`${idPrefix}-r-end-hint`} endMin={recurringEnd.endMin} />
+			) : null}
 			<RoleSelect
 				id={roleId}
 				value={state.role}
@@ -701,14 +710,28 @@ function RoleSelect({ id, value, onChange }: RoleSelectProps) {
 	);
 }
 
+/**
+ * Inline note under the time fields when the shift crosses midnight — the end
+ * time alone ("02:00") would otherwise read as ending before it starts.
+ */
+function EndsNextDayHint({ id, endMin }: { readonly id: string; readonly endMin: number }) {
+	const { t } = useTranslation();
+	return (
+		<p id={id} className="text-xs text-muted-foreground -mt-1">
+			{t(AdminStaffKeys.SCHEDULE_DRAWER_ENDS_NEXT_DAY_HINT, { time: formatHm(endMin) })}
+		</p>
+	);
+}
+
 interface TimeFieldProps {
 	readonly id: string;
 	readonly label: string;
 	readonly value: number;
 	readonly onChange: (v: number) => void;
+	readonly describedById?: string;
 }
 
-function TimeField({ id, label, value, onChange }: TimeFieldProps) {
+function TimeField({ id, label, value, onChange, describedById }: TimeFieldProps) {
 	const [draft, setDraft] = useState(formatHm(value));
 	useEffect(() => {
 		setDraft(formatHm(value));
@@ -726,6 +749,7 @@ function TimeField({ id, label, value, onChange }: TimeFieldProps) {
 				type="time"
 				value={draft}
 				onChange={(e) => commit(e.target.value)}
+				aria-describedby={describedById}
 				className="block w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
 			/>
 		</label>

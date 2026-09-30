@@ -13,6 +13,7 @@ export function useCart() {
 	const updateItem = useConvexMutate(api.orders.updateItem);
 	const removeItem = useConvexMutate(api.orders.removeItem);
 	const setDraftInstructions = useConvexMutate(api.orders.setDraftInstructions);
+	const saveDraftFromMenu = useConvexMutate(api.orders.saveDraftFromMenu);
 
 	return {
 		createDraft: createDraft.mutateAsync,
@@ -20,5 +21,10 @@ export function useCart() {
 		updateItem: updateItem.mutateAsync,
 		removeItem: removeItem.mutateAsync,
 		setDraftInstructions: setDraftInstructions.mutateAsync,
+		/**
+		 * The menu's one submit call: replaces the session draft's lines with the
+		 * picks, atomically. Returns a result tuple — unwrap it with `unwrapResult`.
+		 */
+		saveDraftFromMenu: saveDraftFromMenu.mutateAsync,
 	};
 }

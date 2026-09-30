@@ -1,6 +1,6 @@
 import { StatusBadge } from "@/global/components";
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -24,6 +24,7 @@ interface MenuItemDetailProps {
 }
 
 export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuItemDetailProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const { data: menuItem } = useQuery(convexQuery(api.menuItems.getById, { itemId }));
 	const { data: optionGroups } = useQuery(
@@ -88,7 +89,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 						<p className="text-sm mt-1 text-muted-foreground">{menuItem.description}</p>
 					)}
 					<p className="text-lg font-semibold mt-2 text-foreground">
-						${formatCents(menuItem.basePrice)}
+						{formatMoney(menuItem.basePrice)}
 					</p>
 				</div>
 
@@ -138,7 +139,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 													<span>{opt.name}</span>
 													{opt.priceModifier > 0 && (
 														<span className="text-faint-foreground">
-															+${formatCents(opt.priceModifier)}
+															+{formatMoney(opt.priceModifier)}
 														</span>
 													)}
 												</button>
@@ -186,7 +187,7 @@ export function MenuItemDetail({ itemId, onBack, onAddToCart }: Readonly<MenuIte
 					onClick={handleAdd}
 					className="w-full py-3 rounded-xl text-sm font-medium hover-btn-primary"
 				>
-					{t(OrderingKeys.ITEM_ADD_TO_CART)} - ${formatCents(itemTotal)}
+					{t(OrderingKeys.ITEM_ADD_TO_CART)} - {formatMoney(itemTotal)}
 				</button>
 			</div>
 		</div>

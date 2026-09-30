@@ -112,7 +112,7 @@ describe("DisputesSection", () => {
 
 		expect(screen.getByTestId("dispute-row-dp_lost_1")).toBeInTheDocument();
 		// The amount, and the order in the number staff actually use.
-		expect(screen.getByText("$640.00 MXN")).toBeInTheDocument();
+		expect(screen.getByText("$640.00")).toBeInTheDocument();
 		expect(screen.getByText(/disputes\.list\.order 42/)).toBeInTheDocument();
 		// "Reversed", not "Lost": nothing was lost by the restaurant.
 		expect(screen.getByText("disputes.status.lost")).toBeInTheDocument();
@@ -153,8 +153,8 @@ describe("DisputesSection", () => {
 		render(<DisputesSection restaurantId={RESTAURANT_ID} />);
 
 		const card = screen.getByTestId("dispute-recovery-card");
-		expect(card).toHaveTextContent("disputes.recovery.outstanding $500.00 MXN");
-		expect(card).toHaveTextContent("disputes.recovery.recovered $140.00 MXN");
+		expect(card).toHaveTextContent("disputes.recovery.outstanding $500.00");
+		expect(card).toHaveTextContent("disputes.recovery.recovered $140.00");
 	});
 
 	it("keeps the ledger split to platform admins", () => {
