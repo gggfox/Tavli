@@ -6,6 +6,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import {
 	AUDIT_SYSTEM_USER_ID,
 	ORDER_PAYMENT_STATE,
+	ORDER_STATUS,
 	PAYMENT_KIND,
 	PAYMENT_REFUND_STATUS,
 	PAYMENT_STATUS,
@@ -15,6 +16,7 @@ import {
 import { ConflictError, fromErrorObject } from "./_shared/errors";
 import { appendAuditEvent } from "./_util/audit";
 import { restoreLedgerForRefund } from "./disputes";
+import { mergeRefundTotals } from "./orderRefundHelpers";
 import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupersedeHelpers";
 
 const paymentStatusValidator = v.union(
@@ -414,6 +416,22 @@ export const createPayment = internalMutation({
 		const now = Date.now();
 		const { supersededPaymentId, ...row } = args;
 
+		// TRANSACTIONAL "is this order still the one we priced?" guard.
+		//
+		// `createPaymentIntent` read the order seconds ago and priced the charge
+		// from that snapshot. In between, staff can tap "mark paid in person"
+		// (`orders.markOrderPaidInPerson` only refuses while a LIVE card attempt
+		// exists — and until this insert there is none), or another member can
+		// edit the shared draft. Without re-asking here, the row goes in, the
+		// diner's card is charged, and `confirmPayment` accepts it over the cash
+		// settlement — or charges a total nobody is looking at any more.
+		//
+		// Thrown BEFORE anything is written and before the action reaches
+		// Stripe, so there is no intent to clean up and the order is untouched.
+		if (row.orderId) {
+			assertOrderStillPayable(await ctx.db.get(row.orderId), row.orderUpdatedAtSnapshot);
+		}
+
 		// TRANSACTIONAL double-tap guard (TAVLI-104 review round 1).
 		//
 		// The action already stood the previous attempt down at Stripe and
@@ -459,6 +477,52 @@ export const createPayment = internalMutation({
 		return paymentId;
 	},
 });
+
+/**
+ * The order states a diner may still start a card charge from — the same pair
+ * `createPaymentIntent` and `orders.verifyOrderForPaymentInternal` accept.
+ */
+const CARD_PAYABLE_ORDER_STATUSES: ReadonlySet<string> = new Set([
+	ORDER_STATUS.DRAFT,
+	ORDER_STATUS.AWAITING_PAYMENT,
+]);
+
+/** Settled one way or another: nothing is left for a card to pay. */
+const SETTLED_ORDER_PAYMENT_STATES: ReadonlySet<string> = new Set([
+	ORDER_PAYMENT_STATE.PAID,
+	ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+	ORDER_PAYMENT_STATE.REFUNDED,
+	ORDER_PAYMENT_STATE.REFUND_FAILED,
+]);
+
+/**
+ * Throws a stable code unless `order` is still exactly the one the calling
+ * action priced: it exists, is in a card-payable status, is not already
+ * settled, and has not been edited since `orderUpdatedAtSnapshot`.
+ *
+ * `updatedAt` is the edit marker because every order edit bumps it, while the
+ * payment-bookkeeping writes (`createPayment` itself, `updateOrderPaymentSummary`)
+ * deliberately keep it — which is what lets a re-tap on an unedited order
+ * pass. A caller that sends no snapshot skips only that last comparison;
+ * `createPaymentIntent`, the one production caller, always sends it.
+ */
+function assertOrderStillPayable(
+	order: Doc<"orders"> | null,
+	orderUpdatedAtSnapshot: number | undefined
+): void {
+	if (order?.paymentState && SETTLED_ORDER_PAYMENT_STATES.has(order.paymentState)) {
+		// Paid in person (or by an earlier charge) since the snapshot. Same
+		// message the supersede path uses: there is nothing left to pay.
+		throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.ALREADY_PAID).toObject());
+	}
+	if (
+		!order ||
+		!CARD_PAYABLE_ORDER_STATUSES.has(order.status) ||
+		(orderUpdatedAtSnapshot !== undefined && order.updatedAt !== orderUpdatedAtSnapshot)
+	) {
+		throw fromErrorObject(new ConflictError(PAYMENT_SUPERSEDE_ERRORS.ORDER_CHANGED).toObject());
+	}
+}
 
 /**
  * The live payment attempt for whatever this new row is about to pay for, or
@@ -762,6 +826,12 @@ export const recordStripeWebhookEvent = internalMutation({
  * `stripeWebhookEvents`. Full refunds also flip the linked order to "refunded"
  * (session/tab payments have no dedicated refunded state, so only the payment
  * record is updated there). Also surfaces manual Stripe-dashboard refunds.
+ *
+ * Order-independent: `charge.refunded` fires once per refund and Stripe does
+ * not promise delivery order, so a partial refund's event can arrive after the
+ * full refund's. The stored total only ever grows (`mergeRefundTotals`), and a
+ * fully refunded payment never goes back to `partial` — that regression would
+ * count a refunded sale as revenue again.
  */
 export const recordChargeRefund = internalMutation({
 	args: {
@@ -778,18 +848,32 @@ export const recordChargeRefund = internalMutation({
 		if (!payment) return;
 
 		const now = Date.now();
-		const refundStatus = args.isFullyRefunded
+		const totals = mergeRefundTotals(payment, {
+			amountRefunded: args.amountRefunded,
+			isFullyRefunded: args.isFullyRefunded,
+			amountCaptured: args.amountCaptured,
+		});
+		const refundStatus = totals.isFullyRefunded
 			? PAYMENT_REFUND_STATUS.SUCCEEDED
 			: PAYMENT_REFUND_STATUS.PARTIAL;
 
 		await ctx.db.patch(args.paymentId, {
 			refundStatus,
-			amountRefunded: args.amountRefunded,
+			amountRefunded: totals.amountRefunded,
 			...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
 			...(args.latestStripeEventId !== undefined && {
 				latestStripeEventId: args.latestStripeEventId,
 			}),
-			...(args.isFullyRefunded && { refundedAt: args.refundedAtMs ?? now }),
+			// Stamped by the event that completed the refund, not by a late
+			// partial arriving afterwards.
+			...(totals.isFullyRefunded &&
+				(args.isFullyRefunded || payment.refundedAt === undefined) && {
+					refundedAt: args.refundedAtMs ?? now,
+				}),
+			// A failed reservation has nothing left to retry once the charge is
+			// fully refunded (e.g. an operator finished it from the Dashboard).
+			...(totals.isFullyRefunded &&
+				payment.pendingRefund?.failedAt !== undefined && { pendingRefund: undefined }),
 			updatedAt: now,
 			updatedBy: AUDIT_SYSTEM_USER_ID,
 		});
@@ -811,16 +895,20 @@ export const recordChargeRefund = internalMutation({
 		//   payment; either way this row is not the one that settled it, and
 		//   REFUNDED would erase an order the diner still has to pay for, or
 		//   un-settle one that is genuinely paid.
-		// - `paymentState` is PAID or REFUND_REQUESTED: the only two states a
-		//   full refund can legitimately move to REFUNDED.
+		// - `paymentState` is PAID, REFUND_REQUESTED or REFUND_FAILED: the states
+		//   a full refund can legitimately move to REFUNDED. REFUND_FAILED is in
+		//   the set because a refund our call reported as failed can still have
+		//   landed (or been finished from the Dashboard) — the diner has the
+		//   money, and staff must not be sent to refund it again.
 		//
 		// The refund facts are recorded on the payment row above either way.
-		if (args.isFullyRefunded && payment.orderId && payment.status === PAYMENT_STATUS.SUCCEEDED) {
+		if (totals.isFullyRefunded && payment.orderId && payment.status === PAYMENT_STATUS.SUCCEEDED) {
 			const order = await ctx.db.get(payment.orderId);
 			const settledThisOrder =
 				order?.activePaymentId === args.paymentId &&
 				(order.paymentState === ORDER_PAYMENT_STATE.PAID ||
-					order.paymentState === ORDER_PAYMENT_STATE.REFUND_REQUESTED);
+					order.paymentState === ORDER_PAYMENT_STATE.REFUND_REQUESTED ||
+					order.paymentState === ORDER_PAYMENT_STATE.REFUND_FAILED);
 			if (order && settledThisOrder) {
 				await ctx.db.patch(order._id, {
 					paymentState: ORDER_PAYMENT_STATE.REFUNDED,
@@ -834,10 +922,11 @@ export const recordChargeRefund = internalMutation({
 		// its debt back (TAVLI-102): Stripe returns the diner's whole charge out
 		// of the platform balance and reverses only the already-reduced transfer,
 		// so Tavli recovered nothing. Same transaction as the refund record, so
-		// the two can never disagree.
+		// the two can never disagree. Fed the merged cumulative total, so a late
+		// partial event can never ask it to restore less than it already has.
 		await restoreLedgerForRefund(ctx, {
 			paymentId: args.paymentId,
-			amountRefunded: args.amountRefunded,
+			amountRefunded: totals.amountRefunded,
 		});
 
 		await appendAuditEvent(ctx, {
@@ -856,6 +945,59 @@ export const recordChargeRefund = internalMutation({
 			idempotencyKey: args.latestStripeEventId
 				? `charge.refunded:${args.latestStripeEventId}`
 				: undefined,
+		});
+	},
+});
+
+/**
+ * Records `createRefund`'s side of a refund on the payment: the request, the
+ * result, or the failure. The refund-aware sibling of `updatePayment`.
+ *
+ * Same monotonic rules as {@link recordChargeRefund}, because the two race:
+ * the `charge.refunded` webhook for this very refund can commit before this
+ * does. `amountRefunded`, when given, is Stripe's **cumulative** figure from
+ * the refund's expanded charge — never this refund's amount — and is merged
+ * with `max`, so whichever lands second changes nothing. A payment already
+ * fully refunded stays `succeeded` whatever status is asked for: a stray
+ * `requested` / `failed` / `partial` would put a refunded sale back into
+ * revenue.
+ */
+export const recordRefundResultInternal = internalMutation({
+	args: {
+		paymentId: v.id(TABLE.PAYMENTS),
+		refundStatus: paymentRefundStatusValidator,
+		amountRefunded: v.optional(v.number()),
+		amountCaptured: v.optional(v.number()),
+		isFullyRefunded: v.optional(v.boolean()),
+		stripeRefundId: v.optional(v.string()),
+		refundRequestedAt: v.optional(v.number()),
+		refundedAt: v.optional(v.number()),
+		failureMessage: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const payment = await ctx.db.get(args.paymentId);
+		if (!payment) return;
+
+		const totals =
+			args.amountRefunded !== undefined
+				? mergeRefundTotals(payment, {
+						amountRefunded: args.amountRefunded,
+						isFullyRefunded: args.isFullyRefunded ?? false,
+						amountCaptured: args.amountCaptured,
+					})
+				: null;
+		const fullyRefunded =
+			totals?.isFullyRefunded === true || payment.refundStatus === PAYMENT_REFUND_STATUS.SUCCEEDED;
+		const refundStatus = fullyRefunded ? PAYMENT_REFUND_STATUS.SUCCEEDED : args.refundStatus;
+
+		await ctx.db.patch(args.paymentId, {
+			refundStatus,
+			...(totals && { amountRefunded: totals.amountRefunded }),
+			...(args.stripeRefundId !== undefined && { stripeRefundId: args.stripeRefundId }),
+			...(args.refundRequestedAt !== undefined && { refundRequestedAt: args.refundRequestedAt }),
+			...(args.refundedAt !== undefined && { refundedAt: args.refundedAt }),
+			...(args.failureMessage !== undefined && { failureMessage: args.failureMessage }),
+			updatedAt: Date.now(),
 		});
 	},
 });

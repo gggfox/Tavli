@@ -146,6 +146,7 @@ function ordersWith(orders: DashboardOrder[] = []) {
 		unmarkStationReady: vi.fn(),
 		cancelOrderItem: vi.fn(),
 		cancelOrderAndRefund: vi.fn(),
+		retryOrderRefund: vi.fn(),
 		markOrderPaidInPerson: vi.fn(() => Promise.resolve([null, null])),
 	};
 }

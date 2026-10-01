@@ -5,13 +5,17 @@ import type { Id } from "convex/_generated/dataModel";
 import { OrderingKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useAuth } from "@clerk/tanstack-react-start";
-import { useState } from "react";
+import { X } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCart } from "../hooks/useCart";
 import { showsGeofenceNotice, useGeofence } from "../hooks/useGeofence";
 import { useBranding } from "../hooks/useBranding";
+import { useRestoredPicks } from "../hooks/useRestoredPicks";
 import { useSessionStore } from "../hooks/useSession";
 import type { SelectedOption } from "../types";
+import type { MenuPick } from "../utils/menuPicks";
+import { saveStoredPicks } from "../utils/storedPicks";
 import { describeMenuSubmitError, type MenuSubmitError } from "../utils/submitError";
 import { GeofenceNotice } from "./GeofenceNotice";
 import { MenuBrowser } from "./MenuBrowser";
@@ -68,11 +72,32 @@ export function CustomerMenuPage({
 	// Session is bound to, exactly as before. Ordering also waits for the
 	// session's orders: `MenuBrowser` reads its draft seed once, on mount.
 	const menuRestaurantId = browsing ? restaurant?._id : restaurantId;
-	if (!menuRestaurantId || (!browsing && (!sessionId || sessionOrders === undefined))) {
+	const menuReady =
+		menuRestaurantId != null && (browsing || (sessionId !== null && sessionOrders !== undefined));
+	const draft = sessionOrders?.find((order) => order.status === "draft");
+
+	// Picks made signed out survive the sign-in redirect in the browser; the
+	// menu opens holding them unless the session's draft overrules them (see
+	// `useRestoredPicks` for the precedence).
+	const restoredPicks = useRestoredPicks({
+		slug,
+		restaurantId: menuRestaurantId,
+		browsing,
+		ready: menuReady,
+		hasDraft: draft !== undefined,
+		...(lang ? { lang } : {}),
+	});
+	const [restoreNoticeDismissed, setRestoreNoticeDismissed] = useState(false);
+	const rememberPicks = useCallback(
+		(picks: ReadonlyMap<string, MenuPick>) => saveStoredPicks(slug, picks),
+		[slug]
+	);
+
+	if (!menuRestaurantId || !menuReady || restoredPicks.status === "pending") {
 		return <MenuBrowserSkeleton />;
 	}
 
-	const draft = sessionOrders?.find((order) => order.status === "draft");
+	const restoredLines = restoredPicks.lines;
 	const initialDraft = draft
 		? {
 				lines: draft.items,
@@ -81,7 +106,13 @@ export function CustomerMenuPage({
 					specialInstructions: draft.specialInstructions,
 				}),
 			}
-		: undefined;
+		: restoredLines
+			? { lines: restoredLines }
+			: undefined;
+	const restoreNotice =
+		restoredPicks.droppedSome && !restoreNoticeDismissed ? (
+			<RestoredPicksNotice onDismiss={() => setRestoreNoticeDismissed(true)} />
+		) : null;
 
 	const handleSubmitOrder = async (data: {
 		items: Array<{
@@ -153,6 +184,9 @@ export function CustomerMenuPage({
 			{...(initialDraft ? { initialDraft } : {})}
 			submitError={submitError}
 			onDismissSubmitError={() => setSubmitError(null)}
+			// Only while browsing: signed in, the draft is where picks are kept.
+			{...(browsing ? { onPicksChange: rememberPicks } : {})}
+			picksNotice={restoreNotice}
 			orderingBlocked={orderingBlocked}
 			blockedNotice={blockedNotice}
 			// Reuses the restaurant already fetched above for the geofence — the
@@ -169,5 +203,30 @@ export function CustomerMenuPage({
 				) : null
 			}
 		/>
+	);
+}
+
+/**
+ * Some picks kept across sign-in were dropped because the menu changed in
+ * the meantime. Said once, dismissible, never blocking: the rest of the picks
+ * are already on the menu and the diner carries on from there.
+ */
+function RestoredPicksNotice({ onDismiss }: Readonly<{ onDismiss: () => void }>) {
+	const { t } = useTranslation();
+	return (
+		<div
+			role="status"
+			className="shrink-0 mx-4 mb-2 flex items-start gap-2 px-3 py-2 rounded-lg text-sm text-warning bg-warning-subtle"
+		>
+			<p className="flex-1">{t(OrderingKeys.MENU_RESTORED_PICKS_DROPPED)}</p>
+			<button
+				type="button"
+				onClick={onDismiss}
+				aria-label={t(OrderingKeys.MENU_RESTORED_PICKS_DISMISS)}
+				className="shrink-0 p-0.5 rounded"
+			>
+				<X size={16} />
+			</button>
+		</div>
 	);
 }

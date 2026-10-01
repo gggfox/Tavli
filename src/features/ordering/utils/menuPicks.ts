@@ -98,6 +98,20 @@ export function picksFromDraftLines(lines: readonly DraftLine[]): Map<string, Me
 }
 
 /**
+ * The inverse of `picksFromDraftLines`: one draft-shaped line per pick, so the
+ * picks a signed-out diner made can be kept in the browser and later seeded
+ * through exactly the path a real draft takes (see `storedPicks`).
+ */
+export function draftLinesFromPicks(picks: ReadonlyMap<string, MenuPick>): DraftLine[] {
+	return Array.from(picks.values(), (pick) => ({
+		menuItemId: pick.menuItemId,
+		quantity: pick.quantity,
+		unitPrice: pick.basePrice,
+		selectedOptions: Array.from(pick.selectedOptions.values()).flat(),
+	}));
+}
+
+/**
  * One pick per dish, for the dish cards: the dish's own pick with the quantity
  * of every way it is ordered, so a card never under-reports what is coming.
  */

@@ -1,8 +1,9 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { useQuery } from "@tanstack/react-query";
 import { getFunctionName } from "convex/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadStoredPicks, storedPicksKey } from "../utils/storedPicks";
 import { CustomerMenuPage } from "./CustomerMenuPage";
 
 const hoisted = vi.hoisted(() => ({
@@ -13,7 +14,7 @@ const hoisted = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock("@tanstack/react-query", () => ({ useQuery: vi.fn() }));
+vi.mock("@tanstack/react-query", () => ({ useQuery: vi.fn(), useQueries: () => [] }));
 vi.mock("@convex-dev/react-query", () => ({
 	convexQuery: vi.fn((ref, args) => ({ ref, args })),
 }));
@@ -94,6 +95,7 @@ describe("CustomerMenuPage", () => {
 			const name = options?.ref ? getFunctionName(options.ref) : "";
 			return { data: name in overrides ? overrides[name] : QUERY_DATA[name] } as any;
 		});
+		sessionStorage.clear();
 	});
 
 	describe("signed out (browse mode)", () => {
@@ -112,6 +114,34 @@ describe("CustomerMenuPage", () => {
 
 			expect(screen.getByRole("button", { name: /sign in to order/i })).toBeInTheDocument();
 			expect(screen.queryByText(/proceed to payment/i)).toBeNull();
+		});
+
+		it("keeps the picks in the browser, so they survive the sign-in redirect", () => {
+			renderPage();
+
+			fireEvent.click(screen.getByText("Bruschetta"));
+			fireEvent.click(screen.getByText(/add to cart/i));
+
+			expect(loadStoredPicks("vernaculo-spgg")).toEqual([
+				{ menuItemId: "menuItems:test", quantity: 1, unitPrice: 1200, selectedOptions: [] },
+			]);
+		});
+
+		it("holds on to stored picks across a signed-out reload instead of wiping them", () => {
+			// Reopened signed out (a reload, or Clerk's "back"): the menu opens
+			// holding the picks and writes them straight back for the sign-in.
+			const stored = [
+				{ menuItemId: "menuItems:test", quantity: 3, unitPrice: 1200, selectedOptions: [] },
+			];
+			overrides["menuItems:getByRestaurant"] = QUERY_DATA["menuItems:getByMenu"];
+			sessionStorage.setItem(
+				storedPicksKey("vernaculo-spgg"),
+				JSON.stringify({ version: 1, savedAt: Date.now(), lines: stored })
+			);
+
+			renderPage();
+
+			expect(loadStoredPicks("vernaculo-spgg")).toEqual(stored);
 		});
 
 		it("says ordering is unavailable, not 'sign in', when the restaurant takes no online orders", () => {
@@ -137,6 +167,17 @@ describe("CustomerMenuPage", () => {
 			renderPage();
 
 			expect(screen.queryByText("Bruschetta")).toBeNull();
+		});
+
+		it("does not keep picks in the browser — the draft is where they live", () => {
+			hoisted.auth = { isLoaded: true, isSignedIn: true };
+			hoisted.session = { sessionId: "sessions:1", restaurantId: "restaurants:test" };
+			renderPage();
+
+			fireEvent.click(screen.getByText("Bruschetta"));
+			fireEvent.click(screen.getByText(/add to cart/i));
+
+			expect(loadStoredPicks("vernaculo-spgg")).toBeNull();
 		});
 
 		it("never shows the sign-in call to action", () => {

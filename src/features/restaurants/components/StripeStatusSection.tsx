@@ -14,7 +14,8 @@ const PLATFORM_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
 /**
  * V2 account status shape returned by the getAccountStatus action.
  * - connected: a Stripe account exists
- * - readyToReceivePayments: stripe_transfers capability is active
+ * - readyToReceivePayments: both the recipient `stripe_transfers` and the
+ *   merchant `card_payments` capabilities are active
  * - onboardingComplete: no outstanding currently_due/past_due requirements
  * - requirementsStatus: raw status string from Stripe (null if none)
  * - accountStatus: the stored lifecycle status (TAVLI-65), `null` when there

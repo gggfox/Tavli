@@ -71,6 +71,7 @@ function renderCard(
 		onRequestMarkPaid: vi.fn(),
 		onDismissMarkPaid: vi.fn(),
 		onMarkPaidInPerson: vi.fn(),
+		onRetryRefund: vi.fn(),
 		onUpdateStatus: vi.fn(),
 		onMarkStationReady: vi.fn(),
 	};
@@ -83,6 +84,7 @@ function renderCard(
 			markPaidConfirm={null}
 			markPaidPendingId={null}
 			markPaidError={null}
+			retryRefundPendingId={null}
 			activeStationFilters={new Set()}
 			{...handlers}
 			{...overrides}
@@ -276,5 +278,30 @@ describe("OrderCard cash release policy (TAVLI-81)", () => {
 
 		expect(screen.queryByText("orders.markPaid.action")).not.toBeInTheDocument();
 		expect(screen.queryByText("orders.payment.toCollect")).not.toBeInTheDocument();
+	});
+});
+
+describe("OrderCard refund retry", () => {
+	it("offers a retry on a refund_failed order and passes its id", () => {
+		const { handlers } = renderCard(
+			makeOrder({ status: "preparing", paymentState: "refund_failed" })
+		);
+
+		fireEvent.click(screen.getByText("orders.cancel.retryRefund"));
+		expect(handlers.onRetryRefund).toHaveBeenCalledWith("ord1");
+	});
+
+	it("shows the pending label while that order's retry is in flight", () => {
+		renderCard(makeOrder({ status: "cancelled", paymentState: "refund_failed" }), {
+			retryRefundPendingId: "ord1",
+		});
+
+		expect(screen.getByText("orders.cancel.retryRefundPending").closest("button")).toBeDisabled();
+	});
+
+	it("offers no retry when the refund did not fail", () => {
+		renderCard(makeOrder({ status: "preparing", paymentState: "paid" }));
+
+		expect(screen.queryByText("orders.cancel.retryRefund")).not.toBeInTheDocument();
 	});
 });

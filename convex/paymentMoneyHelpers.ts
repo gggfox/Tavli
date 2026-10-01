@@ -150,10 +150,10 @@ export function paymentMoneyBreakdown(payment: PaymentMoneyRow): PaymentMoneyBre
  */
 export function disputeRecoveryFromPayment(payment: PaymentMoneyRow): number {
 	if (payment.disputeRecoveryAppliedAt === undefined) return 0;
-	// Net of anything a refund gave back: refunding the charge returns the
-	// diner's money out of the platform balance and reverses only the already
-	// -shortened transfer, so Tavli recovered nothing and the report must not
-	// claim it did.
+	// Net of anything a refund gave back: the recovery rode on the intent's
+	// application fee, and a refund (`refund_application_fee: true`) hands that
+	// fee back in proportion, so Tavli did not keep that share and the report
+	// must not claim it did.
 	const applied = payment.disputeRecoveryAmount ?? 0;
 	return Math.max(0, applied - (payment.disputeRecoveryRestored ?? 0));
 }
