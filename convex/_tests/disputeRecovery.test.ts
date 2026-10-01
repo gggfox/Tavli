@@ -583,8 +583,9 @@ describe("the deduction on the next order", () => {
 		await diner.action(api.stripe.createPaymentIntent, { orderId });
 
 		const [intentArgs] = mockStripeClient.paymentIntents.create.mock.calls[0];
-		// Exactly what Stripe would have transferred with no `amount` at all.
-		expect(intentArgs.transfer_data).toEqual({ destination: "acct_dispute", amount: 10_000 });
+		// The service fee alone: Stripe transfers `amount − fee` = the subtotal.
+		expect(intentArgs.application_fee_amount).toBe(1_200);
+		expect(intentArgs.transfer_data).toEqual({ destination: "acct_dispute" });
 		expect(intentArgs.amount).toBe(11_200);
 	});
 
@@ -608,10 +609,14 @@ describe("the deduction on the next order", () => {
 		const result = await diner.action(api.stripe.createPaymentIntent, { orderId });
 
 		const [intentArgs] = mockStripeClient.paymentIntents.create.mock.calls[0];
-		expect(intentArgs.transfer_data).toEqual({ destination: "acct_dispute", amount: 8_000 });
+		// The deduction rides on the application fee (fee 1_200 + recovery
+		// 2_000), so Stripe transfers 11_200 − 3_200 = 8_000. Never on
+		// `transfer_data.amount`, which is an alternative to the fee.
+		expect(intentArgs.transfer_data).toEqual({ destination: "acct_dispute" });
 		// The diner pays subtotal + the 12% service fee, exactly as before.
 		expect(intentArgs.amount).toBe(11_200);
-		expect(intentArgs.application_fee_amount).toBe(1_200);
+		expect(intentArgs.application_fee_amount).toBe(3_200);
+		expect(intentArgs.amount - intentArgs.application_fee_amount).toBe(8_000);
 		expect(intentArgs.metadata.disputeRecoveryAmount).toBe("2000");
 
 		const payment = await t.run(async (ctx) => ctx.db.get(result.paymentId));
@@ -641,8 +646,60 @@ describe("the deduction on the next order", () => {
 		await diner.action(api.stripe.createPaymentIntent, { orderId });
 
 		const [intentArgs] = mockStripeClient.paymentIntents.create.mock.calls[0];
-		expect(intentArgs.transfer_data.amount).toBe(9_700);
+		// Fee 1_200 + the 300 still outstanding; the restaurant nets 9_700.
+		expect(intentArgs.application_fee_amount).toBe(1_500);
+		expect(intentArgs.amount - intentArgs.application_fee_amount).toBe(9_700);
+		expect(intentArgs.transfer_data).toEqual({ destination: "acct_dispute" });
 	});
+
+	// GUARD. Stripe documents `application_fee_amount` and
+	// `transfer_data.amount` as ALTERNATIVE ways to take a platform cut on a
+	// destination charge. Sending both is either rejected — every card order
+	// fails at checkout — or takes the fee twice. The order path keeps the
+	// application fee (refunds depend on `refund_application_fee`), so
+	// `transfer_data` must never carry an `amount`, whether or not a recovery
+	// deduction is in play and whether or not the diner tipped.
+	it.each([
+		{ label: "no recovery, no tip", percent: 0, tipPercent: undefined, fee: 1_200, net: 10_000 },
+		{ label: "no recovery, 10% tip", percent: 0, tipPercent: 10, fee: 1_200, net: 11_000 },
+		{ label: "20% recovery, no tip", percent: 20, tipPercent: undefined, fee: 3_200, net: 8_000 },
+		// The tip is outside the recovery base: 20% of the 10_000 subtotal only.
+		{ label: "20% recovery, 10% tip", percent: 20, tipPercent: 10, fee: 3_200, net: 9_000 },
+	])(
+		"never sends application_fee_amount and transfer_data.amount together ($label)",
+		async ({ percent, tipPercent, fee, net }) => {
+			const t = newTest();
+			const restaurantId = await seedRestaurant(t, { disputeRecoveryPercent: percent });
+			await seedLedgerRow(t, {
+				restaurantId,
+				disputeId: "dp_guard",
+				amount: 90_000,
+				lostAt: Date.now() - 1000,
+			});
+			const { orderId, diner } = await seedDraftOrder(t, { restaurantId, totalAmount: 10_000 });
+
+			mockStripeClient.customers.create.mockResolvedValueOnce({ id: "cus_guard" });
+			mockStripeClient.paymentIntents.create.mockResolvedValueOnce({
+				id: "pi_guard",
+				client_secret: "cs_guard",
+			});
+
+			await diner.action(api.stripe.createPaymentIntent, {
+				orderId,
+				...(tipPercent !== undefined && { tipPercent }),
+			});
+
+			expect(mockStripeClient.paymentIntents.create).toHaveBeenCalledTimes(1);
+			for (const [intentArgs] of mockStripeClient.paymentIntents.create.mock.calls) {
+				expect(intentArgs.application_fee_amount).toBe(fee);
+				expect(intentArgs.transfer_data).toBeDefined();
+				expect(intentArgs.transfer_data).not.toHaveProperty("amount");
+				expect(Object.keys(intentArgs.transfer_data)).toEqual(["destination"]);
+				// What the restaurant nets is carried entirely by the fee.
+				expect(intentArgs.amount - intentArgs.application_fee_amount).toBe(net);
+			}
+		}
+	);
 
 	it("draws the ledger down only once the payment settles, oldest loss first", async () => {
 		const t = newTest();

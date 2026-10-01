@@ -34,9 +34,10 @@
 //   For connected-account payout events:
 //     stripe listen --forward-connect-to http://localhost:3210/stripe/connected-webhook
 //
-//   For V2 thin events (connected account changes):
+//   For V2 thin events (connected account changes) — the four types
+//   `handleThinEvent` acts on (or pass 'v2.core.account*' for all of them):
 //     stripe listen --thin-events \
-//       'v2.core.account[requirements].updated,v2.core.account[.recipient].capability_status_updated' \
+//       'v2.core.account[requirements].updated,v2.core.account[configuration.recipient].capability_status_updated,v2.core.account[configuration.merchant].capability_status_updated,v2.core.account.closed' \
 //       --forward-thin-to http://localhost:3210/stripe/connect-webhook
 //
 // =============================================================================
@@ -71,6 +72,7 @@ import {
 	TAB_RECONCILE_ALERT_AGE_MS,
 	TAB_RECONCILE_MIN_AGE_MS,
 	TABLE,
+	type OrderPaymentState,
 	type StripeAccountStatus,
 } from "./constants";
 import {
@@ -87,8 +89,9 @@ import { buildIntegrationErrorLog, redactExternalId } from "./_shared/integratio
 import type { AsyncReturn } from "./_shared/types";
 import {
 	buildLineRefundIdempotencyKey,
-	computeLineRefundAmount,
 	ORDER_REFUND_BLOCK_REASON,
+	REFUND_ERRORS,
+	refundAttemptKey,
 	type OrderRefundBlockReason,
 } from "./orderRefundHelpers";
 import {
@@ -99,7 +102,7 @@ import {
 } from "./paymentReconcileHelpers";
 import { computePayoutFacts, type PayoutInput } from "./payoutHelpers";
 import { decideTabReconciliation } from "./sessionHelpers";
-import { STRIPE_NOT_CONFIGURED } from "./stripeWebhookHelpers";
+import { computeRefundFacts, STRIPE_NOT_CONFIGURED } from "./stripeWebhookHelpers";
 import {
 	handleSubscriptionCheckoutCompleted,
 	handleSubscriptionDeleted,
@@ -142,7 +145,9 @@ import { isPaymentCreateInFlight, PAYMENT_SUPERSEDE_ERRORS } from "./paymentSupe
  * - The platform is responsible for both fee collection and loss coverage
  *   (`fees_collector: 'application'`, `losses_collector: 'application'`).
  * - Requests the `stripe_transfers` capability under `recipient` configuration
- *   so the connected account can receive transfers from the platform.
+ *   so the connected account can receive transfers from the platform, and the
+ *   `card_payments` capability under `merchant` because every charge is made
+ *   `on_behalf_of` the account. `inferV2AccountStatus` requires both active.
  * - Does NOT pass a top-level `type` — the V2 API determines the account type
  *   from the configuration provided.
  *
@@ -326,7 +331,8 @@ export const createAccountLink = action({
  *
  * Returns a status object the frontend uses to decide what to show:
  * - `connected` — whether a Stripe account exists at all
- * - `readyToReceivePayments` — the stripe_transfers capability is "active"
+ * - `readyToReceivePayments` — both the recipient `stripe_transfers` and the
+ *   merchant `card_payments` capabilities are "active" (see `inferV2AccountStatus`)
  * - `onboardingComplete` — no outstanding "currently_due" or "past_due" requirements
  * - `requirementsStatus` — raw status string for display (e.g. "currently_due")
  *
@@ -408,7 +414,7 @@ export const getAccountStatus = action({
  *
  * The destination is subscribed to all 15 `v2.core.account*` types so it never
  * has to be edited again (see `documentation/runbooks/stripe-go-live.md`). Of
- * those, **three** change Tavli's state:
+ * those, **four** change Tavli's state:
  *
  * 1. `v2.core.account[requirements].updated`
  *    Fired when an account's requirements change (e.g. regulators add new
@@ -416,18 +422,25 @@ export const getAccountStatus = action({
  *    our DB accordingly.
  *
  * 2. `v2.core.account[configuration.recipient].capability_status_updated`
- *    Fired when a capability's status changes (e.g. stripe_transfers goes
- *    from "pending" to "active"). We check if the account is now ready
+ *    Fired when a recipient capability's status changes (e.g. stripe_transfers
+ *    goes from "pending" to "active"). We check if the account is now ready
  *    to receive payments.
  *
- * 3. `v2.core.account.closed` (TAVLI-65)
+ * 3. `v2.core.account[configuration.merchant].capability_status_updated`
+ *    The same for the merchant configuration's `card_payments`. Every charge
+ *    is created `on_behalf_of` the connected account, so this capability gates
+ *    payments exactly as `stripe_transfers` does: a restriction mid-service
+ *    must flip the restaurant to `restricted` before the next diner meets a
+ *    Stripe failure at the card sheet.
+ *
+ * 4. `v2.core.account.closed` (TAVLI-65)
  *    Stripe closed or rejected the account. Nothing can be charged against it
  *    again, so the restaurant is flipped out of `stripeOnboardingComplete`,
  *    recorded as `closed`, and an operator alert is raised. Before this the
  *    closure was invisible: the payment gates kept building intents and the
  *    diner met an opaque Stripe failure at the card sheet.
  *
- * The remaining 12 are listed explicitly in the switch with the reason each is
+ * The remaining 11 are listed explicitly in the switch with the reason each is
  * ignored, so "we never handled that" and "we decided that one is noise" stop
  * looking identical in the logs. A type outside all 15 still warns.
  *
@@ -437,7 +450,9 @@ export const getAccountStatus = action({
  *
  * Setup in Stripe Dashboard:
  *   1. Go to Developers > Webhooks > + Add destination
- *   2. In "Events from", select "Connected accounts"
+ *   2. In "Events from", select "Your account" ("Tu cuenta") — V2 accounts the
+ *      platform creates deliver their lifecycle events there, not under
+ *      "Connected accounts" (see the runbook's three-destination table)
  *   3. Select "Show advanced options" > Payload style: "Thin"
  *   4. Subscribe to every `v2.core.account*` type
  *
@@ -502,8 +517,12 @@ export const handleThinEvent = internalAction({
 			}
 
 			switch (eventNotification.type) {
+				// The merchant capability counts as much as the recipient one:
+				// `card_payments` gates every charge, since they are all
+				// `on_behalf_of` the connected account (the settlement merchant).
 				case "v2.core.account[requirements].updated":
-				case "v2.core.account[configuration.recipient].capability_status_updated": {
+				case "v2.core.account[configuration.recipient].capability_status_updated":
+				case "v2.core.account[configuration.merchant].capability_status_updated": {
 					const accountId = eventNotification.related_object?.id;
 					if (accountId) {
 						await handleAccountStatusChange(ctx, stripeClient, accountId);
@@ -533,8 +552,9 @@ export const handleThinEvent = internalAction({
 				//   already persisted. Nothing to learn.
 				// `.updated`
 				//   Generic account mutation — name, metadata, dashboard edits. The
-				//   two fields Tavli reads (requirements, the recipient capability)
-				//   have their own events above, which fire alongside this one.
+				//   fields Tavli reads (requirements, the recipient and merchant
+				//   capabilities) have their own events above, which fire alongside
+				//   this one.
 				// `[identity].updated`
 				//   KYC identity details. Whether they are SUFFICIENT is what
 				//   `[requirements].updated` reports, and only that gates payments.
@@ -550,10 +570,12 @@ export const handleThinEvent = internalAction({
 				//   The recipient configuration itself (payout schedule, external
 				//   accounts). Only its CAPABILITY status decides whether transfers
 				//   work, and that has its own event above.
-				// `[configuration.merchant].updated` / `.capability_status_updated`
-				//   Tavli charges with destination charges on the PLATFORM account, so
-				//   the connected account never acts as merchant of record and its
-				//   `card_payments` capability gates nothing here.
+				// `[configuration.merchant].updated`
+				//   The merchant configuration's settings (branding, statement
+				//   descriptor, card-payment settings). Its `card_payments` CAPABILITY
+				//   does gate every charge — they are destination charges created
+				//   `on_behalf_of` the connected account — but a capability change
+				//   has its own `.capability_status_updated` event, handled above.
 				// `[configuration.customer].updated` / `.capability_status_updated`
 				//   The customer configuration is for accounts that BUY from the
 				//   platform. Restaurants pay the platform subscription through Stripe
@@ -571,7 +593,6 @@ export const handleThinEvent = internalAction({
 				case "v2.core.account[defaults].updated":
 				case "v2.core.account[configuration.recipient].updated":
 				case "v2.core.account[configuration.merchant].updated":
-				case "v2.core.account[configuration.merchant].capability_status_updated":
 				case "v2.core.account[configuration.customer].updated":
 				case "v2.core.account[configuration.customer].capability_status_updated":
 				case "v2.core.account_person.created":
@@ -1148,6 +1169,12 @@ export const createRefund = internalAction({
 		 * refund fields are still maintained either way.
 		 */
 		skipOrderStatePatch: v.optional(v.boolean()),
+		/**
+		 * The `payments.pendingRefund` key this call executes, when it executes
+		 * one. A failure is classified onto that reservation (definitive Stripe
+		 * answer vs unknown outcome), which decides the key a retry may send.
+		 */
+		reservationKey: v.optional(v.string()),
 	},
 	handler: async (
 		ctx,
@@ -1197,12 +1224,17 @@ export const createRefund = internalAction({
 		}
 
 		// A partial refund leaves money on the charge, so the payment is `partial`
-		// rather than `succeeded`. This matches what the `charge.refunded` webhook
-		// will independently derive via `computeRefundFacts` moments later — if
-		// the two disagreed the status would flap.
+		// rather than `succeeded`. Only the fallback when Stripe's charge is not
+		// in the response: normally the expanded charge says exactly how much of
+		// it has come back, which is what the `charge.refunded` webhook will
+		// derive via `computeRefundFacts` moments later — if the two disagreed
+		// the status would flap.
 		const isPartial = args.amount !== undefined && args.amount < payment.amount;
 
-		await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+		// Every payment write below goes through `recordRefundResultInternal`,
+		// which never regresses a fully refunded payment — the webhook for an
+		// earlier refund may have landed while this one was being decided.
+		await ctx.runMutation(internal.stripeHelpers.recordRefundResultInternal, {
 			paymentId: args.paymentId,
 			refundStatus: PAYMENT_REFUND_STATUS.REQUESTED,
 			refundRequestedAt: Date.now(),
@@ -1214,79 +1246,154 @@ export const createRefund = internalAction({
 			});
 		}
 
-		const stripeClient = getStripeClient();
+		// Only the Stripe call is guarded: once money has moved, an error while
+		// writing our own records must not be reported as a failed refund.
+		let refund: Stripe.Refund;
 		try {
-			const refund: Stripe.Refund = await stripeClient.refunds.create(
+			refund = await getStripeClient().refunds.create(
 				{
 					payment_intent: payment.stripePaymentIntentId,
 					// Omit the key entirely for a full refund — Stripe treats an
-					// explicit `undefined` differently from an absent field.
+					// explicit `undefined` differently from an absent field, and an
+					// absent amount means "whatever remains", decided by Stripe.
 					...(args.amount !== undefined && { amount: args.amount }),
 					reverse_transfer: true,
 					refund_application_fee: true,
+					// The charge carries Stripe's cumulative `amount_refunded`: the
+					// only figure `payments.amountRefunded` may hold. Adding this
+					// refund to our own total double-counted it whenever the
+					// `charge.refunded` webhook got there first.
+					expand: ["charge"],
 				},
 				{
 					idempotencyKey: args.idempotencyKey ?? `refund:${args.paymentId}`,
 				}
 			);
-
-			const succeeded = refund.status === "succeeded";
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
-				paymentId: args.paymentId,
-				refundStatus: succeeded
-					? isPartial
-						? PAYMENT_REFUND_STATUS.PARTIAL
-						: PAYMENT_REFUND_STATUS.SUCCEEDED
-					: PAYMENT_REFUND_STATUS.REQUESTED,
-				stripeRefundId: refund.id,
-				...(succeeded && { refundedAt: Date.now() }),
-			});
-			if (patchOrderState && targetOrderId) {
-				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
-					orderId: targetOrderId,
-					paymentState: succeeded
-						? ORDER_PAYMENT_STATE.REFUNDED
-						: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+		} catch (error) {
+			// `charge_already_refunded` is not a failure to return money: the
+			// money is already back. Recorded as a full refund so the callers'
+			// outcome mutations settle the order instead of flagging it
+			// `refund_failed` and sending staff to refund the diner twice.
+			const alreadyRefunded = isChargeAlreadyRefunded(error);
+			if (args.reservationKey !== undefined) {
+				await ctx.runMutation(internal.orderRefundHelpers.noteRefundFailureInternal, {
+					paymentId: args.paymentId,
+					idempotencyKey: args.reservationKey,
+					definitive: isDefinitiveRefundFailure(error, args.amount === undefined),
 				});
 			}
-
-			// Stripe always echoes `amount`, but fall back rather than return
-			// `undefined` — the caller records this figure through a validated
-			// mutation, and a validator error there would misreport a refund that
-			// has already moved money as a failure.
-			return {
-				refundId: refund.id,
-				status: refund.status,
-				amount: refund.amount ?? args.amount ?? payment.amount,
-			};
-		} catch (error) {
-			await ctx.runMutation(internal.stripeHelpers.updatePayment, {
+			await ctx.runMutation(internal.stripeHelpers.recordRefundResultInternal, {
 				paymentId: args.paymentId,
 				refundStatus: PAYMENT_REFUND_STATUS.FAILED,
 				failureMessage: error instanceof Error ? error.message : "Refund failed",
+				...(alreadyRefunded && {
+					amountRefunded: payment.amount,
+					isFullyRefunded: true,
+				}),
 			});
 			if (patchOrderState && targetOrderId) {
 				await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
 					orderId: targetOrderId,
-					paymentState: ORDER_PAYMENT_STATE.REFUND_FAILED,
+					paymentState: alreadyRefunded
+						? ORDER_PAYMENT_STATE.REFUNDED
+						: ORDER_PAYMENT_STATE.REFUND_FAILED,
 				});
 			}
 			throw error;
 		}
+
+		const succeeded = refund.status === "succeeded";
+		const charge =
+			typeof refund.charge === "object" && refund.charge !== null ? refund.charge : null;
+		const facts = charge ? computeRefundFacts(charge) : null;
+		await ctx.runMutation(internal.stripeHelpers.recordRefundResultInternal, {
+			paymentId: args.paymentId,
+			refundStatus: succeeded
+				? (facts?.refundStatus ??
+					(isPartial ? PAYMENT_REFUND_STATUS.PARTIAL : PAYMENT_REFUND_STATUS.SUCCEEDED))
+				: PAYMENT_REFUND_STATUS.REQUESTED,
+			stripeRefundId: refund.id,
+			...(facts && {
+				amountRefunded: facts.amountRefunded,
+				amountCaptured: facts.amountCaptured,
+				isFullyRefunded: facts.isFullyRefunded,
+			}),
+			...(succeeded && { refundedAt: Date.now() }),
+		});
+		if (patchOrderState && targetOrderId) {
+			await ctx.runMutation(internal.stripeHelpers.updateOrderPaymentSummary, {
+				orderId: targetOrderId,
+				paymentState: succeeded
+					? ORDER_PAYMENT_STATE.REFUNDED
+					: ORDER_PAYMENT_STATE.REFUND_REQUESTED,
+			});
+		}
+
+		// Stripe always echoes `amount`, but fall back rather than return
+		// `undefined` — the caller records this figure through a validated
+		// mutation, and a validator error there would misreport a refund that
+		// has already moved money as a failure.
+		return {
+			refundId: refund.id,
+			status: refund.status,
+			amount: refund.amount ?? args.amount ?? payment.amount,
+		};
 	},
 });
+
+/**
+ * Whether a failed `refunds.create` got a definitive answer from Stripe, i.e.
+ * no refund exists under the key it sent — so a retry may use a fresh key, and
+ * must, because Stripe replays the stored error under the old one for 24h.
+ *
+ * Anything that is not clearly definitive counts as UNKNOWN and keeps its key,
+ * since a fresh key after a refund that did land would pay the diner twice:
+ * - no HTTP status (timeout, connection error, anything not from Stripe);
+ * - `StripeConnectionError`, and `StripeIdempotencyError` (a concurrent
+ *   request, or a changed body under a key that may already hold a refund);
+ * - `StripeRateLimitError` — not stored, so the same key is simply retried;
+ * - a 5xx on an explicit-amount refund: Stripe calls its result
+ *   indeterminate. On a sweep (no amount) a fresh key is safe anyway — Stripe
+ *   only refunds what remains — so a sweep's 5xx counts as definitive.
+ */
+function isDefinitiveRefundFailure(error: unknown, isSweep: boolean): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	const { type, statusCode } = error as { type?: unknown; statusCode?: unknown };
+	if (typeof statusCode !== "number") return false;
+	if (
+		type === "StripeConnectionError" ||
+		type === "StripeIdempotencyError" ||
+		type === "StripeRateLimitError"
+	) {
+		return false;
+	}
+	return statusCode < 500 || isSweep;
+}
+
+/** Stripe's answer to refunding a charge that has nothing left to refund. */
+function isChargeAlreadyRefunded(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		(error as { code?: unknown }).code === "charge_already_refunded"
+	);
+}
 
 /**
  * Cancels an order and refunds the diner that order's share, synchronously.
  *
  * Order of operations is **cancel first, then refund**. If Stripe fails the
  * order is still cancelled and flagged `refund_failed`, so the kitchen stops
- * cooking and the money is loudly surfaced for manual follow-up. Refunding
- * first would risk returning money for a dish that keeps cooking.
+ * cooking and the money is loudly surfaced — a manager can retry it from the
+ * orders tab (`retryOrderRefund`). Refunding first would risk returning money
+ * for a dish that keeps cooking.
  *
  * Double-cancel is impossible: `updateStatus` rejects a transition out of
  * `cancelled` (no such key in `VALID_TRANSITIONS`), so two managers clicking at
  * once cannot produce two refunds — before Stripe idempotency is even reached.
+ * `updateStatus` also reserves the refund on the payment in the same
+ * transaction (see `orderRefundHelpers`), so a cancel racing a line refund on
+ * the same charge is refused before it cancels anything.
  */
 export type CancelOrderAndRefundResult = {
 	orderId: Id<"orders">;
@@ -1325,101 +1432,146 @@ export const cancelOrderAndRefund = action({
 		});
 		if (cancelError) return [null, cancelError];
 
-		const { plan, blocked } = await ctx.runQuery(
-			internal.orderRefundHelpers.resolveOrderRefundPlanInternal,
-			{ orderId: args.orderId }
-		);
-		if (!plan) {
-			// An unpaid order is the normal case here — cancelling is the whole
-			// job. The other reasons mean money may be owed, so they surface as
-			// errors rather than a silent success.
-			if (blocked === ORDER_REFUND_BLOCK_REASON.NOT_PAID) {
-				return [
-					{
-						orderId: args.orderId,
-						refunded: false,
-						amountRefunded: 0,
-						stripeRefundId: null,
-						skippedReason: blocked,
-					},
-					null,
-				];
-			}
-			return [
-				null,
-				new ConflictError(
-					blocked === ORDER_REFUND_BLOCK_REASON.NOTHING_REFUNDABLE
-						? "ERROR_REFUND_ALREADY_ISSUED"
-						: "ERROR_REFUND_PAYMENT_UNRESOLVED"
-				).toObject(),
-			];
-		}
-
-		// Only the Stripe call is guarded. Recording the outcome runs *after* the
-		// catch, because once money has moved, an error while writing our own
-		// records must not be reported as "refund failed" — that would send staff
-		// to re-issue a refund the diner already received.
-		let refund: { refundId: string; status: string | null; amount: number };
-		try {
-			refund = await ctx.runAction(internal.stripe.createRefund, {
-				paymentId: plan.paymentId,
-				orderId: plan.orderId,
-				// Omit `amount` when the order's share is the whole charge (the
-				// legacy per-order case) so the Stripe call is byte-identical to
-				// what shipped before partial refunds existed.
-				...(plan.isFullRefund ? {} : { amount: plan.amount }),
-				idempotencyKey: plan.idempotencyKey,
-			});
-		} catch (error) {
-			console.error(
-				"[stripe.cancelOrderAndRefund] REFUND FAILED",
-				buildIntegrationErrorLog(error, {
-					integration: "stripe",
-					operation: "cancelOrderAndRefund",
-				})
-			);
-			await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
-				orderId: args.orderId,
-				succeeded: false,
-				amount: plan.amount,
-				failureMessage: error instanceof Error ? error.message : "Refund failed",
-				userId,
-			});
-			return [null, new ConflictError("ERROR_REFUND_FAILED").toObject()];
-		}
-
-		await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
-			orderId: args.orderId,
-			succeeded: true,
-			amount: refund.amount,
-			userId,
-			stripeRefundId: refund.refundId,
-		});
-
-		return [
-			{
-				orderId: args.orderId,
-				refunded: true,
-				amountRefunded: refund.amount,
-				stripeRefundId: refund.refundId,
-				skippedReason: null,
-			},
-			null,
-		];
+		return await refundCancelledOrder(ctx, args.orderId, userId);
 	},
 });
 
 /**
+ * Executes the whole-order refund `orders.updateStatus` reserved (or the
+ * manager's retry re-armed): plan → Stripe → outcome. Shared by
+ * {@link cancelOrderAndRefund} and {@link retryOrderRefund} so the two cannot
+ * drift.
+ */
+async function refundCancelledOrder(
+	ctx: ActionCtx,
+	orderId: Id<"orders">,
+	userId: string
+): AsyncReturn<CancelOrderAndRefundResult, CancelOrderAndRefundErrors> {
+	const { plan, blocked } = await ctx.runQuery(
+		internal.orderRefundHelpers.resolveOrderRefundPlanInternal,
+		{ orderId }
+	);
+	if (!plan) {
+		// An unpaid order is the normal case here — cancelling is the whole
+		// job. The other reasons mean money may be owed, so they surface as
+		// errors rather than a silent success.
+		if (blocked === ORDER_REFUND_BLOCK_REASON.NOT_PAID) {
+			return [
+				{
+					orderId,
+					refunded: false,
+					amountRefunded: 0,
+					stripeRefundId: null,
+					skippedReason: blocked,
+				},
+				null,
+			];
+		}
+		return [
+			null,
+			new ConflictError(
+				blocked === ORDER_REFUND_BLOCK_REASON.NOTHING_REFUNDABLE
+					? "ERROR_REFUND_ALREADY_ISSUED"
+					: "ERROR_REFUND_PAYMENT_UNRESOLVED"
+			).toObject(),
+		];
+	}
+
+	// Only the Stripe call is guarded. Recording the outcome runs *after* the
+	// catch, because once money has moved, an error while writing our own
+	// records must not be reported as "refund failed" — that would send staff
+	// to re-issue a refund the diner already received.
+	let refund: { refundId: string; status: string | null; amount: number };
+	try {
+		refund = await ctx.runAction(internal.stripe.createRefund, {
+			paymentId: plan.paymentId,
+			orderId: plan.orderId,
+			// Omit `amount` when the order's share is everything that remains (the
+			// legacy per-order case, and every fee-inclusive ADR 008 cancel) so
+			// Stripe itself decides what "remaining" is.
+			...(plan.isFullRefund ? {} : { amount: plan.amount }),
+			// The reservation's current attempt: the original key, or a fresh
+			// `:retry:N` one after a definitive failure (see orderRefundHelpers).
+			idempotencyKey: plan.stripeIdempotencyKey,
+			reservationKey: plan.idempotencyKey,
+			// The outcome mutation below is the one writer of the order's money
+			// state, so a Stripe failure on an already fully refunded charge
+			// never flashes `refund_failed`.
+			skipOrderStatePatch: true,
+		});
+	} catch (error) {
+		console.error(
+			"[stripe.cancelOrderAndRefund] REFUND FAILED",
+			buildIntegrationErrorLog(error, {
+				integration: "stripe",
+				operation: "cancelOrderAndRefund",
+			})
+		);
+		const outcome: { paymentState: OrderPaymentState } | null = await ctx.runMutation(
+			internal.orderRefundHelpers.recordOrderRefundOutcomeInternal,
+			{
+				orderId,
+				succeeded: false,
+				amount: plan.amount,
+				failureMessage: error instanceof Error ? error.message : "Refund failed",
+				userId,
+				paymentId: plan.paymentId,
+				idempotencyKey: plan.idempotencyKey,
+			}
+		);
+		// Stripe refused because the charge is already fully refunded: the
+		// diner has their money, so this is a cancel with nothing left to send.
+		if (outcome?.paymentState === ORDER_PAYMENT_STATE.REFUNDED) {
+			return [
+				{
+					orderId,
+					refunded: false,
+					amountRefunded: 0,
+					stripeRefundId: null,
+					skippedReason: ORDER_REFUND_BLOCK_REASON.NOTHING_REFUNDABLE,
+				},
+				null,
+			];
+		}
+		return [null, new ConflictError("ERROR_REFUND_FAILED").toObject()];
+	}
+
+	await ctx.runMutation(internal.orderRefundHelpers.recordOrderRefundOutcomeInternal, {
+		orderId,
+		succeeded: true,
+		amount: refund.amount,
+		userId,
+		stripeRefundId: refund.refundId,
+		paymentId: plan.paymentId,
+		idempotencyKey: plan.idempotencyKey,
+	});
+
+	return [
+		{
+			orderId,
+			refunded: true,
+			amountRefunded: refund.amount,
+			stripeRefundId: refund.refundId,
+			skippedReason: null,
+		},
+		null,
+	];
+}
+
+/**
  * Refunds a single line removed from a **paid** order (ADR 008). Scheduled by
- * `orders.cancelOrderItem` after it stamps the line, so the kitchen-facing
- * removal commits transactionally and the Stripe call happens out-of-band —
- * mirroring the cancel-first ordering of {@link cancelOrderAndRefund}.
+ * `orders.cancelOrderItem` after it stamps the line and reserves the refund on
+ * the payment, so the kitchen-facing removal commits transactionally and the
+ * Stripe call happens out-of-band — mirroring the cancel-first ordering of
+ * {@link cancelOrderAndRefund}.
  *
- * Amount: `lineTotal + round(lineTotal × fee rate)` clamped to the payment's
- * remaining balance; when removing the line cancelled the whole order (last
- * live line) the **entire remaining balance** comes back instead, which
- * structurally retires the per-order rounding residue (see
- * `computeLineRefundAmount`).
+ * Amount: decided by `cancelOrderItem` and carried on the reservation
+ * (`payments.pendingRefund`) — `lineTotal + round(lineTotal × fee rate)`
+ * clamped to the payment's remaining balance, or, when removing the line
+ * cancelled the whole order (last live line), **no amount at all**: Stripe
+ * refunds whatever remains, which structurally retires the per-order rounding
+ * residue (see `computeLineRefundAmount`). Without a matching reservation this
+ * refuses to call Stripe — a refund it did not reserve could be racing another.
  * That math only holds for a fee-inclusive ADR 008 payment (kind "order",
  * `subtotalAmount` set) covering exactly this order, so anything else — a tab
  * payment whose balance is many orders plus the tip, a pre-fee per-order
@@ -1431,7 +1583,10 @@ export const cancelOrderAndRefund = action({
  *
  * Idempotent: the order item's `refundedAt` short-circuits a replayed
  * schedule before Stripe is reached, and the (payment, orderItem) idempotency
- * key dedupes at Stripe below that.
+ * key dedupes at Stripe below that — which is also what makes the manager's
+ * retry safe after a "failure" whose outcome was unknown. The key sent is the
+ * reservation's current attempt (`refundAttemptKey`): a fresh `:retry:N` one
+ * after a definitive Stripe error, which Stripe would otherwise replay.
  *
  * Order-state policy lives in `recordOrderItemRefundOutcomeInternal`: a
  * cooking order stays `paid` (only the item + audit + payment record the
@@ -1459,28 +1614,42 @@ export const refundOrderItem = internalAction({
 			internal.stripeHelpers.getPaymentInternal,
 			{ paymentId: args.paymentId }
 		);
+		const idempotencyKey = buildLineRefundIdempotencyKey(args.paymentId, args.orderItemId);
+		// Every early return frees the reservation, or it would block the
+		// payment's other refunds until it went stale.
+		const release = () =>
+			ctx.runMutation(internal.orderRefundHelpers.releaseRefundClaimInternal, {
+				paymentId: args.paymentId,
+				idempotencyKey,
+			});
 		if (!order || !item || !payment) {
 			console.error("[stripe.refundOrderItem] order/item/payment missing", {
 				orderId: args.orderId,
 				orderItemId: args.orderItemId,
 				paymentId: args.paymentId,
 			});
+			if (payment) await release();
 			return;
 		}
 
 		// Idempotent no-op: this line's money already went back.
-		if (item.refundedAt !== undefined) return;
+		if (item.refundedAt !== undefined) {
+			await release();
+			return;
+		}
 
 		if (item.cancelledAt === undefined) {
 			console.error(
 				`[stripe.refundOrderItem] item ${args.orderItemId} is not cancelled — nothing to refund`
 			);
+			await release();
 			return;
 		}
 		if (payment.status !== PAYMENT_STATUS.SUCCEEDED) {
 			console.error(
 				`[stripe.refundOrderItem] payment ${args.paymentId} is ${payment.status}, not succeeded`
 			);
+			await release();
 			return;
 		}
 
@@ -1495,40 +1664,38 @@ export const refundOrderItem = internalAction({
 				`[stripe.refundOrderItem] payment ${args.paymentId} is not a fee-inclusive ` +
 					`order payment (kind ${payment.kind ?? "legacy"}) — refusing the line refund`
 			);
+			await release();
 			return;
 		}
 
-		// The scheduling mutation flips the order to "cancelled" in the same
-		// transaction when the removed line was the last live one, so the order's
-		// status is the reliable signal — no flag to drift on a replay.
-		const isLastLiveLine = order.status === "cancelled";
+		const claim = payment.pendingRefund;
+		if (claim?.idempotencyKey !== idempotencyKey || claim.failedAt !== undefined) {
+			console.error(
+				`[stripe.refundOrderItem] no armed reservation for item ${args.orderItemId} on ` +
+					`payment ${args.paymentId} — refusing to call Stripe`
+			);
+			return;
+		}
+
+		// Reserved without an amount exactly when the removed line was the last
+		// live one — the reservation, not the order's status, is the signal.
+		const isLastLiveLine = claim.amount === undefined;
 
 		// The staff member who removed the line owns the money trail.
 		const actorUserId = item.cancelledBy ?? AUDIT_SYSTEM_USER_ID;
 
-		const amount = computeLineRefundAmount({
-			lineTotal: item.lineTotal,
-			feeRate: PLATFORM_APPLICATION_FEE_RATE,
-			paymentAmount: payment.amount,
-			paymentAmountRefunded: payment.amountRefunded,
-			isLastLiveLine,
-		});
-
-		if (amount <= 0) {
-			console.error(
-				`[stripe.refundOrderItem] payment ${args.paymentId} has no refundable balance ` +
-					`left for item ${args.orderItemId}`
-			);
-			return;
-		}
+		// For the audit trail of a failure: what the sweep was expected to return.
+		const expectedAmount =
+			claim.amount ?? Math.max(0, payment.amount - (payment.amountRefunded ?? 0));
 
 		let refund: { refundId: string; status: string | null; amount: number };
 		try {
 			refund = await ctx.runAction(internal.stripe.createRefund, {
 				paymentId: args.paymentId,
 				orderId: args.orderId,
-				amount,
-				idempotencyKey: buildLineRefundIdempotencyKey(args.paymentId, args.orderItemId),
+				...(claim.amount !== undefined && { amount: claim.amount }),
+				idempotencyKey: refundAttemptKey(claim),
+				reservationKey: idempotencyKey,
 				skipOrderStatePatch: true,
 			});
 		} catch (error) {
@@ -1544,9 +1711,11 @@ export const refundOrderItem = internalAction({
 				orderId: args.orderId,
 				orderItemId: args.orderItemId,
 				succeeded: false,
-				amount,
+				amount: expectedAmount,
 				isLastLiveLine,
 				userId: actorUserId,
+				paymentId: args.paymentId,
+				idempotencyKey,
 				failureMessage,
 			});
 			// Recorded as refund_failed — do not rethrow, or the scheduler retry
@@ -1562,8 +1731,70 @@ export const refundOrderItem = internalAction({
 			isLastLiveLine,
 			userId: actorUserId,
 			paymentId: args.paymentId,
+			idempotencyKey,
 			stripeRefundId: refund.refundId,
 		});
+	},
+});
+
+export type RetryOrderRefundResult = {
+	orderId: Id<"orders">;
+	/** Where the order's money landed: `refunded`, or `paid` for a still-cooking order whose line refund settled. */
+	paymentState: Doc<"orders">["paymentState"];
+};
+
+/**
+ * Re-runs a `refund_failed` order's refund — the manager's "Retry refund".
+ *
+ * Authorized exactly like cancelling an order (manager or above; see
+ * `orderRefundHelpers.armRefundRetryInternal`), and it re-sends the failed
+ * reservation's own amount. After an unknown outcome it re-sends the same
+ * idempotency key, so a refund that had in fact reached Stripe is replayed
+ * instead of paying the diner twice; after a definitive Stripe error it moves
+ * to a fresh `:retry:N` key, because Stripe would replay that error for 24h.
+ * Also recovers an order left in `refund_requested` by a refund that crashed
+ * (stale reservation). A line refund re-runs through `refundOrderItem`, a
+ * whole-order refund through the same path as {@link cancelOrderAndRefund}.
+ */
+export const retryOrderRefund = action({
+	args: { orderId: v.id(TABLE.ORDERS) },
+	handler: async (ctx, args): AsyncReturn<RetryOrderRefundResult, CancelOrderAndRefundErrors> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			return [null, new NotAuthenticatedError().toObject()];
+		}
+
+		const [target, armError] = await ctx.runMutation(
+			internal.orderRefundHelpers.armRefundRetryInternal,
+			{ orderId: args.orderId }
+		);
+		if (armError) return [null, armError];
+
+		if (target.kind === "settled") {
+			// Nothing to send: the charge was already fully refunded.
+		} else if (target.kind === "line") {
+			await ctx.runAction(internal.stripe.refundOrderItem, {
+				orderId: args.orderId,
+				orderItemId: target.orderItemId,
+				paymentId: target.paymentId,
+			});
+		} else {
+			const [, refundError] = await refundCancelledOrder(ctx, args.orderId, identity.subject);
+			// A plain Stripe failure is reported below as a failed retry; anything
+			// else (e.g. the payment can no longer be found) keeps its own code.
+			if (refundError && refundError.message !== "ERROR_REFUND_FAILED") {
+				return [null, refundError];
+			}
+		}
+
+		const order: Doc<"orders"> | null = await ctx.runQuery(
+			internal.stripeHelpers.getOrderInternal,
+			{ orderId: args.orderId }
+		);
+		if (!order || order.paymentState === ORDER_PAYMENT_STATE.REFUND_FAILED) {
+			return [null, new ConflictError(REFUND_ERRORS.RETRY_FAILED).toObject()];
+		}
+		return [{ orderId: args.orderId, paymentState: order.paymentState }, null];
 	},
 });
 
@@ -1664,8 +1895,10 @@ function throwSupersededMidCreate(operation: string, paymentId: Id<"payments">):
  *
  * Money model (destination charge):
  * - `amount = order.totalAmount + round(totalAmount × PLATFORM_APPLICATION_FEE_RATE)`
- * - `application_fee_amount` is exactly that fee — customer-borne, on top, so
- *   the restaurant nets its full subtotal.
+ * - `application_fee_amount` is that fee — customer-borne, on top, so the
+ *   restaurant nets its full subtotal — plus any dispute recovery deduction
+ *   (TAVLI-102). It is the ONLY fee mechanism on this intent: no
+ *   `transfer_data.amount`, which Stripe treats as an alternative to it.
  * - `on_behalf_of` the restaurant's connected account (merchant of record).
  * - `setup_future_usage: "off_session"` saves the card on the diner's
  *   platform-level Customer for later one-tap tips.
@@ -1816,12 +2049,13 @@ export const createPaymentIntent = action({
 		// it back out of its later ORDER payments — never a tip charge, never a
 		// tab — a capped percentage at a time.
 		//
-		// `restaurantShare` is what Stripe would transfer with no deduction
-		// (`amount − application_fee_amount`, i.e. subtotal + gratuity), and
-		// `recoveryBase` is the food subtotal alone, so the whole gratuity
-		// always reaches the restaurant. The diner's `amount` is NOT touched:
-		// they pay exactly what the checkout sheet said, and the order still
-		// reports full revenue.
+		// `restaurantShare` is what the restaurant nets with no deduction
+		// (`amount − feeAmount`, i.e. subtotal + gratuity), and `recoveryBase`
+		// is the food subtotal alone, so the whole gratuity always reaches the
+		// restaurant. The deduction is added to `application_fee_amount` below,
+		// so the restaurant nets `restaurantShare − disputeRecoveryAmount`. The
+		// diner's `amount` is NOT touched: they pay exactly what the checkout
+		// sheet said, and the order still reports full revenue.
 		const recoveryQuote: RecoveryQuote = await ctx.runQuery(
 			internal.disputes.getRecoveryQuoteInternal,
 			{ restaurantId: order.restaurantId }
@@ -1848,6 +2082,12 @@ export const createPaymentIntent = action({
 			status: PAYMENT_STATUS.PENDING,
 			refundStatus: PAYMENT_REFUND_STATUS.NONE,
 			attemptNumber,
+			// Also the transactional "still the order we priced?" check:
+			// `createPayment` refuses with ERROR_PAYMENT_ALREADY_PAID (staff took
+			// cash meanwhile) or ERROR_PAYMENT_ORDER_CHANGED (edited, left a
+			// payable status) before inserting. Deliberately called OUTSIDE the
+			// `try` below — nothing exists at Stripe yet, and the catch would
+			// otherwise mark an order that was just paid in cash as `failed`.
 			orderUpdatedAtSnapshot: order.updatedAt,
 			...(disputeRecoveryAmount > 0 && {
 				disputeRecoveryAmount,
@@ -1871,22 +2111,31 @@ export const createPaymentIntent = action({
 					currency,
 					customer: customerId,
 					setup_future_usage: "off_session",
-					// Deliberately NOT `amount`. The tip is inside `amount` and
-					// must not be inside the fee: the schema's invariant is that
-					// the service fee never applies to tips, so 100% of a
-					// gratuity reaches the restaurant through the destination
-					// charge — exactly as it did when tips were their own charge
-					// at close-out.
-					application_fee_amount: feeAmount,
+					// Deliberately NOT derived from `amount`. The tip is inside
+					// `amount` and must not be inside the fee: the schema's
+					// invariant is that the service fee never applies to tips,
+					// so 100% of a gratuity reaches the restaurant through the
+					// destination charge — exactly as it did when tips were
+					// their own charge at close-out.
+					//
+					// The dispute recovery deduction (TAVLI-102) rides on the
+					// application fee, and this is the only place it moves
+					// money: Stripe transfers `amount − application_fee_amount`
+					// = `restaurantShare − disputeRecoveryAmount`. With no
+					// deduction it is `feeAmount`, byte-for-byte the pre-102
+					// request.
+					//
+					// NEVER add `transfer_data.amount` alongside this. Stripe
+					// documents the two as ALTERNATIVE fee mechanisms; sending
+					// both is rejected or takes the fee twice. The application
+					// fee is the one to keep because refunds pass
+					// `refund_application_fee: true` (see `createRefund`), and
+					// Stripe refunds it proportionally — which is exactly what
+					// `restoreLedgerForRefund` assumes when it gives the ledger
+					// back `applied × refunded / amount`.
+					application_fee_amount: feeAmount + disputeRecoveryAmount,
 					transfer_data: {
 						destination: restaurant.stripeAccountId,
-						// Explicit from TAVLI-102 onward. Left unset, Stripe
-						// transfers `amount − application_fee_amount`, which is
-						// exactly `restaurantShare` — so with no deduction this
-						// is byte-for-byte the previous behaviour, stated rather
-						// than inferred. With one, it is the only place the
-						// recovery actually moves money.
-						amount: restaurantShare - disputeRecoveryAmount,
 					},
 					on_behalf_of: restaurant.stripeAccountId,
 					metadata: {

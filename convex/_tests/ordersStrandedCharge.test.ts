@@ -328,6 +328,7 @@ describe("orders.confirmPayment — a charge that matches no active payment (TAV
 				payment_intent: "pi_stranded",
 				reverse_transfer: true,
 				refund_application_fee: true,
+				expand: ["charge"],
 			});
 			expect(options).toEqual({
 				idempotencyKey: `stranded-charge-refund:${seeded.paymentId}`,

@@ -62,7 +62,7 @@ For local development, forward Stripe events with the Stripe CLI:
 
 ```bash
 stripe listen --forward-to http://localhost:3210/stripe/webhook
-stripe listen --thin-events "v2.core.account[requirements].updated,v2.core.account[configuration.recipient].capability_status_updated" --forward-thin-to http://localhost:3210/stripe/connect-webhook
+stripe listen --thin-events "v2.core.account[requirements].updated,v2.core.account[configuration.recipient].capability_status_updated,v2.core.account[configuration.merchant].capability_status_updated,v2.core.account.closed" --forward-thin-to http://localhost:3210/stripe/connect-webhook
 ```
 
 Production rollout steps live in [`documentation/runbooks/stripe-go-live.md`](documentation/runbooks/stripe-go-live.md).

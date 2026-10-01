@@ -571,6 +571,7 @@ describe("stripe actions", () => {
 					payment_intent: "pi_refund",
 					reverse_transfer: true,
 					refund_application_fee: true,
+					expand: ["charge"],
 				},
 				expect.objectContaining({
 					idempotencyKey: expect.stringContaining("refund:"),
@@ -702,6 +703,7 @@ describe("stripe actions", () => {
 					amount: 6000,
 					reverse_transfer: true,
 					refund_application_fee: true,
+					expand: ["charge"],
 				},
 				{ idempotencyKey: `refund:${paymentId}:${firstOrderId}` }
 			);
@@ -1249,11 +1251,10 @@ describe("stripe actions", () => {
 					customer: "cus_fee",
 					setup_future_usage: "off_session",
 					application_fee_amount: 1200,
-					// `transfer_data.amount` is explicit from TAVLI-102 onward. With
-					// no dispute recovery configured it is exactly what Stripe would
-					// have transferred anyway (subtotal + tip), so this asserts the
-					// previous behaviour is unchanged, only now stated.
-					transfer_data: { destination: "acct_ready", amount: 10000 },
+					// Destination only. `transfer_data.amount` is an ALTERNATIVE
+					// fee mechanism to `application_fee_amount`, never a companion
+					// — Stripe transfers `amount − application_fee_amount` itself.
+					transfer_data: { destination: "acct_ready" },
 					on_behalf_of: "acct_ready",
 					metadata: expect.objectContaining({
 						orderId,
@@ -1803,6 +1804,23 @@ describe("stripe actions", () => {
 		 * lines, plus a staff identity. `activePaymentId` points at the succeeded
 		 * kind-"order" payment, as `confirmPayment` leaves it.
 		 */
+		/**
+		 * The charge `refunds.create` returns when `expand: ["charge"]` is sent:
+		 * Stripe's cumulative `amount_refunded` after the refund, which is the
+		 * only figure `payments.amountRefunded` may record.
+		 */
+		function chargeAfterRefunds(amountRefunded: number, amount = 1568) {
+			return {
+				id: "ch_refunds",
+				object: "charge",
+				payment_intent: "pi_refunds",
+				amount,
+				amount_captured: amount,
+				amount_refunded: amountRefunded,
+				refunded: amountRefunded >= amount,
+			};
+		}
+
 		async function seedPaidOrderWithTwoLines(t: ReturnType<typeof convexTest>) {
 			const organizationId = await seedOrganization(t);
 			const restaurantId = await seedRestaurant(t, {
@@ -1934,6 +1952,7 @@ describe("stripe actions", () => {
 					id: "re_line",
 					status: "succeeded",
 					amount: 672,
+					charge: chargeAfterRefunds(672),
 				});
 
 				const [, error] = await staff.mutation(api.orders.cancelOrderItem, {
@@ -1949,6 +1968,7 @@ describe("stripe actions", () => {
 						amount: 672,
 						reverse_transfer: true,
 						refund_application_fee: true,
+						expand: ["charge"],
 					},
 					{ idempotencyKey: `refund:${paymentId}:${drinkItemId}` }
 				);
@@ -1980,8 +2000,18 @@ describe("stripe actions", () => {
 					await seedPaidOrderWithTwoLines(t);
 
 				mockStripeClient.refunds.create
-					.mockResolvedValueOnce({ id: "re_first", status: "succeeded", amount: 672 })
-					.mockResolvedValueOnce({ id: "re_last", status: "succeeded", amount: 896 });
+					.mockResolvedValueOnce({
+						id: "re_first",
+						status: "succeeded",
+						amount: 672,
+						charge: chargeAfterRefunds(672),
+					})
+					.mockResolvedValueOnce({
+						id: "re_last",
+						status: "succeeded",
+						amount: 896,
+						charge: chargeAfterRefunds(1568),
+					});
 
 				await staff.mutation(api.orders.cancelOrderItem, { orderItemId: drinkItemId });
 				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
@@ -1989,11 +2019,12 @@ describe("stripe actions", () => {
 				await t.finishAllScheduledFunctions(() => vi.runAllTimers());
 
 				// 672 + 896 = 1568 — the sum of line refunds is exactly the charge,
-				// so no rounding residue survives an order emptied line by line.
+				// so no rounding residue survives an order emptied line by line. The
+				// last line sends no amount at all: Stripe refunds what remains.
 				const amounts = mockStripeClient.refunds.create.mock.calls.map(
-					(call) => (call[0] as { amount: number }).amount
+					(call) => (call[0] as { amount?: number }).amount
 				);
-				expect(amounts).toEqual([672, 896]);
+				expect(amounts).toEqual([672, undefined]);
 
 				const { order, payment } = await t.run(async (ctx) => ({
 					order: await ctx.db.get(orderId),
@@ -2123,6 +2154,7 @@ describe("stripe actions", () => {
 					payment_intent: "pi_refunds",
 					reverse_transfer: true,
 					refund_application_fee: true,
+					expand: ["charge"],
 				},
 				{ idempotencyKey: `refund:${paymentId}:${orderId}` }
 			);

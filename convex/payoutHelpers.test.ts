@@ -19,6 +19,8 @@ import {
 	computePayoutFacts,
 	decidePayoutUpdate,
 	formatPayoutAmount,
+	heldTotalPaidLowerBound,
+	isPayoutReturn,
 	normalizePayoutFailureCode,
 	normalizePayoutStatus,
 	type HeldTotalInput,
@@ -218,13 +220,57 @@ describe("decidePayoutUpdate", () => {
 		).toEqual({ apply: true, status: STRIPE_PAYOUT_STATUS.FAILED, conflict: false });
 	});
 
-	it("keeps the stored terminal status and flags a conflict when two terminals disagree", () => {
+	it("applies paid → failed: the bank returned a payout that had already shown paid", () => {
+		// https://docs.stripe.com/payouts — a payout can be marked paid and still
+		// fail days later. Keeping `paid` would tell the restaurant the money
+		// arrived when it is back in the Stripe balance.
 		expect(
 			decidePayoutUpdate(
 				{ status: STRIPE_PAYOUT_STATUS.PAID },
 				{ status: STRIPE_PAYOUT_STATUS.FAILED }
 			)
-		).toEqual({ apply: false, status: STRIPE_PAYOUT_STATUS.PAID, conflict: true });
+		).toEqual({ apply: true, status: STRIPE_PAYOUT_STATUS.FAILED, conflict: false });
+		expect(
+			isPayoutReturn({ status: STRIPE_PAYOUT_STATUS.PAID }, { status: STRIPE_PAYOUT_STATUS.FAILED })
+		).toBe(true);
+	});
+
+	it("refuses failed → paid and flags it: Stripe never retries a failed payout", () => {
+		expect(
+			decidePayoutUpdate(
+				{ status: STRIPE_PAYOUT_STATUS.FAILED },
+				{ status: STRIPE_PAYOUT_STATUS.PAID }
+			)
+		).toEqual({ apply: false, status: STRIPE_PAYOUT_STATUS.FAILED, conflict: true });
+		expect(
+			isPayoutReturn({ status: STRIPE_PAYOUT_STATUS.FAILED }, { status: STRIPE_PAYOUT_STATUS.PAID })
+		).toBe(false);
+	});
+
+	it.each([
+		[STRIPE_PAYOUT_STATUS.CANCELED, STRIPE_PAYOUT_STATUS.PAID],
+		[STRIPE_PAYOUT_STATUS.CANCELED, STRIPE_PAYOUT_STATUS.FAILED],
+		[STRIPE_PAYOUT_STATUS.PAID, STRIPE_PAYOUT_STATUS.CANCELED],
+		[STRIPE_PAYOUT_STATUS.FAILED, STRIPE_PAYOUT_STATUS.CANCELED],
+	])(
+		"keeps %s and flags a conflict when %s arrives — nothing moves into or out of canceled",
+		(stored, incoming) => {
+			expect(decidePayoutUpdate({ status: stored }, { status: incoming })).toEqual({
+				apply: false,
+				status: stored,
+				conflict: true,
+			});
+			expect(isPayoutReturn({ status: stored }, { status: incoming })).toBe(false);
+		}
+	);
+
+	it("still applies pending/in_transit → canceled, the normal forward path", () => {
+		expect(
+			decidePayoutUpdate(
+				{ status: STRIPE_PAYOUT_STATUS.IN_TRANSIT },
+				{ status: STRIPE_PAYOUT_STATUS.CANCELED }
+			)
+		).toEqual({ apply: true, status: STRIPE_PAYOUT_STATUS.CANCELED, conflict: false });
 	});
 });
 
@@ -339,6 +385,79 @@ describe("computeHeldTotal", () => {
 	it("does not care what order the rows arrive in", () => {
 		const rows = [paid("po_2", 1000, 20), failed("po_1", 1000, 10)];
 		expect(computeHeldTotal(rows).heldCents).toBe(0);
+	});
+
+	describe("a payout returned after it showed paid (paid → failed)", () => {
+		const returned = (
+			id: string,
+			amount: number,
+			createdAt: number,
+			returnedAt: number
+		): HeldTotalInput => ({ ...failed(id, amount, createdAt), returnedAt });
+
+		it("is held even though routine payouts were created between it and the return", () => {
+			// Monday's payout (10) shows paid; Tuesday's (20) and Wednesday's (30)
+			// sweep new sales; Thursday (40) the bank returns Monday's. Neither
+			// later payout carried Monday's money — it was not in the balance yet.
+			expect(
+				computeHeldTotal([
+					returned("po_mon", 1000, 10, 40),
+					paid("po_tue", 300, 20),
+					paid("po_wed", 200, 30),
+				])
+			).toEqual({ heldCents: 1000, unresolvedPayoutIds: ["po_mon"] });
+		});
+
+		it("is resolved by a paid payout created after the return, just like a first-time failure", () => {
+			expect(
+				computeHeldTotal([returned("po_mon", 1000, 10, 40), paid("po_fri", 1500, 50)])
+			).toEqual({ heldCents: 0, unresolvedPayoutIds: [] });
+		});
+
+		it("still supersedes an ordinary failure that is older than it", () => {
+			// Monday's payout swept a balance that already held Sunday's bounce, so
+			// when Monday's comes back it is carrying that money too.
+			expect(
+				computeHeldTotal([failed("po_sun", 400, 5), returned("po_mon", 1000, 10, 40)])
+			).toEqual({ heldCents: 1000, unresolvedPayoutIds: ["po_mon"] });
+		});
+
+		it("is not superseded by a failure created before the return, and neither is that failure", () => {
+			// Tuesday's payout (20) fails outright; Monday's is returned later (40).
+			// Tuesday's sweep never contained Monday's money, so both are stuck.
+			expect(
+				computeHeldTotal([returned("po_mon", 1000, 10, 40), failed("po_tue", 300, 20)])
+			).toEqual({
+				heldCents: 1300,
+				unresolvedPayoutIds: ["po_tue", "po_mon"],
+			});
+		});
+	});
+});
+
+describe("heldTotalPaidLowerBound", () => {
+	const failed = (id: string, createdAt: number, returnedAt?: number): HeldTotalInput => ({
+		stripePayoutId: id,
+		amount: 100,
+		createdAt,
+		status: STRIPE_PAYOUT_STATUS.FAILED,
+		...(returnedAt !== undefined && { returnedAt }),
+	});
+
+	it("is null with no failures", () => {
+		expect(heldTotalPaidLowerBound([])).toBeNull();
+	});
+
+	it("is the newest failure's createdAt for ordinary failures", () => {
+		expect(heldTotalPaidLowerBound([failed("a", 10), failed("b", 20)])).toBe(20);
+	});
+
+	it("is the return time of a returned payout nothing has superseded", () => {
+		expect(heldTotalPaidLowerBound([failed("a", 5), failed("b", 10, 40)])).toBe(40);
+	});
+
+	it("is the earliest standing threshold when a return left an older-created failure standing", () => {
+		expect(heldTotalPaidLowerBound([failed("mon", 10, 40), failed("tue", 20)])).toBe(20);
 	});
 });
 
