@@ -126,7 +126,7 @@ export function TablePickerForReservation(props: Readonly<TablePickerForReservat
 							className="flex flex-col items-start gap-1 rounded-lg px-3 py-2 text-left text-sm"
 							style={{
 								backgroundColor: selected ? "var(--btn-primary-bg)" : "var(--bg-secondary)",
-								color: selected ? "var(--btn-primary-fg, white)" : "var(--text-primary)",
+								color: selected ? "var(--btn-primary-text)" : "var(--text-primary)",
 								border: `1px solid ${selected ? "var(--btn-primary-bg)" : "var(--border-default)"}`,
 								opacity: disabled ? 0.45 : 1,
 								cursor: disabled ? "not-allowed" : "pointer",

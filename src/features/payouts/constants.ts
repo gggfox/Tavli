@@ -54,7 +54,7 @@ export const PAYOUT_STATUS_BADGE: Record<
 	},
 	[STRIPE_PAYOUT_STATUS.CANCELED]: {
 		bgColor: "var(--bg-tertiary)",
-		textColor: "var(--text-faint)",
+		textColor: "var(--color-faint-foreground)",
 	},
 };
 

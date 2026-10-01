@@ -25,7 +25,7 @@ export function TableErrorState({
 	return (
 		<div
 			className={`flex flex-col items-center justify-center rounded-lg ${sizing}`}
-			style={{ backgroundColor: "var(--accent-danger-bg, rgba(239, 68, 68, 0.1))" }}
+			style={{ backgroundColor: "var(--color-destructive-subtle)" }}
 		>
 			<p className="text-lg font-medium text-destructive">
 				{t(ErrorKeys.DASHBOARD_LOAD_FAILED, { entity: entityName })}
