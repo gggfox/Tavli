@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBrandColor } from "../hooks/useBranding";
 import { buildStripeAppearance } from "../stripeAppearanceTokens";
+import { isConfirmedIntentStatus } from "../utils/paymentConfirmation";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -43,14 +44,31 @@ export function useIsDarkTheme(): boolean {
 	return isDark;
 }
 
+/** What `stripe.confirmPayment` reported once the diner's part was done. */
+export interface ConfirmedPaymentIntent {
+	readonly id: string;
+	readonly status: string;
+}
+
 interface StripePaymentSectionProps {
 	readonly clientSecret: string;
 	/** Submit-button label; defaults to the checkout's "Pay Now". */
 	readonly submitLabel?: string;
+	/**
+	 * Fires once `confirmPayment` returns without an error and the intent is
+	 * past the diner (succeeded / processing). The caller should swap this
+	 * sheet for a "confirming" screen: the webhook has not settled anything
+	 * yet, and a live pay button here only invites a second attempt.
+	 */
+	readonly onConfirmed?: (paymentIntent: ConfirmedPaymentIntent) => void;
 }
 
 /** Theme- and brand-aware Elements wrapper around {@link StripePaymentForm}. */
-export function StripePaymentSection({ clientSecret, submitLabel }: StripePaymentSectionProps) {
+export function StripePaymentSection({
+	clientSecret,
+	submitLabel,
+	onConfirmed,
+}: StripePaymentSectionProps) {
 	const isDark = useIsDarkTheme();
 	const brandColor = useBrandColor();
 	// Was two module-level constants. It has to be a memo now because the
@@ -76,7 +94,7 @@ export function StripePaymentSection({ clientSecret, submitLabel }: StripePaymen
 			stripe={stripePromise}
 			options={elementsOptions}
 		>
-			<StripePaymentForm submitLabel={submitLabel} />
+			<StripePaymentForm submitLabel={submitLabel} onConfirmed={onConfirmed} />
 		</Elements>
 	);
 }
@@ -104,7 +122,13 @@ function resolveConfirmErrorMessage(
 	return confirmError.message ?? t(OrderingKeys.CHECKOUT_GENERIC_ERROR);
 }
 
-function StripePaymentForm({ submitLabel }: Readonly<{ submitLabel?: string }>) {
+function StripePaymentForm({
+	submitLabel,
+	onConfirmed,
+}: Readonly<{
+	submitLabel?: string;
+	onConfirmed?: (paymentIntent: ConfirmedPaymentIntent) => void;
+}>) {
 	const { t } = useTranslation();
 	const stripe = useStripe();
 	const elements = useElements();
@@ -131,7 +155,7 @@ function StripePaymentForm({ submitLabel }: Readonly<{ submitLabel?: string }>) 
 		// Past the synchronous validation: this is a real confirmation attempt.
 		track("payment_submitted");
 
-		const { error: confirmError } = await stripe.confirmPayment({
+		const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
 			elements,
 			confirmParams: {
 				return_url: globalThis.location.href,
@@ -142,9 +166,28 @@ function StripePaymentForm({ submitLabel }: Readonly<{ submitLabel?: string }>) 
 		if (confirmError) {
 			setError(resolveConfirmErrorMessage(confirmError, t));
 			setProcessing(false);
+			return;
 		}
-		// On success the webhook settles the payment; the caller's subscription
-		// moves the UI forward.
+
+		// Defensive: Stripe reports a failed 3-D Secure challenge as an error, but
+		// an intent that comes back without one and still waiting on the diner
+		// (`requires_payment_method`, `requires_action`) has charged nothing. Say
+		// so and let them try again with this same sheet rather than showing a
+		// "confirming" screen for money that is not moving.
+		if (paymentIntent && !isConfirmedIntentStatus(paymentIntent.status)) {
+			setError(t(OrderingKeys.CHECKOUT_PAYMENT_FAILED));
+			setProcessing(false);
+			return;
+		}
+
+		// Success. `processing` deliberately stays true: the webhook settles the
+		// money, and re-enabling "Pay" before it does is an invitation to pay
+		// twice. The caller owns what happens next — `onConfirmed` hands it the
+		// intent so it can show a confirming screen that survives a reload and
+		// escalates if the webhook is slow.
+		if (paymentIntent) {
+			onConfirmed?.({ id: paymentIntent.id, status: paymentIntent.status });
+		}
 	};
 
 	return (

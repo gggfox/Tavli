@@ -7,7 +7,9 @@ import {
 	normalizeLanguage,
 	parseLanguageCookie,
 	readLanguageCookie,
+	replaceLanguageSegment,
 	resolveLanguage,
+	toSupportedLanguage,
 	writeLanguageCookie,
 } from "./language";
 
@@ -57,6 +59,39 @@ describe("languageFromPathname", () => {
 	});
 });
 
+describe("toSupportedLanguage", () => {
+	it("collapses region tags onto the shipped base language", () => {
+		expect(toSupportedLanguage("es-MX")).toBe(Languages.ES);
+		expect(toSupportedLanguage("en-US")).toBe(Languages.EN);
+		expect(toSupportedLanguage("ES_es")).toBe(Languages.ES);
+		expect(toSupportedLanguage("es")).toBe(Languages.ES);
+	});
+
+	it("keeps unshipped languages unmatched instead of forcing en", () => {
+		expect(toSupportedLanguage("fr-FR")).toBeNull();
+		expect(toSupportedLanguage("")).toBeNull();
+		expect(toSupportedLanguage(undefined)).toBeNull();
+	});
+});
+
+describe("replaceLanguageSegment (unsupported :lang redirect target)", () => {
+	it("swaps only the :lang segment and keeps the rest of the path", () => {
+		expect(replaceLanguageSegment("/r/vernaculo-spgg/fr/menu", Languages.EN)).toBe(
+			"/r/vernaculo-spgg/en/menu"
+		);
+		expect(replaceLanguageSegment("/r/vernaculo-spgg/fr/order/abc?table=4#top", Languages.ES)).toBe(
+			"/r/vernaculo-spgg/es/order/abc?table=4#top"
+		);
+		expect(replaceLanguageSegment("/r/vernaculo-spgg/fr", Languages.ES)).toBe(
+			"/r/vernaculo-spgg/es"
+		);
+	});
+
+	it("leaves non-diner paths alone", () => {
+		expect(replaceLanguageSegment("/admin/menus/fr", Languages.EN)).toBe("/admin/menus/fr");
+	});
+});
+
 describe("parseLanguageCookie", () => {
 	it("finds the language cookie among others", () => {
 		expect(parseLanguageCookie(`theme=dark; ${LANGUAGE_COOKIE_NAME}=es; other=1`)).toBe(
@@ -98,6 +133,21 @@ describe("resolveLanguage (browser)", () => {
 		writeLanguageCookie(Languages.ES);
 		await expect(resolveLanguage("/r/tavli/en/menu")).resolves.toBe(Languages.EN);
 		clearLanguageCookie();
+	});
+
+	it("prefers a Spanish URL over an en-US cookie", async () => {
+		clearLanguageCookie();
+		document.cookie = `${LANGUAGE_COOKIE_NAME}=en-US; path=/`;
+		await expect(resolveLanguage("/r/vernaculo-spgg/es/menu")).resolves.toBe(Languages.ES);
+		clearLanguageCookie();
+	});
+
+	it("resolves an unsupported :lang segment to the cookie, the redirect's fallback", async () => {
+		clearLanguageCookie();
+		document.cookie = `${LANGUAGE_COOKIE_NAME}=es-MX; path=/`;
+		await expect(resolveLanguage("/r/vernaculo-spgg/fr/menu")).resolves.toBe(Languages.ES);
+		clearLanguageCookie();
+		await expect(resolveLanguage("/r/vernaculo-spgg/fr/menu")).resolves.toBe(Languages.EN);
 	});
 
 	it("falls back to the cookie off the language-scoped routes", async () => {

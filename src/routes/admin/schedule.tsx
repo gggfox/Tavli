@@ -3,8 +3,11 @@ import { useRestaurant } from "@/features/restaurants";
 import {
 	PublishWeekButton,
 	ScheduleWeekGrid,
+	ScheduleWeekGridSkeleton,
 	ShiftCellChip,
 	ShiftDrawer,
+	addDaysToYmd,
+	formatYmd,
 	getMondayYmdOfWeek,
 	startOfDayMs,
 	endOfWeekMs,
@@ -54,9 +57,17 @@ function AdminSchedulePage() {
 	const { roles: userRoles, organizationId: currentUserOrgId } = useCurrentUserRoles();
 
 	const timezone = restaurant?.timezone ?? DEFAULT_TIMEZONE;
-	const [anchorMs, setAnchorMs] = useState(() => Date.now());
+	// The viewed week is held as its restaurant-local Monday; `null` means
+	// "the week containing now". Navigation steps by 7 calendar days in ymd
+	// space so a DST switch can't drift the anchor into the wrong week.
+	const [nowMs] = useState(() => Date.now());
+	const [selectedMondayYmd, setSelectedMondayYmd] = useState<string | null>(null);
 
-	const mondayYmd = useMemo(() => getMondayYmdOfWeek(anchorMs, timezone), [anchorMs, timezone]);
+	const mondayYmd = useMemo(
+		() => selectedMondayYmd ?? getMondayYmdOfWeek(nowMs, timezone),
+		[selectedMondayYmd, nowMs, timezone]
+	);
+	const onStepWeek = (weeks: number) => setSelectedMondayYmd(addDaysToYmd(mondayYmd, 7 * weeks));
 	const weekStartMs = useMemo(() => startOfDayMs(mondayYmd, timezone), [mondayYmd, timezone]);
 	const weekEndMs = useMemo(() => endOfWeekMs(mondayYmd, timezone), [mondayYmd, timezone]);
 
@@ -89,13 +100,13 @@ function AdminSchedulePage() {
 		return false;
 	}, [restaurant, userId, userRoles, currentUserOrgId, myMembership]);
 
-	const formatRange = useMemo(() => {
-		const fmt = new Intl.DateTimeFormat(i18n.language, {
-			month: "short",
-			day: "numeric",
-		});
-		return `${fmt.format(new Date(weekStartMs))} – ${fmt.format(new Date(weekEndMs - 1))}`;
-	}, [i18n.language, weekStartMs, weekEndMs]);
+	// Label the restaurant-local Monday..Sunday ymds directly — formatting the
+	// UTC instants in the browser's zone would name the wrong days for a
+	// viewer outside the restaurant's timezone.
+	const formatRange = `${formatYmd(mondayYmd, i18n.language)} – ${formatYmd(
+		addDaysToYmd(mondayYmd, 6),
+		i18n.language
+	)}`;
 
 	if (isLoading) return <LoadingState />;
 
@@ -117,7 +128,7 @@ function AdminSchedulePage() {
 				weekEndMs={weekEndMs}
 				formatRange={formatRange}
 				queryClient={queryClient}
-				setAnchorMs={setAnchorMs}
+				onStepWeek={onStepWeek}
 				myMemberId={myMemberId}
 			/>
 		);
@@ -131,10 +142,39 @@ function AdminSchedulePage() {
 			weekStartMs={weekStartMs}
 			weekEndMs={weekEndMs}
 			formatRange={formatRange}
-			setAnchorMs={setAnchorMs}
+			onStepWeek={onStepWeek}
 			myMembership={myMembership}
 			ownEmail={user?.primaryEmailAddress?.emailAddress ?? null}
 		/>
+	);
+}
+
+interface WeekNavProps {
+	readonly formatRange: string;
+	/** Move the viewed week by `weeks` (±1) calendar weeks. */
+	readonly onStepWeek: (weeks: number) => void;
+}
+
+function WeekNav({ formatRange, onStepWeek }: Readonly<WeekNavProps>) {
+	const { t } = useTranslation();
+	return (
+		<div className="flex items-center gap-2">
+			<button
+				type="button"
+				className="text-xs px-2 py-1 rounded border border-border hover:bg-(--bg-hover)"
+				onClick={() => onStepWeek(-1)}
+			>
+				{t(AdminStaffKeys.SCHEDULE_PREV_WEEK)}
+			</button>
+			<span className="text-xs font-medium text-foreground">{formatRange}</span>
+			<button
+				type="button"
+				className="text-xs px-2 py-1 rounded border border-border hover:bg-(--bg-hover)"
+				onClick={() => onStepWeek(1)}
+			>
+				{t(AdminStaffKeys.SCHEDULE_NEXT_WEEK)}
+			</button>
+		</div>
 	);
 }
 
@@ -146,7 +186,7 @@ interface ManagerScheduleViewProps {
 	readonly weekEndMs: number;
 	readonly formatRange: string;
 	readonly queryClient: ReturnType<typeof useQueryClient>;
-	readonly setAnchorMs: (updater: (prev: number) => number) => void;
+	readonly onStepWeek: (weeks: number) => void;
 	readonly myMemberId: Id<"restaurantMembers"> | null;
 }
 
@@ -216,12 +256,12 @@ function ManagerScheduleView({
 	weekEndMs,
 	formatRange,
 	queryClient,
-	setAnchorMs,
+	onStepWeek,
 	myMemberId,
 }: Readonly<ManagerScheduleViewProps>) {
 	const { t, i18n } = useTranslation();
 
-	const { members } = useAssignableMembers(restaurant._id);
+	const { members, isLoading: membersLoading } = useAssignableMembers(restaurant._id);
 
 	const shiftsQueryArgs = { restaurantId: restaurant._id, weekStartMs };
 	const shiftsQuery = useQuery({
@@ -236,7 +276,15 @@ function ManagerScheduleView({
 		select: unwrapResult<Doc<"absences">[]>,
 	});
 
-	const shifts = shiftsQuery.data ?? [];
+	// The backend returns every shift *overlapping* the week, which includes an
+	// overnight shift that started the Sunday before. The grid shows a shift on
+	// its start day, so keep only shifts starting this week — otherwise that
+	// shift would count toward drafts / "with shifts" without being visible.
+	const shiftsData = shiftsQuery.data;
+	const shifts = useMemo(
+		() => (shiftsData ?? []).filter((s) => s.startsAt >= weekStartMs && s.startsAt < weekEndMs),
+		[shiftsData, weekStartMs, weekEndMs]
+	);
 	const absences = absencesQuery.data ?? [];
 
 	const { pendingDatesByMember, approvedDatesByMember, pendingCountByMember } = useMemo(
@@ -312,6 +360,17 @@ function ManagerScheduleView({
 		});
 	};
 
+	const weekNav = <WeekNav formatRange={formatRange} onStepWeek={onStepWeek} />;
+
+	if (membersLoading) {
+		return (
+			<AdminPageLayout>
+				<div className="mb-4">{weekNav}</div>
+				<ScheduleWeekGridSkeleton />
+			</AdminPageLayout>
+		);
+	}
+
 	if (members.length === 0) {
 		return (
 			<AdminPageLayout>
@@ -365,23 +424,7 @@ function ManagerScheduleView({
 	return (
 		<AdminPageLayout actions={headerActions}>
 			<div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-				<div className="flex items-center gap-2">
-					<button
-						type="button"
-						className="text-xs px-2 py-1 rounded border border-border hover:bg-(--bg-hover)"
-						onClick={() => setAnchorMs((a) => a - 7 * 24 * 60 * 60 * 1000)}
-					>
-						{t(AdminStaffKeys.SCHEDULE_PREV_WEEK)}
-					</button>
-					<span className="text-xs font-medium text-foreground">{formatRange}</span>
-					<button
-						type="button"
-						className="text-xs px-2 py-1 rounded border border-border hover:bg-(--bg-hover)"
-						onClick={() => setAnchorMs((a) => a + 7 * 24 * 60 * 60 * 1000)}
-					>
-						{t(AdminStaffKeys.SCHEDULE_NEXT_WEEK)}
-					</button>
-				</div>
+				{weekNav}
 				<div className="flex items-center gap-2 w-full sm:w-auto">
 					<SegmentedControl
 						options={shiftPresenceOptions}
@@ -408,11 +451,13 @@ function ManagerScheduleView({
 				</div>
 			</div>
 
-			{filteredMembers.length === 0 ? (
+			{shiftsQuery.isPending ? <ScheduleWeekGridSkeleton /> : null}
+			{!shiftsQuery.isPending && filteredMembers.length === 0 ? (
 				<p className="text-sm text-faint-foreground py-6 text-center">
 					{t(AdminStaffKeys.SCHEDULE_FILTER_NO_MATCHES)}
 				</p>
-			) : (
+			) : null}
+			{!shiftsQuery.isPending && filteredMembers.length > 0 ? (
 				<ScheduleWeekGrid
 					members={filteredMembers}
 					shifts={shifts}
@@ -440,7 +485,7 @@ function ManagerScheduleView({
 						))
 					}
 				</ScheduleWeekGrid>
-			)}
+			) : null}
 
 			{drawerInitial ? (
 				<ShiftDrawer
@@ -488,7 +533,7 @@ interface EmployeeScheduleViewProps {
 	readonly weekStartMs: number;
 	readonly weekEndMs: number;
 	readonly formatRange: string;
-	readonly setAnchorMs: (updater: (prev: number) => number) => void;
+	readonly onStepWeek: (weeks: number) => void;
 	readonly myMembership: Doc<"restaurantMembers"> | null;
 	readonly ownEmail: string | null;
 }
@@ -500,7 +545,7 @@ function EmployeeScheduleView({
 	weekStartMs,
 	weekEndMs,
 	formatRange,
-	setAnchorMs,
+	onStepWeek,
 	myMembership,
 	ownEmail,
 }: Readonly<EmployeeScheduleViewProps>) {
@@ -574,27 +619,11 @@ function EmployeeScheduleView({
 	return (
 		<AdminPageLayout>
 			<div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-				<div className="flex items-center gap-2">
-					<button
-						type="button"
-						className="text-xs px-2 py-1 rounded border border-border hover:bg-(--bg-hover)"
-						onClick={() => setAnchorMs((a) => a - 7 * 24 * 60 * 60 * 1000)}
-					>
-						{t(AdminStaffKeys.SCHEDULE_PREV_WEEK)}
-					</button>
-					<span className="text-xs font-medium text-foreground">{formatRange}</span>
-					<button
-						type="button"
-						className="text-xs px-2 py-1 rounded border border-border hover:bg-(--bg-hover)"
-						onClick={() => setAnchorMs((a) => a + 7 * 24 * 60 * 60 * 1000)}
-					>
-						{t(AdminStaffKeys.SCHEDULE_NEXT_WEEK)}
-					</button>
-				</div>
+				<WeekNav formatRange={formatRange} onStepWeek={onStepWeek} />
 			</div>
 
 			{shiftsLoading ? (
-				<LoadingState />
+				<ScheduleWeekGridSkeleton />
 			) : (
 				<ScheduleWeekGrid
 					members={singleRowMembers}

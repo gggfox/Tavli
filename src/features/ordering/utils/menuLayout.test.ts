@@ -35,18 +35,34 @@ describe("isItemAvailableToday", () => {
 	const SUNDAY = 0;
 
 	it("hides an item the restaurant has switched off", () => {
-		expect(isItemAvailableToday({ isAvailable: false, availableDays: [] }, MONDAY)).toBe(false);
+		expect(
+			isItemAvailableToday({ isAvailable: false, basePrice: 1200, availableDays: [] }, MONDAY)
+		).toBe(false);
 	});
 
 	it("shows an item with no day restriction every day", () => {
-		expect(isItemAvailableToday({ isAvailable: true, availableDays: [] }, SUNDAY)).toBe(true);
-		expect(isItemAvailableToday({ isAvailable: true }, SUNDAY)).toBe(true);
+		expect(
+			isItemAvailableToday({ isAvailable: true, basePrice: 1200, availableDays: [] }, SUNDAY)
+		).toBe(true);
+		expect(isItemAvailableToday({ isAvailable: true, basePrice: 1200 }, SUNDAY)).toBe(true);
 	});
 
 	it("honours a day restriction", () => {
-		const weekdaysOnly = { isAvailable: true, availableDays: [1, 2, 3, 4, 5] };
+		const weekdaysOnly = { isAvailable: true, basePrice: 1200, availableDays: [1, 2, 3, 4, 5] };
 		expect(isItemAvailableToday(weekdaysOnly, MONDAY)).toBe(true);
 		expect(isItemAvailableToday(weekdaysOnly, SUNDAY)).toBe(false);
+	});
+
+	it("hides an item with no price yet, which would otherwise read as $0.00", () => {
+		expect(isItemAvailableToday({ isAvailable: true, basePrice: 0 }, MONDAY)).toBe(false);
+	});
+
+	it("hides an item whose price is not a usable number", () => {
+		expect(isItemAvailableToday({ isAvailable: true, basePrice: -500 }, MONDAY)).toBe(false);
+		expect(isItemAvailableToday({ isAvailable: true, basePrice: Number.NaN }, MONDAY)).toBe(false);
+		expect(
+			isItemAvailableToday({ isAvailable: true, basePrice: Number.POSITIVE_INFINITY }, MONDAY)
+		).toBe(false);
 	});
 });
 
@@ -55,10 +71,11 @@ describe("countAvailableByCategory", () => {
 	// what the section actually renders, so they use the same availability rule.
 	it("counts only items on the menu today, per category", () => {
 		const items = [
-			{ categoryId: "meats", isAvailable: true },
-			{ categoryId: "meats", isAvailable: false },
-			{ categoryId: "meats", isAvailable: true, availableDays: [6] },
-			{ categoryId: "soups", isAvailable: true },
+			{ categoryId: "meats", isAvailable: true, basePrice: 1200 },
+			{ categoryId: "meats", isAvailable: false, basePrice: 1200 },
+			{ categoryId: "meats", isAvailable: true, basePrice: 1200, availableDays: [6] },
+			{ categoryId: "meats", isAvailable: true, basePrice: 0 },
+			{ categoryId: "soups", isAvailable: true, basePrice: 800 },
 		];
 		const counts = countAvailableByCategory(items, 1);
 		expect(counts.get("meats")).toBe(1);

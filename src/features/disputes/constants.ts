@@ -1,5 +1,4 @@
 import { DisputesKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
 import { DISPUTE_STATUS, type DisputeStatus } from "convex/constants";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, CheckCircle2, HelpCircle, Scale, Search } from "lucide-react";
@@ -77,18 +76,6 @@ export const DISPUTE_STATUS_BADGE: Record<DisputeStatus, { bgColor: string; text
 	},
 	[DISPUTE_STATUS.UNKNOWN]: {
 		bgColor: "var(--bg-tertiary)",
-		textColor: "var(--text-faint)",
+		textColor: "var(--color-faint-foreground)",
 	},
 };
-
-/**
- * One money string for the whole disputes surface: `$640.00 MXN`.
- *
- * Identical in shape to `formatPayoutMoney`, and deliberately so — the two
- * cards sit on the same page, and two spellings of the same amount read as two
- * different numbers at a glance. The currency **code** stays beside the symbol
- * because `$` is MXN, USD and several others.
- */
-export function formatDisputeMoney(cents: number, currency: string): string {
-	return `$${formatCents(cents)} ${currency}`.trim();
-}

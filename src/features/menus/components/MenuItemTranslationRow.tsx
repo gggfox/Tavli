@@ -1,6 +1,6 @@
 import { InlineEditInput } from "@/global/components";
 import { MenusKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,7 @@ export function MenuItemTranslationRow({
 	selectedLang,
 	onSaveTranslation,
 }: Readonly<MenuItemTranslationRowProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const translatedName = item.translations?.[selectedLang]?.name ?? "";
 	const translatedDesc = item.translations?.[selectedLang]?.description ?? "";
@@ -79,7 +80,7 @@ export function MenuItemTranslationRow({
 					)}
 				</div>
 				<span className="text-xs shrink-0 text-faint-foreground">
-					${formatCents(item.basePrice)}
+					{formatMoney(item.basePrice)}
 				</span>
 			</div>
 		</div>

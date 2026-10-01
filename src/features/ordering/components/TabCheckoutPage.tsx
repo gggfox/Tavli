@@ -1,6 +1,6 @@
 import { OrderingKeys } from "@/global/i18n";
 import { getErrorMessage } from "@/global/utils/errorMessages";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
@@ -53,6 +53,7 @@ interface TabCheckoutPageProps {
  * in the session plus the tip. Default tip 10%, adjustable, never below 0.
  */
 export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPageProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const { sessionId, clearSession } = useSessionStore();
 	const createTabPaymentIntent = useConvexAction(api.stripe.createTabPaymentIntent);
@@ -206,15 +207,15 @@ export function TabCheckoutPage({ onBackToTab, onDone }: Readonly<TabCheckoutPag
 				<div className="rounded-xl p-4 space-y-2 bg-muted border border-border">
 					<div className="flex justify-between text-sm text-muted-foreground">
 						<span>{t(OrderingKeys.TAB_SUBTOTAL, { count: tab.payableOrderIds.length })}</span>
-						<span>${formatCents(subtotal)}</span>
+						<span>{formatMoney(subtotal)}</span>
 					</div>
 					<div className="flex justify-between text-sm text-muted-foreground">
 						<span>{t(OrderingKeys.TAB_TIP_LABEL)}</span>
-						<span>${formatCents(tipAmount)}</span>
+						<span>{formatMoney(tipAmount)}</span>
 					</div>
 					<div className="flex justify-between pt-2 text-sm font-semibold border-t border-border text-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
-						<span>${formatCents(total)}</span>
+						<span>{formatMoney(total)}</span>
 					</div>
 				</div>
 

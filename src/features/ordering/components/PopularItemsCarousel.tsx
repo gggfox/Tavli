@@ -24,7 +24,7 @@
  * so as the first copy leaves the viewport the second is precisely where the
  * first began — the loop has no seam and no jump.
  */
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { OrderingKeys } from "@/global/i18n";
 import { getTranslatedField } from "@/global/utils/translations";
 import { useTranslation } from "react-i18next";
@@ -102,6 +102,7 @@ function PopularCard({
 	onOpenDetail: (item: MenuItemWithImage) => void;
 	duplicate?: boolean;
 }>) {
+	const formatMoney = useFormatMoney();
 	const name = getTranslatedField(item, lang);
 	return (
 		<li
@@ -131,7 +132,7 @@ function PopularCard({
 				) : null}
 				<div className="px-2.5 py-2">
 					<p className="truncate text-sm font-medium text-foreground">{name}</p>
-					<p className="text-sm font-bold text-foreground">${formatCents(item.basePrice)}</p>
+					<p className="text-sm font-bold text-foreground">{formatMoney(item.basePrice)}</p>
 				</div>
 			</button>
 		</li>

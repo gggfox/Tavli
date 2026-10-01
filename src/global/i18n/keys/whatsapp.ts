@@ -38,6 +38,14 @@ export const WhatsappKeys = {
 	/** The assistant follows the restaurant's active state (TAVLI-107). */
 	ASSISTANT_OFF_RESTAURANT_INACTIVE: "whatsapp.assistant.offRestaurantInactive",
 	ASSISTANT_ACTIVATE_RESTAURANT: "whatsapp.assistant.activateRestaurant",
+	/** The restaurant's own wording for the deep-link message; the code is appended. */
+	ASSISTANT_MESSAGE_LABEL: "whatsapp.assistant.messageLabel",
+	ASSISTANT_MESSAGE_HINT: "whatsapp.assistant.messageHint",
+	ASSISTANT_MESSAGE_PLACEHOLDER: "whatsapp.assistant.messagePlaceholder",
+	ASSISTANT_MESSAGE_SAVE: "whatsapp.assistant.messageSave",
+	ASSISTANT_MESSAGE_SAVING: "whatsapp.assistant.messageSaving",
+	ASSISTANT_MESSAGE_SAVED: "whatsapp.assistant.messageSaved",
+	ASSISTANT_MESSAGE_USE_DEFAULT: "whatsapp.assistant.messageUseDefault",
 
 	// Staff conversation view (TAVLI-93)
 	PAGE_SETUP_RESTAURANT_FIRST: "whatsapp.page.setupRestaurantFirst",

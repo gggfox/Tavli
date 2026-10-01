@@ -12,6 +12,7 @@ import type { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
 import { getCurrentUserId, isAdmin, requireRestaurantManagerOrAbove } from "./_util/auth";
 import { DEFAULT_PREP_STATION, TABLE } from "./constants";
+import { stripPriceNotListedNote } from "./_shared/menuPricing";
 
 type BatchInsertErrors =
 	| NotAuthenticatedErrorObject
@@ -170,7 +171,10 @@ export const batchInsertMenuCategories = mutation({
 					categoryId,
 					restaurantId: args.restaurantId,
 					name: extractedItem.name,
-					description: extractedItem.description,
+					// Older prompts told the model to write "(price not listed)" into
+					// the description; a model can still do it unprompted. The menu
+					// editor flags an unpriced item itself, so the note never lands.
+					description: stripPriceNotListedNote(extractedItem.description),
 					basePrice: extractedItem.priceInCents,
 					isAvailable: true,
 					displayOrder: existingItems.length + itemsCreated,

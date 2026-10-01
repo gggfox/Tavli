@@ -1,7 +1,8 @@
 import { SearchInput } from "@/global/components";
+import { hasListedPrice } from "convex/_shared/menuPricing";
 import { useFuzzyMatch } from "@/global/hooks/useFuzzyMatch";
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { track } from "@/global/utils/telemetry";
 import { getTranslatedField } from "@/global/utils/translations";
 import { convexQuery } from "@convex-dev/react-query";
@@ -23,6 +24,13 @@ import {
 	isItemAvailableToday,
 	partitionByPhoto,
 } from "../utils/menuLayout";
+import {
+	type DraftLine,
+	isPickOfDish,
+	type MenuPick,
+	picksByDish,
+	picksFromDraftLines,
+} from "../utils/menuPicks";
 import { CategoryRail } from "./CategoryRail";
 import { CategoryTileRail } from "./CategoryTileRail";
 import { FullMenuSheet } from "./FullMenuSheet";
@@ -34,11 +42,11 @@ import { ItemDetailSheet } from "./ItemDetailSheet";
 
 export type { SelectedOption } from "../types";
 
-interface ItemSelection {
-	quantity: number;
-	basePrice: number;
-	selectedOptions: Map<string, SelectedOption[]>;
-}
+/**
+ * Keyed by dish id — plus, for a draft that orders one dish two different
+ * ways, a key per extra way (see `picksFromDraftLines`).
+ */
+type ItemSelection = MenuPick;
 
 const bottomBarSafePadding = "pb-[max(1rem,env(safe-area-inset-bottom))]";
 /**
@@ -78,6 +86,25 @@ interface MenuBrowserProps {
 	 * stays free of route/loader coupling and remains renderable in isolation.
 	 */
 	hero?: React.ReactNode;
+	/**
+	 * The session's existing draft, which the menu opens holding. Saving
+	 * replaces the draft's lines with the menu's picks, so a menu that opened
+	 * empty would throw away whatever the diner picked before visiting checkout.
+	 * Read once, on mount — after that the diner's edits are the truth.
+	 */
+	initialDraft?: {
+		lines: readonly DraftLine[];
+		tableId?: Id<"tables">;
+		specialInstructions?: string;
+	};
+	/**
+	 * Why the last submit was refused, already translated. `menuItemId` names
+	 * the pick the server refused, when it said which one: an unavailable dish
+	 * has left the menu listing, so this is the only place it can be removed.
+	 */
+	submitError?: { message: string; menuItemId?: Id<"menuItems"> } | null;
+	/** Clears `submitError` once the diner has acted on it. */
+	onDismissSubmitError?: () => void;
 }
 
 export function MenuBrowser({
@@ -89,7 +116,11 @@ export function MenuBrowser({
 	blockedNotice,
 	contactBar,
 	hero,
+	initialDraft,
+	submitError,
+	onDismissSubmitError,
 }: Readonly<MenuBrowserProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const { data: paymentsEnabled } = useQuery(
 		convexQuery(api.restaurants.getPaymentsEnabled, { restaurantId })
@@ -99,10 +130,14 @@ export function MenuBrowser({
 		.filter((m) => m.isActive)
 		.sort((a, b) => a.displayOrder - b.displayOrder);
 	const [selectedMenuId, setSelectedMenuId] = useState<Id<"menus"> | null>(null);
-	const [selections, setSelections] = useState<Map<string, ItemSelection>>(new Map());
+	const [selections, setSelections] = useState<Map<string, ItemSelection>>(() =>
+		picksFromDraftLines(initialDraft?.lines ?? [])
+	);
 	const [showPayFlow, setShowPayFlow] = useState(false);
-	const [comment, setComment] = useState("");
-	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(null);
+	const [comment, setComment] = useState(initialDraft?.specialInstructions ?? "");
+	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(
+		initialDraft?.tableId ?? null
+	);
 	const [detailItem, setDetailItem] = useState<MenuItemWithImage | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -195,11 +230,12 @@ export function MenuBrowser({
 		const resolved = popularIds
 			.map((id) => byId.get(id as string))
 			.filter((item): item is (typeof menuItems)[number] => item !== undefined)
-			// Availability and photographs are read here rather than baked into
-			// the nightly ranking, because both change without the ranking
-			// changing: a dish pulled at lunch must leave the strip immediately,
-			// and one that gains a photo this morning should be able to appear.
-			.filter((item) => item.isAvailable && item.imageUrl);
+			// Availability, price and photographs are read here rather than baked
+			// into the nightly ranking, because all three change without the
+			// ranking changing: a dish pulled at lunch must leave the strip
+			// immediately, and one that gains a photo this morning should be able
+			// to appear. A dish with no price yet is off the menu entirely.
+			.filter((item) => item.isAvailable && hasListedPrice(item.basePrice) && item.imageUrl);
 		// All-or-nothing below the floor. Two cards do not read as "our most
 		// popular" — they read as a strip that failed to load.
 		return resolved.length >= POPULARITY_MIN_ITEMS ? resolved : [];
@@ -224,6 +260,7 @@ export function MenuBrowser({
 			setSelections((prev) => {
 				const next = new Map(prev);
 				next.set(data.menuItemId, {
+					menuItemId: data.menuItemId,
 					quantity: data.quantity,
 					basePrice: data.basePrice,
 					selectedOptions: data.selectedOptions,
@@ -231,6 +268,7 @@ export function MenuBrowser({
 				return next;
 			});
 			setDetailItem(null);
+			onDismissSubmitError?.();
 			track("item_added_to_cart", {
 				menu_item_id: data.menuItemId,
 				quantity: data.quantity,
@@ -238,17 +276,30 @@ export function MenuBrowser({
 				restaurant_id: restaurantId,
 			});
 		},
-		[restaurantId]
+		[restaurantId, onDismissSubmitError]
 	);
 
-	const handleRemoveItem = useCallback((itemId: Id<"menuItems">) => {
-		setSelections((prev) => {
-			const next = new Map(prev);
-			next.delete(itemId);
-			return next;
-		});
-		setDetailItem(null);
-	}, []);
+	// Every way the dish is ordered, not just the one the item sheet shows.
+	const handleRemoveItem = useCallback(
+		(itemId: Id<"menuItems">) => {
+			setSelections((prev) => {
+				const next = new Map(prev);
+				for (const key of prev.keys()) {
+					if (isPickOfDish(key, itemId)) next.delete(key);
+				}
+				return next;
+			});
+			setDetailItem(null);
+			onDismissSubmitError?.();
+		},
+		[onDismissSubmitError]
+	);
+
+	const selectionsByDish = useMemo(() => picksByDish(selections), [selections]);
+	const refusedMenuItemId =
+		submitError?.menuItemId !== undefined && selectionsByDish.has(submitError.menuItemId)
+			? submitError.menuItemId
+			: undefined;
 
 	const orderTotal = useMemo(() => {
 		let total = 0;
@@ -287,8 +338,8 @@ export function MenuBrowser({
 
 	const handleConfirmOrder = () => {
 		if (!selectedTableId) return;
-		const items = Array.from(selections.entries()).map(([menuItemId, sel]) => ({
-			menuItemId: menuItemId as Id<"menuItems">,
+		const items = Array.from(selections.values()).map((sel) => ({
+			menuItemId: sel.menuItemId,
 			quantity: sel.quantity,
 			selectedOptions: Array.from(sel.selectedOptions.values()).flat(),
 		}));
@@ -436,7 +487,7 @@ export function MenuBrowser({
 								items={menuItems}
 								dayOfWeek={dayOfWeek}
 								lang={lang}
-								selections={selections}
+								selections={selectionsByDish}
 								onOpenDetail={handleOpenDetail}
 								searchQuery={deferredSearchQuery}
 								onFilterVisibility={handleFilterVisibility}
@@ -557,8 +608,25 @@ export function MenuBrowser({
 							/>
 							<div className="flex justify-between text-base font-semibold text-foreground">
 								<span>{t(OrderingKeys.MENU_TOTAL_LABEL)}</span>
-								<span>${formatCents(orderTotal)}</span>
+								<span>{formatMoney(orderTotal)}</span>
 							</div>
+							{submitError ? (
+								<div
+									role="alert"
+									className="px-3 py-2 rounded-lg text-sm text-destructive bg-destructive-subtle"
+								>
+									<p>{submitError.message}</p>
+									{refusedMenuItemId ? (
+										<button
+											type="button"
+											onClick={() => handleRemoveItem(refusedMenuItemId)}
+											className="mt-1 text-sm font-semibold underline"
+										>
+											{t(OrderingKeys.MENU_REMOVE_UNAVAILABLE_DISH)}
+										</button>
+									) : null}
+								</div>
+							) : null}
 							<button
 								onClick={handleConfirmOrder}
 								disabled={isSubmitting || !selectedTableId || paymentsEnabled === false}
@@ -573,7 +641,7 @@ export function MenuBrowser({
 						<>
 							<div className="flex justify-between text-base font-semibold text-foreground">
 								<span>{t(OrderingKeys.MENU_TOTAL_WITH_COUNT, { count: itemCount })}</span>
-								<span>${formatCents(orderTotal)}</span>
+								<span>{formatMoney(orderTotal)}</span>
 							</div>
 							<button
 								onClick={() => setShowPayFlow(true)}
@@ -799,6 +867,7 @@ interface MenuItemProps {
 }
 
 function MenuItemCard({ item, lang, selection, onOpenDetail }: Readonly<MenuItemProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const isSelected = selection !== undefined;
 	const description = getTranslatedField(item, lang, "description") || item.description;
@@ -848,13 +917,14 @@ function MenuItemCard({ item, lang, selection, onOpenDetail }: Readonly<MenuItem
 				{description && (
 					<div className="text-xs mt-0.5 line-clamp-2 text-faint-foreground">{description}</div>
 				)}
-				<div className="text-sm font-bold mt-1 text-foreground">${formatCents(item.basePrice)}</div>
+				<div className="text-sm font-bold mt-1 text-foreground">{formatMoney(item.basePrice)}</div>
 			</div>
 		</button>
 	);
 }
 
 function MenuItemRow({ item, lang, selection, onOpenDetail }: Readonly<MenuItemProps>) {
+	const formatMoney = useFormatMoney();
 	const isSelected = selection !== undefined;
 	const description = getTranslatedField(item, lang, "description") || item.description;
 	return (
@@ -878,7 +948,7 @@ function MenuItemRow({ item, lang, selection, onOpenDetail }: Readonly<MenuItemP
 					<span className="truncate">{getTranslatedField(item, lang)}</span>
 				</span>
 				<span className="shrink-0 text-sm font-bold tabular-nums text-foreground">
-					${formatCents(item.basePrice)}
+					{formatMoney(item.basePrice)}
 				</span>
 			</div>
 			{description && (

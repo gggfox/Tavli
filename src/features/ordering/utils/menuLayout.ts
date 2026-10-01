@@ -1,19 +1,22 @@
 /**
  * Layout rules for the diner menu that are worth testing on their own.
  */
+import { hasListedPrice } from "convex/_shared/menuPricing";
 
 /**
  * Is this item on the menu today?
  *
  * One predicate for every surface that counts or lists items — the section
  * body, the category rail's counts, the full-menu sheet — so a dish switched
- * off or restricted to weekends disappears from all of them at once.
+ * off, restricted to weekends, or not priced yet disappears from all of them
+ * at once. An unpriced dish (see `hasListedPrice`) would otherwise show as
+ * `$0.00`; the menu editor flags it for staff instead.
  */
 export function isItemAvailableToday(
-	item: Readonly<{ isAvailable: boolean; availableDays?: readonly number[] }>,
+	item: Readonly<{ isAvailable: boolean; basePrice: number; availableDays?: readonly number[] }>,
 	dayOfWeek: number
 ): boolean {
-	if (!item.isAvailable) return false;
+	if (!item.isAvailable || !hasListedPrice(item.basePrice)) return false;
 	if (item.availableDays && item.availableDays.length > 0) {
 		return item.availableDays.includes(dayOfWeek);
 	}
@@ -45,6 +48,7 @@ export function countAvailableByCategory(
 	items: readonly {
 		categoryId: string;
 		isAvailable: boolean;
+		basePrice: number;
 		availableDays?: readonly number[];
 	}[],
 	dayOfWeek: number

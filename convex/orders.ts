@@ -1,3 +1,4 @@
+import { hasListedPrice } from "./_shared/menuPricing";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -6,11 +7,14 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { recordWalkInOccupancyForOrder } from "./walkInOccupancy";
 import {
 	ConflictError,
+	ConflictErrorObject,
 	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
 	NotAuthorizedErrorObject,
 	NotFoundError,
 	NotFoundErrorObject,
 	UserInputValidationError,
+	UserInputValidationErrorObject,
 } from "./_shared/errors";
 import { AsyncReturn } from "./_shared/types";
 import { appendAuditEvent } from "./_util/audit";
@@ -22,6 +26,7 @@ import {
 	requireRestaurantStaffAccess,
 } from "./_util/auth";
 import {
+	DINER_SESSION_ERRORS,
 	isSessionMember,
 	requireAuthenticatedDiner,
 	requireOwnedActiveSession,
@@ -34,6 +39,7 @@ import {
 	AUDIT_SYSTEM_USER_ID,
 	DEFAULT_ORDER_NUMBER_RESET_FREQUENCY,
 	DEFAULT_PREP_STATION,
+	MAX_DRAFT_ORDER_LINES,
 	OPERATOR_ALERT_KIND,
 	OPERATOR_ALERT_SEVERITY,
 	ORDER_PAYMENT_STATE,
@@ -51,7 +57,12 @@ import {
 } from "./constants";
 import { formatMoneyCents } from "./_shared/money";
 import { raiseOperatorAlert } from "./_util/operatorAlerts";
-import { canRecordPaymentFailure, currentOrderChargeAmount } from "./paymentSupersedeHelpers";
+import {
+	canRecordPaymentFailure,
+	currentOrderChargeAmount,
+	isPaymentCreateInFlight,
+	PAYMENT_SUPERSEDE_ERRORS,
+} from "./paymentSupersedeHelpers";
 import { isCashSettledOrder, paymentMoneyBreakdown } from "./paymentMoneyHelpers";
 import { allocateNextOrderNumber } from "./orderDayCounters";
 import { getOrderResetPeriodKey, getOrderServiceDateKey } from "./orderServiceDate";
@@ -69,14 +80,19 @@ import {
 	type OrderScope,
 	SERVICE_DATE_FILTER_VALIDATOR,
 	type ServiceDateFilter,
+	DRAFT_ORDER_ERRORS,
 	invalidateActivePayment,
+	isValidOrderLineQuantity,
 	loadOrderItemTranslations,
+	type NormalizedSelectedOption,
 	normalizeSelectedOptions,
 	owesInPersonPayment,
 	PREP_STATION_VALIDATOR,
+	priceOrderLine,
 	recalculateTotal,
 	releasesCashOrdersImmediately,
 	resolvePrepStation,
+	sameDraftLines,
 	selectedOptionValidator,
 } from "./orderHelpers";
 import { executeOrderItemCancellation } from "./orderItemCancellation";
@@ -174,23 +190,33 @@ export const addItem = mutation({
 
 		const menuItem = await ctx.db.get(args.menuItemId);
 		if (!menuItem) throw new NotFoundError("Menu item not found");
-
-		const menuItemName = (args.lang && menuItem.translations?.[args.lang]?.name) || menuItem.name;
+		// Same refusal `saveDraftFromMenu` makes: a dish that is switched off, or
+		// has no price yet (stored as 0), is not on the diner's menu and must not
+		// become a line priced at nothing.
+		if (!menuItem.isAvailable || !hasListedPrice(menuItem.basePrice)) {
+			throw new UserInputValidationError({
+				fields: [{ field: "menuItemId", message: DRAFT_ORDER_ERRORS.MENU_ITEM_UNAVAILABLE }],
+			});
+		}
 
 		const normalizedSelectedOptions = await normalizeSelectedOptions(
 			ctx,
 			order.restaurantId,
 			args.selectedOptions
 		);
-		const optionsTotal = normalizedSelectedOptions.reduce((sum, o) => sum + o.priceModifier, 0);
-		const lineTotal = (menuItem.basePrice + optionsTotal) * args.quantity;
+		const { menuItemName, unitPrice, lineTotal } = priceOrderLine(
+			menuItem,
+			normalizedSelectedOptions,
+			args.quantity,
+			args.lang
+		);
 
 		const itemId = await ctx.db.insert(TABLE.ORDER_ITEMS, {
 			orderId: args.orderId,
 			menuItemId: args.menuItemId,
 			menuItemName,
 			quantity: args.quantity,
-			unitPrice: menuItem.basePrice,
+			unitPrice,
 			selectedOptions: normalizedSelectedOptions,
 			specialInstructions: args.specialInstructions,
 			lineTotal,
@@ -280,6 +306,233 @@ export const setDraftInstructions = mutation({
 		await invalidateActivePayment(ctx, order);
 	},
 });
+
+type SaveDraftFromMenuError =
+	| NotAuthenticatedErrorObject
+	| NotAuthorizedErrorObject
+	| NotFoundErrorObject
+	| ConflictErrorObject
+	| UserInputValidationErrorObject;
+
+/**
+ * Writes the menu's picks onto the session's draft in one transaction and
+ * returns the draft's id, ready for the per-order checkout (ADR 008).
+ *
+ * **Replace, not append.** The menu sends the diner's whole order every time,
+ * so the draft's lines become exactly those picks, with the chosen table and
+ * notes. The old path — `createDraft` returned any existing draft, then one
+ * `addItem` per pick — appended, so a diner who went to checkout, came back
+ * and picked again was charged for both rounds. The menu now opens seeded from
+ * the draft, which is what makes replacing safe: nothing the diner picked
+ * earlier is lost, it is simply resent.
+ *
+ * **Validate everything, then write.** Refusals come back as a result tuple
+ * with a stable code rather than a throw, and a returned error does not roll
+ * back a Convex transaction the way a throw does — so every read and check
+ * runs before the first write. A refusal leaves the draft exactly as it was;
+ * the old per-line loop could fail half-way and leave half an order.
+ *
+ * Line refusals travel as `"items.<index>: CODE"` so the menu can tell which
+ * pick to take off: a dish staff switched off after the diner picked it, one
+ * that no longer exists or belongs to another restaurant, an option that has
+ * gone, or a quantity outside 1–`MAX_ORDER_ITEM_QUANTITY`.
+ *
+ * **An open payment attempt.** A diner who reached checkout already has a
+ * PaymentIntent on this draft. Changing the lines retires it exactly as every
+ * other draft edit does (`invalidateActivePayment`), and — unlike those older
+ * edit paths — also stands the intent down at Stripe through the existing
+ * `stripe.standDownSupersededIntent` hop, so the client secret the checkout
+ * page held cannot be confirmed for the old food. A charge that wins that race
+ * is the case `confirmPayment` already handles (accepted when it still matches
+ * what the order costs, otherwise refunded). The one state that is refused is
+ * an intent whose create call is still running (`isPaymentCreateInFlight`):
+ * there is no intent id to cancel yet, so the diner is asked to wait a moment
+ * with `ERROR_PAYMENT_IN_PROGRESS`. When nothing changed at all, the draft and
+ * its payment attempt are left untouched.
+ */
+export const saveDraftFromMenu = mutation({
+	args: {
+		sessionId: v.id(TABLE.SESSIONS),
+		tableId: v.id(TABLE.TABLES),
+		items: v.array(
+			v.object({
+				menuItemId: v.id(TABLE.MENU_ITEMS),
+				quantity: v.number(),
+				selectedOptions: v.array(selectedOptionValidator),
+			})
+		),
+		specialInstructions: v.optional(v.string()),
+		lang: v.optional(v.string()),
+	},
+	handler: async function (ctx, args): AsyncReturn<Id<"orders">, SaveDraftFromMenuError> {
+		// ---- Reads and checks only: nothing below may write until every one passes.
+		const [userId, authError] = await getCurrentUserId(ctx);
+		if (authError) return [null, authError];
+
+		const session = await ctx.db.get(args.sessionId);
+		if (!session || session.status !== "active" || !isSessionMember(session, userId)) {
+			return [null, new NotFoundError(DRAFT_ORDER_ERRORS.SESSION_ENDED).toObject()];
+		}
+		if (session.lockedForPaymentAt !== undefined) {
+			return [null, new NotAuthorizedError(DINER_SESSION_ERRORS.TAB_LOCKED).toObject()];
+		}
+
+		const table = await ctx.db.get(args.tableId);
+		if (!table || !table.isActive || table.restaurantId !== session.restaurantId) {
+			return [null, new NotFoundError(DRAFT_ORDER_ERRORS.TABLE_NOT_FOUND).toObject()];
+		}
+
+		if (args.items.length === 0) {
+			return [null, lineError("items", DRAFT_ORDER_ERRORS.EMPTY)];
+		}
+		if (args.items.length > MAX_DRAFT_ORDER_LINES) {
+			return [null, lineError("items", DRAFT_ORDER_ERRORS.TOO_MANY_LINES)];
+		}
+
+		const lines = [];
+		for (const [index, item] of args.items.entries()) {
+			const field = `items.${index}`;
+			if (!isValidOrderLineQuantity(item.quantity)) {
+				return [null, lineError(field, DRAFT_ORDER_ERRORS.QUANTITY_INVALID)];
+			}
+			const menuItem = await ctx.db.get(item.menuItemId);
+			if (!menuItem || menuItem.restaurantId !== session.restaurantId) {
+				return [null, lineError(field, DRAFT_ORDER_ERRORS.MENU_ITEM_NOT_FOUND)];
+			}
+			// An unpriced dish (basePrice 0 — see `hasListedPrice`) is hidden from
+			// the diner's menu, so to the diner it is as gone as a switched-off one.
+			if (!menuItem.isAvailable || !hasListedPrice(menuItem.basePrice)) {
+				return [null, lineError(field, DRAFT_ORDER_ERRORS.MENU_ITEM_UNAVAILABLE)];
+			}
+			let selectedOptions: NormalizedSelectedOption[];
+			try {
+				selectedOptions = await normalizeSelectedOptions(
+					ctx,
+					session.restaurantId,
+					item.selectedOptions
+				);
+			} catch (error) {
+				if (error instanceof NotFoundError) {
+					return [null, lineError(field, DRAFT_ORDER_ERRORS.OPTION_NOT_FOUND)];
+				}
+				throw error;
+			}
+			lines.push({
+				menuItemId: item.menuItemId,
+				quantity: item.quantity,
+				selectedOptions,
+				...priceOrderLine(menuItem, selectedOptions, item.quantity, args.lang),
+			});
+		}
+
+		const sessionOrders = await ctx.db
+			.query(TABLE.ORDERS)
+			.withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+			.collect();
+		const draft = sessionOrders.find((o) => o.status === ORDER_STATUS.DRAFT);
+		const draftItems = draft
+			? await ctx.db
+					.query(TABLE.ORDER_ITEMS)
+					.withIndex("by_order", (q) => q.eq("orderId", draft._id))
+					.collect()
+			: [];
+
+		const now = Date.now();
+		const activePayment = draft?.activePaymentId ? await ctx.db.get(draft.activePaymentId) : null;
+
+		if (
+			draft &&
+			draft.tableId === args.tableId &&
+			(draft.specialInstructions ?? "") === (args.specialInstructions ?? "") &&
+			sameDraftLines(draftItems, lines)
+		) {
+			return [draft._id, null];
+		}
+
+		if (activePayment && isPaymentCreateInFlight(activePayment, now)) {
+			return [null, new ConflictError(PAYMENT_SUPERSEDE_ERRORS.IN_PROGRESS).toObject()];
+		}
+
+		// ---- Writes.
+		// TAVLI-83: the table becomes known at the first order, so pin it onto the
+		// session here, as `createDraft` does. A session already pinned keeps its
+		// table — later rounds must not move it — with one exception: the table
+		// was pinned by THIS draft and nothing else has been ordered, which is a
+		// diner correcting a mis-picked table before paying, not a later round.
+		const pinnedByThisDraft =
+			draft !== undefined &&
+			session.tableId === draft.tableId &&
+			sessionOrders.every((o) => o._id === draft._id);
+		if (session.tableId === undefined || (pinnedByThisDraft && session.tableId !== args.tableId)) {
+			await ctx.db.patch(session._id, { tableId: args.tableId });
+		}
+
+		let orderId: Id<"orders">;
+		if (draft) {
+			orderId = draft._id;
+			// Retire the attempt priced for the old lines. The row is patched here;
+			// the intent comes down at Stripe from the scheduled hop, since a
+			// mutation cannot call Stripe (see `stripe.standDownSupersededIntent`).
+			const liveIntentPaymentId =
+				activePayment?.stripePaymentIntentId &&
+				(activePayment.status === PAYMENT_STATUS.PENDING ||
+					activePayment.status === PAYMENT_STATUS.PROCESSING)
+					? activePayment._id
+					: undefined;
+			await invalidateActivePayment(ctx, draft);
+			if (liveIntentPaymentId) {
+				await ctx.scheduler.runAfter(0, internal.stripe.standDownSupersededIntent, {
+					paymentId: liveIntentPaymentId,
+				});
+			}
+			for (const item of draftItems) {
+				await ctx.db.delete(item._id);
+			}
+			await ctx.db.patch(orderId, {
+				tableId: args.tableId,
+				specialInstructions: args.specialInstructions,
+				updatedAt: now,
+			});
+		} else {
+			orderId = await ctx.db.insert(TABLE.ORDERS, {
+				sessionId: args.sessionId,
+				restaurantId: session.restaurantId,
+				tableId: args.tableId,
+				status: ORDER_STATUS.DRAFT,
+				totalAmount: 0,
+				paymentState: ORDER_PAYMENT_STATE.UNPAID,
+				...(args.specialInstructions !== undefined && {
+					specialInstructions: args.specialInstructions,
+				}),
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+
+		for (const line of lines) {
+			await ctx.db.insert(TABLE.ORDER_ITEMS, { orderId, ...line, createdAt: now });
+		}
+		await recalculateTotal(ctx, orderId);
+
+		// TAVLI-100: the table is occupied from the moment someone orders at it.
+		// Inline and caught for the reasons given in `createDraft`; re-run when the
+		// diner moved the draft to another table, so the new table reads as taken.
+		if (!draft || draft.tableId !== args.tableId) {
+			try {
+				await recordWalkInOccupancyForOrder(ctx, orderId);
+			} catch (error) {
+				console.error("[orders.saveDraftFromMenu] walk-in occupancy failed", { orderId, error });
+			}
+		}
+
+		return [orderId, null];
+	},
+});
+
+/** A validation refusal pinned to one field, as `"<field>: <CODE>"`. */
+function lineError(field: string, code: string): UserInputValidationErrorObject {
+	return new UserInputValidationError({ fields: [{ field, message: code }] }).toObject();
+}
 
 /**
  * LEGACY pre-ADR-008 path: sends a draft order to the kitchen/bar unpaid

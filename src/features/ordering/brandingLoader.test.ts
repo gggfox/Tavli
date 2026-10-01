@@ -28,7 +28,15 @@ function clientReturning(impl: () => Promise<unknown>): {
 	return { client, calls: () => calls };
 }
 
-const branded = { branding: { color: "#0f7b6c", fontStack: "X, sans-serif" } };
+const branded = {
+	name: "Tacos",
+	isActive: true,
+	branding: { color: "#0f7b6c", fontStack: "X, sans-serif" },
+};
+const brandedResult = { branding: branded.branding, restaurantName: "Tacos", notFound: false };
+/** Timeout or throw: unbranded, and — the point — not a 404. */
+const unresolved = { branding: null, restaurantName: null, notFound: false };
+const missing = { branding: null, restaurantName: null, notFound: true };
 
 afterEach(() => {
 	__resetBrandingNegativeCache();
@@ -38,14 +46,16 @@ afterEach(() => {
 describe("loadBranding", () => {
 	it("returns the restaurant's branding", async () => {
 		const { client } = clientReturning(async () => branded);
-		await expect(loadBranding(client, "tacos")).resolves.toEqual({
-			branding: branded.branding,
-		});
+		await expect(loadBranding(client, "tacos")).resolves.toEqual(brandedResult);
 	});
 
 	it("returns unbranded for a restaurant with no branding set", async () => {
-		const { client } = clientReturning(async () => ({ name: "Tacos" }));
-		await expect(loadBranding(client, "tacos")).resolves.toEqual({ branding: null });
+		const { client } = clientReturning(async () => ({ name: "Tacos", isActive: true }));
+		await expect(loadBranding(client, "tacos")).resolves.toEqual({
+			branding: null,
+			restaurantName: "Tacos",
+			notFound: false,
+		});
 	});
 
 	it("degrades to unbranded when the query throws", async () => {
@@ -54,7 +64,7 @@ describe("loadBranding", () => {
 		const { client } = clientReturning(async () => {
 			throw new Error("convex is down");
 		});
-		await expect(loadBranding(client, "tacos")).resolves.toEqual({ branding: null });
+		await expect(loadBranding(client, "tacos")).resolves.toEqual(unresolved);
 	});
 
 	it("degrades to unbranded when the query hangs", async () => {
@@ -62,7 +72,22 @@ describe("loadBranding", () => {
 		const { client } = clientReturning(() => new Promise(() => {}));
 		const promise = loadBranding(client, "tacos");
 		await vi.advanceTimersByTimeAsync(1_500);
-		await expect(promise).resolves.toEqual({ branding: null });
+		await expect(promise).resolves.toEqual(unresolved);
+	});
+
+	it("reports a definitely-missing restaurant as not found", async () => {
+		const { client } = clientReturning(async () => null);
+		await expect(loadBranding(client, "nope")).resolves.toEqual(missing);
+	});
+
+	it("reports an inactive restaurant as not found, without caching it", async () => {
+		// `sessions.create` refuses an inactive restaurant, so a diner can never
+		// order there — but a manager can switch it back on at any moment, so it
+		// must not sit in the negative cache.
+		const { client, calls } = clientReturning(async () => ({ ...branded, isActive: false }));
+		await expect(loadBranding(client, "paused")).resolves.toEqual(missing);
+		await loadBranding(client, "paused");
+		expect(calls()).toBe(2);
 	});
 
 	describe("negative cache", () => {
@@ -71,7 +96,8 @@ describe("loadBranding", () => {
 
 			await loadBranding(client, "nope");
 			await loadBranding(client, "nope");
-			await loadBranding(client, "nope");
+			// A cache hit is still a definite miss, so the route still 404s.
+			await expect(loadBranding(client, "nope")).resolves.toEqual(missing);
 
 			// Without this, `/r/<anything>` is one HTTP request in, one database
 			// round-trip out, at whatever rate someone cares to send — the SSR
@@ -103,11 +129,11 @@ describe("loadBranding", () => {
 
 			const first = loadBranding(client, "slow");
 			await vi.advanceTimersByTimeAsync(1_500);
-			await expect(first).resolves.toEqual({ branding: null });
+			await expect(first).resolves.toEqual(unresolved);
 
 			// The second attempt must go through and get the real branding.
 			vi.useRealTimers();
-			await expect(loadBranding(client, "slow")).resolves.toEqual({ branding: branded.branding });
+			await expect(loadBranding(client, "slow")).resolves.toEqual(brandedResult);
 			expect(call).toBe(2);
 		});
 
@@ -120,8 +146,8 @@ describe("loadBranding", () => {
 				return branded;
 			}) as QueryClient["ensureQueryData"];
 
-			await expect(loadBranding(client, "flaky")).resolves.toEqual({ branding: null });
-			await expect(loadBranding(client, "flaky")).resolves.toEqual({ branding: branded.branding });
+			await expect(loadBranding(client, "flaky")).resolves.toEqual(unresolved);
+			await expect(loadBranding(client, "flaky")).resolves.toEqual(brandedResult);
 		});
 
 		it("forgets a missing slug once its TTL expires", async () => {
@@ -137,7 +163,7 @@ describe("loadBranding", () => {
 
 			await loadBranding(client, "soon");
 			await vi.advanceTimersByTimeAsync(61_000);
-			await expect(loadBranding(client, "soon")).resolves.toEqual({ branding: branded.branding });
+			await expect(loadBranding(client, "soon")).resolves.toEqual(brandedResult);
 		});
 
 		it("stays bounded under a flood of distinct slugs", async () => {

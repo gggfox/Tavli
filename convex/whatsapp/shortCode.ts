@@ -22,6 +22,7 @@
  * on its tables offers anyway.
  */
 import {
+	WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH,
 	WHATSAPP_SHORT_CODE_MAX_CANDIDATES,
 	WHATSAPP_SHORT_CODE_PREFIX_LENGTH,
 	WHATSAPP_SHORT_CODE_SUFFIX_ALPHABET,
@@ -169,13 +170,45 @@ export function stripShortCode(body: string, code: string): string {
  * The sentence the wa.me link prefills. It has to read like something a person
  * would actually send, because WhatsApp shows it to the diner before they hit
  * send — a bare code would look like a scam.
+ *
+ * A restaurant may replace the wording (`customMessage`), but never the code:
+ * it is always appended here, so no edit in Settings can produce a link that
+ * does not route.
  */
 export function buildDeepLinkText(
 	restaurantName: string,
 	code: string,
-	locale: WhatsappLocale
+	locale: WhatsappLocale,
+	customMessage?: string
 ): string {
+	const custom = customMessage?.trim();
+	if (custom) return `${custom} · ${formatShortCode(code)}`;
 	return getBotCopy(locale).deepLinkPrefill(restaurantName, formatShortCode(code));
+}
+
+export type DeepLinkMessageValidation =
+	| { ok: true; message: string | undefined }
+	| { ok: false; code: "ERROR_WHATSAPP_MESSAGE_TOO_LONG" | "ERROR_WHATSAPP_MESSAGE_HAS_CODE" };
+
+/**
+ * Normalize a custom deep-link message before it is stored. Blank means "use
+ * the default sentence" and comes back as `undefined`.
+ *
+ * A code-shaped token is refused, not stripped: the router tries every
+ * candidate in a message, so another restaurant's code in the wording could
+ * send this restaurant's diners somewhere else — and a quietly edited message
+ * would surprise the manager who typed it.
+ */
+export function validateDeepLinkMessage(raw: string): DeepLinkMessageValidation {
+	const message = raw.trim();
+	if (!message) return { ok: true, message: undefined };
+	if (message.length > WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH) {
+		return { ok: false, code: "ERROR_WHATSAPP_MESSAGE_TOO_LONG" };
+	}
+	if (extractShortCodeCandidates(message).length > 0) {
+		return { ok: false, code: "ERROR_WHATSAPP_MESSAGE_HAS_CODE" };
+	}
+	return { ok: true, message };
 }
 
 /**
@@ -187,10 +220,11 @@ export function buildDeepLinkUrl(
 	tavliNumber: string | undefined | null,
 	restaurantName: string,
 	code: string,
-	locale: WhatsappLocale
+	locale: WhatsappLocale,
+	customMessage?: string
 ): string | null {
 	const digits = (tavliNumber ?? "").replace(/[^0-9]/g, "");
 	if (!digits) return null;
-	const text = buildDeepLinkText(restaurantName, code, locale);
+	const text = buildDeepLinkText(restaurantName, code, locale, customMessage);
 	return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }

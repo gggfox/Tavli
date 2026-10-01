@@ -60,21 +60,22 @@ type DirectoryRow =
 export function useAssignableMembers(
 	restaurantId: Id<"restaurants"> | undefined
 ): UseAssignableMembersResult {
-	const { isAuthenticated } = useConvexAuth();
+	const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
 	const { userId } = useAuth();
-	const { roles, organizationId: userOrgId } = useCurrentUserRoles();
+	const { roles, organizationId: userOrgId, isLoading: rolesLoading } = useCurrentUserRoles();
 	const { restaurant, restaurants } = useRestaurant();
 
-	const { data: directoryRows, isLoading: directoryLoading } = useQuery({
+	const directoryEnabled = Boolean(isAuthenticated && restaurantId);
+	const { data: directoryRows, isPending: directoryPending } = useQuery({
 		...convexQuery(
 			api.restaurantMembers.listTeamDirectory,
 			restaurantId ? { restaurantId } : "skip"
 		),
-		enabled: Boolean(isAuthenticated && restaurantId),
+		enabled: directoryEnabled,
 		select: unwrapResult<DirectoryRow[]>,
 	});
 
-	const { data: myMemberships, isLoading: membershipsLoading } = useQuery({
+	const { data: myMemberships, isPending: membershipsPending } = useQuery({
 		...convexQuery(api.restaurantMembers.listByUser, {}),
 		enabled: isAuthenticated,
 		select: unwrapResult<Doc<"restaurantMembers">[]>,
@@ -136,9 +137,16 @@ export function useAssignableMembers(
 		return out;
 	}, [directoryRows, canAssignAny, canTargetManagers]);
 
+	// `isPending` (no data yet) rather than `isLoading`: while Convex auth is
+	// still resolving the queries are disabled, and a disabled query reports
+	// `isLoading: false` — which let callers flash "no team members".
 	return {
 		members,
-		isLoading: directoryLoading || membershipsLoading,
+		isLoading:
+			authLoading ||
+			rolesLoading ||
+			(directoryEnabled && directoryPending) ||
+			(isAuthenticated && membershipsPending),
 		canAssignAny,
 	};
 }

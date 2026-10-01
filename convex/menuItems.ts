@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { hasListedPrice } from "./_shared/menuPricing";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
@@ -628,6 +629,39 @@ export const listByCategoryForStaff = query({
 			.withIndex("by_category", (q) => q.eq("categoryId", args.categoryId))
 			.collect();
 		return resolveImageUrls(ctx, items);
+	},
+});
+
+/**
+ * Staff read: how many items on a menu have no usable price (see
+ * `hasListedPrice`). Those are hidden from diners, so the menu editor warns
+ * with this count — the rows themselves live in per-category queries, and the
+ * warning has to cover categories that are collapsed or scrolled away.
+ */
+export const countUnpricedForStaff = query({
+	args: { menuId: v.id(TABLE.MENUS) },
+	handler: async (ctx, args) => {
+		const menu = await ctx.db.get(args.menuId);
+		if (!menu) return 0;
+
+		const [userId, error] = await getCurrentUserId(ctx);
+		if (error) return 0;
+		const [, error2] = await requireRestaurantManagerOrAbove(ctx, userId, menu.restaurantId);
+		if (error2) return 0;
+
+		const categories = await ctx.db
+			.query(TABLE.MENU_CATEGORIES)
+			.withIndex("by_menu", (q) => q.eq("menuId", args.menuId))
+			.collect();
+		let unpriced = 0;
+		for (const category of categories) {
+			const items = await ctx.db
+				.query(TABLE.MENU_ITEMS)
+				.withIndex("by_category", (q) => q.eq("categoryId", category._id))
+				.collect();
+			unpriced += items.filter((item) => !hasListedPrice(item.basePrice)).length;
+		}
+		return unpriced;
 	},
 });
 

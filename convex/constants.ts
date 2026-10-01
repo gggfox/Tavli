@@ -107,6 +107,21 @@ export const ORDER_STATUS = {
 export type OrderStatus = (typeof ORDER_STATUS)[keyof typeof ORDER_STATUS];
 
 /**
+ * Most of one dish a diner can put on a single order line. A sanity bound, not
+ * a business rule: nobody orders 100 of anything from a phone, and a number
+ * past it is a stuck stepper or a crafted request. The item sheet's stepper
+ * stops here too, so the diner never meets the server-side refusal.
+ */
+export const MAX_ORDER_ITEM_QUANTITY = 99;
+
+/**
+ * Most lines one menu submission may carry (`orders.saveDraftFromMenu`). Each
+ * line costs a few reads (the dish, then its options), so the bound also keeps
+ * the mutation far inside Convex's per-function read budget.
+ */
+export const MAX_DRAFT_ORDER_LINES = 50;
+
+/**
  * How often the per-restaurant order-number counter resets. Stored on
  * `restaurants.orderNumberResetFrequency`; missing rows behave as
  * `DEFAULT_ORDER_NUMBER_RESET_FREQUENCY`.
@@ -1442,6 +1457,14 @@ export const WHATSAPP_SHORT_CODE_MAX_CANDIDATES = 5;
 
 /** Attempts to find a free short code before falling back to a random prefix. */
 export const WHATSAPP_SHORT_CODE_MAX_ATTEMPTS = 8;
+
+/**
+ * Longest custom deep-link message a restaurant may set. The code is appended
+ * after it, and the whole sentence sits in the diner's message box before they
+ * hit send — past a couple of lines it stops reading like something a person
+ * would type.
+ */
+export const WHATSAPP_DEEP_LINK_MESSAGE_MAX_LENGTH = 200;
 
 /**
  * How far back a phone's own history may bind an inbound message with no code.

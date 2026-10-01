@@ -22,7 +22,9 @@ export {
 	normalizeLanguage,
 	parseLanguageCookie,
 	readLanguageCookie,
+	replaceLanguageSegment,
 	resolveLanguage,
+	toSupportedLanguage,
 	writeLanguageCookie,
 } from "./language";
 export { MenusKeys, type MenusKey } from "./keys/menus";

@@ -12,6 +12,7 @@ import type * as _shared_brandColor from "../_shared/brandColor.js";
 import type * as _shared_brandFonts from "../_shared/brandFonts.js";
 import type * as _shared_errors from "../_shared/errors.js";
 import type * as _shared_integrationLogging from "../_shared/integrationLogging.js";
+import type * as _shared_menuPricing from "../_shared/menuPricing.js";
 import type * as _shared_money from "../_shared/money.js";
 import type * as _shared_tip from "../_shared/tip.js";
 import type * as _shared_types from "../_shared/types.js";
@@ -110,6 +111,7 @@ import type * as migrations_backfillRestaurantTimezone from "../migrations/backf
 import type * as migrations_backfillTableAssignedBy from "../migrations/backfillTableAssignedBy.js";
 import type * as migrations_backfillUpdatedBy from "../migrations/backfillUpdatedBy.js";
 import type * as migrations_backfillWhatsappShortCodes from "../migrations/backfillWhatsappShortCodes.js";
+import type * as migrations_stripPriceNotListedNote from "../migrations/stripPriceNotListedNote.js";
 import type * as notifications from "../notifications.js";
 import type * as operatorAlertActions from "../operatorAlertActions.js";
 import type * as operatorAlerts from "../operatorAlerts.js";
@@ -186,6 +188,7 @@ declare const fullApi: ApiFromModules<{
   "_shared/brandFonts": typeof _shared_brandFonts;
   "_shared/errors": typeof _shared_errors;
   "_shared/integrationLogging": typeof _shared_integrationLogging;
+  "_shared/menuPricing": typeof _shared_menuPricing;
   "_shared/money": typeof _shared_money;
   "_shared/tip": typeof _shared_tip;
   "_shared/types": typeof _shared_types;
@@ -284,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/backfillTableAssignedBy": typeof migrations_backfillTableAssignedBy;
   "migrations/backfillUpdatedBy": typeof migrations_backfillUpdatedBy;
   "migrations/backfillWhatsappShortCodes": typeof migrations_backfillWhatsappShortCodes;
+  "migrations/stripPriceNotListedNote": typeof migrations_stripPriceNotListedNote;
   notifications: typeof notifications;
   operatorAlertActions: typeof operatorAlertActions;
   operatorAlerts: typeof operatorAlerts;

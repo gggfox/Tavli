@@ -356,7 +356,7 @@ export function TimelineDayNavigator({
 													selected
 														? { backgroundColor: "var(--btn-primary-bg)" }
 														: focused
-															? { backgroundColor: "var(--bg-muted)" }
+															? { backgroundColor: "var(--color-muted)" }
 															: undefined
 												}
 												onMouseEnter={() => setFocusedIdx(idx)}

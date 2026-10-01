@@ -1,4 +1,5 @@
 import { Surface } from "@/global/components";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { DisputesKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
@@ -8,7 +9,6 @@ import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { Scale } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { formatDisputeMoney } from "../constants";
 import { DisputeRow } from "./DisputeRow";
 
 type DisputesPageData = NonNullable<
@@ -38,6 +38,9 @@ export interface DisputesSectionProps {
  */
 export function DisputesSection({ restaurantId }: DisputesSectionProps) {
 	const { t } = useTranslation();
+	// Stripe money carries its own currency, so each call passes it rather
+	// than trusting the restaurant's.
+	const formatMoney = useFormatMoney();
 
 	const { data } = useQuery({
 		...convexQuery(api.disputes.listByRestaurant, { restaurantId }),
@@ -82,13 +85,13 @@ export function DisputesSection({ restaurantId }: DisputesSectionProps) {
 					</p>
 					<p className="text-sm text-foreground">
 						{t(DisputesKeys.RECOVERY_OUTSTANDING, {
-							amount: formatDisputeMoney(recovery.totalOutstanding, recovery.currency),
+							amount: formatMoney(recovery.totalOutstanding, recovery.currency),
 						})}
 					</p>
 					{recovery.totalRecovered > 0 && (
 						<p className="text-xs text-muted-foreground">
 							{t(DisputesKeys.RECOVERY_RECOVERED, {
-								amount: formatDisputeMoney(recovery.totalRecovered, recovery.currency),
+								amount: formatMoney(recovery.totalRecovered, recovery.currency),
 							})}
 						</p>
 					)}

@@ -49,12 +49,17 @@ export const ERROR_BOUNDARY_HEADING = "Something went wrong";
 export const APP_TITLE = "Tavli";
 
 /**
- * Copy rendered by the `/r/$slug` customer layout for a signed-out visitor
- * (`ordering.session.signInRequired`). The layout short-circuits before its
- * `Outlet`, so signed out this is what every diner route renders — which makes
- * it the positive "the router matched and the customer shell mounted" signal.
+ * Copy rendered by the `/r/$slug` customer layout for a signed-out visitor on
+ * a page about their own orders (`ordering.session.signInRequired`). The menu
+ * and the reservation form no longer show it: they render for anyone.
  */
 export const DINER_SIGN_IN_HEADING = "Sign in to order";
+
+/**
+ * Copy the `/r/$slug` route renders when Convex says there is no (active)
+ * restaurant at the slug (`customer.notFound.title`), with a 404 status.
+ */
+export const DINER_RESTAURANT_NOT_FOUND_HEADING = "We couldn't find this restaurant";
 
 /**
  * Start collecting uncaught page errors. Call before the first navigation and
@@ -80,14 +85,25 @@ export function collectPageErrors(page: Page): readonly string[] {
  * `<body>` and still contains no "Page not found" text — so an
  * absence-only assertion passes against a hard 500. Requiring an OK status and
  * the app's own `<title>` closes that hole.
+ *
+ * Diner pages under a real restaurant are titled with the restaurant's name,
+ * not "Tavli" — pass that (or a pattern) as `title`. A JSON error body has no
+ * `<title>` at all, so any non-empty expectation still rejects it.
  */
-export async function gotoSettled(page: Page, url: string): Promise<void> {
+export async function gotoSettled(
+	page: Page,
+	url: string,
+	title: string | RegExp = APP_TITLE
+): Promise<void> {
 	const response = await page.goto(url);
 	await page.waitForLoadState("domcontentloaded");
 	expect(response, `no response for ${url}`).not.toBeNull();
 	expect(response?.status(), `${url} did not return an OK status`).toBeLessThan(400);
-	await expect(page).toHaveTitle(APP_TITLE);
+	await expect(page).toHaveTitle(title);
 }
+
+/** Any non-empty `<title>` — for diner pages titled with the restaurant's name. */
+export const ANY_TITLE = /\S/;
 
 /**
  * Fixture contract for the data-dependent specs. Every one of these is unset

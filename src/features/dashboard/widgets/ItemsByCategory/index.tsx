@@ -1,5 +1,5 @@
 import { DashboardKeys } from "@/global/i18n";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { formatMoney, toMajorUnits, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { DonutChart } from "@tremor/react";
@@ -36,24 +36,19 @@ function ItemsByCategoryWidget({ context }: WidgetProps<Options>) {
 
 	const data = query.data;
 
-	const money = useMemo(
-		() =>
-			new Intl.NumberFormat(i18n.language, {
-				style: "currency",
-				currency: context.currency ?? "USD",
-				maximumFractionDigits: 0,
-			}),
-		[i18n.language, context.currency]
-	);
-
 	const chartData = useMemo(
 		() => (data ?? []).map((row) => ({ name: row.categoryName, value: row.revenue })),
 		[data]
 	);
 
 	const exportRows = useMemo(
-		() => (data ?? []).map((row) => ({ category: row.categoryName, revenue: row.revenue })),
-		[data]
+		// `revenue` is Σ `lineTotal` in minor units; a spreadsheet wants pesos.
+		() =>
+			(data ?? []).map((row) => ({
+				category: row.categoryName,
+				revenue: toMajorUnits(row.revenue, context.currency),
+			})),
+		[data, context.currency]
 	);
 
 	if (query.isPending && !data) return <WidgetLoading />;
@@ -71,7 +66,7 @@ function ItemsByCategoryWidget({ context }: WidgetProps<Options>) {
 				category="value"
 				index="name"
 				colors={[...SOBER_CHART_COLORS]}
-				valueFormatter={(v) => money.format(v)}
+				valueFormatter={(v) => formatMoney(v, context.currency, i18n.language)}
 				showAnimation={false}
 			/>
 		</div>

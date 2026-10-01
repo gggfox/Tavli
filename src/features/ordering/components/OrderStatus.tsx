@@ -1,13 +1,14 @@
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
-import { CheckCircle2, ChefHat, Clock, UtensilsCrossed } from "lucide-react";
+import { ORDER_STATUS, PLATFORM_APPLICATION_FEE_RATE } from "convex/constants";
+import { CheckCircle2, ChefHat, Clock, CreditCard, UtensilsCrossed } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { EmailReceiptButton } from "./EmailReceiptButton";
+import { OrderNotFound } from "./OrderNotFound";
 
 /** Customer-borne service-fee rate as a display percentage (e.g. 12). */
 const SERVICE_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
@@ -15,6 +16,10 @@ const SERVICE_FEE_PERCENT = PLATFORM_APPLICATION_FEE_RATE * 100;
 interface OrderStatusProps {
 	orderId: Id<"orders">;
 	onBackToMenu: () => void;
+	/** The diner's orders list — the way out of a not-found order. */
+	onViewOrders: () => void;
+	/** The per-order checkout, for a round that has not been paid yet. */
+	onContinueToPayment: () => void;
 }
 
 const STATUS_STEPS = [
@@ -26,17 +31,42 @@ const STATUS_STEPS = [
 
 const STATUS_ORDER = ["submitted", "preparing", "ready", "served"];
 
-export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps>) {
+export function OrderStatus({
+	orderId,
+	onBackToMenu,
+	onViewOrders,
+	onContinueToPayment,
+}: Readonly<OrderStatusProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
-	const { data: orderData } = useQuery(convexQuery(api.orders.getOrderWithItems, { orderId }));
+	const { data: orderData, isError } = useQuery({
+		...convexQuery(api.orders.getOrderWithItems, { orderId }),
+		// A Convex query error is an answer, not a blip: an id the validator
+		// rejects fails the same way every time. Retrying only stretches the
+		// spinner by the backoff before the not-found screen.
+		retry: false,
+	});
 
-	if (!orderData) {
+	// `undefined` is loading; `null` is the query's answer for an order that
+	// does not exist or is not this diner's. Treating both as "loading" was an
+	// infinite spinner on every stale or shared link.
+	if (orderData === null || (orderData === undefined && isError)) {
+		return <OrderNotFound onBackToMenu={onBackToMenu} onViewOrders={onViewOrders} />;
+	}
+
+	if (orderData === undefined) {
 		return (
 			<div className="p-4 flex items-center justify-center h-full text-faint-foreground">
 				<p>{t(OrderingKeys.ORDER_STATUS_LOADING)}</p>
 			</div>
 		);
 	}
+
+	// Not placed yet: a draft the diner has not paid, or a round committed to
+	// pay at the table. The kitchen has not seen either, so the stepper would
+	// be four grey circles with no way forward — the way forward is checkout.
+	const awaitingPlacement =
+		orderData.status === ORDER_STATUS.DRAFT || orderData.status === ORDER_STATUS.AWAITING_PAYMENT;
 
 	const currentIndex = STATUS_ORDER.indexOf(orderData.status);
 	// Removed lines are still listed below, but the diner is neither charged for
@@ -66,8 +96,12 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 	// than seeing a total silently shrink.
 	const refundedTotal = orderData.items.reduce((sum, item) => sum + (item.refundAmount ?? 0), 0);
 
+	// The page scrolls itself: the customer layout clips its outlet
+	// (`overflow-hidden`), so a long order used to push "Order more" out of
+	// reach. The actions live in a sticky footer (below) so they stay on screen
+	// however many lines the order has.
 	return (
-		<div className="flex flex-col h-full p-4 space-y-8">
+		<div className="flex flex-col h-full overflow-y-auto p-4 space-y-8">
 			<div className="text-center">
 				<h2 className="text-xl font-bold text-foreground">
 					{t(OrderingKeys.ORDER_STATUS_HEADING)}
@@ -79,13 +113,19 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 				)}
 				<p className="text-sm mt-1 text-faint-foreground">
 					{t(OrderingKeys.ORDER_STATUS_SUMMARY, {
-						total: formatCents(orderData.totalAmount),
+						total: formatMoney(orderData.totalAmount),
 						count: liveItemCount,
 					})}
 				</p>
 			</div>
 
-			{orderData.status === "cancelled" ? (
+			{awaitingPlacement ? (
+				<p className="text-sm text-center max-w-xs mx-auto text-muted-foreground">
+					{orderData.status === ORDER_STATUS.DRAFT
+						? t(OrderingKeys.ORDER_STATUS_UNPAID_NOTE)
+						: t(OrderingKeys.CHECKOUT_CASH_KITCHEN_NOTE)}
+				</p>
+			) : orderData.status === "cancelled" ? (
 				<div className="text-center py-8">
 					<p className="text-lg font-semibold text-destructive">
 						{t(OrderingKeys.ORDER_STATUS_CANCELLED)}
@@ -151,7 +191,7 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 							<span>
 								{item.quantity}x {item.menuItemName}
 							</span>
-							<span>${formatCents(item.lineTotal)}</span>
+							<span>{formatMoney(item.lineTotal)}</span>
 						</div>
 					)
 				)}
@@ -160,22 +200,22 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 					<>
 						<div className="flex justify-between pt-2 text-sm border-t border-border text-muted-foreground">
 							<span>{t(OrderingKeys.CHECKOUT_SUBTOTAL)}</span>
-							<span>${formatCents(chargedSubtotal)}</span>
+							<span>{formatMoney(chargedSubtotal)}</span>
 						</div>
 						{chargedFee > 0 && (
 							<div className="flex justify-between text-sm text-muted-foreground">
 								<span>{t(OrderingKeys.CHECKOUT_SERVICE_FEE, { rate: SERVICE_FEE_PERCENT })}</span>
-								<span>${formatCents(chargedFee)}</span>
+								<span>{formatMoney(chargedFee)}</span>
 							</div>
 						)}
 						<div className="flex justify-between pt-2 text-sm font-semibold border-t border-border text-foreground">
 							<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
-							<span>${formatCents(chargedTotal)}</span>
+							<span>{formatMoney(chargedTotal)}</span>
 						</div>
 						{refundedTotal > 0 && (
 							<div className="flex justify-between text-sm text-muted-foreground">
 								<span>{t(OrderingKeys.ORDER_STATUS_REFUNDED_LINE)}</span>
-								<span>-${formatCents(refundedTotal)}</span>
+								<span>{formatMoney(-refundedTotal)}</span>
 							</div>
 						)}
 					</>
@@ -184,12 +224,29 @@ export function OrderStatus({ orderId, onBackToMenu }: Readonly<OrderStatusProps
 
 			{isPaid && <EmailReceiptButton orderId={orderId} />}
 
-			<button
-				onClick={onBackToMenu}
-				className="w-full py-3 rounded-xl text-sm font-medium border border-border text-foreground"
-			>
-				{t(OrderingKeys.ORDER_STATUS_ORDER_MORE)}
-			</button>
+			{/* `mt-auto` pins the footer to the bottom of a short order; `sticky`
+			    keeps it on screen over a long one. The negative margins let its
+			    background span the page padding so lines scroll under it, not
+			    through it. */}
+			<div className="sticky bottom-0 mt-auto -mx-4 -mb-4 px-4 pt-3 space-y-2 border-t border-border bg-background pb-[max(1rem,env(safe-area-inset-bottom))]">
+				{awaitingPlacement && (
+					<button
+						type="button"
+						onClick={onContinueToPayment}
+						className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold hover-btn-primary"
+					>
+						<CreditCard size={16} />
+						{t(OrderingKeys.CHECKOUT_CONTINUE_TO_PAYMENT)}
+					</button>
+				)}
+				<button
+					type="button"
+					onClick={onBackToMenu}
+					className="w-full py-3 rounded-xl text-sm font-medium border border-border text-foreground"
+				>
+					{t(OrderingKeys.ORDER_STATUS_ORDER_MORE)}
+				</button>
+			</div>
 		</div>
 	);
 }

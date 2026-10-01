@@ -1,4 +1,5 @@
-import { Outlet, createFileRoute } from "@tanstack/react-router";
+import { isSupportedLanguage, replaceLanguageSegment } from "@/global/i18n";
+import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 
 /**
  * Language-scoped customer layout.
@@ -11,6 +12,24 @@ import { Outlet, createFileRoute } from "@tanstack/react-router";
  * avoid.
  */
 export const Route = createFileRoute("/r/$slug/$lang")({
+	/**
+	 * An unsupported segment (`/r/x/fr/menu`, a typo'd QR, a hand-edited URL)
+	 * used to render with `lang = "fr"`, which then flowed into mutations and
+	 * localized lookups that only understand `en` / `es`. Redirect it to the
+	 * same path in the language the root route already resolved for this
+	 * request — the cookie, else English, exactly what the legacy
+	 * `/r/$slug/menu` redirect uses. The restaurant's menu `defaultLanguage`
+	 * would be a nicer fallback, but it is only known after the `$slug`
+	 * loader runs, i.e. after every `beforeLoad`; not worth a waterfall for a
+	 * URL nobody should be printing.
+	 */
+	beforeLoad: ({ params, location, context }) => {
+		if (isSupportedLanguage(params.lang)) return;
+		throw redirect({
+			href: replaceLanguageSegment(location.href, context.language),
+			replace: true,
+		});
+	},
 	component: LanguageLayout,
 });
 

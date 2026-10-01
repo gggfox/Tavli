@@ -1,5 +1,5 @@
 import { DashboardKeys } from "@/global/i18n";
-import { unwrapResult, type UnwrappedValue } from "@/global/utils";
+import { formatMoney, toMajorUnits, unwrapResult, type UnwrappedValue } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -34,15 +34,9 @@ function ServerPerformanceWidget({ context }: WidgetProps<Options>) {
 
 	const data = query.data;
 
-	const money = useMemo(
-		() =>
-			new Intl.NumberFormat(i18n.language, {
-				style: "currency",
-				currency: context.currency ?? "USD",
-				maximumFractionDigits: 0,
-			}),
-		[i18n.language, context.currency]
-	);
+	// `sales` is Σ `orders.totalAmount` and `avgCheck` its per-order mean, both
+	// in minor units (centavos).
+	const money = (minorUnits: number) => formatMoney(minorUnits, context.currency, i18n.language);
 
 	const maxSales = useMemo(() => Math.max(1, ...(data ?? []).map((r) => r.sales)), [data]);
 
@@ -50,11 +44,11 @@ function ServerPerformanceWidget({ context }: WidgetProps<Options>) {
 		() =>
 			(data ?? []).map((r) => ({
 				server: r.name,
-				sales: r.sales,
+				sales: toMajorUnits(r.sales, context.currency),
 				orders: r.orders,
-				avgCheck: Number(r.avgCheck.toFixed(2)),
+				avgCheck: Number(toMajorUnits(r.avgCheck, context.currency).toFixed(2)),
 			})),
-		[data]
+		[data, context.currency]
 	);
 
 	if (query.isPending && !data) return <WidgetLoading />;
@@ -95,13 +89,13 @@ function ServerPerformanceWidget({ context }: WidgetProps<Options>) {
 											style={{ width: `${(row.sales / maxSales) * 100}%` }}
 										/>
 										<span className="relative px-1 text-[11px] text-foreground tabular-nums">
-											{money.format(row.sales)}
+											{money(row.sales)}
 										</span>
 									</div>
 								</td>
 								<td className="py-1 text-right tabular-nums text-faint-foreground">{row.orders}</td>
 								<td className="py-1 text-right tabular-nums text-faint-foreground">
-									{money.format(row.avgCheck)}
+									{money(row.avgCheck)}
 								</td>
 							</tr>
 						))}

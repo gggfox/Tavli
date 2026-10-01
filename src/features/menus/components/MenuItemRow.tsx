@@ -1,8 +1,9 @@
 import { MenusKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { PREP_STATION } from "convex/constants";
-import { Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
+import { hasListedPrice } from "convex/_shared/menuPricing";
+import { AlertTriangle, Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ItemOptionGroupsBadge } from "./ItemOptionGroupsBadge";
@@ -41,8 +42,12 @@ export function MenuItemRow({
 	onToggleAvailability,
 	onRemove,
 }: Readonly<MenuItemRowProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const station = STATION_STYLE[item.prepStation ?? PREP_STATION.KITCHEN];
+	// No price yet (0, or a malformed value): diners do not see the dish, so
+	// say that instead of printing "$0.00" as though it were a real price.
+	const priced = hasListedPrice(item.basePrice);
 
 	const surface = isEditing
 		? "bg-background ring-2 ring-primary/70"
@@ -89,9 +94,16 @@ export function MenuItemRow({
 					>
 						{item.name}
 					</span>
-					<span className="text-sm tabular-nums text-muted-foreground">
-						${formatCents(item.basePrice)}
-					</span>
+					{priced ? (
+						<span className="text-sm tabular-nums text-muted-foreground">
+							{formatMoney(item.basePrice)}
+						</span>
+					) : (
+						<span className="inline-flex items-center gap-1 rounded-full bg-warning-subtle px-1.5 py-px text-[11px] font-medium text-warning">
+							<AlertTriangle size={11} aria-hidden="true" />
+							{t(MenusKeys.ITEM_NO_PRICE_BADGE)}
+						</span>
+					)}
 					<span className={`rounded-full px-1.5 py-px text-[11px] ${station.chip}`}>
 						{t(station.labelKey)}
 					</span>

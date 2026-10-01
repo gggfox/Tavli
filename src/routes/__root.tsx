@@ -17,6 +17,7 @@ import { RestaurantAdminProvider, useRestaurant } from "@/features/restaurants";
 import { useUserSettings } from "@/features/users/hooks/useUserSettings";
 import { ErrorBoundary, MobileTopBar, NotificationCenter, Sidebar } from "@/global/components";
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
+import { MoneyCurrencyProvider } from "@/global/hooks/useFormatMoney";
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
 import { i18n, normalizeLanguage, resolveLanguage } from "@/global/i18n";
 import { config } from "@/global/utils/config";
@@ -73,10 +74,18 @@ export const Route = createRootRouteWithContext<{
 	 * shared by concurrent requests. Renders are synchronous with respect to
 	 * this assignment, but if we ever add awaits between here and render, this
 	 * needs to move to a per-request instance.
+	 *
+	 * This does NOT run for the first client render: TanStack's `hydrate()`
+	 * reuses this context from the server instead of calling `beforeLoad`
+	 * again. The client i18next instance gets there on its own — its detector
+	 * reads the same URL segment at module load (see `global/i18n/config.ts`).
+	 *
+	 * Preloads (`defaultPreload: "intent"`) also run `beforeLoad`; hovering a
+	 * link to a Spanish menu must not flip the page the user is still on.
 	 */
-	beforeLoad: async ({ location }) => {
+	beforeLoad: async ({ location, preload }) => {
 		const language = await resolveLanguage(location.pathname);
-		if (normalizeLanguage(i18n.language) !== language) {
+		if (!preload && normalizeLanguage(i18n.language) !== language) {
 			await i18n.changeLanguage(language);
 		}
 		return { language };
@@ -163,7 +172,10 @@ function StaffLayout() {
 			{!hideSidebar && <Sidebar pathname={pathname} />}
 			<main className="flex-1 min-h-0 min-w-0 overflow-auto bg-background">
 				<ErrorBoundary>
-					<Outlet />
+					{/* Every staff amount is the selected restaurant's money. */}
+					<MoneyCurrencyProvider currency={restaurant?.currency}>
+						<Outlet />
+					</MoneyCurrencyProvider>
 				</ErrorBoundary>
 			</main>
 			<NotificationCenter />

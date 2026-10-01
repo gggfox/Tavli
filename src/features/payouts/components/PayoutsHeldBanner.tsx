@@ -1,4 +1,5 @@
 import { Surface } from "@/global/components";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { PayoutsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
@@ -9,7 +10,7 @@ import type { Id } from "convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { formatPayoutMoney, PAYOUTS_ROUTE } from "../constants";
+import { PAYOUTS_ROUTE } from "../constants";
 
 type HeldTotal = NonNullable<Awaited<FunctionReturnType<typeof api.payouts.getHeldTotal>>[0]>;
 
@@ -36,6 +37,9 @@ export interface PayoutsHeldBannerProps {
  */
 export function PayoutsHeldBanner({ restaurantId }: PayoutsHeldBannerProps) {
 	const { t } = useTranslation();
+	// Stripe money carries its own currency, so each call passes it rather
+	// than trusting the restaurant's.
+	const formatMoney = useFormatMoney();
 
 	const { data } = useQuery({
 		...convexQuery(api.payouts.getHeldTotal, { restaurantId }),
@@ -58,7 +62,7 @@ export function PayoutsHeldBanner({ restaurantId }: PayoutsHeldBannerProps) {
 				<div className="min-w-0">
 					<p className="text-sm font-semibold text-foreground">
 						{t(PayoutsKeys.BANNER_TITLE, {
-							amount: formatPayoutMoney(data.heldCents, data.currency),
+							amount: formatMoney(data.heldCents, data.currency),
 						})}
 					</p>
 					<p className="text-xs text-muted-foreground">{t(PayoutsKeys.BANNER_BODY)}</p>

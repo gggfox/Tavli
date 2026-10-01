@@ -1,9 +1,10 @@
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { DatabaseReader, DatabaseWriter } from "./_generated/server";
 import { NotFoundError, UserInputValidationError } from "./_shared/errors";
 import {
 	DEFAULT_PREP_STATION,
+	MAX_ORDER_ITEM_QUANTITY,
 	ORDER_PAYMENT_STATE,
 	ORDER_STATUS,
 	PAYMENT_STATUS,
@@ -342,6 +343,61 @@ export async function normalizeSelectedOptions(
 }
 
 /**
+ * Prices one draft line: the dish name in the diner's language, the unit price
+ * snapshotted from the menu, and the line total with its options. Shared by
+ * `orders.addItem` and `orders.saveDraftFromMenu` so the two can never price
+ * the same pick differently.
+ */
+export function priceOrderLine(
+	menuItem: Pick<Doc<"menuItems">, "name" | "basePrice" | "translations">,
+	selectedOptions: ReadonlyArray<{ priceModifier: number }>,
+	quantity: number,
+	lang?: string
+): { menuItemName: string; unitPrice: number; lineTotal: number } {
+	const menuItemName = (lang && menuItem.translations?.[lang]?.name) || menuItem.name;
+	const optionsTotal = selectedOptions.reduce((sum, o) => sum + o.priceModifier, 0);
+	return {
+		menuItemName,
+		unitPrice: menuItem.basePrice,
+		lineTotal: (menuItem.basePrice + optionsTotal) * quantity,
+	};
+}
+
+/**
+ * Stable, diner-facing codes `orders.saveDraftFromMenu` returns. Each maps to
+ * an `errors.<CODE>` entry in en.json/es.json. Line-level codes travel as
+ * `"items.<index>: CODE"` so the menu can tell which pick was refused.
+ */
+export const DRAFT_ORDER_ERRORS = {
+	/** The visit is closed, or was never this diner's. */
+	SESSION_ENDED: "ERROR_ORDER_SESSION_ENDED",
+	/** The chosen table is gone, switched off, or belongs to another restaurant. */
+	TABLE_NOT_FOUND: "ERROR_ORDER_TABLE_NOT_FOUND",
+	/** No lines at all — there is nothing to pay for. */
+	EMPTY: "ERROR_ORDER_EMPTY",
+	/** More lines than `MAX_DRAFT_ORDER_LINES`. */
+	TOO_MANY_LINES: "ERROR_ORDER_TOO_MANY_LINES",
+	/** Not a whole number between 1 and {@link MAX_ORDER_ITEM_QUANTITY}. */
+	QUANTITY_INVALID: "ERROR_ORDER_ITEM_QUANTITY_INVALID",
+	/** The dish no longer exists, or is another restaurant's. */
+	MENU_ITEM_NOT_FOUND: "ERROR_MENU_ITEM_NOT_FOUND",
+	/** Staff switched the dish off after the diner picked it. */
+	MENU_ITEM_UNAVAILABLE: "ERROR_MENU_ITEM_UNAVAILABLE",
+	/** A chosen option was removed or moved to another group since it was picked. */
+	OPTION_NOT_FOUND: "ERROR_MENU_ITEM_OPTION_NOT_FOUND",
+} as const;
+
+/** Whole number from 1 to {@link MAX_ORDER_ITEM_QUANTITY}, inclusive. */
+export function isValidOrderLineQuantity(quantity: number): boolean {
+	return (
+		Number.isFinite(quantity) &&
+		Number.isInteger(quantity) &&
+		quantity >= 1 &&
+		quantity <= MAX_ORDER_ITEM_QUANTITY
+	);
+}
+
+/**
  * Loads `translations` maps for every menu item / option / option group
  * referenced by the given order items so the kitchen and payments
  * dashboards can localize names without depending on the snapshot being
@@ -428,4 +484,46 @@ export async function invalidateActivePayment(
 		paymentState: ORDER_PAYMENT_STATE.UNPAID,
 		updatedAt: Date.now(),
 	});
+}
+
+/** The parts of a draft line that decide what the diner is charged and served. */
+type ComparableDraftLine = {
+	menuItemId: Id<"menuItems">;
+	menuItemName: string;
+	quantity: number;
+	lineTotal: number;
+	selectedOptions: ReadonlyArray<{ optionId: Id<"options"> }>;
+	specialInstructions?: string;
+};
+
+function draftLineSignature(line: ComparableDraftLine): string {
+	const optionIds = line.selectedOptions.map((o) => o.optionId as string).sort();
+	return JSON.stringify([
+		line.menuItemId,
+		line.menuItemName,
+		line.quantity,
+		line.lineTotal,
+		optionIds,
+		line.specialInstructions ?? "",
+	]);
+}
+
+/**
+ * Would replacing `current` with `next` change the draft at all? Order-blind,
+ * because the menu does not promise to send lines in the order it stored them.
+ *
+ * Lets `orders.saveDraftFromMenu` leave an untouched draft alone — a diner who
+ * backs out of checkout and straight back in keeps their payment attempt
+ * instead of having it stood down at Stripe and recreated for the same food.
+ * `lineTotal` is part of the signature, so a price change since the draft was
+ * built still counts as a change and reprices it.
+ */
+export function sameDraftLines(
+	current: ReadonlyArray<ComparableDraftLine>,
+	next: ReadonlyArray<ComparableDraftLine>
+): boolean {
+	if (current.length !== next.length) return false;
+	const a = current.map(draftLineSignature).sort();
+	const b = next.map(draftLineSignature).sort();
+	return a.every((signature, i) => signature === b[i]);
 }

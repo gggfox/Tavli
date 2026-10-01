@@ -16,8 +16,17 @@
  *
  * A diner mid-order does not care that Convex had a blip. An unbranded menu is
  * a minor cosmetic loss; an error page is a lost order. So every failure path
- * — timeout, throw, missing restaurant — returns `{ branding: null }`, which
- * renders exactly the pre-branding UI.
+ * — timeout, throw — returns `{ branding: null }`, which renders exactly the
+ * pre-branding UI.
+ *
+ * ## Why "missing" is its own answer
+ *
+ * A slug Convex *definitively* says has no restaurant is not a failure, it is
+ * a fact, and the route turns it into a not-found page instead of a sign-in
+ * card for a restaurant that does not exist. That is the one answer that must
+ * never be produced by a timeout or a throw: a Convex blip showing a diner at
+ * a real table "we couldn't find this restaurant" is worse than any unbranded
+ * menu. Hence `notFound` is set only from a settled query result.
  *
  * ## Why there is a negative cache
  *
@@ -95,9 +104,24 @@ export function __resetBrandingNegativeCache(): void {
 
 export interface BrandingLoaderData {
 	branding: PublicBranding | null;
+	/**
+	 * For the document title. `null` whenever the lookup did not settle, so the
+	 * tab falls back to the app name rather than to a guess.
+	 */
+	restaurantName: string | null;
+	/**
+	 * `true` only when Convex answered that diners have no restaurant at this
+	 * slug: no row, a soft-deleted one (`getBySlug` returns `null` for both), or
+	 * one that is not active. Inactive counts because `sessions.create` already
+	 * refuses it with "Restaurant not found" — a diner could never order there.
+	 * Never `true` for a timeout or a throw.
+	 */
+	notFound: boolean;
 }
 
-const UNBRANDED: BrandingLoaderData = { branding: null };
+/** The lookup did not settle (timeout, throw). Degrade, never 404. */
+const UNBRANDED: BrandingLoaderData = { branding: null, restaurantName: null, notFound: false };
+const NOT_FOUND: BrandingLoaderData = { branding: null, restaurantName: null, notFound: true };
 
 /** Distinguishes "the query took too long" from Convex's "no such restaurant". */
 const TIMED_OUT = Symbol("branding-loader-timeout");
@@ -113,7 +137,7 @@ export async function loadBranding(
 	queryClient: QueryClient,
 	slug: string
 ): Promise<BrandingLoaderData> {
-	if (isKnownMissing(slug)) return UNBRANDED;
+	if (isKnownMissing(slug)) return NOT_FOUND;
 
 	try {
 		const options = convexQuery(api.restaurants.getBySlug, { slug });
@@ -139,10 +163,18 @@ export async function loadBranding(
 			// A definite "no such restaurant" — the only answer worth
 			// remembering, and the one that makes `/r/<random>` cheap.
 			rememberMissing(slug);
-			return UNBRANDED;
+			return NOT_FOUND;
 		}
 
-		return { branding: restaurant.branding ?? null };
+		// Not remembered: a paused restaurant is a real row a manager can switch
+		// back on, and the negative cache would hide it for the whole TTL.
+		if (!restaurant.isActive) return NOT_FOUND;
+
+		return {
+			branding: restaurant.branding ?? null,
+			restaurantName: restaurant.name,
+			notFound: false,
+		};
 	} catch {
 		// A Convex blip degrades to unbranded, never to an error page for a
 		// diner mid-order.

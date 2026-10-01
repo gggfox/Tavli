@@ -1,6 +1,6 @@
 import { Tooltip } from "@/global/components";
 import { CommonKeys, localizeName, PaymentsKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { useTranslation } from "react-i18next";
 import type { PaymentsLedgerRow } from "./types";
 
@@ -10,6 +10,7 @@ import type { PaymentsLedgerRow } from "./types";
  * Tip rows have no items, so they render an em dash instead.
  */
 export function OrderItemsTooltipTrigger({ row }: Readonly<{ row: PaymentsLedgerRow }>) {
+	const formatMoney = useFormatMoney();
 	const { t, i18n } = useTranslation();
 	// A paid order can still carry lines that were removed while it was open.
 	// They were never charged, so listing them here would not add up to the
@@ -41,7 +42,7 @@ export function OrderItemsTooltipTrigger({ row }: Readonly<{ row: PaymentsLedger
 					</ul>
 					<div className="flex items-baseline justify-between gap-3 pt-1.5 mt-1 font-medium border-t border-border text-foreground">
 						<span className="text-faint-foreground">{t(PaymentsKeys.TOOLTIP_SUBTOTAL)}</span>
-						<span>${formatCents(row.subtotalCents)}</span>
+						<span>{formatMoney(row.subtotalCents)}</span>
 					</div>
 				</div>
 			}

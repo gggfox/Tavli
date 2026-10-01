@@ -19,7 +19,7 @@
  * under a moving thumb is how a list becomes unusable.
  */
 import { OrderingKeys } from "@/global/i18n";
-import { formatCents } from "@/global/utils/money";
+import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -51,6 +51,7 @@ export function OrderSummaryCard({
 	onViewStatus,
 	children,
 }: Readonly<OrderSummaryCardProps>) {
+	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -135,13 +136,13 @@ export function OrderSummaryCard({
 								<span className="min-w-0 truncate">
 									{item.quantity}x {item.menuItemName}
 								</span>
-								<span className="shrink-0 tabular-nums">${formatCents(item.lineTotal)}</span>
+								<span className="shrink-0 tabular-nums">{formatMoney(item.lineTotal)}</span>
 							</li>
 						))}
 					</ul>
 					<div className="mt-2 flex justify-between border-t border-border pt-2 text-sm font-semibold text-foreground">
 						<span>{t(OrderingKeys.CHECKOUT_TOTAL)}</span>
-						<span className="tabular-nums">${formatCents(totalAmount)}</span>
+						<span className="tabular-nums">{formatMoney(totalAmount)}</span>
 					</div>
 					<button
 						type="button"
