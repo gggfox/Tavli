@@ -132,6 +132,8 @@
 			"defu": ">=6.1.5",
 			"js-cookie": ">=3.0.7",
 			"ws": ">=8.21.0",
+			"axios": "^1.20.0",
+			"@react-email/ui>next": "^16.3.6",
 			"vite": "^7.3.5",
 			"xlsx": "npm:@e965/xlsx@^0.20.3",
 			"eslint>minimatch": "^3.1.4",
