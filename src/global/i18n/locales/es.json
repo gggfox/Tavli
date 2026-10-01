@@ -851,7 +851,9 @@
 			"generatedImage": "Imagen generada",
 			"generatedImageDetail": "Esta imagen fue generada con IA y puede diferir del platillo real.",
 			"submitFailed": "No pudimos guardar tu pedido. Revisa tu conexión e inténtalo de nuevo.",
-			"removeUnavailableDish": "Quitarlo de mi pedido"
+			"removeUnavailableDish": "Quitarlo de mi pedido",
+			"restoredPicksDropped": "Algunos platillos que elegiste ya no están disponibles, así que los quitamos.",
+			"restoredPicksDismiss": "Cerrar"
 		},
 		"item": {
 			"required": "Obligatorio",

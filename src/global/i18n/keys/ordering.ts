@@ -52,6 +52,8 @@ export const OrderingKeys = {
 	MENU_GENERATED_IMAGE_DETAIL: "ordering.menu.generatedImageDetail",
 	MENU_SUBMIT_FAILED: "ordering.menu.submitFailed",
 	MENU_REMOVE_UNAVAILABLE_DISH: "ordering.menu.removeUnavailableDish",
+	MENU_RESTORED_PICKS_DROPPED: "ordering.menu.restoredPicksDropped",
+	MENU_RESTORED_PICKS_DISMISS: "ordering.menu.restoredPicksDismiss",
 
 	ITEM_REQUIRED: "ordering.item.required",
 	ITEM_PICK_ONE: "ordering.item.pickOne",

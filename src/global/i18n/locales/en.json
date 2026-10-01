@@ -851,7 +851,9 @@
 			"generatedImage": "AI image",
 			"generatedImageDetail": "This image was AI-generated and may differ from the actual dish.",
 			"submitFailed": "We couldn't save your order. Check your connection and try again.",
-			"removeUnavailableDish": "Remove it from my order"
+			"removeUnavailableDish": "Remove it from my order",
+			"restoredPicksDropped": "Some dishes you picked are no longer available, so we removed them.",
+			"restoredPicksDismiss": "Dismiss"
 		},
 		"item": {
 			"required": "Required",
