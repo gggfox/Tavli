@@ -282,6 +282,18 @@ export async function getOrCreateStripeCustomerId(
  * `getAccountStatus` and the thin-event handler in lockstep so they cannot
  * drift (e.g. one starts checking a new capability while the other doesn't).
  *
+ * `readyToReceivePayments` needs TWO capabilities, one per configuration the
+ * account was created with (`createConnectAccount`):
+ *
+ * - `configuration.recipient.capabilities.stripe_balance.stripe_transfers` —
+ *   the destination transfer of every charge lands in the account's balance.
+ * - `configuration.merchant.capabilities.card_payments` — every order, tip and
+ *   tab PaymentIntent is created with `on_behalf_of: stripeAccountId`, which
+ *   makes the connected account the settlement merchant. Stripe refuses such a
+ *   charge unless the account's `card_payments` is active, so an account with
+ *   transfers active but card payments pending or restricted cannot take a
+ *   single payment and must not read as ready.
+ *
  * Lives here (not in `stripeHelpers.ts`) because it both calls the Stripe
  * SDK and inspects V2 account fields -- `stripeHelpers.ts` is not `"use node"`.
  */
@@ -297,12 +309,15 @@ export async function inferV2AccountStatus(
 }> {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const account: any = await stripeClient.v2.core.accounts.retrieve(stripeAccountId, {
-		include: ["configuration.recipient", "requirements"],
+		include: ["configuration.merchant", "configuration.recipient", "requirements"],
 	});
 
-	const readyToReceivePayments: boolean =
+	const transfersActive: boolean =
 		account?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status ===
 		"active";
+	const cardPaymentsActive: boolean =
+		account?.configuration?.merchant?.capabilities?.card_payments?.status === "active";
+	const readyToReceivePayments = transfersActive && cardPaymentsActive;
 
 	const requirementsStatus: string | null =
 		account?.requirements?.summary?.minimum_deadline?.status ?? null;
@@ -963,7 +978,7 @@ export async function handlePaymentIntentSuccess(
 		});
 		// The dispute recovery ledger is drawn down HERE, after the charge has
 		// settled, and never when the intent was priced (TAVLI-102). The
-		// deduction was applied to `transfer_data.amount` at creation time, but
+		// deduction was added to `application_fee_amount` at creation time, but
 		// an intent that fails or is superseded moves no money — drawing the
 		// ledger down then would forgive a debt nobody ever paid. A no-op for
 		// every payment that carries no deduction, which is almost all of them.

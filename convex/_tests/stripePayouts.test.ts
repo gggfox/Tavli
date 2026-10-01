@@ -815,6 +815,288 @@ describe("payout events on the connected-account destination (TAVLI-103)", () =>
 		});
 	});
 
+	describe("a payout returned after it showed paid (paid → failed)", () => {
+		/** Monday's payout: delivered paid, then returned by the bank. */
+		async function paidThenReturned(
+			t: ReturnType<typeof convexTest>,
+			opts: { between?: () => Promise<void> } = {}
+		): Promise<void> {
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_ret_paid",
+					type: "payout.paid",
+					payout: payout({
+						id: "po_ret",
+						amount: 1_000_00,
+						status: "paid",
+						created: 1_700_000_000,
+					}),
+				})
+			);
+			await opts.between?.();
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_ret_failed",
+					type: "payout.failed",
+					payout: payout({
+						id: "po_ret",
+						amount: 1_000_00,
+						status: "failed",
+						created: 1_700_000_000,
+						failureCode: "account_closed",
+					}),
+				})
+			);
+		}
+
+		async function sideEffects(t: ReturnType<typeof convexTest>) {
+			return await t.run(async (ctx) => ({
+				payouts: await ctx.db.query("stripePayouts").collect(),
+				alerts: await ctx.db.query("operatorAlerts").collect(),
+				notifications: await ctx.db.query("notifications").collect(),
+				jobs: (await ctx.db.system.query("_scheduled_functions").collect()).filter((job) =>
+					job.name.includes("sendPayoutEmail")
+				),
+			}));
+		}
+
+		it("marks it failed, holds its amount, and tells managers and Tavli exactly once", async () => {
+			const t = harness();
+			const restaurantId = await seedRestaurant(t);
+
+			await paidThenReturned(t);
+
+			const { payouts, alerts, notifications, jobs } = await sideEffects(t);
+			expect(payouts).toHaveLength(1);
+			expect(payouts[0]).toMatchObject({
+				stripePayoutId: "po_ret",
+				status: "failed",
+				failureCode: "account_closed",
+			});
+			expect(payouts[0].returnedAt).toEqual(expect.any(Number));
+
+			// The same path as a first-time failure: one bell row per manager, one
+			// email per address, one severe alert.
+			expect(notifications).toHaveLength(2);
+			for (const row of notifications) {
+				expect(row).toMatchObject({
+					kind: "payout_failed",
+					dedupeKey: "payout_failed:po_ret",
+					messageParams: { amount: "1,000.00", currency: "MXN" },
+				});
+			}
+			expect(jobs).toHaveLength(2);
+			expect(alerts).toHaveLength(1);
+			expect(alerts[0]).toMatchObject({
+				kind: "payout_failed",
+				severity: "severe",
+				stripeObjectId: "po_ret",
+			});
+
+			const held = await t
+				.withIdentity({ subject: OWNER })
+				.query(api.payouts.getHeldTotal, { restaurantId });
+			expect(held[0]).toMatchObject({ heldCents: 1_000_00, unresolvedPayoutIds: ["po_ret"] });
+		});
+
+		it("is held and announced even when routine payouts were paid between it and the return", async () => {
+			const t = harness();
+			const restaurantId = await seedRestaurant(t);
+
+			// Tuesday's routine payout swept Tuesday's sales and arrived — before
+			// the bank sent Monday's money back, so it never carried it.
+			await paidThenReturned(t, {
+				between: () =>
+					deliver(
+						t,
+						payoutEvent({
+							eventId: "evt_ret_tuesday",
+							type: "payout.paid",
+							payout: payout({
+								id: "po_tuesday",
+								amount: 300_00,
+								status: "paid",
+								created: 1_700_086_400,
+							}),
+						})
+					),
+			});
+
+			const held = await t
+				.withIdentity({ subject: OWNER })
+				.query(api.payouts.getHeldTotal, { restaurantId });
+			expect(held[0]).toMatchObject({ heldCents: 1_000_00, unresolvedPayoutIds: ["po_ret"] });
+
+			const { alerts, notifications } = await sideEffects(t);
+			expect(alerts).toHaveLength(1);
+			expect(notifications.filter((row) => row.kind === "payout_failed")).toHaveLength(2);
+		});
+
+		it("does not notify again when the failure is redelivered or repeated by payout.updated", async () => {
+			const t = harness();
+			await seedRestaurant(t);
+
+			await paidThenReturned(t);
+			const returnedAt = (await sideEffects(t)).payouts[0].returnedAt;
+
+			// The same event again (event-id dedup) …
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_ret_failed",
+					type: "payout.failed",
+					payout: payout({
+						id: "po_ret",
+						amount: 1_000_00,
+						status: "failed",
+						created: 1_700_000_000,
+						failureCode: "account_closed",
+					}),
+				})
+			);
+			// … and a different event repeating the failed status (failed → failed).
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_ret_updated",
+					type: "payout.updated",
+					payout: payout({
+						id: "po_ret",
+						amount: 1_000_00,
+						status: "failed",
+						created: 1_700_000_000,
+						failureCode: "account_closed",
+					}),
+				})
+			);
+
+			const { payouts, alerts, notifications, jobs } = await sideEffects(t);
+			expect(payouts[0].status).toBe("failed");
+			// The return time is stamped once and not moved by a repeat.
+			expect(payouts[0].returnedAt).toBe(returnedAt);
+			expect(notifications).toHaveLength(2);
+			expect(jobs).toHaveLength(2);
+			expect(alerts).toHaveLength(1);
+		});
+
+		it("keeps it failed, and logs a conflict, when a stale payout.paid arrives afterwards", async () => {
+			const t = harness();
+			const restaurantId = await seedRestaurant(t);
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			await paidThenReturned(t);
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_ret_paid_again",
+					type: "payout.updated",
+					payout: payout({
+						id: "po_ret",
+						amount: 1_000_00,
+						status: "paid",
+						created: 1_700_000_000,
+					}),
+				})
+			);
+
+			const { payouts, notifications } = await sideEffects(t);
+			expect(payouts[0].status).toBe("failed");
+			expect(
+				warnSpy.mock.calls.some((call) =>
+					String(call[0]).includes("two different terminal statuses")
+				)
+			).toBe(true);
+			// No "payouts resumed" for a paid that is not new money.
+			expect(notifications.filter((row) => row.kind === "payouts_resumed")).toHaveLength(0);
+
+			const held = await t
+				.withIdentity({ subject: OWNER })
+				.query(api.payouts.getHeldTotal, { restaurantId });
+			expect(held[0]?.heldCents).toBe(1_000_00);
+			warnSpy.mockRestore();
+		});
+
+		it("is resolved by the next paid payout, which says payouts resumed — as for a first-time failure", async () => {
+			const t = harness();
+			const restaurantId = await seedRestaurant(t);
+
+			await paidThenReturned(t);
+			// Created after the return (Stripe's clock is ahead of the fixtures').
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_ret_recovery",
+					type: "payout.paid",
+					payout: payout({
+						id: "po_recovery",
+						amount: 1_200_00,
+						status: "paid",
+						created: Math.floor(Date.now() / 1000) + 86_400,
+					}),
+				})
+			);
+
+			const held = await t
+				.withIdentity({ subject: OWNER })
+				.query(api.payouts.getHeldTotal, { restaurantId });
+			expect(held[0]).toMatchObject({ heldCents: 0, unresolvedPayoutIds: [] });
+
+			const { notifications } = await sideEffects(t);
+			const resumed = notifications.filter((row) => row.kind === "payouts_resumed");
+			expect(resumed).toHaveLength(2);
+			expect(resumed[0].dedupeKey).toBe("payouts_resumed:po_recovery");
+		});
+
+		it("leaves canceled transitions alone: paid → canceled and canceled → failed are refused", async () => {
+			const t = harness();
+			await seedRestaurant(t);
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_cx_paid",
+					type: "payout.paid",
+					payout: payout({ id: "po_cx_paid", status: "paid" }),
+				})
+			);
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_cx_paid_canceled",
+					type: "payout.canceled",
+					payout: payout({ id: "po_cx_paid", status: "canceled" }),
+				})
+			);
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_cx_canceled",
+					type: "payout.canceled",
+					payout: payout({ id: "po_cx_canceled", status: "canceled" }),
+				})
+			);
+			await deliver(
+				t,
+				payoutEvent({
+					eventId: "evt_cx_canceled_failed",
+					type: "payout.failed",
+					payout: payout({ id: "po_cx_canceled", status: "failed", failureCode: "declined" }),
+				})
+			);
+
+			const { payouts, alerts, notifications } = await sideEffects(t);
+			const byId = new Map(payouts.map((row) => [row.stripePayoutId, row]));
+			expect(byId.get("po_cx_paid")?.status).toBe("paid");
+			expect(byId.get("po_cx_canceled")?.status).toBe("canceled");
+			expect(alerts).toHaveLength(0);
+			expect(notifications).toHaveLength(0);
+			warnSpy.mockRestore();
+		});
+	});
+
 	describe("the payouts page query", () => {
 		it("lists payouts newest first, maps the failure code, and never returns Stripe's sentence", async () => {
 			const t = harness();

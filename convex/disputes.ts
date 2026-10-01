@@ -19,8 +19,11 @@
  *   dispute fee is not in it: Tavli absorbs that (it is recorded on the dispute
  *   row and in the per-month fee aggregate instead), because a restaurant
  *   cannot influence it.
- * - Each later ORDER payment — never a tip, never a tab — carries an explicit
- *   `transfer_data.amount` of `restaurantShare − deduction`. The diner's charge
+ * - Each later ORDER payment — never a tip, never a tab — adds the deduction
+ *   to its `application_fee_amount` (`feeAmount + deduction`), so Stripe
+ *   transfers `restaurantShare − deduction` and the difference stays on the
+ *   PLATFORM balance. Never via `transfer_data.amount`: Stripe treats that as
+ *   an alternative to the application fee, not a companion. The diner's charge
  *   is untouched and the order still reports full revenue; the recovery is its
  *   own line in the payments ledger and the exports.
  * - The ledger is drawn down when that payment **settles**, not when it is
@@ -922,7 +925,8 @@ export function formatDisputeAmount(cents: number): string {
  *
  * **Whatever cannot be applied is transferred back.** Re-planning is the right
  * behaviour for the ledger and the wrong one for the money: Stripe has already
- * withheld `disputeRecoveryAmount` from this transfer, so if the dispute was
+ * withheld `disputeRecoveryAmount` from this transfer (it was part of the
+ * intent's `application_fee_amount`), so if the dispute was
  * reinstated between pricing and settlement — or two intents were priced
  * against the same last 500 and both settled — the difference is sitting on the
  * PLATFORM balance and belongs to the restaurant. It is returned with
@@ -1079,12 +1083,14 @@ export const markRecoveryShortfallReturnedInternal = internalMutation({
 /**
  * Give the ledger back what a refund undid (TAVLI-102, review round 1).
  *
- * A refund on a payment that drew the ledger down is a double loss if nothing
- * is done. Stripe returns the **whole** amount the diner paid out of the
- * PLATFORM balance, and reverses only the transfer that actually went out —
- * which was already short by the recovery. So Tavli pays the diner in full,
- * claws back a reduced transfer, and the ledger still says the debt was repaid.
- * It was not: nobody's money moved in Tavli's favour.
+ * A refund on a payment that drew the ledger down undoes the repayment, and the
+ * ledger has to say so. The deduction was carried on the intent's
+ * `application_fee_amount`, and `createRefund` passes
+ * `refund_application_fee: true` with `reverse_transfer: true`, so Stripe hands
+ * back the application fee — service fee AND recovery — in proportion to the
+ * refunded amount. Tavli gives up that share of the recovery it kept, so if
+ * the ledger still said the debt was repaid, it would be a double loss: nobody's
+ * money would have moved in Tavli's favour.
  *
  * The restored amount is proportional to how much of the charge was refunded,
  * so a single line removed from an order gives back its share and a full
