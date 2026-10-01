@@ -56,6 +56,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { TimelineReopenConfirmDialog } from "./TimelineReopenConfirmDialog";
+import { getTimelineBlockStyle } from "../utils/timelineBlockStyle";
 
 const RESERVATION_DRAG_PREFIX = "reservation-drag";
 const ROW_PREFIX = "row";
@@ -1127,13 +1128,7 @@ function TimelineBlockContent({
 				time: `${startTime}–${endTime}`,
 			})}
 			className={`h-full w-full rounded px-1.5 py-0.5 flex items-center gap-1 overflow-hidden cursor-pointer border text-left transition-opacity hover:opacity-90${isDimmed ? " opacity-40" : ""}${isColliding ? " border-2 ring-1 ring-destructive" : ""}${isProvisional ? " border-dashed" : ""}`}
-			style={{
-				backgroundColor: isColliding
-					? "var(--destructive-tinted, var(--destructive))"
-					: palette.tintedBg,
-				borderColor: isColliding ? "var(--destructive)" : isDimmed ? "var(--border)" : palette.fg,
-				color: isColliding ? "var(--destructive-foreground, var(--destructive))" : palette.fg,
-			}}
+			style={getTimelineBlockStyle({ palette, isColliding, isDimmed })}
 		>
 			{dragHandleProps && (
 				<span
@@ -1158,7 +1153,7 @@ function TimelineBlockContent({
 			</span>
 			{isColliding && (
 				<span
-					className="shrink-0"
+					className="shrink-0 text-destructive"
 					title={t(ReservationsKeys.TIMELINE_COLLISION_TOOLTIP)}
 					aria-label={t(ReservationsKeys.TIMELINE_COLLISION_TOOLTIP)}
 				>
