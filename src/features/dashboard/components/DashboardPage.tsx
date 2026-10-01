@@ -20,8 +20,9 @@ import {
 	pushToast,
 	Skeleton,
 } from "@/global/components";
-import { DashboardKeys } from "@/global/i18n";
+import { DashboardKeys, ErrorKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -203,7 +204,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 				id: `dashboard-save-failed-${Date.now()}`,
 				kind: "error",
 				title: t(DashboardKeys.EDIT_SAVE_FAILED),
-				body: e instanceof Error ? e.message : String(e),
+				body: getErrorMessage(e, t),
 			});
 		} finally {
 			setSaving(false);
@@ -438,7 +439,7 @@ export function DashboardPage({ userRoles }: DashboardPageProps) {
 				<DashboardShell
 					isLoading={layoutsLoading}
 					error={layoutsError as { message?: string } | null}
-					entityName="dashboards"
+					errorTitle={t(ErrorKeys.LOAD_FAILED_DASHBOARD)}
 					skeleton={<DashboardGridSkeleton />}
 					header={header}
 					gap="6"

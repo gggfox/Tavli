@@ -10,6 +10,7 @@
  */
 import { Modal, DialogHeader } from "@/global/components";
 import { AdminStaffKeys } from "@/global/i18n";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
@@ -46,7 +47,7 @@ export function PublishWeekButton({
 			onPublished();
 			setConfirmOpen(false);
 		} catch (e) {
-			setError(extractError(e));
+			setError(getErrorMessage(e, t));
 		}
 	};
 
@@ -113,12 +114,4 @@ export function PublishWeekButton({
 			</Modal>
 		</>
 	);
-}
-
-function extractError(e: unknown): string {
-	if (typeof e === "object" && e != null) {
-		const message = (e as { message?: unknown }).message;
-		if (typeof message === "string") return message;
-	}
-	return "Error";
 }

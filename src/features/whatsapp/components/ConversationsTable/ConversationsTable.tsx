@@ -12,7 +12,7 @@
  */
 import { AdminTable } from "@/global/components";
 import { useAdminTable } from "@/global/hooks";
-import { WhatsappKeys } from "@/global/i18n";
+import { ErrorKeys, WhatsappKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
@@ -44,7 +44,7 @@ export function ConversationsTable({ restaurantId, onSelect }: Readonly<Conversa
 		<div className="flex flex-col flex-1 h-full min-h-0 gap-2">
 			<AdminTable
 				tableState={tableState}
-				entityName={t(WhatsappKeys.LIST_ENTITY)}
+				errorTitle={t(ErrorKeys.LOAD_FAILED_CONVERSATIONS)}
 				searchPlaceholder={t(WhatsappKeys.LIST_SEARCH_PLACEHOLDER)}
 				getResultCountText={(count) => t(WhatsappKeys.LIST_RESULT_COUNT, { count })}
 				emptyIcon={MessageSquare}

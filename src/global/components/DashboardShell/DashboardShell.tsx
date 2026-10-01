@@ -1,11 +1,13 @@
 /**
  * DashboardShell — collapses the loading-error-content triad that the
  * order, payments, and reservations dashboards each implemented from
- * scratch. The error copy is localized: the title uses
- * `errors.dashboardShell.loadFailed` ("Could not load {{entity}}.") and the
- * description runs the caught error through `getErrorMessage`, so a known
- * backend code maps to a localized message and anything else falls back to
- * `errors.dashboardShell.loadHint` — a raw backend message never reaches the UI.
+ * scratch. The error copy is localized: the caller passes an already-translated
+ * `errorTitle` (one whole sentence per entity, e.g. `errors.loadFailed.orders`,
+ * because gluing an English noun into "Could not load {{entity}}" broke Spanish
+ * agreement and leaked English), and the description runs the caught error
+ * through `getErrorMessage`, so a known backend code maps to a localized
+ * message and anything else falls back to `errors.dashboardShell.loadHint` — a
+ * raw backend message never reaches the UI.
  *
  * Renders:
  *   1. `header` always (filter pills, range chips, page actions, etc.).
@@ -29,7 +31,11 @@ interface DashboardShellError {
 export interface DashboardShellProps {
 	readonly isLoading: boolean;
 	readonly error: DashboardShellError | null | undefined;
-	readonly entityName: string;
+	/**
+	 * Translated title shown when `error` is set, e.g.
+	 * `t(ErrorKeys.LOAD_FAILED_ORDERS)`. Pass a full sentence, never a noun.
+	 */
+	readonly errorTitle: string;
 	readonly skeleton: ReactNode;
 	readonly header?: ReactNode;
 	readonly children: ReactNode;
@@ -53,7 +59,7 @@ const GAP_CLASSES = {
 export function DashboardShell({
 	isLoading,
 	error,
-	entityName,
+	errorTitle,
 	skeleton,
 	header,
 	children,
@@ -90,7 +96,7 @@ export function DashboardShell({
 				{inlineHeader}
 				<EmptyState
 					icon={AlertTriangle}
-					title={t(ErrorKeys.DASHBOARD_LOAD_FAILED, { entity: entityName })}
+					title={errorTitle}
 					description={getErrorMessage(error, t, ErrorKeys.DASHBOARD_LOAD_HINT)}
 					fill
 				/>

@@ -1,4 +1,8 @@
+import { CommonKeys } from "@/global/i18n";
+import { useTranslation } from "react-i18next";
+
 interface LoadingStateProps {
+	/** Defaults to the localized "Loading…" (`common.loading`). */
 	readonly message?: string;
 	readonly variant?: "text" | "spinner" | "skeleton";
 	readonly skeletonRows?: number;
@@ -6,11 +10,13 @@ interface LoadingStateProps {
 }
 
 export function LoadingState({
-	message = "Loading...",
+	message: messageProp,
 	variant = "text",
 	skeletonRows = 5,
 	className = "",
 }: LoadingStateProps) {
+	const { t } = useTranslation();
+	const message = messageProp ?? t(CommonKeys.LOADING);
 	if (variant === "skeleton") {
 		return (
 			<div className={`space-y-3 ${className}`}>

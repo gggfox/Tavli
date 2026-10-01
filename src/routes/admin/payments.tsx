@@ -7,8 +7,10 @@ import {
 import { FinancesTabs } from "@/features/payouts";
 import { useRestaurant } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
+import { AdminAccessKeys } from "@/global/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import type { Id } from "convex/_generated/dataModel";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/admin/payments")({
 	component: PaymentsPage,
@@ -41,9 +43,12 @@ function PaymentsContent({
 	restaurantId,
 	isLoading,
 }: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
+	const { t } = useTranslation();
 	if (isLoading) return <PaymentsDashboardSkeleton />;
 	if (!restaurantId) {
-		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
+		return (
+			<p className="text-sm text-faint-foreground">{t(AdminAccessKeys.SETUP_RESTAURANT_FIRST)}</p>
+		);
 	}
 	return <PaymentsDashboard restaurantId={restaurantId} />;
 }

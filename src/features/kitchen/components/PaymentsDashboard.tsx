@@ -5,7 +5,7 @@ import { usePaymentsDashboardPrefs } from "../hooks/usePaymentsDashboardPrefs";
 import type { PaymentsTimePeriod } from "../paymentsDashboardSearch";
 import { AdminTable, DashboardShell, SegmentedControl, Surface } from "@/global/components";
 import { useAdminTable } from "@/global/hooks";
-import { PaymentsKeys } from "@/global/i18n";
+import { ErrorKeys, PaymentsKeys } from "@/global/i18n";
 import { useFormatMoney } from "@/global/hooks/useFormatMoney";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
@@ -126,7 +126,7 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 		<DashboardShell
 			isLoading={tableState.isLoading || tableState.isAuthLoading}
 			error={tableState.error}
-			entityName="payments"
+			errorTitle={t(ErrorKeys.LOAD_FAILED_PAYMENTS)}
 			skeleton={<PaymentsDashboardSkeleton />}
 			header={timeFrameControl}
 			gap="6"
@@ -175,7 +175,7 @@ export function PaymentsDashboard({ restaurantId }: Readonly<PaymentsDashboardPr
 
 			<AdminTable
 				tableState={tableState}
-				entityName="payments"
+				errorTitle={t(ErrorKeys.LOAD_FAILED_PAYMENTS)}
 				searchPlaceholder={t(PaymentsKeys.SEARCH_PLACEHOLDER)}
 				getResultCountText={(count) => t(PaymentsKeys.RESULT_COUNT, { count })}
 				emptyIcon={CreditCard}

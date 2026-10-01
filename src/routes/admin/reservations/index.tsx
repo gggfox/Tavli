@@ -11,7 +11,7 @@ import { RESERVATION_STATUS_CONFIG } from "@/features/reservations/statusConfig"
 import { ORDERED_RANGES, type ReservationRange } from "@/features/reservations/utils";
 import { isValidYmd } from "@/global/utils/calendarMonth";
 import { Button, DialogHeader, Drawer, AdminPageLayout } from "@/global/components";
-import { ReservationsKeys } from "@/global/i18n";
+import { AdminAccessKeys, ReservationsKeys } from "@/global/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import { Lock, Settings } from "lucide-react";
 import { useState } from "react";
@@ -104,7 +104,9 @@ function ReservationsPage() {
 					{restaurant ? (
 						<ReservationSettingsPanel restaurantId={restaurant._id} />
 					) : (
-						<p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>
+						<p className="text-sm text-faint-foreground">
+							{t(AdminAccessKeys.SETUP_RESTAURANT_FIRST)}
+						</p>
 					)}
 				</div>
 			</Drawer>
@@ -124,7 +126,9 @@ function ReservationsPage() {
 					{restaurant ? (
 						<TableLocksManager restaurantId={restaurant._id} />
 					) : (
-						<p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>
+						<p className="text-sm text-faint-foreground">
+							{t(AdminAccessKeys.SETUP_RESTAURANT_FIRST)}
+						</p>
 					)}
 				</div>
 			</Drawer>
@@ -136,9 +140,12 @@ function ReservationsContent({
 	hasRestaurant,
 	isLoading,
 }: Readonly<{ hasRestaurant: boolean; isLoading: boolean }>) {
+	const { t } = useTranslation();
 	if (isLoading) return <ReservationsDashboardSkeleton />;
 	if (!hasRestaurant) {
-		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
+		return (
+			<p className="text-sm text-faint-foreground">{t(AdminAccessKeys.SETUP_RESTAURANT_FIRST)}</p>
+		);
 	}
 	return <ReservationsDashboard />;
 }

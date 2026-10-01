@@ -1,4 +1,8 @@
+import { AdminAccessKeys } from "@/global/i18n";
+import { useTranslation } from "react-i18next";
+
 export function InsufficientPermissionsState() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex items-center justify-center p-8">
 			<div className="text-center">
@@ -22,10 +26,10 @@ export function InsufficientPermissionsState() {
 						/>
 					</svg>
 				</div>
-				<h3 className="text-lg font-medium mb-1 text-foreground">Access Restricted</h3>
-				<p className="text-muted-foreground">
-					You need the appropriate role to access this section.
-				</p>
+				<h3 className="text-lg font-medium mb-1 text-foreground">
+					{t(AdminAccessKeys.INSUFFICIENT_TITLE)}
+				</h3>
+				<p className="text-muted-foreground">{t(AdminAccessKeys.INSUFFICIENT_DESCRIPTION)}</p>
 			</div>
 		</div>
 	);

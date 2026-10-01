@@ -19,7 +19,7 @@ import {
 	LoadingState,
 } from "@/global/components";
 import { useAdminTable, useIsNarrowViewport } from "@/global/hooks";
-import { AdminStaffKeys } from "@/global/i18n";
+import { AdminStaffKeys, ErrorKeys } from "@/global/i18n";
 import { getErrorMessage, unwrapResult } from "@/global/utils";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -396,7 +396,7 @@ function AdminTeamPage() {
 
 				<AdminTable
 					tableState={tableState}
-					entityName={t(AdminStaffKeys.TEAM_DIRECTORY_ENTITY_NAME)}
+					errorTitle={t(ErrorKeys.LOAD_FAILED_TEAM)}
 					searchPlaceholder={t(AdminStaffKeys.TEAM_DIRECTORY_SEARCH_PLACEHOLDER)}
 					emptyIcon={Users}
 					emptyTitle={t(AdminStaffKeys.TEAM_DIRECTORY_EMPTY_TITLE)}

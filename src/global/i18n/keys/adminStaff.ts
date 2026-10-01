@@ -40,7 +40,6 @@ export const AdminStaffKeys = {
 	TEAM_DIRECTORY_FILTERED_EMPTY_DESCRIPTION: "adminStaff.team.directoryFilteredEmptyDescription",
 	TEAM_DIRECTORY_SEARCH_PLACEHOLDER: "adminStaff.team.directorySearchPlaceholder",
 	TEAM_INVITE_MODAL_TITLE: "adminStaff.team.inviteModalTitle",
-	TEAM_DIRECTORY_ENTITY_NAME: "adminStaff.team.directoryEntityName",
 	TEAM_DRAWER_SWIPE_HANDLE: "adminStaff.team.drawerSwipeHandle",
 	TEAM_DRAWER_SUBTITLE_OWNER: "adminStaff.team.drawerSubtitleOwner",
 	TEAM_DRAWER_RANGE_TODAY: "adminStaff.team.drawerRangeToday",

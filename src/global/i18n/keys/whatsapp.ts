@@ -51,7 +51,6 @@ export const WhatsappKeys = {
 	PAGE_SETUP_RESTAURANT_FIRST: "whatsapp.page.setupRestaurantFirst",
 
 	// Conversation list
-	LIST_ENTITY: "whatsapp.list.entity",
 	LIST_SEARCH_PLACEHOLDER: "whatsapp.list.searchPlaceholder",
 	LIST_RESULT_COUNT: "whatsapp.list.resultCount",
 	LIST_EMPTY_TITLE: "whatsapp.list.emptyTitle",
@@ -92,6 +91,29 @@ export const WhatsappKeys = {
 
 	// Entry point on a reservation
 	RESERVATION_LINK: "whatsapp.reservationLink.label",
+
+	// Spend allowlist (TAVLI-91, /admin/whatsapp-allowlist)
+	ALLOWLIST_FORM_TITLE: "whatsapp.allowlist.formTitle",
+	/** Interpolates `{{inbound}}` and `{{outbound}}` from the daily-limit constants. */
+	ALLOWLIST_FORM_DESCRIPTION: "whatsapp.allowlist.formDescription",
+	ALLOWLIST_PHONE_LABEL: "whatsapp.allowlist.phoneLabel",
+	ALLOWLIST_LABEL_LABEL: "whatsapp.allowlist.labelLabel",
+	ALLOWLIST_LABEL_PLACEHOLDER: "whatsapp.allowlist.labelPlaceholder",
+	ALLOWLIST_ADD: "whatsapp.allowlist.add",
+	ALLOWLIST_ADD_OPERATOR: "whatsapp.allowlist.addOperator",
+	/** "Remove {{label}}" — accessible name of a row's remove button. */
+	ALLOWLIST_REMOVE_ARIA: "whatsapp.allowlist.removeAria",
+	ALLOWLIST_SEARCH_PLACEHOLDER: "whatsapp.allowlist.searchPlaceholder",
+	/** Pluralized: pass `{ count }`. */
+	ALLOWLIST_RESULT_COUNT: "whatsapp.allowlist.resultCount",
+	ALLOWLIST_EMPTY_TITLE: "whatsapp.allowlist.emptyTitle",
+	ALLOWLIST_EMPTY_DESCRIPTION: "whatsapp.allowlist.emptyDescription",
+	ALLOWLIST_FILTERED_EMPTY_TITLE: "whatsapp.allowlist.filteredEmptyTitle",
+	ALLOWLIST_NOT_AUTHENTICATED: "whatsapp.allowlist.notAuthenticated",
+	ALLOWLIST_COLUMN_PHONE: "whatsapp.allowlist.column.phone",
+	ALLOWLIST_COLUMN_LABEL: "whatsapp.allowlist.column.label",
+	ALLOWLIST_COLUMN_ADDED: "whatsapp.allowlist.column.added",
+	ALLOWLIST_COLUMN_ADDED_BY: "whatsapp.allowlist.column.addedBy",
 } as const;
 
 export type WhatsappKey = (typeof WhatsappKeys)[keyof typeof WhatsappKeys];

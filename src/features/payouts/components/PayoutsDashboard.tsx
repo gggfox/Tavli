@@ -1,5 +1,5 @@
 import { DashboardShell, EmptyState, Skeleton } from "@/global/components";
-import { PayoutsKeys } from "@/global/i18n";
+import { ErrorKeys, PayoutsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -54,7 +54,7 @@ export function PayoutsDashboard({ restaurantId }: PayoutsDashboardProps) {
 		<DashboardShell
 			isLoading={isPending}
 			error={queryError}
-			entityName="payouts"
+			errorTitle={t(ErrorKeys.LOAD_FAILED_PAYOUTS)}
 			skeleton={<PayoutsDashboardSkeleton />}
 			gap="5"
 		>

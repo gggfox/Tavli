@@ -1,3 +1,10 @@
+import { CommonKeys } from "@/global/i18n";
+import { useTranslation } from "react-i18next";
+
+/**
+ * Endonyms on purpose: a language is labelled in its own language, so these
+ * stay the same whichever UI language is active.
+ */
 const LANGUAGE_LABELS: Record<string, string> = {
 	en: "English",
 	es: "Espa\u00f1ol",
@@ -21,6 +28,7 @@ export function LanguageTabBar({
 	className,
 	compact = false,
 }: Readonly<LanguageTabBarProps>) {
+	const { t } = useTranslation();
 	if (languages.length <= 1) return null;
 
 	return (
@@ -46,7 +54,7 @@ export function LanguageTabBar({
 						{compact ? lang : (LANGUAGE_LABELS[lang] ?? lang.toUpperCase())}
 						{isDefault && !compact && (
 							<span className="ml-1 opacity-60" style={{ fontSize: "0.65rem" }}>
-								(default)
+								{t(CommonKeys.LANGUAGE_DEFAULT_SUFFIX)}
 							</span>
 						)}
 					</button>

@@ -1,6 +1,7 @@
 import { Modal } from "@/global/components/Modal";
 import { MenusKeys } from "@/global/i18n";
 import { useFormatMoney } from "@/global/hooks/useFormatMoney";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import type { Doc, Id } from "convex/_generated/dataModel";
 import { hasListedPrice, stripPriceNotListedNote } from "convex/_shared/menuPricing";
 import { AlertTriangle, FileUp, Loader2, Upload } from "lucide-react";
@@ -145,8 +146,10 @@ export function MenuImportDialog({
 							/>
 						</button>
 
-						{error && (
-							<p className="text-sm text-error">{t(MenusKeys.IMPORT_ERROR, { message: error })}</p>
+						{error != null && (
+							<p className="text-sm text-error">
+								{t(MenusKeys.IMPORT_ERROR, { message: getErrorMessage(error, t) })}
+							</p>
 						)}
 					</>
 				)}
@@ -169,7 +172,11 @@ export function MenuImportDialog({
 								{t(MenusKeys.IMPORT_PREVIEW_TITLE)}
 							</h3>
 							<span className="text-xs text-muted-foreground">
-								{extraction.categories.length} categories · {totalItems} items
+								{t(MenusKeys.IMPORT_PREVIEW_CATEGORY_COUNT, {
+									count: extraction.categories.length,
+								})}
+								{" · "}
+								{t(MenusKeys.IMPORT_PREVIEW_ITEM_COUNT, { count: totalItems })}
 							</span>
 						</div>
 

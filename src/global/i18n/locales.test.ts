@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	AdminAccessKeys,
 	AdminStaffKeys,
 	AlertsKeys,
 	CommonKeys,
@@ -7,12 +8,15 @@ import {
 	DashboardKeys,
 	ErrorKeys,
 	ExportsKeys,
+	FeatureFlagsKeys,
+	InvitesKeys,
 	Languages,
 	MenusKeys,
 	NotificationsKeys,
 	OptionsKeys,
 	OrderingKeys,
 	OrdersKeys,
+	OrganizationsKeys,
 	PaymentsKeys,
 	PayoutsKeys,
 	DisputesKeys,
@@ -23,6 +27,7 @@ import {
 	SidebarKeys,
 	TimeKeys,
 	UserOnboardingKeys,
+	UsersKeys,
 	WelcomeKeys,
 	WhatsappKeys,
 } from "@/global/i18n";
@@ -131,6 +136,11 @@ describe("Key enums resolve in every locale", () => {
 		["UserOnboardingKeys", UserOnboardingKeys as Record<string, string>],
 		["ErrorKeys", ErrorKeys as Record<string, string>],
 		["WhatsappKeys", WhatsappKeys as Record<string, string>],
+		["AdminAccessKeys", AdminAccessKeys as Record<string, string>],
+		["InvitesKeys", InvitesKeys as Record<string, string>],
+		["OrganizationsKeys", OrganizationsKeys as Record<string, string>],
+		["FeatureFlagsKeys", FeatureFlagsKeys as Record<string, string>],
+		["UsersKeys", UsersKeys as Record<string, string>],
 	])("%s -- all values resolve in en.json and es.json", (name, keys) => {
 		expectAllKeysResolve(name, keys);
 	});

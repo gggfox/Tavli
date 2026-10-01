@@ -14,7 +14,7 @@
  */
 import { expect, test } from "@playwright/test";
 import {
-	ACCESS_DENIED_HEADING,
+	STAFF_GUARD_HEADING,
 	collectPageErrors,
 	ERROR_BOUNDARY_HEADING,
 	gotoSettled,
@@ -29,7 +29,7 @@ test.describe("Stripe admin smoke", () => {
 		// holds for an SSR 500 error page. `gotoSettled` now requires an OK
 		// status and the app's own title, and the guard copy is a positive
 		// signal that the route actually rendered.
-		await expect(page.getByText(ACCESS_DENIED_HEADING)).toBeVisible();
+		await expect(page.getByText(STAFF_GUARD_HEADING)).toBeVisible();
 		await expect(page.getByText(ERROR_BOUNDARY_HEADING)).toHaveCount(0);
 		expect(errors).toEqual([]);
 	});

@@ -10,6 +10,9 @@ export const CustomerKeys = {
 	/** A path under a real restaurant that matches no page. */
 	PAGE_NOT_FOUND_TITLE: "customer.notFound.pageTitle",
 	RESERVE: "customer.nav.reserve",
+	/** Accessible name of the Menu / Reserve tab strip. */
+	NAV_ARIA: "customer.nav.aria",
+	LOADING: "customer.loading",
 	SIGN_IN: "customer.auth.signIn",
 	SIGN_UP: "customer.auth.signUp",
 	INFO_HEADING: "customer.info.heading",

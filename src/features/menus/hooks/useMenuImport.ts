@@ -14,7 +14,12 @@ interface UseMenuImportOptions {
 export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 	const [step, setStep] = useState<ImportStep>("idle");
 	const [extraction, setExtraction] = useState<MenuExtraction | null>(null);
-	const [error, setError] = useState<string | null>(null);
+	/**
+	 * The caught value itself, not its message: the import actions throw English
+	 * prose (and Convex wraps it in `[CONVEX A(...)]` noise), so the dialog
+	 * localizes it through `getErrorMessage` instead of rendering it.
+	 */
+	const [error, setError] = useState<unknown>(null);
 	const [result, setResult] = useState<{
 		categoriesCreated: number;
 		categoriesMerged: number;
@@ -59,7 +64,7 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 				setExtraction(extracted);
 				setStep("preview");
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Extraction failed");
+				setError(err);
 				setStep("error");
 			}
 		},
@@ -98,7 +103,7 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 				setResult(importResult);
 				setStep("done");
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Import failed");
+				setError(err);
 				setStep("error");
 			}
 		},

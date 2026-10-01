@@ -1,9 +1,11 @@
 import { AuthLoadingState, NotAuthenticatedState } from "@/features/auth";
 import type { useAdminTable } from "@/global/hooks/useAdminTable";
+import { CommonKeys } from "@/global/i18n";
 import { flexRender, type Row } from "@tanstack/react-table";
 import type { LucideIcon } from "lucide-react";
 import { Search } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { EmptyState } from "../EmptyState";
 import { SearchInput } from "../SearchInput";
 import { Pagination } from "./Pagination";
@@ -11,12 +13,26 @@ import { SortIcon } from "./SortIcon";
 import { TableErrorState } from "./TableErrorState";
 import { TableSkeleton } from "./TableSkeleton";
 
+/**
+ * Every piece of copy AdminTable renders is either passed in already translated
+ * by the caller or falls back to an entity-neutral `common.table.*` string. The
+ * table never builds a sentence out of an entity noun: the old `entityName`
+ * prop produced English plurals ("{noun}s") and "No {noun} found" inside the
+ * Spanish UI. A caller that wants entity-specific wording passes it — count
+ * text via `getResultCountText` backed by an i18next `_one`/`_other` key.
+ */
 interface AdminTableProps<TData> {
 	readonly tableState: ReturnType<typeof useAdminTable<TData>>;
+	/** Defaults to `common.table.searchPlaceholder` ("Search…"). */
 	readonly searchPlaceholder?: string;
-	/** When set, replaces the default "{n} {entity}" filtered-row count line. */
+	/**
+	 * Filtered-row count line, e.g.
+	 * `(count) => t(AlertsKeys.PAGE_RESULT_COUNT, { count })`. Defaults to the
+	 * pluralized `common.table.resultCount` ("N results").
+	 */
 	readonly getResultCountText?: (filteredCount: number) => string;
-	readonly entityName: string;
+	/** Load-failure title, e.g. `t(ErrorKeys.LOAD_FAILED_ALERTS)`. */
+	readonly errorTitle?: string;
 	readonly emptyIcon?: LucideIcon;
 	readonly emptyTitle?: string;
 	readonly emptyDescription?: string;
@@ -39,7 +55,7 @@ export function AdminTable<TData>({
 	tableState,
 	searchPlaceholder,
 	getResultCountText,
-	entityName,
+	errorTitle,
 	emptyIcon: EmptyIcon = Search,
 	emptyTitle,
 	emptyDescription,
@@ -56,6 +72,7 @@ export function AdminTable<TData>({
 	// out, sorting/filtering state changes never reach the rendered rows until
 	// some other prop forces a re-render.
 	"use no memo";
+	const { t } = useTranslation();
 
 	const {
 		table,
@@ -75,7 +92,7 @@ export function AdminTable<TData>({
 		return (
 			<NotAuthenticatedState
 				icon={EmptyIcon}
-				message={notAuthenticatedMessage ?? `Please sign in to view ${entityName}.`}
+				message={notAuthenticatedMessage ?? t(CommonKeys.TABLE_SIGN_IN_REQUIRED)}
 			/>
 		);
 	}
@@ -85,7 +102,7 @@ export function AdminTable<TData>({
 		const errorObj = error instanceof Error ? error : new Error(String(error));
 		return (
 			<div className="flex flex-col flex-1 h-full min-h-0">
-				<TableErrorState error={errorObj} entityName={entityName} onRetry={() => refetch()} fill />
+				<TableErrorState error={errorObj} title={errorTitle} onRetry={() => refetch()} fill />
 			</div>
 		);
 	}
@@ -94,19 +111,16 @@ export function AdminTable<TData>({
 	const isEmpty = data.length === 0;
 	const filteredCount = table.getFilteredRowModel().rows.length;
 	const isFilteredEmpty = !isEmpty && filteredCount === 0;
-	const singular = entityName.endsWith("s") ? entityName.slice(0, -1) : entityName;
-	const plural = entityName.endsWith("s") ? entityName : `${entityName}s`;
-	const defaultResultCountText = `${filteredCount} ${filteredCount === 1 ? singular : plural}`;
 	const resultCountLabel = getResultCountText
 		? getResultCountText(filteredCount)
-		: defaultResultCountText;
+		: t(CommonKeys.TABLE_RESULT_COUNT, { count: filteredCount });
 
 	let tableSection: ReactNode;
 	if (isEmpty) {
 		tableSection = (
 			<EmptyState
 				icon={EmptyIcon}
-				title={emptyTitle ?? `No ${entityName} found`}
+				title={emptyTitle ?? t(CommonKeys.TABLE_EMPTY_TITLE)}
 				description={emptyDescription}
 				fill
 			/>
@@ -115,7 +129,7 @@ export function AdminTable<TData>({
 		tableSection = (
 			<EmptyState
 				icon={FilteredEmptyIcon}
-				title={filteredEmptyTitle ?? `No matching ${entityName}`}
+				title={filteredEmptyTitle ?? t(CommonKeys.TABLE_FILTERED_EMPTY_TITLE)}
 				description={filteredEmptyDescription}
 				fill
 			/>
@@ -146,7 +160,7 @@ export function AdminTable<TData>({
 									))}
 									{renderRowActions && (
 										<th className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-											Actions
+											{t(CommonKeys.TABLE_ACTIONS)}
 										</th>
 									)}
 								</tr>
@@ -174,7 +188,7 @@ export function AdminTable<TData>({
 		<div className="flex flex-col flex-1 h-full min-h-0">
 			<div className="mb-4 flex gap-4 items-center">
 				<SearchInput
-					placeholder={searchPlaceholder ?? `Search ${entityName}...`}
+					placeholder={searchPlaceholder ?? t(CommonKeys.TABLE_SEARCH_PLACEHOLDER)}
 					value={globalFilter}
 					onChange={setGlobalFilter}
 				/>

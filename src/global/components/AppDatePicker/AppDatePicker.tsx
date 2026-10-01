@@ -1,4 +1,5 @@
 import { useClickOutside } from "@/global/hooks/useClickOutside";
+import { CommonKeys } from "@/global/i18n";
 import { useCalendarVariant } from "@/global/hooks/useCalendarVariant";
 import { useEscapeKey } from "@/global/hooks/useEscapeKey";
 import { KEY } from "@/global/utils/keyboard";
@@ -22,6 +23,7 @@ import {
 	type KeyboardEvent,
 	type RefObject,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { FieldLabel } from "@/global/components/Form/FieldLabel";
 import { formInputClasses, formInputStyle } from "@/global/components/Form/styles";
 
@@ -33,7 +35,11 @@ export interface AppDatePickerProps {
 	readonly onChange: (ymd: string) => void;
 	readonly description?: string;
 	readonly disabled?: boolean;
-	/** BCP 47 tag for weekday labels and display formatting. */
+	/**
+	 * BCP 47 tag for weekday labels and display formatting. Defaults to the
+	 * active UI language, so an omitted tag never renders English weekdays
+	 * inside the Spanish UI.
+	 */
 	readonly localeTag?: string;
 	/**
 	 * When true, shows month navigation + day grid inline (no popover).
@@ -123,6 +129,7 @@ function CalendarGridBody({
 	onChange,
 	onGridKeyDown,
 }: CalendarGridBodyProps) {
+	const { t } = useTranslation();
 	const rows = chunk7(grid);
 	const activeDescendantId = `${listId}-cell-${focusedIdx}`;
 
@@ -133,7 +140,7 @@ function CalendarGridBody({
 					type="button"
 					tabIndex={-1}
 					className="rounded p-1 hover:bg-muted"
-					aria-label="Previous month"
+					aria-label={t(CommonKeys.DATE_PICKER_PREVIOUS_MONTH)}
 					onClick={prevMonth}
 				>
 					<ChevronLeft size={18} />
@@ -143,7 +150,7 @@ function CalendarGridBody({
 					type="button"
 					tabIndex={-1}
 					className="rounded p-1 hover:bg-muted"
-					aria-label="Next month"
+					aria-label={t(CommonKeys.DATE_PICKER_NEXT_MONTH)}
 					onClick={nextMonth}
 				>
 					<ChevronRight size={18} />
@@ -156,7 +163,7 @@ function CalendarGridBody({
 				tabIndex={0}
 				aria-activedescendant={activeDescendantId}
 				aria-readonly="true"
-				title="Page Up / Page Down: change month"
+				title={t(CommonKeys.DATE_PICKER_PAGE_KEYS_HINT)}
 				className="text-center text-xs outline-none focus:ring-2 focus:ring-(--btn-primary-bg) focus:ring-offset-2 focus:ring-offset-[var(--bg-secondary)]"
 				onKeyDown={onGridKeyDown}
 			>
@@ -213,7 +220,7 @@ function CalendarGridBody({
 					onChange(todayLocalYmd());
 				}}
 			>
-				Today
+				{t(CommonKeys.DATE_PICKER_TODAY)}
 			</button>
 		</>
 	);
@@ -226,9 +233,11 @@ export function AppDatePicker({
 	onChange,
 	description,
 	disabled,
-	localeTag = "en",
+	localeTag: localeTagProp,
 	embedded = false,
 }: AppDatePickerProps) {
+	const { i18n } = useTranslation();
+	const localeTag = localeTagProp ?? i18n.language;
 	const variant = useCalendarVariant();
 	const listId = useId();
 	const triggerRef = useRef<HTMLButtonElement>(null);

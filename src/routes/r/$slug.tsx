@@ -410,7 +410,7 @@ export function CustomerNavTabs({ slug }: Readonly<{ slug: string }>) {
 
 	return (
 		<nav
-			aria-label="Customer sections"
+			aria-label={t(CustomerKeys.NAV_ARIA)}
 			className="flex shrink-0 items-center gap-0.5 rounded-full p-0.5 bg-background border border-border"
 		>
 			{lang ? (

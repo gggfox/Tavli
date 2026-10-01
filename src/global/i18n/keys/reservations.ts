@@ -43,6 +43,8 @@ export const ReservationsKeys = {
 	SOURCE_STAFF: "reservations.sources.staff",
 
 	TABLE_SEARCH_PLACEHOLDER: "reservations.table.searchPlaceholder",
+	/** Pluralized "N reservations" -- pass `{ count }`. */
+	TABLE_RESULT_COUNT: "reservations.table.resultCount",
 	COLUMN_STATUS: "reservations.table.columns.status",
 	COLUMN_GUEST: "reservations.table.columns.guest",
 	COLUMN_PARTY: "reservations.table.columns.party",

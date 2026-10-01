@@ -1,6 +1,6 @@
 import { AdminTable } from "@/global/components";
 import { useAdminTable } from "@/global/hooks";
-import { UserOnboardingKeys } from "@/global/i18n";
+import { UserOnboardingKeys, UsersKeys } from "@/global/i18n";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "convex/_generated/api";
 import { USER_ROLES, type UserRoleDoc } from "convex/constants";
@@ -9,16 +9,17 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useCurrentUserRoles } from "../../hooks/useCurrentUserRoles";
 import { BulkInviteDialog, InviteUserDialog } from "../invites";
-import { columns } from "./Columns";
+import { buildUserColumns } from "./Columns";
 
 const ACTION_CLASS =
 	"inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-md border border-border text-foreground hover:bg-hover";
 
 export function UsersTable() {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
+	const dateLocale = i18n.language?.startsWith("es") ? "es-MX" : "en-US";
 	const tableState = useAdminTable<UserRoleDoc>({
 		queryOptions: convexQuery(api.admin.getAllUsers, {}),
-		columns,
+		columns: buildUserColumns(t, dateLocale),
 	});
 
 	// The onboarding endpoints are platform-admin only and say so server-side;
@@ -36,12 +37,13 @@ export function UsersTable() {
 		<>
 			<AdminTable
 				tableState={tableState}
-				entityName="users"
-				searchPlaceholder="Search users..."
+				searchPlaceholder={t(UsersKeys.SEARCH_PLACEHOLDER)}
+				getResultCountText={(count) => t(UsersKeys.RESULT_COUNT, { count })}
 				emptyIcon={Search}
-				emptyTitle="No users found"
-				emptyDescription="There are no users with roles assigned yet."
-				notAuthenticatedMessage="Please sign in to view user management."
+				emptyTitle={t(UsersKeys.EMPTY_TITLE)}
+				emptyDescription={t(UsersKeys.EMPTY_DESCRIPTION)}
+				filteredEmptyTitle={t(UsersKeys.FILTERED_EMPTY_TITLE)}
+				notAuthenticatedMessage={t(UsersKeys.NOT_AUTHENTICATED)}
 				actions={
 					isAdmin ? (
 						<>

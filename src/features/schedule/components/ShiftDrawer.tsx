@@ -23,6 +23,7 @@
 import { AppDatePicker, DialogHeader, Drawer, FieldLabel } from "@/global/components";
 import { useIsNarrowViewport } from "@/global/hooks";
 import { AdminStaffKeys } from "@/global/i18n";
+import { getErrorMessageKey } from "@/global/utils/errorMessages";
 import { unwrapResult } from "@/global/utils/unwrapResult";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -923,10 +924,11 @@ function extractSectionsError(
 			if (lower.includes("already covered") || lower.includes("ya cubre")) {
 				return t(AdminStaffKeys.SCHEDULE_DRAWER_SECTIONS_OVERLAP);
 			}
-			return message;
 		}
 	}
-	return t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_GENERIC);
+	// Never the raw message: known backend codes map to localized copy, and
+	// anything else (prose like "Shift not found") falls back to the generic key.
+	return t(getErrorMessageKey(e, AdminStaffKeys.SCHEDULE_DRAWER_ERROR_GENERIC));
 }
 
 function extractError(e: unknown, t: (k: string) => string): string {
@@ -942,8 +944,9 @@ function extractError(e: unknown, t: (k: string) => string): string {
 			if (message.toLowerCase().includes("endsat")) {
 				return t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_TIME);
 			}
-			return message;
 		}
 	}
-	return t(AdminStaffKeys.SCHEDULE_DRAWER_ERROR_GENERIC);
+	// Never the raw message: known backend codes map to localized copy, and
+	// anything else (prose like "Shift not found") falls back to the generic key.
+	return t(getErrorMessageKey(e, AdminStaffKeys.SCHEDULE_DRAWER_ERROR_GENERIC));
 }

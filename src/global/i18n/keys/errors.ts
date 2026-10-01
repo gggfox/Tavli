@@ -220,8 +220,22 @@ export const ErrorKeys = {
 	BOUNDARY_RELOAD: "errors.boundary.reload",
 	BOUNDARY_SIGN_IN: "errors.boundary.signIn",
 	// DashboardShell fallback UI
-	DASHBOARD_LOAD_FAILED: "errors.dashboardShell.loadFailed",
 	DASHBOARD_LOAD_HINT: "errors.dashboardShell.loadHint",
+	/**
+	 * Load-failure titles for DashboardShell / AdminTable / TableErrorState.
+	 * One whole sentence per entity rather than "Could not load {{entity}}":
+	 * gluing a noun into a sentence breaks Spanish gender and number agreement
+	 * ("No se pudieron cargar los pedidos" vs. "No se pudo cargar el tablero").
+	 */
+	LOAD_FAILED_GENERIC: "errors.loadFailed.generic",
+	LOAD_FAILED_ORDERS: "errors.loadFailed.orders",
+	LOAD_FAILED_PAYMENTS: "errors.loadFailed.payments",
+	LOAD_FAILED_PAYOUTS: "errors.loadFailed.payouts",
+	LOAD_FAILED_RESERVATIONS: "errors.loadFailed.reservations",
+	LOAD_FAILED_DASHBOARD: "errors.loadFailed.dashboard",
+	LOAD_FAILED_ALERTS: "errors.loadFailed.alerts",
+	LOAD_FAILED_CONVERSATIONS: "errors.loadFailed.conversations",
+	LOAD_FAILED_TEAM: "errors.loadFailed.team",
 	...ERROR_CODE_KEYS,
 } as const;
 

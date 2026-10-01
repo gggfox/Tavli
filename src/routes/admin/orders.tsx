@@ -2,8 +2,10 @@ import { ExportButton, useCanExport } from "@/features/exports";
 import { OrderDashboard, OrderDashboardSkeleton } from "@/features/kitchen";
 import { useRestaurant } from "@/features/restaurants";
 import { AdminPageLayout } from "@/global/components";
+import { AdminAccessKeys } from "@/global/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import type { Id } from "convex/_generated/dataModel";
+import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/admin/orders")({
 	component: OrdersPage,
@@ -34,9 +36,12 @@ function OrdersContent({
 	restaurantId,
 	isLoading,
 }: Readonly<{ restaurantId: Id<"restaurants"> | undefined; isLoading: boolean }>) {
+	const { t } = useTranslation();
 	if (isLoading) return <OrderDashboardSkeleton />;
 	if (!restaurantId) {
-		return <p className="text-sm text-faint-foreground">Please set up your restaurant first.</p>;
+		return (
+			<p className="text-sm text-faint-foreground">{t(AdminAccessKeys.SETUP_RESTAURANT_FIRST)}</p>
+		);
 	}
 	return <OrderDashboard restaurantId={restaurantId} />;
 }

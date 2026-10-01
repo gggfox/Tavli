@@ -5,8 +5,10 @@
  * previously copy-pasted across the reservations route, the reservation
  * detail drawer, and the order detail modal.
  */
+import { CommonKeys } from "@/global/i18n";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export interface DialogHeaderProps {
 	readonly title: ReactNode;
@@ -18,7 +20,8 @@ export interface DialogHeaderProps {
 	 */
 	readonly extra?: ReactNode;
 	/**
-	 * ARIA label for the close button. Defaults to "Close".
+	 * ARIA label for the close button. Defaults to the localized "Close"
+	 * (`common.close`); pass one only when a more specific label helps.
 	 */
 	readonly closeAriaLabel?: string;
 	readonly className?: string;
@@ -29,9 +32,10 @@ export function DialogHeader({
 	subtitle,
 	onClose,
 	extra,
-	closeAriaLabel = "Close",
+	closeAriaLabel,
 	className = "",
 }: DialogHeaderProps) {
+	const { t } = useTranslation();
 	const classes = ["px-6 py-4 flex items-start justify-between gap-4", className]
 		.filter(Boolean)
 		.join(" ");
@@ -56,7 +60,7 @@ export function DialogHeader({
 				type="button"
 				onClick={onClose}
 				className="p-1 rounded-md transition-colors hover:opacity-80 shrink-0 text-faint-foreground"
-				aria-label={closeAriaLabel}
+				aria-label={closeAriaLabel ?? t(CommonKeys.CLOSE)}
 			>
 				<X size={18} />
 			</button>

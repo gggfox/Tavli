@@ -9,7 +9,7 @@ import {
 } from "@/global/components";
 import { useOptimisticUserSetting } from "@/global/hooks";
 import { getErrorMessage } from "@/global/utils";
-import { OrdersKeys } from "@/global/i18n";
+import { ErrorKeys, OrdersKeys } from "@/global/i18n";
 import type { Id } from "convex/_generated/dataModel";
 import { SERVED_VISIBLE_WINDOW_MS } from "convex/constants";
 import { isServedOrderVisible } from "convex/orderHelpers";
@@ -518,7 +518,7 @@ export function OrderDashboard({ restaurantId }: Readonly<OrderDashboardProps>) 
 		<DashboardShell
 			isLoading={isLoading}
 			error={error}
-			entityName="orders"
+			errorTitle={t(ErrorKeys.LOAD_FAILED_ORDERS)}
 			skeleton={<OrderDashboardSkeleton />}
 			header={filterPills}
 		>

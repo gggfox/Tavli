@@ -31,12 +31,13 @@ import { expect, type Page } from "@playwright/test";
 export const NOT_FOUND_HEADING = "Page not found";
 
 /**
- * Copy rendered by the `/admin` layout for a visitor who is not signed in as
- * staff (`src/routes/admin.tsx`). Signed out — which is how CI runs — every
- * `/admin/*` route legitimately stops here, so this string doubles as "the
- * route exists and its guard held".
+ * Copy rendered by the `/admin` layout for a signed-out visitor
+ * (`StaffAccessDeniedState`, English `adminAccess.signIn.title`). Signed out —
+ * which is how CI runs — every `/admin/*` route legitimately stops here, so
+ * this string doubles as "the route exists and its guard held". A signed-in
+ * visitor without a staff role sees "Access denied" instead.
  */
-export const ACCESS_DENIED_HEADING = "Access Denied";
+export const STAFF_GUARD_HEADING = "Sign in to continue";
 
 /**
  * Copy rendered by `ErrorFallback` behind `RouteErrorComponent`. A route that
