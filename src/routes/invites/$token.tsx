@@ -7,6 +7,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { SignInButton, useAuth } from "@clerk/tanstack-react-start";
 import { api } from "convex/_generated/api";
 import { RESTAURANT_MEMBER_ROLE, USER_ROLES } from "convex/constants";
+import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,8 +35,45 @@ const INVITE_ROLE_LABEL_KEY: Record<InviteRole, string> = {
 	[RESTAURANT_MEMBER_ROLE.EMPLOYEE]: AdminStaffKeys.TEAM_ROLE_DISPLAY_EMPLOYEE,
 };
 
+/** Up to this many restaurants are named one by one; past it the line counts them. */
+const MAX_NAMED_RESTAURANTS = 3;
+
+/**
+ * Who is inviting, in one sentence: the one restaurant by name, a few joined
+ * the way the reader's language joins a list ("A, B y C"), many as "N
+ * restaurants of {organization}", and an organization-level invitation by the
+ * organization's name. Falls back to the anonymous "join a team" line only when
+ * the invitation names nothing (e.g. its organization is gone).
+ */
+export function inviteHeadline(
+	invite: { organizationName: string | null; restaurantNames: string[] },
+	t: TFunction,
+	locale: string
+): string {
+	const { organizationName, restaurantNames } = invite;
+	if (restaurantNames.length === 1) {
+		return t(InvitesKeys.INVITED_RESTAURANT, { restaurant: restaurantNames[0] });
+	}
+	if (restaurantNames.length > MAX_NAMED_RESTAURANTS && organizationName) {
+		return t(InvitesKeys.INVITED_RESTAURANT_TOTAL, {
+			total: restaurantNames.length,
+			organization: organizationName,
+		});
+	}
+	if (restaurantNames.length > 1) {
+		const restaurants = new Intl.ListFormat(locale, { type: "conjunction" }).format(
+			restaurantNames
+		);
+		return t(InvitesKeys.INVITED_RESTAURANTS, { restaurants });
+	}
+	if (organizationName) {
+		return t(InvitesKeys.INVITED_ORGANIZATION, { organization: organizationName });
+	}
+	return t(InvitesKeys.INVITED);
+}
+
 function InviteAcceptPage() {
-	const { t } = useTranslation();
+	const { t, i18n: activeI18n } = useTranslation();
 	const { token } = Route.useParams();
 	const { isSignedIn } = useAuth();
 	const [now] = useState(() => Date.now());
@@ -58,6 +96,24 @@ function InviteAcceptPage() {
 
 	const row = preview.data;
 	const invalid = !row;
+	// Accepting flips the invitation out of "pending", so the preview goes null
+	// right after a successful accept — that is not a dead link.
+	const dead = !preview.isLoading && invalid && !accepted;
+
+	if (dead) {
+		return (
+			<div className="min-h-[60vh] flex flex-col items-center justify-center p-6">
+				<div className="max-w-md w-full rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
+					<h1 className="text-xl font-semibold text-foreground">{t(InvitesKeys.TITLE)}</h1>
+					<p className="text-sm text-destructive">{t(InvitesKeys.INVALID)}</p>
+					<p className="text-sm text-muted-foreground">{t(InvitesKeys.INVALID_HINT)}</p>
+					<Link to="/" className="block text-center text-sm text-primary hover:underline">
+						{t(InvitesKeys.GO_HOME)}
+					</Link>
+				</div>
+			</div>
+		);
+	}
 
 	let inviteActions: ReactNode = null;
 	if (isSignedIn) {
@@ -103,11 +159,10 @@ function InviteAcceptPage() {
 				{preview.isLoading && (
 					<p className="text-sm text-faint-foreground">{t(InvitesKeys.LOADING)}</p>
 				)}
-				{!preview.isLoading && invalid && (
-					<p className="text-sm text-destructive">{t(InvitesKeys.INVALID)}</p>
-				)}
-				{row && !invalid && !isSignedIn && (
-					<p className="text-sm text-muted-foreground">{t(InvitesKeys.INVITED)}</p>
+				{row && (
+					<p className="text-sm text-muted-foreground">
+						{inviteHeadline(row, t, activeI18n.language)}
+					</p>
 				)}
 				{row && !invalid && isSignedIn && (
 					<div className="text-sm space-y-1 text-muted-foreground">

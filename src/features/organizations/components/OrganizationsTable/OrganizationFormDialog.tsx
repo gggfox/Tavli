@@ -1,7 +1,11 @@
 import { Modal, TextInput } from "@/global/components";
 import { OrganizationsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
-import { getErrorMessage } from "@/global/utils/errorMessages";
+import {
+	extractErrorField,
+	getErrorMessage,
+	getErrorMessageKey,
+} from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
@@ -19,24 +23,11 @@ interface OrganizationFormDialogProps {
 }
 
 /**
- * The organization mutations name the failing field but word the reason in
- * English prose (`"name: An organization with this name already exists"`), so
- * the field is the only part worth reading: each one we know gets its own
- * localized hint, which covers every reason the backend has for that field.
+ * Fields the organization mutations can refuse (`"name: ERROR_ORGANIZATION_NAME_TAKEN"`).
+ * A refusal pinned to one of these is shown under that input, in the words of
+ * its `errors.<CODE>` key; anything else goes to the form-level message.
  */
-const FIELD_ERROR_KEYS: Record<string, string> = {
-	name: OrganizationsKeys.FORM_NAME_INVALID,
-	aiImageMonthlyLimit: OrganizationsKeys.FORM_AI_LIMIT_INVALID,
-};
-
-function parseFieldErrors(err: unknown): string[] | null {
-	if (!(err instanceof Error) || !err.message.includes(":")) return null;
-	const fields = err.message
-		.split(", ")
-		.map((part) => part.split(": ")[0])
-		.filter((field) => field in FIELD_ERROR_KEYS);
-	return fields.length > 0 ? fields : null;
-}
+const FORM_FIELDS: ReadonlySet<string> = new Set(["name", "aiImageMonthlyLimit"]);
 
 export function OrganizationFormDialog({
 	isOpen,
@@ -98,11 +89,9 @@ export function OrganizationFormDialog({
 				onSuccess();
 				onClose();
 			} catch (err) {
-				const fields = parseFieldErrors(err);
-				if (fields) {
-					setFieldErrors(
-						Object.fromEntries(fields.map((field) => [field, FIELD_ERROR_KEYS[field]]))
-					);
+				const field = extractErrorField(err);
+				if (field && FORM_FIELDS.has(field)) {
+					setFieldErrors({ [field]: getErrorMessageKey(err) });
 					return;
 				}
 				setFormError(getErrorMessage(err, t, OrganizationsKeys.FORM_SAVE_FAILED));

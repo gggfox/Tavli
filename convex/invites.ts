@@ -563,6 +563,20 @@ export const listForOrganization = query({
 	},
 });
 
+/**
+ * What the public `/invites/$token` page may show before anyone signs in.
+ *
+ * Anything that can be read with the token alone is effectively public to
+ * whoever holds the link, so an unknown, accepted, revoked or expired token
+ * still returns `null` and nothing else. Only a live invitation names who is
+ * inviting: the organization and the restaurants it grants (in the order the
+ * inviter picked them), so the invitee reads "join Vernáculo" rather than
+ * "join a team". Restaurants that were since removed — or that no longer
+ * belong to the invitation's organization — are left out rather than named.
+ *
+ * `now` is optional for older callers, which skip the expiry check; the names
+ * are still withheld from those once the invitation has expired.
+ */
 export const getByTokenPublic = query({
 	args: {
 		token: v.string(),
@@ -579,6 +593,9 @@ export const getByTokenPublic = query({
 			),
 			status: v.literal(INVITATION_STATUS.PENDING),
 			expiresAt: v.number(),
+			/** `null` when the organization is gone (or the invitation has expired). */
+			organizationName: v.union(v.string(), v.null()),
+			restaurantNames: v.array(v.string()),
 		}),
 		v.null()
 	),
@@ -591,13 +608,27 @@ export const getByTokenPublic = query({
 		if (row.status !== INVITATION_STATUS.PENDING) return null;
 		if (args.now !== undefined && row.expiresAt < args.now) return null;
 
-		return {
+		const preview = {
 			email: maskInviteEmail(row.email),
 			organizationId: row.organizationId,
 			role: row.role,
 			status: row.status,
 			expiresAt: row.expiresAt,
 		};
+		if (row.expiresAt < (args.now ?? Date.now())) {
+			return { ...preview, organizationName: null, restaurantNames: [] };
+		}
+
+		const org = await ctx.db.get(row.organizationId);
+		const restaurantNames: string[] = [];
+		for (const restaurantId of row.restaurantIds) {
+			const restaurant = await ctx.db.get(restaurantId);
+			if (!restaurant || restaurant.deletedAt !== undefined) continue;
+			if (restaurant.organizationId !== row.organizationId) continue;
+			restaurantNames.push(restaurant.name);
+		}
+
+		return { ...preview, organizationName: org?.name ?? null, restaurantNames };
 	},
 });
 

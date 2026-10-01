@@ -32,9 +32,6 @@ export const OrganizationsKeys = {
 	FORM_DESCRIPTION_LABEL: "organizations.form.descriptionLabel",
 	FORM_DESCRIPTION_PLACEHOLDER: "organizations.form.descriptionPlaceholder",
 	FORM_AI_LIMIT_LABEL: "organizations.form.aiLimitLabel",
-	/** The backend names the field but words the reason in English prose. */
-	FORM_NAME_INVALID: "organizations.form.nameInvalid",
-	FORM_AI_LIMIT_INVALID: "organizations.form.aiLimitInvalid",
 	FORM_SAVE_FAILED: "organizations.form.saveFailed",
 	FORM_CANCEL: "organizations.form.cancel",
 	FORM_SAVING: "organizations.form.saving",
@@ -45,7 +42,6 @@ export const OrganizationsKeys = {
 	/** Rendered with `<Trans>`: `<name/>` is replaced by the bolded organization name. */
 	DELETE_CONFIRM: "organizations.delete.confirm",
 	DELETE_IRREVERSIBLE: "organizations.delete.irreversible",
-	DELETE_HAS_USERS: "organizations.delete.hasUsers",
 	DELETE_FAILED: "organizations.delete.failed",
 	DELETE_CANCEL: "organizations.delete.cancel",
 	DELETE_DELETING: "organizations.delete.deleting",

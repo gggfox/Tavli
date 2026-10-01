@@ -24,6 +24,20 @@ type AdminErrors = NotAuthenticatedErrorObject | NotAuthorizedErrorObject;
 type MutationErrors = AdminErrors | NotFoundErrorObject | UserInputValidationErrorObject;
 
 /**
+ * Stable codes the organization functions return; the frontend maps each to
+ * `errors.<CODE>`. Validation failures keep their field (`"name: CODE"`), and
+ * `HAS_USERS` carries how many users are still assigned as `CODE:<count>` so
+ * the refusal can say how many to reassign.
+ */
+export const ORGANIZATION_ERROR = {
+	NOT_FOUND: "ERROR_ORGANIZATION_NOT_FOUND",
+	NAME_REQUIRED: "ERROR_ORGANIZATION_NAME_REQUIRED",
+	NAME_TAKEN: "ERROR_ORGANIZATION_NAME_TAKEN",
+	AI_IMAGE_LIMIT_INVALID: "ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID",
+	HAS_USERS: "ERROR_ORGANIZATION_HAS_USERS",
+} as const;
+
+/**
  * The organization directory, **tiered by role** rather than admin-only.
  *
  * - `admin` — the platform operator — sees every organization, because the
@@ -88,7 +102,7 @@ export const getOrganization = query({
 
 		const org = await ctx.db.get(args.id);
 		if (!org) {
-			return [null, new NotFoundError("Organization not found").toObject()];
+			return [null, new NotFoundError(ORGANIZATION_ERROR.NOT_FOUND).toObject()];
 		}
 		return [org, null];
 	},
@@ -110,7 +124,7 @@ export const createOrganization = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [{ field: "name", message: "Organization name is required" }],
+					fields: [{ field: "name", message: ORGANIZATION_ERROR.NAME_REQUIRED }],
 				}).toObject(),
 			];
 		}
@@ -124,7 +138,7 @@ export const createOrganization = mutation({
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [{ field: "name", message: "An organization with this name already exists" }],
+					fields: [{ field: "name", message: ORGANIZATION_ERROR.NAME_TAKEN }],
 				}).toObject(),
 			];
 		}
@@ -160,14 +174,14 @@ export const updateOrganization = mutation({
 
 		const org = await ctx.db.get(args.id);
 		if (!org) {
-			return [null, new NotFoundError("Organization not found").toObject()];
+			return [null, new NotFoundError(ORGANIZATION_ERROR.NOT_FOUND).toObject()];
 		}
 
 		if (args.name !== undefined && !args.name.trim()) {
 			return [
 				null,
 				new UserInputValidationError({
-					fields: [{ field: "name", message: "Organization name is required" }],
+					fields: [{ field: "name", message: ORGANIZATION_ERROR.NAME_REQUIRED }],
 				}).toObject(),
 			];
 		}
@@ -183,7 +197,7 @@ export const updateOrganization = mutation({
 				return [
 					null,
 					new UserInputValidationError({
-						fields: [{ field: "name", message: "An organization with this name already exists" }],
+						fields: [{ field: "name", message: ORGANIZATION_ERROR.NAME_TAKEN }],
 					}).toObject(),
 				];
 			}
@@ -201,7 +215,7 @@ export const updateOrganization = mutation({
 					fields: [
 						{
 							field: "aiImageMonthlyLimit",
-							message: "Must be a whole number between 0 and 100000",
+							message: ORGANIZATION_ERROR.AI_IMAGE_LIMIT_INVALID,
 						},
 					],
 				}).toObject(),
@@ -231,7 +245,7 @@ export const deleteOrganization = mutation({
 
 		const org = await ctx.db.get(args.id);
 		if (!org) {
-			return [null, new NotFoundError("Organization not found").toObject()];
+			return [null, new NotFoundError(ORGANIZATION_ERROR.NOT_FOUND).toObject()];
 		}
 
 		const assignedUsers = await ctx.db
@@ -246,7 +260,7 @@ export const deleteOrganization = mutation({
 					fields: [
 						{
 							field: "id",
-							message: `Cannot delete organization with ${assignedUsers.length} assigned user(s). Reassign them first.`,
+							message: `${ORGANIZATION_ERROR.HAS_USERS}:${assignedUsers.length}`,
 						},
 					],
 				}).toObject(),

@@ -31,10 +31,63 @@ import { z } from "zod";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
-import { NotAuthenticatedError, NotAuthorizedError } from "./_shared/errors";
+import {
+	ConflictError,
+	ConflictErrorObject,
+	NotAuthenticatedError,
+	NotAuthenticatedErrorObject,
+	NotAuthorizedError,
+	NotAuthorizedErrorObject,
+	NotFoundError,
+	NotFoundErrorObject,
+	UserInputValidationError,
+	UserInputValidationErrorObject,
+} from "./_shared/errors";
+import { AsyncReturn } from "./_shared/types";
 import { TABLE } from "./constants";
 import { isDevEnv } from "./_util/env";
-import { assertPdfBufferWithinLimits, MAX_PDF_PAGES } from "./menuImportPdfHelpers";
+import {
+	assertPdfBufferWithinLimits,
+	isPdfBufferWithinLimits,
+	MAX_PDF_PAGES,
+	PDF_TOO_LARGE_ERROR,
+} from "./menuImportPdfHelpers";
+
+// =============================================================================
+// Error codes
+// =============================================================================
+
+/**
+ * Stable codes `extractMenuFromDocument` returns; the frontend maps each to
+ * `errors.<CODE>`. They are RETURNED as result tuples, never thrown: Convex
+ * replaces a thrown error's message with "Server Error" in production, so a
+ * thrown code would never reach the client.
+ */
+export const MENU_IMPORT_ERROR = {
+	/** The upload's storage id resolves to nothing (expired or never stored). */
+	FILE_NOT_FOUND: "ERROR_MENU_IMPORT_FILE_NOT_FOUND",
+	FILE_TOO_LARGE: PDF_TOO_LARGE_ERROR,
+	/** The document parsed but held no text — typically a scanned image. */
+	NO_TEXT: "ERROR_MENU_IMPORT_NO_TEXT",
+	/** The model answered, but not with a menu in the expected shape. */
+	INVALID_RESPONSE: "ERROR_MENU_IMPORT_INVALID_RESPONSE",
+	/** The model call failed; what non-admins see. */
+	UNAVAILABLE: "ERROR_MENU_IMPORT_UNAVAILABLE",
+	/** OpenRouter answered 402; only admins are told, since only they can top up. */
+	CREDITS_EXHAUSTED: "ERROR_MENU_IMPORT_CREDITS_EXHAUSTED",
+} as const;
+
+type ExtractMenuErrors =
+	| NotAuthenticatedErrorObject
+	| NotAuthorizedErrorObject
+	| NotFoundErrorObject
+	| UserInputValidationErrorObject
+	| ConflictErrorObject;
+
+/** A refusal about the uploaded file itself, pinned to the `file` field. */
+function fileError(code: string): UserInputValidationErrorObject {
+	return new UserInputValidationError({ fields: [{ field: "file", message: code }] }).toObject();
+}
 
 // =============================================================================
 // Zod schema for LLM structured output
@@ -186,53 +239,67 @@ function getModel() {
 // Extract action
 // =============================================================================
 
+/**
+ * Pull the first JSON object out of the model's answer and validate it as a
+ * menu, or `null` when there is none or it does not fit the schema.
+ */
+function parseExtraction(responseText: string): MenuExtraction | null {
+	const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+	if (!jsonMatch) return null;
+	try {
+		const result = menuExtractionSchema.safeParse(JSON.parse(jsonMatch[0]));
+		if (result.success) return result.data;
+		console.warn(
+			"[menuImport] model response did not match the menu schema",
+			result.error.issues.map((issue) => issue.path.map(String).join(".")).slice(0, 10)
+		);
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 export const extractMenuFromDocument = action({
 	args: {
 		storageId: v.id("_storage"),
 		filename: v.string(),
 		restaurantId: v.id(TABLE.RESTAURANTS),
 	},
-	handler: async (ctx, args): Promise<MenuExtraction> => {
+	handler: async (ctx, args): AsyncReturn<MenuExtraction, ExtractMenuErrors> => {
 		const identity = await ctx.auth.getUserIdentity();
-		if (!identity) throw new NotAuthenticatedError("Not authenticated");
+		if (!identity) return [null, new NotAuthenticatedError().toObject()];
 
 		const access = await ctx.runQuery(internal.menuImportMutation.verifyMenuImportAccess, {
 			userId: identity.subject,
 			restaurantId: args.restaurantId,
 		});
 		if (!access.allowed) {
-			throw new NotAuthorizedError(access.errorMessage ?? "NOT_AUTHORIZED");
+			return [null, new NotAuthorizedError(access.errorMessage ?? "NOT_AUTHORIZED").toObject()];
 		}
 
 		const blob = await ctx.storage.get(args.storageId);
-		if (!blob) throw new Error("File not found in storage");
+		if (!blob) return [null, new NotFoundError(MENU_IMPORT_ERROR.FILE_NOT_FOUND).toObject()];
 
 		const arrayBuffer = await blob.arrayBuffer();
 		const buffer = Buffer.from(arrayBuffer);
 
 		const fileType = detectFileType(args.filename);
+		if (fileType === "pdf" && !isPdfBufferWithinLimits(buffer)) {
+			return [null, fileError(MENU_IMPORT_ERROR.FILE_TOO_LARGE)];
+		}
 		const text = await extractText(buffer, fileType);
 
 		if (!text.trim()) {
-			throw new Error("Could not extract any text from the document");
+			return [null, fileError(MENU_IMPORT_ERROR.NO_TEXT)];
 		}
 
-		const model = getModel();
-
+		let responseText: string;
 		try {
-			const { text: responseText } = await generateText({
-				model,
+			({ text: responseText } = await generateText({
+				model: getModel(),
 				system: EXTRACTION_SYSTEM_PROMPT,
 				prompt: buildExtractionPrompt(text),
-			});
-
-			const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-			if (!jsonMatch) {
-				throw new Error("LLM did not return valid JSON");
-			}
-
-			const parsed = menuExtractionSchema.parse(JSON.parse(jsonMatch[0]));
-			return parsed;
+			}));
 		} catch (err) {
 			if (isDevEnv()) {
 				throw err;
@@ -245,14 +312,20 @@ export const extractMenuFromDocument = action({
 			if (userIsAdmin) {
 				const statusCode = (err as { statusCode?: number }).statusCode;
 				if (statusCode === 402) {
-					throw new Error(
-						"OpenRouter credits exhausted. Add credits at openrouter.ai to resume menu imports."
-					);
+					return [null, new ConflictError(MENU_IMPORT_ERROR.CREDITS_EXHAUSTED).toObject()];
 				}
+				// Anything else reaches an admin as the provider's own failure, which
+				// Convex logs in full (the client sees only "Server Error" in production).
 				throw err;
 			}
 
-			throw new Error("Menu import is temporarily unavailable. Please try again later.");
+			return [null, new ConflictError(MENU_IMPORT_ERROR.UNAVAILABLE).toObject()];
 		}
+
+		const extraction = parseExtraction(responseText);
+		if (!extraction) {
+			return [null, new ConflictError(MENU_IMPORT_ERROR.INVALID_RESPONSE).toObject()];
+		}
+		return [extraction, null];
 	},
 });

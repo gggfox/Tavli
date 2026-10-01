@@ -15,9 +15,9 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 	const [step, setStep] = useState<ImportStep>("idle");
 	const [extraction, setExtraction] = useState<MenuExtraction | null>(null);
 	/**
-	 * The caught value itself, not its message: the import actions throw English
-	 * prose (and Convex wraps it in `[CONVEX A(...)]` noise), so the dialog
-	 * localizes it through `getErrorMessage` instead of rendering it.
+	 * The caught value itself, not its message: the import functions return
+	 * stable `ERROR_MENU_IMPORT_*` codes (see `MENU_IMPORT_ERROR`), which the
+	 * dialog localizes through `getErrorMessage` instead of rendering raw.
 	 */
 	const [error, setError] = useState<unknown>(null);
 	const [result, setResult] = useState<{
@@ -55,11 +55,13 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 
 				setStep("extracting");
 
-				const extracted = await extractAction({
-					storageId: storageId as Id<"_storage">,
-					filename: file.name,
-					restaurantId,
-				});
+				const extracted = unwrapResult(
+					await extractAction({
+						storageId: storageId as Id<"_storage">,
+						filename: file.name,
+						restaurantId,
+					})
+				);
 
 				setExtraction(extracted);
 				setStep("preview");

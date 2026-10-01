@@ -1,7 +1,7 @@
 import { Modal } from "@/global/components";
-import { OrganizationsKeys } from "@/global/i18n";
+import { ERROR_CODE_KEYS, OrganizationsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
-import { extractErrorCode, getErrorMessage } from "@/global/utils/errorMessages";
+import { extractErrorDetail, getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
@@ -40,11 +40,13 @@ export function DeleteConfirmDialog({
 			onSuccess();
 			onClose();
 		} catch (err) {
-			// The only validation failure delete has is "users are still assigned",
-			// sent as English prose — the category is the stable part to branch on.
+			// "Users are still assigned" arrives as `ERROR_ORGANIZATION_HAS_USERS:<count>`;
+			// the count picks the singular/plural copy. Every other refusal (and a
+			// count-less one) goes through the ordinary code → message mapping.
+			const assigned = Number(extractErrorDetail(err, "ERROR_ORGANIZATION_HAS_USERS"));
 			setError(
-				extractErrorCode(err) === "VALIDATION_ERROR"
-					? t(OrganizationsKeys.DELETE_HAS_USERS)
+				Number.isInteger(assigned) && assigned > 0
+					? t(ERROR_CODE_KEYS.ERROR_ORGANIZATION_HAS_USERS, { count: assigned })
 					: getErrorMessage(err, t, OrganizationsKeys.DELETE_FAILED)
 			);
 		}

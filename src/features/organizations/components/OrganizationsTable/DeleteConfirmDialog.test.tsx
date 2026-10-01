@@ -2,9 +2,10 @@
 /**
  * The delete-organization confirmation, in the operator's language.
  *
- * The backend refuses a delete with English prose ("Cannot delete organization
- * with 2 assigned user(s)..."); what is pinned here is that the prose never
- * reaches the screen and the organization's name is shown as data, not parsed
+ * The backend refuses a delete with a stable code that carries how many users
+ * are still assigned (`"id: ERROR_ORGANIZATION_HAS_USERS:2"`); what is pinned
+ * here is that the count reaches the localized message, the raw code never
+ * reaches the screen, and the organization's name is shown as data, not parsed
  * as markup.
  */
 import { i18n } from "@/global/i18n";
@@ -56,13 +57,35 @@ describe("DeleteConfirmDialog", () => {
 		expect(screen.getByRole("button", { name: "Eliminar" })).toBeInTheDocument();
 	});
 
-	it("explains the assigned-users refusal without the backend's English prose", async () => {
+	it.each([
+		[
+			"id: ERROR_ORGANIZATION_HAS_USERS:2",
+			"Esta organización todavía tiene 2 usuarios asignados. Reasígnalos antes de eliminarla.",
+		],
+		[
+			"id: ERROR_ORGANIZATION_HAS_USERS:1",
+			"Esta organización todavía tiene 1 usuario asignado. Reasígnalo antes de eliminarla.",
+		],
+		[
+			"id: ERROR_ORGANIZATION_HAS_USERS",
+			"Esta organización todavía tiene usuarios asignados. Reasígnalos antes de eliminarla.",
+		],
+	])("explains the assigned-users refusal %s with its count", async (message, expected) => {
+		hoisted.remove.mockResolvedValue([null, { name: "VALIDATION_ERROR", message }]);
+		render(
+			<DeleteConfirmDialog isOpen organization={ORG} onClose={() => {}} onSuccess={() => {}} />
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+
+		await waitFor(() => expect(screen.getByText(expected)).toBeInTheDocument());
+		expect(screen.queryByText(/ERROR_/)).not.toBeInTheDocument();
+	});
+
+	it("names a vanished organization instead of the generic failure", async () => {
 		hoisted.remove.mockResolvedValue([
 			null,
-			{
-				name: "VALIDATION_ERROR",
-				message: "id: Cannot delete organization with 2 assigned user(s). Reassign them first.",
-			},
+			{ name: "NOT_FOUND", message: "ERROR_ORGANIZATION_NOT_FOUND" },
 		]);
 		render(
 			<DeleteConfirmDialog isOpen organization={ORG} onClose={() => {}} onSuccess={() => {}} />
@@ -71,12 +94,7 @@ describe("DeleteConfirmDialog", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
 
 		await waitFor(() =>
-			expect(
-				screen.getByText(
-					"Esta organización todavía tiene usuarios asignados. Reasígnalos antes de eliminarla."
-				)
-			).toBeInTheDocument()
+			expect(screen.getByText("Esa organización ya no existe.")).toBeInTheDocument()
 		);
-		expect(screen.queryByText(/Cannot delete/)).not.toBeInTheDocument();
 	});
 });

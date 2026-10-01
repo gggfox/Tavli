@@ -141,6 +141,13 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_MENU_NAME_REQUIRED",
 	"ERROR_MENU_NAME_TOO_LONG",
 	"ERROR_MENU_IMPORT_TARGET_REQUIRED",
+	// Menu document import — convex/menuImport.ts (`MENU_IMPORT_ERROR`)
+	"ERROR_MENU_IMPORT_FILE_NOT_FOUND",
+	"ERROR_MENU_IMPORT_FILE_TOO_LARGE",
+	"ERROR_MENU_IMPORT_NO_TEXT",
+	"ERROR_MENU_IMPORT_INVALID_RESPONSE",
+	"ERROR_MENU_IMPORT_UNAVAILABLE",
+	"ERROR_MENU_IMPORT_CREDITS_EXHAUSTED",
 	// Reservations — convex/reservationHelpers.ts, convex/reservations.ts
 	"ERROR_INVALID_PARTY_SIZE",
 	"ERROR_CONTACT_FIELD_TOO_LONG",
@@ -189,6 +196,14 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_OPERATOR_ALERT_NOT_FOUND",
 	// Manager notifications — convex/notifications.ts
 	"ERROR_NOTIFICATION_NOT_FOUND",
+	// Organizations — convex/organizations.ts (`ORGANIZATION_ERROR`).
+	// `ERROR_ORGANIZATION_HAS_USERS` arrives as `CODE:<count>`; its copy has
+	// `_one`/`_other` forms for that count plus a count-less fallback.
+	"ERROR_ORGANIZATION_NOT_FOUND",
+	"ERROR_ORGANIZATION_NAME_REQUIRED",
+	"ERROR_ORGANIZATION_NAME_TAKEN",
+	"ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID",
+	"ERROR_ORGANIZATION_HAS_USERS",
 	// AI menu images — convex/_shared/errors.ts
 	"AI_IMAGE_GENERATION_IN_PROGRESS",
 	"AI_IMAGE_MONTHLY_LIMIT_REACHED",
