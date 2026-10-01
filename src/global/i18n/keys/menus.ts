@@ -135,6 +135,9 @@ export const MenusKeys = {
 	IMPORT_EXTRACTING: "menus.import.extracting",
 	IMPORT_UPLOADING: "menus.import.uploading",
 	IMPORT_PREVIEW_TITLE: "menus.import.previewTitle",
+	/** Pluralized: pass `{ count }`. Shown as "{categories} · {items}". */
+	IMPORT_PREVIEW_CATEGORY_COUNT: "menus.import.previewCategoryCount",
+	IMPORT_PREVIEW_ITEM_COUNT: "menus.import.previewItemCount",
 	IMPORT_PREVIEW_CATEGORY: "menus.import.previewCategory",
 	IMPORT_PREVIEW_ITEM: "menus.import.previewItem",
 	IMPORT_PREVIEW_PRICE: "menus.import.previewPrice",

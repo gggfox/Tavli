@@ -12,7 +12,6 @@ export const AlertsKeys = {
 	// Page chrome
 	PAGE_TITLE: "alerts.page.title",
 	PAGE_DESCRIPTION: "alerts.page.description",
-	PAGE_ENTITY: "alerts.page.entity",
 	PAGE_SEARCH_PLACEHOLDER: "alerts.page.searchPlaceholder",
 	PAGE_EMPTY_TITLE: "alerts.page.emptyTitle",
 	PAGE_EMPTY_DESCRIPTION: "alerts.page.emptyDescription",

@@ -52,7 +52,7 @@ function Harness() {
 		queryOptions: { queryKey: ["payments-columns-test"] } as any,
 		columns,
 	});
-	return <AdminTable tableState={tableState} entityName="payments" />;
+	return <AdminTable tableState={tableState} />;
 }
 
 function mockRows(rows: PaymentsLedgerRow[]) {

@@ -112,7 +112,6 @@
 			"directoryFilteredEmptyDescription": "Try another email, user id, role, or status keyword.",
 			"directorySearchPlaceholder": "Search by email or user id…",
 			"inviteModalTitle": "Send invitation",
-			"directoryEntityName": "members and invitations",
 			"drawerSwipeHandle": "Drag down to close",
 			"drawerSubtitleOwner": "Owner · No shifts tracked",
 			"drawerRangeToday": "Today",
@@ -374,7 +373,51 @@
 			"saving": "Saving..."
 		},
 		"itemsCount_one": "1 item",
-		"itemsCount_other": "{{count}} items"
+		"itemsCount_other": "{{count}} items",
+		"close": "Close",
+		"dismiss": "Dismiss",
+		"view": "View",
+		"moreInfo": "More info",
+		"loading": "Loading…",
+		"notificationsRegion": "Notifications",
+		"drawer": {
+			"dragToClose": "Drag down to close"
+		},
+		"datePicker": {
+			"previousMonth": "Previous month",
+			"nextMonth": "Next month",
+			"pageKeysHint": "Page Up / Page Down: change month",
+			"today": "Today"
+		},
+		"copyId": {
+			"copied": "Copied!",
+			"copyAria": "Copy ID {{id}}",
+			"copiedAria": "ID {{id}} copied to clipboard"
+		},
+		"select": {
+			"noOptions": "No options found",
+			"selectedCount_one": "{{count}} item selected",
+			"selectedCount_other": "{{count}} items selected"
+		},
+		"language": {
+			"defaultSuffix": "(default)"
+		},
+		"table": {
+			"actions": "Actions",
+			"searchPlaceholder": "Search…",
+			"resultCount_one": "{{count}} result",
+			"resultCount_other": "{{count}} results",
+			"emptyTitle": "Nothing here yet",
+			"filteredEmptyTitle": "No results match your search",
+			"signInRequired": "Please sign in to view this page.",
+			"pageOf": "Page {{page}} of {{total}}",
+			"previousPage": "Previous",
+			"nextPage": "Next"
+		},
+		"notFound": {
+			"title": "Page not found",
+			"description": "The URL may be mistyped, or the page may have been removed."
+		}
 	},
 	"orders": {
 		"page": {
@@ -597,7 +640,8 @@
 	"customer": {
 		"nav": {
 			"menu": "Menu",
-			"reserve": "Reserve"
+			"reserve": "Reserve",
+			"aria": "Restaurant sections"
 		},
 		"auth": {
 			"signIn": "Sign In",
@@ -626,7 +670,8 @@
 			"title": "We couldn't find this restaurant",
 			"body": "The link may be mistyped, or the restaurant isn't available right now. Check the QR code or ask the staff for the right link.",
 			"pageTitle": "We couldn't find this page"
-		}
+		},
+		"loading": "Loading…"
 	},
 	"roles": {
 		"admin": "Admin",
@@ -647,7 +692,6 @@
 			"signIn": "Sign In"
 		},
 		"dashboardShell": {
-			"loadFailed": "Could not load {{entity}}.",
 			"loadHint": "Please check your permissions and try again."
 		},
 		"NOT_AUTHENTICATED": "You need to sign in to continue.",
@@ -731,6 +775,12 @@
 		"ERROR_MENU_NAME_REQUIRED": "Menu name is required.",
 		"ERROR_MENU_NAME_TOO_LONG": "Menu name is too long.",
 		"ERROR_MENU_IMPORT_TARGET_REQUIRED": "Choose a menu to import into, or name a new one.",
+		"ERROR_MENU_IMPORT_FILE_NOT_FOUND": "We couldn't find the uploaded file. Upload it again.",
+		"ERROR_MENU_IMPORT_FILE_TOO_LARGE": "That PDF is too large. Upload a file of 10 MB or less.",
+		"ERROR_MENU_IMPORT_NO_TEXT": "We couldn't find any text in that document. If it's a scanned image, try a PDF or Word file with selectable text.",
+		"ERROR_MENU_IMPORT_INVALID_RESPONSE": "We couldn't read a menu from that document. Try again, or try a clearer file.",
+		"ERROR_MENU_IMPORT_UNAVAILABLE": "Menu import is temporarily unavailable. Please try again later.",
+		"ERROR_MENU_IMPORT_CREDITS_EXHAUSTED": "Menu import has run out of AI credits. Add OpenRouter credits to resume imports.",
 		"ERROR_INVALID_PARTY_SIZE": "Please enter a valid party size.",
 		"ERROR_CONTACT_FIELD_TOO_LONG": "One of the contact fields is too long.",
 		"ERROR_INVALID_EMAIL": "Please enter a valid email address.",
@@ -796,8 +846,26 @@
 		"AI_IMAGE_CONTENT_BLOCKED": "The image service rejected this dish's name. Add a description to the product, or upload a photo.",
 		"AI_IMAGE_GENERATION_FAILED": "Couldn't generate an image. Try again.",
 		"ERROR_NOTIFICATION_NOT_FOUND": "That notification no longer exists.",
+		"ERROR_ORGANIZATION_NOT_FOUND": "That organization no longer exists.",
+		"ERROR_ORGANIZATION_NAME_REQUIRED": "Enter a name for the organization.",
+		"ERROR_ORGANIZATION_NAME_TAKEN": "Another organization already uses that name.",
+		"ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID": "Enter a whole number from 0 to 100,000.",
+		"ERROR_ORGANIZATION_HAS_USERS": "This organization still has users assigned. Reassign them before deleting it.",
+		"ERROR_ORGANIZATION_HAS_USERS_one": "This organization still has 1 user assigned. Reassign them before deleting it.",
+		"ERROR_ORGANIZATION_HAS_USERS_other": "This organization still has {{count}} users assigned. Reassign them before deleting it.",
 		"ERROR_PAYMENT_UNDER_DISPUTE": "This charge is tied to a bank dispute, so it can't be refunded here. Tavli is handling it — and if the bank already decided in the diner's favour, they have their money back from the bank.",
-		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "The dispute recovery percentage must be a whole number between 0 and 50."
+		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "The dispute recovery percentage must be a whole number between 0 and 50.",
+		"loadFailed": {
+			"generic": "Could not load the data.",
+			"orders": "Could not load orders.",
+			"payments": "Could not load payments.",
+			"payouts": "Could not load payouts.",
+			"reservations": "Could not load reservations.",
+			"dashboard": "Could not load the dashboard.",
+			"alerts": "Could not load alerts.",
+			"conversations": "Could not load conversations.",
+			"team": "Could not load members and invitations."
+		}
 	},
 	"time": {
 		"relative": {
@@ -1622,7 +1690,11 @@
 				"description": "Upload a PDF, Word document, or text file and we'll extract your categories and items automatically."
 			},
 			"serviceUnavailable": "Menu import is temporarily unavailable. Please try again later.",
-			"newMenuDefaultName": "Imported Menu"
+			"newMenuDefaultName": "Imported Menu",
+			"previewCategoryCount_one": "1 category",
+			"previewCategoryCount_other": "{{count}} categories",
+			"previewItemCount_one": "1 item",
+			"previewItemCount_other": "{{count}} items"
 		},
 		"aiImage": {
 			"generate": "Generate with AI",
@@ -1712,7 +1784,9 @@
 				"tables": "Tables",
 				"notes": "Notes",
 				"restaurant": "Restaurant"
-			}
+			},
+			"resultCount_one": "{{count}} reservation",
+			"resultCount_other": "{{count}} reservations"
 		},
 		"aria": {
 			"filterRange": "Filter reservations by date range",
@@ -2218,7 +2292,6 @@
 			"setupRestaurantFirst": "Please set up your restaurant first."
 		},
 		"list": {
-			"entity": "conversations",
 			"searchPlaceholder": "Search by name or phone...",
 			"resultCount_one": "1 conversation",
 			"resultCount_other": "{{count}} conversations",
@@ -2265,13 +2338,35 @@
 		},
 		"reservationLink": {
 			"label": "Open the WhatsApp conversation"
+		},
+		"allowlist": {
+			"formTitle": "Exempt a phone",
+			"formDescription": "Waives the assistant's daily message caps ({{inbound}} inbound, {{outbound}} outbound per day) for this number. It does not waive the hourly reservation-write limit, and it does not waive the platform-wide daily ceiling.",
+			"phoneLabel": "Phone",
+			"labelLabel": "Label",
+			"labelPlaceholder": "Whose phone is this?",
+			"add": "Add to allowlist",
+			"addOperator": "Add operator number",
+			"removeAria": "Remove {{label}}",
+			"searchPlaceholder": "Search allowlisted phones...",
+			"resultCount_one": "1 phone",
+			"resultCount_other": "{{count}} phones",
+			"emptyTitle": "No phones are exempt",
+			"emptyDescription": "Every phone is subject to the assistant's daily message caps. The operator's own number adds itself the first time it messages the assistant; add it now, or any supervised testing number, to exempt it before then.",
+			"filteredEmptyTitle": "No matching phones",
+			"notAuthenticated": "Please sign in to view the WhatsApp spend allowlist.",
+			"column": {
+				"phone": "Phone",
+				"label": "Label",
+				"added": "Added",
+				"addedBy": "Added by"
+			}
 		}
 	},
 	"alerts": {
 		"page": {
 			"title": "Operator alerts",
 			"description": "Problems on Tavli's money paths that a person has to look at. Severe ones also email every platform admin.",
-			"entity": "alerts",
 			"searchPlaceholder": "Search alerts...",
 			"emptyTitle": "Nothing needs a human",
 			"emptyDescription": "No operator alert has been raised. Stuck payments, unmatched charges, failed payouts and closed accounts land here when they happen.",
@@ -2400,7 +2495,6 @@
 		"page": {
 			"title": "Payouts",
 			"description": "Money moving from Tavli to your bank account.",
-			"entity": "payouts",
 			"noRestaurant": "Please set up your restaurant first."
 		},
 		"safeLine": "This money is yours and it is safe.",
@@ -2512,6 +2606,141 @@
 				"reason": "The bank refused the transfer and did not say why.",
 				"fix": "Check your bank details in Stripe. If they look right, contact us and we will look at it with you."
 			}
+		}
+	},
+	"invites": {
+		"accept": {
+			"title": "Team invitation",
+			"loading": "Loading…",
+			"invalid": "This invitation link is not valid or has expired.",
+			"invalidHint": "Ask the person who invited you to send you a new invitation.",
+			"goHome": "Go to the Tavli home page",
+			"invited": "You've been invited to join a team on Tavli.",
+			"invitedRestaurant": "You've been invited to join {{restaurant}}.",
+			"invitedRestaurants": "You've been invited to join {{restaurants}}.",
+			"invitedRestaurantTotal": "You've been invited to join {{total}} restaurants at {{organization}}.",
+			"invitedOrganization": "You've been invited to join {{organization}} on Tavli.",
+			"roleLabel": "Role",
+			"emailLabel": "Email",
+			"accept": "Accept invitation",
+			"accepting": "Accepting…",
+			"accepted": "You're in! Open the admin app to get started.",
+			"signInHint": "Sign in with the email this invitation was sent to.",
+			"signIn": "Sign in",
+			"goToAdmin": "Go to admin"
+		}
+	},
+	"adminAccess": {
+		"denied": {
+			"title": "Access denied",
+			"description": "Your account doesn't have a staff role. Ask your restaurant's owner or manager to invite you."
+		},
+		"signIn": {
+			"title": "Sign in to continue",
+			"description": "This page is for restaurant staff. Sign in with your Tavli account.",
+			"button": "Sign in"
+		},
+		"setupRestaurantFirst": "Please set up your restaurant first.",
+		"home": {
+			"title": "Admin dashboard",
+			"description": "Manage users and system settings."
+		},
+		"auth": {
+			"loading": "Verifying authentication…",
+			"requiredTitle": "Authentication required",
+			"requiredMessage": "Please sign in to manage your restaurants.",
+			"insufficientTitle": "Access restricted",
+			"insufficientDescription": "You need the appropriate role to access this section."
+		}
+	},
+	"organizations": {
+		"list": {
+			"searchPlaceholder": "Search organizations...",
+			"resultCount_one": "1 organization",
+			"resultCount_other": "{{count}} organizations",
+			"emptyTitle": "No organizations yet",
+			"emptyDescription": "Create your first organization to get started.",
+			"filteredEmptyTitle": "No matching organizations",
+			"notAuthenticated": "Please sign in to view organizations.",
+			"new": "New organization",
+			"edit": "Edit",
+			"delete": "Delete"
+		},
+		"column": {
+			"id": "ID",
+			"name": "Name",
+			"description": "Description",
+			"status": "Status",
+			"created": "Created",
+			"updated": "Updated"
+		},
+		"status": {
+			"active": "Active",
+			"inactive": "Inactive"
+		},
+		"form": {
+			"createTitle": "Create organization",
+			"editTitle": "Edit organization",
+			"close": "Close",
+			"nameLabel": "Name",
+			"namePlaceholder": "Organization name",
+			"slugLabel": "Slug (optional)",
+			"descriptionLabel": "Description (optional)",
+			"descriptionPlaceholder": "Brief description",
+			"aiLimitLabel": "AI images per month (0 = off)",
+			"saveFailed": "We couldn't save the organization. Please try again.",
+			"cancel": "Cancel",
+			"saving": "Saving...",
+			"save": "Save changes",
+			"create": "Create"
+		},
+		"delete": {
+			"title": "Delete organization",
+			"confirm": "Are you sure you want to delete <name/>?",
+			"irreversible": "This action cannot be undone.",
+			"failed": "We couldn't delete the organization. Please try again.",
+			"cancel": "Cancel",
+			"deleting": "Deleting...",
+			"button": "Delete"
+		}
+	},
+	"featureFlags": {
+		"noneRegistered": {
+			"title": "No feature flags registered",
+			"description": "Add a key to FEATURE_FLAGS in convex/featureFlags.ts (and a matching entry in FEATURE_FLAG_METADATA) to manage it here."
+		},
+		"loading": "Loading feature flags…",
+		"loadFailed": "Couldn't load feature flags",
+		"retry": "Retry",
+		"column": {
+			"key": "Key",
+			"description": "Description",
+			"updatedAt": "Last updated",
+			"updatedBy": "Updated by",
+			"numericValue": "Numeric value",
+			"status": "Status"
+		},
+		"numericValueAria": "Numeric value for {{flag}}",
+		"enableAria": "Enable {{flag}}",
+		"disableAria": "Disable {{flag}}"
+	},
+	"users": {
+		"list": {
+			"searchPlaceholder": "Search users...",
+			"resultCount_one": "1 user",
+			"resultCount_other": "{{count}} users",
+			"emptyTitle": "No users found",
+			"emptyDescription": "There are no users with roles assigned yet.",
+			"filteredEmptyTitle": "No matching users",
+			"notAuthenticated": "Please sign in to view user management."
+		},
+		"column": {
+			"userId": "User ID",
+			"email": "Email",
+			"roles": "Roles",
+			"organization": "Organization",
+			"created": "Created",
+			"updated": "Updated"
 		}
 	}
 }

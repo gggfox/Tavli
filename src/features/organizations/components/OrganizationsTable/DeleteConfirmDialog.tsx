@@ -1,11 +1,14 @@
 import { Modal } from "@/global/components";
+import { ERROR_CODE_KEYS, OrganizationsKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
+import { extractErrorDetail, getErrorMessage } from "@/global/utils/errorMessages";
 import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { OrganizationDoc } from "convex/constants";
 import { AlertTriangle, X } from "lucide-react";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 interface DeleteConfirmDialogProps {
 	isOpen: boolean;
@@ -20,6 +23,7 @@ export function DeleteConfirmDialog({
 	organization,
 	onSuccess,
 }: Readonly<DeleteConfirmDialogProps>) {
+	const { t } = useTranslation();
 	const [error, setError] = useState<string | null>(null);
 
 	const deleteMutation = useMutation({
@@ -36,20 +40,37 @@ export function DeleteConfirmDialog({
 			onSuccess();
 			onClose();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to delete organization");
+			// "Users are still assigned" arrives as `ERROR_ORGANIZATION_HAS_USERS:<count>`;
+			// the count picks the singular/plural copy. Every other refusal (and a
+			// count-less one) goes through the ordinary code → message mapping.
+			const assigned = Number(extractErrorDetail(err, "ERROR_ORGANIZATION_HAS_USERS"));
+			setError(
+				Number.isInteger(assigned) && assigned > 0
+					? t(ERROR_CODE_KEYS.ERROR_ORGANIZATION_HAS_USERS, { count: assigned })
+					: getErrorMessage(err, t, OrganizationsKeys.DELETE_FAILED)
+			);
 		}
 	}
 
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} ariaLabel="Delete Organization" size="sm">
+		<Modal
+			isOpen={isOpen}
+			onClose={onClose}
+			ariaLabel={t(OrganizationsKeys.DELETE_TITLE)}
+			size="sm"
+		>
 			<div className="rounded-xl p-6 bg-background border border-border">
 				<div className="flex items-center justify-between mb-4">
 					<div className="flex items-center gap-2 text-destructive">
 						<AlertTriangle size={20} />
-						<h2 className="text-lg font-semibold text-foreground">Delete Organization</h2>
+						<h2 className="text-lg font-semibold text-foreground">
+							{t(OrganizationsKeys.DELETE_TITLE)}
+						</h2>
 					</div>
 					<button
+						type="button"
 						onClick={onClose}
+						aria-label={t(OrganizationsKeys.FORM_CLOSE)}
 						className="p-1 rounded-md transition-colors hover:opacity-80 text-faint-foreground"
 					>
 						<X size={18} />
@@ -57,10 +78,17 @@ export function DeleteConfirmDialog({
 				</div>
 
 				<p className="text-sm mb-1 text-muted-foreground">
-					Are you sure you want to delete{" "}
-					<strong className="text-foreground">{organization?.name}</strong>?
+					{/* The name is a component child, not an interpolated value: Trans
+					    parses the translated string for tags, and an organization's
+					    name is data, never markup. */}
+					<Trans
+						i18nKey={OrganizationsKeys.DELETE_CONFIRM}
+						components={{ name: <strong className="text-foreground">{organization?.name}</strong> }}
+					/>
 				</p>
-				<p className="text-xs mb-4 text-faint-foreground">This action cannot be undone.</p>
+				<p className="text-xs mb-4 text-faint-foreground">
+					{t(OrganizationsKeys.DELETE_IRREVERSIBLE)}
+				</p>
 
 				{error && <p className="text-xs mb-4 text-destructive">{error}</p>}
 
@@ -70,7 +98,7 @@ export function DeleteConfirmDialog({
 						onClick={onClose}
 						className="px-4 py-2 rounded-lg text-sm transition-colors bg-muted text-foreground border border-border"
 					>
-						Cancel
+						{t(OrganizationsKeys.DELETE_CANCEL)}
 					</button>
 					<button
 						type="button"
@@ -79,7 +107,9 @@ export function DeleteConfirmDialog({
 						className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 bg-destructive"
 						style={{ color: "#fff" }}
 					>
-						{deleteMutation.isPending ? "Deleting..." : "Delete"}
+						{deleteMutation.isPending
+							? t(OrganizationsKeys.DELETE_DELETING)
+							: t(OrganizationsKeys.DELETE_BUTTON)}
 					</button>
 				</div>
 			</div>

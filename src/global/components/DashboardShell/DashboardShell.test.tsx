@@ -9,7 +9,7 @@ describe("DashboardShell", () => {
 			<DashboardShell
 				isLoading
 				error={null}
-				entityName="orders"
+				errorTitle="Could not load orders."
 				header={<nav>filters</nav>}
 				skeleton={<div data-testid="skel" />}
 			>
@@ -22,7 +22,7 @@ describe("DashboardShell", () => {
 		expect(screen.queryByText("real content")).not.toBeInTheDocument();
 	});
 
-	it("renders the noun-aware title and maps a known backend code to a localized message", () => {
+	it("renders the caller title and maps a known backend code to a localized message", () => {
 		render(
 			<DashboardShell
 				isLoading={false}
@@ -30,7 +30,7 @@ describe("DashboardShell", () => {
 					message:
 						"[CONVEX Q(reservations:list)] Server Error Uncaught Error: ERROR_INSUFFICIENT_ROLES at x",
 				}}
-				entityName="reservations"
+				errorTitle="Could not load reservations."
 				skeleton={<div data-testid="skel" />}
 			>
 				<p>real content</p>
@@ -49,7 +49,7 @@ describe("DashboardShell", () => {
 			<DashboardShell
 				isLoading={false}
 				error={{ message: "Forbidden" }}
-				entityName="reservations"
+				errorTitle="Could not load reservations."
 				skeleton={<div />}
 			>
 				<p>real content</p>
@@ -62,7 +62,12 @@ describe("DashboardShell", () => {
 
 	it("falls back to the localized hint when the error has no message", () => {
 		render(
-			<DashboardShell isLoading={false} error={{}} entityName="payments" skeleton={<div />}>
+			<DashboardShell
+				isLoading={false}
+				error={{}}
+				errorTitle="Could not load payments."
+				skeleton={<div />}
+			>
 				<p>real content</p>
 			</DashboardShell>
 		);
@@ -72,7 +77,12 @@ describe("DashboardShell", () => {
 
 	it("renders children when neither loading nor errored", () => {
 		render(
-			<DashboardShell isLoading={false} error={null} entityName="orders" skeleton={<div />}>
+			<DashboardShell
+				isLoading={false}
+				error={null}
+				errorTitle="Could not load orders."
+				skeleton={<div />}
+			>
 				<p>real content</p>
 			</DashboardShell>
 		);
@@ -86,7 +96,7 @@ describe("DashboardShell", () => {
 				<DashboardShell
 					isLoading={false}
 					error={null}
-					entityName="orders"
+					errorTitle="Could not load orders."
 					header={<nav>filters</nav>}
 					skeleton={<div />}
 				>

@@ -112,7 +112,6 @@
 			"directoryFilteredEmptyDescription": "Prueba con otro correo, id de usuario, rol o palabra de estado.",
 			"directorySearchPlaceholder": "Buscar por correo o id de usuario…",
 			"inviteModalTitle": "Enviar invitación",
-			"directoryEntityName": "miembros e invitaciones",
 			"drawerSwipeHandle": "Arrastra hacia abajo para cerrar",
 			"drawerSubtitleOwner": "Propietario · No registra turnos",
 			"drawerRangeToday": "Hoy",
@@ -374,7 +373,51 @@
 			"saving": "Guardando..."
 		},
 		"itemsCount_one": "1 artículo",
-		"itemsCount_other": "{{count}} artículos"
+		"itemsCount_other": "{{count}} artículos",
+		"close": "Cerrar",
+		"dismiss": "Descartar",
+		"view": "Ver",
+		"moreInfo": "Más información",
+		"loading": "Cargando…",
+		"notificationsRegion": "Notificaciones",
+		"drawer": {
+			"dragToClose": "Arrastra hacia abajo para cerrar"
+		},
+		"datePicker": {
+			"previousMonth": "Mes anterior",
+			"nextMonth": "Mes siguiente",
+			"pageKeysHint": "Re Pág / Av Pág: cambiar de mes",
+			"today": "Hoy"
+		},
+		"copyId": {
+			"copied": "¡Copiado!",
+			"copyAria": "Copiar ID {{id}}",
+			"copiedAria": "ID {{id}} copiado al portapapeles"
+		},
+		"select": {
+			"noOptions": "No se encontraron opciones",
+			"selectedCount_one": "{{count}} elemento seleccionado",
+			"selectedCount_other": "{{count}} elementos seleccionados"
+		},
+		"language": {
+			"defaultSuffix": "(predeterminado)"
+		},
+		"table": {
+			"actions": "Acciones",
+			"searchPlaceholder": "Buscar…",
+			"resultCount_one": "{{count}} resultado",
+			"resultCount_other": "{{count}} resultados",
+			"emptyTitle": "Aún no hay nada aquí",
+			"filteredEmptyTitle": "Ningún resultado coincide con tu búsqueda",
+			"signInRequired": "Inicia sesión para ver esta página.",
+			"pageOf": "Página {{page}} de {{total}}",
+			"previousPage": "Anterior",
+			"nextPage": "Siguiente"
+		},
+		"notFound": {
+			"title": "Página no encontrada",
+			"description": "Es posible que la URL esté mal escrita o que la página se haya eliminado."
+		}
 	},
 	"orders": {
 		"page": {
@@ -597,7 +640,8 @@
 	"customer": {
 		"nav": {
 			"menu": "Menú",
-			"reserve": "Reservar"
+			"reserve": "Reservar",
+			"aria": "Secciones del restaurante"
 		},
 		"auth": {
 			"signIn": "Iniciar sesión",
@@ -626,7 +670,8 @@
 			"title": "No encontramos este restaurante",
 			"body": "Puede que el enlace esté mal escrito o que el restaurante no esté disponible por ahora. Revisa el código QR o pide el enlace correcto al personal.",
 			"pageTitle": "No encontramos esta página"
-		}
+		},
+		"loading": "Cargando…"
 	},
 	"roles": {
 		"admin": "Administrador",
@@ -647,7 +692,6 @@
 			"signIn": "Iniciar sesión"
 		},
 		"dashboardShell": {
-			"loadFailed": "No se pudo cargar {{entity}}.",
 			"loadHint": "Verifica tus permisos e inténtalo de nuevo."
 		},
 		"NOT_AUTHENTICATED": "Debes iniciar sesión para continuar.",
@@ -731,6 +775,12 @@
 		"ERROR_MENU_NAME_REQUIRED": "El nombre del menú es obligatorio.",
 		"ERROR_MENU_NAME_TOO_LONG": "El nombre del menú es demasiado largo.",
 		"ERROR_MENU_IMPORT_TARGET_REQUIRED": "Elige un menú al cual importar o dale nombre a uno nuevo.",
+		"ERROR_MENU_IMPORT_FILE_NOT_FOUND": "No encontramos el archivo que subiste. Súbelo de nuevo.",
+		"ERROR_MENU_IMPORT_FILE_TOO_LARGE": "Ese PDF es demasiado grande. Sube un archivo de 10 MB o menos.",
+		"ERROR_MENU_IMPORT_NO_TEXT": "No encontramos texto en ese documento. Si es una imagen escaneada, prueba con un PDF o un archivo de Word con texto seleccionable.",
+		"ERROR_MENU_IMPORT_INVALID_RESPONSE": "No pudimos leer un menú en ese documento. Inténtalo de nuevo o prueba con un archivo más claro.",
+		"ERROR_MENU_IMPORT_UNAVAILABLE": "La importación de menús no está disponible por el momento. Inténtalo más tarde.",
+		"ERROR_MENU_IMPORT_CREDITS_EXHAUSTED": "La importación de menús se quedó sin créditos de IA. Agrega créditos en OpenRouter para reanudarla.",
 		"ERROR_INVALID_PARTY_SIZE": "Ingresa un número de personas válido.",
 		"ERROR_CONTACT_FIELD_TOO_LONG": "Uno de los campos de contacto es demasiado largo.",
 		"ERROR_INVALID_EMAIL": "Ingresa un correo electrónico válido.",
@@ -796,8 +846,26 @@
 		"AI_IMAGE_CONTENT_BLOCKED": "El servicio de imágenes rechazó el nombre de este platillo. Agrega una descripción al producto o sube una foto.",
 		"AI_IMAGE_GENERATION_FAILED": "No se pudo generar la imagen. Inténtalo de nuevo.",
 		"ERROR_NOTIFICATION_NOT_FOUND": "Esa notificación ya no existe.",
+		"ERROR_ORGANIZATION_NOT_FOUND": "Esa organización ya no existe.",
+		"ERROR_ORGANIZATION_NAME_REQUIRED": "Escribe un nombre para la organización.",
+		"ERROR_ORGANIZATION_NAME_TAKEN": "Ya hay otra organización con ese nombre.",
+		"ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID": "Escribe un número entero del 0 al 100,000.",
+		"ERROR_ORGANIZATION_HAS_USERS": "Esta organización todavía tiene usuarios asignados. Reasígnalos antes de eliminarla.",
+		"ERROR_ORGANIZATION_HAS_USERS_one": "Esta organización todavía tiene 1 usuario asignado. Reasígnalo antes de eliminarla.",
+		"ERROR_ORGANIZATION_HAS_USERS_other": "Esta organización todavía tiene {{count}} usuarios asignados. Reasígnalos antes de eliminarla.",
 		"ERROR_PAYMENT_UNDER_DISPUTE": "Este cargo está ligado a una disputa bancaria, así que no se puede reembolsar aquí. Tavli la está atendiendo — y si el banco ya resolvió a favor del comensal, su dinero ya le fue devuelto por el banco.",
-		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "El porcentaje de recuperación de disputas debe ser un número entero entre 0 y 50."
+		"ERROR_DISPUTE_RECOVERY_PERCENT_INVALID": "El porcentaje de recuperación de disputas debe ser un número entero entre 0 y 50.",
+		"loadFailed": {
+			"generic": "No se pudieron cargar los datos.",
+			"orders": "No se pudieron cargar los pedidos.",
+			"payments": "No se pudieron cargar los pagos.",
+			"payouts": "No se pudieron cargar los depósitos.",
+			"reservations": "No se pudieron cargar las reservaciones.",
+			"dashboard": "No se pudo cargar el tablero.",
+			"alerts": "No se pudieron cargar las alertas.",
+			"conversations": "No se pudieron cargar las conversaciones.",
+			"team": "No se pudieron cargar los miembros y las invitaciones."
+		}
 	},
 	"time": {
 		"relative": {
@@ -1622,7 +1690,11 @@
 				"description": "Sube un PDF, documento de Word o archivo de texto y extraeremos tus categorías e ítems automáticamente."
 			},
 			"serviceUnavailable": "La importación de menú no está disponible temporalmente. Intenta de nuevo más tarde.",
-			"newMenuDefaultName": "Menú importado"
+			"newMenuDefaultName": "Menú importado",
+			"previewCategoryCount_one": "1 categoría",
+			"previewCategoryCount_other": "{{count}} categorías",
+			"previewItemCount_one": "1 ítem",
+			"previewItemCount_other": "{{count}} ítems"
 		},
 		"aiImage": {
 			"generate": "Generar con IA",
@@ -1712,7 +1784,9 @@
 				"tables": "Mesas",
 				"notes": "Notas",
 				"restaurant": "Restaurante"
-			}
+			},
+			"resultCount_one": "{{count}} reservación",
+			"resultCount_other": "{{count}} reservaciones"
 		},
 		"aria": {
 			"filterRange": "Filtrar reservaciones por rango de fechas",
@@ -2218,7 +2292,6 @@
 			"setupRestaurantFirst": "Primero configura tu restaurante."
 		},
 		"list": {
-			"entity": "conversaciones",
 			"searchPlaceholder": "Buscar por nombre o teléfono...",
 			"resultCount_one": "1 conversación",
 			"resultCount_other": "{{count}} conversaciones",
@@ -2265,13 +2338,35 @@
 		},
 		"reservationLink": {
 			"label": "Abrir la conversación de WhatsApp"
+		},
+		"allowlist": {
+			"formTitle": "Exentar un teléfono",
+			"formDescription": "Quita los límites diarios de mensajes del asistente ({{inbound}} entrantes y {{outbound}} salientes por día) para este número. No quita el límite por hora de reservaciones creadas ni el tope diario de toda la plataforma.",
+			"phoneLabel": "Teléfono",
+			"labelLabel": "Etiqueta",
+			"labelPlaceholder": "¿De quién es este teléfono?",
+			"add": "Agregar a exentos",
+			"addOperator": "Agregar número del operador",
+			"removeAria": "Quitar {{label}}",
+			"searchPlaceholder": "Buscar teléfonos exentos...",
+			"resultCount_one": "1 teléfono",
+			"resultCount_other": "{{count}} teléfonos",
+			"emptyTitle": "Ningún teléfono está exento",
+			"emptyDescription": "Todos los teléfonos están sujetos a los límites diarios de mensajes del asistente. El número del operador se agrega solo la primera vez que le escribe al asistente; agrégalo ahora, o cualquier número de pruebas supervisadas, para exentarlo desde antes.",
+			"filteredEmptyTitle": "Ningún teléfono coincide",
+			"notAuthenticated": "Inicia sesión para ver los teléfonos exentos de WhatsApp.",
+			"column": {
+				"phone": "Teléfono",
+				"label": "Etiqueta",
+				"added": "Agregado",
+				"addedBy": "Agregado por"
+			}
 		}
 	},
 	"alerts": {
 		"page": {
 			"title": "Alertas de operación",
 			"description": "Problemas en los caminos del dinero de Tavli que alguien tiene que revisar. Las graves también le llegan por correo a cada administrador de la plataforma.",
-			"entity": "alertas",
 			"searchPlaceholder": "Buscar alertas...",
 			"emptyTitle": "Nada requiere intervención",
 			"emptyDescription": "No se ha levantado ninguna alerta de operación. Los pagos atorados, los cargos sin orden, los depósitos fallidos y las cuentas cerradas aparecen aquí cuando ocurren.",
@@ -2400,7 +2495,6 @@
 		"page": {
 			"title": "Depósitos",
 			"description": "El dinero que va de Tavli a tu cuenta bancaria.",
-			"entity": "depósitos",
 			"noRestaurant": "Primero configura tu restaurante."
 		},
 		"safeLine": "Este dinero es tuyo y está seguro.",
@@ -2512,6 +2606,141 @@
 				"reason": "El banco rechazó la transferencia y no dijo por qué.",
 				"fix": "Revisa tus datos bancarios en Stripe. Si se ven correctos, escríbenos y lo revisamos contigo."
 			}
+		}
+	},
+	"invites": {
+		"accept": {
+			"title": "Invitación al equipo",
+			"loading": "Cargando…",
+			"invalid": "Este enlace de invitación no es válido o ya expiró.",
+			"invalidHint": "Pide a quien te invitó que te envíe una nueva invitación.",
+			"goHome": "Ir a la página de inicio de Tavli",
+			"invited": "Te invitaron a unirte a un equipo en Tavli.",
+			"invitedRestaurant": "Te invitaron a unirte a {{restaurant}}.",
+			"invitedRestaurants": "Te invitaron a unirte a {{restaurants}}.",
+			"invitedRestaurantTotal": "Te invitaron a unirte a {{total}} restaurantes de {{organization}}.",
+			"invitedOrganization": "Te invitaron a unirte a {{organization}} en Tavli.",
+			"roleLabel": "Rol",
+			"emailLabel": "Correo",
+			"accept": "Aceptar invitación",
+			"accepting": "Aceptando…",
+			"accepted": "¡Listo, ya eres parte del equipo! Abre el panel de administración para empezar.",
+			"signInHint": "Inicia sesión con el correo al que llegó esta invitación.",
+			"signIn": "Iniciar sesión",
+			"goToAdmin": "Ir al panel de administración"
+		}
+	},
+	"adminAccess": {
+		"denied": {
+			"title": "Acceso denegado",
+			"description": "Tu cuenta no tiene un rol de personal. Pide al propietario o gerente de tu restaurante que te invite."
+		},
+		"signIn": {
+			"title": "Inicia sesión para continuar",
+			"description": "Esta página es para el personal del restaurante. Inicia sesión con tu cuenta de Tavli.",
+			"button": "Iniciar sesión"
+		},
+		"setupRestaurantFirst": "Primero configura tu restaurante.",
+		"home": {
+			"title": "Panel de administración",
+			"description": "Administra usuarios y la configuración del sistema."
+		},
+		"auth": {
+			"loading": "Verificando tu sesión…",
+			"requiredTitle": "Necesitas iniciar sesión",
+			"requiredMessage": "Inicia sesión para administrar tus restaurantes.",
+			"insufficientTitle": "Acceso restringido",
+			"insufficientDescription": "Necesitas el rol adecuado para entrar a esta sección."
+		}
+	},
+	"organizations": {
+		"list": {
+			"searchPlaceholder": "Buscar organizaciones...",
+			"resultCount_one": "1 organización",
+			"resultCount_other": "{{count}} organizaciones",
+			"emptyTitle": "Aún no hay organizaciones",
+			"emptyDescription": "Crea tu primera organización para empezar.",
+			"filteredEmptyTitle": "Ninguna organización coincide",
+			"notAuthenticated": "Inicia sesión para ver las organizaciones.",
+			"new": "Nueva organización",
+			"edit": "Editar",
+			"delete": "Eliminar"
+		},
+		"column": {
+			"id": "ID",
+			"name": "Nombre",
+			"description": "Descripción",
+			"status": "Estado",
+			"created": "Creada",
+			"updated": "Actualizada"
+		},
+		"status": {
+			"active": "Activa",
+			"inactive": "Inactiva"
+		},
+		"form": {
+			"createTitle": "Crear organización",
+			"editTitle": "Editar organización",
+			"close": "Cerrar",
+			"nameLabel": "Nombre",
+			"namePlaceholder": "Nombre de la organización",
+			"slugLabel": "Slug (opcional)",
+			"descriptionLabel": "Descripción (opcional)",
+			"descriptionPlaceholder": "Descripción breve",
+			"aiLimitLabel": "Imágenes con IA por mes (0 = desactivado)",
+			"saveFailed": "No pudimos guardar la organización. Inténtalo de nuevo.",
+			"cancel": "Cancelar",
+			"saving": "Guardando...",
+			"save": "Guardar cambios",
+			"create": "Crear"
+		},
+		"delete": {
+			"title": "Eliminar organización",
+			"confirm": "¿Seguro que quieres eliminar <name/>?",
+			"irreversible": "Esta acción no se puede deshacer.",
+			"failed": "No pudimos eliminar la organización. Inténtalo de nuevo.",
+			"cancel": "Cancelar",
+			"deleting": "Eliminando...",
+			"button": "Eliminar"
+		}
+	},
+	"featureFlags": {
+		"noneRegistered": {
+			"title": "No hay feature flags registrados",
+			"description": "Agrega una clave a FEATURE_FLAGS en convex/featureFlags.ts (y su entrada en FEATURE_FLAG_METADATA) para administrarla aquí."
+		},
+		"loading": "Cargando feature flags…",
+		"loadFailed": "No se pudieron cargar los feature flags",
+		"retry": "Reintentar",
+		"column": {
+			"key": "Clave",
+			"description": "Descripción",
+			"updatedAt": "Última actualización",
+			"updatedBy": "Actualizado por",
+			"numericValue": "Valor numérico",
+			"status": "Estado"
+		},
+		"numericValueAria": "Valor numérico de {{flag}}",
+		"enableAria": "Activar {{flag}}",
+		"disableAria": "Desactivar {{flag}}"
+	},
+	"users": {
+		"list": {
+			"searchPlaceholder": "Buscar usuarios...",
+			"resultCount_one": "1 usuario",
+			"resultCount_other": "{{count}} usuarios",
+			"emptyTitle": "No se encontraron usuarios",
+			"emptyDescription": "Todavía no hay usuarios con roles asignados.",
+			"filteredEmptyTitle": "Ningún usuario coincide",
+			"notAuthenticated": "Inicia sesión para ver la administración de usuarios."
+		},
+		"column": {
+			"userId": "ID de usuario",
+			"email": "Correo",
+			"roles": "Roles",
+			"organization": "Organización",
+			"created": "Creado",
+			"updated": "Actualizado"
 		}
 	}
 }

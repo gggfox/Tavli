@@ -620,6 +620,102 @@ describe("invites getByTokenPublic", () => {
 		});
 	});
 
+	it("names the organization and the invited restaurant on a live invite", async () => {
+		const t = convexTest(schema, modules);
+		const ctx = await seedInviteContext(t);
+		const token = await createInviteToken(t, ctx, { email: "named@example.com" });
+
+		const preview = await t.query(api.invites.getByTokenPublic, { token, now: Date.now() });
+
+		expect(preview).toMatchObject({ organizationName: "Invite Org", restaurantNames: ["R1"] });
+	});
+
+	/** Org-level and multi-restaurant rows, written directly so any shape can be seeded. */
+	async function insertInviteRow(
+		t: ReturnType<typeof convexTest>,
+		args: {
+			organizationId: Id<"organizations">;
+			restaurantIds: Id<"restaurants">[];
+			role: "owner" | "manager" | "employee";
+		}
+	): Promise<string> {
+		const token = `token-${args.role}-${args.restaurantIds.length}`;
+		await t.run(async (dbCtx) => {
+			const now = Date.now();
+			await dbCtx.db.insert("invitations", {
+				token,
+				email: "row@example.com",
+				organizationId: args.organizationId,
+				role: args.role,
+				restaurantIds: args.restaurantIds,
+				invitedBy: "owner1",
+				status: INVITATION_STATUS.PENDING,
+				expiresAt: now + 60_000,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		return token;
+	}
+
+	it("names every restaurant in the inviter's order and skips removed ones", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId, r1, r2 } = await seedOrgAndRestaurants(t);
+		const removed = await t.run(async (dbCtx) => {
+			const now = Date.now();
+			return await dbCtx.db.insert("restaurants", {
+				ownerId: "seed-owner",
+				organizationId: orgId,
+				name: "Gone",
+				slug: "invite-gone",
+				currency: "USD",
+				isActive: false,
+				deletedAt: now,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+		const token = await insertInviteRow(t, {
+			organizationId: orgId,
+			restaurantIds: [r2, removed, r1],
+			role: RESTAURANT_MEMBER_ROLE.MANAGER,
+		});
+
+		const preview = await t.query(api.invites.getByTokenPublic, { token, now: Date.now() });
+
+		expect(preview?.restaurantNames).toEqual(["R2", "R1"]);
+		expect(preview?.organizationName).toBe("Invite Org");
+	});
+
+	it("names only the organization on an org-level invite", async () => {
+		const t = convexTest(schema, modules);
+		const { orgId } = await seedOrgAndRestaurants(t);
+		const token = await insertInviteRow(t, {
+			organizationId: orgId,
+			restaurantIds: [],
+			role: USER_ROLES.OWNER,
+		});
+
+		const preview = await t.query(api.invites.getByTokenPublic, { token, now: Date.now() });
+
+		expect(preview).toMatchObject({ organizationName: "Invite Org", restaurantNames: [] });
+	});
+
+	it("withholds the names from an expired invite even when the caller omits `now`", async () => {
+		const t = convexTest(schema, modules);
+		const ctx = await seedInviteContext(t);
+		const token = await createInviteToken(t, ctx, {
+			email: "stale@example.com",
+			expiresAt: Date.now() - 1,
+		});
+
+		const preview = await t.query(api.invites.getByTokenPublic, { token });
+
+		expect(preview).toMatchObject({ organizationName: null, restaurantNames: [] });
+		expect(JSON.stringify(preview)).not.toContain("Invite Org");
+		expect(JSON.stringify(preview)).not.toContain("R1");
+	});
+
 	it("returns null for accepted, revoked, and expired invitations", async () => {
 		const t = convexTest(schema, modules);
 		const ctx = await seedInviteContext(t);

@@ -1,11 +1,14 @@
 import { CopyableId, EmptyState } from "@/global/components";
+import { FeatureFlagsKeys } from "@/global/i18n";
 import { formatDate, getDisplayTimestamp } from "@/global/utils/date";
+import { getErrorMessage } from "@/global/utils/errorMessages";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import { FEATURE_FLAG_METADATA, FEATURE_FLAGS } from "convex/featureFlags";
 import { Flag } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type FeatureFlagDoc = {
 	_id: string;
@@ -30,6 +33,8 @@ type FlagRow = {
 };
 
 export function FeatureFlagsTable() {
+	const { t, i18n } = useTranslation();
+	const dateLocale = i18n.language?.startsWith("es") ? "es-MX" : "en-US";
 	const registeredKeys = useMemo(() => Object.values(FEATURE_FLAGS) as string[], []);
 
 	const { data, isLoading, isError, error, refetch } = useQuery(
@@ -46,30 +51,30 @@ export function FeatureFlagsTable() {
 		return (
 			<EmptyState
 				icon={Flag}
-				title="No feature flags registered"
-				description="Add a key to FEATURE_FLAGS in convex/featureFlags.ts (and a matching entry in FEATURE_FLAG_METADATA) to manage it here."
+				title={t(FeatureFlagsKeys.NONE_REGISTERED_TITLE)}
+				description={t(FeatureFlagsKeys.NONE_REGISTERED_DESCRIPTION)}
 				fill
 			/>
 		);
 	}
 
 	if (isLoading) {
-		return <EmptyState icon={Flag} title="Loading feature flags…" variant="card" />;
+		return <EmptyState icon={Flag} title={t(FeatureFlagsKeys.LOADING)} variant="card" />;
 	}
 
 	if (isError) {
 		return (
 			<EmptyState
 				icon={Flag}
-				title="Couldn't load feature flags"
-				description={error instanceof Error ? error.message : "Unknown error"}
+				title={t(FeatureFlagsKeys.LOAD_FAILED)}
+				description={getErrorMessage(error, t)}
 				action={
 					<button
 						type="button"
 						onClick={() => refetch()}
 						className="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground"
 					>
-						Retry
+						{t(FeatureFlagsKeys.RETRY)}
 					</button>
 				}
 			/>
@@ -134,22 +139,22 @@ export function FeatureFlagsTable() {
 				<thead>
 					<tr>
 						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-							Key
+							{t(FeatureFlagsKeys.COLUMN_KEY)}
 						</th>
 						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-							Description
+							{t(FeatureFlagsKeys.COLUMN_DESCRIPTION)}
 						</th>
 						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-							Last updated
+							{t(FeatureFlagsKeys.COLUMN_UPDATED_AT)}
 						</th>
 						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-							Updated by
+							{t(FeatureFlagsKeys.COLUMN_UPDATED_BY)}
 						</th>
 						<th className="px-4 py-3 text-left text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-							Numeric value
+							{t(FeatureFlagsKeys.COLUMN_NUMERIC_VALUE)}
 						</th>
 						<th className="px-4 py-3 text-right text-sm font-medium sticky top-0 bg-muted text-muted-foreground border-b border-border">
-							Status
+							{t(FeatureFlagsKeys.COLUMN_STATUS)}
 						</th>
 					</tr>
 				</thead>
@@ -171,7 +176,7 @@ export function FeatureFlagsTable() {
 								</td>
 								<td className="px-4 py-3 align-top">
 									<span className="text-sm text-muted-foreground">
-										{displayTimestamp ? formatDate(displayTimestamp) : "—"}
+										{displayTimestamp ? formatDate(displayTimestamp, dateLocale) : "—"}
 									</span>
 								</td>
 								<td className="px-4 py-3 align-top">
@@ -195,7 +200,7 @@ export function FeatureFlagsTable() {
 											void handleNumericChange(row, raw);
 										}}
 										className="w-24 px-2 py-1 rounded-md border border-border bg-background text-sm text-foreground"
-										aria-label={`Numeric value for ${row.key}`}
+										aria-label={t(FeatureFlagsKeys.NUMERIC_VALUE_ARIA, { flag: row.key })}
 										placeholder="—"
 									/>
 								</td>
@@ -204,7 +209,10 @@ export function FeatureFlagsTable() {
 										type="button"
 										role="switch"
 										aria-checked={row.enabled}
-										aria-label={`${row.enabled ? "Disable" : "Enable"} ${row.key}`}
+										aria-label={t(
+											row.enabled ? FeatureFlagsKeys.DISABLE_ARIA : FeatureFlagsKeys.ENABLE_ARIA,
+											{ flag: row.key }
+										)}
 										disabled={isPending}
 										onClick={() => handleToggle(row)}
 										className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${

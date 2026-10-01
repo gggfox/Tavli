@@ -145,6 +145,13 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_MENU_NAME_REQUIRED",
 	"ERROR_MENU_NAME_TOO_LONG",
 	"ERROR_MENU_IMPORT_TARGET_REQUIRED",
+	// Menu document import — convex/menuImport.ts (`MENU_IMPORT_ERROR`)
+	"ERROR_MENU_IMPORT_FILE_NOT_FOUND",
+	"ERROR_MENU_IMPORT_FILE_TOO_LARGE",
+	"ERROR_MENU_IMPORT_NO_TEXT",
+	"ERROR_MENU_IMPORT_INVALID_RESPONSE",
+	"ERROR_MENU_IMPORT_UNAVAILABLE",
+	"ERROR_MENU_IMPORT_CREDITS_EXHAUSTED",
 	// Reservations — convex/reservationHelpers.ts, convex/reservations.ts
 	"ERROR_INVALID_PARTY_SIZE",
 	"ERROR_CONTACT_FIELD_TOO_LONG",
@@ -193,6 +200,14 @@ export const BACKEND_ERROR_CODES = [
 	"ERROR_OPERATOR_ALERT_NOT_FOUND",
 	// Manager notifications — convex/notifications.ts
 	"ERROR_NOTIFICATION_NOT_FOUND",
+	// Organizations — convex/organizations.ts (`ORGANIZATION_ERROR`).
+	// `ERROR_ORGANIZATION_HAS_USERS` arrives as `CODE:<count>`; its copy has
+	// `_one`/`_other` forms for that count plus a count-less fallback.
+	"ERROR_ORGANIZATION_NOT_FOUND",
+	"ERROR_ORGANIZATION_NAME_REQUIRED",
+	"ERROR_ORGANIZATION_NAME_TAKEN",
+	"ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID",
+	"ERROR_ORGANIZATION_HAS_USERS",
 	// AI menu images — convex/_shared/errors.ts
 	"AI_IMAGE_GENERATION_IN_PROGRESS",
 	"AI_IMAGE_MONTHLY_LIMIT_REACHED",
@@ -224,8 +239,22 @@ export const ErrorKeys = {
 	BOUNDARY_RELOAD: "errors.boundary.reload",
 	BOUNDARY_SIGN_IN: "errors.boundary.signIn",
 	// DashboardShell fallback UI
-	DASHBOARD_LOAD_FAILED: "errors.dashboardShell.loadFailed",
 	DASHBOARD_LOAD_HINT: "errors.dashboardShell.loadHint",
+	/**
+	 * Load-failure titles for DashboardShell / AdminTable / TableErrorState.
+	 * One whole sentence per entity rather than "Could not load {{entity}}":
+	 * gluing a noun into a sentence breaks Spanish gender and number agreement
+	 * ("No se pudieron cargar los pedidos" vs. "No se pudo cargar el tablero").
+	 */
+	LOAD_FAILED_GENERIC: "errors.loadFailed.generic",
+	LOAD_FAILED_ORDERS: "errors.loadFailed.orders",
+	LOAD_FAILED_PAYMENTS: "errors.loadFailed.payments",
+	LOAD_FAILED_PAYOUTS: "errors.loadFailed.payouts",
+	LOAD_FAILED_RESERVATIONS: "errors.loadFailed.reservations",
+	LOAD_FAILED_DASHBOARD: "errors.loadFailed.dashboard",
+	LOAD_FAILED_ALERTS: "errors.loadFailed.alerts",
+	LOAD_FAILED_CONVERSATIONS: "errors.loadFailed.conversations",
+	LOAD_FAILED_TEAM: "errors.loadFailed.team",
 	...ERROR_CODE_KEYS,
 } as const;
 

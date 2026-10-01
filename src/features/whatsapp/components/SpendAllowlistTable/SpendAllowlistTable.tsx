@@ -12,24 +12,30 @@
 import { AdminTable, InlineError } from "@/global/components";
 import { formInputClasses, formInputStyle } from "@/global/components/Form/styles";
 import { useAdminTable } from "@/global/hooks";
+import { WhatsappKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "convex/_generated/api";
 import type { Id } from "convex/_generated/dataModel";
-import { WHATSAPP_SPEND_ALLOWLIST_SEED } from "convex/constants";
+import {
+	WHATSAPP_INBOUND_DAILY_LIMIT,
+	WHATSAPP_OUTBOUND_DAILY_LIMIT,
+	WHATSAPP_SPEND_ALLOWLIST_SEED,
+} from "convex/constants";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { columns, type SpendAllowlistRow } from "./Columns";
+import { buildSpendAllowlistColumns, type SpendAllowlistRow } from "./Columns";
 
 export function SpendAllowlistTable() {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
+	const dateLocale = i18n.language?.startsWith("es") ? "es-MX" : "en-US";
 
 	const tableState = useAdminTable<SpendAllowlistRow>({
 		queryOptions: convexQuery(api.whatsappSpendAllowlist.list, {}),
-		columns,
+		columns: buildSpendAllowlistColumns(t, dateLocale),
 	});
 
 	const addEntry = useMutation({ mutationFn: useConvexMutation(api.whatsappSpendAllowlist.add) });
@@ -92,11 +98,12 @@ export function SpendAllowlistTable() {
 
 			<div className="rounded-lg p-4 space-y-3 bg-muted border border-border">
 				<div>
-					<h3 className="text-sm font-medium">Exempt a phone</h3>
+					<h3 className="text-sm font-medium">{t(WhatsappKeys.ALLOWLIST_FORM_TITLE)}</h3>
 					<p className="text-xs text-muted-foreground mt-1">
-						Waives the assistant&rsquo;s daily message caps (25 inbound, 75 outbound per day) for
-						this number. It does not waive the hourly reservation-write limit, and it does not waive
-						the platform-wide daily ceiling.
+						{t(WhatsappKeys.ALLOWLIST_FORM_DESCRIPTION, {
+							inbound: WHATSAPP_INBOUND_DAILY_LIMIT.max,
+							outbound: WHATSAPP_OUTBOUND_DAILY_LIMIT.max,
+						})}
 					</p>
 				</div>
 				<div className="flex flex-wrap gap-2 items-end">
@@ -104,7 +111,7 @@ export function SpendAllowlistTable() {
 						htmlFor="allowlist-phone"
 						className="flex flex-col gap-1 text-xs text-muted-foreground"
 					>
-						<span>Phone</span>
+						<span>{t(WhatsappKeys.ALLOWLIST_PHONE_LABEL)}</span>
 						<input
 							id="allowlist-phone"
 							type="tel"
@@ -119,13 +126,13 @@ export function SpendAllowlistTable() {
 						htmlFor="allowlist-label"
 						className="flex flex-col gap-1 text-xs text-muted-foreground"
 					>
-						<span>Label</span>
+						<span>{t(WhatsappKeys.ALLOWLIST_LABEL_LABEL)}</span>
 						<input
 							id="allowlist-label"
 							type="text"
 							value={label}
 							onChange={(e) => setLabel(e.target.value)}
-							placeholder="Whose phone is this?"
+							placeholder={t(WhatsappKeys.ALLOWLIST_LABEL_PLACEHOLDER)}
 							className={formInputClasses}
 							style={formInputStyle}
 						/>
@@ -135,20 +142,20 @@ export function SpendAllowlistTable() {
 						onClick={handleAdd}
 						className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium hover-btn-primary"
 					>
-						<Plus size={14} /> Add to allowlist
+						<Plus size={14} /> {t(WhatsappKeys.ALLOWLIST_ADD)}
 					</button>
 				</div>
 			</div>
 
 			<AdminTable
 				tableState={tableState}
-				entityName="allowlisted phones"
-				searchPlaceholder="Search allowlisted phones..."
+				searchPlaceholder={t(WhatsappKeys.ALLOWLIST_SEARCH_PLACEHOLDER)}
+				getResultCountText={(count) => t(WhatsappKeys.ALLOWLIST_RESULT_COUNT, { count })}
 				emptyIcon={ShieldCheck}
-				emptyTitle="No phones are exempt"
-				emptyDescription="Every phone is subject to the assistant's daily message caps. The operator's own number adds itself the first time it messages the assistant; add it now, or any supervised testing number, to exempt it before then."
-				filteredEmptyTitle="No matching phones"
-				notAuthenticatedMessage="Please sign in to view the WhatsApp spend allowlist."
+				emptyTitle={t(WhatsappKeys.ALLOWLIST_EMPTY_TITLE)}
+				emptyDescription={t(WhatsappKeys.ALLOWLIST_EMPTY_DESCRIPTION)}
+				filteredEmptyTitle={t(WhatsappKeys.ALLOWLIST_FILTERED_EMPTY_TITLE)}
+				notAuthenticatedMessage={t(WhatsappKeys.ALLOWLIST_NOT_AUTHENTICATED)}
 				actions={
 					operatorMissing ? (
 						<button
@@ -157,7 +164,7 @@ export function SpendAllowlistTable() {
 							className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-primary text-primary-foreground"
 						>
 							<Plus size={16} />
-							Add operator number
+							{t(WhatsappKeys.ALLOWLIST_ADD_OPERATOR)}
 						</button>
 					) : undefined
 				}
@@ -167,7 +174,7 @@ export function SpendAllowlistTable() {
 							type="button"
 							onClick={() => handleRemove(row._id)}
 							className="p-1.5 rounded-md transition-colors hover:opacity-80 text-destructive"
-							aria-label={`Remove ${row.label}`}
+							aria-label={t(WhatsappKeys.ALLOWLIST_REMOVE_ARIA, { label: row.label })}
 						>
 							<Trash2 size={15} />
 						</button>

@@ -1,6 +1,8 @@
+import { CommonKeys } from "@/global/i18n";
 import { Check, Copy } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 
 export interface CopyableIdProps {
 	readonly id: string;
@@ -12,6 +14,7 @@ const COPY_FEEDBACK_MS = 1500;
 const TOOLTIP_OFFSET_PX = 8;
 
 export function CopyableId({ id, truncateLength = 12, className = "" }: CopyableIdProps) {
+	const { t } = useTranslation();
 	const [copied, setCopied] = useState(false);
 	const [tooltipVisible, setTooltipVisible] = useState(false);
 	const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
@@ -59,7 +62,7 @@ export function CopyableId({ id, truncateLength = 12, className = "" }: Copyable
 
 	const truncated = id.length > truncateLength ? `${id.slice(0, truncateLength)}...` : id;
 
-	const tooltipLabel = copied ? "Copied!" : id;
+	const tooltipLabel = copied ? t(CommonKeys.COPY_ID_COPIED) : id;
 
 	return (
 		<>
@@ -72,7 +75,11 @@ export function CopyableId({ id, truncateLength = 12, className = "" }: Copyable
 				onFocus={showTooltip}
 				onBlur={hideTooltip}
 				className={`${`group inline-flex items-center gap-1.5 font-mono text-xs rounded px-1.5 py-0.5 -mx-1.5 cursor-pointer transition-colors hover:bg-(--bg-hover) focus:outline-none focus-visible:ring-1 focus-visible:ring-(--input-border-focus) ${className}`} text-muted-foreground`}
-				aria-label={copied ? `ID ${id} copied to clipboard` : `Copy ID ${id}`}
+				aria-label={
+					copied
+						? t(CommonKeys.COPY_ID_COPIED_ARIA, { id })
+						: t(CommonKeys.COPY_ID_COPY_ARIA, { id })
+				}
 			>
 				<span>{truncated}</span>
 				{copied ? (

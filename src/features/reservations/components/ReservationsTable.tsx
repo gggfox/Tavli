@@ -289,7 +289,7 @@ export function ReservationsTable({
 					onChange={setGlobalFilter}
 				/>
 				<div className="text-sm text-muted-foreground">
-					{filteredCount} {filteredCount === 1 ? "reservation" : "reservations"}
+					{t(ReservationsKeys.TABLE_RESULT_COUNT, { count: filteredCount })}
 				</div>
 			</div>
 

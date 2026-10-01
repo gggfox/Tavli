@@ -14,7 +14,12 @@ interface UseMenuImportOptions {
 export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 	const [step, setStep] = useState<ImportStep>("idle");
 	const [extraction, setExtraction] = useState<MenuExtraction | null>(null);
-	const [error, setError] = useState<string | null>(null);
+	/**
+	 * The caught value itself, not its message: the import functions return
+	 * stable `ERROR_MENU_IMPORT_*` codes (see `MENU_IMPORT_ERROR`), which the
+	 * dialog localizes through `getErrorMessage` instead of rendering raw.
+	 */
+	const [error, setError] = useState<unknown>(null);
 	const [result, setResult] = useState<{
 		categoriesCreated: number;
 		categoriesMerged: number;
@@ -50,16 +55,18 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 
 				setStep("extracting");
 
-				const extracted = await extractAction({
-					storageId: storageId as Id<"_storage">,
-					filename: file.name,
-					restaurantId,
-				});
+				const extracted = unwrapResult(
+					await extractAction({
+						storageId: storageId as Id<"_storage">,
+						filename: file.name,
+						restaurantId,
+					})
+				);
 
 				setExtraction(extracted);
 				setStep("preview");
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Extraction failed");
+				setError(err);
 				setStep("error");
 			}
 		},
@@ -98,7 +105,7 @@ export function useMenuImport({ restaurantId }: UseMenuImportOptions) {
 				setResult(importResult);
 				setStep("done");
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Import failed");
+				setError(err);
 				setStep("error");
 			}
 		},

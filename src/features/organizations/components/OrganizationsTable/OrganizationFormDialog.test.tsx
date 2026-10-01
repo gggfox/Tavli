@@ -3,7 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const hoisted = vi.hoisted(() => ({
-	update: vi.fn(async (_args: Record<string, unknown>) => ["organizations:1", null]),
+	update: vi.fn(
+		async (_args: Record<string, unknown>): Promise<unknown> => ["organizations:1", null]
+	),
 }));
 vi.mock("@convex-dev/react-query", () => ({
 	useConvexMutation: (ref: any) => (ref?.name === "update" ? hoisted.update : vi.fn()),
@@ -88,5 +90,29 @@ describe("OrganizationFormDialog", () => {
 		fireEvent.submit(input.closest("form")!);
 		await waitFor(() => expect(hoisted.update).toHaveBeenCalled());
 		expect(hoisted.update.mock.calls[0][0]).not.toHaveProperty("aiImageMonthlyLimit");
+	});
+	it.each([
+		["name: ERROR_ORGANIZATION_NAME_TAKEN", "Name", "Another organization already uses that name."],
+		[
+			"aiImageMonthlyLimit: ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID",
+			"AI images per month (0 = off)",
+			"Enter a whole number from 0 to 100,000.",
+		],
+	])("shows the backend's %s refusal under its field", async (message, label, expected) => {
+		hoisted.update.mockResolvedValueOnce([null, { name: "VALIDATION_ERROR", message }]);
+		render(
+			<OrganizationFormDialog
+				isOpen
+				organization={
+					{ _id: "organizations:1", name: "Org", isActive: true, aiImageMonthlyLimit: 100 } as any
+				}
+				onClose={() => {}}
+				onSuccess={() => {}}
+			/>
+		);
+		const input = screen.getByLabelText(label, { exact: false }) as HTMLInputElement;
+		fireEvent.submit(input.closest("form")!);
+		await waitFor(() => expect(screen.getByText(expected)).toBeInTheDocument());
+		expect(screen.queryByText(/ERROR_/)).not.toBeInTheDocument();
 	});
 });

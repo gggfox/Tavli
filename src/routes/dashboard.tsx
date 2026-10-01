@@ -1,6 +1,7 @@
+import { StaffAccessDeniedState } from "@/features/auth";
 import { DashboardErrorFallback, DashboardPage } from "@/features/dashboard";
 import { useCurrentUserRoles } from "@/features/users/hooks";
-import { EmptyState, ErrorBoundary, LoadingState } from "@/global/components";
+import { ErrorBoundary, LoadingState } from "@/global/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { STAFF_ROLES } from "convex/constants";
 import { useMemo } from "react";
@@ -20,11 +21,7 @@ function DashboardRoute() {
 	if (!isAuthenticated || !isStaff) {
 		return (
 			<div className="p-6 flex items-center justify-center h-full">
-				<EmptyState
-					variant="inline"
-					title="Access Denied"
-					description="You do not have permission to view this page."
-				/>
+				<StaffAccessDeniedState />
 			</div>
 		);
 	}

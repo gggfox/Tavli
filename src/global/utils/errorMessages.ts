@@ -159,6 +159,23 @@ export function extractErrorField(error: unknown): string | null {
 	return null;
 }
 
+/**
+ * Reads the detail a backend attached to `code` with the `CODE:detail`
+ * convention (e.g. `"id: ERROR_ORGANIZATION_HAS_USERS:2"` → `"2"`), or `null`
+ * when the error does not carry that code or carries it bare. The detail is
+ * data — a count, a column name — for the localized message to interpolate.
+ */
+export function extractErrorDetail(error: unknown, code: BackendErrorCode): string | null {
+	const needle = `${code}:`;
+	for (const candidate of candidateStrings(error)) {
+		const at = candidate.indexOf(needle);
+		if (at === -1) continue;
+		const detail = /^[^\s,]+/.exec(candidate.slice(at + needle.length));
+		if (detail) return detail[0];
+	}
+	return null;
+}
+
 export function extractErrorCode(error: unknown): BackendErrorCode | null {
 	const candidates = candidateStrings(error);
 

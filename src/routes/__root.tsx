@@ -10,6 +10,7 @@ import {
 import { useConvexAuth } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { useEffect, useRef, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AuthDebugPanel } from "@/features";
 import { useNewReservationListener } from "@/features/reservations";
@@ -19,7 +20,7 @@ import { ErrorBoundary, MobileTopBar, NotificationCenter, Sidebar } from "@/glob
 import { ClientOnlyDevtools, SafeRouterDevtoolsPanel } from "@/global/components/Debug";
 import { MoneyCurrencyProvider } from "@/global/hooks/useFormatMoney";
 import { LOCAL_STORAGE_KEY_SIDEBAR_EXPANDED } from "@/global/components/Sidebar/hooks";
-import { i18n, normalizeLanguage, resolveLanguage } from "@/global/i18n";
+import { CommonKeys, i18n, normalizeLanguage, resolveLanguage } from "@/global/i18n";
 import { config } from "@/global/utils/config";
 import { identifyUser, initTelemetry, resetUser } from "@/global/utils/telemetry";
 import {
@@ -49,11 +50,12 @@ const initScript = `(function(){try{var k=${JSON.stringify(LOCAL_STORAGE_THEME_K
 initTelemetry();
 
 function RootNotFound() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 p-8 text-center">
-			<h1 className="text-lg font-medium text-foreground">Page not found</h1>
+			<h1 className="text-lg font-medium text-foreground">{t(CommonKeys.NOT_FOUND_TITLE)}</h1>
 			<p className="max-w-sm text-sm text-muted-foreground">
-				The URL may be mistyped, or the page may have been removed.
+				{t(CommonKeys.NOT_FOUND_DESCRIPTION)}
 			</p>
 		</div>
 	);

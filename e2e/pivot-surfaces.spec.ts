@@ -17,7 +17,7 @@
  */
 import { expect, test } from "@playwright/test";
 import {
-	ACCESS_DENIED_HEADING,
+	STAFF_GUARD_HEADING,
 	APP_TITLE,
 	collectPageErrors,
 	DINER_RESTAURANT_NOT_FOUND_HEADING,
@@ -137,7 +137,7 @@ test.describe("ADR 008 staff surfaces", () => {
 			// instead of leaking a dashboard to an anonymous visitor.
 			await expect(page.getByText(NOT_FOUND_HEADING)).toHaveCount(0);
 			await expect(page.getByText(ERROR_BOUNDARY_HEADING)).toHaveCount(0);
-			await expect(page.getByText(ACCESS_DENIED_HEADING)).toBeVisible();
+			await expect(page.getByText(STAFF_GUARD_HEADING)).toBeVisible();
 			expect(errors).toEqual([]);
 		});
 	}

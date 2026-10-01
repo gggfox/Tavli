@@ -51,7 +51,7 @@ import {
 	Surface,
 	toneByValue,
 } from "@/global/components";
-import { ReservationsKeys } from "@/global/i18n";
+import { ErrorKeys, ReservationsKeys } from "@/global/i18n";
 import { type UnwrappedValue, unwrapResult } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { resolveRestaurantTimezone, utcMsToYmdInTimezone } from "@/global/utils/timezone";
@@ -270,7 +270,7 @@ export function ReservationsDashboard() {
 		<DashboardShell
 			isLoading={isLoading}
 			error={error}
-			entityName="reservations"
+			errorTitle={t(ErrorKeys.LOAD_FAILED_RESERVATIONS)}
 			skeleton={<ReservationsDashboardSkeleton />}
 			header={header}
 			gap="6"

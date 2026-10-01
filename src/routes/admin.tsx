@@ -1,5 +1,6 @@
+import { StaffAccessDeniedState } from "@/features/auth";
 import { useCurrentUserRoles } from "@/features/users/hooks";
-import { EmptyState, LoadingState, RouteErrorComponent } from "@/global/components";
+import { LoadingState, RouteErrorComponent } from "@/global/components";
 import {
 	createFileRoute,
 	Link,
@@ -7,7 +8,7 @@ import {
 	useMatches,
 	type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { SidebarKeys } from "@/global/i18n";
+import { AdminAccessKeys, SidebarKeys } from "@/global/i18n";
 import { STAFF_ROLES } from "convex/constants";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -43,6 +44,7 @@ function AdminErrorComponent(props: Readonly<ErrorComponentProps>) {
 }
 
 function AdminLayout() {
+	const { t } = useTranslation();
 	const matches = useMatches();
 	const isExactAdminRoute = matches.length > 0 && matches.at(-1)?.pathname === "/admin";
 	const { roles: userRoles, isLoading, isAuthenticated } = useCurrentUserRoles();
@@ -55,11 +57,7 @@ function AdminLayout() {
 	if (!isAuthenticated || !isStaff) {
 		return (
 			<div className="p-6 flex items-center justify-center h-full">
-				<EmptyState
-					variant="inline"
-					title="Access Denied"
-					description="You do not have permission to view this page."
-				/>
+				<StaffAccessDeniedState />
 			</div>
 		);
 	}
@@ -69,8 +67,12 @@ function AdminLayout() {
 			{isExactAdminRoute ? (
 				<div className="p-6 flex flex-col h-full overflow-hidden">
 					<div className="mb-6">
-						<h1 className="text-2xl font-semibold text-foreground">Admin Dashboard</h1>
-						<p className="mt-2 text-sm text-muted-foreground">Manage users and system settings.</p>
+						<h1 className="text-2xl font-semibold text-foreground">
+							{t(AdminAccessKeys.ADMIN_HOME_TITLE)}
+						</h1>
+						<p className="mt-2 text-sm text-muted-foreground">
+							{t(AdminAccessKeys.ADMIN_HOME_DESCRIPTION)}
+						</p>
 					</div>
 				</div>
 			) : (

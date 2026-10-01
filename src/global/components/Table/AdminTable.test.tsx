@@ -1,8 +1,9 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
 import { useAdminTable } from "@/global/hooks/useAdminTable";
+import { i18n, Languages } from "@/global/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper } from "@tanstack/react-table";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useConvexAuth } from "convex/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminTable } from "./AdminTable";
@@ -50,7 +51,6 @@ function Harness() {
 	return (
 		<AdminTable
 			tableState={tableState}
-			entityName="rows"
 			searchPlaceholder="Search rows..."
 			filteredEmptyTitle="Nothing matches"
 		/>
@@ -129,6 +129,38 @@ describe("AdminTable global search", () => {
 		expect(screen.queryByText("Carol")).not.toBeInTheDocument();
 	});
 
+	it("falls back to localized, entity-neutral copy and pluralizes through i18next", async () => {
+		function BareHarness() {
+			const tableState = useAdminTable<SampleRow>({
+				queryOptions: { queryKey: ["admin-table-bare-test"] } as any,
+				columns,
+			});
+			return <AdminTable tableState={tableState} />;
+		}
+
+		mockData(SAMPLE);
+		const { rerender } = render(<BareHarness />);
+		expect(screen.getByPlaceholderText("Search…")).toBeInTheDocument();
+		expect(screen.getByText("3 results")).toBeInTheDocument();
+
+		await act(() => i18n.changeLanguage(Languages.ES));
+		try {
+			rerender(<BareHarness />);
+			expect(screen.getByPlaceholderText("Buscar…")).toBeInTheDocument();
+			expect(screen.getByText("3 resultados")).toBeInTheDocument();
+
+			fireEvent.change(screen.getByPlaceholderText("Buscar…"), { target: { value: "bob" } });
+			expect(screen.getByText("1 resultado")).toBeInTheDocument();
+
+			fireEvent.change(screen.getByPlaceholderText("Buscar…"), {
+				target: { value: "zzz-no-match" },
+			});
+			expect(screen.getByText("Ningún resultado coincide con tu búsqueda")).toBeInTheDocument();
+		} finally {
+			await act(() => i18n.changeLanguage(Languages.EN));
+		}
+	});
+
 	// Regression for the Members-page bug: if every column is a `display`
 	// column with no accessorFn, TanStack v8 skips the global filter entirely
 	// (see table-core's getCanGlobalFilter which ends in `!!column.accessorFn`).
@@ -153,9 +185,7 @@ describe("AdminTable global search", () => {
 				queryOptions: { queryKey: ["admin-table-display-test"] } as any,
 				columns: displayColumns,
 			});
-			return (
-				<AdminTable tableState={tableState} entityName="rows" searchPlaceholder="Search rows..." />
-			);
+			return <AdminTable tableState={tableState} searchPlaceholder="Search rows..." />;
 		}
 
 		mockData(SAMPLE);

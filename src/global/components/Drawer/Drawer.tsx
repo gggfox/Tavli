@@ -5,6 +5,7 @@ import {
 	useDialogPhase,
 	useMediaQuery,
 } from "@/global/hooks";
+import { CommonKeys } from "@/global/i18n";
 import {
 	useCallback,
 	useEffect,
@@ -14,6 +15,7 @@ import {
 	type CSSProperties,
 	type PointerEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import "./Drawer.css";
 import type { DrawerProps, DrawerSide } from "@/global/components/Drawer/types";
 
@@ -61,7 +63,8 @@ export function Drawer({
 	const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
 	const swipeEnabled = swipeToClose && side === "bottom";
-	const handleLabel = swipeHandleAriaLabel ?? "Drag down to close";
+	const { t } = useTranslation();
+	const handleLabel = swipeHandleAriaLabel ?? t(CommonKeys.DRAWER_DRAG_TO_CLOSE);
 
 	const [dragY, setDragY] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);

@@ -12,7 +12,7 @@
 import { AdminTable, InlineError } from "@/global/components";
 import { formInputClasses, formInputStyle } from "@/global/components/Form/styles";
 import { useAdminTable } from "@/global/hooks";
-import { AlertsKeys } from "@/global/i18n";
+import { AlertsKeys, ErrorKeys } from "@/global/i18n";
 import { unwrapResult } from "@/global/utils";
 import { getErrorMessage } from "@/global/utils/errorMessages";
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
@@ -163,7 +163,7 @@ export function OperatorAlertsTable() {
 
 			<AdminTable
 				tableState={tableState}
-				entityName={t(AlertsKeys.PAGE_ENTITY)}
+				errorTitle={t(ErrorKeys.LOAD_FAILED_ALERTS)}
 				searchPlaceholder={t(AlertsKeys.PAGE_SEARCH_PLACEHOLDER)}
 				getResultCountText={(count) => t(AlertsKeys.PAGE_RESULT_COUNT, { count })}
 				emptyIcon={BellRing}

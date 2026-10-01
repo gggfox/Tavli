@@ -184,3 +184,99 @@ describe("organizations.getAllOrganizations", () => {
 		expect(error!.name).toBe("NOT_AUTHENTICATED");
 	});
 });
+
+/**
+ * The organization functions refuse with stable codes the frontend localizes,
+ * never English prose. Validation failures keep the field they belong to, and
+ * the delete refusal carries how many users are still assigned.
+ */
+describe("organizations error codes", () => {
+	async function seedAdmin(t: ReturnType<typeof convexTest>) {
+		await seedUserRole(t, { userId: "admin1", roles: [USER_ROLES.ADMIN] });
+		return t.withIdentity({ subject: "admin1" });
+	}
+
+	it("refuses a blank or duplicate name on create", async () => {
+		const t = convexTest(schema, modules);
+		const admin = await seedAdmin(t);
+		await seedOrganization(t, "Taken");
+
+		const [, blank] = await admin.mutation(api.organizations.createOrganization, { name: "  " });
+		expect(blank).toMatchObject({
+			name: "VALIDATION_ERROR",
+			message: "name: ERROR_ORGANIZATION_NAME_REQUIRED",
+		});
+
+		const [, taken] = await admin.mutation(api.organizations.createOrganization, {
+			name: "Taken",
+		});
+		expect(taken).toMatchObject({
+			name: "VALIDATION_ERROR",
+			message: "name: ERROR_ORGANIZATION_NAME_TAKEN",
+		});
+	});
+
+	it("refuses a blank or duplicate name, and an out-of-range AI limit, on update", async () => {
+		const t = convexTest(schema, modules);
+		const admin = await seedAdmin(t);
+		const id = await seedOrganization(t, "Mine");
+		await seedOrganization(t, "Theirs");
+
+		const [, blank] = await admin.mutation(api.organizations.updateOrganization, {
+			id,
+			name: "",
+		});
+		expect(blank?.message).toBe("name: ERROR_ORGANIZATION_NAME_REQUIRED");
+
+		const [, taken] = await admin.mutation(api.organizations.updateOrganization, {
+			id,
+			name: "Theirs",
+		});
+		expect(taken?.message).toBe("name: ERROR_ORGANIZATION_NAME_TAKEN");
+
+		for (const aiImageMonthlyLimit of [-1, 1.5, 100001]) {
+			const [, limit] = await admin.mutation(api.organizations.updateOrganization, {
+				id,
+				aiImageMonthlyLimit,
+			});
+			expect(limit).toMatchObject({
+				name: "VALIDATION_ERROR",
+				message: "aiImageMonthlyLimit: ERROR_ORGANIZATION_AI_IMAGE_LIMIT_INVALID",
+			});
+		}
+	});
+
+	it("reports a missing organization as ERROR_ORGANIZATION_NOT_FOUND", async () => {
+		const t = convexTest(schema, modules);
+		const admin = await seedAdmin(t);
+		const id = await seedOrganization(t, "Doomed");
+		await t.run(async (ctx) => ctx.db.delete(id));
+
+		const [, read] = await admin.query(api.organizations.getOrganization, { id });
+		const [, update] = await admin.mutation(api.organizations.updateOrganization, {
+			id,
+			name: "New",
+		});
+		const [, remove] = await admin.mutation(api.organizations.deleteOrganization, { id });
+
+		for (const error of [read, update, remove]) {
+			expect(error).toMatchObject({ name: "NOT_FOUND", message: "ERROR_ORGANIZATION_NOT_FOUND" });
+		}
+	});
+
+	it("refuses to delete an organization with assigned users, saying how many", async () => {
+		const t = convexTest(schema, modules);
+		const admin = await seedAdmin(t);
+		const id = await seedOrganization(t, "Staffed");
+		await seedUserRole(t, { userId: "u1", roles: [USER_ROLES.OWNER], organizationId: id });
+		await seedUserRole(t, { userId: "u2", roles: [USER_ROLES.OWNER], organizationId: id });
+
+		const [, error] = await admin.mutation(api.organizations.deleteOrganization, { id });
+
+		expect(error).toMatchObject({
+			name: "VALIDATION_ERROR",
+			message: "id: ERROR_ORGANIZATION_HAS_USERS:2",
+		});
+		expect(await t.run(async (ctx) => ctx.db.get(id))).not.toBeNull();
+	});
+});

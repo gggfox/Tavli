@@ -87,7 +87,7 @@ describe("CustomerNavTabs", () => {
 
 		render(<CustomerNavTabs slug="vernaculo-spgg" />);
 
-		expect(screen.getByRole("navigation", { name: /customer sections/i })).toBeTruthy();
+		expect(screen.getByRole("navigation", { name: /restaurant sections/i })).toBeTruthy();
 		expect(screen.getAllByRole("link")).toHaveLength(2);
 	});
 
