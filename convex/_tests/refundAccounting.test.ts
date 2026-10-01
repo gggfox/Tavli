@@ -200,6 +200,7 @@ function refundCalls() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	process.env.STRIPE_SECRET_KEY = "sk_test_123";
 	vi.useFakeTimers();
 });
 
