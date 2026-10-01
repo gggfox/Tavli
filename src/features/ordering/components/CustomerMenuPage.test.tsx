@@ -1,15 +1,17 @@
 /* eslint-disable boundaries/no-unknown-files, boundaries/no-unknown, @typescript-eslint/no-explicit-any */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { getFunctionName } from "convex/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useSessionStore } from "../hooks/useSession";
+import { storedPicksKey } from "../utils/storedPicks";
 import { CustomerMenuPage } from "./CustomerMenuPage";
 
 const saveDraftFromMenu = vi.fn();
 
 vi.mock("@tanstack/react-query", () => ({
 	useQuery: vi.fn(),
+	useQueries: vi.fn(),
 }));
 
 vi.mock("@convex-dev/react-query", () => ({
@@ -102,7 +104,31 @@ const QUERY_DATA: Record<string, unknown> = {
 	],
 	"menuItemPopularity:getPopularItemIds": [],
 	"orders:getOrdersBySession": [DRAFT],
+	// What restored picks are checked against: every public dish, any menu.
+	"menuItems:getByRestaurant": [
+		{ _id: "menuItems:tacos", basePrice: 1000, isAvailable: true },
+		{ _id: "menuItems:soup", basePrice: 600, isAvailable: true },
+	],
 };
+
+/** `optionGroups.getGroupsForMenuItem`, by dish. */
+const OPTION_GROUPS: Record<string, unknown> = {
+	"menuItems:tacos": [
+		{
+			_id: "optionGroups:salsa",
+			name: "Salsa",
+			options: [
+				{ _id: "options:verde", name: "Verde", isAvailable: true, priceModifier: 150 },
+				{ _id: "options:roja", name: "Roja", isAvailable: true, priceModifier: 150 },
+			],
+		},
+	],
+};
+
+/** What a signed-out diner left in the browser before the sign-in redirect. */
+function storePicks(lines: unknown[], savedAt = Date.now()) {
+	sessionStorage.setItem(storedPicksKey("casa"), JSON.stringify({ version: 1, savedAt, lines }));
+}
 
 let overrides: Record<string, unknown> = {};
 
@@ -133,6 +159,11 @@ describe("CustomerMenuPage", () => {
 			const name = options?.ref ? getFunctionName(options.ref) : "";
 			return { data: name in overrides ? overrides[name] : QUERY_DATA[name] } as any;
 		});
+		vi.mocked(useQueries).mockImplementation(
+			({ queries }: any) =>
+				queries.map((q: any) => ({ data: OPTION_GROUPS[q.args.menuItemId] })) as any
+		);
+		sessionStorage.clear();
 	});
 
 	it("waits for the session's orders before showing the menu, since it seeds from them", () => {
@@ -229,5 +260,70 @@ describe("CustomerMenuPage", () => {
 		overrides["orders:getOrdersBySession"] = [];
 		renderPage();
 		expect(screen.getByText("Tap on items to start your order")).toBeInTheDocument();
+	});
+
+	describe("picks kept across sign-in", () => {
+		const STORED = [
+			{ menuItemId: "menuItems:tacos", quantity: 2, unitPrice: 1000, selectedOptions: [verde] },
+			{ menuItemId: "menuItems:soup", quantity: 1, unitPrice: 600, selectedOptions: [] },
+		];
+
+		it("opens holding the picks made signed out when the session has no draft", async () => {
+			overrides["orders:getOrdersBySession"] = [];
+			storePicks(STORED);
+			saveDraftFromMenu.mockResolvedValue(["orders:new", null]);
+			const onProceed = renderPage();
+
+			expect(screen.getByText("Total (2 items)")).toBeInTheDocument();
+			// Consumed: a reload must not bring them back a second time.
+			expect(sessionStorage.getItem(storedPicksKey("casa"))).toBeNull();
+			// Restoring is not ordering — nothing is saved until the diner submits.
+			expect(saveDraftFromMenu).not.toHaveBeenCalled();
+			expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+			fireEvent.change(openPayFlow(), { target: { value: "tables:one" } });
+			confirmOrder();
+
+			await waitFor(() => expect(onProceed).toHaveBeenCalledWith("orders:new"));
+			expect(saveDraftFromMenu.mock.calls[0][0].items).toEqual([
+				{ menuItemId: "menuItems:tacos", quantity: 2, selectedOptions: [verde] },
+				{ menuItemId: "menuItems:soup", quantity: 1, selectedOptions: [] },
+			]);
+		});
+
+		it("lets an existing draft win, and discards the stored picks", () => {
+			storePicks([STORED[1]]);
+			renderPage();
+
+			// The draft's two ways of ordering the tacos — not the stored soup.
+			expect(screen.getByText("Total (2 items)")).toBeInTheDocument();
+			expect(openPayFlow().value).toBe("tables:two");
+			expect(sessionStorage.getItem(storedPicksKey("casa"))).toBeNull();
+		});
+
+		it("says when stored picks had to be dropped, and lets the diner dismiss it", () => {
+			overrides["orders:getOrdersBySession"] = [];
+			overrides["menuItems:getByRestaurant"] = [
+				{ _id: "menuItems:tacos", basePrice: 1000, isAvailable: true },
+			];
+			storePicks(STORED);
+			renderPage();
+
+			expect(screen.getByText("Total (1 item)")).toBeInTheDocument();
+			expect(screen.getByRole("status")).toHaveTextContent(
+				"Some dishes you picked are no longer available, so we removed them."
+			);
+
+			fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+			expect(screen.queryByRole("status")).not.toBeInTheDocument();
+		});
+
+		it("ignores expired picks", () => {
+			overrides["orders:getOrdersBySession"] = [];
+			storePicks(STORED, Date.now() - 3 * 60 * 60 * 1000);
+			renderPage();
+
+			expect(screen.getByText("Tap on items to start your order")).toBeInTheDocument();
+		});
 	});
 });

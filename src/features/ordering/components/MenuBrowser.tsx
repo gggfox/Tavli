@@ -105,6 +105,17 @@ interface MenuBrowserProps {
 	submitError?: { message: string; menuItemId?: Id<"menuItems"> } | null;
 	/** Clears `submitError` once the diner has acted on it. */
 	onDismissSubmitError?: () => void;
+	/**
+	 * Told the picks on mount and after every change. Browsing signed out, the
+	 * page keeps them in the browser so they survive the sign-in redirect
+	 * (`storedPicks`); ordering, the draft is where picks are kept.
+	 */
+	onPicksChange?: (picks: ReadonlyMap<string, MenuPick>) => void;
+	/**
+	 * A short message about the picks the menu opened with — e.g. that some
+	 * restored dishes are gone — shown just above the order bar.
+	 */
+	picksNotice?: React.ReactNode;
 }
 
 export function MenuBrowser({
@@ -119,6 +130,8 @@ export function MenuBrowser({
 	initialDraft,
 	submitError,
 	onDismissSubmitError,
+	onPicksChange,
+	picksNotice,
 }: Readonly<MenuBrowserProps>) {
 	const formatMoney = useFormatMoney();
 	const { t } = useTranslation();
@@ -133,6 +146,9 @@ export function MenuBrowser({
 	const [selections, setSelections] = useState<Map<string, ItemSelection>>(() =>
 		picksFromDraftLines(initialDraft?.lines ?? [])
 	);
+	useEffect(() => {
+		onPicksChange?.(selections);
+	}, [selections, onPicksChange]);
 	const [showPayFlow, setShowPayFlow] = useState(false);
 	const [comment, setComment] = useState(initialDraft?.specialInstructions ?? "");
 	const [selectedTableId, setSelectedTableId] = useState<Id<"tables"> | null>(
@@ -500,6 +516,8 @@ export function MenuBrowser({
 			{/* Anchored above whatever bottom bar is showing — the cart CTA is the
 			    revenue button on this page and must never be covered. */}
 			<ScrollToTopButton scrollRef={scrollRef} bottomOffset={16} />
+
+			{picksNotice}
 
 			{/* Bottom bar: geofence / ordering-unavailable notice */}
 			{orderingBlocked && blockedNotice && (
