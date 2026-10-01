@@ -24,13 +24,42 @@ function definedColorTokens(): Set<string> {
 	return tokens;
 }
 
-function sourceFiles(dir: string, acc: string[] = []): string[] {
+function sourceFiles(dir: string, acc: string[] = [], pattern = /\.tsx$/): string[] {
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
 		const full = join(dir, entry.name);
-		if (entry.isDirectory()) sourceFiles(full, acc);
-		else if (/\.tsx$/.test(entry.name)) acc.push(full);
+		if (entry.isDirectory()) sourceFiles(full, acc, pattern);
+		else if (pattern.test(entry.name)) acc.push(full);
 	}
 	return acc;
+}
+
+/** App code that ships: `.ts`/`.tsx`, minus tests, generated routes and demo scaffolds. */
+function shippedCode(): string[] {
+	return sourceFiles(SRC, [], /\.tsx?$/).filter(
+		(file) =>
+			!/\.test\.tsx?$/.test(file) &&
+			!file.endsWith("routeTree.gen.ts") &&
+			!file.includes(join("routes", "demo"))
+	);
+}
+
+/**
+ * Every custom property the app defines: declared in a stylesheet, written into
+ * CSS from code (the restaurant branding builds `--brand-*: …` strings), set on
+ * an element with `style.setProperty("--…")`, or passed as a style-object key.
+ */
+function definedCustomProperties(): Set<string> {
+	const names = new Set<string>();
+	const declare = (text: string) => {
+		for (const match of text.matchAll(/(--[a-zA-Z0-9-]+)\s*:/g)) names.add(match[1]);
+		for (const match of text.matchAll(/setProperty\(\s*["'`](--[a-zA-Z0-9-]+)/g))
+			names.add(match[1]);
+		for (const match of text.matchAll(/["'`](--[a-zA-Z0-9-]+)["'`]\s*\]?\s*:/g))
+			names.add(match[1]);
+	};
+	for (const file of sourceFiles(SRC, [], /\.css$/)) declare(readFileSync(file, "utf-8"));
+	for (const file of shippedCode()) declare(readFileSync(file, "utf-8"));
+	return names;
 }
 
 /**
@@ -97,6 +126,35 @@ describe("theme tokens", () => {
 		}
 
 		expect(offenders).toEqual([]);
+	});
+
+	it("defines every custom property that code reads with var(--…)", () => {
+		// The same silent failure one level down: a declaration whose `var()`
+		// cannot resolve is dropped by the browser. `--destructive` (never
+		// defined; the token is `--color-destructive`) left the reservation
+		// timeline's double-booking block with no fill and no red border, and
+		// `--bg-muted`, `--border-hover` and `--text-faint` did the same to a
+		// focused calendar day, a hover border and a status colour. A fallback
+		// (`var(--x, white)`) is not an excuse either: it hard-codes a colour
+		// that ignores the theme and the restaurant's branding.
+		const defined = definedCustomProperties();
+		const offenders: string[] = [];
+
+		for (const file of shippedCode()) {
+			const contents = readFileSync(file, "utf-8");
+			// `var(--x)` in styles and arbitrary classes, and Tailwind v4's
+			// `ring-(--x)` shorthand for the same thing.
+			const references = [
+				...contents.matchAll(/var\(\s*(--[a-zA-Z0-9-]+)/g),
+				...contents.matchAll(/[a-z]-\((--[a-zA-Z0-9-]+)\)/g),
+			];
+			for (const match of references) {
+				if (defined.has(match[1])) continue;
+				offenders.push(`${file.replace(SRC, "src")}: ${match[1]}`);
+			}
+		}
+
+		expect([...new Set(offenders)]).toEqual([]);
 	});
 
 	it("gives every dialog panel an opaque background", () => {

@@ -76,6 +76,6 @@ export const DISPUTE_STATUS_BADGE: Record<DisputeStatus, { bgColor: string; text
 	},
 	[DISPUTE_STATUS.UNKNOWN]: {
 		bgColor: "var(--bg-tertiary)",
-		textColor: "var(--text-faint)",
+		textColor: "var(--color-faint-foreground)",
 	},
 };

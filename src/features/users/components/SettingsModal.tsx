@@ -227,7 +227,7 @@ export function SettingsModal({ isOpen, onClose }: Readonly<SettingsModalProps>)
 										className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-all border ${
 											isActive
 												? "bg-active border-accent"
-												: "border-border hover:border-[var(--border-hover)]"
+												: "border-border hover:border-border-strong"
 										}`}
 										style={{ color: isActive ? "var(--text-primary)" : "var(--text-muted)" }}
 									>
