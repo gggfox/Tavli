@@ -627,6 +627,9 @@ describe("startGeneration", () => {
 
 	it("enforces the organization's monthly limit, ignoring failed attempts", async () => {
 		vi.useFakeTimers();
+		// The seeded jobs are dated NOW; "this month" is read from the clock, so
+		// the clock must say NOW too or the test only passes in September 2026.
+		vi.setSystemTime(NOW);
 		try {
 			const t = convexTest(schema, modules);
 			registerDisputeComponents(t);
@@ -765,29 +768,36 @@ describe("startGeneration", () => {
 	});
 
 	it("counts a failed invalid_response attempt toward the monthly limit (it may have been billed)", async () => {
-		const t = convexTest(schema, modules);
-		registerDisputeComponents(t);
-		const ids = await seed(t, { monthlyLimit: 1 });
-		await t.run(async (ctx) =>
-			ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
-				restaurantId: ids.restaurantId,
-				organizationId: ids.organizationId,
-				menuItemId: ids.menuItemId,
-				attempt: 1,
-				status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
-				error: MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE,
-				requestedBy: MANAGER,
-				model: "m",
-				retries: 0,
-				createdAt: NOW,
-				finishedAt: NOW,
-			})
-		);
+		// Seeded at NOW and counted against the clock's month: pin the clock.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(NOW);
+		try {
+			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
+			const ids = await seed(t, { monthlyLimit: 1 });
+			await t.run(async (ctx) =>
+				ctx.db.insert(TABLE.MENU_AI_IMAGE_GEN_JOBS, {
+					restaurantId: ids.restaurantId,
+					organizationId: ids.organizationId,
+					menuItemId: ids.menuItemId,
+					attempt: 1,
+					status: MENU_AI_IMAGE_JOB_STATUS.FAILED,
+					error: MENU_AI_IMAGE_FAILURE.INVALID_RESPONSE,
+					requestedBy: MANAGER,
+					model: "m",
+					retries: 0,
+					createdAt: NOW,
+					finishedAt: NOW,
+				})
+			);
 
-		const [, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
-			menuItemId: ids.menuItemId,
-		});
-		expect(error?.name).toBe("AI_IMAGE_MONTHLY_LIMIT_REACHED");
+			const [, error] = await asManager(t).mutation(api.menuAIImageGen.startGeneration, {
+				menuItemId: ids.menuItemId,
+			});
+			expect(error?.name).toBe("AI_IMAGE_MONTHLY_LIMIT_REACHED");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("is switched off by a limit of 0", async () => {
@@ -838,20 +848,27 @@ describe("startGeneration", () => {
 
 describe("getItemGeneration", () => {
 	it("reports the pending draft with a url, the attempt count, and what is left", async () => {
-		const t = convexTest(schema, modules);
-		registerDisputeComponents(t);
-		const ids = await seed(t);
-		await insertJobAndDraft(t, ids, "pending");
+		// The draft's job is dated NOW and counted against the clock's month.
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(NOW);
+		try {
+			const t = convexTest(schema, modules);
+			registerDisputeComponents(t);
+			const ids = await seed(t);
+			await insertJobAndDraft(t, ids, "pending");
 
-		const view = await asManager(t).query(api.menuAIImageGen.getItemGeneration, {
-			menuItemId: ids.menuItemId,
-		});
-		expect(view.pendingDraft?.imageUrl).toMatch(/^https?:\/\//);
-		expect(view.pendingDraft?.attempt).toBe(1);
-		expect(view.attemptCount).toBe(1);
-		expect(view.activeJob).toBeNull();
-		expect(view.monthlyLimit).toBe(MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG);
-		expect(view.remainingThisMonth).toBe(MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG - 1);
+			const view = await asManager(t).query(api.menuAIImageGen.getItemGeneration, {
+				menuItemId: ids.menuItemId,
+			});
+			expect(view.pendingDraft?.imageUrl).toMatch(/^https?:\/\//);
+			expect(view.pendingDraft?.attempt).toBe(1);
+			expect(view.attemptCount).toBe(1);
+			expect(view.activeJob).toBeNull();
+			expect(view.monthlyLimit).toBe(MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG);
+			expect(view.remainingThisMonth).toBe(MENU_AI_IMAGE_DEFAULT_MONTHLY_LIMIT_PER_ORG - 1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("surfaces a recent failure so the panel can explain it", async () => {
